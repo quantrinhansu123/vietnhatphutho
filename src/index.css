@@ -12,9 +12,161 @@
   outline-color: transparent;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   overscroll-behavior-y: contain; /* Prevents pull-to-refresh pull actions on mobile browsers */
-  background-color: #0b1329; /* Deep executive midnight tone matched to the container */
+  background-color: #151515;
+}
+
+/* Viet Nhat IPT brand palette overrides */
+:root {
+  --brand-red: #ef1b2d;
+  --brand-red-dark: #b30d1c;
+  --brand-red-soft: #fff1f2;
+  --brand-black: #111111;
+  --brand-ink: #202020;
+  --brand-line: #e7e5e4;
+}
+
+#main-root-container {
+  color: var(--brand-ink);
+}
+
+#main-root-container .bg-slate-900,
+#main-root-container .bg-slate-950 {
+  background-color: var(--brand-black) !important;
+}
+
+#main-root-container .border-slate-800,
+#main-root-container .border-slate-800\/80 {
+  border-color: #2f2f2f !important;
+}
+
+#main-root-container .bg-slate-50,
+#main-root-container .bg-zinc-50 {
+  background-color: #fafafa !important;
+}
+
+#main-root-container .brand-logo {
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.08));
+}
+
+#main-root-container .text-emerald-200,
+#main-root-container .text-emerald-300,
+#main-root-container .text-amber-200,
+#main-root-container .text-amber-300 {
+  color: #fecdd3 !important;
+}
+
+#main-root-container .text-emerald-400,
+#main-root-container .text-emerald-500,
+#main-root-container .text-emerald-600,
+#main-root-container .text-emerald-700,
+#main-root-container .text-emerald-800,
+#main-root-container .text-indigo-400,
+#main-root-container .text-indigo-500,
+#main-root-container .text-indigo-700,
+#main-root-container .text-amber-400,
+#main-root-container .text-amber-500,
+#main-root-container .text-amber-700,
+#main-root-container .text-amber-800 {
+  color: var(--brand-red) !important;
+}
+
+#main-root-container .bg-emerald-50,
+#main-root-container .bg-emerald-50\/20,
+#main-root-container .bg-emerald-50\/50,
+#main-root-container .bg-amber-50,
+#main-root-container .bg-amber-50\/50 {
+  background-color: var(--brand-red-soft) !important;
+}
+
+#main-root-container .bg-emerald-500,
+#main-root-container .bg-emerald-600,
+#main-root-container .bg-emerald-700,
+#main-root-container .bg-indigo-100,
+#main-root-container .bg-amber-400,
+#main-root-container .bg-amber-500 {
+  background-color: var(--brand-red) !important;
+}
+
+#main-root-container .bg-emerald-500\/10,
+#main-root-container .bg-emerald-500\/20,
+#main-root-container .bg-amber-500\/10,
+#main-root-container .bg-amber-500\/20 {
+  background-color: rgba(239, 27, 45, 0.12) !important;
+}
+
+#main-root-container .bg-emerald-950\/90,
+#main-root-container .bg-amber-950\/90 {
+  background-color: rgba(69, 10, 10, 0.94) !important;
+}
+
+#main-root-container .border-emerald-100,
+#main-root-container .border-emerald-200,
+#main-root-container .border-emerald-400,
+#main-root-container .border-emerald-500,
+#main-root-container .border-emerald-500\/30,
+#main-root-container .border-indigo-100,
+#main-root-container .border-amber-200,
+#main-root-container .border-amber-500\/30 {
+  border-color: var(--brand-red) !important;
+}
+
+#main-root-container .focus\:border-emerald-500:focus {
+  border-color: #ef1b2d !important;
+}
+
+#main-root-container .focus\:ring-emerald-500\/10:focus,
+#main-root-container .focus\:ring-emerald-500\/20:focus {
+  --tw-ring-color: rgba(239, 27, 45, 0.16) !important;
+}
+
+#main-root-container .hover\:border-emerald-500:hover {
+  border-color: #ef1b2d !important;
+}
+
+#main-root-container .hover\:text-emerald-700:hover {
+  color: var(--brand-red) !important;
+}
+
+#main-root-container .hover\:bg-emerald-50:hover,
+#main-root-container .hover\:bg-emerald-50\/20:hover {
+  background-color: var(--brand-red-soft) !important;
+}
+
+#main-root-container .shadow-emerald-600\/10 {
+  --tw-shadow-color: rgba(239, 27, 45, 0.18) !important;
+}
+
+#main-root-container .from-emerald-800 {
+  --tw-gradient-from: var(--brand-black) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(17, 17, 17, 0) var(--tw-gradient-to-position) !important;
+}
+
+#main-root-container .to-slate-900 {
+  --tw-gradient-to: var(--brand-red) var(--tw-gradient-to-position) !important;
+}
+
+#main-root-container button.bg-slate-900,
+#main-root-container button.bg-slate-800 {
+  background-color: var(--brand-black) !important;
+}
+
+#main-root-container button.bg-slate-900:hover,
+#main-root-container button.bg-slate-800:hover {
+  background-color: #2b2b2b !important;
+}
+
+#main-root-container button.bg-emerald-600:hover,
+#main-root-container button.bg-emerald-700:hover {
+  background-color: var(--brand-red-dark) !important;
 }
 
 /* Safe area utilities */
@@ -50,4 +202,111 @@ input[type="number"] {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(156, 163, 175, 0.5);
+}
+
+.qr-print-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .qr-print-sheet,
+  .qr-print-sheet * {
+    visibility: visible !important;
+  }
+
+  .qr-print-sheet {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    z-index: 9999;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+  }
+
+  .qr-print-page {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8mm;
+    width: 190mm;
+    margin: 0 auto;
+  }
+
+  .qr-print-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    height: 58mm;
+    border: 1px solid #111111;
+    border-radius: 4mm;
+    padding: 5mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3mm;
+  }
+
+  .qr-print-code {
+    position: relative;
+    width: 34mm;
+    height: 34mm;
+  }
+
+  .qr-print-code > img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .qr-print-code > span {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 9mm;
+    height: 9mm;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 1.5mm;
+    background: #ffffff;
+    padding: 1mm;
+    box-shadow: 0 0 0 0.3mm #ffffff;
+  }
+
+  .qr-print-code > span > img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .qr-print-meta {
+    width: 100%;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  .qr-print-meta strong {
+    display: block;
+    font-size: 11pt;
+    font-weight: 900;
+  }
+
+  .qr-print-meta p {
+    margin: 1.5mm 0 0;
+    font-size: 8pt;
+    font-weight: 700;
+  }
 }
