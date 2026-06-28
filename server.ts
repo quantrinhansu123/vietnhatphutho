@@ -5,7 +5,6 @@ import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
-import { createServer as createViteServer } from 'vite';
 import { ProductionReport } from './src/types';
 
 dotenv.config();
@@ -1516,10 +1515,37 @@ async function getReportsFromLocalFile(): Promise<ProductionReport[]> {
 }
 
 async function startServer() {
-  const app = express();
+  const app = await createApp();
   const server = http.createServer(app);
   const PORT = 3001;
 
+  if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      cacheDir: '.vite',
+      server: {
+        middlewareMode: true,
+        hmr: { server },
+      },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[FULLSTACK] Server running on http://0.0.0.0:${PORT}`);
+    getReportsFromDb();
+  });
+}
+
+export async function createApp() {
+  const app = express();
   app.use(express.json({ limit: '12mb' }));
 
   // API Route: Get all reports
@@ -3081,29 +3107,9 @@ async function startServer() {
     });
   });
 
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      cacheDir: '.vite',
-      server: {
-        middlewareMode: true,
-        hmr: { server },
-      },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[FULLSTACK] Server running on http://0.0.0.0:${PORT}`);
-    // Initialize DB with seed reports if missing
-    getReportsFromDb();
-  });
+  return app;
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
