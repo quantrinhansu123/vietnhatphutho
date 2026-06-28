@@ -1,13 +1,19 @@
-export type AppTab = 'menu' | 'form' | 'weighing-summary' | 'hr' | 'products' | 'machines' | 'materials' | 'dashboard';
+export type AppTab = 'menu' | 'control-board' | 'form' | 'weighing-summary' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'production-orders' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
+  'control-board': '/bang-dieu-khien',
   form: '/nhap-bao-cao',
   'weighing-summary': '/tong-hop-ca',
   hr: '/nhan-su',
   products: '/san-pham',
   machines: '/danh-sach-may',
-  materials: '/nguyen-phu-lieu',
+  materials: '/kho-nvl',
+  'warehouse-slip': '/phieu-xuat-nhap-kho',
+  'warehouse-history': '/lich-su-xuat-nhap-kho',
+  orders: '/don-hang',
+  'production-orders': '/lenh-san-xuat',
+  settings: '/cai-dat',
   dashboard: '/phan-tich'
 };
 
@@ -17,6 +23,7 @@ const PATH_TO_TAB = new Map<string, AppTab>(
 
 PATH_TO_TAB.set('/menu', 'menu');
 PATH_TO_TAB.set('/bao-cao-can', 'weighing-summary');
+PATH_TO_TAB.set('/nguyen-phu-lieu', 'materials');
 
 export function tabFromPath(pathname: string): AppTab {
   const normalized = pathname.replace(/\/+$/, '') || '/';

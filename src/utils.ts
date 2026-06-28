@@ -84,3 +84,40 @@ export function formatNumber(val: number, fractionDigits: number = 1): string {
     maximumFractionDigits: fractionDigits
   }).format(val);
 }
+
+/** Tiền VND: luôn dùng dấu chấm phân cách hàng nghìn (VD: 1.250.000) */
+export function formatMoney(val: number, fractionDigits: number = 0): string {
+  if (!Number.isFinite(val)) return '0';
+  const rounded = Math.round(val * 10 ** fractionDigits) / 10 ** fractionDigits;
+  const [intPart, decPart = ''] = Math.abs(rounded).toFixed(fractionDigits).split('.');
+  const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const sign = rounded < 0 ? '-' : '';
+  if (fractionDigits > 0) {
+    return `${sign}${withDots},${decPart}`;
+  }
+  return `${sign}${withDots}`;
+}
+
+/** Đọc số tiền nhập tay: 25.000 -> 25000, 1.250,5 -> 1250.5 */
+export function parseMoneyInput(value: string): number {
+  const trimmed = value.trim().replace(/\s/g, '');
+  if (!trimmed) return NaN;
+  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+  return Number(normalized);
+}
+
+/** Format ô nhập giá: chỉ giữ số, hiển thị dấu chấm phân cách (24000 -> 24.000) */
+export function sanitizeMoneyInput(value: string): string {
+  const digits = value.replace(/[^\d]/g, '');
+  if (!digits) return '';
+  return formatMoney(Number(digits), 0);
+}
+
+export function formatPercent(val: number): string {
+  return formatNumber(val, 2);
+}
+
+export function parsePercentInput(value: string): number {
+  const normalized = value.trim().replace(/\s/g, '').replace(',', '.');
+  return Number(normalized);
+}
