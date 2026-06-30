@@ -15,6 +15,7 @@ import MixingReportForm from './components/MixingReportForm';
 import MixingReportListView from './components/MixingReportListView';
 import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from './components/WarehouseSlipPrintModal';
+import { RepeatableLineRow, RepeatableLinesBlock } from './components/RepeatableLinesBlock';
 import { AppTab, pathFromTab, tabFromPath } from './routes';
 import vietNhatLogoUrl from '../logovietnhat_1.png';
 import { 
@@ -4064,53 +4065,53 @@ function WarehouseSlipPanel({
         </div>
       </section>
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-sm font-black text-zinc-950">
-              Chi tiết {warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL'}
-            </p>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              Mỗi dòng là một {warehouseKind === 'san_pham' ? 'mã SP' : 'mã NPL'} trong phiếu
-            </p>
+      <section className="space-y-3 rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                Chi tiết {warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL'}
+              </p>
+              <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
+                Mỗi dòng là một {warehouseKind === 'san_pham' ? 'mã SP' : 'mã NPL'} trong phiếu
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLines(current => [...current, createWarehouseLineDraft()])}
+              className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-100"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm dòng
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setLines(current => [...current, createWarehouseLineDraft()])}
-            className="flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-          >
-            <Plus className="h-4 w-4" />
-            Thêm dòng
-          </button>
-        </div>
 
-        <div className="space-y-3">
-          {lines.map((line, index) => (
-            <div key={line.key} className="rounded-xl border border-zinc-200 p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Dòng {index + 1}</p>
-                {lines.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setLines(current => current.filter(item => item.key !== line.key))}
-                    className="text-xs font-bold text-rose-600 hover:text-rose-700"
-                  >
-                    Xóa dòng
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                <label className="block space-y-1.5 sm:col-span-2 xl:col-span-1">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                    {warehouseItemCodeLabel(warehouseKind)} *
-                  </span>
+          <div className="hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+              {warehouseItemCodeLabel(warehouseKind)} *
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+              {warehouseItemNameLabel(warehouseKind)}
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thành tiền</span>
+            <span />
+          </div>
+
+          <div className="divide-y divide-zinc-200/80">
+            {lines.map(line => (
+              <div
+                key={line.key}
+                className="grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3"
+              >
+                <div className="sm:col-span-2 xl:col-span-1">
                   <SearchableSelect
                     value={line.code}
                     onChange={code => pickItem(line.key, code)}
                     options={itemOptions}
-                    placeholder={
-                      warehouseKind === 'san_pham' ? 'Gõ để tìm mã SP' : 'Gõ để tìm mã NPL'
-                    }
+                    placeholder={warehouseKind === 'san_pham' ? 'Gõ để tìm mã SP' : 'Gõ để tìm mã NPL'}
                     isLoading={isLoadingItems}
                     disabled={isLoadingItems}
                     inputClassName={warehouseFieldClass}
@@ -4120,19 +4121,22 @@ function WarehouseSlipPanel({
                     }}
                     getValue={item => (item as MaterialOption).code}
                   />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                    {warehouseItemNameLabel(warehouseKind)}
-                  </span>
-                  <input value={line.name} onChange={event => updateLine(line.key, { name: event.target.value })} className={warehouseFieldClass} />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
-                  <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className={warehouseFieldClass} />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
+                </div>
+                <div>
+                  <input
+                    value={line.name}
+                    onChange={event => updateLine(line.key, { name: event.target.value })}
+                    className={warehouseFieldClass}
+                  />
+                </div>
+                <div>
+                  <input
+                    value={line.unit}
+                    onChange={event => updateLine(line.key, { unit: event.target.value })}
+                    className={warehouseFieldClass}
+                  />
+                </div>
+                <div>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -4141,9 +4145,8 @@ function WarehouseSlipPanel({
                     className={warehouseFieldClass}
                     placeholder="VD: 100,00"
                   />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giá</span>
+                </div>
+                <div>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -4153,16 +4156,25 @@ function WarehouseSlipPanel({
                     className={warehouseFieldClass}
                     placeholder="VD: 25.000"
                   />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Thành tiền</span>
-                  <div className={`${warehouseFieldClass} flex items-center bg-zinc-50 font-mono font-bold text-zinc-900`}>
+                </div>
+                <div>
+                  <div className={`${warehouseFieldClass} flex items-center bg-white font-mono font-bold text-zinc-900`}>
                     {formatWarehouseMoney(computeWarehouseLineAmount(line.quantity, line.unitPrice))} đ
                   </div>
-                </label>
+                </div>
+                {lines.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setLines(current => current.filter(item => item.key !== line.key))}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 xl:mb-0.5"
+                    title="Xóa dòng"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         <div className="flex flex-wrap justify-end gap-2">
@@ -4635,6 +4647,15 @@ interface OrderProductOption {
   newCode: string;
 }
 
+function normalizeLookupText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+}
+
 function normalizeStaffOptions(data: unknown): StaffOption[] {
   if (!Array.isArray(data)) return [];
 
@@ -4650,6 +4671,30 @@ function normalizeStaffOptions(data: unknown): StaffOption[] {
       return name ? { name } : null;
     })
     .filter((item): item is StaffOption => Boolean(item));
+}
+
+function normalizeDaNangBusinessStaffOptions(data: unknown): StaffOption[] {
+  const branches = normalizeHrBranches(data);
+  const staff = branches.flatMap(branch => {
+    const branchText = normalizeLookupText(`${branch.name} ${branch.shortName}`);
+    if (!branchText.includes('da nang')) return [];
+
+    return branch.departments.flatMap(department => {
+      const departmentText = normalizeLookupText(department.name);
+      if (!departmentText.includes('kinh doanh')) return [];
+      return department.members.map(member => ({ name: member.name }));
+    });
+  });
+
+  const seen = new Set<string>();
+  return staff
+    .filter(item => {
+      const key = normalizeLookupText(item.name.trim());
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 }
 
 function normalizeCustomerOptions(data: unknown): CustomerOption[] {
@@ -6501,13 +6546,36 @@ function buildProductionPlanQrLabels(
   return labels;
 }
 
+type ProductionPlanQrPrintFooter = {
+  shift: string;
+  machine: string;
+  productionDate: string;
+  operatorName: string;
+};
+
+function formatProductionPlanPrintDate(value: string) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  if (year && month && day) return `${day}/${month}/${year}`;
+  return value;
+}
+
 function ProductionPlanQrPrintSheet({
   labels,
-  qrImages
+  qrImages,
+  footer
 }: {
   labels: ProductionPlanQrLabel[];
   qrImages: Record<string, string>;
+  footer: ProductionPlanQrPrintFooter;
 }) {
+  const footerRows: Array<{ label: string; value: string }> = [
+    { label: 'Ca sản xuất', value: footer.shift },
+    { label: 'Máy sản xuất', value: footer.machine },
+    { label: 'Ngày sản xuất', value: formatProductionPlanPrintDate(footer.productionDate) },
+    { label: 'Nhân viên', value: footer.operatorName }
+  ];
+
   return (
     <div className="production-plan-qr-print-sheet">
       <div className="production-plan-qr-print-page">
@@ -6523,6 +6591,19 @@ function ProductionPlanQrPrintSheet({
           </div>
         ))}
       </div>
+
+      <table className="production-plan-qr-print-footer">
+        <tbody>
+          {footerRows.map(row => (
+            <tr key={row.label}>
+              <th>{row.label}</th>
+              <td>
+                <span className="production-plan-qr-print-footer-field">{row.value}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -6545,12 +6626,25 @@ function ProductionPlanQrPrintModal({
   );
   const [selectedShift, setSelectedShift] = useState('');
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [formError, setFormError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [printLabels, setPrintLabels] = useState<ProductionPlanQrLabel[]>([]);
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [printFooter, setPrintFooter] = useState<ProductionPlanQrPrintFooter>({
+    shift: '',
+    machine: '',
+    productionDate: '',
+    operatorName: ''
+  });
+
+  const shiftLines = useMemo(
+    () => lines.filter(line => line.shift === selectedShift),
+    [lines, selectedShift]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -6559,7 +6653,37 @@ function ProductionPlanQrPrintModal({
     setPrintLabels([]);
     setQrImages({});
     setPendingPrint(false);
+    setStaffBranches([]);
+    setPrintFooter({
+      shift: '',
+      machine: '',
+      productionDate: '',
+      operatorName: ''
+    });
   }, [open, shiftOptions]);
+
+  useEffect(() => {
+    if (!open || !selectedShift) return;
+
+    const machines = [
+      ...new Set(
+        shiftLines
+          .map(line => (line.position && line.position !== '-' ? line.position : ''))
+          .filter(Boolean)
+      )
+    ];
+    setPrintFooter(prev => ({
+      shift: selectedShift,
+      machine: machines.join(', '),
+      productionDate: prev.productionDate || todayDateInputValue(),
+      operatorName: prev.operatorName
+    }));
+  }, [open, selectedShift, shiftLines]);
+
+  const kinhDoanhStaff = useMemo(
+    () => getHrDepartmentMembers(staffBranches, 'kinh doanh'),
+    [staffBranches]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -6567,15 +6691,31 @@ function ProductionPlanQrPrintModal({
 
     (async () => {
       setIsLoadingProducts(true);
+      setIsLoadingStaff(true);
       try {
-        const res = await fetch('/api/san-pham?format=table');
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách sản phẩm.');
-        if (!cancelled) setProducts(normalizeProducts(data));
+        const [productRes, staffRes] = await Promise.all([
+          fetch('/api/san-pham?format=table'),
+          fetch('/api/nhan-su?format=groups&scope=all')
+        ]);
+        const productData = await productRes.json().catch(() => ({}));
+        const staffData = await staffRes.json().catch(() => ({}));
+        if (!productRes.ok) throw new Error(productData.error || 'Không thể tải danh sách sản phẩm.');
+        if (!cancelled) {
+          setProducts(normalizeProducts(productData));
+          if (staffRes.ok) {
+            setStaffBranches(normalizeHrBranches(staffData));
+          } else {
+            setStaffBranches([]);
+            setFormError(staffData.error || 'Không thể tải nhân sự phòng Kinh doanh.');
+          }
+        }
       } catch (error: any) {
-        if (!cancelled) setFormError(error.message || 'Không thể tải danh sách sản phẩm.');
+        if (!cancelled) setFormError(error.message || 'Không thể tải dữ liệu in QR.');
       } finally {
-        if (!cancelled) setIsLoadingProducts(false);
+        if (!cancelled) {
+          setIsLoadingProducts(false);
+          setIsLoadingStaff(false);
+        }
       }
     })();
 
@@ -6624,6 +6764,11 @@ function ProductionPlanQrPrintModal({
   const handlePrint = async () => {
     if (!selectedShift) {
       setFormError('Vui lòng chọn ca.');
+      return;
+    }
+
+    if (!printFooter.operatorName.trim()) {
+      setFormError('Vui lòng chọn nhân viên từ phòng Kinh doanh.');
       return;
     }
 
@@ -6708,6 +6853,66 @@ function ProductionPlanQrPrintModal({
               </select>
             </label>
 
+            <div className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+              <p className="mb-3 text-xs font-black uppercase tracking-wider text-zinc-500">
+                Thông tin in phía dưới tem QR (có thể để trống để điền tay)
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-bold text-zinc-600">Ca sản xuất</span>
+                  <input
+                    type="text"
+                    value={printFooter.shift}
+                    onChange={event => setPrintFooter(prev => ({ ...prev, shift: event.target.value }))}
+                    placeholder="Để trống nếu điền tay khi in"
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-bold text-zinc-600">Máy sản xuất</span>
+                  <input
+                    type="text"
+                    value={printFooter.machine}
+                    onChange={event => setPrintFooter(prev => ({ ...prev, machine: event.target.value }))}
+                    placeholder="Để trống nếu điền tay khi in"
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-bold text-zinc-600">Ngày sản xuất</span>
+                  <input
+                    type="date"
+                    value={printFooter.productionDate}
+                    onChange={event => setPrintFooter(prev => ({ ...prev, productionDate: event.target.value }))}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+                <label className="space-y-1 sm:col-span-2">
+                  <span className="text-xs font-bold text-zinc-600">Nhân viên</span>
+                  <span className="block text-[11px] font-medium text-zinc-500">Chọn từ phòng Kinh doanh</span>
+                  <select
+                    value={printFooter.operatorName}
+                    onChange={event => setPrintFooter(prev => ({ ...prev, operatorName: event.target.value }))}
+                    disabled={isLoadingStaff}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:opacity-60"
+                  >
+                    <option value="">-- Chọn nhân viên --</option>
+                    {kinhDoanhStaff.map(member => (
+                      <option key={member.id} value={member.name}>
+                        {member.name}
+                        {member.role && member.role !== 'Nhân sự' ? ` · ${member.role}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {!isLoadingStaff && kinhDoanhStaff.length === 0 ? (
+                    <span className="text-[11px] font-semibold text-amber-700">
+                      Chưa có nhân sự phòng Kinh doanh. Thêm tại Quản lý nhân sự.
+                    </span>
+                  ) : null}
+                </label>
+              </div>
+            </div>
+
             {isLoadingProducts ? (
               <p className="py-6 text-center text-sm font-semibold text-zinc-400">
                 <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
@@ -6765,7 +6970,7 @@ function ProductionPlanQrPrintModal({
       </div>
 
       {pendingPrint && printLabels.length > 0 && (
-        <ProductionPlanQrPrintSheet labels={printLabels} qrImages={qrImages} />
+        <ProductionPlanQrPrintSheet labels={printLabels} qrImages={qrImages} footer={printFooter} />
       )}
     </>
   );
@@ -8617,7 +8822,7 @@ function AddProductionOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm lệnh sản xuất mới</h3>
@@ -8666,129 +8871,121 @@ function AddProductionOrderModal({
             />
           </label>
 
-          <div className="col-span-2 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn hàng &amp; mã hàng *</span>
-              <button
-                type="button"
-                onClick={() =>
-                  setForm(prev => ({
-                    ...prev,
-                    entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
-                  }))
-                }
-                className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-50"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Thêm dòng
-              </button>
-            </div>
+          <RepeatableLinesBlock
+            className="col-span-2"
+            title="Đơn hàng & mã hàng"
+            required
+            onAdd={() =>
+              setForm(prev => ({
+                ...prev,
+                entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
+              }))
+            }
+            columns={[
+              { key: 'order', label: 'Mã đơn', className: 'min-w-0 flex-[1.1]', required: true },
+              { key: 'code', label: 'Mã hàng', className: 'min-w-0 flex-[1.35]', required: true },
+              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-[1.1]' },
+              { key: 'unit', label: 'ĐV', className: 'w-16 shrink-0 sm:w-20' },
+              { key: 'qty', label: 'SL', className: 'w-20 shrink-0 sm:w-24', required: true },
+              { key: 'actions', label: '', className: 'w-9 shrink-0' }
+            ]}
+          >
+            {form.entryLines.map(line => {
+              const productOptions = listProductOptionsForOrder(
+                orders,
+                productionOrders,
+                catalogProducts,
+                line.orderRef
+              );
+              const selectedProduct = productOptions.find(item => item.code === line.productCode);
 
-            <div className="space-y-3">
-              {form.entryLines.map(line => {
-                const productOptions = listProductOptionsForOrder(
-                  orders,
-                  productionOrders,
-                  catalogProducts,
-                  line.orderRef
-                );
-                const selectedProduct = productOptions.find(item => item.code === line.productCode);
-
-                return (
-                  <div key={line.key} className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
-                    <div className="flex flex-wrap items-end gap-2">
-                      <label className="min-w-0 flex-[1.1] space-y-1">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã đơn *</span>
-                        <SearchableSelect
-                          value={line.orderRef}
-                          onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
-                          options={orderCodeOptions}
-                          placeholder="Gõ để tìm mã đơn"
-                          isLoading={isLoadingLookups}
-                          inputClassName={orderFieldClass}
-                          getLabel={item => String(item)}
-                          getValue={item => String(item)}
-                        />
-                      </label>
-                      <label className="min-w-0 flex-[1.35] space-y-1">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã hàng *</span>
-                        <SearchableSelect
-                          value={line.productCode}
-                          onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
-                          options={productOptions}
-                          placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
-                          disabled={!line.orderRef}
-                          isLoading={isLoadingLookups}
-                          inputClassName={orderFieldClass}
-                          getLabel={item => {
-                            const product = item as (typeof productOptions)[number];
-                            const remaining =
-                              product.remainingQty <= 0 && product.orderQty > 0
-                                ? ' · hết'
-                                : product.orderQty > 0
-                                  ? ` · còn ${formatNumber(product.remainingQty, 0)}`
-                                  : '';
-                            return product.code ? `${product.code} · ${product.name}${remaining}` : product.name;
-                          }}
-                          getValue={item => (item as (typeof productOptions)[number]).code}
-                        />
-                      </label>
-                      <label className="min-w-0 flex-[1.1] space-y-1">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên hàng</span>
-                        <input
-                          value={selectedProduct?.name || line.productName}
-                          readOnly
-                          className={`${orderFieldClass} bg-white text-zinc-800`}
-                          placeholder="Tự điền theo mã hàng"
-                        />
-                      </label>
-                      <label className="w-16 shrink-0 space-y-1 sm:w-20">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">ĐV</span>
-                        <input
-                          value={line.unit}
-                          readOnly
-                          className={`${orderFieldClass} bg-white text-zinc-800`}
-                          placeholder="ĐV"
-                        />
-                      </label>
-                      <label className="w-20 shrink-0 space-y-1 sm:w-24">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL *</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={line.quantity}
-                          onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
-                          className={orderFieldClass}
-                          placeholder="SL"
-                        />
-                      </label>
-                      {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
-                        <span className="mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
-                          Còn {formatNumber(selectedProduct.remainingQty, 0)}
-                        </span>
-                      )}
-                      {form.entryLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setForm(prev => ({
-                              ...prev,
-                              entryLines: prev.entryLines.filter(item => item.key !== line.key)
-                            }))
-                          }
-                          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                          title="Xóa dòng"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
+              return (
+                <RepeatableLineRow key={line.key}>
+                  <div className="min-w-0 flex-[1.1]">
+                    <SearchableSelect
+                      value={line.orderRef}
+                      onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
+                      options={orderCodeOptions}
+                      placeholder="Gõ để tìm mã đơn"
+                      isLoading={isLoadingLookups}
+                      inputClassName={orderFieldClass}
+                      getLabel={item => String(item)}
+                      getValue={item => String(item)}
+                    />
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                  <div className="min-w-0 flex-[1.35]">
+                    <SearchableSelect
+                      value={line.productCode}
+                      onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
+                      options={productOptions}
+                      placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
+                      disabled={!line.orderRef}
+                      isLoading={isLoadingLookups}
+                      inputClassName={orderFieldClass}
+                      getLabel={item => {
+                        const product = item as (typeof productOptions)[number];
+                        const remaining =
+                          product.remainingQty <= 0 && product.orderQty > 0
+                            ? ' · hết'
+                            : product.orderQty > 0
+                              ? ` · còn ${formatNumber(product.remainingQty, 0)}`
+                              : '';
+                        return product.code ? `${product.code} · ${product.name}${remaining}` : product.name;
+                      }}
+                      getValue={item => (item as (typeof productOptions)[number]).code}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-[1.1]">
+                    <input
+                      value={selectedProduct?.name || line.productName}
+                      readOnly
+                      className={`${orderFieldClass} bg-white text-zinc-800`}
+                      placeholder="Tự điền theo mã hàng"
+                    />
+                  </div>
+                  <div className="w-16 shrink-0 sm:w-20">
+                    <input
+                      value={line.unit}
+                      readOnly
+                      className={`${orderFieldClass} bg-white text-zinc-800`}
+                      placeholder="ĐV"
+                    />
+                  </div>
+                  <div className="w-20 shrink-0 sm:w-24">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={line.quantity}
+                      onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
+                      className={orderFieldClass}
+                      placeholder="SL"
+                    />
+                  </div>
+                  {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
+                    <span className="mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
+                      Còn {formatNumber(selectedProduct.remainingQty, 0)}
+                    </span>
+                  )}
+                  {form.entryLines.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm(prev => ({
+                          ...prev,
+                          entryLines: prev.entryLines.filter(item => item.key !== line.key)
+                        }))
+                      }
+                      className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      title="Xóa dòng"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </RepeatableLineRow>
+              );
+            })}
+          </RepeatableLinesBlock>
 
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca *</span>
@@ -8968,6 +9165,8 @@ function EditProductionOrderModal({
   open,
   row,
   orders,
+  productionOrders,
+  catalogProducts,
   machines,
   onClose,
   onSaved
@@ -8975,6 +9174,8 @@ function EditProductionOrderModal({
   open: boolean;
   row: ProductionOrderRow | null;
   orders: OrderRow[];
+  productionOrders: ProductionOrderRow[];
+  catalogProducts: ProductRow[];
   machines: MachineRow[];
   onClose: () => void;
   onSaved: () => void | Promise<void>;
@@ -8986,17 +9187,21 @@ function EditProductionOrderModal({
 
   useEffect(() => {
     if (!open || !row) return;
+    const productLines = getProductionOrderProductLines(row);
     setForm({
       code: row.code === '-' ? '' : row.code,
       name: row.name === '-' ? '' : row.name,
-      entryLines: getProductionOrderProductLines(row).map((product, index) => ({
-        key: `edit-${row.id}-${index}`,
-        orderRef: row.orderRef === '-' ? '' : row.orderRef,
-        productCode: product.productCode === '-' ? '' : product.productCode,
-        productName: product.productName === '-' ? '' : product.productName,
-        quantity: product.quantity === '-' ? '' : product.quantity,
-        unit: product.unit === '-' ? '' : product.unit
-      })),
+      entryLines:
+        productLines.length > 0
+          ? productLines.map((product, index) => ({
+              key: `edit-${row.id}-${index}`,
+              orderRef: row.orderRef === '-' ? '' : row.orderRef,
+              productCode: product.productCode === '-' ? '' : product.productCode,
+              productName: product.productName === '-' ? '' : product.productName,
+              quantity: product.quantity === '-' ? '' : product.quantity,
+              unit: product.unit === '-' ? '' : product.unit
+            }))
+          : [newProductionOrderEntryLine()],
       status: row.status === '-' ? 'Chờ sx' : row.status,
       shift: row.shift === '-' ? '' : row.shift,
       selectedStaffIds: [],
@@ -9009,26 +9214,76 @@ function EditProductionOrderModal({
     setFormError('');
   }, [open, row]);
 
+  const orderCodeOptions = useMemo(() => {
+    return [...new Set(orders.map(order => order.orderCode).filter(code => code && code !== '-'))].sort((a, b) =>
+      a.localeCompare(b, 'vi')
+    );
+  }, [orders]);
+
+  const updateEntryLine = (key: string, patch: Partial<ProductionOrderEntryLine>) => {
+    setForm(prev => ({
+      ...prev,
+      entryLines: prev.entryLines.map(line => (line.key === key ? { ...line, ...patch } : line))
+    }));
+  };
+
+  const handleEntryOrderChange = (key: string, orderRef: string) => {
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
+    let patch: Partial<ProductionOrderEntryLine> = {
+      orderRef,
+      productCode: '',
+      productName: '',
+      quantity: '',
+      unit: ''
+    };
+    if (options.length === 1) {
+      const product = options[0];
+      patch = {
+        orderRef,
+        ...buildProductionEntryLine(
+          orders,
+          productionOrders,
+          orderRef,
+          product.code,
+          product.name,
+          product.unit
+        )
+      };
+    }
+    updateEntryLine(key, patch);
+  };
+
+  const handleEntryProductChange = (key: string, orderRef: string, productCode: string) => {
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
+    const product = options.find(item => item.code === productCode);
+    const built = buildProductionEntryLine(
+      orders,
+      productionOrders,
+      orderRef,
+      productCode,
+      product?.name || '',
+      product?.unit || ''
+    );
+    updateEntryLine(key, built);
+  };
+
   if (!open || !row) return null;
 
-  const line = form.entryLines[0];
-  const orderCodeOptions = [...new Set(orders.map(order => order.orderCode).filter(code => code && code !== '-'))].sort((a, b) =>
-    a.localeCompare(b, 'vi')
-  );
-
   const handleSubmit = async () => {
-    const quantity = Number(line.quantity);
-    if (!line.orderRef.trim()) {
-      setFormError('Vui lòng chọn mã đơn.');
+    const filledLines = form.entryLines.filter(line => line.orderRef.trim() && line.productCode.trim());
+
+    if (filledLines.length === 0) {
+      setFormError('Vui lòng thêm ít nhất một dòng đơn hàng và mã hàng.');
       return;
     }
-    if (!line.productCode.trim()) {
-      setFormError('Vui lòng nhập mã hàng.');
-      return;
-    }
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setFormError('Số lượng phải lớn hơn 0.');
-      return;
+
+    for (const line of filledLines) {
+      const quantity = Number(line.quantity);
+      const productName = line.productName || line.productCode;
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setFormError(`Số lượng phải lớn hơn 0 cho ${productName}.`);
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -9038,7 +9293,7 @@ function EditProductionOrderModal({
       const res = await fetch(`/api/lenh-sx/${row.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productionOrderFormToPayload(form, line, staffText))
+        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines, staffText))
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -9056,7 +9311,7 @@ function EditProductionOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Sửa lệnh sản xuất</h3>
@@ -9088,55 +9343,108 @@ function EditProductionOrderModal({
             <input value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} className={orderFieldClass} />
           </label>
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn</span>
-            <SearchableSelect
-              value={line.orderRef}
-              onChange={orderRef => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], orderRef }] }))}
-              options={orderCodeOptions}
-              placeholder="Gõ để tìm mã đơn"
-              inputClassName={orderFieldClass}
-              getLabel={item => String(item)}
-              getValue={item => String(item)}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã hàng</span>
-            <input
-              value={line.productCode}
-              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], productCode: e.target.value }] }))}
-              className={orderFieldClass}
-            />
-          </label>
+          <RepeatableLinesBlock
+            className="col-span-2"
+            title="Đơn hàng & mã hàng"
+            required
+            onAdd={() =>
+              setForm(prev => ({
+                ...prev,
+                entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
+              }))
+            }
+            columns={[
+              { key: 'order', label: 'Mã đơn', className: 'min-w-0 flex-[1.1]', required: true },
+              { key: 'code', label: 'Mã hàng', className: 'min-w-0 flex-[1.35]', required: true },
+              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-[1.1]' },
+              { key: 'unit', label: 'ĐV', className: 'w-16 shrink-0 sm:w-20' },
+              { key: 'qty', label: 'SL', className: 'w-20 shrink-0 sm:w-24', required: true },
+              { key: 'actions', label: '', className: 'w-9 shrink-0' }
+            ]}
+          >
+            {form.entryLines.map(line => {
+              const productOptions = listProductOptionsForOrder(
+                orders,
+                productionOrders,
+                catalogProducts,
+                line.orderRef
+              );
+              const selectedProduct = productOptions.find(item => item.code === line.productCode);
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên hàng</span>
-            <input
-              value={line.productName}
-              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], productName: e.target.value }] }))}
-              className={orderFieldClass}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
-            <input
-              value={line.unit}
-              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], unit: e.target.value }] }))}
-              className={orderFieldClass}
-            />
-          </label>
-
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Số lượng</span>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={line.quantity}
-              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], quantity: e.target.value }] }))}
-              className={orderFieldClass}
-            />
-          </label>
+              return (
+                <RepeatableLineRow key={line.key}>
+                  <div className="min-w-0 flex-[1.1]">
+                    <SearchableSelect
+                      value={line.orderRef}
+                      onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
+                      options={orderCodeOptions}
+                      placeholder="Gõ để tìm mã đơn"
+                      inputClassName={orderFieldClass}
+                      getLabel={item => String(item)}
+                      getValue={item => String(item)}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-[1.35]">
+                    <SearchableSelect
+                      value={line.productCode}
+                      onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
+                      options={productOptions}
+                      placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
+                      disabled={!line.orderRef}
+                      inputClassName={orderFieldClass}
+                      getLabel={item => {
+                        const product = item as (typeof productOptions)[number];
+                        return product.code ? `${product.code} · ${product.name}` : product.name;
+                      }}
+                      getValue={item => (item as (typeof productOptions)[number]).code}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-[1.1]">
+                    <input
+                      value={selectedProduct?.name || line.productName}
+                      readOnly
+                      className={`${orderFieldClass} bg-white text-zinc-800`}
+                      placeholder="Tự điền theo mã hàng"
+                    />
+                  </div>
+                  <div className="w-16 shrink-0 sm:w-20">
+                    <input
+                      value={line.unit}
+                      readOnly
+                      className={`${orderFieldClass} bg-white text-zinc-800`}
+                      placeholder="ĐV"
+                    />
+                  </div>
+                  <div className="w-20 shrink-0 sm:w-24">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={line.quantity}
+                      onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
+                      className={orderFieldClass}
+                      placeholder="SL"
+                    />
+                  </div>
+                  {form.entryLines.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm(prev => ({
+                          ...prev,
+                          entryLines: prev.entryLines.filter(item => item.key !== line.key)
+                        }))
+                      }
+                      className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      title="Xóa dòng"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </RepeatableLineRow>
+              );
+            })}
+          </RepeatableLinesBlock>
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
             <SearchableSelect
@@ -9755,7 +10063,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
       try {
         const [staffRes, customerRes, productRes] = await Promise.all([
-          fetch('/api/nhan-su'),
+          fetch('/api/nhan-su?format=groups&scope=all'),
           fetch('/api/khach-hang'),
           fetch('/api/san-pham?format=table')
         ]);
@@ -9775,7 +10083,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
         }
 
         if (!cancelled) {
-          setStaffOptions(normalizeStaffOptions(staffData));
+          setStaffOptions(normalizeDaNangBusinessStaffOptions(staffData));
           setCustomerOptions(normalizeCustomerOptions(customerData));
           setProductOptions(normalizeOrderProducts(productData));
         }
@@ -10015,7 +10323,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="max-h-[92dvh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
@@ -10084,7 +10392,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   value={orderForm.staffName}
                   onChange={staffName => setOrderForm(prev => ({ ...prev, staffName }))}
                   options={staffOptions}
-                  placeholder="Chọn nhân viên"
+                  placeholder="Chọn nhân viên KD Đà Nẵng"
                   isLoading={isLoadingLookups}
                   getValue={item => (item as StaffOption).name}
                   getLabel={item => (item as StaffOption).name}
@@ -10106,107 +10414,100 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                 />
               </label>
 
-              <div className="col-span-2 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Sản phẩm *</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOrderForm(prev => ({
-                        ...prev,
-                        productLines: [...prev.productLines, newOrderProductFormLine()]
-                      }))
-                    }
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Thêm dòng
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {orderForm.productLines.map(line => {
-                    const matchedLineProduct = findOrderProductByCode(productOptions, line.productCode);
-                    return (
-                      <div key={line.key} className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
-                        <div className="flex items-end gap-2">
-                          <label className="min-w-0 flex-[1.35] space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã SP *</span>
-                            <SearchableSelect
-                              value={line.productCode}
-                              onChange={productCode => pickOrderProduct(line.key, productCode)}
-                              options={productOptions}
-                              placeholder="Gõ để tìm mã SP"
-                              isLoading={isLoadingLookups}
-                              inputClassName={orderFieldClass}
-                              getValue={item => (item as OrderProductOption).code}
-                              getLabel={item => {
-                                const product = item as OrderProductOption;
-                                return product.newCode ? `${product.code} · ${product.name}` : `${product.code} · ${product.name}`;
-                              }}
-                            />
-                          </label>
-                          <label className="min-w-0 flex-[1.5] space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên SP</span>
-                            <input
-                              value={matchedLineProduct ? matchedLineProduct.name : line.productName}
-                              readOnly={Boolean(matchedLineProduct)}
-                              onChange={e => updateProductLine(line.key, { productName: e.target.value })}
-                              className={`${orderFieldClass} ${matchedLineProduct ? 'bg-white text-zinc-800' : 'bg-white'}`}
-                              placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
-                            />
-                          </label>
-                          <label className="w-24 shrink-0 space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">ĐVT</span>
-                            <input
-                              list="order-unit-suggestions"
-                              value={line.unit}
-                              onChange={e => updateProductLine(line.key, { unit: e.target.value })}
-                              onBlur={e => {
-                                const trimmed = e.target.value.trim();
-                                if (trimmed) saveUnitSuggestion(trimmed);
-                              }}
-                              className={`${orderFieldClass} bg-white`}
-                              placeholder="ĐVT"
-                            />
-                          </label>
-                          <label className="w-24 shrink-0 space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL *</span>
-                            <input
-                              type="number"
-                              value={line.quantity}
-                              onChange={e => updateProductLine(line.key, { quantity: e.target.value })}
-                              className={`${orderFieldClass} bg-white`}
-                              placeholder="0"
-                            />
-                          </label>
-                          {orderForm.productLines.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setOrderForm(prev => ({
-                                  ...prev,
-                                  productLines: prev.productLines.filter(item => item.key !== line.key)
-                                }))
-                              }
-                              title="Xóa dòng"
-                              className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
+              <RepeatableLinesBlock
+                className="col-span-2"
+                title="Sản phẩm"
+                required
+                onAdd={() =>
+                  setOrderForm(prev => ({
+                    ...prev,
+                    productLines: [...prev.productLines, newOrderProductFormLine()]
+                  }))
+                }
+                addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                columns={[
+                  { key: 'code', label: 'Mã SP', className: 'min-w-0 flex-[1.35]', required: true },
+                  { key: 'name', label: 'Tên SP', className: 'min-w-0 flex-[1.5]' },
+                  { key: 'unit', label: 'ĐVT', className: 'w-24 shrink-0' },
+                  { key: 'qty', label: 'SL', className: 'w-24 shrink-0', required: true },
+                  { key: 'actions', label: '', className: 'w-10 shrink-0' }
+                ]}
+              >
+                {orderForm.productLines.map(line => {
+                  const matchedLineProduct = findOrderProductByCode(productOptions, line.productCode);
+                  return (
+                    <RepeatableLineRow key={line.key}>
+                      <div className="min-w-0 flex-[1.35]">
+                        <SearchableSelect
+                          value={line.productCode}
+                          onChange={productCode => pickOrderProduct(line.key, productCode)}
+                          options={productOptions}
+                          placeholder="Gõ để tìm mã SP"
+                          isLoading={isLoadingLookups}
+                          inputClassName={orderFieldClass}
+                          getValue={item => (item as OrderProductOption).code}
+                          getLabel={item => {
+                            const product = item as OrderProductOption;
+                            return product.newCode ? `${product.code} · ${product.name}` : `${product.code} · ${product.name}`;
+                          }}
+                        />
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="min-w-0 flex-[1.5]">
+                        <input
+                          value={matchedLineProduct ? matchedLineProduct.name : line.productName}
+                          readOnly={Boolean(matchedLineProduct)}
+                          onChange={e => updateProductLine(line.key, { productName: e.target.value })}
+                          className={`${orderFieldClass} ${matchedLineProduct ? 'bg-white text-zinc-800' : 'bg-white'}`}
+                          placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
+                        />
+                      </div>
+                      <div className="w-24 shrink-0">
+                        <input
+                          list="order-unit-suggestions"
+                          value={line.unit}
+                          onChange={e => updateProductLine(line.key, { unit: e.target.value })}
+                          onBlur={e => {
+                            const trimmed = e.target.value.trim();
+                            if (trimmed) saveUnitSuggestion(trimmed);
+                          }}
+                          className={`${orderFieldClass} bg-white`}
+                          placeholder="ĐVT"
+                        />
+                      </div>
+                      <div className="w-24 shrink-0">
+                        <input
+                          type="number"
+                          value={line.quantity}
+                          onChange={e => updateProductLine(line.key, { quantity: e.target.value })}
+                          className={`${orderFieldClass} bg-white`}
+                          placeholder="0"
+                        />
+                      </div>
+                      {orderForm.productLines.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOrderForm(prev => ({
+                              ...prev,
+                              productLines: prev.productLines.filter(item => item.key !== line.key)
+                            }))
+                          }
+                          title="Xóa dòng"
+                          className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </RepeatableLineRow>
+                  );
+                })}
+              </RepeatableLinesBlock>
 
-                <datalist id="order-unit-suggestions">
-                  {unitSuggestions.map(unit => (
-                    <option key={unit} value={unit} />
-                  ))}
-                </datalist>
-              </div>
+              <datalist id="order-unit-suggestions">
+                {unitSuggestions.map(unit => (
+                  <option key={unit} value={unit} />
+                ))}
+              </datalist>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
               <button
@@ -11084,6 +11385,28 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
 
 function flattenHrMembers(branches: HrBranch[]): HrMember[] {
   return branches.flatMap(branch => branch.departments.flatMap(department => department.members));
+}
+
+function getHrDepartmentMembers(branches: HrBranch[], departmentName: string): HrMember[] {
+  const needle = departmentName.trim().toLowerCase();
+  if (!needle) return [];
+
+  const members: HrMember[] = [];
+  const seen = new Set<string>();
+
+  branches.forEach(branch => {
+    branch.departments.forEach(department => {
+      if (!department.name.toLowerCase().includes(needle)) return;
+      department.members.forEach(member => {
+        const key = member.name.trim().toLowerCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        members.push(member);
+      });
+    });
+  });
+
+  return members.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 }
 
 function parseProductionOrderFilterDate(value: string): string {
@@ -12045,6 +12368,8 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
         open={Boolean(editingProductionOrder)}
         row={editingProductionOrder}
         orders={orders}
+        productionOrders={productionOrders}
+        catalogProducts={products}
         machines={machines}
         onClose={() => setEditingProductionOrder(null)}
         onSaved={loadBoard}

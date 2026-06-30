@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
 
 dotenv.config();
@@ -193,7 +193,7 @@ async function getReportsFromDb(): Promise<ProductionReport[]> {
   if (supabase) {
     try {
       const { data, error } = await supabase
-        .from<ProductionReport>(SUPABASE_TABLE)
+        .from(SUPABASE_TABLE)
         .select('*')
         .order('createdAt', { ascending: false });
 
@@ -204,7 +204,7 @@ async function getReportsFromDb(): Promise<ProductionReport[]> {
           console.error('Lỗi khi truy vấn Supabase:', error);
         }
       } else if (data) {
-        return data;
+        return data as ProductionReport[];
       }
     } catch (error) {
       console.error('Lỗi khi truy vấn Supabase:', error);
@@ -1305,15 +1305,15 @@ function settingsWriteErrorMessage(error: { code?: string; message?: string; det
 }
 
 async function writeSettingRecord(
-  supabase: NonNullable<ReturnType<typeof createClient>>,
+  client: SupabaseClient,
   payload: SettingWritePayload,
   id?: string
 ) {
   const { fullRecord, coreRecord, startTime, endTime, note } = payload;
   const write = (record: Record<string, string>) =>
     id
-      ? supabase.from(SUPABASE_SETTINGS_TABLE).update(record).eq('id', id).select('*').single()
-      : supabase.from(SUPABASE_SETTINGS_TABLE).insert(record).select('*').single();
+      ? client.from(SUPABASE_SETTINGS_TABLE).update(record).eq('id', id).select('*').single()
+      : client.from(SUPABASE_SETTINGS_TABLE).insert(record).select('*').single();
 
   let { data, error } = await write(fullRecord);
 
@@ -2422,13 +2422,13 @@ export function createApp() {
 
       if (supabase) {
         const { data, error } = await supabase
-          .from<ProductionReport>(SUPABASE_TABLE)
+          .from(SUPABASE_TABLE)
           .insert(newReport)
           .select()
           .single();
 
         if (!error && data) {
-          return res.status(201).json(data);
+          return res.status(201).json(data as ProductionReport);
         }
 
         if (error) {
