@@ -9,8 +9,12 @@ import { ProductionReport } from './src/types';
 
 dotenv.config();
 
-const DB_FILE_PATH = path.join(process.cwd(), 'reports-db.json');
-const WEIGHING_DB_FILE_PATH = path.join(process.cwd(), 'phieu-can-dinh-ki-db.json');
+const DB_FILE_PATH = process.env.VERCEL
+  ? path.join('/tmp', 'reports-db.json')
+  : path.join(process.cwd(), 'reports-db.json');
+const WEIGHING_DB_FILE_PATH = process.env.VERCEL
+  ? path.join('/tmp', 'phieu-can-dinh-ki-db.json')
+  : path.join(process.cwd(), 'phieu-can-dinh-ki-db.json');
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_KEY;
 const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'reports';
@@ -2333,12 +2337,19 @@ export async function createApp() {
   app.get('/api/reports', async (_req, res) => {
     try {
       const list = await getReportsFromDb();
-      list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      res.json(list);
+      const sorted = [...(list || [])].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      return res.json(sorted);
     } catch (err: any) {
       console.error('GET /api/reports error:', err);
-      const fallback = await getReportsFromLocalFile();
-      res.json(fallback);
+      try {
+        const fallback = await getReportsFromLocalFile();
+        return res.json(fallback);
+      } catch (fallbackErr) {
+        console.error('GET /api/reports fallback error:', fallbackErr);
+        return res.json(getSeedReports());
+      }
     }
   });
 
