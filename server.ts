@@ -2333,6 +2333,24 @@ export function createApp() {
   const app = express();
   app.use(express.json({ limit: '12mb' }));
 
+  app.use((req, _res, next) => {
+    if (!process.env.VERCEL) {
+      next();
+      return;
+    }
+
+    const rawUrl = req.url || '/';
+    const queryIndex = rawUrl.indexOf('?');
+    const pathname = queryIndex >= 0 ? rawUrl.slice(0, queryIndex) : rawUrl;
+    const query = queryIndex >= 0 ? rawUrl.slice(queryIndex) : '';
+
+    if (!pathname.startsWith('/api')) {
+      req.url = `/api${pathname.startsWith('/') ? pathname : `/${pathname}`}${query}`;
+    }
+
+    next();
+  });
+
   app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,
@@ -4578,9 +4596,6 @@ export function createApp() {
 
   return app;
 }
-
-const app = createApp();
-export default app;
 
 if (!process.env.VERCEL) {
   startServer();
