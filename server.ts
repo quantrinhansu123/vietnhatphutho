@@ -5,7 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
-import { ProductionReport } from './src/types';
+import type { ProductionReport } from './src/types';
 
 dotenv.config();
 
@@ -688,6 +688,19 @@ function isMissingTableError(error: { code?: string; message?: string } | null) 
   if (!error) return false;
   if (error.code === 'PGRST205') return true;
   return /could not find the table/i.test(error.message || '');
+}
+
+function respondSupabaseReadError(
+  res: express.Response,
+  error: { code?: string; message?: string },
+  table: string,
+  emptyPayload: Record<string, unknown>
+) {
+  if (isMissingTableError(error)) {
+    return res.json({ ...emptyPayload, source: 'local', warning: `Bảng ${table} chưa có trên Supabase.` });
+  }
+  console.error(`Supabase ${table} error:`, error);
+  return res.status(500).json({ error: `Không thể tải từ ${table}. ${error.message}` });
 }
 
 type ProductNplPhanTramItem = {
@@ -2455,10 +2468,7 @@ export function createApp() {
           .order('ten_sp', { ascending: true });
 
         if (error) {
-          console.error('Supabase san_pham table query error:', error);
-          return res.status(500).json({
-            error: `Không thể tải bảng sản phẩm từ ${SUPABASE_PRODUCTS_TABLE}. ${error.message}`
-          });
+          return respondSupabaseReadError(res, error, SUPABASE_PRODUCTS_TABLE, { products: [], total: 0 });
         }
 
         return res.json({
@@ -2617,10 +2627,7 @@ export function createApp() {
         .select('*');
 
       if (error) {
-        console.error('Supabase danh_sach_may query error:', error);
-        return res.status(500).json({
-          error: `Không thể tải danh sách máy từ ${SUPABASE_MACHINES_TABLE}. ${error.message}`
-        });
+        return respondSupabaseReadError(res, error, SUPABASE_MACHINES_TABLE, { machines: [], total: 0 });
       }
 
       return res.json({
@@ -2796,10 +2803,7 @@ export function createApp() {
         .order('ma_don_hang', { ascending: true });
 
       if (error) {
-        console.error('Supabase don_hang query error:', error);
-        return res.status(500).json({
-          error: `Không thể tải đơn hàng từ ${SUPABASE_ORDERS_TABLE}. ${error.message}`
-        });
+        return respondSupabaseReadError(res, error, SUPABASE_ORDERS_TABLE, { orders: [], total: 0 });
       }
 
       return res.json({
@@ -2938,9 +2942,9 @@ export function createApp() {
       }
 
       if (error) {
-        console.error('Supabase lenh_sx query error:', error);
-        return res.status(500).json({
-          error: `Không thể tải lệnh sản xuất từ ${SUPABASE_PRODUCTION_ORDERS_TABLE}. ${error.message}`
+        return respondSupabaseReadError(res, error, SUPABASE_PRODUCTION_ORDERS_TABLE, {
+          productionOrders: [],
+          total: 0
         });
       }
 
@@ -3409,10 +3413,7 @@ export function createApp() {
       }
 
       if (error) {
-        console.error('Supabase cai_dat query error:', error);
-        return res.status(500).json({
-          error: `Không thể tải cài đặt từ ${SUPABASE_SETTINGS_TABLE}. ${error.message}`
-        });
+        return respondSupabaseReadError(res, error, SUPABASE_SETTINGS_TABLE, { settings: [], total: 0 });
       }
 
       return res.json({
@@ -3529,10 +3530,7 @@ export function createApp() {
         .order('ma_npl', { ascending: true });
 
       if (error) {
-        console.error('Supabase kho_nvl query error:', error);
-        return res.status(500).json({
-          error: `Không thể tải nguyên phụ liệu từ ${SUPABASE_MATERIALS_TABLE}. ${error.message}`
-        });
+        return respondSupabaseReadError(res, error, SUPABASE_MATERIALS_TABLE, { materials: [], total: 0 });
       }
 
       const movementTotals = await buildMaterialMovementTotals();
@@ -3829,10 +3827,7 @@ export function createApp() {
           .select('*');
 
         if (error) {
-          console.error('Supabase nhan_su group query error:', error);
-          return res.status(500).json({
-            error: `Không thể tải danh sách nhân sự từ ${SUPABASE_STAFF_TABLE}. ${error.message}`
-          });
+          return respondSupabaseReadError(res, error, SUPABASE_STAFF_TABLE, { branches: [], total: 0 });
         }
 
         const rows = ((data || []) as Record<string, unknown>[])
@@ -4448,7 +4443,7 @@ export function createApp() {
 
   app.get('/api/bao-cao-nghiem-thu', async (req, res) => {
     if (!supabase) {
-      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+      return res.json({ reports: [], total: 0, source: 'local' });
     }
 
     try {
@@ -4467,8 +4462,7 @@ export function createApp() {
 
       const { data, error } = await query;
       if (error) {
-        console.error('Supabase acceptance report query error:', error);
-        return res.status(500).json({ error: acceptanceReportWriteError(error) });
+        return respondSupabaseReadError(res, error, SUPABASE_ACCEPTANCE_REPORTS_TABLE, { reports: [], total: 0 });
       }
 
       return res.json({ reports: data || [], total: data?.length || 0 });
