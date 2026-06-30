@@ -1,10 +1,10 @@
 import type { Express } from 'express';
+import { createApp } from '../server';
 
 let app: Express | null = null;
 
-async function getApp(): Promise<Express> {
+function getApp(): Express {
   if (!app) {
-    const { createApp } = await import('../server');
     app = createApp();
   }
   return app;
@@ -24,7 +24,7 @@ function normalizeApiUrl(req: { url?: string }) {
 export default async function handler(req: any, res: any) {
   try {
     normalizeApiUrl(req);
-    const expressApp = await getApp();
+    const expressApp = getApp();
 
     await new Promise<void>((resolve, reject) => {
       expressApp(req, res, (err: unknown) => {
