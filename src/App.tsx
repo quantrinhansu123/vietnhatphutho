@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { 
@@ -11,6 +11,10 @@ import MaterialsForm from './components/MaterialsForm';
 import WasteForm from './components/WasteForm';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import WeighingShiftSummary from './components/WeighingShiftSummary';
+import MixingReportForm from './components/MixingReportForm';
+import MixingReportListView from './components/MixingReportListView';
+import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
+import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from './components/WarehouseSlipPrintModal';
 import { AppTab, pathFromTab, tabFromPath } from './routes';
 import vietNhatLogoUrl from '../logovietnhat_1.png';
 import { 
@@ -19,12 +23,14 @@ import {
   ChevronRight, ChevronLeft, ChevronDown, Save, Sparkles, Loader2, Menu, History, UsersRound,
   Building2, UserPlus, Search, MoreVertical, ShieldCheck, BriefcaseBusiness, Package, Cpu, Plus, Boxes, ClipboardList, Settings,
   ImagePlus,
-  Eye, Pencil, Trash2, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowUpFromLine
+  Eye, Pencil, Trash2, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowUpFromLine, Printer,
+  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, QrCode, Scale, CalendarDays
 } from 'lucide-react';
 
 const STORAGE_DRAFT_KEY = 'factory_report_draft_v1';
 const STORAGE_OFFLINE_KEY = 'factory_reports_offline_queue';
 const STORAGE_REPORTS_CACHE_KEY = 'factory_reports_cache_v1';
+const STORAGE_WAREHOUSE_SLIP_DRAFT_KEY = 'warehouse_slip_prefill_draft_v1';
 
 function readCachedReports(): ProductionReport[] {
   try {
@@ -44,6 +50,8 @@ function VietNhatLogo() {
     />
   );
 }
+
+const PRINT_COMPANY_NAME = 'CÔNG TY TNHH VIỆT NHẬT IPT';
 
 interface HrMember {
   id: string;
@@ -125,10 +133,17 @@ interface ProductRow {
   id: string;
   code: string;
   newCode: string;
+  amisCode: string;
   name: string;
   nature: string;
   group: string;
   unit: string;
+  totalWeight: string;
+  rollWidth: string;
+  rollLength: string;
+  coreWeight: string;
+  bagWeight: string;
+  plasticWeight: string;
   openingStock: string;
   inbound: string;
   outbound: string;
@@ -510,6 +525,62 @@ function ProductNplItemFormModal({
   );
 }
 
+function parseProductSpecNumber(value: string) {
+  if (!value || value === '-') return null;
+  const num = Number(String(value).trim().replace(',', '.'));
+  return Number.isFinite(num) ? num : null;
+}
+
+function formatProductSpecDisplay(value: string) {
+  const num = parseProductSpecNumber(value);
+  if (num === null) return '-';
+  return formatNumber(num, 2);
+}
+
+function resolveProductPlasticWeight(
+  product: Pick<ProductRow, 'plasticWeight' | 'totalWeight' | 'coreWeight' | 'bagWeight'>
+) {
+  const stored = parseProductSpecNumber(product.plasticWeight);
+  if (stored !== null) return formatNumber(stored, 2);
+  const total = parseProductSpecNumber(product.totalWeight);
+  if (total === null) return '-';
+  const core = parseProductSpecNumber(product.coreWeight) ?? 0;
+  const bag = parseProductSpecNumber(product.bagWeight) ?? 0;
+  return formatNumber(total - core - bag, 2);
+}
+
+function resolveProductMaterialBaseKg(
+  product?: Pick<ProductRow, 'plasticWeight' | 'totalWeight' | 'coreWeight' | 'bagWeight'> | null
+) {
+  if (!product) return 0;
+  const stored = parseProductSpecNumber(product.plasticWeight);
+  if (stored !== null && stored > 0) return stored;
+  const total = parseProductSpecNumber(product.totalWeight);
+  if (total === null || total <= 0) return 0;
+  const core = parseProductSpecNumber(product.coreWeight) ?? 0;
+  const bag = parseProductSpecNumber(product.bagWeight) ?? 0;
+  return roundNplNumber(total - core - bag);
+}
+
+function normalizeProductCodeKey(code: string) {
+  return code.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function findProductByCode(products: ProductRow[], code: string) {
+  const key = normalizeProductCodeKey(code);
+  if (!key) return undefined;
+  return products.find(
+    product =>
+      normalizeProductCodeKey(product.code) === key ||
+      (product.amisCode && normalizeProductCodeKey(product.amisCode) === key) ||
+      (product.newCode && normalizeProductCodeKey(product.newCode) === key)
+  );
+}
+
+function productAmisDisplayCode(product: Pick<ProductRow, 'amisCode' | 'code'>) {
+  return product.amisCode && product.amisCode !== '-' ? product.amisCode : product.code || '-';
+}
+
 function ProductViewModal({
   product,
   initialTab = 'info',
@@ -591,21 +662,38 @@ function ProductViewModal({
     }
   };
 
-  const infoRows: Array<[string, string]> = [
+  const compactInfoRows: Array<[string, string]> = [
     ['Mã SP', product.code || '-'],
-    ['Mã mới', product.newCode || '-'],
-    ['Tên sản phẩm', product.name || '-'],
+    ['Mã AMIS', productAmisDisplayCode(product)],
+    ...(product.newCode && product.newCode !== '-' && product.newCode !== product.code
+      ? [['Mã mới', product.newCode] as [string, string]]
+      : []),
+    ['Nhóm', product.group],
     ['Tính chất', product.nature],
-    ['Nhóm VTHH', product.group],
-    ['Đơn vị', product.unit],
     ['Tồn đầu', product.openingStock],
     ['Nhập', product.inbound],
     ['Xuất', product.outbound],
     ['Tồn kho', product.stock],
-    ['Tồn tối thiểu', product.minStock],
-    ['Nguồn gốc', product.origin],
-    ['Mô tả', product.description || '-']
+    ['Tồn TT', product.minStock],
+    ['Nguồn gốc', product.origin]
+  ].filter(([, value]) => value && value !== '-');
+
+  const productDescription =
+    product.description && product.description !== '-' ? product.description.trim() : '';
+
+  const normSpecCells = [
+    { label: 'Đơn vị tính', value: product.unit && product.unit !== '-' ? product.unit : '-' },
+    { label: 'Tổng trọng lượng TP (kg)', value: formatProductSpecDisplay(product.totalWeight), highlight: true },
+    { label: 'Khổ cuộn (m)', value: formatProductSpecDisplay(product.rollWidth) },
+    { label: 'Chiều dài mét/cuộn (m)', value: formatProductSpecDisplay(product.rollLength) },
+    { label: 'Trọng lượng lõi (kg)', value: formatProductSpecDisplay(product.coreWeight) },
+    { label: 'Trọng lượng túi (kg)', value: formatProductSpecDisplay(product.bagWeight) },
+    { label: 'Trọng lượng nhựa + phụ gia (kg)', value: resolveProductPlasticWeight(product), highlight: true }
   ];
+
+  const hasNormSpecs = normSpecCells.some(
+    cell => cell.label !== 'Đơn vị tính' && cell.value !== '-'
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -644,13 +732,77 @@ function ProductViewModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {tab === 'info' ? (
-            <div className="grid grid-cols-2 gap-3">
-              {infoRows.map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
-                  <p className="mt-1 text-sm font-bold text-zinc-900">{value}</p>
+            <div className="space-y-3">
+              <section className="rounded-lg border border-zinc-200 bg-zinc-50/80">
+                <p className="border-b border-zinc-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                  Thông tin chung
+                </p>
+                <div className="overflow-x-auto px-2 py-2">
+                  <table className="min-w-full text-xs">
+                    <tbody>
+                      <tr className="divide-x divide-zinc-200">
+                        {compactInfoRows.map(([label, value]) => (
+                          <td key={label} className="px-2 py-1 align-top whitespace-nowrap">
+                            <span className="text-[9px] font-black uppercase tracking-wide text-zinc-400">{label}</span>
+                            <p className="mt-0.5 font-bold text-zinc-900">{value}</p>
+                          </td>
+                        ))}
+                      </tr>
+                      {productDescription ? (
+                        <tr>
+                          <td colSpan={Math.max(compactInfoRows.length, 1)} className="border-t border-zinc-200 px-2 py-1.5">
+                            <span className="text-[9px] font-black uppercase tracking-wide text-zinc-400">Mô tả</span>
+                            <p className="mt-0.5 text-xs font-semibold text-zinc-700">{productDescription}</p>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
+              </section>
+
+              <section className="overflow-hidden rounded-xl border-2 border-emerald-200 bg-emerald-50/30">
+                <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Định mức sản phẩm</p>
+                  <p className="text-[10px] font-semibold text-emerald-700/80">
+                    Mã AMIS · {productAmisDisplayCode(product)}
+                    {product.unit && product.unit !== '-' ? ` · ${product.unit}` : ''}
+                  </p>
+                </div>
+                {!hasNormSpecs ? (
+                  <p className="px-4 py-6 text-center text-sm font-semibold text-zinc-500">
+                    Chưa khai báo định mức. Bấm Sửa để nhập hoặc chạy file seed SQL trên Supabase.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto p-2">
+                    <table className="min-w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="bg-zinc-950 text-[9px] uppercase tracking-wider text-white">
+                          {normSpecCells.map(cell => (
+                            <th key={cell.label} className="px-2 py-2 font-black whitespace-nowrap">
+                              {cell.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="bg-white">
+                          {normSpecCells.map(cell => (
+                            <td
+                              key={cell.label}
+                              className={`border border-zinc-200 px-2 py-2 font-bold whitespace-nowrap ${
+                                cell.highlight ? 'bg-emerald-50 text-emerald-800' : 'text-zinc-900'
+                              }`}
+                            >
+                              {cell.value}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
             </div>
           ) : (
             <div className="space-y-3">
@@ -824,10 +976,17 @@ function normalizeProducts(data: unknown): ProductRow[] {
         id: String(record.id ?? '').trim() || code || name,
         code,
         newCode: String(record.ma_sp_moi ?? '').trim(),
+        amisCode: String(record.ma_amis ?? '').trim(),
         name,
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
+        totalWeight: formatCell(record.tong_trong_luong),
+        rollWidth: formatCell(record.kho_cuon),
+        rollLength: formatCell(record.chieu_dai_cuon),
+        coreWeight: formatCell(record.trong_luong_loi),
+        bagWeight: formatCell(record.trong_luong_tui),
+        plasticWeight: formatCell(record.trong_luong_nhua),
         openingStock:
           record.ton_dau_ky === null || record.ton_dau_ky === undefined ? '-' : String(record.ton_dau_ky),
         inbound: formatCell(record.nhap_trong_ky),
@@ -839,7 +998,13 @@ function normalizeProducts(data: unknown): ProductRow[] {
             : String(record.so_luong_ton_toi_thieu),
         origin: String(record.nguon_goc ?? '').trim() || '-',
         description: String(record.mo_ta ?? '').trim(),
-        nplItems: parseProductNplItems(record.npl_phan_tram)
+        nplItems: parseProductNplItems(
+          record.npl_phan_tram ??
+          record.nplPhanTram ??
+          record.nplItems ??
+          record.thanh_phan ??
+          record.dinh_muc
+        )
       };
     })
     .filter((product): product is ProductRow => Boolean(product));
@@ -848,10 +1013,17 @@ function normalizeProducts(data: unknown): ProductRow[] {
 type ProductFormState = {
   code: string;
   newCode: string;
+  amisCode: string;
   name: string;
   nature: string;
   group: string;
   unit: string;
+  totalWeight: string;
+  rollWidth: string;
+  rollLength: string;
+  coreWeight: string;
+  bagWeight: string;
+  plasticWeight: string;
   openingStock: string;
   inbound: string;
   outbound: string;
@@ -869,10 +1041,17 @@ function productToForm(product: ProductRow): ProductFormState {
   return {
     code: productCellToInput(product.code),
     newCode: productCellToInput(product.newCode),
+    amisCode: productCellToInput(product.amisCode),
     name: productCellToInput(product.name),
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
     unit: productCellToInput(product.unit),
+    totalWeight: productCellToInput(product.totalWeight),
+    rollWidth: productCellToInput(product.rollWidth),
+    rollLength: productCellToInput(product.rollLength),
+    coreWeight: productCellToInput(product.coreWeight),
+    bagWeight: productCellToInput(product.bagWeight),
+    plasticWeight: productCellToInput(product.plasticWeight),
     openingStock: productCellToInput(product.openingStock),
     inbound: productCellToInput(product.inbound),
     outbound: productCellToInput(product.outbound),
@@ -902,20 +1081,27 @@ function ProductEditModal({
     setForm(productToForm(product));
   }, [product.id]);
 
-  const fields: Array<{ key: keyof ProductFormState; label: string; required?: boolean }> = [
+  const fields: Array<{ key: keyof ProductFormState; label: string; required?: boolean; span?: boolean }> = [
     { key: 'code', label: 'Mã SP', required: true },
+    { key: 'amisCode', label: 'Mã AMIS' },
     { key: 'newCode', label: 'Mã mới' },
     { key: 'name', label: 'Tên sản phẩm', required: true },
     { key: 'nature', label: 'Tính chất' },
     { key: 'group', label: 'Nhóm VTHH' },
-    { key: 'unit', label: 'Đơn vị' },
+    { key: 'unit', label: 'Đơn vị tính' },
+    { key: 'totalWeight', label: 'Tổng trọng lượng TP (kg)' },
+    { key: 'rollWidth', label: 'Khổ cuộn (m)' },
+    { key: 'rollLength', label: 'Chiều dài mét/cuộn (m)' },
+    { key: 'coreWeight', label: 'Trọng lượng lõi (kg)' },
+    { key: 'bagWeight', label: 'Trọng lượng túi (kg)' },
+    { key: 'plasticWeight', label: 'Trọng lượng nhựa + phụ gia (kg)' },
     { key: 'openingStock', label: 'Tồn đầu' },
     { key: 'inbound', label: 'Nhập' },
     { key: 'outbound', label: 'Xuất' },
     { key: 'stock', label: 'Tồn kho' },
     { key: 'minStock', label: 'Tồn tối thiểu' },
     { key: 'origin', label: 'Nguồn gốc' },
-    { key: 'description', label: 'Mô tả' }
+    { key: 'description', label: 'Mô tả', span: true }
   ];
 
   const handleSave = async () => {
@@ -924,7 +1110,7 @@ function ProductEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Sửa sản phẩm</h3>
@@ -939,7 +1125,7 @@ function ProductEditModal({
         )}
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           {fields.map(field => (
-            <label key={field.key} className={`block space-y-1.5 ${field.key === 'description' ? 'sm:col-span-2' : ''}`}>
+            <label key={field.key} className={`block space-y-1.5 ${field.span ? 'sm:col-span-2' : ''}`}>
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 {field.label}{field.required ? ' *' : ''}
               </span>
@@ -1080,10 +1266,17 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
         body: JSON.stringify({
           code: form.code.trim(),
           newCode: form.newCode.trim(),
+          amisCode: form.amisCode.trim(),
           name: form.name.trim(),
           nature: form.nature.trim(),
           group: form.group.trim(),
           unit: form.unit.trim(),
+          totalWeight: form.totalWeight.trim(),
+          rollWidth: form.rollWidth.trim(),
+          rollLength: form.rollLength.trim(),
+          coreWeight: form.coreWeight.trim(),
+          bagWeight: form.bagWeight.trim(),
+          plasticWeight: form.plasticWeight.trim(),
           openingStock: form.openingStock.trim(),
           inbound: form.inbound.trim(),
           outbound: form.outbound.trim(),
@@ -1746,6 +1939,77 @@ function normalizeMachines(data: unknown): MachineRow[] {
       };
     })
     .filter((machine): machine is MachineRow => Boolean(machine));
+}
+
+function findMachineByRef(machines: MachineRow[], ref: string): MachineRow | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+
+  return (
+    machines.find(machine => machine.code === trimmed) ??
+    machines.find(machine => machine.name === trimmed) ??
+    machines.find(machine => `${machine.code} · ${machine.name}` === trimmed) ??
+    null
+  );
+}
+
+function machineSelectLabel(machine: MachineRow): string {
+  const name = machine.name?.trim();
+  if (name && name !== '-') return name;
+  const code = machine.code?.trim();
+  if (code && code !== '-') return code;
+  return '';
+}
+
+function machineSelectValue(machine: MachineRow): string {
+  return machineSelectLabel(machine);
+}
+
+function buildMachineSelectOptions(machines: MachineRow[], currentValue = ''): MachineRow[] {
+  const normalized = resolveMachineDisplayValue(currentValue, machines) || currentValue.trim();
+  if (!normalized) return machines;
+
+  if (findMachineByRef(machines, normalized) || findMachineByRef(machines, currentValue)) {
+    return machines;
+  }
+
+  return [
+    {
+      id: `custom-${normalized}`,
+      code: normalized,
+      name: normalized,
+      type: '-',
+      branch: '-',
+      location: '-',
+      status: '-',
+      note: ''
+    },
+    ...machines
+  ];
+}
+
+function renderMachineSelect(
+  value: string,
+  onChange: (machine: string) => void,
+  machines: MachineRow[],
+  options?: { disabled?: boolean; placeholder?: string; isLoading?: boolean }
+) {
+  const machineOptions = buildMachineSelectOptions(machines, value);
+  const displayValue = resolveMachineDisplayValue(value, machines) || value;
+
+  return (
+    <SearchableSelect
+      value={displayValue}
+      onChange={onChange}
+      options={machineOptions}
+      placeholder={options?.placeholder ?? 'Gõ để tìm máy'}
+      disabled={options?.disabled}
+      isLoading={options?.isLoading}
+      getLabel={item => machineSelectLabel(item as MachineRow)}
+      getValue={item => machineSelectValue(item as MachineRow)}
+      resolveSelectedItem={(opts, val) => findMachineByRef(opts as MachineRow[], val)}
+    />
+  );
 }
 
 type MachineFormState = {
@@ -2866,8 +3130,8 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     });
   }, [materials, normalizedSearch, selectedUnit]);
 
-  const totalPlasticWeight = materials.reduce((sum, material) => {
-    const value = Number(material.plasticWeight);
+  const totalWeightAll = materials.reduce((sum, material) => {
+    const value = parseInventoryNumber(material.totalWeight);
     return Number.isFinite(value) ? sum + value : sum;
   }, 0);
 
@@ -3016,8 +3280,8 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
             {[
               ['Mã NVL', materials.length],
-              ['Đơn vị', units.length > 0 ? units.length - 1 : 0],
-              ['Kg nhựa', formatNumber(totalPlasticWeight)]
+              ['Tổng kg', formatNumber(totalWeightAll, 2)],
+              ['Đơn vị', units.length > 0 ? units.length - 1 : 0]
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <span className="block font-bold text-zinc-400">{label}</span>
@@ -3170,12 +3434,13 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-[860px] w-full text-left text-sm">
+          <table className="min-w-[960px] w-full text-left text-sm">
             <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
               <tr>
                 <th className="px-4 py-3 font-black">Mã NPL</th>
                 <th className="px-4 py-3 font-black">Tên nguyên phụ liệu</th>
                 <th className="px-4 py-3 font-black">Đơn vị</th>
+                <th className="px-4 py-3 text-right font-black">Tổng kg</th>
                 <th className="px-4 py-3 font-black">Tồn đầu</th>
                 <th className="px-4 py-3 font-black">Nhập</th>
                 <th className="px-4 py-3 font-black">Xuất</th>
@@ -3189,6 +3454,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
                   <td className="px-4 py-3 font-black text-zinc-950">{material.name || '-'}</td>
                   <td className="px-4 py-3 font-bold text-zinc-700">{material.unit}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
                   <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.openingStock}</td>
                   <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.inbound}</td>
                   <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.outbound}</td>
@@ -3233,7 +3499,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
 
               {!isLoadingMaterials && filteredMaterials.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={9} className="px-4 py-8 text-center font-bold text-zinc-500">
                     Không có nguyên phụ liệu phù hợp bộ lọc.
                   </td>
                 </tr>
@@ -3276,6 +3542,15 @@ interface WarehouseSlipLineDraft {
   unitPrice: string;
 }
 
+type WarehouseSlipPrefillDraft = {
+  slipType: WarehouseSlipType;
+  warehouseKind: WarehouseKind;
+  reason: string;
+  note: string;
+  createdBy: string;
+  lines: Array<Pick<WarehouseSlipLineDraft, 'code' | 'name' | 'unit' | 'quantity' | 'unitPrice'>>;
+};
+
 const warehouseFieldClass =
   'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
@@ -3303,6 +3578,95 @@ function computeWarehouseLineAmount(quantityText: string, unitPriceText: string)
   return Math.round(quantity * unitPrice * 100) / 100;
 }
 
+function generateWarehouseSlipPreviewCode(slipType: WarehouseSlipType) {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const time = now.toISOString().slice(11, 19).replace(/:/g, '');
+  return `${slipType === 'nhap' ? 'PN' : 'PX'}-${date}-${time}`;
+}
+
+type WarehouseSlipPayloadItem = {
+  code: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+function parseWarehouseSlipPayloadItems(
+  lines: WarehouseSlipLineDraft[],
+  warehouseKind: WarehouseKind
+): { error: string } | { items: WarehouseSlipPayloadItem[] } {
+  const itemLabel = warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL';
+  const codeLabel = warehouseItemCodeLabel(warehouseKind);
+
+  const payloadItems = lines
+    .map(line => {
+      const quantity = parsePercentInput(line.quantity);
+      const unitPrice = parseMoneyInput(line.unitPrice);
+      return {
+        code: line.code.trim(),
+        name: line.name.trim(),
+        unit: line.unit.trim(),
+        quantity,
+        unitPrice: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0
+      };
+    })
+    .filter(line => line.code || line.quantity);
+
+  if (payloadItems.length === 0) {
+    return { error: `Vui lòng thêm ít nhất một dòng ${itemLabel}.` };
+  }
+
+  for (const item of payloadItems) {
+    if (!item.code) {
+      return { error: `Mỗi dòng cần chọn ${codeLabel}.` };
+    }
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      return { error: `Số lượng của ${item.code} phải lớn hơn 0.` };
+    }
+    if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
+      return { error: `Giá của ${item.code} không hợp lệ.` };
+    }
+  }
+
+  return { items: payloadItems };
+}
+
+function buildWarehouseSlipPrintData(
+  items: WarehouseSlipPayloadItem[],
+  options: {
+    slipCode: string;
+    slipType: WarehouseSlipType;
+    warehouseKind: WarehouseKind;
+    slipDate: string;
+    reason: string;
+    note: string;
+    createdBy: string;
+  }
+): WarehouseSlipPrintData {
+  const printLines = items.map(item => ({
+    code: item.code,
+    name: item.name,
+    unit: item.unit,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100
+  }));
+
+  return {
+    slipCode: options.slipCode,
+    slipType: options.slipType,
+    warehouseKind: options.warehouseKind,
+    slipDate: options.slipDate,
+    reason: options.reason,
+    note: options.note,
+    createdBy: options.createdBy,
+    totalAmount: printLines.reduce((sum, line) => sum + line.lineAmount, 0),
+    lines: printLines
+  };
+}
+
 function formatWarehouseMoney(value: number) {
   return formatMoney(value, 0);
 }
@@ -3315,6 +3679,19 @@ function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     unit: '',
     quantity: '',
     unitPrice: ''
+  };
+}
+
+function createWarehouseLineDraftFromPrefill(
+  line: Pick<WarehouseSlipLineDraft, 'code' | 'name' | 'unit' | 'quantity' | 'unitPrice'>
+): WarehouseSlipLineDraft {
+  return {
+    key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    code: line.code || '',
+    name: line.name || '',
+    unit: line.unit || '',
+    quantity: line.quantity || '',
+    unitPrice: line.unitPrice || ''
   };
 }
 
@@ -3390,6 +3767,32 @@ function WarehouseSlipPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [printSlip, setPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printAutoTrigger, setPrintAutoTrigger] = useState(false);
+
+  useEffect(() => {
+    const rawDraft = localStorage.getItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY);
+    if (!rawDraft) return;
+
+    try {
+      const draft = JSON.parse(rawDraft) as Partial<WarehouseSlipPrefillDraft>;
+      if (!draft || !Array.isArray(draft.lines) || draft.lines.length === 0) return;
+
+      setWarehouseKind(draft.warehouseKind === 'san_pham' ? 'san_pham' : 'nvl');
+      setSlipType(draft.slipType === 'nhap' ? 'nhap' : 'xuat');
+      setReason(draft.reason || '');
+      setNote(draft.note || '');
+      setCreatedBy(draft.createdBy || '');
+      setLines(draft.lines.map(createWarehouseLineDraftFromPrefill));
+      setActionMessage('Đã điền sẵn phiếu xuất kho từ hạch toán định mức NVL.');
+      setFormError('');
+    } catch {
+      setFormError('Không thể đọc dữ liệu phiếu xuất kho đã chuyển sang.');
+    } finally {
+      localStorage.removeItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     const loadItems = async () => {
@@ -3455,44 +3858,39 @@ function WarehouseSlipPanel({
     [lines]
   );
 
-  const handleSave = async () => {
-    const itemLabel = warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL';
-    const codeLabel = warehouseItemCodeLabel(warehouseKind);
-
-    const payloadItems = lines
-      .map(line => {
-        const quantity = parsePercentInput(line.quantity);
-        const unitPrice = parseMoneyInput(line.unitPrice);
-        return {
-          code: line.code.trim(),
-          name: line.name.trim(),
-          unit: line.unit.trim(),
-          quantity,
-          unitPrice: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0
-        };
-      })
-      .filter(line => line.code || line.quantity);
-
-    if (payloadItems.length === 0) {
-      setFormError(`Vui lòng thêm ít nhất một dòng ${itemLabel}.`);
+  const handlePrintPreview = () => {
+    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind);
+    if ('error' in parsed) {
+      setFormError(parsed.error);
+      setActionMessage('');
       return;
     }
 
-    for (const item of payloadItems) {
-      if (!item.code) {
-        setFormError(`Mỗi dòng cần chọn ${codeLabel}.`);
-        return;
-      }
-      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
-        setFormError(`Số lượng của ${item.code} phải lớn hơn 0.`);
-        return;
-      }
-      if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
-        setFormError(`Giá của ${item.code} không hợp lệ.`);
-        return;
-      }
+    setFormError('');
+    setActionMessage('');
+    setPrintSlip(
+      buildWarehouseSlipPrintData(parsed.items, {
+        slipCode: generateWarehouseSlipPreviewCode(slipType),
+        slipType,
+        warehouseKind,
+        slipDate,
+        reason: reason.trim(),
+        note: note.trim(),
+        createdBy: createdBy.trim()
+      })
+    );
+    setPrintAutoTrigger(true);
+    setPrintModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind);
+    if ('error' in parsed) {
+      setFormError(parsed.error);
+      return;
     }
 
+    const payloadItems = parsed.items;
     setIsSaving(true);
     setFormError('');
     setActionMessage('');
@@ -3517,6 +3915,19 @@ function WarehouseSlipPanel({
         throw new Error(data.error || 'Không thể lưu phiếu xuất nhập kho.');
       }
 
+      setPrintSlip(
+        buildWarehouseSlipPrintData(payloadItems, {
+          slipCode: String(data.slipCode || '').trim(),
+          slipType,
+          warehouseKind,
+          slipDate,
+          reason: reason.trim(),
+          note: note.trim(),
+          createdBy: createdBy.trim()
+        })
+      );
+      setPrintAutoTrigger(true);
+      setPrintModalOpen(true);
       setActionMessage(`Đã lưu phiếu ${data.slipCode || ''} (${warehouseKindLabel(warehouseKind)}).`.trim());
       setReason('');
       setNote('');
@@ -3754,7 +4165,15 @@ function WarehouseSlipPanel({
           ))}
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={handlePrintPreview}
+            className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400"
+          >
+            <Printer className="h-4 w-4" />
+            In phiếu
+          </button>
           <button
             type="button"
             onClick={handleSave}
@@ -3762,10 +4181,21 @@ function WarehouseSlipPanel({
             className="flex h-11 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-5 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isSaving ? 'Đang lưu...' : `Lưu phiếu ${warehouseSlipTypeLabel(slipType).toLowerCase()}`}
+            {isSaving ? 'Đang lưu...' : `Lưu & in phiếu ${warehouseSlipTypeLabel(slipType).toLowerCase()}`}
           </button>
         </div>
       </section>
+
+      <WarehouseSlipPrintModal
+        open={printModalOpen}
+        data={printSlip}
+        autoPrint={printAutoTrigger}
+        onClose={() => {
+          setPrintModalOpen(false);
+          setPrintSlip(null);
+          setPrintAutoTrigger(false);
+        }}
+      />
     </div>
   );
 }
@@ -3787,6 +4217,9 @@ function WarehouseHistoryPanel({
   const [error, setError] = useState('');
   const [viewingSlipCode, setViewingSlipCode] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [historyPrintSlip, setHistoryPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
+  const [historyPrintOpen, setHistoryPrintOpen] = useState(false);
+  const [historyPrintAutoTrigger, setHistoryPrintAutoTrigger] = useState(false);
 
   const loadMovements = async () => {
     setIsLoading(true);
@@ -3853,6 +4286,39 @@ function WarehouseHistoryPanel({
     () => viewingRows.reduce((sum, row) => sum + row.lineAmount, 0),
     [viewingRows]
   );
+
+  const handlePrintSlipByCode = (slipCode: string, autoPrint = false) => {
+    const rows = filteredMovements.filter(row => row.slipCode === slipCode);
+    const header = rows[0];
+    if (!header) return;
+
+    const totalAmount = rows.reduce((sum, row) => sum + row.lineAmount, 0);
+    setHistoryPrintSlip({
+      slipCode,
+      slipType: header.slipType,
+      warehouseKind: header.warehouseKind,
+      slipDate: header.slipDate,
+      reason: header.reason,
+      note: header.note,
+      createdBy: header.createdBy,
+      totalAmount,
+      lines: rows.map(row => ({
+        code: row.itemCode,
+        name: row.itemName,
+        unit: row.unit,
+        quantity: row.quantity,
+        unitPrice: row.unitPrice,
+        lineAmount: row.lineAmount
+      }))
+    });
+    setHistoryPrintAutoTrigger(autoPrint);
+    setHistoryPrintOpen(true);
+  };
+
+  const handlePrintViewingSlip = (autoPrint = false) => {
+    if (!viewingSlipCode) return;
+    handlePrintSlipByCode(viewingSlipCode, autoPrint);
+  };
 
   const handleDeleteRow = async (row: WarehouseMovementRow) => {
     if (!row.id) return;
@@ -4024,6 +4490,14 @@ function WarehouseHistoryPanel({
                       </button>
                       <button
                         type="button"
+                        onClick={() => handlePrintSlipByCode(row.slipCode, true)}
+                        title="In phiếu"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDeleteRow(row)}
                         disabled={deletingId === row.id}
                         title="Xóa"
@@ -4105,15 +4579,34 @@ function WarehouseHistoryPanel({
                   ))}
                 </tbody>
               </table>
-              <div className="mt-3 flex justify-end rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
                 <p className="text-sm font-black text-zinc-950">
                   Tổng tiền: <span className="text-[#ef1b2d]">{formatWarehouseMoney(viewingSlipTotal)} đ</span>
                 </p>
+                <button
+                  type="button"
+                  onClick={() => handlePrintViewingSlip(true)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  <Printer className="h-4 w-4" />
+                  In phiếu
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <WarehouseSlipPrintModal
+        open={historyPrintOpen}
+        data={historyPrintSlip}
+        autoPrint={historyPrintAutoTrigger}
+        onClose={() => {
+          setHistoryPrintOpen(false);
+          setHistoryPrintSlip(null);
+          setHistoryPrintAutoTrigger(false);
+        }}
+      />
     </div>
   );
 }
@@ -4178,6 +4671,139 @@ function normalizeCustomerOptions(data: unknown): CustomerOption[] {
       };
     })
     .filter((item): item is CustomerOption => Boolean(item));
+}
+
+function CustomersPanel({ onBack }: { onBack: () => void }) {
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadCustomers = async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const res = await fetch('/api/khach-hang');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách khách hàng.');
+      setCustomers(normalizeCustomerOptions(data));
+    } catch (loadError: any) {
+      setCustomers([]);
+      setError(loadError.message || 'Không thể tải danh sách khách hàng.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCustomers();
+  }, []);
+
+  const normalizedSearch = searchText.trim().toLowerCase();
+  const filteredCustomers = useMemo(
+    () =>
+      customers.filter(customer =>
+        !normalizedSearch || `${customer.code} ${customer.name}`.toLowerCase().includes(normalizedSearch)
+      ),
+    [customers, normalizedSearch]
+  );
+
+  return (
+    <div className="mx-auto w-full max-w-[1280px] space-y-4">
+      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
+        <div className="bg-zinc-950 p-4 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-red-300">Kinh doanh</p>
+              <h2 className="mt-1 text-2xl font-black leading-tight">Khách hàng</h2>
+              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
+                Danh sách khách hàng dùng cho đơn hàng và tra cứu kinh doanh.
+              </p>
+            </div>
+            <BackButton onClick={onBack} variant="dark" className="h-10 rounded-xl" />
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-2 text-xs">
+            {[
+              ['Khách hàng', customers.length],
+              ['Đang hiển thị', filteredCustomers.length]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <span className="block font-bold text-zinc-400">{label}</span>
+                <span className="mt-1 block text-xl font-black text-white">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
+        <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+          <Search className="h-4 w-4 text-zinc-400" />
+          <input
+            value={searchText}
+            onChange={event => setSearchText(event.target.value)}
+            placeholder="Tìm mã hoặc tên khách hàng..."
+            disabled={isLoading}
+            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={loadCustomers}
+          disabled={isLoading}
+          className="mt-3 h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-800 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 lg:mt-0"
+        >
+          {isLoading ? 'Đang tải...' : 'Tải lại'}
+        </button>
+      </section>
+
+      {error && (
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+          {error}
+        </section>
+      )}
+
+      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
+              <tr>
+                <th className="px-4 py-3 font-black">STT</th>
+                <th className="px-4 py-3 font-black">Mã khách hàng</th>
+                <th className="px-4 py-3 font-black">Tên khách hàng</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={3} className="px-4 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải khách hàng...
+                  </td>
+                </tr>
+              ) : filteredCustomers.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-4 py-10 text-center font-bold text-zinc-500">
+                    Chưa có khách hàng phù hợp.
+                  </td>
+                </tr>
+              ) : (
+                filteredCustomers.map((customer, index) => (
+                  <tr key={customer.id} className="transition hover:bg-red-50/40">
+                    <td className="px-4 py-3 font-black text-[#ef1b2d]">{index + 1}</td>
+                    <td className="px-4 py-3 font-mono font-bold text-zinc-900">{customer.code || '-'}</td>
+                    <td className="px-4 py-3 font-black text-zinc-950">{customer.name}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function normalizeOrderProducts(data: unknown): OrderProductOption[] {
@@ -4250,7 +4876,8 @@ function SearchableSelect({
   inputClassName,
   maxResults = 50,
   allowEmpty = true,
-  onSelectOption
+  onSelectOption,
+  resolveSelectedItem
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -4264,12 +4891,15 @@ function SearchableSelect({
   maxResults?: number;
   allowEmpty?: boolean;
   onSelectOption?: (item: unknown | null) => void;
+  resolveSelectedItem?: (options: unknown[], value: string) => unknown | null;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
-  const selectedItem = useMemo(
-    () => options.find(item => getValue(item) === value) ?? null,
-    [options, value, getLabel, getValue]
-  );
+  const selectedItem = useMemo(() => {
+    if (resolveSelectedItem) {
+      return resolveSelectedItem(options, value);
+    }
+    return options.find(item => getValue(item) === value) ?? null;
+  }, [options, value, getValue, resolveSelectedItem]);
   const selectedLabel = selectedItem ? getLabel(selectedItem) : value;
 
   const [query, setQuery] = useState(selectedLabel);
@@ -4435,6 +5065,374 @@ function SimpleSelect({
   );
 }
 
+type MachineNvlReportLine = {
+  key: string;
+  code: string;
+  name: string;
+  unit: string;
+  quantity: string;
+  note: string;
+};
+
+type MachineNvlSavedLine = {
+  stt: number;
+  maNvl: string;
+  tenNvl: string;
+  donVi: string;
+  soLuongTon: number;
+  ghiChu: string;
+};
+
+type MachineNvlSavedReport = {
+  id: string;
+  ngay: string;
+  ca: string;
+  gio: string;
+  maMay: string;
+  tenMay: string;
+  nhanSu: string;
+  total: number;
+  note: string;
+  lines: MachineNvlSavedLine[];
+  createdAt: string;
+};
+
+const machineNvlToday = () => {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+};
+
+const emptyMachineNvlLine = (): MachineNvlReportLine => ({
+  key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  code: '',
+  name: '',
+  unit: 'kg',
+  quantity: '',
+  note: ''
+});
+
+function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
+  if (!data || typeof data !== 'object') return [];
+  const reports = (data as { reports?: unknown }).reports;
+  if (!Array.isArray(reports)) return [];
+
+  return reports
+    .map((item): MachineNvlSavedReport | null => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const rawLines = Array.isArray(record.chi_tiet) ? record.chi_tiet : [];
+      const lines = rawLines
+        .map((line, index): MachineNvlSavedLine | null => {
+          if (!line || typeof line !== 'object') return null;
+          const detail = line as Record<string, unknown>;
+          const maNvl = String(detail.ma_nvl ?? detail.ma_npl ?? detail.code ?? '').trim();
+          const tenNvl = String(detail.ten_nvl ?? detail.ten_npl ?? detail.name ?? '').trim();
+          if (!maNvl && !tenNvl) return null;
+          const amount = Number(String(detail.so_luong_ton ?? detail.so_luong ?? detail.quantity ?? 0).replace(',', '.'));
+          return {
+            stt: Number(detail.stt ?? index + 1) || index + 1,
+            maNvl,
+            tenNvl,
+            donVi: String(detail.don_vi ?? detail.unit ?? 'kg').trim() || 'kg',
+            soLuongTon: Number.isFinite(amount) ? amount : 0,
+            ghiChu: String(detail.ghi_chu ?? detail.note ?? '').trim()
+          };
+        })
+        .filter((line): line is MachineNvlSavedLine => Boolean(line));
+
+      return {
+        id: String(record.id ?? '').trim(),
+        ngay: String(record.ngay ?? '').slice(0, 10),
+        ca: String(record.ca ?? '').trim(),
+        gio: String(record.gio ?? '').trim(),
+        maMay: String(record.ma_may ?? '').trim(),
+        tenMay: String(record.ten_may ?? '').trim(),
+        nhanSu: String(record.nhan_su ?? '').trim(),
+        total: Number(record.tong_so_luong_ton ?? 0) || 0,
+        note: String(record.ghi_chu ?? '').trim(),
+        lines,
+        createdAt: String(record.created_at ?? '').trim()
+      };
+    })
+    .filter((report): report is MachineNvlSavedReport => Boolean(report));
+}
+
+function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
+  const [machines, setMachines] = useState<MachineRow[]>([]);
+  const [materials, setMaterials] = useState<MaterialRow[]>([]);
+  const [reports, setReports] = useState<MachineNvlSavedReport[]>([]);
+  const [date, setDate] = useState(machineNvlToday());
+  const [shift, setShift] = useState('');
+  const [machineRef, setMachineRef] = useState('');
+  const [staff, setStaff] = useState('');
+  const [note, setNote] = useState('');
+  const [lines, setLines] = useState<MachineNvlReportLine[]>([emptyMachineNvlLine()]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const loadReports = async () => {
+    const res = await fetch('/api/bao-cao-may-nvl-ton?limit=50');
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) setReports(normalizeMachineNvlReports(data));
+  };
+
+  useEffect(() => {
+    let alive = true;
+
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const [machineRes, materialRes, reportRes] = await Promise.all([
+          fetch('/api/danh-sach-may'),
+          fetch('/api/kho-nvl'),
+          fetch('/api/bao-cao-may-nvl-ton?limit=50')
+        ]);
+        const [machineData, materialData, reportData] = await Promise.all([
+          machineRes.json().catch(() => ({})),
+          materialRes.json().catch(() => ({})),
+          reportRes.json().catch(() => ({}))
+        ]);
+
+        if (!alive) return;
+        if (machineRes.ok) setMachines(normalizeMachines(machineData));
+        if (materialRes.ok) setMaterials(normalizeMaterialsInventory(materialData));
+        if (reportRes.ok) setReports(normalizeMachineNvlReports(reportData));
+      } finally {
+        if (alive) setIsLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const selectedMachine = findMachineByRef(machines, machineRef);
+  const totalQuantity = lines.reduce((sum, line) => {
+    const value = Number(line.quantity.replace(',', '.'));
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+
+  const updateLine = (key: string, updates: Partial<MachineNvlReportLine>) => {
+    setLines(prev => prev.map(line => (line.key === key ? { ...line, ...updates } : line)));
+  };
+
+  const selectMaterial = (key: string, material: MaterialRow | null) => {
+    if (!material) return;
+    updateLine(key, {
+      code: material.code,
+      name: material.name,
+      unit: material.unit === '-' ? 'kg' : material.unit
+    });
+  };
+
+  const saveReport = async () => {
+    setMessage('');
+    const materialLines = lines
+      .map((line, index) => ({
+        stt: index + 1,
+        ma_nvl: line.code.trim(),
+        ten_nvl: line.name.trim(),
+        don_vi: line.unit.trim() || 'kg',
+        so_luong_ton: Number(line.quantity.replace(',', '.')) || 0,
+        ghi_chu: line.note.trim()
+      }))
+      .filter(line => line.ma_nvl || line.ten_nvl || line.so_luong_ton > 0);
+
+    if (!date || !shift || !machineRef.trim() || materialLines.length === 0) {
+      setMessage('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng NVL tồn.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const res = await fetch('/api/bao-cao-may-nvl-ton', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ngay: date,
+          ca: shift,
+          gio: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          ma_may: selectedMachine?.code || machineRef.trim(),
+          ten_may: selectedMachine?.name || machineRef.trim(),
+          nhan_su: staff.trim(),
+          ghi_chu: note.trim(),
+          chi_tiet: materialLines
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo NVL tồn theo máy.');
+
+      setMessage('Đã lưu báo cáo NVL tồn theo máy.');
+      setLines([emptyMachineNvlLine()]);
+      setNote('');
+      await loadReports();
+    } catch (error: any) {
+      setMessage(error.message || 'Không thể lưu báo cáo.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteReport = async (id: string) => {
+    if (!id || !window.confirm('Xóa báo cáo NVL tồn theo máy này?')) return;
+    const res = await fetch(`/api/bao-cao-may-nvl-ton/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMessage(data.error || 'Không thể xóa báo cáo.');
+      return;
+    }
+    setReports(prev => prev.filter(report => report.id !== id));
+  };
+
+  return (
+    <div className="flex h-full flex-col bg-zinc-50">
+      <div className="border-b border-zinc-200 bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <BackButton onClick={onBack} className="h-10 rounded-xl" />
+            <div>
+              <h1 className="text-xl font-black text-zinc-900">Báo cáo NVL tồn theo máy</h1>
+              <p className="text-sm font-semibold text-zinc-500">Thủ kho nhập số lượng tồn thực tế cho từng máy.</p>
+            </div>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-right">
+            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Tổng tồn</p>
+            <p className="text-lg font-black text-emerald-900">{formatNumber(totalQuantity)} kg</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="grid gap-3 md:grid-cols-4">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                Ngày
+                <input type="date" value={date} onChange={event => setDate(event.target.value)} className={`${orderFieldClass} mt-1`} />
+              </label>
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                Ca
+                <input value={shift} onChange={event => setShift(event.target.value)} placeholder="Ca 1 / Ca 2..." className={`${orderFieldClass} mt-1`} />
+              </label>
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
+                Máy
+                <div className="mt-1">
+                  {renderMachineSelect(machineRef, setMachineRef, machines, {
+                    placeholder: 'Chọn máy',
+                    isLoading
+                  })}
+                </div>
+              </label>
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
+                Nhân sự
+                <input value={staff} onChange={event => setStaff(event.target.value)} placeholder="Tên người nhập" className={`${orderFieldClass} mt-1`} />
+              </label>
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
+                Ghi chú
+                <input value={note} onChange={event => setNote(event.target.value)} placeholder="Ghi chú chung" className={`${orderFieldClass} mt-1`} />
+              </label>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200">
+              <div className="grid grid-cols-[52px_1.2fr_1.5fr_90px_130px_1fr_48px] bg-zinc-950 px-3 py-2 text-xs font-black uppercase tracking-wider text-white">
+                <span>STT</span>
+                <span>Mã NVL</span>
+                <span>Tên NVL</span>
+                <span>ĐVT</span>
+                <span>SL tồn</span>
+                <span>Ghi chú</span>
+                <span></span>
+              </div>
+              <div className="divide-y divide-zinc-100">
+                {lines.map((line, index) => (
+                  <div key={line.key} className="grid grid-cols-[52px_1.2fr_1.5fr_90px_130px_1fr_48px] items-center gap-2 px-3 py-2">
+                    <span className="font-mono text-sm font-black text-[#ef1b2d]">{index + 1}</span>
+                    <SearchableSelect
+                      value={line.code}
+                      onChange={value => updateLine(line.key, { code: value })}
+                      options={materials}
+                      placeholder="Mã NVL"
+                      isLoading={isLoading}
+                      inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-bold outline-none focus:border-[#ef1b2d]"
+                      getLabel={item => `${(item as MaterialRow).code} - ${(item as MaterialRow).name}`}
+                      getValue={item => (item as MaterialRow).code}
+                      onSelectOption={item => selectMaterial(line.key, item as MaterialRow | null)}
+                    />
+                    <input value={line.name} onChange={event => updateLine(line.key, { name: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                    <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                    <input type="number" min="0" step="0.01" value={line.quantity} onChange={event => updateLine(line.key, { quantity: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]" />
+                    <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                    <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <button type="button" onClick={() => setLines(prev => [...prev, emptyMachineNvlLine()])} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-black text-zinc-800 hover:border-[#ef1b2d] hover:text-[#ef1b2d]">
+                <Plus className="h-4 w-4" />
+                Thêm dòng NVL
+              </button>
+              <div className="flex items-center gap-3">
+                {message && <span className="text-sm font-bold text-zinc-600">{message}</span>}
+                <button type="button" onClick={saveReport} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-[#ef1b2d] px-5 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-60">
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Lưu báo cáo
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-black text-zinc-900">Lịch sử báo cáo máy</h2>
+                <p className="text-xs font-semibold text-zinc-500">Các phiếu đã lưu gần nhất.</p>
+              </div>
+              <Boxes className="h-5 w-5 text-emerald-700" />
+            </div>
+            <div className="space-y-2">
+              {reports.map(report => (
+                <div key={report.id || `${report.ngay}-${report.maMay}-${report.ca}`} className="rounded-xl border border-zinc-200 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-black text-zinc-900">{report.tenMay || report.maMay || '-'}</p>
+                      <p className="text-xs font-semibold text-zinc-500">{report.ngay} · {report.ca} · {report.lines.length} NVL</p>
+                    </div>
+                    <button type="button" onClick={() => deleteReport(report.id)} className="rounded-lg border border-zinc-200 p-2 text-[#ef1b2d] hover:bg-red-50" title="Xóa báo cáo">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="mt-2 text-sm font-black text-emerald-800">{formatNumber(report.total)} kg</p>
+                  <div className="mt-2 max-h-28 overflow-y-auto rounded-lg bg-zinc-50 p-2 text-xs font-semibold text-zinc-600">
+                    {report.lines.slice(0, 6).map(line => (
+                      <div key={`${report.id}-${line.stt}`} className="flex justify-between gap-2">
+                        <span className="truncate">{line.maNvl || line.tenNvl}</span>
+                        <span className="font-mono font-black">{formatNumber(line.soLuongTon)} {line.donVi}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!isLoading && reports.length === 0 && (
+                <div className="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm font-bold text-zinc-400">
+                  Chưa có báo cáo NVL tồn theo máy.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SearchableProductCodeField({
   value,
   onChange,
@@ -4521,6 +5519,7 @@ interface ProductionOrderRow {
   productName: string;
   quantity: string;
   unit: string;
+  products: OrderProductLine[];
   status: string;
   customer: string;
   orderRef: string;
@@ -4530,6 +5529,2097 @@ interface ProductionOrderRow {
   shift: string;
   staff: string;
   note: string;
+  position: string;
+  priority: number;
+}
+
+function resolveMachineDisplayValue(machineRef: string, machines: MachineRow[] = []): string {
+  const trimmed = machineRef.trim();
+  if (!trimmed || trimmed === '-') return '';
+  const match = findMachineByRef(machines, trimmed);
+  return match ? machineSelectValue(match) : trimmed;
+}
+
+function resolveProductionOrderMachine(row: ProductionOrderRow, machines: MachineRow[] = []): string {
+  const machineRef = row.machine !== '-' ? row.machine : row.position !== '-' ? row.position : '';
+  return resolveMachineDisplayValue(machineRef, machines) || machineRef || '-';
+}
+
+function compareProductionOrderPriority(a: ProductionOrderRow, b: ProductionOrderRow): number {
+  const priorityA = a.priority > 0 ? a.priority : Number.MAX_SAFE_INTEGER;
+  const priorityB = b.priority > 0 ? b.priority : Number.MAX_SAFE_INTEGER;
+  if (priorityA !== priorityB) return priorityA - priorityB;
+
+  const idA = Number(a.id);
+  const idB = Number(b.id);
+  if (Number.isFinite(idA) && Number.isFinite(idB) && idA !== idB) {
+    return idB - idA;
+  }
+
+  return `${b.startDate} ${b.code}`.localeCompare(`${a.startDate} ${a.code}`, 'vi');
+}
+
+function isActiveProductionPlanOrder(row: ProductionOrderRow) {
+  return /đang|chờ|cho|active|sx/i.test(row.status);
+}
+
+type ProductionPlanLine = {
+  id: string;
+  code: string;
+  name: string;
+  productCode: string;
+  productName: string;
+  quantity: string;
+  unit: string;
+  products: OrderProductLine[];
+  status: string;
+  orderRef: string;
+  position: string;
+  staff: string;
+  shift: string;
+  priority: number;
+  note: string;
+};
+
+function getProductionOrderProductLines(row: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>): OrderProductLine[] {
+  if (row.products.length > 0) return row.products;
+  if (!row.productCode && !row.productName) return [];
+  return [
+    {
+      productCode: row.productCode,
+      productName: row.productName,
+      unit: row.unit,
+      quantity: row.quantity
+    }
+  ];
+}
+
+function getProductionPlanLineMaterialKeys(line: ProductionPlanLine): string[] {
+  if (line.products.length > 1) {
+    return line.products.map(product => `${line.id}__${product.productCode}`);
+  }
+  return [line.id];
+}
+
+function getProductionPlanLineMaterials(
+  line: ProductionPlanLine,
+  materialsByLine: Record<string, ProductionOrderMaterialLine[]>
+): ProductionOrderMaterialLine[] {
+  const merged = new Map<string, ProductionOrderMaterialLine>();
+
+  getProductionPlanLineMaterialKeys(line).forEach(key => {
+    (materialsByLine[key] ?? []).forEach(material => {
+      const mergeKey = `${normalizeProductCodeKey(material.code)}__${material.unit || '-'}`;
+      const existing = merged.get(mergeKey);
+      if (existing) {
+        existing.proposedQuantity = roundNplNumber(existing.proposedQuantity + material.proposedQuantity);
+      } else {
+        merged.set(mergeKey, { ...material });
+      }
+    });
+  });
+
+  return [...merged.values()];
+}
+
+function formatProductionOrderProductsSummary(row: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>) {
+  const products = getProductionOrderProductLines(row);
+  if (products.length === 0) return '-';
+  if (products.length === 1) {
+    const product = products[0];
+    return `${product.productCode || '-'} · ${product.productName || '-'} · ${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}`;
+  }
+  return products
+    .map(product => `${product.productCode || '-'} (${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''})`)
+    .join(' | ');
+}
+
+function productionOrderToPlanLine(
+  row: ProductionOrderRow,
+  priority: number,
+  machines: MachineRow[] = []
+): ProductionPlanLine {
+  const products = getProductionOrderProductLines(row);
+  const primaryProduct = products[0];
+
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    productCode: primaryProduct?.productCode ?? row.productCode,
+    productName: primaryProduct?.productName ?? row.productName,
+    quantity: primaryProduct?.quantity ?? row.quantity,
+    unit: primaryProduct?.unit ?? row.unit,
+    products,
+    status: row.status,
+    orderRef: row.orderRef,
+    position: resolveProductionOrderMachine(row, machines),
+    staff: row.staff,
+    shift: row.shift,
+    priority,
+    note: row.note
+  };
+}
+
+function buildInitialProductionPlanLines(
+  productionOrders: ProductionOrderRow[],
+  machines: MachineRow[] = []
+): ProductionPlanLine[] {
+  return productionOrders
+    .filter(isActiveProductionPlanOrder)
+    .sort(compareProductionOrderPriority)
+    .map((row, index) => productionOrderToPlanLine(row, row.priority > 0 ? row.priority : index + 1, machines));
+}
+
+function enrichProductionPlanLines(
+  planLines: ProductionPlanLine[],
+  productionOrders: ProductionOrderRow[],
+  machines: MachineRow[] = []
+): ProductionPlanLine[] {
+  const sourceById = new Map(productionOrders.map(row => [row.id, row]));
+
+  return planLines.map(line => {
+    const source = sourceById.get(line.id);
+    if (!source) return line;
+
+    return {
+      ...productionOrderToPlanLine(source, line.priority, machines),
+      note: line.note
+    };
+  });
+}
+
+type ProductionPlanPrintGroup = {
+  machine: string;
+  lines: ProductionPlanLine[];
+};
+
+function buildProductionPlanPrintGroups(lines: ProductionPlanLine[]): ProductionPlanPrintGroup[] {
+  const map = new Map<string, ProductionPlanLine[]>();
+
+  lines.forEach(line => {
+    const machine = line.position.trim() || 'Chưa gán máy';
+    if (!map.has(machine)) map.set(machine, []);
+    map.get(machine)!.push(line);
+  });
+
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'vi'))
+    .map(([machine, groupLines]) => ({
+      machine,
+      lines: [...groupLines].sort((a, b) => a.priority - b.priority)
+    }));
+}
+
+type ProductionPlanPrintRow = {
+  stt: number;
+  line: ProductionPlanLine;
+  machine: string;
+  machineRowSpan: number;
+};
+
+function buildProductionPlanPrintRows(lines: ProductionPlanLine[]): ProductionPlanPrintRow[] {
+  const groups = buildProductionPlanPrintGroups(lines);
+  const rows: ProductionPlanPrintRow[] = [];
+
+  groups.forEach(group => {
+    group.lines.forEach((line, index) => {
+      rows.push({
+        stt: rows.length + 1,
+        line,
+        machine: group.machine,
+        machineRowSpan: index === 0 ? group.lines.length : 0
+      });
+    });
+  });
+
+  return rows;
+}
+
+function ProductionPlanPrintSheet({
+  lines,
+  materialsByLine
+}: {
+  lines: ProductionPlanLine[];
+  materialsByLine: Record<string, ProductionOrderMaterialLine[]>;
+}) {
+  const printRows = buildProductionPlanPrintRows(lines);
+  const printDate = new Date().toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+
+  return (
+    <div className="production-plan-print-sheet">
+      <div className="production-plan-print-doc">
+        <header className="production-plan-print-header">
+          <div className="production-plan-print-brand">
+            <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="production-plan-print-logo" />
+            <div className="production-plan-print-company">
+              <p className="production-plan-print-company-name">{PRINT_COMPANY_NAME}</p>
+            </div>
+          </div>
+          <div className="production-plan-print-title-wrap">
+            <h1>KẾ HOẠCH SẢN XUẤT</h1>
+          </div>
+          <p className="production-plan-print-date">Ngày: {printDate}</p>
+        </header>
+
+        <table className="production-plan-print-table">
+          <thead>
+            <tr>
+              <th>STT</th>
+              <th>Tên máy</th>
+              <th>Ca làm việc</th>
+              <th>Nhân sự</th>
+              <th>Lệnh sản xuất</th>
+              <th>Vật tư / định mức tạm tính</th>
+              <th>Ghi chú</th>
+            </tr>
+          </thead>
+          <tbody>
+            {printRows.map(row => {
+              const materials = getProductionPlanLineMaterials(row.line, materialsByLine);
+
+              return (
+                <tr key={row.line.id}>
+                  <td className="production-plan-print-center">{row.stt}</td>
+                  {row.machineRowSpan > 0 && (
+                    <td rowSpan={row.machineRowSpan} className="production-plan-print-merged">
+                      {row.machine}
+                    </td>
+                  )}
+                  <td>{row.line.shift && row.line.shift !== '-' ? row.line.shift : '-'}</td>
+                  <td>{row.line.staff && row.line.staff !== '-' ? row.line.staff : '-'}</td>
+                  <td>
+                    <div className="production-plan-print-order-code">{row.line.code || '-'}</div>
+                    {(row.line.products.length > 0
+                      ? row.line.products
+                      : [{ productCode: row.line.productCode, productName: row.line.productName, quantity: row.line.quantity, unit: row.line.unit }]
+                    ).map(product => (
+                      <div key={`${row.line.id}-${product.productCode}`} className="production-plan-print-product-block">
+                        <div className="production-plan-print-product-name">
+                          {product.productName || product.productCode || '-'}
+                        </div>
+                        <div className="production-plan-print-order-meta">
+                          {product.quantity || '-'}
+                          {product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                    {row.line.orderRef ? (
+                      <div className="production-plan-print-order-meta">{row.line.orderRef}</div>
+                    ) : null}
+                  </td>
+                  <td>
+                    {materials.length === 0 ? (
+                      <span className="production-plan-print-empty-material">
+                        Chưa khai báo thành phần NPL
+                      </span>
+                    ) : (
+                      <div className="production-plan-print-material-list">
+                        {materials.map((material, index) => (
+                          <div key={`${row.line.id}-${material.code}-${index}`} className="production-plan-print-material-item">
+                            <span className="production-plan-print-material-name">
+                              {index + 1}. {material.code}{material.name ? ` - ${material.name}` : ''}
+                            </span>
+                            <span className="production-plan-print-material-qty">
+                              {formatProductionOrderPrintQuantity(material.proposedQuantity)}
+                              {material.unit ? ` ${material.unit}` : ''} ({material.normLabel})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td>{row.line.note || '-'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="production-plan-print-signatures">
+          <div>
+            <p>Người giao</p>
+            <span>(Ký, ghi rõ họ tên)</span>
+          </div>
+          <div>
+            <p>Người nhận</p>
+            <span>(Ký, ghi rõ họ tên)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+async function loadProductionPlanMaterials(
+  lines: ProductionPlanLine[]
+): Promise<Record<string, ProductionOrderMaterialLine[]>> {
+  const entries = await Promise.all(
+    lines.flatMap(line => {
+      const products =
+        line.products.length > 0
+          ? line.products
+          : [
+              {
+                productCode: line.productCode,
+                productName: line.productName,
+                unit: line.unit,
+                quantity: line.quantity
+              }
+            ];
+
+      return products.map(async product => {
+        const { items, product: catalogProduct } = await fetchProductPrintData(product.productCode);
+        const orderQuantity = parseProductionOrderQuantity(product.quantity);
+        const materialKey = products.length > 1 ? `${line.id}__${product.productCode}` : line.id;
+        return [materialKey, buildProductionOrderMaterialProposal(orderQuantity, items, catalogProduct)] as const;
+      });
+    })
+  );
+
+  return Object.fromEntries(entries);
+}
+
+type ProductionPlanMaterialAccountingDetail = {
+  lineId: string;
+  orderCode: string;
+  productName: string;
+  orderQuantity: string;
+  proposedQuantity: number;
+  normLabel: string;
+  shift: string;
+};
+
+type ProductionPlanMaterialAccountingLine = {
+  code: string;
+  name: string;
+  unit: string;
+  totalQuantity: number;
+  details: ProductionPlanMaterialAccountingDetail[];
+};
+
+type ProductionPlanMaterialAccountingShiftGroup = {
+  shift: string;
+  orderCount: number;
+  lines: ProductionPlanMaterialAccountingLine[];
+};
+
+type ProductionPlanWarehouseExportLine = {
+  code: string;
+  name: string;
+  unit: string;
+  actualQuantity: number;
+};
+
+function normalizeProductionPlanShift(shift: string) {
+  const trimmed = String(shift || '').trim();
+  return trimmed && trimmed !== '-' ? trimmed : 'Chưa phân ca';
+}
+
+function productionPlanAccountingKey(
+  shift: string,
+  material: Pick<ProductionPlanMaterialAccountingLine, 'code' | 'unit'>
+) {
+  return `${normalizeProductionPlanShift(shift)}__${normalizeProductCodeKey(material.code)}__${material.unit || '-'}`;
+}
+
+function buildInventoryTotalKgMap(materials: MaterialRow[]) {
+  const map = new Map<string, number>();
+
+  materials.forEach(material => {
+    const totalKg = parseInventoryNumber(material.totalWeight);
+    if (!material.code || totalKg === null || totalKg <= 0) return;
+    map.set(normalizeProductCodeKey(material.code), totalKg);
+  });
+
+  return map;
+}
+
+function lookupInventoryTotalKg(code: string, inventoryTotalKgByCode: Map<string, number>) {
+  return inventoryTotalKgByCode.get(normalizeProductCodeKey(code)) ?? null;
+}
+
+function suggestProductionPlanPackageQuantity(totalNorm: number, totalKg: number | null) {
+  if (totalKg === null || totalKg <= 0 || !Number.isFinite(totalNorm) || totalNorm <= 0) return '';
+  return String(roundNplNumber(totalNorm / totalKg));
+}
+
+function calcProductionPlanExpectedWeight(packageQuantity: number, totalKg: number | null) {
+  if (totalKg === null || totalKg <= 0 || !Number.isFinite(packageQuantity) || packageQuantity < 0) return '';
+  return String(roundNplNumber(packageQuantity * totalKg));
+}
+
+function resolveProductionPlanLineForMaterialKey(
+  scopedLines: ProductionPlanLine[],
+  materialKey: string
+): { line: ProductionPlanLine; product: OrderProductLine } | null {
+  const directLine = scopedLines.find(line => line.id === materialKey);
+  if (directLine) {
+    const products =
+      directLine.products.length > 0
+        ? directLine.products
+        : [
+            {
+              productCode: directLine.productCode,
+              productName: directLine.productName,
+              unit: directLine.unit,
+              quantity: directLine.quantity
+            }
+          ];
+    return { line: directLine, product: products[0] };
+  }
+
+  const separatorIndex = materialKey.indexOf('__');
+  if (separatorIndex <= 0) return null;
+
+  const orderId = materialKey.slice(0, separatorIndex);
+  const productCode = materialKey.slice(separatorIndex + 2);
+  const line = scopedLines.find(item => item.id === orderId);
+  if (!line) return null;
+
+  const products =
+    line.products.length > 0
+      ? line.products
+      : [
+          {
+            productCode: line.productCode,
+            productName: line.productName,
+            unit: line.unit,
+            quantity: line.quantity
+          }
+        ];
+  const product =
+    products.find(item => item.productCode === productCode) ??
+    ({
+      productCode,
+      productName: productCode,
+      unit: line.unit,
+      quantity: line.quantity
+    } as OrderProductLine);
+
+  return { line, product };
+}
+
+function buildProductionPlanMaterialAccountingForLines(
+  scopedLines: ProductionPlanLine[],
+  materialsByLine: Record<string, ProductionOrderMaterialLine[]>
+): ProductionPlanMaterialAccountingLine[] {
+  const scopedLineIds = new Set(scopedLines.map(line => line.id));
+  const map = new Map<string, ProductionPlanMaterialAccountingLine>();
+
+  Object.entries(materialsByLine).forEach(([materialKey, materials]) => {
+    const parentId = materialKey.includes('__') ? materialKey.slice(0, materialKey.indexOf('__')) : materialKey;
+    if (!scopedLineIds.has(parentId)) return;
+
+    const resolved = resolveProductionPlanLineForMaterialKey(scopedLines, materialKey);
+    if (!resolved) return;
+
+    const { line, product } = resolved;
+
+    materials.forEach(material => {
+      const code = material.code || '-';
+      const unit = material.unit || '-';
+      const key = `${normalizeProductCodeKey(code)}__${unit}`;
+      const existing =
+        map.get(key) ??
+        {
+          code,
+          name: material.name || code,
+          unit,
+          totalQuantity: 0,
+          details: []
+        };
+
+      existing.totalQuantity = roundNplNumber(existing.totalQuantity + material.proposedQuantity);
+      existing.details.push({
+        lineId: materialKey,
+        orderCode: line.code || '-',
+        productName: product.productName || product.productCode || '-',
+        orderQuantity:
+          product.quantity || product.unit
+            ? `${product.quantity || '-'}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}`
+            : '-',
+        proposedQuantity: material.proposedQuantity,
+        normLabel: material.normLabel,
+        shift: normalizeProductionPlanShift(line.shift)
+      });
+      map.set(key, existing);
+    });
+  });
+
+  return [...map.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+}
+
+function buildProductionPlanMaterialAccountingByShift(
+  lines: ProductionPlanLine[],
+  materialsByLine: Record<string, ProductionOrderMaterialLine[]>
+): ProductionPlanMaterialAccountingShiftGroup[] {
+  const shifts = [...new Set(lines.map(line => normalizeProductionPlanShift(line.shift)))].sort((a, b) =>
+    a.localeCompare(b, 'vi', { numeric: true })
+  );
+
+  return shifts.map(shift => {
+    const scopedLines = lines.filter(line => normalizeProductionPlanShift(line.shift) === shift);
+    return {
+      shift,
+      orderCount: scopedLines.length,
+      lines: buildProductionPlanMaterialAccountingForLines(scopedLines, materialsByLine)
+    };
+  });
+}
+
+function buildProductionPlanMaterialAccounting(
+  lines: ProductionPlanLine[],
+  materialsByLine: Record<string, ProductionOrderMaterialLine[]>
+): ProductionPlanMaterialAccountingLine[] {
+  return buildProductionPlanMaterialAccountingForLines(lines, materialsByLine);
+}
+
+function ProductionPlanMaterialAccountingModal({
+  open,
+  onClose,
+  lines,
+  materialsByLine,
+  inventoryMaterials,
+  isLoading,
+  error,
+  onReload,
+  onExportWarehouseSlip
+}: {
+  open: boolean;
+  onClose: () => void;
+  lines: ProductionPlanLine[];
+  materialsByLine: Record<string, ProductionOrderMaterialLine[]>;
+  inventoryMaterials: MaterialRow[];
+  isLoading: boolean;
+  error: string;
+  onReload: () => void;
+  onExportWarehouseSlip: (lines: ProductionPlanWarehouseExportLine[], shift: string) => void;
+}) {
+  const accountingShiftGroups = useMemo(
+    () => buildProductionPlanMaterialAccountingByShift(lines, materialsByLine),
+    [lines, materialsByLine]
+  );
+  const inventoryTotalKgByCode = useMemo(
+    () => buildInventoryTotalKgMap(inventoryMaterials),
+    [inventoryMaterials]
+  );
+  const [actualQuantities, setActualQuantities] = useState<Record<string, string>>({});
+  const [packageQuantities, setPackageQuantities] = useState<Record<string, string>>({});
+  const totalOrderCount = lines.length;
+  const totalMaterialCount = useMemo(
+    () =>
+      new Set(
+        accountingShiftGroups.flatMap(group =>
+          group.lines.map(material => `${normalizeProductCodeKey(material.code)}__${material.unit}`)
+        )
+      ).size,
+    [accountingShiftGroups]
+  );
+
+  const buildActualExportLinesForShift = (shift: string) =>
+    (accountingShiftGroups.find(group => group.shift === shift)?.lines ?? [])
+      .map(material => ({
+        code: material.code,
+        name: material.name,
+        unit: material.unit && material.unit !== '-' ? material.unit : '',
+        actualQuantity: parsePercentInput(actualQuantities[productionPlanAccountingKey(shift, material)] ?? '')
+      }))
+      .filter(line => Number.isFinite(line.actualQuantity) && line.actualQuantity > 0);
+
+  const allExportLines = useMemo(() => {
+    const merged = new Map<string, ProductionPlanWarehouseExportLine>();
+
+    accountingShiftGroups.forEach(group => {
+      buildActualExportLinesForShift(group.shift).forEach(line => {
+        const key = `${normalizeProductCodeKey(line.code)}__${line.unit}`;
+        const existing = merged.get(key);
+        if (existing) {
+          existing.actualQuantity = roundNplNumber(existing.actualQuantity + line.actualQuantity);
+        } else {
+          merged.set(key, { ...line });
+        }
+      });
+    });
+
+    return [...merged.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+  }, [accountingShiftGroups, actualQuantities]);
+
+  useEffect(() => {
+    if (!open || accountingShiftGroups.length === 0) return;
+
+    const suggestedPackages: Record<string, string> = {};
+    const suggestedWeights: Record<string, string> = {};
+
+    accountingShiftGroups.forEach(group => {
+      group.lines.forEach(material => {
+        const key = productionPlanAccountingKey(group.shift, material);
+        const totalKg = lookupInventoryTotalKg(material.code, inventoryTotalKgByCode);
+        const suggestedPackage = suggestProductionPlanPackageQuantity(material.totalQuantity, totalKg);
+        const suggestedWeight = calcProductionPlanExpectedWeight(
+          parsePercentInput(suggestedPackage),
+          totalKg
+        );
+
+        if (suggestedPackage) suggestedPackages[key] = suggestedPackage;
+        if (suggestedWeight) suggestedWeights[key] = suggestedWeight;
+      });
+    });
+
+    setPackageQuantities(prev => {
+      const next = { ...prev };
+      let changed = false;
+      Object.entries(suggestedPackages).forEach(([key, value]) => {
+        if (next[key] === undefined) {
+          next[key] = value;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    setActualQuantities(prev => {
+      const next = { ...prev };
+      let changed = false;
+      Object.entries(suggestedWeights).forEach(([key, value]) => {
+        if (next[key] === undefined) {
+          next[key] = value;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [open, accountingShiftGroups, inventoryTotalKgByCode]);
+
+  const handleActualQuantityChange = (
+    shift: string,
+    material: ProductionPlanMaterialAccountingLine,
+    value: string
+  ) => {
+    setActualQuantities(prev => ({
+      ...prev,
+      [productionPlanAccountingKey(shift, material)]: value
+    }));
+  };
+
+  const handlePackageQuantityChange = (
+    shift: string,
+    material: ProductionPlanMaterialAccountingLine,
+    value: string
+  ) => {
+    const key = productionPlanAccountingKey(shift, material);
+    const packageQuantity = parsePercentInput(value);
+    const totalKg = lookupInventoryTotalKg(material.code, inventoryTotalKgByCode);
+
+    setPackageQuantities(prev => ({
+      ...prev,
+      [key]: value
+    }));
+
+    setActualQuantities(prev => ({
+      ...prev,
+      [key]: calcProductionPlanExpectedWeight(packageQuantity, totalKg)
+    }));
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-3">
+      <div className="flex max-h-[94vh] w-full max-w-[min(98vw,1920px)] flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
+          <div>
+            <h3 className="text-lg font-black text-zinc-950">Hạch toán định mức NVL</h3>
+            <p className="mt-1 text-sm font-medium text-zinc-500">
+              Tổng hợp NVL tạm tính theo từng ca từ {totalOrderCount} lệnh SX trong kế hoạch hiện tại.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+          >
+            Đóng
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-5">
+          {error && (
+            <p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
+              {error}
+            </p>
+          )}
+
+          <div className="mb-3 grid gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lệnh SX</p>
+              <p className="mt-1 text-xl font-black text-zinc-950">{totalOrderCount}</p>
+            </div>
+            <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-sky-700">Số ca</p>
+              <p className="mt-1 text-xl font-black text-sky-800">{accountingShiftGroups.length}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Mã NVL</p>
+              <p className="mt-1 text-xl font-black text-emerald-800">{totalMaterialCount}</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tổng kg / kiện</p>
+              <p className="mt-1 text-sm font-extrabold text-zinc-800">Tra từ Kho NVL theo mã NVL</p>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <p className="py-10 text-center text-sm font-semibold text-zinc-400">
+              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+              Đang tính định mức NVL...
+            </p>
+          ) : accountingShiftGroups.length === 0 || accountingShiftGroups.every(group => group.lines.length === 0) ? (
+            <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm font-semibold text-zinc-500">
+              Chưa có NVL để hạch toán. Kiểm tra thành phần NPL trong danh mục sản phẩm.
+            </p>
+          ) : (
+            <div className="space-y-5">
+              {accountingShiftGroups.map(group => {
+                const shiftExportLines = buildActualExportLinesForShift(group.shift);
+
+                return (
+                  <section key={group.shift} className="overflow-hidden rounded-xl border border-zinc-200">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-950 px-4 py-3 text-white">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wider text-red-300">Ca làm việc</p>
+                        <h4 className="text-lg font-black">{group.shift}</h4>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                        <span className="rounded-full bg-white/10 px-2.5 py-1">{group.orderCount} lệnh SX</span>
+                        <span className="rounded-full bg-white/10 px-2.5 py-1">{group.lines.length} mã NVL</span>
+                        <button
+                          type="button"
+                          onClick={() => onExportWarehouseSlip(shiftExportLines, group.shift)}
+                          disabled={isLoading || shiftExportLines.length === 0}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <ArrowUpFromLine className="h-3.5 w-3.5" />
+                          Xuất kho {group.shift}
+                        </button>
+                      </div>
+                    </div>
+
+                    {group.lines.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-sm font-semibold text-zinc-500">
+                        Ca này chưa có NVL để hạch toán.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-[1680px] w-full text-left text-sm">
+                          <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-700">
+                            <tr>
+                              <th className="px-3 py-2 font-black">STT</th>
+                              <th className="min-w-[148px] px-3 py-2 font-black">Mã NVL</th>
+                              <th className="px-3 py-2 font-black">Tên NVL</th>
+                              <th className="px-3 py-2 font-black">ĐVT</th>
+                              <th className="px-3 py-2 text-right font-black">Tổng định mức</th>
+                              <th className="px-3 py-2 text-right font-black">Tổng kg</th>
+                              <th className="w-[88px] max-w-[88px] px-2 py-2 font-black leading-tight">Số lượng xuất kiện</th>
+                              <th className="w-[88px] max-w-[88px] px-2 py-2 text-right font-black leading-tight">Khối lượng xuất dự kiến</th>
+                              <th className="w-[88px] max-w-[88px] px-2 py-2 font-black leading-tight">Số lượng xuất thực tế</th>
+                              <th className="max-w-[220px] px-3 py-2 font-black">Chi tiết lệnh SX</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {group.lines.map((material, index) => {
+                              const totalKg = lookupInventoryTotalKg(material.code, inventoryTotalKgByCode);
+                              const accountingKey = productionPlanAccountingKey(group.shift, material);
+                              const packageQty = parsePercentInput(packageQuantities[accountingKey] ?? '');
+                              const expectedExportWeight = calcProductionPlanExpectedWeight(packageQty, totalKg);
+
+                              return (
+                              <tr key={`${group.shift}-${material.code}-${material.unit}`}>
+                                <td className="px-3 py-2 font-black text-emerald-700">{index + 1}</td>
+                                <td className="min-w-[148px] whitespace-nowrap px-3 py-2 font-mono font-bold text-zinc-900">
+                                  {material.code}
+                                </td>
+                                <td className="px-3 py-2 font-semibold text-zinc-800">{material.name}</td>
+                                <td className="px-3 py-2 text-zinc-700">{material.unit}</td>
+                                <td className="px-3 py-2 text-right font-black text-[#ef1b2d]">
+                                  {formatProductionOrderPrintQuantity(material.totalQuantity)}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono font-bold text-zinc-800">
+                                  {totalKg !== null ? formatNumber(totalKg, 2) : '-'}
+                                </td>
+                                <td className="w-[88px] max-w-[88px] px-2 py-2">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={packageQuantities[accountingKey] ?? ''}
+                                    onChange={event =>
+                                      handlePackageQuantityChange(group.shift, material, event.target.value)
+                                    }
+                                    title={
+                                      totalKg
+                                        ? `Tổng định mức ÷ ${formatNumber(totalKg, 2)} kg`
+                                        : 'Chưa tìm thấy Tổng kg trong Kho NVL'
+                                    }
+                                    className="h-9 w-[84px] rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-xs font-black text-emerald-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                                    placeholder={totalKg ? 'Kiện' : '-'}
+                                  />
+                                </td>
+                                <td className="w-[88px] max-w-[88px] px-2 py-2 text-right">
+                                  <p
+                                    className="font-mono text-sm font-black text-sky-800"
+                                    title={
+                                      totalKg && expectedExportWeight
+                                        ? `Số kiện × ${formatNumber(totalKg, 2)} kg`
+                                        : undefined
+                                    }
+                                  >
+                                    {expectedExportWeight || '-'}
+                                  </p>
+                                </td>
+                                <td className="w-[88px] max-w-[88px] px-2 py-2">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={actualQuantities[accountingKey] ?? ''}
+                                    onChange={event =>
+                                      handleActualQuantityChange(group.shift, material, event.target.value)
+                                    }
+                                    className="h-9 w-[84px] rounded-lg border border-amber-200 bg-amber-50 px-2 text-xs font-black text-amber-900 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                                    placeholder="Thực tế"
+                                  />
+                                </td>
+                                <td className="max-w-[220px] px-3 py-2 align-top">
+                                  <div className="space-y-1.5">
+                                    {material.details.map(detail => (
+                                      <div
+                                        key={`${group.shift}-${material.code}-${detail.lineId}-${detail.normLabel}`}
+                                        className="rounded-lg bg-zinc-50 px-2 py-1.5"
+                                      >
+                                        <p className="font-bold leading-snug text-zinc-900">
+                                          {detail.orderCode} · {detail.productName}
+                                        </p>
+                                        <p className="text-xs font-semibold leading-snug text-zinc-500">
+                                          SL lệnh: {detail.orderQuantity}
+                                        </p>
+                                        <p className="text-xs font-semibold leading-snug text-zinc-500">
+                                          Định mức: {detail.normLabel} · NVL:{' '}
+                                          {formatProductionOrderPrintQuantity(detail.proposedQuantity)} {material.unit}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-4 sm:px-5">
+          <button
+            type="button"
+            onClick={() => onExportWarehouseSlip(allExportLines, 'Tất cả các ca')}
+            disabled={isLoading || allExportLines.length === 0}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <ArrowUpFromLine className="h-4 w-4" />
+            Xuất kho NVL
+          </button>
+          <button
+            type="button"
+            onClick={onReload}
+            disabled={isLoading}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-extrabold text-zinc-800 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+            Tính lại
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type ProductionPlanQrLabel = {
+  id: string;
+  qrPayload: string;
+  displayCode: string;
+  displayName: string;
+  orderCode: string;
+  quantity: number;
+};
+
+function buildProductionPlanQrPayload(productCode: string, orderCode: string) {
+  const maSp = productCode.trim();
+  const maLenh = orderCode.trim();
+  if (maSp && maLenh) return `${maSp}+${maLenh}`;
+  return maSp || maLenh;
+}
+
+function buildProductionPlanQrLabels(
+  lines: ProductionPlanLine[],
+  selectedShift: string,
+  products: ProductRow[]
+): ProductionPlanQrLabel[] {
+  const labels: ProductionPlanQrLabel[] = [];
+
+  lines
+    .filter(line => line.shift === selectedShift)
+    .forEach(line => {
+      const quantity = Math.max(0, Math.floor(parseProductionOrderQuantity(line.quantity)));
+      if (quantity <= 0) return;
+
+      const product = findProductByCode(products, line.productCode);
+      const displayCode = product?.code || line.productCode || '-';
+      const displayName = product?.name || line.productName || line.name || '-';
+      const qrPayload = buildProductionPlanQrPayload(displayCode, line.code);
+
+      for (let index = 0; index < quantity; index += 1) {
+        labels.push({
+          id: `${line.id}-${index}`,
+          qrPayload,
+          displayCode,
+          displayName,
+          orderCode: line.code,
+          quantity: 1
+        });
+      }
+    });
+
+  return labels;
+}
+
+function ProductionPlanQrPrintSheet({
+  labels,
+  qrImages
+}: {
+  labels: ProductionPlanQrLabel[];
+  qrImages: Record<string, string>;
+}) {
+  return (
+    <div className="production-plan-qr-print-sheet">
+      <div className="production-plan-qr-print-page">
+        {labels.map(label => (
+          <div key={label.id} className="production-plan-qr-print-card">
+            <p className="production-plan-qr-print-code">{label.displayCode}</p>
+            <p className="production-plan-qr-print-name">{label.displayName}</p>
+            <div className="production-plan-qr-print-code-wrap">
+              {qrImages[label.qrPayload] && (
+                <img src={qrImages[label.qrPayload]} alt={`QR ${label.qrPayload}`} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProductionPlanQrPrintModal({
+  open,
+  onClose,
+  lines
+}: {
+  open: boolean;
+  onClose: () => void;
+  lines: ProductionPlanLine[];
+}) {
+  const shiftOptions = useMemo(
+    () =>
+      [...new Set(lines.map(line => line.shift).filter(shift => shift && shift !== '-'))].sort((a, b) =>
+        a.localeCompare(b, 'vi')
+      ),
+    [lines]
+  );
+  const [selectedShift, setSelectedShift] = useState('');
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [printLabels, setPrintLabels] = useState<ProductionPlanQrLabel[]>([]);
+  const [qrImages, setQrImages] = useState<Record<string, string>>({});
+  const [pendingPrint, setPendingPrint] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedShift(shiftOptions[0] ?? '');
+    setFormError('');
+    setPrintLabels([]);
+    setQrImages({});
+    setPendingPrint(false);
+  }, [open, shiftOptions]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+
+    (async () => {
+      setIsLoadingProducts(true);
+      try {
+        const res = await fetch('/api/san-pham?format=table');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách sản phẩm.');
+        if (!cancelled) setProducts(normalizeProducts(data));
+      } catch (error: any) {
+        if (!cancelled) setFormError(error.message || 'Không thể tải danh sách sản phẩm.');
+      } finally {
+        if (!cancelled) setIsLoadingProducts(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const previewGroups = useMemo(() => {
+    if (!selectedShift) return [];
+
+    return lines
+      .filter(line => line.shift === selectedShift)
+      .map(line => {
+        const product = findProductByCode(products, line.productCode);
+        const displayCode = product?.code || line.productCode || '-';
+        const displayName = product?.name || line.productName || line.name || '-';
+        const quantity = Math.max(0, Math.floor(parseProductionOrderQuantity(line.quantity)));
+
+        return {
+          id: line.id,
+          orderCode: line.code,
+          displayCode,
+          displayName,
+          quantity,
+          qrPayload: buildProductionPlanQrPayload(displayCode, line.code)
+        };
+      })
+      .filter(group => group.quantity > 0);
+  }, [lines, selectedShift, products]);
+
+  const totalQrCount = useMemo(
+    () => previewGroups.reduce((sum, group) => sum + group.quantity, 0),
+    [previewGroups]
+  );
+
+  useEffect(() => {
+    if (!pendingPrint || printLabels.length === 0) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingPrint(false);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [pendingPrint, printLabels, qrImages]);
+
+  const handlePrint = async () => {
+    if (!selectedShift) {
+      setFormError('Vui lòng chọn ca.');
+      return;
+    }
+
+    const labels = buildProductionPlanQrLabels(lines, selectedShift, products);
+    if (labels.length === 0) {
+      setFormError('Không có sản phẩm nào trong ca đã chọn để in QR.');
+      return;
+    }
+
+    setIsGenerating(true);
+    setFormError('');
+
+    try {
+      const uniquePayloads = [...new Set(labels.map(label => label.qrPayload))];
+      const imageEntries = await Promise.all(
+        uniquePayloads.map(async payload => {
+          const url = await QRCode.toDataURL(payload, {
+            errorCorrectionLevel: 'H',
+            margin: 1,
+            width: 220,
+            color: {
+              dark: '#111111',
+              light: '#ffffff'
+            }
+          });
+          return [payload, url] as const;
+        })
+      );
+
+      setQrImages(Object.fromEntries(imageEntries));
+      setPrintLabels(labels);
+      setPendingPrint(true);
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể tạo mã QR.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+        <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
+            <div>
+              <h3 className="text-lg font-black text-zinc-950">In QR sản phẩm theo ca</h3>
+              <p className="mt-1 text-sm font-medium text-zinc-500">
+                Số lượng tem QR = số lượng SP. Nội dung QR: mã SP + mã lệnh SX.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-5">
+            {formError && (
+              <p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
+                {formError}
+              </p>
+            )}
+
+            <label className="mb-4 block space-y-1">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Chọn ca</span>
+              <select
+                value={selectedShift}
+                onChange={event => setSelectedShift(event.target.value)}
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="">-- Chọn ca --</option>
+                {shiftOptions.map(shift => (
+                  <option key={shift} value={shift}>
+                    {shift}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {isLoadingProducts ? (
+              <p className="py-6 text-center text-sm font-semibold text-zinc-400">
+                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                Đang tải sản phẩm...
+              </p>
+            ) : selectedShift && previewGroups.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm font-semibold text-zinc-500">
+                Ca này chưa có lệnh SX với số lượng hợp lệ.
+              </p>
+            ) : selectedShift ? (
+              <div className="space-y-3">
+                <p className="text-sm font-black text-emerald-800">
+                  Sẽ in <span className="text-[#ef1b2d]">{totalQrCount}</span> tem QR
+                </p>
+                <div className="overflow-x-auto rounded-xl border border-zinc-200">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                      <tr>
+                        <th className="px-3 py-2 font-black">Mã SP</th>
+                        <th className="px-3 py-2 font-black">Tên sản phẩm</th>
+                        <th className="px-3 py-2 font-black">Lệnh SX</th>
+                        <th className="px-3 py-2 font-black">Nội dung QR</th>
+                        <th className="px-3 py-2 text-right font-black">Số tem</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {previewGroups.map(group => (
+                        <tr key={group.id}>
+                          <td className="px-3 py-2 font-mono font-bold text-zinc-800">{group.displayCode}</td>
+                          <td className="px-3 py-2 text-zinc-700">{group.displayName}</td>
+                          <td className="px-3 py-2 font-semibold text-zinc-800">{group.orderCode}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-zinc-600">{group.qrPayload}</td>
+                          <td className="px-3 py-2 text-right font-black text-emerald-700">{group.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-4 sm:px-5">
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={isGenerating || isLoadingProducts || !selectedShift || totalQrCount === 0}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+              In {totalQrCount > 0 ? `${totalQrCount} tem QR` : 'QR'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {pendingPrint && printLabels.length > 0 && (
+        <ProductionPlanQrPrintSheet labels={printLabels} qrImages={qrImages} />
+      )}
+    </>
+  );
+}
+
+function todayDateInputValue() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function buildProductionPlanSaveItems(lines: ProductionPlanLine[]) {
+  return lines.map((line, index) => {
+    const products =
+      line.products.length > 0
+        ? line.products
+        : [
+            {
+              productCode: line.productCode,
+              productName: line.productName,
+              unit: line.unit,
+              quantity: line.quantity
+            }
+          ];
+
+    return {
+      id: line.id,
+      thu_tu_uu_tien: index + 1,
+      vi_tri: line.position && line.position !== '-' ? line.position : null,
+      ghi_chu: line.note.trim() || null,
+      ma_lenh_sx: line.code,
+      ma_don_hang: line.orderRef && line.orderRef !== '-' ? line.orderRef : '',
+      ca: line.shift && line.shift !== '-' ? line.shift : '',
+      may: line.position && line.position !== '-' ? line.position : '',
+      nhan_su: line.staff && line.staff !== '-' ? line.staff : '',
+      san_pham: products.map(product => ({
+        ma_sp: product.productCode,
+        ten_sp: product.productName,
+        don_vi: product.unit && product.unit !== '-' ? product.unit : '',
+        so_luong: parseProductionOrderQuantity(product.quantity)
+      }))
+    };
+  });
+}
+
+type ProductionPlanHistorySummary = {
+  id: string;
+  code: string;
+  planDate: string;
+  status: string;
+  orderCount: number;
+  note: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+type ProductionPlanHistoryLine = {
+  id: string;
+  priority: number;
+  position: string;
+  note: string;
+  orderCode: string;
+  orderRef: string;
+  shift: string;
+  machine: string;
+  staff: string;
+  products: OrderProductLine[];
+};
+
+function normalizeProductionPlanHistory(data: unknown): ProductionPlanHistorySummary[] {
+  if (!data || typeof data !== 'object') return [];
+  const plans = (data as { plans?: unknown }).plans;
+  if (!Array.isArray(plans)) return [];
+
+  return plans
+    .map((item): ProductionPlanHistorySummary | null => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const id = String(record.id ?? '').trim();
+      if (!id) return null;
+
+      return {
+        id,
+        code: pickText(record, ['ma_ke_hoach', 'code'], '-'),
+        planDate: formatCell(record.ngay_ke_hoach ?? record.planDate),
+        status: pickText(record, ['trang_thai', 'status'], '-'),
+        orderCount: Number(record.so_lenh ?? record.orderCount ?? 0) || 0,
+        note: pickText(record, ['ghi_chu', 'note'], ''),
+        createdBy: pickText(record, ['nguoi_lap', 'createdBy'], ''),
+        createdAt: formatCell(record.created_at ?? record.createdAt)
+      };
+    })
+    .filter((row): row is ProductionPlanHistorySummary => Boolean(row));
+}
+
+function normalizeProductionPlanHistoryLines(data: unknown): ProductionPlanHistoryLine[] {
+  if (!data || typeof data !== 'object') return [];
+  const lines = (data as { lines?: unknown }).lines;
+  if (!Array.isArray(lines)) return [];
+
+  return lines
+    .map((item): ProductionPlanHistoryLine | null => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const products = parseOrderProductsFromRecord({
+        san_pham: record.san_pham,
+        ma_hang: record.ma_lenh_sx,
+        ten_hang: record.ten_hang,
+        don_vi: record.don_vi,
+        so_luong: record.so_luong
+      });
+
+      return {
+        id: String(record.id ?? '').trim() || `${record.ma_lenh_sx}-${record.thu_tu_uu_tien}`,
+        priority: Number(record.thu_tu_uu_tien ?? 0) || 0,
+        position: pickText(record, ['vi_tri', 'position'], '-'),
+        note: pickText(record, ['ghi_chu', 'note'], ''),
+        orderCode: pickText(record, ['ma_lenh_sx', 'code'], '-'),
+        orderRef: pickText(record, ['ma_don_hang', 'orderRef'], '-'),
+        shift: pickText(record, ['ca', 'shift'], '-'),
+        machine: pickText(record, ['may', 'machine'], '-'),
+        staff: pickText(record, ['nhan_su', 'staff'], '-'),
+        products
+      };
+    })
+    .filter((row): row is ProductionPlanHistoryLine => Boolean(row))
+    .sort((a, b) => a.priority - b.priority);
+}
+
+function formatProductionPlanHistoryProducts(products: OrderProductLine[]) {
+  if (products.length === 0) return '-';
+  return products
+    .map(product => {
+      const qty = product.quantity && product.quantity !== '-' ? product.quantity : '';
+      const unit = product.unit && product.unit !== '-' ? ` ${product.unit}` : '';
+      return `${product.productName || product.productCode || '-'}${qty ? ` (${qty}${unit})` : ''}`;
+    })
+    .join(' · ');
+}
+
+function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
+  const [filterDate, setFilterDate] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [plans, setPlans] = useState<ProductionPlanHistorySummary[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [selectedLines, setSelectedLines] = useState<ProductionPlanHistoryLine[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const loadPlans = async (options?: { ngay?: string; tuNgay?: string; denNgay?: string }) => {
+    setIsLoading(true);
+    setLoadError('');
+
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', '200');
+      if (options?.ngay) {
+        params.set('ngay', options.ngay);
+      } else {
+        if (options?.tuNgay) params.set('tu_ngay', options.tuNgay);
+        if (options?.denNgay) params.set('den_ngay', options.denNgay);
+      }
+
+      const res = await fetch(`/api/ke-hoach-sx?${params.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể tải kế hoạch sản xuất.');
+      }
+
+      const nextPlans = normalizeProductionPlanHistory(data);
+      setPlans(nextPlans);
+      if (selectedPlanId && !nextPlans.some(plan => plan.id === selectedPlanId)) {
+        setSelectedPlanId('');
+        setSelectedLines([]);
+      }
+    } catch (error: any) {
+      setPlans([]);
+      setLoadError(error.message || 'Không thể tải kế hoạch sản xuất.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadPlanDetail = async (planId: string) => {
+    setIsLoadingDetail(true);
+    setLoadError('');
+
+    try {
+      const res = await fetch(`/api/ke-hoach-sx?id=${encodeURIComponent(planId)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể tải chi tiết kế hoạch.');
+      }
+
+      setSelectedPlanId(planId);
+      setSelectedLines(normalizeProductionPlanHistoryLines(data));
+    } catch (error: any) {
+      setSelectedLines([]);
+      setLoadError(error.message || 'Không thể tải chi tiết kế hoạch.');
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPlans();
+  }, []);
+
+  const selectedPlan = plans.find(plan => plan.id === selectedPlanId) ?? null;
+  const plansByDate = useMemo(() => {
+    const map = new Map<string, ProductionPlanHistorySummary[]>();
+    plans.forEach(plan => {
+      const key = plan.planDate && plan.planDate !== '-' ? plan.planDate : 'Chưa có ngày';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(plan);
+    });
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0], 'vi'));
+  }, [plans]);
+
+  const applyFilters = () => {
+    if (filterDate) {
+      void loadPlans({ ngay: filterDate });
+      return;
+    }
+    void loadPlans({ tuNgay: fromDate, denNgay: toDate });
+  };
+
+  const resetToToday = () => {
+    const today = todayDateInputValue();
+    setFilterDate(today);
+    setFromDate('');
+    setToDate('');
+    void loadPlans({ ngay: today });
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-[1680px] space-y-4">
+      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
+        <div className="bg-zinc-950 p-4 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-red-300">Báo cáo sản xuất</p>
+              <h2 className="mt-1 text-2xl font-black leading-tight">Kế hoạch sản xuất theo ngày</h2>
+              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
+                Tra cứu snapshot kế hoạch đã lưu từ bảng ke_hoach_san_xuat.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onBack}
+              className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
+            >
+              Menu
+            </button>
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
+            {[
+              ['Bản ghi', plans.length],
+              ['Ngày có KH', plansByDate.length],
+              ['Đang xem', selectedPlan ? 1 : 0]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <span className="block font-bold text-zinc-400">{label}</span>
+                <span className="mt-1 block text-xl font-black text-white">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Theo ngày</span>
+            <input
+              type="date"
+              value={filterDate}
+              onChange={event => {
+                setFilterDate(event.target.value);
+                setFromDate('');
+                setToDate('');
+              }}
+              className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={event => {
+                setFromDate(event.target.value);
+                setFilterDate('');
+              }}
+              className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Đến ngày</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={event => {
+                setToDate(event.target.value);
+                setFilterDate('');
+              }}
+              className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={applyFilters}
+            disabled={isLoading}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            Lọc
+          </button>
+          <button
+            type="button"
+            onClick={resetToToday}
+            disabled={isLoading}
+            className="inline-flex h-10 items-center rounded-xl border border-zinc-200 px-4 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Hôm nay
+          </button>
+        </div>
+
+        {loadError && (
+          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+            {loadError}
+          </p>
+        )}
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
+        <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+          <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-3">
+            <h3 className="text-sm font-black text-zinc-950">Danh sách kế hoạch</h3>
+          </div>
+          <div className="max-h-[70vh] overflow-auto">
+            {isLoading ? (
+              <p className="px-4 py-8 text-center text-sm font-semibold text-zinc-400">
+                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                Đang tải...
+              </p>
+            ) : plans.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm font-semibold text-zinc-500">
+                Chưa có kế hoạch đã lưu. Lưu từ modal Kế hoạch sản xuất hoặc chạy supabase-ke-hoach-san-xuat.sql.
+              </p>
+            ) : (
+              <div className="divide-y divide-zinc-100">
+                {plansByDate.map(([date, datePlans]) => (
+                  <div key={date}>
+                    <div className="sticky top-0 bg-zinc-950 px-4 py-2 text-xs font-black uppercase tracking-wider text-red-300">
+                      {date}
+                    </div>
+                    {datePlans.map(plan => (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        onClick={() => void loadPlanDetail(plan.id)}
+                        className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition hover:bg-red-50/50 ${
+                          selectedPlanId === plan.id ? 'bg-emerald-50' : ''
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="font-mono text-sm font-black text-zinc-950">{plan.code}</p>
+                          <p className="mt-0.5 text-xs font-semibold text-zinc-600">
+                            {plan.orderCount} lệnh SX · {plan.status}
+                          </p>
+                          {plan.note ? (
+                            <p className="mt-1 text-xs font-medium text-zinc-500">{plan.note}</p>
+                          ) : null}
+                        </div>
+                        <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-zinc-400" />
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+          <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-3">
+            <h3 className="text-sm font-black text-zinc-950">Chi tiết kế hoạch</h3>
+            {selectedPlan ? (
+              <p className="mt-1 text-xs font-semibold text-zinc-600">
+                {selectedPlan.code} · {selectedPlan.planDate} · {selectedPlan.orderCount} lệnh
+              </p>
+            ) : (
+              <p className="mt-1 text-xs font-semibold text-zinc-500">Chọn một bản ghi bên trái để xem chi tiết.</p>
+            )}
+          </div>
+
+          {!selectedPlan ? (
+            <p className="px-4 py-10 text-center text-sm font-semibold text-zinc-500">Chưa chọn kế hoạch.</p>
+          ) : isLoadingDetail ? (
+            <p className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
+              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+              Đang tải chi tiết...
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[920px] w-full text-left text-sm">
+                <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                  <tr>
+                    <th className="px-3 py-2 font-black">STT</th>
+                    <th className="px-3 py-2 font-black">Mã lệnh</th>
+                    <th className="px-3 py-2 font-black">Máy</th>
+                    <th className="px-3 py-2 font-black">Ca</th>
+                    <th className="px-3 py-2 font-black">Nhân sự</th>
+                    <th className="px-3 py-2 font-black">Sản phẩm</th>
+                    <th className="px-3 py-2 font-black">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {selectedLines.map(line => (
+                    <tr key={line.id}>
+                      <td className="px-3 py-2 font-black text-emerald-700">{line.priority}</td>
+                      <td className="px-3 py-2">
+                        <p className="font-mono font-bold text-zinc-900">{line.orderCode}</p>
+                        {line.orderRef !== '-' ? (
+                          <p className="text-xs font-semibold text-zinc-500">{line.orderRef}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-zinc-700">{line.machine !== '-' ? line.machine : line.position}</td>
+                      <td className="px-3 py-2 text-zinc-700">{line.shift}</td>
+                      <td className="px-3 py-2 text-zinc-600">{line.staff}</td>
+                      <td className="px-3 py-2 text-zinc-800">{formatProductionPlanHistoryProducts(line.products)}</td>
+                      <td className="px-3 py-2 text-zinc-600">{line.note || '-'}</td>
+                    </tr>
+                  ))}
+                  {selectedLines.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-8 text-center font-semibold text-zinc-500">
+                        Kế hoạch này chưa có dòng chi tiết.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ProductionPlanModal({
+  open,
+  onClose,
+  onSaved,
+  onOpenWarehouseSlip,
+  productionOrders,
+  machines
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+  onOpenWarehouseSlip: () => void;
+  productionOrders: ProductionOrderRow[];
+  machines: MachineRow[];
+}) {
+  const [planLines, setPlanLines] = useState<ProductionPlanLine[]>([]);
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [pendingPrint, setPendingPrint] = useState(false);
+  const [isLoadingPlanPrint, setIsLoadingPlanPrint] = useState(false);
+  const [printMaterialsByLine, setPrintMaterialsByLine] = useState<Record<string, ProductionOrderMaterialLine[]>>({});
+  const [showMaterialAccountingModal, setShowMaterialAccountingModal] = useState(false);
+  const [isLoadingMaterialAccounting, setIsLoadingMaterialAccounting] = useState(false);
+  const [materialAccountingError, setMaterialAccountingError] = useState('');
+  const [accountingMaterialsByLine, setAccountingMaterialsByLine] = useState<Record<string, ProductionOrderMaterialLine[]>>({});
+  const [accountingInventoryMaterials, setAccountingInventoryMaterials] = useState<MaterialRow[]>([]);
+  const [showQrPrintModal, setShowQrPrintModal] = useState(false);
+  const [planDate, setPlanDate] = useState(todayDateInputValue());
+  const [planHeaderNote, setPlanHeaderNote] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setPlanLines(buildInitialProductionPlanLines(productionOrders, machines));
+    setFormError('');
+    setDragIndex(null);
+    setPendingPrint(false);
+    setIsLoadingPlanPrint(false);
+    setPrintMaterialsByLine({});
+    setShowMaterialAccountingModal(false);
+    setIsLoadingMaterialAccounting(false);
+    setMaterialAccountingError('');
+    setAccountingMaterialsByLine({});
+    setAccountingInventoryMaterials([]);
+    setShowQrPrintModal(false);
+    setPlanDate(todayDateInputValue());
+    setPlanHeaderNote('');
+  }, [open, productionOrders, machines]);
+
+  const displayLines = useMemo(
+    () => enrichProductionPlanLines(planLines, productionOrders, machines),
+    [planLines, productionOrders, machines]
+  );
+
+  useEffect(() => {
+    if (!pendingPrint || displayLines.length === 0) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingPrint(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [pendingPrint, displayLines]);
+
+  const reorderLine = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    setPlanLines(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next.map((line, index) => ({ ...line, priority: index + 1 }));
+    });
+  };
+
+  const moveLine = (index: number, direction: -1 | 1) => {
+    reorderLine(index, index + direction);
+  };
+
+  const handleSave = async () => {
+    if (displayLines.length === 0) {
+      setFormError('Không có lệnh SX đang chờ/đang sản xuất để lập kế hoạch.');
+      return;
+    }
+
+    setIsSaving(true);
+    setFormError('');
+
+    try {
+      const res = await fetch('/api/ke-hoach-sx', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ngay_ke_hoach: planDate,
+          ghi_chu: planHeaderNote.trim(),
+          items: buildProductionPlanSaveItems(displayLines)
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể lưu kế hoạch sản xuất.');
+      }
+
+      await onSaved();
+      onClose();
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể lưu kế hoạch sản xuất.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePrint = async () => {
+    if (displayLines.length === 0) return;
+    setIsLoadingPlanPrint(true);
+    setFormError('');
+
+    try {
+      setPrintMaterialsByLine(await loadProductionPlanMaterials(displayLines));
+      setPendingPrint(true);
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể tải thành phần sản phẩm để in kế hoạch.');
+    } finally {
+      setIsLoadingPlanPrint(false);
+    }
+  };
+
+  const loadMaterialAccounting = async () => {
+    if (displayLines.length === 0) return;
+    setIsLoadingMaterialAccounting(true);
+    setMaterialAccountingError('');
+
+    try {
+      const [materialsByLine, inventoryRes] = await Promise.all([
+        loadProductionPlanMaterials(displayLines),
+        fetch('/api/kho-nvl')
+      ]);
+      const inventoryData = await inventoryRes.json().catch(() => ({}));
+      if (!inventoryRes.ok) {
+        throw new Error(inventoryData.error || 'Không thể tải Kho NVL để tra Tổng kg.');
+      }
+
+      setAccountingMaterialsByLine(materialsByLine);
+      setAccountingInventoryMaterials(normalizeMaterialsInventory(inventoryData));
+    } catch (error: any) {
+      setMaterialAccountingError(error.message || 'Không thể tải thành phần sản phẩm để hạch toán NVL.');
+    } finally {
+      setIsLoadingMaterialAccounting(false);
+    }
+  };
+
+  const handleOpenMaterialAccounting = () => {
+    if (displayLines.length === 0) return;
+    setShowMaterialAccountingModal(true);
+    void loadMaterialAccounting();
+  };
+
+  const handleExportWarehouseSlip = (materialLines: ProductionPlanWarehouseExportLine[], shift: string) => {
+    if (materialLines.length === 0) {
+      setMaterialAccountingError('Vui lòng nhập số lượng xuất thực tế lớn hơn 0 cho ít nhất một NVL trong ca này.');
+      return;
+    }
+
+    const shiftOrderCount =
+      normalizeProductionPlanShift(shift) === 'Tất cả các ca'
+        ? displayLines.length
+        : displayLines.filter(
+            line => normalizeProductionPlanShift(line.shift) === normalizeProductionPlanShift(shift)
+          ).length;
+
+    const draft: WarehouseSlipPrefillDraft = {
+      slipType: 'xuat',
+      warehouseKind: 'nvl',
+      reason: `Xuất NVL theo kế hoạch sản xuất - ${shift}`,
+      note: `Tạo từ hạch toán định mức NVL (${shift}, ${shiftOrderCount} lệnh SX).`,
+      createdBy: '',
+      lines: materialLines.map(line => ({
+        code: line.code,
+        name: line.name,
+        unit: line.unit,
+        quantity: String(roundNplNumber(line.actualQuantity)),
+        unitPrice: ''
+      }))
+    };
+
+    localStorage.setItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY, JSON.stringify(draft));
+    setShowMaterialAccountingModal(false);
+    onClose();
+    onOpenWarehouseSlip();
+  };
+
+  const updateLineNote = (lineId: string, note: string) => {
+    setPlanLines(prev => prev.map(line => (line.id === lineId ? { ...line, note } : line)));
+  };
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+        <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
+            <div>
+              <h3 className="text-lg font-black text-zinc-950">Kế hoạch sản xuất</h3>
+              <p className="mt-1 text-sm font-medium text-zinc-500">
+                Máy, ca, nhân sự và sản phẩm lấy từ lệnh SX. Kéo thả hoặc dùng mũi tên để sắp xếp ưu tiên.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-5">
+            {formError && (
+              <p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
+                {formError}
+              </p>
+            )}
+
+            <div className="mb-4 grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày kế hoạch</span>
+                <input
+                  type="date"
+                  value={planDate}
+                  onChange={event => setPlanDate(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú kế hoạch</span>
+                <input
+                  type="text"
+                  value={planHeaderNote}
+                  onChange={event => setPlanHeaderNote(event.target.value)}
+                  placeholder="Ghi chú chung khi lưu snapshot"
+                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+            </div>
+
+            {displayLines.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm font-semibold text-zinc-500">
+                Không có lệnh SX đang chờ hoặc đang sản xuất.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-zinc-200">
+                <table className="min-w-[980px] w-full text-left text-sm">
+                  <thead className="bg-zinc-950 text-[11px] uppercase tracking-wider text-white">
+                    <tr>
+                      <th className="px-2 py-2 font-black">STT</th>
+                      <th className="px-2 py-2 font-black">Tên máy</th>
+                      <th className="px-2 py-2 font-black">Ca làm việc</th>
+                      <th className="px-2 py-2 font-black">Nhân sự</th>
+                      <th className="px-2 py-2 font-black">Lệnh sản xuất</th>
+                      <th className="px-2 py-2 font-black">Ghi chú</th>
+                      <th className="px-2 py-2 font-black">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {displayLines.map((line, index) => (
+                      <tr
+                        key={line.id}
+                        draggable
+                        onDragStart={() => setDragIndex(index)}
+                        onDragOver={event => event.preventDefault()}
+                        onDrop={() => {
+                          if (dragIndex === null) return;
+                          reorderLine(dragIndex, index);
+                          setDragIndex(null);
+                        }}
+                        className={dragIndex === index ? 'bg-emerald-50' : 'hover:bg-zinc-50'}
+                      >
+                        <td className="px-2 py-2 font-black text-emerald-700">{index + 1}</td>
+                        <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
+                        <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
+                        <td className="px-2 py-2 text-zinc-600">{line.staff && line.staff !== '-' ? line.staff : '-'}</td>
+                        <td className="px-2 py-2 text-zinc-800">
+                          <div className="font-bold text-zinc-900">{line.code || '-'}</div>
+                          {(line.products.length > 0 ? line.products : [{ productCode: line.productCode, productName: line.productName, quantity: line.quantity, unit: line.unit }]).map(product => (
+                            <div key={`${line.id}-${product.productCode}`} className="mt-1">
+                              <div>{product.productName || product.productCode || '-'}</div>
+                              <div className="font-mono font-bold text-zinc-700">
+                                {product.quantity}
+                                {product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}
+                              </div>
+                            </div>
+                          ))}
+                          {line.orderRef ? (
+                            <div className="mt-1 text-xs font-semibold text-zinc-500">{line.orderRef}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-2 py-2 align-top">
+                          <textarea
+                            value={line.note}
+                            onChange={event => updateLineNote(line.id, event.target.value)}
+                            rows={3}
+                            className="w-full min-w-[220px] rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                            placeholder="Nhập ghi chú cho lệnh này"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => moveLine(index, -1)}
+                              disabled={index === 0}
+                              className="flex h-7 w-7 items-center justify-center rounded border border-zinc-200 text-zinc-600 disabled:opacity-40"
+                              title="Lên"
+                            >
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveLine(index, 1)}
+                              disabled={index === displayLines.length - 1}
+                              className="flex h-7 w-7 items-center justify-center rounded border border-zinc-200 text-zinc-600 disabled:opacity-40"
+                              title="Xuống"
+                            >
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
+                            <span className="flex h-7 w-7 items-center justify-center text-zinc-400">
+                              <GripVertical className="h-4 w-4" />
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-4 sm:px-5">
+            <button
+              type="button"
+              onClick={handleOpenMaterialAccounting}
+              disabled={displayLines.length === 0 || isLoadingMaterialAccounting}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-4 text-sm font-extrabold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoadingMaterialAccounting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+              Định mức NVL
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowQrPrintModal(true)}
+              disabled={displayLines.length === 0}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-extrabold text-zinc-800 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <QrCode className="h-4 w-4" />
+              In QR
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={displayLines.length === 0 || isLoadingPlanPrint}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoadingPlanPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              In kế hoạch
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || displayLines.length === 0}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Lưu kế hoạch SX
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {pendingPrint && displayLines.length > 0 && (
+        <ProductionPlanPrintSheet lines={displayLines} materialsByLine={printMaterialsByLine} />
+      )}
+
+      <ProductionPlanMaterialAccountingModal
+        open={showMaterialAccountingModal}
+        onClose={() => setShowMaterialAccountingModal(false)}
+        lines={displayLines}
+        materialsByLine={accountingMaterialsByLine}
+        inventoryMaterials={accountingInventoryMaterials}
+        isLoading={isLoadingMaterialAccounting}
+        error={materialAccountingError}
+        onReload={loadMaterialAccounting}
+        onExportWarehouseSlip={handleExportWarehouseSlip}
+      />
+
+      <ProductionPlanQrPrintModal
+        open={showQrPrintModal}
+        onClose={() => setShowQrPrintModal(false)}
+        lines={displayLines}
+      />
+    </>
+  );
 }
 
 function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
@@ -4547,14 +7637,18 @@ function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
       const productName = pickText(record, ['ten_hang', 'ten_sp', 'product_name'], '');
       if (!code && !name && !productCode && !productName) return null;
 
+      const products = parseOrderProductsFromRecord(record);
+      const summary = summarizeOrderProducts(products);
+
       return {
-        id: String(record.id ?? '').trim() || code || name || productCode,
+        id: String(record.id ?? '').trim() || code || name || summary.productCode,
         code,
         name,
-        productCode,
-        productName,
-        quantity: formatCell(record.so_luong ?? record.sl ?? record.quantity),
-        unit: formatCell(record.don_vi ?? record.unit),
+        productCode: summary.productCode,
+        productName: summary.productName,
+        quantity: summary.quantity,
+        unit: summary.unit,
+        products,
         status: pickText(record, ['trang_thai', 'status', 'tinh_trang'], '-'),
         customer: pickText(record, ['khach_hang', 'customer', 'ten_khach_hang'], '-'),
         orderRef: pickText(record, ['ma_don_hang', 'don_hang', 'order_code'], '-'),
@@ -4565,10 +7659,410 @@ function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         machine: pickText(record, ['may', 'ten_may', 'ma_may', 'machine'], '-'),
         shift: pickText(record, ['ca', 'shift'], '-'),
         staff: pickText(record, ['nhan_su', 'staff', 'nhan_vien'], '-'),
-        note: pickText(record, ['ghi_chu', 'note', 'mo_ta'], '')
+        note: pickText(record, ['ghi_chu', 'note', 'mo_ta'], ''),
+        position: pickText(record, ['vi_tri', 'position'], '-'),
+        priority: Number(record.thu_tu_uu_tien ?? record.priority ?? 0) || 0
       };
     })
     .filter((row): row is ProductionOrderRow => Boolean(row));
+}
+
+interface ProductionOrderMaterialLine {
+  code: string;
+  name: string;
+  normLabel: string;
+  proposedQuantity: number;
+  unit: string;
+}
+
+function formatProductionOrderNormLabel(item: ProductNplItem): string {
+  if (item.amountType === 'quantity') {
+    const unitSuffix = item.unit && item.unit !== '-' ? ` ${item.unit}` : '';
+    return `${formatNumber(item.quantity ?? 0, 2)}${unitSuffix}/TP`;
+  }
+  return `${formatPercent(item.percent ?? 0)}%`;
+}
+
+function formatProductionOrderFinishedWeight(
+  orderQuantity: number,
+  product?: Pick<ProductRow, 'totalWeight'> | null
+) {
+  const unitWeight = parseProductSpecNumber(product?.totalWeight ?? '');
+  if (unitWeight === null || unitWeight <= 0 || orderQuantity <= 0) return '-';
+  return formatProductionOrderPrintQuantity(roundNplNumber(unitWeight * orderQuantity));
+}
+
+function parseProductionOrderQuantity(value: string) {
+  const normalized = value.replace(/[^\d.,-]/g, '').replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatProductionOrderPrintQuantity(value: string | number, fractionDigits = 2) {
+  const numeric = typeof value === 'number' ? value : parseProductionOrderQuantity(String(value));
+  return formatNumber(numeric, fractionDigits);
+}
+
+function buildProductionOrderMaterialProposal(
+  orderQuantity: number,
+  items: ProductNplItem[],
+  product?: Pick<ProductRow, 'plasticWeight' | 'totalWeight' | 'coreWeight' | 'bagWeight'> | null
+): ProductionOrderMaterialLine[] {
+  const materialBaseKg = resolveProductMaterialBaseKg(product);
+
+  return items.map(item => {
+    const proposedQuantity =
+      item.amountType === 'quantity'
+        ? roundNplNumber((item.quantity ?? 0) * orderQuantity)
+        : materialBaseKg > 0
+          ? roundNplNumber((materialBaseKg * orderQuantity * (item.percent ?? 0)) / 100)
+          : roundNplNumber((orderQuantity * (item.percent ?? 0)) / 100);
+
+    return {
+      code: item.code,
+      name: item.name || item.code,
+      normLabel: formatProductionOrderNormLabel(item),
+      proposedQuantity,
+      unit:
+        item.amountType === 'percent'
+          ? 'kg'
+          : item.unit && item.unit !== '-'
+            ? item.unit
+            : ''
+    };
+  });
+}
+
+let productNplCache: ProductRow[] | null = null;
+let productNplCachePromise: Promise<ProductRow[]> | null = null;
+
+async function loadProductsForPrint(): Promise<ProductRow[]> {
+  if (productNplCache) return productNplCache;
+  if (productNplCachePromise) return productNplCachePromise;
+
+  productNplCachePromise = fetch('/api/san-pham?format=table')
+    .then(async res => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể tải danh sách sản phẩm.');
+      }
+      return normalizeProducts(data);
+    })
+    .then(products => {
+      productNplCache = products;
+      return products;
+    })
+    .finally(() => {
+      productNplCachePromise = null;
+    });
+
+  return productNplCachePromise;
+}
+
+async function fetchProductPrintData(
+  productCode: string
+): Promise<{ items: ProductNplItem[]; product: ProductRow | null }> {
+  const codes = productCode
+    .split(',')
+    .map(code => code.trim())
+    .filter(Boolean);
+  if (codes.length === 0) return { items: [], product: null };
+
+  const products = await loadProductsForPrint();
+  const primaryProduct = findProductByCode(products, codes[0]) ?? null;
+  const merged = new Map<string, ProductNplItem>();
+
+  codes.forEach(code => {
+    const product = findProductByCode(products, code);
+    (product?.nplItems ?? []).forEach(item => {
+      const key = `${item.code}__${item.amountType}__${item.unit}`;
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, { ...item });
+        return;
+      }
+
+      if (item.amountType === 'quantity') {
+        existing.quantity = roundNplNumber((existing.quantity ?? 0) + (item.quantity ?? 0));
+      } else {
+        existing.percent = roundNplNumber((existing.percent ?? 0) + (item.percent ?? 0));
+      }
+    });
+  });
+
+  return { items: [...merged.values()], product: primaryProduct };
+}
+
+async function fetchProductNplItems(productCode: string): Promise<ProductNplItem[]> {
+  const { items } = await fetchProductPrintData(productCode);
+  return items;
+}
+
+let machinePrintCache: MachineRow[] | null = null;
+
+async function resolveProductionOrderMachineLabel(machineValue: string): Promise<string> {
+  const value = machineValue.trim();
+  if (!value || value === '-') return '-';
+
+  if (!machinePrintCache) {
+    const res = await fetch('/api/danh-sach-may');
+    const data = await res.json().catch(() => ({}));
+    machinePrintCache = res.ok ? normalizeMachines(data) : [];
+  }
+
+  const match = machinePrintCache.find(
+    machine => machine.code === value || machine.name === value || machine.id === value
+  );
+  return match?.name || value;
+}
+
+function formatProductionOrderPrintDate(value?: string) {
+  if (!value || value === '-') {
+    return new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  return value;
+}
+
+function buildProductionOrderDescription(order: ProductionOrderRow) {
+  const name = order.name?.trim();
+  if (name && name !== '-' && name !== order.code) {
+    return name;
+  }
+
+  const date = formatProductionOrderPrintDate(order.startDate);
+  const machine = order.machine && order.machine !== '-' ? order.machine : 'Máy';
+  const shift = order.shift && order.shift !== '-' ? order.shift.replace(/^ca\s*/i, '') : '';
+  const staff = order.staff && order.staff !== '-' ? order.staff.replace(/,/g, ' + ') : '';
+
+  let text = `${machine} ngày ${date}`;
+  if (shift) text += ` ca ${shift}`;
+  if (staff) text += `: ${staff}`;
+  return text;
+}
+
+function ProductionOrderPrintSheet({
+  order,
+  materials,
+  machineLabel,
+  product
+}: {
+  order: ProductionOrderRow;
+  materials: ProductionOrderMaterialLine[];
+  machineLabel?: string;
+  product?: ProductRow | null;
+}) {
+  const printDate = formatProductionOrderPrintDate(order.startDate);
+  const description = buildProductionOrderDescription(order);
+  const orderQuantity = parseProductionOrderQuantity(order.quantity);
+  const finishedWeightKg = formatProductionOrderFinishedWeight(orderQuantity, product);
+  const shiftLabel = order.shift && order.shift !== '-' ? order.shift : '-';
+  const staffLabel =
+    order.staff && order.staff !== '-'
+      ? order.staff.replace(/,/g, ' + ')
+      : '-';
+  const machineName =
+    machineLabel && machineLabel !== '-'
+      ? machineLabel
+      : order.machine && order.machine !== '-'
+        ? order.machine
+        : '-';
+  const costObject = machineName;
+
+  return (
+    <div className="production-order-print-sheet">
+      <div className="production-order-print-doc">
+        <header className="production-order-print-letterhead">
+          <img
+            src={vietNhatLogoUrl}
+            alt="Logo Viet Nhat IPT"
+            className="production-order-print-logo"
+          />
+          <div className="production-order-print-company">
+            <p className="production-order-print-company-name">{PRINT_COMPANY_NAME}</p>
+          </div>
+        </header>
+
+        <h1 className="production-order-print-title">LỆNH SẢN XUẤT</h1>
+
+        <div className="production-order-print-meta">
+          <span>Số: {order.code || '-'}</span>
+          <span>Ngày: {printDate}</span>
+        </div>
+
+        <p className="production-order-print-description">Diễn giải: {description}</p>
+
+        <table className="production-order-print-grid-table production-order-print-params-table">
+          <thead>
+            <tr>
+              <th>Ca</th>
+              <th>Máy</th>
+              <th>Nhân sự phụ trách</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="production-order-print-center">{shiftLabel}</td>
+              <td>{machineName}</td>
+              <td>{staffLabel}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 className="production-order-print-section-title">1. Thành phẩm</h2>
+        <table className="production-order-print-grid-table production-order-print-product-table">
+          <thead>
+            <tr>
+              <th>Mã thành phẩm</th>
+              <th>Tên thành phẩm</th>
+              <th>ĐVT</th>
+              <th>Số lượng</th>
+              <th>Khối lượng (kg)</th>
+              <th>Đối tượng THCP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{order.productCode || '-'}</td>
+              <td>{order.productName || '-'}</td>
+              <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
+              <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
+              <td className="production-order-print-right">{finishedWeightKg}</td>
+              <td>{costObject}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 className="production-order-print-section-title">2. Định mức nguyên vật liệu</h2>
+        {materials.length === 0 ? (
+          <p className="production-order-print-materials-empty">
+            Sản phẩm chưa khai báo thành phần NPL. Vào Sản phẩm → tab Thành phần để nhập định mức.
+          </p>
+        ) : (
+          <table className="production-order-print-grid-table production-order-print-materials-table">
+            <thead>
+              <tr>
+                <th>Mã nguyên vật liệu</th>
+                <th>Tên nguyên vật liệu</th>
+                <th>ĐVT</th>
+                <th>Định mức</th>
+                <th>Số lượng</th>
+              </tr>
+            </thead>
+            <tbody>
+              {materials.map((line, index) => (
+                <tr key={`${line.code}-${index}`}>
+                  <td>{line.code}</td>
+                  <td>{line.name}</td>
+                  <td className="production-order-print-center">{line.unit || '-'}</td>
+                  <td className="production-order-print-center">{line.normLabel}</td>
+                  <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.proposedQuantity)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <div className="production-order-print-signatures">
+          <div>
+            <p>Người lập</p>
+            <span>(Ký, họ tên)</span>
+          </div>
+          <div>
+            <p>Kế toán trưởng</p>
+            <span>(Ký, họ tên)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type PrintableProductionOrder = {
+  order: ProductionOrderRow;
+  materials: ProductionOrderMaterialLine[];
+  machineLabel: string;
+  product: ProductRow | null;
+};
+
+function ProductionOrderBatchPrintSheets({ items }: { items: PrintableProductionOrder[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="production-order-print-batch">
+      {items.map(item => (
+        <div key={item.order.id} className="production-order-print-page">
+          <ProductionOrderPrintSheet
+            order={item.order}
+            materials={item.materials}
+            machineLabel={item.machineLabel}
+            product={item.product}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function useProductionOrderPrint() {
+  const [printingOrder, setPrintingOrder] = useState<ProductionOrderRow | null>(null);
+  const [printingMaterials, setPrintingMaterials] = useState<ProductionOrderMaterialLine[]>([]);
+  const [printingProduct, setPrintingProduct] = useState<ProductRow | null>(null);
+  const [printingMachineLabel, setPrintingMachineLabel] = useState('');
+  const [pendingPrint, setPendingPrint] = useState(false);
+  const [isLoadingPrint, setIsLoadingPrint] = useState(false);
+
+  const printProductionOrder = async (order: ProductionOrderRow) => {
+    setIsLoadingPrint(true);
+    try {
+      const [{ items, product }, machineLabel] = await Promise.all([
+        fetchProductPrintData(order.productCode),
+        resolveProductionOrderMachineLabel(order.machine)
+      ]);
+      const orderQuantity = parseProductionOrderQuantity(order.quantity);
+      const materials = buildProductionOrderMaterialProposal(orderQuantity, items, product);
+      setPrintingMaterials(materials);
+      setPrintingProduct(product);
+      setPrintingMachineLabel(machineLabel);
+      setPrintingOrder(order);
+      setPendingPrint(true);
+    } catch (error) {
+      console.error('Không thể in lệnh SX:', error);
+      window.alert('Không thể tải thành phần sản phẩm để in lệnh SX.');
+    } finally {
+      setIsLoadingPrint(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingPrint || !printingOrder) return;
+
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingPrint(false);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [pendingPrint, printingOrder, printingMaterials, printingProduct, printingMachineLabel]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintingOrder(null);
+      setPrintingMaterials([]);
+      setPrintingProduct(null);
+      setPrintingMachineLabel('');
+      setPendingPrint(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  return { printingOrder, printingMaterials, printingProduct, printingMachineLabel, isLoadingPrint, printProductionOrder };
 }
 
 const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'];
@@ -4607,6 +8101,16 @@ function toDatetimeLocalValue(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function toDatetimeLocalInputValue(value: string) {
+  const raw = value.trim();
+  if (!raw || raw === '-') return '';
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return raw;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return toDatetimeLocalValue(parsed);
+}
+
 function settingMatchesShift(setting: ProductionOrderLookupSetting, shift: string) {
   if (!shift) return false;
   const needle = shift.toLowerCase();
@@ -4614,14 +8118,156 @@ function settingMatchesShift(setting: ProductionOrderLookupSetting, shift: strin
     .some(value => value && value !== '-' && value.toLowerCase().includes(needle));
 }
 
+function formatProductionOrderShiftLabel(shift: string, settings: ProductionOrderLookupSetting[]) {
+  const trimmed = shift.trim();
+  if (!trimmed) return '';
+
+  const matchedSetting = settings.find(setting => {
+    const candidates = [setting.name, setting.code].filter(value => value && value !== '-');
+    return candidates.some(value => value.trim().toLowerCase() === trimmed.toLowerCase());
+  });
+  const timeFrame = matchedSetting?.timeFrame && matchedSetting.timeFrame !== '-' ? matchedSetting.timeFrame : '';
+
+  return timeFrame ? `${trimmed} (${timeFrame})` : trimmed;
+}
+
+function splitProductionProductCodes(raw: string): string[] {
+  return raw
+    .split(',')
+    .map(code => code.trim())
+    .filter(code => code && code !== '-');
+}
+
+function parseRowQuantity(raw: string): number {
+  const num = parsePercentInput(raw);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function getOrderProductQuantity(orders: OrderRow[], orderRef: string, productCode: string): number {
+  return orders
+    .filter(order => order.orderCode === orderRef)
+    .reduce((sum, order) => {
+      const lines = getOrderProductLines(order);
+      return (
+        sum +
+        lines
+          .filter(line => line.productCode === productCode)
+          .reduce((lineSum, line) => lineSum + parseRowQuantity(line.quantity), 0)
+      );
+    }, 0);
+}
+
+function getAllocatedProductionQuantity(
+  productionOrders: ProductionOrderRow[],
+  orderRef: string,
+  productCode: string
+): number {
+  return productionOrders
+    .filter(po => po.orderRef === orderRef)
+    .reduce((sum, po) => {
+      return (
+        sum +
+        getProductionOrderProductLines(po)
+          .filter(line => line.productCode === productCode)
+          .reduce((lineSum, line) => lineSum + parseRowQuantity(line.quantity), 0)
+      );
+    }, 0);
+}
+
+function getRemainingProductionQuantity(
+  orders: OrderRow[],
+  productionOrders: ProductionOrderRow[],
+  orderRef: string,
+  productCode: string
+): number {
+  const ordered = getOrderProductQuantity(orders, orderRef, productCode);
+  const allocated = getAllocatedProductionQuantity(productionOrders, orderRef, productCode);
+  return Math.max(0, ordered - allocated);
+}
+
+function getOrderProductUnit(orders: OrderRow[], orderRef: string, productCode: string): string {
+  const line = orders
+    .filter(order => order.orderCode === orderRef)
+    .flatMap(order => getOrderProductLines(order))
+    .find(item => item.productCode === productCode);
+  return line?.unit && line.unit !== '-' ? line.unit : '';
+}
+
+function buildProductionEntryLine(
+  orders: OrderRow[],
+  productionOrders: ProductionOrderRow[],
+  orderRef: string,
+  productCode: string,
+  productName = '',
+  unit = ''
+): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'quantity' | 'unit'> {
+  const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode);
+  return {
+    productCode,
+    productName,
+    quantity: remaining > 0 ? String(remaining) : '',
+    unit: unit || getOrderProductUnit(orders, orderRef, productCode)
+  };
+}
+
+function listProductOptionsForOrder(
+  orders: OrderRow[],
+  productionOrders: ProductionOrderRow[],
+  catalogProducts: ProductRow[],
+  orderRef: string
+) {
+  if (!orderRef) return [];
+
+  const fromOrders = orders
+    .filter(order => order.orderCode === orderRef)
+    .flatMap(order =>
+      getOrderProductLines(order).map(line => ({
+        code: line.productCode,
+        name: line.productName,
+        unit: line.unit && line.unit !== '-' ? line.unit : ''
+      }))
+    )
+    .filter(item => item.code && item.code !== '-');
+
+  const unique = new Map<string, { name: string; unit: string }>();
+  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, unit: item.unit }));
+
+  if (unique.size === 0) {
+    catalogProducts.forEach(product => {
+      if (product.code) {
+        unique.set(product.code, {
+          name: product.name || product.code,
+          unit: product.unit && product.unit !== '-' ? product.unit : ''
+        });
+      }
+    });
+  }
+
+  return [...unique.entries()]
+    .map(([code, meta]) => ({
+      code,
+      name: meta.name,
+      unit: meta.unit,
+      orderQty: getOrderProductQuantity(orders, orderRef, code),
+      remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code)
+    }))
+    .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+}
+
+type ProductionOrderEntryLine = {
+  key: string;
+  orderRef: string;
+  productCode: string;
+  productName: string;
+  quantity: string;
+  unit: string;
+};
+
 type ProductionOrderFormState = {
   code: string;
   name: string;
-  selectedProductCodes: string[];
-  quantity: string;
-  unit: string;
+  entryLines: ProductionOrderEntryLine[];
   status: string;
-  orderRef: string;
   shift: string;
   selectedStaffIds: string[];
   startDateTime: string;
@@ -4630,15 +8276,23 @@ type ProductionOrderFormState = {
   note: string;
 };
 
+function newProductionOrderEntryLine(): ProductionOrderEntryLine {
+  return {
+    key: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    orderRef: '',
+    productCode: '',
+    productName: '',
+    quantity: '',
+    unit: ''
+  };
+}
+
 function emptyProductionOrderForm(): ProductionOrderFormState {
   return {
     code: '',
     name: '',
-    selectedProductCodes: [],
-    quantity: '',
-    unit: '',
+    entryLines: [newProductionOrderEntryLine()],
     status: 'Chờ sx',
-    orderRef: '',
     shift: '',
     selectedStaffIds: [],
     startDateTime: toDatetimeLocalValue(),
@@ -4646,6 +8300,62 @@ function emptyProductionOrderForm(): ProductionOrderFormState {
     machine: '',
     note: ''
   };
+}
+
+function productionOrderFormToCreatePayload(
+  form: ProductionOrderFormState,
+  lines: ProductionOrderEntryLine[],
+  staffText = ''
+) {
+  const staff = staffText || form.selectedStaffIds.join(', ');
+  const products = lines.map(line => ({
+    ma_sp: line.productCode.trim(),
+    ten_sp: line.productName.trim(),
+    don_vi: line.unit.trim(),
+    so_luong: Number(line.quantity)
+  }));
+  const summary = summarizeOrderProducts(
+    products.map(product => ({
+      productCode: product.ma_sp,
+      productName: product.ten_sp,
+      unit: product.don_vi,
+      quantity: String(product.so_luong)
+    }))
+  );
+  const primaryLine = lines[0];
+  const defaultName =
+    lines.length === 1
+      ? primaryLine.productName || primaryLine.productCode
+      : lines
+          .map(line => line.productName || line.productCode)
+          .filter(Boolean)
+          .join(' + ');
+
+  return {
+    ma_lenh_sx: form.code.trim(),
+    ten_lenh_sx: form.name.trim() || (defaultName ? `SX ${defaultName}` : ''),
+    san_pham: products,
+    ma_hang: summary.productCode,
+    ten_hang: summary.productName,
+    so_luong: Number(summary.quantity),
+    don_vi: summary.unit === '-' ? '' : summary.unit,
+    trang_thai: form.status,
+    ma_don_hang: primaryLine.orderRef.trim(),
+    ca: form.shift.trim(),
+    nhan_su: staff,
+    ngay_gio_bat_dau: form.startDateTime || null,
+    ngay_gio_ket_thuc: form.endDateTime.trim() || null,
+    may: form.machine.trim(),
+    ghi_chu: form.note.trim()
+  };
+}
+
+function productionOrderFormToPayload(
+  form: ProductionOrderFormState,
+  line: ProductionOrderEntryLine,
+  staffText = ''
+) {
+  return productionOrderFormToCreatePayload(form, [line], staffText);
 }
 
 function AddProductionOrderModal({
@@ -4662,6 +8372,7 @@ function AddProductionOrderModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [productionOrders, setProductionOrders] = useState<ProductionOrderRow[]>([]);
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
@@ -4676,8 +8387,9 @@ function AddProductionOrderModal({
 
     const loadLookups = async () => {
       try {
-        const [orderRes, machineRes, settingRes, staffRes, productRes] = await Promise.all([
+        const [orderRes, productionRes, machineRes, settingRes, staffRes, productRes] = await Promise.all([
           fetch('/api/don-hang'),
+          fetch('/api/lenh-sx'),
           fetch('/api/danh-sach-may'),
           fetch('/api/cai-dat'),
           fetch('/api/nhan-su?format=groups'),
@@ -4685,12 +8397,14 @@ function AddProductionOrderModal({
         ]);
 
         const orderData = await orderRes.json().catch(() => ({}));
+        const productionData = await productionRes.json().catch(() => ({}));
         const machineData = await machineRes.json().catch(() => ({}));
         const settingData = await settingRes.json().catch(() => ({}));
         const staffData = await staffRes.json().catch(() => ({}));
         const productData = await productRes.json().catch(() => ({}));
 
         if (orderRes.ok) setOrders(normalizeOrders(orderData));
+        if (productionRes.ok) setProductionOrders(normalizeProductionOrders(productionData));
         if (machineRes.ok) setMachines(normalizeMachines(machineData));
         if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
         if (staffRes.ok) setStaffBranches(normalizeHrBranches(staffData));
@@ -4708,34 +8422,6 @@ function AddProductionOrderModal({
       a.localeCompare(b, 'vi')
     );
   }, [orders]);
-
-  const productOptions = useMemo(() => {
-    if (!form.orderRef) return [];
-
-    const fromOrders = orders
-      .filter(order => order.orderCode === form.orderRef)
-      .map(order => ({ code: order.productCode, name: order.productName }))
-      .filter(item => item.code && item.code !== '-');
-
-    const unique = new Map<string, string>();
-    fromOrders.forEach(item => unique.set(item.code, item.name || item.code));
-
-    if (unique.size === 0) {
-      catalogProducts.forEach(product => {
-        if (product.code) unique.set(product.code, product.name || product.code);
-      });
-    }
-
-    return [...unique.entries()]
-      .map(([code, name]) => ({ code, name }))
-      .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
-  }, [catalogProducts, form.orderRef, orders]);
-
-  const derivedProductNames = useMemo(() => {
-    return form.selectedProductCodes
-      .map(code => productOptions.find(item => item.code === code)?.name || code)
-      .join(', ');
-  }, [form.selectedProductCodes, productOptions]);
 
   const shiftOptions = useMemo(() => {
     const fromSettings = settings
@@ -4801,27 +8487,51 @@ function AddProductionOrderModal({
       .join(', ');
   }, [form.selectedStaffIds, staffOptions]);
 
-  const handleOrderChange = (orderRef: string) => {
-    const matchingOrders = orders.filter(order => order.orderCode === orderRef);
-    const defaultCodes = [...new Set(matchingOrders.map(order => order.productCode).filter(code => code && code !== '-'))];
-    const defaultUnit = matchingOrders.find(order => order.unit && order.unit !== '-')?.unit || '';
-
+  const updateEntryLine = (key: string, patch: Partial<ProductionOrderEntryLine>) => {
     setForm(prev => ({
       ...prev,
-      orderRef,
-      selectedProductCodes: defaultCodes.length === 1 ? defaultCodes : [],
-      unit: defaultUnit,
-      machine: ''
+      entryLines: prev.entryLines.map(line => (line.key === key ? { ...line, ...patch } : line))
     }));
   };
 
-  const toggleProductCode = (code: string) => {
-    setForm(prev => ({
-      ...prev,
-      selectedProductCodes: prev.selectedProductCodes.includes(code)
-        ? prev.selectedProductCodes.filter(item => item !== code)
-        : [...prev.selectedProductCodes, code]
-    }));
+  const handleEntryOrderChange = (key: string, orderRef: string) => {
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
+    let patch: Partial<ProductionOrderEntryLine> = {
+      orderRef,
+      productCode: '',
+      productName: '',
+      quantity: '',
+      unit: ''
+    };
+    if (options.length === 1) {
+      const product = options[0];
+      patch = {
+        orderRef,
+        ...buildProductionEntryLine(
+          orders,
+          productionOrders,
+          orderRef,
+          product.code,
+          product.name,
+          product.unit
+        )
+      };
+    }
+    updateEntryLine(key, patch);
+  };
+
+  const handleEntryProductChange = (key: string, orderRef: string, productCode: string) => {
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
+    const product = options.find(item => item.code === productCode);
+    const built = buildProductionEntryLine(
+      orders,
+      productionOrders,
+      orderRef,
+      productCode,
+      product?.name || '',
+      product?.unit || ''
+    );
+    updateEntryLine(key, built);
   };
 
   const toggleStaffId = (staffId: string) => {
@@ -4836,21 +8546,41 @@ function AddProductionOrderModal({
   if (!open) return null;
 
   const handleSubmit = async () => {
-    const quantity = Number(form.quantity);
-    const productCode = form.selectedProductCodes.join(', ');
-    const productName = derivedProductNames;
+    const filledLines = form.entryLines.filter(line => line.orderRef.trim() && line.productCode.trim());
 
-    if (!form.orderRef.trim()) {
-      setFormError('Vui lòng chọn mã đơn hàng.');
+    if (filledLines.length === 0) {
+      setFormError('Vui lòng thêm ít nhất một dòng đơn hàng và mã hàng.');
       return;
     }
-    if (!productCode) {
-      setFormError('Vui lòng chọn ít nhất một mã hàng.');
-      return;
-    }
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setFormError('Số lượng phải lớn hơn 0.');
-      return;
+
+    for (const line of filledLines) {
+      const quantity = Number(line.quantity);
+      const productName = line.productName || line.productCode;
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setFormError(`Số lượng phải lớn hơn 0 cho ${productName}.`);
+        return;
+      }
+      const ordered = getOrderProductQuantity(orders, line.orderRef.trim(), line.productCode);
+      if (ordered <= 0) {
+        setFormError(`${productName} không có trong đơn ${line.orderRef} hoặc chưa có số lượng đặt hàng.`);
+        return;
+      }
+      const remaining = getRemainingProductionQuantity(
+        orders,
+        productionOrders,
+        line.orderRef.trim(),
+        line.productCode
+      );
+      if (remaining <= 0) {
+        setFormError(`${productName} đã được lập đủ lệnh SX cho đơn ${line.orderRef}.`);
+        return;
+      }
+      if (quantity > remaining) {
+        setFormError(
+          `Số lượng ${productName} (đơn ${line.orderRef}) vượt quá còn lại (${formatNumber(remaining, 0)}).`
+        );
+        return;
+      }
     }
     if (!form.shift.trim()) {
       setFormError('Vui lòng chọn ca.');
@@ -4868,27 +8598,12 @@ function AddProductionOrderModal({
       const res = await fetch('/api/lenh-sx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ma_lenh_sx: form.code.trim(),
-          ten_lenh_sx: form.name.trim() || (productName ? `SX ${productName}` : ''),
-          ma_hang: productCode,
-          ten_hang: productName,
-          so_luong: quantity,
-          don_vi: form.unit.trim(),
-          trang_thai: form.status,
-          ma_don_hang: form.orderRef.trim(),
-          ca: form.shift.trim(),
-          nhan_su: selectedStaffNames,
-          ngay_gio_bat_dau: form.startDateTime,
-          ngay_gio_ket_thuc: form.endDateTime.trim() || null,
-          may: form.machine.trim(),
-          ghi_chu: form.note.trim()
-        })
+        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines, selectedStaffNames))
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error || 'Không thể tạo lệnh sản xuất.');
+        throw new Error(data.error || 'Không thể tạo lệnh SX.');
       }
 
       await onCreated();
@@ -4951,82 +8666,129 @@ function AddProductionOrderModal({
             />
           </label>
 
-          <label className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn hàng *</span>
-            <SearchableSelect
-              value={form.orderRef}
-              onChange={handleOrderChange}
-              options={orderCodeOptions}
-              placeholder="Gõ để tìm mã đơn hàng"
-              isLoading={isLoadingLookups}
-              getLabel={item => String(item)}
-              getValue={item => String(item)}
-            />
-          </label>
+          <div className="col-span-2 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn hàng &amp; mã hàng *</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setForm(prev => ({
+                    ...prev,
+                    entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
+                  }))
+                }
+                className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Thêm dòng
+              </button>
+            </div>
 
-          <div className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã hàng * (chọn nhiều)</span>
-            <div className="max-h-36 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
-              {!form.orderRef && (
-                <p className="px-2 py-3 text-xs font-semibold text-zinc-400">Chọn mã đơn hàng trước.</p>
-              )}
-              {form.orderRef && productOptions.length === 0 && (
-                <p className="px-2 py-3 text-xs font-semibold text-zinc-400">Không có mã hàng cho đơn này.</p>
-              )}
-              {productOptions.map(product => {
-                const checked = form.selectedProductCodes.includes(product.code);
+            <div className="space-y-3">
+              {form.entryLines.map(line => {
+                const productOptions = listProductOptionsForOrder(
+                  orders,
+                  productionOrders,
+                  catalogProducts,
+                  line.orderRef
+                );
+                const selectedProduct = productOptions.find(item => item.code === line.productCode);
+
                 return (
-                  <label
-                    key={product.code}
-                    className={`mb-1 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition last:mb-0 ${
-                      checked ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-zinc-200 bg-white text-zinc-700'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleProductCode(product.code)}
-                      className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                    />
-                    <span className="font-black">{product.code}</span>
-                    <span className="text-zinc-500">{product.name}</span>
-                  </label>
+                  <div key={line.key} className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="min-w-0 flex-[1.1] space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã đơn *</span>
+                        <SearchableSelect
+                          value={line.orderRef}
+                          onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
+                          options={orderCodeOptions}
+                          placeholder="Gõ để tìm mã đơn"
+                          isLoading={isLoadingLookups}
+                          inputClassName={orderFieldClass}
+                          getLabel={item => String(item)}
+                          getValue={item => String(item)}
+                        />
+                      </label>
+                      <label className="min-w-0 flex-[1.35] space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã hàng *</span>
+                        <SearchableSelect
+                          value={line.productCode}
+                          onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
+                          options={productOptions}
+                          placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
+                          disabled={!line.orderRef}
+                          isLoading={isLoadingLookups}
+                          inputClassName={orderFieldClass}
+                          getLabel={item => {
+                            const product = item as (typeof productOptions)[number];
+                            const remaining =
+                              product.remainingQty <= 0 && product.orderQty > 0
+                                ? ' · hết'
+                                : product.orderQty > 0
+                                  ? ` · còn ${formatNumber(product.remainingQty, 0)}`
+                                  : '';
+                            return product.code ? `${product.code} · ${product.name}${remaining}` : product.name;
+                          }}
+                          getValue={item => (item as (typeof productOptions)[number]).code}
+                        />
+                      </label>
+                      <label className="min-w-0 flex-[1.1] space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên hàng</span>
+                        <input
+                          value={selectedProduct?.name || line.productName}
+                          readOnly
+                          className={`${orderFieldClass} bg-white text-zinc-800`}
+                          placeholder="Tự điền theo mã hàng"
+                        />
+                      </label>
+                      <label className="w-16 shrink-0 space-y-1 sm:w-20">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">ĐV</span>
+                        <input
+                          value={line.unit}
+                          readOnly
+                          className={`${orderFieldClass} bg-white text-zinc-800`}
+                          placeholder="ĐV"
+                        />
+                      </label>
+                      <label className="w-20 shrink-0 space-y-1 sm:w-24">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL *</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={line.quantity}
+                          onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
+                          className={orderFieldClass}
+                          placeholder="SL"
+                        />
+                      </label>
+                      {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
+                        <span className="mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
+                          Còn {formatNumber(selectedProduct.remainingQty, 0)}
+                        </span>
+                      )}
+                      {form.entryLines.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm(prev => ({
+                              ...prev,
+                              entryLines: prev.entryLines.filter(item => item.key !== line.key)
+                            }))
+                          }
+                          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                          title="Xóa dòng"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
           </div>
-
-          <label className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên hàng *</span>
-            <input
-              value={derivedProductNames}
-              readOnly
-              className={`${orderFieldClass} bg-zinc-50 text-zinc-800`}
-              placeholder="Tự hiện theo mã hàng đã chọn"
-            />
-          </label>
-
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={form.quantity}
-              onChange={e => setForm(prev => ({ ...prev, quantity: e.target.value }))}
-              className={orderFieldClass}
-              placeholder="VD: 1000"
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
-            <input
-              value={form.unit}
-              onChange={e => setForm(prev => ({ ...prev, unit: e.target.value }))}
-              className={orderFieldClass}
-              placeholder="VD: kg, cái"
-            />
-          </label>
 
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca *</span>
@@ -5036,7 +8798,7 @@ function AddProductionOrderModal({
               options={shiftOptions}
               placeholder="Gõ để tìm ca"
               isLoading={isLoadingLookups}
-              getLabel={item => String(item)}
+              getLabel={item => formatProductionOrderShiftLabel(String(item), settings)}
               getValue={item => String(item)}
             />
           </label>
@@ -5056,21 +8818,15 @@ function AddProductionOrderModal({
 
           <label className="col-span-2 space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy *</span>
-            <SearchableSelect
-              value={form.machine}
-              onChange={machine => setForm(prev => ({ ...prev, machine }))}
-              options={availableMachines}
-              placeholder={form.shift ? 'Gõ để tìm máy' : 'Chọn ca trước'}
-              disabled={!form.shift}
-              getLabel={item => {
-                const machine = item as MachineRow;
-                return machine.code ? `${machine.code} · ${machine.name}` : machine.name;
-              }}
-              getValue={item => {
-                const machine = item as MachineRow;
-                return machine.code || machine.name;
-              }}
-            />
+            {renderMachineSelect(
+              form.machine,
+              machine => setForm(prev => ({ ...prev, machine })),
+              availableMachines,
+              {
+                disabled: !form.shift,
+                placeholder: form.shift ? 'Gõ để tìm máy' : 'Chọn ca trước'
+              }
+            )}
             {form.shift && availableMachines.length === 0 && (
               <p className="text-[11px] font-semibold text-amber-700">
                 Không còn máy trống cho ca này (các máy đã khai báo trong Ca máy).
@@ -5161,6 +8917,302 @@ function AddProductionOrderModal({
   );
 }
 
+function ProductionOrderViewModal({
+  row,
+  onClose
+}: {
+  row: ProductionOrderRow | null;
+  onClose: () => void;
+}) {
+  if (!row) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết lệnh SX</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">{row.code || row.name}</p>
+          </div>
+          <button type="button" onClick={onClose} className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50">
+            Đóng
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 p-4 text-sm">
+          {[
+            ['Mã lệnh', row.code],
+            ['Tên lệnh', row.name],
+            ['Sản phẩm', formatProductionOrderProductsSummary(row)],
+            ['Trạng thái', row.status],
+            ['Khách hàng', row.customer],
+            ['Đơn hàng', row.orderRef],
+            ['Ca', row.shift],
+            ['Nhân sự', row.staff],
+            ['Bắt đầu', row.startDate],
+            ['Kết thúc', row.endDate],
+            ['Máy', row.machine],
+            ['Ghi chú', row.note || '-']
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
+              <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditProductionOrderModal({
+  open,
+  row,
+  orders,
+  machines,
+  onClose,
+  onSaved
+}: {
+  open: boolean;
+  row: ProductionOrderRow | null;
+  orders: OrderRow[];
+  machines: MachineRow[];
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [form, setForm] = useState<ProductionOrderFormState>(emptyProductionOrderForm);
+  const [staffText, setStaffText] = useState('');
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open || !row) return;
+    setForm({
+      code: row.code === '-' ? '' : row.code,
+      name: row.name === '-' ? '' : row.name,
+      entryLines: getProductionOrderProductLines(row).map((product, index) => ({
+        key: `edit-${row.id}-${index}`,
+        orderRef: row.orderRef === '-' ? '' : row.orderRef,
+        productCode: product.productCode === '-' ? '' : product.productCode,
+        productName: product.productName === '-' ? '' : product.productName,
+        quantity: product.quantity === '-' ? '' : product.quantity,
+        unit: product.unit === '-' ? '' : product.unit
+      })),
+      status: row.status === '-' ? 'Chờ sx' : row.status,
+      shift: row.shift === '-' ? '' : row.shift,
+      selectedStaffIds: [],
+      startDateTime: toDatetimeLocalInputValue(row.startDate),
+      endDateTime: toDatetimeLocalInputValue(row.endDate),
+      machine: row.machine === '-' ? '' : row.machine,
+      note: row.note
+    });
+    setStaffText(row.staff === '-' ? '' : row.staff);
+    setFormError('');
+  }, [open, row]);
+
+  if (!open || !row) return null;
+
+  const line = form.entryLines[0];
+  const orderCodeOptions = [...new Set(orders.map(order => order.orderCode).filter(code => code && code !== '-'))].sort((a, b) =>
+    a.localeCompare(b, 'vi')
+  );
+
+  const handleSubmit = async () => {
+    const quantity = Number(line.quantity);
+    if (!line.orderRef.trim()) {
+      setFormError('Vui lòng chọn mã đơn.');
+      return;
+    }
+    if (!line.productCode.trim()) {
+      setFormError('Vui lòng nhập mã hàng.');
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setFormError('Số lượng phải lớn hơn 0.');
+      return;
+    }
+
+    setIsSaving(true);
+    setFormError('');
+
+    try {
+      const res = await fetch(`/api/lenh-sx/${row.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productionOrderFormToPayload(form, line, staffText))
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể cập nhật lệnh sản xuất.');
+      }
+
+      await onSaved();
+      onClose();
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể cập nhật lệnh sản xuất.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Sửa lệnh sản xuất</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">{row.code || row.name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Đóng
+          </button>
+        </div>
+
+        {formError && (
+          <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
+            {formError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 p-4">
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã lệnh</span>
+            <input value={form.code} onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))} className={orderFieldClass} />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên lệnh</span>
+            <input value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} className={orderFieldClass} />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn</span>
+            <SearchableSelect
+              value={line.orderRef}
+              onChange={orderRef => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], orderRef }] }))}
+              options={orderCodeOptions}
+              placeholder="Gõ để tìm mã đơn"
+              inputClassName={orderFieldClass}
+              getLabel={item => String(item)}
+              getValue={item => String(item)}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã hàng</span>
+            <input
+              value={line.productCode}
+              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], productCode: e.target.value }] }))}
+              className={orderFieldClass}
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên hàng</span>
+            <input
+              value={line.productName}
+              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], productName: e.target.value }] }))}
+              className={orderFieldClass}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
+            <input
+              value={line.unit}
+              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], unit: e.target.value }] }))}
+              className={orderFieldClass}
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Số lượng</span>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={line.quantity}
+              onChange={e => setForm(prev => ({ ...prev, entryLines: [{ ...prev.entryLines[0], quantity: e.target.value }] }))}
+              className={orderFieldClass}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+            <SearchableSelect
+              value={form.status}
+              onChange={status => setForm(prev => ({ ...prev, status }))}
+              options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
+              placeholder="Gõ để tìm trạng thái"
+              getLabel={item => String(item)}
+              getValue={item => String(item)}
+              allowEmpty={false}
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
+            <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân sự</span>
+            <input value={staffText} onChange={e => setStaffText(e.target.value)} className={orderFieldClass} />
+          </label>
+
+          <label className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>
+            {renderMachineSelect(
+              form.machine,
+              machine => setForm(prev => ({ ...prev, machine })),
+              machines,
+              { placeholder: 'Gõ để tìm máy' }
+            )}
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ bắt đầu</span>
+            <input type="datetime-local" value={form.startDateTime} onChange={e => setForm(prev => ({ ...prev, startDateTime: e.target.value }))} className={orderFieldClass} />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>
+            <input type="datetime-local" value={form.endDateTime} onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))} className={orderFieldClass} />
+          </label>
+
+          <label className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+            <textarea
+              value={form.note}
+              onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
+              rows={2}
+              className={`${orderFieldClass} min-h-[72px] resize-y`}
+            />
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-zinc-100 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSaving}
+            className="flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isSaving ? 'Đang lưu...' : 'Cập nhật'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<ProductionOrderRow[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -5169,6 +9221,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
   const [loadError, setLoadError] = useState('');
   const [viewingRow, setViewingRow] = useState<ProductionOrderRow | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
 
   const loadProductionOrders = async () => {
     setIsLoading(true);
@@ -5208,7 +9261,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
       const matchesStatus = selectedStatus === 'all' || row.status === selectedStatus;
       const matchesSearch =
         !normalizedSearch ||
-        `${row.code} ${row.name} ${row.productCode} ${row.productName} ${row.customer} ${row.orderRef} ${row.machine} ${row.status} ${row.note}`
+        `${row.code} ${row.name} ${row.productCode} ${row.productName} ${formatProductionOrderProductsSummary(row)} ${row.customer} ${row.orderRef} ${row.machine} ${row.status} ${row.note}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesStatus && matchesSearch;
@@ -5314,45 +9367,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
         onCreated={loadProductionOrders}
       />
 
-      {viewingRow && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết lệnh SX</h3>
-                <p className="mt-0.5 text-xs font-semibold text-zinc-500">{viewingRow.code || viewingRow.name}</p>
-              </div>
-              <button type="button" onClick={() => setViewingRow(null)} className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50">
-                Đóng
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3 p-4 text-sm">
-              {[
-                ['Mã lệnh', viewingRow.code],
-                ['Tên lệnh', viewingRow.name],
-                ['Mã hàng', viewingRow.productCode],
-                ['Tên hàng', viewingRow.productName],
-                ['Số lượng', viewingRow.quantity],
-                ['Đơn vị', viewingRow.unit],
-                ['Trạng thái', viewingRow.status],
-                ['Khách hàng', viewingRow.customer],
-                ['Đơn hàng', viewingRow.orderRef],
-                ['Ca', viewingRow.shift],
-                ['Nhân sự', viewingRow.staff],
-                ['Bắt đầu', viewingRow.startDate],
-                ['Kết thúc', viewingRow.endDate],
-                ['Máy', viewingRow.machine],
-                ['Ghi chú', viewingRow.note || '-']
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
-                  <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <ProductionOrderViewModal row={viewingRow} onClose={() => setViewingRow(null)} />
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -5371,7 +9386,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-4 py-3 font-black">Bắt đầu</th>
                 <th className="px-4 py-3 font-black">Kết thúc</th>
                 <th className="px-4 py-3 font-black">Máy</th>
-                <th className="px-4 py-3 text-center font-black">Xem</th>
+                <th className="px-4 py-3 text-center font-black">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -5379,10 +9394,26 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                 <tr key={row.id} className="transition hover:bg-red-50/40">
                   <td className="px-4 py-3 font-black text-zinc-950">{row.code || '-'}</td>
                   <td className="px-4 py-3 font-black text-zinc-950">{row.name || '-'}</td>
-                  <td className="px-4 py-3 font-semibold text-zinc-700">{row.productCode || '-'}</td>
-                  <td className="px-4 py-3 font-semibold text-zinc-800">{row.productName || '-'}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{row.quantity}</td>
-                  <td className="px-4 py-3 font-bold text-zinc-700">{row.unit}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">
+                    {getProductionOrderProductLines(row)
+                      .map(product => product.productCode || '-')
+                      .join(' | ') || '-'}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-zinc-800">
+                    {getProductionOrderProductLines(row)
+                      .map(product => product.productName || '-')
+                      .join(' | ') || '-'}
+                  </td>
+                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">
+                    {getProductionOrderProductLines(row)
+                      .map(product => product.quantity || '-')
+                      .join(' | ') || '-'}
+                  </td>
+                  <td className="px-4 py-3 font-bold text-zinc-700">
+                    {getProductionOrderProductLines(row)
+                      .map(product => product.unit || '-')
+                      .join(' | ') || '-'}
+                  </td>
                   <td className="px-4 py-3">
                     <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
                       {row.status}
@@ -5394,14 +9425,25 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-4 py-3 font-mono text-xs font-bold text-zinc-600">{row.endDate}</td>
                   <td className="px-4 py-3 font-semibold text-zinc-600">{row.machine}</td>
                   <td className="px-4 py-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setViewingRow(row)}
-                      title="Xem chi tiết"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
+                    <div className="inline-flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingRow(row)}
+                        title="Xem chi tiết"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => printProductionOrder(row)}
+                        disabled={isLoadingPrint}
+                        title="In lệnh SX"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -5417,8 +9459,100 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
           </table>
         </div>
       </section>
+
+      {printingOrder && (
+        <ProductionOrderPrintSheet
+          order={printingOrder}
+          materials={printingMaterials}
+          machineLabel={printingMachineLabel}
+          product={printingProduct}
+        />
+      )}
     </div>
   );
+}
+
+interface OrderProductLine {
+  productCode: string;
+  productName: string;
+  unit: string;
+  quantity: string;
+}
+
+function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderProductLine[] {
+  const raw = record.san_pham ?? record.products;
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw
+      .map((item): OrderProductLine | null => {
+        if (!item || typeof item !== 'object') return null;
+        const row = item as Record<string, unknown>;
+        const productCode = pickText(row, ['ma_sp', 'ma_hang', 'productCode', 'code'], '');
+        const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
+        const unit = formatCell(row.don_vi ?? row.unit);
+        const quantity = formatCell(row.so_luong ?? row.quantity);
+        if (!productCode && !productName) return null;
+        return { productCode, productName, unit, quantity };
+      })
+      .filter((line): line is OrderProductLine => Boolean(line));
+  }
+
+  const productCode = pickText(record, ['ma_hang', 'ma_sp', 'product_code'], '');
+  const productName = pickText(record, ['ten_hang', 'ten_sp', 'product_name'], '');
+  if (!productCode && !productName) return [];
+
+  return [
+    {
+      productCode,
+      productName,
+      unit: formatCell(record.don_vi),
+      quantity: formatCell(record.so_luong ?? record.sl ?? record.quantity)
+    }
+  ];
+}
+
+function summarizeOrderProducts(products: OrderProductLine[]) {
+  const productCode = products.map(item => item.productCode).filter(Boolean).join(', ') || '-';
+  const productName = products.map(item => item.productName).filter(Boolean).join(', ') || '-';
+  const unit =
+    products.length === 1
+      ? products[0].unit
+      : products
+          .map(item => item.unit)
+          .filter(unit => unit && unit !== '-')
+          .join(', ') || '-';
+  const total = products.reduce((sum, item) => sum + parsePercentInput(item.quantity), 0);
+
+  return {
+    productCode,
+    productName,
+    unit,
+    quantity: total > 0 ? String(total) : '-'
+  };
+}
+
+function getOrderProductLines(order: OrderRow): OrderProductLine[] {
+  if (order.products.length > 0) return order.products;
+  if (!order.productCode && !order.productName) return [];
+  return [
+    {
+      productCode: order.productCode,
+      productName: order.productName,
+      unit: order.unit,
+      quantity: order.quantity
+    }
+  ];
+}
+
+function formatOrderProductsSummary(products: OrderProductLine[]) {
+  if (products.length === 0) return '-';
+  return products
+    .map(line => {
+      const qty = line.quantity && line.quantity !== '-' ? line.quantity : '';
+      const unit = line.unit && line.unit !== '-' ? line.unit : '';
+      const label = line.productCode || line.productName || '-';
+      return `${label}${qty ? ` × ${qty}` : ''}${unit ? ` ${unit}` : ''}`;
+    })
+    .join(' · ');
 }
 
 interface OrderRow {
@@ -5428,12 +9562,11 @@ interface OrderRow {
   status: string;
   staffName: string;
   customer: string;
+  products: OrderProductLine[];
   productCode: string;
   productName: string;
   unit: string;
   quantity: string;
-  stockQuantity: string;
-  productionOrder: string;
   note: string;
 }
 
@@ -5447,29 +9580,44 @@ function normalizeOrders(data: unknown): OrderRow[] {
       if (!item || typeof item !== 'object') return null;
       const record = item as Record<string, unknown>;
       const orderCode = pickText(record, ['ma_don_hang', 'order_code', 'code'], '');
-      const productCode = pickText(record, ['ma_hang', 'ma_sp', 'product_code'], '');
-      const productName = pickText(record, ['ten_hang', 'ten_sp', 'product_name'], '');
-      if (!orderCode && !productCode && !productName) return null;
+      const products = parseOrderProductsFromRecord(record);
+      const summary = summarizeOrderProducts(products);
+      if (!orderCode && products.length === 0) return null;
 
       return {
-        id: String(record.id ?? '').trim() || orderCode || productCode || productName,
+        id: String(record.id ?? '').trim() || orderCode || summary.productCode || summary.productName,
         orderCode,
         orderType: pickText(record, ['loai_don_hang', 'order_type', 'type'], '-'),
         status: pickText(record, ['trang_thai', 'status', 'trang_thai_don'], ORDER_STATUS_DEFAULT),
         staffName: pickText(record, ['nhan_vien', 'staff', 'nv'], '-'),
         customer: pickText(record, ['khach_hang', 'customer'], '-'),
-        productCode,
-        productName,
-        unit: formatCell(record.don_vi),
-        quantity: formatCell(record.so_luong ?? record.sl ?? record.quantity),
-        stockQuantity: formatCell(
-          record.so_luong_ton ?? record.so_luong_ton_kho ?? record.sl_ton ?? record.stock_quantity
-        ),
-        productionOrder: pickText(record, ['lenh_sx', 'production_order'], '-'),
+        products,
+        productCode: summary.productCode,
+        productName: summary.productName,
+        unit: summary.unit,
+        quantity: summary.quantity,
         note: pickText(record, ['ghi_chu', 'note'], '')
       };
     })
     .filter((order): order is OrderRow => Boolean(order));
+}
+
+type OrderProductFormLine = {
+  key: string;
+  productCode: string;
+  productName: string;
+  unit: string;
+  quantity: string;
+};
+
+function newOrderProductFormLine(): OrderProductFormLine {
+  return {
+    key: `order-product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    productCode: '',
+    productName: '',
+    unit: '',
+    quantity: ''
+  };
 }
 
 type OrderFormState = {
@@ -5477,12 +9625,7 @@ type OrderFormState = {
   orderType: string;
   staffName: string;
   customer: string;
-  productCode: string;
-  productName: string;
-  unit: string;
-  quantity: string;
-  stockQuantity: string;
-  productionOrder: string;
+  productLines: OrderProductFormLine[];
   note: string;
   status: string;
 };
@@ -5492,15 +9635,33 @@ const emptyOrderForm = (): OrderFormState => ({
   orderType: ORDER_TYPE_OPTIONS[0],
   staffName: '',
   customer: '',
-  productCode: '',
-  productName: '',
-  unit: '',
-  quantity: '',
-  stockQuantity: '',
-  productionOrder: '',
+  productLines: [newOrderProductFormLine()],
   note: '',
   status: ORDER_STATUS_DEFAULT
 });
+
+function orderProductLinesToPayload(lines: OrderProductFormLine[], productOptions: OrderProductOption[]) {
+  return lines
+    .filter(line => line.productCode.trim() || line.productName.trim())
+    .map(line => {
+      const resolved = resolveOrderProductFields(productOptions, line.productCode, {
+        productName: line.productName,
+        unit: line.unit
+      });
+      const productCode = line.productCode.trim();
+      const productName = resolved.productName || line.productName.trim();
+      const unit = line.unit.trim() || resolved.unit;
+      const quantity = parsePercentInput(line.quantity);
+
+      return {
+        ma_sp: productCode,
+        ten_sp: productName,
+        don_vi: unit,
+        so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null
+      };
+    })
+    .filter(item => item.ma_sp || item.ten_sp);
+}
 
 function orderCellToInput(value: string) {
   return value === '-' ? '' : value;
@@ -5515,17 +9676,20 @@ function orderToForm(order: OrderRow): OrderFormState {
     ? order.orderType
     : ORDER_TYPE_OPTIONS[0];
 
+  const productLines = getOrderProductLines(order).map(line => ({
+    key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
+    productCode: orderCellToInput(line.productCode),
+    productName: orderCellToInput(line.productName),
+    unit: orderCellToInput(line.unit),
+    quantity: orderCellToInput(line.quantity)
+  }));
+
   return {
     orderCode: orderCellToInput(order.orderCode),
     orderType,
     staffName: orderCellToInput(order.staffName),
     customer: orderCellToInput(order.customer),
-    productCode: orderCellToInput(order.productCode),
-    productName: orderCellToInput(order.productName),
-    unit: orderCellToInput(order.unit),
-    quantity: orderCellToInput(order.quantity),
-    stockQuantity: orderCellToInput(order.stockQuantity),
-    productionOrder: orderCellToInput(order.productionOrder),
+    productLines: productLines.length > 0 ? productLines : [newOrderProductFormLine()],
     note: orderCellToInput(order.note),
     status: (ORDER_STATUS_OPTIONS as readonly string[]).includes(order.status)
       ? order.status
@@ -5545,7 +9709,6 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingOrder, setViewingOrder] = useState<OrderRow | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
-  const [creatingProductionOrderId, setCreatingProductionOrderId] = useState<string | null>(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -5662,35 +9825,62 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   const unitSuggestions = useMemo(() => {
     const fromProducts = productOptions.map(product => product.unit).filter(Boolean);
-    const fromOrders = orders.map(order => order.unit).filter(unit => unit && unit !== '-');
+    const fromOrders = orders
+      .flatMap(order => getOrderProductLines(order).map(line => line.unit))
+      .filter(unit => unit && unit !== '-');
     return [...new Set([...fromProducts, ...fromOrders, ...readUnitSuggestions()])].sort((a, b) =>
       a.localeCompare(b, 'vi')
     );
   }, [orders, productOptions]);
 
-  const matchedProduct = useMemo(
-    () => findOrderProductByCode(productOptions, orderForm.productCode),
-    [orderForm.productCode, productOptions]
-  );
+  const updateProductLine = (key: string, patch: Partial<OrderProductFormLine>) => {
+    setOrderForm(prev => ({
+      ...prev,
+      productLines: prev.productLines.map(line => (line.key === key ? { ...line, ...patch } : line))
+    }));
+  };
+
+  const pickOrderProduct = (key: string, productCode: string) => {
+    const resolved = resolveOrderProductFields(productOptions, productCode, {});
+    const match = findOrderProductByCode(productOptions, productCode);
+    updateProductLine(key, {
+      productCode,
+      productName: resolved.productName,
+      unit: resolved.unit || match?.unit || ''
+    });
+  };
 
   const handleSaveOrder = async () => {
     if (!orderForm.orderCode.trim()) {
       setFormError('Vui lòng nhập mã đơn hàng.');
       return;
     }
-    if (!orderForm.productCode.trim() && !orderForm.productName.trim()) {
-      setFormError('Vui lòng nhập mã hàng hoặc tên hàng.');
+
+    const products = orderProductLinesToPayload(orderForm.productLines, productOptions);
+    if (products.length === 0) {
+      setFormError('Vui lòng thêm ít nhất một sản phẩm.');
       return;
     }
 
-    const resolvedFields = resolveOrderProductFields(productOptions, orderForm.productCode, {
-      productName: orderForm.productName,
-      unit: orderForm.unit
-    });
+    for (const product of products) {
+      if (!product.ma_sp && !product.ten_sp) {
+        setFormError('Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.');
+        return;
+      }
+      if (!product.so_luong || product.so_luong <= 0) {
+        setFormError(`Số lượng phải lớn hơn 0 cho sản phẩm ${product.ma_sp || product.ten_sp}.`);
+        return;
+      }
+    }
+
     const payload = {
-      ...orderForm,
-      productName: resolvedFields.productName || orderForm.productName,
-      unit: orderForm.unit.trim() || resolvedFields.unit
+      orderCode: orderForm.orderCode.trim(),
+      orderType: orderForm.orderType,
+      staffName: orderForm.staffName,
+      customer: orderForm.customer,
+      products,
+      note: orderForm.note,
+      status: orderForm.status
     };
 
     setIsSavingOrder(true);
@@ -5709,9 +9899,9 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
         throw new Error(data.error || (isEdit ? 'Không thể cập nhật đơn hàng.' : 'Không thể thêm đơn hàng mới.'));
       }
 
-      if (payload.unit.trim()) {
-        saveUnitSuggestion(payload.unit.trim());
-      }
+      orderForm.productLines.forEach(line => {
+        if (line.unit.trim()) saveUnitSuggestion(line.unit.trim());
+      });
 
       closeForm();
       setActionMessage(isEdit ? 'Đã cập nhật đơn hàng.' : 'Đã thêm đơn hàng mới.');
@@ -5720,50 +9910,6 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
       setFormError(error.message || 'Không thể lưu đơn hàng.');
     } finally {
       setIsSavingOrder(false);
-    }
-  };
-
-  const handleCreateProductionOrder = async (order: OrderRow) => {
-    if (!order.id) {
-      setOrdersError('Không tìm thấy ID đơn hàng.');
-      return;
-    }
-
-    if (orderHasProductionOrder(order)) {
-      setOrdersError(`Đơn hàng đã có lệnh SX: ${order.productionOrder}`);
-      return;
-    }
-
-    if (!window.confirm(`Tạo lệnh SX từ đơn "${order.orderCode || order.productCode}"?`)) return;
-
-    setCreatingProductionOrderId(order.id);
-    setOrdersError('');
-    setActionMessage('');
-
-    try {
-      const res = await fetch(`/api/lenh-sx/from-don-hang/${order.id}`, { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể tạo lệnh sản xuất.');
-      }
-
-      const code = typeof data.code === 'string' ? data.code : '';
-      setActionMessage(
-        data.warning
-          ? String(data.warning)
-          : code
-            ? `Đã tạo lệnh SX ${code} và ghi vào bảng lenh_sx.`
-            : 'Đã tạo lệnh sản xuất.'
-      );
-      if (code) {
-        setViewingOrder(prev => (prev?.id === order.id ? { ...prev, productionOrder: code } : prev));
-      }
-      await loadOrders();
-    } catch (error: any) {
-      setOrdersError(error.message || 'Không thể tạo lệnh sản xuất.');
-    } finally {
-      setCreatingProductionOrderId(null);
     }
   };
 
@@ -5808,7 +9954,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
       const matchesType = selectedType === 'all' || order.orderType === selectedType;
       const matchesSearch =
         !normalizedSearch ||
-        `${order.orderCode} ${order.orderType} ${order.status} ${order.staffName} ${order.customer} ${order.productCode} ${order.productName} ${order.quantity} ${order.stockQuantity} ${order.productionOrder} ${order.note}`
+        `${order.orderCode} ${order.orderType} ${order.status} ${order.staffName} ${order.customer} ${formatOrderProductsSummary(getOrderProductLines(order))} ${order.note}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesType && matchesSearch;
@@ -5869,7 +10015,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="max-h-[92dvh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
@@ -5959,100 +10105,108 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   }}
                 />
               </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã hàng</span>
-                <SearchableProductCodeField
-                  value={orderForm.productCode}
-                  onChange={productCode => {
-                    setOrderForm(prev => {
-                      const resolved = resolveOrderProductFields(productOptions, productCode, {
-                        productName: prev.productName,
-                        unit: prev.unit
-                      });
-                      return {
+
+              <div className="col-span-2 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Sản phẩm *</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOrderForm(prev => ({
                         ...prev,
-                        productCode,
-                        productName: resolved.productName,
-                        unit: resolved.unit || prev.unit
-                      };
-                    });
-                  }}
-                  products={productOptions}
-                  isLoading={isLoadingLookups}
-                  onSelectProduct={product => {
-                    if (!product) return;
-                    setOrderForm(prev => ({
-                      ...prev,
-                      productCode: product.code || product.newCode,
-                      productName: product.name,
-                      unit: product.unit || prev.unit
-                    }));
-                  }}
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên hàng</span>
-                <input
-                  value={matchedProduct ? matchedProduct.name : orderForm.productName}
-                  readOnly={Boolean(matchedProduct)}
-                  onChange={e => setOrderForm(prev => ({ ...prev, productName: e.target.value }))}
-                  className={`${orderFieldClass} ${matchedProduct ? 'bg-zinc-50 text-zinc-800' : ''}`}
-                  placeholder={matchedProduct ? '' : 'Tự động theo mã hàng'}
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
-                <input
-                  list="order-unit-suggestions"
-                  value={orderForm.unit}
-                  onChange={e => setOrderForm(prev => ({ ...prev, unit: e.target.value }))}
-                  onBlur={e => {
-                    const trimmed = e.target.value.trim();
-                    if (trimmed) saveUnitSuggestion(trimmed);
-                  }}
-                  className={orderFieldClass}
-                  placeholder="Chọn hoặc nhập đơn vị mới"
-                />
+                        productLines: [...prev.productLines, newOrderProductFormLine()]
+                      }))
+                    }
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Thêm dòng
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {orderForm.productLines.map(line => {
+                    const matchedLineProduct = findOrderProductByCode(productOptions, line.productCode);
+                    return (
+                      <div key={line.key} className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
+                        <div className="flex items-end gap-2">
+                          <label className="min-w-0 flex-[1.35] space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã SP *</span>
+                            <SearchableSelect
+                              value={line.productCode}
+                              onChange={productCode => pickOrderProduct(line.key, productCode)}
+                              options={productOptions}
+                              placeholder="Gõ để tìm mã SP"
+                              isLoading={isLoadingLookups}
+                              inputClassName={orderFieldClass}
+                              getValue={item => (item as OrderProductOption).code}
+                              getLabel={item => {
+                                const product = item as OrderProductOption;
+                                return product.newCode ? `${product.code} · ${product.name}` : `${product.code} · ${product.name}`;
+                              }}
+                            />
+                          </label>
+                          <label className="min-w-0 flex-[1.5] space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên SP</span>
+                            <input
+                              value={matchedLineProduct ? matchedLineProduct.name : line.productName}
+                              readOnly={Boolean(matchedLineProduct)}
+                              onChange={e => updateProductLine(line.key, { productName: e.target.value })}
+                              className={`${orderFieldClass} ${matchedLineProduct ? 'bg-white text-zinc-800' : 'bg-white'}`}
+                              placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
+                            />
+                          </label>
+                          <label className="w-24 shrink-0 space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">ĐVT</span>
+                            <input
+                              list="order-unit-suggestions"
+                              value={line.unit}
+                              onChange={e => updateProductLine(line.key, { unit: e.target.value })}
+                              onBlur={e => {
+                                const trimmed = e.target.value.trim();
+                                if (trimmed) saveUnitSuggestion(trimmed);
+                              }}
+                              className={`${orderFieldClass} bg-white`}
+                              placeholder="ĐVT"
+                            />
+                          </label>
+                          <label className="w-24 shrink-0 space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL *</span>
+                            <input
+                              type="number"
+                              value={line.quantity}
+                              onChange={e => updateProductLine(line.key, { quantity: e.target.value })}
+                              className={`${orderFieldClass} bg-white`}
+                              placeholder="0"
+                            />
+                          </label>
+                          {orderForm.productLines.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOrderForm(prev => ({
+                                  ...prev,
+                                  productLines: prev.productLines.filter(item => item.key !== line.key)
+                                }))
+                              }
+                              title="Xóa dòng"
+                              className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <datalist id="order-unit-suggestions">
                   {unitSuggestions.map(unit => (
                     <option key={unit} value={unit} />
                   ))}
                 </datalist>
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Số lượng</span>
-                <input
-                  type="number"
-                  value={orderForm.quantity}
-                  onChange={e => setOrderForm(prev => ({ ...prev, quantity: e.target.value }))}
-                  className={orderFieldClass}
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Số lượng tồn</span>
-                <input
-                  type="number"
-                  value={orderForm.stockQuantity}
-                  onChange={e => setOrderForm(prev => ({ ...prev, stockQuantity: e.target.value }))}
-                  className={orderFieldClass}
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lệnh SX</span>
-                <input
-                  value={orderForm.productionOrder}
-                  onChange={e => setOrderForm(prev => ({ ...prev, productionOrder: e.target.value }))}
-                  className={orderFieldClass}
-                />
-              </label>
-              <label className="col-span-2 space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-                <input
-                  value={orderForm.note}
-                  onChange={e => setOrderForm(prev => ({ ...prev, note: e.target.value }))}
-                  className={orderFieldClass}
-                />
-              </label>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
               <button
@@ -6095,12 +10249,6 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                 ['Trạng thái', viewingOrder.status],
                 ['Nhân viên', viewingOrder.staffName],
                 ['Khách hàng', viewingOrder.customer],
-                ['Mã hàng', viewingOrder.productCode],
-                ['Tên hàng', viewingOrder.productName],
-                ['Đơn vị', viewingOrder.unit],
-                ['Số lượng', viewingOrder.quantity],
-                ['Số lượng tồn', viewingOrder.stockQuantity],
-                ['Lệnh SX', viewingOrder.productionOrder],
                 ['Ghi chú', viewingOrder.note || '-']
               ].map(([label, value]) => (
                 <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
@@ -6108,23 +10256,22 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
                 </div>
               ))}
+              <div className="col-span-2 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Sản phẩm</p>
+                <div className="mt-2 space-y-2">
+                  {getOrderProductLines(viewingOrder).map(line => (
+                    <div key={`${line.productCode}-${line.quantity}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm">
+                      <p className="font-bold text-zinc-900">{line.productCode || '-'} · {line.productName || '-'}</p>
+                      <p className="mt-0.5 text-zinc-600">
+                        SL: {line.quantity || '-'}
+                        {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
-              {!orderHasProductionOrder(viewingOrder) && (
-                <button
-                  type="button"
-                  onClick={() => handleCreateProductionOrder(viewingOrder)}
-                  disabled={creatingProductionOrderId === viewingOrder.id}
-                  className="flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {creatingProductionOrderId === viewingOrder.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Factory className="h-4 w-4" />
-                  )}
-                  Tạo Lệnh sx
-                </button>
-              )}
               <button type="button" onClick={() => openEditForm(viewingOrder)} className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
                 <Pencil className="h-4 w-4" />
                 Sửa
@@ -6192,7 +10339,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-[1480px] w-full text-left text-sm">
+          <table className="min-w-[1320px] w-full text-left text-sm">
             <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
               <tr>
                 <th className="px-4 py-3 font-black">Mã đơn</th>
@@ -6200,12 +10347,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-4 py-3 font-black">Trạng thái</th>
                 <th className="px-4 py-3 font-black">Nhân viên</th>
                 <th className="px-4 py-3 font-black">Khách hàng</th>
-                <th className="px-4 py-3 font-black">Mã hàng</th>
-                <th className="px-4 py-3 font-black">Tên hàng</th>
-                <th className="px-4 py-3 font-black">Đơn vị</th>
-                <th className="px-4 py-3 font-black">Số lượng</th>
-                <th className="px-4 py-3 font-black">Số lượng tồn</th>
-                <th className="px-4 py-3 font-black">Lệnh SX</th>
+                <th className="w-[560px] px-4 py-3 font-black">Sản phẩm</th>
                 <th className="px-4 py-3 font-black">Ghi chú</th>
                 <th className="px-4 py-3 text-center font-black">Thao tác</th>
               </tr>
@@ -6226,30 +10368,30 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   </td>
                   <td className="px-4 py-3 font-semibold text-zinc-700">{order.staffName}</td>
                   <td className="px-4 py-3 font-bold text-zinc-800">{order.customer}</td>
-                  <td className="px-4 py-3 font-black text-zinc-950">{order.productCode || '-'}</td>
-                  <td className="px-4 py-3 font-black text-zinc-950">{order.productName || '-'}</td>
-                  <td className="px-4 py-3 font-bold text-zinc-700">{order.unit}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{order.quantity}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{order.stockQuantity}</td>
-                  <td className="px-4 py-3 font-semibold text-zinc-600">{order.productionOrder}</td>
+                  <td className="w-[560px] px-4 py-3">
+                    <div className="min-w-[520px] overflow-hidden rounded-lg border border-zinc-300 bg-white">
+                      <div className="grid grid-cols-[1.1fr_1.7fr_0.8fr_0.8fr] divide-x divide-zinc-300 border-b border-zinc-300 bg-zinc-100 text-[10px] font-black uppercase tracking-wider text-zinc-600">
+                        <span className="px-3 py-2">Mã SP</span>
+                        <span className="px-3 py-2">Tên SP</span>
+                        <span className="px-3 py-2 text-right">Số lượng</span>
+                        <span className="px-3 py-2">Đơn vị</span>
+                      </div>
+                      {getOrderProductLines(order).map((line, index) => (
+                        <div
+                          key={`${order.id}-${line.productCode}-${line.productName}-${index}`}
+                          className="grid grid-cols-[1.1fr_1.7fr_0.8fr_0.8fr] divide-x divide-zinc-200 border-b border-zinc-200 text-xs font-semibold text-zinc-700 last:border-b-0"
+                        >
+                          <span className="px-3 py-2 font-black text-zinc-950">{line.productCode || '-'}</span>
+                          <span className="px-3 py-2 text-zinc-800">{line.productName || '-'}</span>
+                          <span className="px-3 py-2 text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
+                          <span className="px-3 py-2 font-bold text-zinc-700">{line.unit || '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 font-semibold text-zinc-500">{order.note || '-'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
-                      {!orderHasProductionOrder(order) && (
-                        <button
-                          type="button"
-                          onClick={() => handleCreateProductionOrder(order)}
-                          disabled={creatingProductionOrderId === order.id}
-                          title="Tạo Lệnh sx"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {creatingProductionOrderId === order.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Factory className="h-4 w-4" />
-                          )}
-                        </button>
-                      )}
                       <button
                         type="button"
                         onClick={() => setViewingOrder(order)}
@@ -6286,7 +10428,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
               {!isLoadingOrders && filteredOrders.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={8} className="px-4 py-8 text-center font-bold text-zinc-500">
                     Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
                   </td>
                 </tr>
@@ -6944,6 +11086,23 @@ function flattenHrMembers(branches: HrBranch[]): HrMember[] {
   return branches.flatMap(branch => branch.departments.flatMap(department => department.members));
 }
 
+function parseProductionOrderFilterDate(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '-') return '';
+  const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
+function splitProductionOrderStaffNames(value: string): string[] {
+  return String(value || '')
+    .split(/[,;+]/)
+    .map(name => name.trim())
+    .filter(name => name && name !== '-');
+}
+
 function DashboardWindow({
   title,
   subtitle,
@@ -6957,7 +11116,9 @@ function DashboardWindow({
   error,
   onOpen,
   openLabel,
+  disabled,
   secondaryAction,
+  tertiaryAction,
   compact = false,
   children
 }: {
@@ -6973,7 +11134,14 @@ function DashboardWindow({
   error: string;
   onOpen: () => void;
   openLabel: string;
+  disabled?: boolean;
   secondaryAction?: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+  };
+  tertiaryAction?: {
     label: string;
     onClick: () => void;
     disabled?: boolean;
@@ -7006,6 +11174,23 @@ function DashboardWindow({
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {tertiaryAction && (
+            <button
+              type="button"
+              onClick={tertiaryAction.onClick}
+              disabled={tertiaryAction.disabled || tertiaryAction.loading}
+              className="rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {tertiaryAction.loading ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Đang in...
+                </span>
+              ) : (
+                tertiaryAction.label
+              )}
+            </button>
+          )}
           {secondaryAction && (
             <button
               type="button"
@@ -7026,7 +11211,8 @@ function DashboardWindow({
           <button
             type="button"
             onClick={onOpen}
-            className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-white/20"
+            disabled={disabled}
+            className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {openLabel}
           </button>
@@ -7073,6 +11259,8 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrderRow[]>([]);
+  const [productionOrderSettings, setProductionOrderSettings] = useState<ProductionOrderLookupSetting[]>([]);
+  const [acceptanceReports, setAcceptanceReports] = useState<AcceptanceReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [staffSearch, setStaffSearch] = useState('');
@@ -7081,20 +11269,36 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
   const [machineSearch, setMachineSearch] = useState('');
   const [materialSearch, setMaterialSearch] = useState('');
   const [productionOrderSearch, setProductionOrderSearch] = useState('');
+  const [productionOrderDateFrom, setProductionOrderDateFrom] = useState('');
+  const [productionOrderDateTo, setProductionOrderDateTo] = useState('');
+  const [productionOrderShiftFilter, setProductionOrderShiftFilter] = useState('all');
+  const [productionOrderStaffFilters, setProductionOrderStaffFilters] = useState<Set<string>>(() => new Set());
+  const [acceptanceReportSearch, setAcceptanceReportSearch] = useState('');
   const [showAddProductionOrder, setShowAddProductionOrder] = useState(false);
+  const [showProductionPlan, setShowProductionPlan] = useState(false);
+  const [viewingProductionOrder, setViewingProductionOrder] = useState<ProductionOrderRow | null>(null);
+  const [editingProductionOrder, setEditingProductionOrder] = useState<ProductionOrderRow | null>(null);
+  const [deletingProductionOrderId, setDeletingProductionOrderId] = useState('');
+  const [selectedProductionOrderIds, setSelectedProductionOrderIds] = useState<string[]>([]);
+  const [printingBatchOrders, setPrintingBatchOrders] = useState<PrintableProductionOrder[]>([]);
+  const [pendingBatchPrint, setPendingBatchPrint] = useState(false);
+  const [isBatchPrinting, setIsBatchPrinting] = useState(false);
+  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
 
   const loadBoard = async () => {
     setIsLoading(true);
     setLoadError('');
 
     try {
-      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes] = await Promise.all([
+      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes] = await Promise.all([
         fetch('/api/nhan-su?format=groups'),
         fetch('/api/don-hang'),
         fetch('/api/san-pham?format=table'),
         fetch('/api/danh-sach-may'),
         fetch('/api/kho-nvl'),
-        fetch('/api/lenh-sx')
+        fetch('/api/lenh-sx'),
+        fetch('/api/cai-dat'),
+        fetch('/api/bao-cao-nghiem-thu?limit=30')
       ]);
 
       const staffData = await staffRes.json().catch(() => ({}));
@@ -7103,6 +11307,8 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
       const machineData = await machineRes.json().catch(() => ({}));
       const materialData = await materialRes.json().catch(() => ({}));
       const productionData = await productionRes.json().catch(() => ({}));
+      const settingData = await settingRes.json().catch(() => ({}));
+      const acceptanceData = await acceptanceRes.json().catch(() => ({}));
 
       if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
       if (!orderRes.ok) throw new Error(orderData.error || 'Không thể tải đơn hàng.');
@@ -7117,6 +11323,12 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
       setMachines(normalizeMachines(machineData));
       setMaterials(normalizeMaterialsInventory(materialData));
       setProductionOrders(normalizeProductionOrders(productionData));
+      setProductionOrderSettings(settingRes.ok ? mapProductionOrderSettings(settingData) : []);
+      if (acceptanceRes.ok) {
+        setAcceptanceReports(normalizeAcceptanceReports(acceptanceData));
+      } else {
+        setAcceptanceReports([]);
+      }
     } catch (error: any) {
       setStaffBranches([]);
       setOrders([]);
@@ -7124,6 +11336,8 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
       setMachines([]);
       setMaterials([]);
       setProductionOrders([]);
+      setProductionOrderSettings([]);
+      setAcceptanceReports([]);
       setLoadError(error.message || 'Không thể tải dữ liệu bảng điều khiển.');
     } finally {
       setIsLoading(false);
@@ -7147,7 +11361,7 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
   const filteredOrders = useMemo(() => {
     if (!orderQuery) return orders;
     return orders.filter(order =>
-      `${order.orderCode} ${order.productCode} ${order.productName} ${order.customer} ${order.status} ${order.quantity} ${order.stockQuantity}`
+      `${order.orderCode} ${formatOrderProductsSummary(getOrderProductLines(order))} ${order.customer} ${order.status} ${order.stockQuantity}`
         .toLowerCase()
         .includes(orderQuery)
     );
@@ -7180,28 +11394,194 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
   }, [materials, materialQuery]);
 
   const productionOrderQuery = productionOrderSearch.trim().toLowerCase();
-  const recentProductionOrders = useMemo(() => {
-    const sorted = [...productionOrders].sort((a, b) => {
-      const idA = Number(a.id);
-      const idB = Number(b.id);
-      if (Number.isFinite(idA) && Number.isFinite(idB) && idA !== idB) {
-        return idB - idA;
-      }
-      return `${b.startDate} ${b.code}`.localeCompare(`${a.startDate} ${a.code}`, 'vi');
-    });
+  const productionOrderShiftOptions = useMemo(() => {
+    const fromTimeSettings = productionOrderSettings
+      .filter(setting => setting.loaiCaiDat === 'Thời gian')
+      .map(setting => setting.name || setting.code)
+      .filter(value => value && value !== '-');
 
-    if (!productionOrderQuery) return sorted;
+    const fallbackFromOrders = productionOrders
+      .map(row => (row.shift && row.shift !== '-' ? row.shift : 'Chưa phân ca'))
+      .filter(Boolean);
+
+    return [...new Set(fromTimeSettings.length > 0 ? fromTimeSettings : fallbackFromOrders)].sort((a, b) =>
+      a.localeCompare(b, 'vi', { numeric: true })
+    );
+  }, [productionOrderSettings, productionOrders]);
+  const productionOrderStaffOptions = useMemo(() => {
+    return [
+      ...new Set(productionOrders.flatMap(row => splitProductionOrderStaffNames(row.staff)))
+    ].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [productionOrders]);
+  const recentProductionOrders = useMemo(() => {
+    const sorted = [...productionOrders].sort(compareProductionOrderPriority);
 
     return sorted.filter(row =>
-      `${row.code} ${row.name} ${row.productCode} ${row.productName} ${row.customer} ${row.orderRef} ${row.status} ${row.machine}`
-        .toLowerCase()
-        .includes(productionOrderQuery)
+      {
+        const matchesSearch =
+          !productionOrderQuery ||
+          `${row.code} ${row.name} ${row.productCode} ${row.productName} ${row.customer} ${row.orderRef} ${row.status} ${row.machine} ${row.position} ${resolveProductionOrderMachine(row, machines)} ${row.shift} ${row.staff}`
+            .toLowerCase()
+            .includes(productionOrderQuery);
+        const rowDate = parseProductionOrderFilterDate(row.startDate);
+        const matchesDateFrom = !productionOrderDateFrom || (rowDate && rowDate >= productionOrderDateFrom);
+        const matchesDateTo = !productionOrderDateTo || (rowDate && rowDate <= productionOrderDateTo);
+        const rowShift = row.shift && row.shift !== '-' ? row.shift : 'Chưa phân ca';
+        const matchesShift = productionOrderShiftFilter === 'all' || rowShift === productionOrderShiftFilter;
+        const rowStaff = splitProductionOrderStaffNames(row.staff);
+        const matchesStaff =
+          productionOrderStaffFilters.size === 0 ||
+          rowStaff.some(name => productionOrderStaffFilters.has(name));
+
+        return matchesSearch && matchesDateFrom && matchesDateTo && matchesShift && matchesStaff;
+      }
     );
-  }, [productionOrders, productionOrderQuery]);
+  }, [
+    productionOrders,
+    productionOrderQuery,
+    productionOrderDateFrom,
+    productionOrderDateTo,
+    productionOrderShiftFilter,
+    productionOrderStaffFilters,
+    machines
+  ]);
+
+  const acceptanceReportQuery = acceptanceReportSearch.trim().toLowerCase();
+  const filteredAcceptanceReports = useMemo(() => {
+    if (!acceptanceReportQuery) return acceptanceReports;
+    return acceptanceReports.filter(report =>
+      `${report.ngay} ${report.ca} ${report.lan} ${report.gio} ${report.ma_may} ${report.ten_may} ${report.mat_hang} ${report.don_vi} ${report.so_luong ?? ''}`
+        .toLowerCase()
+        .includes(acceptanceReportQuery)
+    );
+  }, [acceptanceReports, acceptanceReportQuery]);
 
   const previewLimit = 12;
   const sidePreviewLimit = 6;
   const productionPreviewLimit = 20;
+  const visibleProductionOrders = recentProductionOrders.slice(0, productionPreviewLimit);
+  const selectedProductionOrdersForPlan = useMemo(
+    () => productionOrders.filter(row => selectedProductionOrderIds.includes(row.id)),
+    [productionOrders, selectedProductionOrderIds]
+  );
+  const selectedVisibleProductionOrderIds = visibleProductionOrders
+    .map(row => row.id)
+    .filter(id => selectedProductionOrderIds.includes(id));
+  const allVisibleProductionOrdersSelected =
+    visibleProductionOrders.length > 0 && selectedVisibleProductionOrderIds.length === visibleProductionOrders.length;
+  const hasAnyVisibleProductionOrderSelected = selectedVisibleProductionOrderIds.length > 0;
+
+  useEffect(() => {
+    setSelectedProductionOrderIds(prev => prev.filter(id => productionOrders.some(row => row.id === id)));
+  }, [productionOrders]);
+
+  const handleDeleteProductionOrder = async (row: ProductionOrderRow) => {
+    const label = row.code || row.name || 'lệnh SX';
+    if (!window.confirm(`Xóa ${label}?`)) return;
+
+    setDeletingProductionOrderId(row.id);
+    try {
+      const res = await fetch(`/api/lenh-sx/${row.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa lệnh sản xuất.');
+      }
+      if (viewingProductionOrder?.id === row.id) setViewingProductionOrder(null);
+      if (editingProductionOrder?.id === row.id) setEditingProductionOrder(null);
+      await loadBoard();
+    } catch (error: any) {
+      window.alert(error.message || 'Không thể xóa lệnh sản xuất.');
+    } finally {
+      setDeletingProductionOrderId('');
+    }
+  };
+
+  const toggleProductionOrderSelection = (orderId: string) => {
+    setSelectedProductionOrderIds(prev =>
+      prev.includes(orderId) ? prev.filter(id => id !== orderId) : [...prev, orderId]
+    );
+  };
+
+  const toggleSelectAllVisibleProductionOrders = () => {
+    setSelectedProductionOrderIds(prev => {
+      const visibleIds = visibleProductionOrders.map(row => row.id);
+      if (visibleIds.length === 0) return prev;
+      if (allVisibleProductionOrdersSelected) {
+        return prev.filter(id => !visibleIds.includes(id));
+      }
+      return [...new Set([...prev, ...visibleIds])];
+    });
+  };
+
+  const toggleProductionOrderStaffFilter = (staffName: string) => {
+    setProductionOrderStaffFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(staffName)) {
+        next.delete(staffName);
+      } else {
+        next.add(staffName);
+      }
+      return next;
+    });
+  };
+
+  const clearProductionOrderFilters = () => {
+    setProductionOrderDateFrom('');
+    setProductionOrderDateTo('');
+    setProductionOrderShiftFilter('all');
+    setProductionOrderStaffFilters(new Set());
+  };
+
+  const handlePrintSelectedProductionOrders = async () => {
+    const rowsToPrint = visibleProductionOrders.filter(row => selectedProductionOrderIds.includes(row.id));
+    if (rowsToPrint.length === 0) return;
+
+    setIsBatchPrinting(true);
+    try {
+      const printableItems = await Promise.all(
+        rowsToPrint.map(async order => {
+          const [{ items, product }, machineLabel] = await Promise.all([
+            fetchProductPrintData(order.productCode),
+            resolveProductionOrderMachineLabel(order.machine)
+          ]);
+          const orderQuantity = parseProductionOrderQuantity(order.quantity);
+          return {
+            order,
+            materials: buildProductionOrderMaterialProposal(orderQuantity, items, product),
+            machineLabel,
+            product
+          };
+        })
+      );
+      setPrintingBatchOrders(printableItems);
+      setPendingBatchPrint(true);
+    } catch (error) {
+      console.error('Không thể in nhiều lệnh SX:', error);
+      window.alert('Không thể tải dữ liệu để in các lệnh SX đã chọn.');
+    } finally {
+      setIsBatchPrinting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingBatchPrint || printingBatchOrders.length === 0) return;
+
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingBatchPrint(false);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [pendingBatchPrint, printingBatchOrders]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintingBatchOrders([]);
+      setPendingBatchPrint(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
 
   return (
     <div className="mx-auto w-full max-w-[1880px] space-y-4">
@@ -7211,7 +11591,295 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
         </p>
       )}
 
+      <div className="grid grid-cols-1 gap-4">
+        <DashboardWindow
+          title="Lệnh sản xuất"
+          subtitle="Các dòng lệnh mới nhất từ bảng lenh_sx"
+          icon={Factory}
+          accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
+          count={productionOrders.length}
+          countLabel="Lệnh"
+          search={productionOrderSearch}
+          onSearchChange={setProductionOrderSearch}
+          isLoading={isLoading}
+          error=""
+          onOpen={async () => {
+            if (selectedProductionOrdersForPlan.length === 0) return;
+            await loadBoard();
+            setShowProductionPlan(true);
+          }}
+          openLabel={`Tạo Kế hoạch SX${selectedProductionOrdersForPlan.length > 0 ? ` (${selectedProductionOrdersForPlan.length})` : ''}`}
+          disabled={selectedProductionOrdersForPlan.length === 0}
+          secondaryAction={{
+            label: 'Thêm mới',
+            onClick: () => setShowAddProductionOrder(true)
+          }}
+          tertiaryAction={{
+            label: `In lệnh${selectedProductionOrderIds.length > 0 ? ` (${selectedProductionOrderIds.length})` : ''}`,
+            onClick: handlePrintSelectedProductionOrders,
+            disabled: !hasAnyVisibleProductionOrderSelected,
+            loading: isBatchPrinting
+          }}
+        >
+          <div className="border-b border-zinc-100 bg-white p-3">
+            <div className="grid gap-2 md:grid-cols-[1fr_1fr_1.2fr_auto]">
+              <label className="space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
+                <input
+                  type="date"
+                  value={productionOrderDateFrom}
+                  onChange={event => setProductionOrderDateFrom(event.target.value)}
+                  className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tới ngày</span>
+                <input
+                  type="date"
+                  value={productionOrderDateTo}
+                  onChange={event => setProductionOrderDateTo(event.target.value)}
+                  className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
+                <select
+                  value={productionOrderShiftFilter}
+                  onChange={event => setProductionOrderShiftFilter(event.target.value)}
+                  className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+                >
+                  <option value="all">Tất cả ca</option>
+                  {productionOrderShiftOptions.map(shift => (
+                    <option key={shift} value={shift}>
+                      {formatProductionOrderShiftLabel(shift, productionOrderSettings)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={clearProductionOrderFilters}
+                  className="h-9 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-700 transition hover:bg-zinc-100"
+                >
+                  Xóa lọc
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Nhân sự</span>
+                <span className="text-[10px] font-bold text-zinc-400">
+                  Hiển thị {recentProductionOrders.length}/{productionOrders.length} lệnh
+                </span>
+              </div>
+              {productionOrderStaffOptions.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-400">
+                  Chưa có nhân sự trong lệnh SX.
+                </p>
+              ) : (
+                <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+                  {productionOrderStaffOptions.map(staffName => {
+                    const checked = productionOrderStaffFilters.has(staffName);
+                    return (
+                      <label
+                        key={staffName}
+                        className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                          checked
+                            ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
+                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleProductionOrderStaffFilter(staffName)}
+                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                        />
+                        {staffName}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          <table className="w-full min-w-[860px] text-left text-xs">
+            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2 text-center font-black">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleProductionOrdersSelected}
+                    onChange={toggleSelectAllVisibleProductionOrders}
+                    aria-label="Chọn tất cả lệnh SX đang hiển thị"
+                    className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                  />
+                </th>
+                <th className="px-3 py-2 font-black">Ưu tiên</th>
+                <th className="px-3 py-2 font-black">Mã lệnh</th>
+                <th className="px-3 py-2 font-black">Mã hàng</th>
+                <th className="px-3 py-2 font-black">Tên hàng</th>
+                <th className="px-3 py-2 font-black">SL</th>
+                <th className="px-3 py-2 font-black">Trạng thái</th>
+                <th className="px-3 py-2 font-black">Máy</th>
+                <th className="px-3 py-2 font-black">Đơn hàng</th>
+                <th className="px-3 py-2 font-black">Bắt đầu</th>
+                  <th className="px-3 py-2 text-center font-black">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {visibleProductionOrders.map(row => (
+                  <tr key={row.id} className="hover:bg-emerald-50/50">
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedProductionOrderIds.includes(row.id)}
+                      onChange={() => toggleProductionOrderSelection(row.id)}
+                      aria-label={`Chọn ${row.code || row.name}`}
+                      className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                    />
+                  </td>
+                  <td className="px-3 py-2 font-black text-emerald-700">{row.priority > 0 ? row.priority : '-'}</td>
+                  <td className="px-3 py-2 font-black text-zinc-950">{row.code || '-'}</td>
+                  <td className="px-3 py-2 font-semibold text-zinc-700">{row.productCode || '-'}</td>
+                  <td className="px-3 py-2 font-semibold text-zinc-800">{row.productName || '-'}</td>
+                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.quantity}</td>
+                  <td className="px-3 py-2">
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-semibold text-zinc-700">{resolveProductionOrderMachine(row, machines)}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-600">{row.orderRef}</td>
+                    <td className="px-3 py-2 font-mono text-[11px] font-bold text-zinc-600">{row.startDate}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setViewingProductionOrder(row)}
+                          title="Xem chi tiết"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingProductionOrder(row)}
+                          title="Sửa lệnh SX"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProductionOrder(row)}
+                          disabled={deletingProductionOrderId === row.id}
+                          title="Xóa lệnh SX"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {deletingProductionOrderId === row.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => printProductionOrder(row)}
+                          disabled={isLoadingPrint}
+                        title="In lệnh SX"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!isLoading && recentProductionOrders.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="px-3 py-8 text-center font-bold text-zinc-400">
+                    Chưa có lệnh SX. Tạo lệnh từ trang Đơn hàng.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </DashboardWindow>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <DashboardWindow
+          title="Báo cáo nghiệm thu"
+          subtitle="Ghi nhận mặt hàng, số lượng và ảnh nghiệm thu theo ca"
+          icon={ClipboardCheck}
+          accentClass="bg-gradient-to-r from-sky-900 to-sky-700"
+          count={acceptanceReports.length}
+          countLabel="Báo cáo"
+          search={acceptanceReportSearch}
+          onSearchChange={setAcceptanceReportSearch}
+          isLoading={isLoading}
+          error=""
+          onOpen={() => onNavigate('acceptance-report')}
+          openLabel="Thêm mới"
+          compact
+        >
+          <table className="w-full table-fixed text-left text-[11px]">
+            <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="w-12 px-2 py-1.5 font-black">Ảnh</th>
+                <th className="w-[28%] px-2 py-1.5 font-black">Ngày</th>
+                <th className="px-2 py-1.5 font-black">Mặt hàng</th>
+                <th className="w-16 px-2 py-1.5 text-right font-black">SL</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {filteredAcceptanceReports.slice(0, sidePreviewLimit).map(report => (
+                <tr key={report.id} className="hover:bg-sky-50/50">
+                  <td className="px-2 py-1.5">
+                    {report.hinh_anh ? (
+                      <a
+                        href={report.hinh_anh}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block h-8 w-8 overflow-hidden rounded-md border border-zinc-200"
+                      >
+                        <img src={report.hinh_anh} alt="Nghiệm thu" className="h-full w-full object-cover" />
+                      </a>
+                    ) : (
+                      <span className="text-zinc-400">-</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <p className="truncate font-mono text-[10px] font-bold text-zinc-700">{report.ngay || '-'}</p>
+                    <p className="truncate text-[9px] font-semibold text-zinc-500">
+                      {report.ca || '-'} · Lần {report.lan || '-'}
+                    </p>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <p className="truncate font-semibold text-zinc-800">{report.mat_hang || '-'}</p>
+                    <p className="truncate text-[9px] font-semibold text-zinc-500">
+                      {report.ten_may || report.ma_may || '-'} · {report.gio || '-'}
+                    </p>
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
+                    {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
+                  </td>
+                </tr>
+              ))}
+              {!isLoading && filteredAcceptanceReports.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
+                    Chưa có báo cáo nghiệm thu.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </DashboardWindow>
+
         <DashboardWindow
           title="Nhân sự"
           subtitle="Danh sách thợ máy, phụ máy theo ca"
@@ -7250,70 +11918,52 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
           </table>
         </DashboardWindow>
 
-        <div className="xl:col-span-2">
-          <DashboardWindow
-            title="Lệnh sản xuất"
-            subtitle="Các dòng lệnh mới nhất từ bảng lenh_sx"
-            icon={Factory}
-            accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
-            count={productionOrders.length}
-            countLabel="Lệnh"
-            search={productionOrderSearch}
-            onSearchChange={setProductionOrderSearch}
-            isLoading={isLoading}
-            error=""
-            onOpen={() => onNavigate('production-orders')}
-            openLabel="Mở Lệnh SX"
-            secondaryAction={{
-              label: 'Thêm mới',
-              onClick: () => setShowAddProductionOrder(true)
-            }}
-          >
-            <table className="w-full min-w-[720px] text-left text-xs">
-              <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2 font-black">Mã lệnh</th>
-                  <th className="px-3 py-2 font-black">Tên lệnh</th>
-                  <th className="px-3 py-2 font-black">Mã hàng</th>
-                  <th className="px-3 py-2 font-black">Tên hàng</th>
-                  <th className="px-3 py-2 font-black">SL</th>
-                  <th className="px-3 py-2 font-black">ĐVT</th>
-                  <th className="px-3 py-2 font-black">Trạng thái</th>
-                  <th className="px-3 py-2 font-black">Đơn hàng</th>
-                  <th className="px-3 py-2 font-black">Khách</th>
-                  <th className="px-3 py-2 font-black">Bắt đầu</th>
+        <DashboardWindow
+          title="Đơn hàng"
+          subtitle="Mã đơn, hàng hóa, số lượng và trạng thái"
+          icon={ClipboardList}
+          accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
+          count={orders.length}
+          countLabel="Đơn"
+          search={orderSearch}
+          onSearchChange={setOrderSearch}
+          isLoading={isLoading}
+          error=""
+          onOpen={() => onNavigate('orders')}
+          openLabel="Mở Đơn hàng"
+        >
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2 font-black">Mã đơn</th>
+                <th className="px-3 py-2 font-black">Hàng</th>
+                <th className="px-3 py-2 font-black">Số lượng</th>
+                <th className="px-3 py-2 font-black">Số lượng tồn</th>
+                <th className="px-3 py-2 font-black">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {filteredOrders.slice(0, previewLimit).map(order => (
+                <tr key={order.id} className="hover:bg-red-50/50">
+                  <td className="px-3 py-2 font-bold text-zinc-900">{order.orderCode || '-'}</td>
+                  <td className="px-3 py-2 text-zinc-700">{formatOrderProductsSummary(getOrderProductLines(order))}</td>
+                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.quantity}</td>
+                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.stockQuantity}</td>
+                  <td className="px-3 py-2">
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
+                      {order.status}
+                    </span>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {recentProductionOrders.slice(0, productionPreviewLimit).map(row => (
-                  <tr key={row.id} className="hover:bg-emerald-50/50">
-                    <td className="px-3 py-2 font-black text-zinc-950">{row.code || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.name || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{row.productCode || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.productName || '-'}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.quantity}</td>
-                    <td className="px-3 py-2 font-bold text-zinc-700">{row.unit}</td>
-                    <td className="px-3 py-2">
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 font-semibold text-zinc-600">{row.orderRef}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-600">{row.customer}</td>
-                    <td className="px-3 py-2 font-mono text-[11px] font-bold text-zinc-600">{row.startDate}</td>
-                  </tr>
-                ))}
-                {!isLoading && recentProductionOrders.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
-                      Chưa có lệnh SX. Tạo lệnh từ trang Đơn hàng.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </DashboardWindow>
-        </div>
+              ))}
+              {!isLoading && filteredOrders.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center font-bold text-zinc-400">Không có đơn hàng.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </DashboardWindow>
 
         <DashboardWindow
           title="Danh sách máy"
@@ -7328,6 +11978,14 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
           error=""
           onOpen={() => onNavigate('machines')}
           openLabel="Mở"
+          secondaryAction={{
+            label: 'Báo cáo phối trộn',
+            onClick: () => onNavigate('mixing-report')
+          }}
+          tertiaryAction={{
+            label: 'Báo cáo NVL tồn',
+            onClick: () => onNavigate('machine-nvl-report')
+          }}
           compact
         >
           <div className="grid grid-cols-1 gap-1.5 p-0.5">
@@ -7372,140 +12030,45 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
         </DashboardWindow>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <DashboardWindow
-          title="Đơn hàng"
-          subtitle="Mã đơn, hàng hóa, số lượng và trạng thái"
-          icon={ClipboardList}
-          accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
-          count={orders.length}
-          countLabel="Đơn"
-          search={orderSearch}
-          onSearchChange={setOrderSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('orders')}
-          openLabel="Mở Đơn hàng"
-        >
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-black">Mã đơn</th>
-                <th className="px-3 py-2 font-black">Hàng</th>
-                <th className="px-3 py-2 font-black">Số lượng</th>
-                <th className="px-3 py-2 font-black">Số lượng tồn</th>
-                <th className="px-3 py-2 font-black">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredOrders.slice(0, previewLimit).map(order => (
-                <tr key={order.id} className="hover:bg-red-50/50">
-                  <td className="px-3 py-2 font-bold text-zinc-900">{order.orderCode || '-'}</td>
-                  <td className="px-3 py-2 text-zinc-700">{order.productCode || order.productName || '-'}</td>
-                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.quantity}</td>
-                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.stockQuantity}</td>
-                  <td className="px-3 py-2">
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
-                      {order.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && filteredOrders.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center font-bold text-zinc-400">Không có đơn hàng.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DashboardWindow>
-
-        <DashboardWindow
-          title="Sản phẩm"
-          subtitle="Mã hàng, tên và nhóm VTHH"
-          icon={Package}
-          accentClass="bg-gradient-to-r from-zinc-900 to-zinc-700"
-          count={products.length}
-          countLabel="Mã SP"
-          search={productSearch}
-          onSearchChange={setProductSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('products')}
-          openLabel="Mở Sản phẩm"
-        >
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-black">Mã</th>
-                <th className="px-3 py-2 font-black">Tên</th>
-                <th className="px-3 py-2 font-black">Nhóm</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredProducts.slice(0, previewLimit).map(product => (
-                <tr key={product.id} className="hover:bg-red-50/50">
-                  <td className="px-3 py-2 font-bold text-zinc-900">{product.code || '-'}</td>
-                  <td className="px-3 py-2 text-zinc-800">{product.name || '-'}</td>
-                  <td className="px-3 py-2 text-zinc-600">{product.group}</td>
-                </tr>
-              ))}
-              {!isLoading && filteredProducts.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-3 py-6 text-center font-bold text-zinc-400">Không có sản phẩm.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DashboardWindow>
-
-        <DashboardWindow
-          title="Kho NVL"
-          subtitle="Nguyên phụ liệu từ bảng kho_nvl"
-          icon={Boxes}
-          accentClass="bg-gradient-to-r from-amber-900 to-amber-700"
-          count={materials.length}
-          countLabel="NVL"
-          search={materialSearch}
-          onSearchChange={setMaterialSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('materials')}
-          openLabel="Mở Kho NVL"
-        >
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-black">Mã NVL</th>
-                <th className="px-3 py-2 font-black">Tên</th>
-                <th className="px-3 py-2 font-black">ĐVT</th>
-                <th className="px-3 py-2 font-black">Tồn đầu</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredMaterials.slice(0, previewLimit).map(material => (
-                <tr key={material.id} className="hover:bg-red-50/50">
-                  <td className="px-3 py-2 font-bold text-zinc-900">{material.code || '-'}</td>
-                  <td className="px-3 py-2 text-zinc-800">{material.name || '-'}</td>
-                  <td className="px-3 py-2 text-zinc-600">{material.unit}</td>
-                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{material.openingStock}</td>
-                </tr>
-              ))}
-              {!isLoading && filteredMaterials.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center font-bold text-zinc-400">Không có NVL.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DashboardWindow>
-      </div>
-
       <AddProductionOrderModal
         open={showAddProductionOrder}
         onClose={() => setShowAddProductionOrder(false)}
         onCreated={loadBoard}
       />
+
+      <ProductionOrderViewModal
+        row={viewingProductionOrder}
+        onClose={() => setViewingProductionOrder(null)}
+      />
+
+      <EditProductionOrderModal
+        open={Boolean(editingProductionOrder)}
+        row={editingProductionOrder}
+        orders={orders}
+        machines={machines}
+        onClose={() => setEditingProductionOrder(null)}
+        onSaved={loadBoard}
+      />
+
+      <ProductionPlanModal
+        open={showProductionPlan}
+        onClose={() => setShowProductionPlan(false)}
+        onSaved={loadBoard}
+        onOpenWarehouseSlip={() => onNavigate('warehouse-slip')}
+        productionOrders={selectedProductionOrdersForPlan}
+        machines={machines}
+      />
+
+      {printingOrder && (
+        <ProductionOrderPrintSheet
+          order={printingOrder}
+          materials={printingMaterials}
+          machineLabel={printingMachineLabel}
+          product={printingProduct}
+        />
+      )}
+
+      {printingBatchOrders.length > 0 && <ProductionOrderBatchPrintSheets items={printingBatchOrders} />}
     </div>
   );
 }
@@ -7516,45 +12079,46 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   const [searchText, setSearchText] = useState('');
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [staffError, setStaffError] = useState('');
+  const [showAddStaffForm, setShowAddStaffForm] = useState(false);
+  const [addStaffDefaults, setAddStaffDefaults] = useState<{ branchId: string; department: string }>({
+    branchId: '',
+    department: ''
+  });
+
+  const loadStaffGroups = async () => {
+    setIsLoadingStaff(true);
+    setStaffError('');
+
+    try {
+      const res = await fetch('/api/nhan-su?format=groups&scope=all');
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể tải nhân sự từ Supabase.');
+      }
+
+      const nextBranches = normalizeHrBranches(data);
+      setBranches(nextBranches);
+      setSelectedBranchId(prev => prev || nextBranches[0]?.id || '');
+    } catch (error: any) {
+      setBranches([]);
+      setStaffError(error.message || 'Không thể tải nhân sự từ Supabase.');
+    } finally {
+      setIsLoadingStaff(false);
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadStaffGroups = async () => {
-      setIsLoadingStaff(true);
-      setStaffError('');
-
-      try {
-        const res = await fetch('/api/nhan-su?format=groups');
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Không thể tải nhân sự từ Supabase.');
-        }
-
-        const nextBranches = normalizeHrBranches(data);
-        if (!cancelled) {
-          setBranches(nextBranches);
-          setSelectedBranchId(prev => prev || nextBranches[0]?.id || '');
-        }
-      } catch (error: any) {
-        if (!cancelled) {
-          setBranches([]);
-          setStaffError(error.message || 'Không thể tải nhân sự từ Supabase.');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingStaff(false);
-        }
-      }
-    };
-
-    loadStaffGroups();
-
-    return () => {
-      cancelled = true;
-    };
+    void loadStaffGroups();
   }, []);
+
+  const openAddStaffForm = (defaults?: { branchId?: string; department?: string }) => {
+    setAddStaffDefaults({
+      branchId: defaults?.branchId || selectedBranchId || branches[0]?.id || '',
+      department: defaults?.department || ''
+    });
+    setShowAddStaffForm(true);
+  };
 
   const selectedBranch = branches.find(branch => branch.id === selectedBranchId) ?? branches[0];
   const normalizedSearch = searchText.trim().toLowerCase();
@@ -7582,6 +12146,12 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     (sum, department) => sum + department.members.filter(member => member.status === 'Đang làm').length,
     0
   ) ?? 0;
+  const departmentOptions = useMemo(() => {
+    const names = new Set<string>();
+    branches.forEach(branch => branch.departments.forEach(department => names.add(department.name)));
+    if (names.size === 0) names.add('Sản xuất');
+    return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [branches]);
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
@@ -7595,13 +12165,23 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 Phòng ban Sản xuất · Chi nhánh Đà Nẵng.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onBack}
-              className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-            >
-              Menu
-            </button>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => openAddStaffForm()}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm mới
+              </button>
+              <button
+                type="button"
+                onClick={onBack}
+                className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
+              >
+                Menu
+              </button>
+            </div>
           </div>
 
           <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
@@ -7688,6 +12268,7 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 aria-label={`Thêm nhân sự vào ${department.name}`}
+                onClick={() => openAddStaffForm({ branchId: selectedBranchId, department: department.name })}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ef1b2d] text-white transition hover:bg-[#b30d1c]"
               >
                 <UserPlus className="h-4 w-4" />
@@ -7732,7 +12313,423 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
           </article>
         ))}
       </section>
+
+      <AddStaffModal
+        open={showAddStaffForm}
+        branches={branches}
+        departmentOptions={departmentOptions}
+        defaultBranchId={addStaffDefaults.branchId}
+        defaultDepartment={addStaffDefaults.department}
+        onClose={() => setShowAddStaffForm(false)}
+        onCreated={loadStaffGroups}
+      />
     </div>
+  );
+}
+
+type StaffFormState = {
+  name: string;
+  code: string;
+  branch: string;
+  department: string;
+  role: string;
+  shift: string;
+  status: string;
+};
+
+function emptyStaffForm(defaults?: { branch?: string; department?: string }): StaffFormState {
+  return {
+    name: '',
+    code: '',
+    branch: defaults?.branch || 'Đà Nẵng',
+    department: defaults?.department || 'Sản xuất',
+    role: 'Nhân sự',
+    shift: STANDARD_SHIFTS[0] || 'Ca 1',
+    status: 'Đang làm'
+  };
+}
+
+function AddStaffModal({
+  open,
+  onClose,
+  onCreated,
+  branches,
+  departmentOptions,
+  defaultBranchId,
+  defaultDepartment
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void | Promise<void>;
+  branches: HrBranch[];
+  departmentOptions: string[];
+  defaultBranchId: string;
+  defaultDepartment: string;
+}) {
+  const [form, setForm] = useState<StaffFormState>(emptyStaffForm());
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const branchOptions = useMemo(() => {
+    const names = branches.map(branch => branch.name).filter(Boolean);
+    return names.length > 0 ? names : ['Đà Nẵng'];
+  }, [branches]);
+
+  useEffect(() => {
+    if (!open) return;
+    const branchName = branches.find(branch => branch.id === defaultBranchId)?.name || branchOptions[0] || 'Đà Nẵng';
+    setForm(emptyStaffForm({ branch: branchName, department: defaultDepartment || departmentOptions[0] || 'Sản xuất' }));
+    setFormError('');
+  }, [open, defaultBranchId, defaultDepartment, branches, branchOptions, departmentOptions]);
+
+  if (!open) return null;
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) {
+      setFormError('Vui lòng nhập tên nhân sự.');
+      return;
+    }
+    if (!form.department.trim()) {
+      setFormError('Vui lòng chọn phòng ban.');
+      return;
+    }
+
+    setIsSaving(true);
+    setFormError('');
+
+    try {
+      const res = await fetch('/api/nhan-su', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nhan_su: form.name.trim(),
+          ma_nhan_su: form.code.trim(),
+          chi_nhanh: form.branch.trim(),
+          phong_ban: form.department.trim(),
+          cong_viec: form.role.trim(),
+          ca_lam: form.shift.trim(),
+          trang_thai: form.status.trim()
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể thêm nhân sự.');
+      }
+
+      await onCreated();
+      onClose();
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể thêm nhân sự.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm nhân sự mới</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi vào bảng nhan_su trên Supabase</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Đóng
+          </button>
+        </div>
+
+        {formError && (
+          <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
+            {formError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 p-4">
+          <label className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Họ và tên *</span>
+            <input
+              value={form.name}
+              onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              placeholder="Nhập tên nhân sự"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã NV</span>
+            <input
+              value={form.code}
+              onChange={event => setForm(prev => ({ ...prev, code: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              placeholder="Tuỳ chọn"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Chi nhánh</span>
+            <select
+              value={form.branch}
+              onChange={event => setForm(prev => ({ ...prev, branch: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            >
+              {branchOptions.map(branch => (
+                <option key={branch} value={branch}>
+                  {branch}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Phòng ban *</span>
+            <select
+              value={form.department}
+              onChange={event => setForm(prev => ({ ...prev, department: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            >
+              {departmentOptions.map(department => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Chức vụ</span>
+            <input
+              value={form.role}
+              onChange={event => setForm(prev => ({ ...prev, role: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca làm</span>
+            <select
+              value={form.shift}
+              onChange={event => setForm(prev => ({ ...prev, shift: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            >
+              {STANDARD_SHIFTS.map(shift => (
+                <option key={shift} value={shift}>
+                  {shift}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+            <select
+              value={form.status}
+              onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            >
+              {['Đang làm', 'Nghỉ phép', 'Nghỉ việc'].map(status => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-zinc-200 px-4 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="h-10 rounded-xl border border-zinc-200 px-4 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Huỷ
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleSubmit()}
+            disabled={isSaving}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isSaving ? 'Đang lưu...' : 'Lưu nhân sự'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type MenuCardConfig = {
+  title: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tab: AppTab;
+};
+
+const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Nhập báo cáo sản xuất',
+    desc: 'Ghi ca máy, mã hàng, nguyên liệu và phế phẩm.',
+    icon: FilePlus2,
+    tab: 'form'
+  },
+  {
+    title: 'Phiếu cân ca',
+    desc: 'Lập phiếu cân, ghi nhận khối lượng và xem tổng hợp theo ca.',
+    icon: Scale,
+    tab: 'weighing-summary'
+  },
+  {
+    title: 'Báo cáo phối trộn',
+    desc: 'Nhập bảng trộn vật tư theo ca, máy và lần phối trộn.',
+    icon: FlaskConical,
+    tab: 'mixing-report'
+  },
+  {
+    title: 'Danh sách báo cáo',
+    desc: 'Xem phiếu cân, phối trộn và các báo cáo đã lưu.',
+    icon: ClipboardList,
+    tab: 'report-lists'
+  },
+  {
+    title: 'Báo cáo nghiệm thu',
+    desc: 'Ghi nhận mặt hàng, số lượng và ảnh nghiệm thu theo ca.',
+    icon: ClipboardCheck,
+    tab: 'acceptance-report'
+  },
+  {
+    title: 'Kế hoạch SX theo ngày',
+    desc: 'Tra cứu snapshot kế hoạch sản xuất đã lưu, lọc theo ngày hoặc khoảng thời gian.',
+    icon: CalendarDays,
+    tab: 'production-plan-history'
+  },
+  {
+    title: 'Phân tích & đối chiếu',
+    desc: 'Kiểm tra báo cáo đã lưu, biểu đồ và dữ liệu mẫu.',
+    icon: BarChart3,
+    tab: 'dashboard'
+  }
+];
+
+const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Kho NVL',
+    desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
+    icon: Boxes,
+    tab: 'materials'
+  },
+  {
+    title: 'Sản phẩm',
+    desc: 'Xem danh mục mã hàng, nhóm VTHH, đơn vị và tồn kho.',
+    icon: Package,
+    tab: 'products'
+  },
+  {
+    title: 'Danh sách máy',
+    desc: 'Theo dõi mã máy, vị trí, loại máy và trạng thái vận hành.',
+    icon: Cpu,
+    tab: 'machines'
+  },
+  {
+    title: 'Phiếu xuất nhập kho',
+    desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
+    icon: ArrowDownToLine,
+    tab: 'warehouse-slip'
+  },
+  {
+    title: 'Lịch sử xuất nhập kho',
+    desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
+    icon: History,
+    tab: 'warehouse-history'
+  }
+];
+
+const HCNS_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Nhân sự',
+    desc: 'Quản lý thợ máy, phụ máy và phân công ca trực.',
+    icon: UsersRound,
+    tab: 'hr'
+  },
+  {
+    title: 'Cài đặt',
+    desc: 'Xem tham số cấu hình và giá trị mặc định của hệ thống.',
+    icon: Settings,
+    tab: 'settings'
+  }
+];
+
+const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Đơn hàng',
+    desc: 'Theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
+    icon: ClipboardList,
+    tab: 'orders'
+  },
+  {
+    title: 'Khách hàng',
+    desc: 'Xem danh sách khách hàng phục vụ lập và tra cứu đơn hàng.',
+    icon: BriefcaseBusiness,
+    tab: 'customers'
+  }
+];
+
+const FACTORY_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Lệnh sản xuất',
+    desc: 'Xem danh sách lệnh SX, mã hàng, trạng thái và kế hoạch sản xuất.',
+    icon: Factory,
+    tab: 'production-orders'
+  }
+];
+
+const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Phiếu cân ca',
+    desc: 'Xem danh sách phiếu cân và cộng dồn theo ca.',
+    icon: History,
+    tab: 'weighing-summary'
+  },
+  {
+    title: 'Danh sách phối trộn',
+    desc: 'Xem các dòng vật tư đã lưu trong báo cáo phối trộn.',
+    icon: Layers,
+    tab: 'mixing-report-list'
+  }
+];
+
+function MenuCardGrid({
+  items,
+  onNavigate
+}: {
+  items: MenuCardConfig[];
+  onNavigate: (tab: AppTab) => void;
+}) {
+  return (
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {items.map(item => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.title}
+            type="button"
+            onClick={() => onNavigate(item.tab)}
+            className="group relative min-h-[168px] overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white p-4 text-left shadow-sm transition hover:border-[#ef1b2d] hover:shadow-[0_12px_32px_rgba(17,17,17,0.12)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-[#ef1b2d]/25"
+          >
+            <span className="absolute inset-x-0 top-0 h-1 bg-zinc-900 transition group-hover:bg-[#ef1b2d]" />
+            <div className="flex items-start gap-3">
+              <span className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 text-[#ef1b2d] shadow-sm transition group-hover:border-[#ef1b2d] group-hover:bg-[#ef1b2d]/10">
+                <Icon className="h-10 w-10" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-black leading-snug text-slate-900">{item.title}</span>
+                <span className="mt-1.5 block text-sm font-medium leading-5 text-slate-500">{item.desc}</span>
+              </span>
+              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-zinc-400 group-hover:text-[#ef1b2d]" />
+            </div>
+          </button>
+        );
+      })}
+    </section>
   );
 }
 
@@ -8057,7 +13054,7 @@ export default function App() {
     <div className={`h-[100dvh] overflow-hidden bg-[#151515] flex flex-col font-sans selection:bg-[#ef1b2d] selection:text-white ${
       activeTab === 'control-board'
         ? 'p-0'
-        : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'settings'
+        : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'acceptance-report'
           ? 'sm:p-4'
           : 'sm:py-6 sm:px-4'
     }`} id="main-root-container">
@@ -8065,7 +13062,7 @@ export default function App() {
       <div className={`flex-1 min-h-0 w-full mx-auto bg-white overflow-hidden flex flex-col ${
         activeTab === 'control-board'
           ? 'max-w-none'
-          : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'settings'
+          : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'acceptance-report'
           ? 'max-w-none sm:rounded-2xl sm:shadow-2xl sm:border sm:border-zinc-800'
           : 'max-w-4xl sm:rounded-3xl sm:shadow-2xl sm:border sm:border-zinc-800'
       }`}>
@@ -8073,9 +13070,23 @@ export default function App() {
         {/* Device Status Header / Bar */}
         <header className="sticky top-0 z-40 bg-white border-b-4 border-[#ef1b2d] px-4 py-3 shrink-0 flex items-center justify-between pt-safe">
           <div className="flex items-center gap-2">
-            {activeTab === 'products' && (
+            {activeTab === 'report-lists' ? (
+              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
+            ) : activeTab === 'production-reports' || activeTab === 'facility-management' || activeTab === 'hcns' || activeTab === 'business' || activeTab === 'factory' ? (
               <BackButton onClick={() => navigateToTab('menu')} className="h-10 rounded-xl" />
-            )}
+            ) : activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' ? (
+              <BackButton onClick={() => navigateToTab('facility-management')} className="h-10 rounded-xl" />
+            ) : activeTab === 'hr' || activeTab === 'settings' ? (
+              <BackButton onClick={() => navigateToTab('hcns')} className="h-10 rounded-xl" />
+            ) : activeTab === 'orders' || activeTab === 'customers' ? (
+              <BackButton onClick={() => navigateToTab('business')} className="h-10 rounded-xl" />
+            ) : activeTab === 'production-orders' ? (
+              <BackButton onClick={() => navigateToTab('factory')} className="h-10 rounded-xl" />
+            ) : activeTab === 'production-plan-history' ? (
+              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
+            ) : activeTab === 'machine-nvl-report' ? (
+              <BackButton onClick={() => navigateToTab('control-board')} className="h-10 rounded-xl" />
+            ) : null}
             <VietNhatLogo />
           </div>
 
@@ -8164,64 +13175,34 @@ export default function App() {
                       action: () => navigateToTab('form')
                     },
                     {
-                      title: 'Phiếu cân ca',
-                      desc: 'Xem danh sách phiếu cân và cộng dồn theo ca.',
-                      icon: History,
-                      action: () => navigateToTab('weighing-summary')
-                    },
-                    {
-                      title: 'Nhân sự',
-                      desc: 'Quản lý thợ máy, phụ máy và phân công ca trực.',
-                      icon: UsersRound,
-                      action: () => navigateToTab('hr')
-                    },
-                    {
-                      title: 'Sản phẩm',
-                      desc: 'Xem danh mục mã hàng, nhóm VTHH, đơn vị và tồn kho.',
-                      icon: Package,
-                      action: () => navigateToTab('products')
-                    },
-                    {
-                      title: 'Danh sách máy',
-                      desc: 'Theo dõi mã máy, vị trí, loại máy và trạng thái vận hành.',
-                      icon: Cpu,
-                      action: () => navigateToTab('machines')
-                    },
-                    {
-                      title: 'Kho NVL',
-                      desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
-                      icon: Boxes,
-                      action: () => navigateToTab('materials')
-                    },
-                    {
-                      title: 'Phiếu xuất nhập kho',
-                      desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
-                      icon: ArrowDownToLine,
-                      action: () => navigateToTab('warehouse-slip')
-                    },
-                    {
-                      title: 'Lịch sử xuất nhập kho',
-                      desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
-                      icon: History,
-                      action: () => navigateToTab('warehouse-history')
-                    },
-                    {
-                      title: 'Đơn hàng',
-                      desc: 'Theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
-                      icon: ClipboardList,
-                      action: () => navigateToTab('orders')
-                    },
-                    {
-                      title: 'Lệnh sản xuất',
-                      desc: 'Xem danh sách lệnh SX, mã hàng, trạng thái và kế hoạch sản xuất.',
+                      title: 'Báo cáo sản xuất',
+                      desc: 'Phiếu cân ca, phối trộn, nghiệm thu và các báo cáo theo ca.',
                       icon: Factory,
-                      action: () => navigateToTab('production-orders')
+                      action: () => navigateToTab('production-reports')
                     },
                     {
-                      title: 'Cài đặt',
-                      desc: 'Xem tham số cấu hình và giá trị mặc định của hệ thống.',
-                      icon: Settings,
-                      action: () => navigateToTab('settings')
+                      title: 'HCNS',
+                      desc: 'Nhân sự và các tham số cài đặt vận hành hệ thống.',
+                      icon: UsersRound,
+                      action: () => navigateToTab('hcns')
+                    },
+                    {
+                      title: 'Kinh doanh',
+                      desc: 'Đơn hàng và danh sách khách hàng phục vụ sản xuất.',
+                      icon: BriefcaseBusiness,
+                      action: () => navigateToTab('business')
+                    },
+                    {
+                      title: 'Nhà máy',
+                      desc: 'Theo dõi lệnh sản xuất và kế hoạch sản xuất.',
+                      icon: Factory,
+                      action: () => navigateToTab('factory')
+                    },
+                    {
+                      title: 'Quản lý CSVC',
+                      desc: 'Kho NVL, sản phẩm, máy móc và phiếu xuất nhập kho.',
+                      icon: Building2,
+                      action: () => navigateToTab('facility-management')
                     },
                     {
                       title: 'Phân tích & đối chiếu',
@@ -8236,12 +13217,12 @@ export default function App() {
                         key={item.title}
                         type="button"
                         onClick={item.action}
-                        className="group relative min-h-[128px] overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white p-4 text-left shadow-sm transition hover:border-[#ef1b2d] hover:shadow-[0_12px_32px_rgba(17,17,17,0.12)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-[#ef1b2d]/25"
+                        className="group relative min-h-[168px] overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white p-4 text-left shadow-sm transition hover:border-[#ef1b2d] hover:shadow-[0_12px_32px_rgba(17,17,17,0.12)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-[#ef1b2d]/25"
                       >
                         <span className="absolute inset-x-0 top-0 h-1 bg-zinc-900 transition group-hover:bg-[#ef1b2d]" />
                         <div className="flex items-start gap-3">
-                          <span className="h-11 w-11 rounded-xl border border-zinc-800 bg-zinc-950 text-[#ef1b2d] flex items-center justify-center shrink-0 shadow-sm group-hover:border-[#ef1b2d] group-hover:bg-[#ef1b2d]/10 transition">
-                            <Icon className="w-5 h-5" />
+                          <span className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 text-[#ef1b2d] shadow-sm transition group-hover:border-[#ef1b2d] group-hover:bg-[#ef1b2d]/10">
+                            <Icon className="h-10 w-10" />
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="block text-base font-black leading-snug text-slate-900">{item.title}</span>
@@ -8253,6 +13234,96 @@ export default function App() {
                     );
                   })}
                 </section>
+              </motion.div>
+            ) : activeTab === 'production-reports' ? (
+              <motion.div
+                key="production-reports-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950">Báo cáo sản xuất</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Chọn loại báo cáo cần mở.</p>
+                </div>
+                <MenuCardGrid items={PRODUCTION_REPORT_MENU_ITEMS} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'report-lists' ? (
+              <motion.div
+                key="report-lists-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950">Danh sách báo cáo</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Xem các báo cáo đã lưu theo từng loại.</p>
+                </div>
+                <MenuCardGrid items={REPORT_LIST_MENU_ITEMS} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'facility-management' ? (
+              <motion.div
+                key="facility-management-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950">Quản lý CSVC</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Cơ sở vật chất, kho hàng và thiết bị sản xuất.</p>
+                </div>
+                <MenuCardGrid items={FACILITY_MENU_ITEMS} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'hcns' ? (
+              <motion.div
+                key="hcns-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950">HCNS</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Nhân sự và cấu hình hệ thống.</p>
+                </div>
+                <MenuCardGrid items={HCNS_MENU_ITEMS} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'business' ? (
+              <motion.div
+                key="business-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950">Kinh doanh</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Đơn hàng và khách hàng.</p>
+                </div>
+                <MenuCardGrid items={BUSINESS_MENU_ITEMS} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'factory' ? (
+              <motion.div
+                key="factory-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950">Nhà máy</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Lệnh sản xuất và điều phối nhà máy.</p>
+                </div>
+                <MenuCardGrid items={FACTORY_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'form' ? (
               <motion.div
@@ -8354,6 +13425,51 @@ export default function App() {
               >
                 <WeighingShiftSummary />
               </motion.div>
+            ) : activeTab === 'mixing-report' ? (
+              <motion.div
+                key="mixing-report"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MixingReportForm
+                  onBack={() => navigateToTab('control-board')}
+                  onOpenList={() => navigateToTab('mixing-report-list')}
+                />
+              </motion.div>
+            ) : activeTab === 'mixing-report-list' ? (
+              <motion.div
+                key="mixing-report-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MixingReportListView
+                  onBack={() => navigateToTab('control-board')}
+                />
+              </motion.div>
+            ) : activeTab === 'machine-nvl-report' ? (
+              <motion.div
+                key="machine-nvl-report"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MachineNvlReportPanel onBack={() => navigateToTab('control-board')} />
+              </motion.div>
+            ) : activeTab === 'acceptance-report' ? (
+              <motion.div
+                key="acceptance-report"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <AcceptanceReportForm onBack={() => navigateToTab('control-board')} />
+              </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div
                 key="human-resources"
@@ -8362,7 +13478,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <HumanResourcesPanel onBack={() => navigateToTab('menu')} />
+                <HumanResourcesPanel onBack={() => navigateToTab('hcns')} />
               </motion.div>
             ) : activeTab === 'products' ? (
               <motion.div
@@ -8372,7 +13488,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ProductsPanel onBack={() => navigateToTab('menu')} />
+                <ProductsPanel onBack={() => navigateToTab('facility-management')} />
               </motion.div>
             ) : activeTab === 'machines' ? (
               <motion.div
@@ -8382,7 +13498,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachinesPanel onBack={() => navigateToTab('menu')} />
+                <MachinesPanel onBack={() => navigateToTab('facility-management')} />
               </motion.div>
             ) : activeTab === 'materials' ? (
               <motion.div
@@ -8392,7 +13508,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MaterialsInventoryPanel onBack={() => navigateToTab('menu')} />
+                <MaterialsInventoryPanel onBack={() => navigateToTab('facility-management')} />
               </motion.div>
             ) : activeTab === 'warehouse-slip' ? (
               <motion.div
@@ -8403,7 +13519,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WarehouseSlipPanel
-                  onBack={() => navigateToTab('menu')}
+                  onBack={() => navigateToTab('facility-management')}
                   onOpenHistory={() => navigateToTab('warehouse-history')}
                 />
               </motion.div>
@@ -8416,7 +13532,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WarehouseHistoryPanel
-                  onBack={() => navigateToTab('menu')}
+                  onBack={() => navigateToTab('facility-management')}
                   onOpenSlip={() => navigateToTab('warehouse-slip')}
                 />
               </motion.div>
@@ -8428,7 +13544,17 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <OrdersPanel onBack={() => navigateToTab('menu')} />
+                <OrdersPanel onBack={() => navigateToTab('business')} />
+              </motion.div>
+            ) : activeTab === 'customers' ? (
+              <motion.div
+                key="customers"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <CustomersPanel onBack={() => navigateToTab('business')} />
               </motion.div>
             ) : activeTab === 'production-orders' ? (
               <motion.div
@@ -8438,7 +13564,17 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ProductionOrdersPanel onBack={() => navigateToTab('menu')} />
+                <ProductionOrdersPanel onBack={() => navigateToTab('factory')} />
+              </motion.div>
+            ) : activeTab === 'production-plan-history' ? (
+              <motion.div
+                key="production-plan-history"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ProductionPlanHistoryPanel onBack={() => navigateToTab('production-reports')} />
               </motion.div>
             ) : activeTab === 'settings' ? (
               <motion.div
@@ -8448,7 +13584,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <SettingsPanel onBack={() => navigateToTab('menu')} />
+                <SettingsPanel onBack={() => navigateToTab('hcns')} />
               </motion.div>
             ) : (
               <motion.div

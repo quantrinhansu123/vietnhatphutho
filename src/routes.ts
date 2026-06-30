@@ -1,10 +1,20 @@
-export type AppTab = 'menu' | 'control-board' | 'form' | 'weighing-summary' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'production-orders' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'production-reports' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'acceptance-report' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
+  'production-reports': '/bao-cao-san-xuat',
+  'report-lists': '/danh-sach-bao-cao',
+  'facility-management': '/quan-ly-csvc',
+  hcns: '/hcns',
+  business: '/kinh-doanh',
+  factory: '/nha-may',
   'control-board': '/bang-dieu-khien',
   form: '/nhap-bao-cao',
   'weighing-summary': '/tong-hop-ca',
+  'mixing-report': '/bao-cao-phoi-tron',
+  'mixing-report-list': '/danh-sach-bao-cao-phoi-tron',
+  'machine-nvl-report': '/bao-cao-may-nvl-ton',
+  'acceptance-report': '/bao-cao-nghiem-thu',
   hr: '/nhan-su',
   products: '/san-pham',
   machines: '/danh-sach-may',
@@ -12,7 +22,9 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'warehouse-slip': '/phieu-xuat-nhap-kho',
   'warehouse-history': '/lich-su-xuat-nhap-kho',
   orders: '/don-hang',
+  customers: '/khach-hang',
   'production-orders': '/lenh-san-xuat',
+  'production-plan-history': '/ke-hoach-san-xuat',
   settings: '/cai-dat',
   dashboard: '/phan-tich'
 };

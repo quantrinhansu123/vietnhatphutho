@@ -570,6 +570,19 @@ export default function WeighingShiftSummary() {
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Làm mới
               </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleOpenSlipSetup({
+                    productionDate: selectedDate,
+                    shiftName: activeShiftSummary?.shiftName
+                  })
+                }
+                className="hidden h-11 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c] sm:flex"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm báo cáo
+              </button>
             </div>
           </div>
         </div>
@@ -886,13 +899,39 @@ export default function WeighingShiftSummary() {
                 </p>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() =>
+                handleOpenSlipSetup({
+                  productionDate: selectedDate,
+                  shiftName: activeShiftSummary.shiftName
+                })
+              }
+              className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 text-xs font-bold text-[#ef1b2d] transition hover:bg-red-100"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm
+            </button>
           </div>
 
           <div className="grid gap-3 p-4 sm:grid-cols-2">
             {activeShiftSummary.dateGroups.length === 0 ? (
-              <p className="col-span-full py-8 text-center text-sm font-semibold text-zinc-400">
-                Chưa có báo cáo cho ca này.
-              </p>
+              <div className="col-span-full flex flex-col items-center gap-3 py-8">
+                <p className="text-sm font-semibold text-zinc-400">Chưa có báo cáo cho ca này.</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleOpenSlipSetup({
+                      productionDate: selectedDate,
+                      shiftName: activeShiftSummary.shiftName
+                    })
+                  }
+                  className="flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c]"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm phiếu cân
+                </button>
+              </div>
             ) : (
               activeShiftSummary.dateGroups.map(dateGroup => (
                 <button

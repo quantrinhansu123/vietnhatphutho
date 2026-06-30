@@ -44,6 +44,9 @@ drop policy if exists "phieu_xuat_nhap_kho_delete_all" on public.phieu_xuat_nhap
 create policy "phieu_xuat_nhap_kho_delete_all"
   on public.phieu_xuat_nhap_kho for delete using (true);
 
+-- Neu luu phieu bao loi integer voi so thap phan (vd. 0.01), chay them:
+-- supabase-phieu-xuat-nhap-kho-so-luong-numeric.sql
+
 -- Reload schema cache PostgREST
 notify pgrst, 'reload schema';
 

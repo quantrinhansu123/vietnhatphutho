@@ -54,7 +54,14 @@ alter table public.san_pham
   add column if not exists nguon_goc text,
   add column if not exists mo_ta text,
   add column if not exists ten_may_san_xuat text,
-  add column if not exists npl_phan_tram jsonb not null default '[]'::jsonb;
+  add column if not exists npl_phan_tram jsonb not null default '[]'::jsonb,
+  add column if not exists ma_amis text,
+  add column if not exists tong_trong_luong numeric,
+  add column if not exists kho_cuon numeric,
+  add column if not exists chieu_dai_cuon numeric,
+  add column if not exists trong_luong_loi numeric,
+  add column if not exists trong_luong_tui numeric,
+  add column if not exists trong_luong_nhua numeric;
 
 create unique index if not exists san_pham_ma_sp_key on public.san_pham (ma_sp);
 

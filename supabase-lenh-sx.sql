@@ -25,7 +25,9 @@ alter table public.lenh_sx
   add column if not exists ghi_chu text,
   add column if not exists cong_nhan text,
   add column if not exists nguoi_tao text,
-  add column if not exists san_pham text;
+  add column if not exists san_pham text,
+  add column if not exists vi_tri text,
+  add column if not exists thu_tu_uu_tien integer default 0;
 
 alter table public.don_hang
   add column if not exists lenh_sx text;
