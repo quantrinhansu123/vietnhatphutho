@@ -2,7 +2,7 @@ node_modules/
 .vite/
 build/
 dist/
-api/index.js
+api/_handler.cjs
 coverage/
 .DS_Store
 *.log
