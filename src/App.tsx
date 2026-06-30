@@ -12805,8 +12805,9 @@ export default function App() {
         const cached = readCachedReports();
         if (cached.length > 0) {
           setReports(cached);
+        } else {
+          addNotification('Không thể lấy báo cáo từ máy chủ.', 'warning');
         }
-        addNotification('Không thể lấy báo cáo từ máy chủ. Đang hiển thị bản lưu thiết bị.', 'warning');
       }
     } catch (err) {
       const cached = readCachedReports();

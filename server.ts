@@ -2337,6 +2337,8 @@ export function createApp() {
     res.json({
       ok: true,
       supabase: Boolean(supabase),
+      supabaseUrl: SUPABASE_URL ? `${SUPABASE_URL.slice(0, 30)}...` : null,
+      serviceKey: usingServiceKey,
       vercel: Boolean(process.env.VERCEL),
       tables: {
         reports: SUPABASE_TABLE,
@@ -3781,12 +3783,16 @@ export function createApp() {
   });
 
   app.get('/api/nhan-su', async (req, res) => {
+    const format = typeof req.query.format === 'string' ? req.query.format : 'list';
+
     if (!supabase) {
+      if (format === 'groups') {
+        return res.json({ branches: [], total: 0, source: 'local' });
+      }
       return res.json([]);
     }
 
     try {
-      const format = typeof req.query.format === 'string' ? req.query.format : 'list';
       const scope = typeof req.query.scope === 'string' ? req.query.scope : 'filtered';
       const departmentFilter = `%${SUPABASE_STAFF_DEPARTMENT}%`;
       const branchFilter = `%${SUPABASE_STAFF_BRANCH}%`;
@@ -4548,6 +4554,14 @@ export function createApp() {
   });
 
   // Development / Production Environment routing integrations
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('[API] Unhandled error:', err);
+    if (!res.headersSent) {
+      const message = err instanceof Error ? err.message : 'Lỗi server API.';
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.use('/api', (_req, res) => {
     res.status(404).json({
       error: 'API route không tồn tại. Hãy chạy npm run dev để khởi động lại server.'
