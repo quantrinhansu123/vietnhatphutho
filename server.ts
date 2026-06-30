@@ -2338,7 +2338,15 @@ export function createApp() {
       ok: true,
       supabase: Boolean(supabase),
       supabaseUrl: SUPABASE_URL ? `${SUPABASE_URL.slice(0, 30)}...` : null,
-      serviceKey: usingServiceKey,
+      hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_KEY),
+      hasAnonKey: Boolean(process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_KEY),
+      keySource: process.env.SUPABASE_SERVICE_KEY
+        ? 'SUPABASE_SERVICE_KEY'
+        : process.env.SUPABASE_KEY
+          ? 'SUPABASE_KEY'
+          : process.env.NEXT_PUBLIC_SUPABASE_KEY
+            ? 'NEXT_PUBLIC_SUPABASE_KEY'
+            : 'none',
       vercel: Boolean(process.env.VERCEL),
       tables: {
         reports: SUPABASE_TABLE,
@@ -4570,6 +4578,9 @@ export function createApp() {
 
   return app;
 }
+
+const app = createApp();
+export default app;
 
 if (!process.env.VERCEL) {
   startServer();
