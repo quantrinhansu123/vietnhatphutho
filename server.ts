@@ -2299,7 +2299,7 @@ async function getReportsFromLocalFile(): Promise<ProductionReport[]> {
 }
 
 async function startServer() {
-  const app = await createApp();
+  const app = createApp();
   const server = http.createServer(app);
   const PORT = 3001;
 
@@ -2329,9 +2329,21 @@ async function startServer() {
   });
 }
 
-export async function createApp() {
+export function createApp() {
   const app = express();
   app.use(express.json({ limit: '12mb' }));
+
+  app.get('/api/health', (_req, res) => {
+    res.json({
+      ok: true,
+      supabase: Boolean(supabase),
+      vercel: Boolean(process.env.VERCEL),
+      tables: {
+        reports: SUPABASE_TABLE,
+        productionPlans: SUPABASE_PRODUCTION_PLANS_TABLE
+      }
+    });
+  });
 
   // API Route: Get all reports
   app.get('/api/reports', async (_req, res) => {
