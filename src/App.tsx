@@ -14,6 +14,8 @@ import WeighingShiftSummary from './components/WeighingShiftSummary';
 import MixingReportForm from './components/MixingReportForm';
 import MixingReportListView from './components/MixingReportListView';
 import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
+import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
+import MachineDowntimeIcon from './components/icons/MachineDowntimeIcon';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from './components/WarehouseSlipPrintModal';
 import { RepeatableLineRow, RepeatableLinesBlock } from './components/RepeatableLinesBlock';
 import { AppTab, pathFromTab, tabFromPath } from './routes';
@@ -12892,12 +12894,6 @@ type MenuCardConfig = {
 
 const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Nhập báo cáo sản xuất',
-    desc: 'Ghi ca máy, mã hàng, nguyên liệu và phế phẩm.',
-    icon: FilePlus2,
-    tab: 'form'
-  },
-  {
     title: 'Phiếu cân ca',
     desc: 'Lập phiếu cân, ghi nhận khối lượng và xem tổng hợp theo ca.',
     icon: Scale,
@@ -12922,16 +12918,16 @@ const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'acceptance-report'
   },
   {
+    title: 'Phiếu báo dừng máy',
+    desc: 'Ghi nhận thời gian dừng, lý do và số cuộn ảnh hưởng theo ca.',
+    icon: MachineDowntimeIcon,
+    tab: 'machine-downtime-report'
+  },
+  {
     title: 'Kế hoạch SX theo ngày',
     desc: 'Tra cứu snapshot kế hoạch sản xuất đã lưu, lọc theo ngày hoặc khoảng thời gian.',
     icon: CalendarDays,
     tab: 'production-plan-history'
-  },
-  {
-    title: 'Phân tích & đối chiếu',
-    desc: 'Kiểm tra báo cáo đã lưu, biểu đồ và dữ liệu mẫu.',
-    icon: BarChart3,
-    tab: 'dashboard'
   }
 ];
 
@@ -13380,7 +13376,7 @@ export default function App() {
     <div className={`h-[100dvh] overflow-hidden bg-[#151515] flex flex-col font-sans selection:bg-[#ef1b2d] selection:text-white ${
       activeTab === 'control-board'
         ? 'p-0'
-        : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'acceptance-report'
+        : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report'
           ? 'sm:p-4'
           : 'sm:py-6 sm:px-4'
     }`} id="main-root-container">
@@ -13388,7 +13384,7 @@ export default function App() {
       <div className={`flex-1 min-h-0 w-full mx-auto bg-white overflow-hidden flex flex-col ${
         activeTab === 'control-board'
           ? 'max-w-none'
-          : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'acceptance-report'
+          : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report'
           ? 'max-w-none sm:rounded-2xl sm:shadow-2xl sm:border sm:border-zinc-800'
           : 'max-w-4xl sm:rounded-3xl sm:shadow-2xl sm:border sm:border-zinc-800'
       }`}>
@@ -13412,6 +13408,8 @@ export default function App() {
               <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
             ) : activeTab === 'machine-nvl-report' ? (
               <BackButton onClick={() => navigateToTab('control-board')} className="h-10 rounded-xl" />
+            ) : activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report' ? (
+              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
             ) : null}
             <VietNhatLogo />
           </div>
@@ -13794,7 +13792,17 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <AcceptanceReportForm onBack={() => navigateToTab('control-board')} />
+                <AcceptanceReportForm onBack={() => navigateToTab('production-reports')} />
+              </motion.div>
+            ) : activeTab === 'machine-downtime-report' ? (
+              <motion.div
+                key="machine-downtime-report"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MachineDowntimeReportPanel onBack={() => navigateToTab('production-reports')} />
               </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div

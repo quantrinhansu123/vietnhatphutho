@@ -927,6 +927,58 @@ input[type="number"] {
   color: #444444;
 }
 
+.machine-downtime-print-table th:nth-child(1) { width: 5%; }
+.machine-downtime-print-table th:nth-child(2),
+.machine-downtime-print-table th:nth-child(3) { width: 9%; }
+.machine-downtime-print-table th:nth-child(4) { width: 8%; }
+.machine-downtime-print-table th:nth-child(5) { width: 24%; }
+.machine-downtime-print-table th:nth-child(6) { width: 7%; }
+.machine-downtime-print-table th:nth-child(7) { width: 14%; }
+.machine-downtime-print-table th:nth-child(8) { width: 16%; }
+
+.machine-downtime-print-note {
+  margin: 6mm 0 0;
+  font-size: 10.5pt;
+  line-height: 1.5;
+}
+
+.machine-downtime-print-footnote {
+  margin: 4mm 0 0;
+  font-size: 10pt;
+  line-height: 1.5;
+  color: #444444;
+}
+
+.machine-downtime-print-signatures {
+  margin-top: 12mm;
+  font-size: 11pt;
+}
+
+.machine-downtime-print-signatures-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8mm;
+  text-align: center;
+}
+
+.machine-downtime-print-signatures-full {
+  margin-top: 8mm;
+  text-align: center;
+}
+
+.machine-downtime-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.machine-downtime-print-signatures span {
+  display: block;
+  margin-top: 18mm;
+  font-style: italic;
+  font-weight: 400;
+  color: #444444;
+}
+
 .warehouse-slip-print-sheet {
   display: none;
 }

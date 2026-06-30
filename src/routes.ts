@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'production-reports' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'acceptance-report' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'production-reports' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-downtime-report' | 'acceptance-report' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -14,6 +14,7 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'mixing-report': '/bao-cao-phoi-tron',
   'mixing-report-list': '/danh-sach-bao-cao-phoi-tron',
   'machine-nvl-report': '/bao-cao-may-nvl-ton',
+  'machine-downtime-report': '/phieu-bao-dung-may',
   'acceptance-report': '/bao-cao-nghiem-thu',
   hr: '/nhan-su',
   products: '/san-pham',

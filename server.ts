@@ -35,6 +35,8 @@ const SUPABASE_MIXING_REPORTS_TABLE = process.env.SUPABASE_MIXING_REPORTS_TABLE 
 const SUPABASE_ACCEPTANCE_REPORTS_TABLE = process.env.SUPABASE_ACCEPTANCE_REPORTS_TABLE || 'bao_cao_nghiem_thu';
 const SUPABASE_MACHINE_NVL_REPORTS_TABLE =
   process.env.SUPABASE_MACHINE_NVL_REPORTS_TABLE || 'bao_cao_may_nvl_ton';
+const SUPABASE_MACHINE_DOWNTIME_TABLE =
+  process.env.SUPABASE_MACHINE_DOWNTIME_TABLE || 'phieu_bao_dung_may';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Đà Nẵng';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -103,6 +105,7 @@ if (useSupabase) {
     mixingReports: SUPABASE_MIXING_REPORTS_TABLE,
     acceptanceReports: SUPABASE_ACCEPTANCE_REPORTS_TABLE,
     machineNvlReports: SUPABASE_MACHINE_NVL_REPORTS_TABLE,
+    machineDowntime: SUPABASE_MACHINE_DOWNTIME_TABLE,
     key: usingServiceKey ? 'service_role' : 'anon/public'
   });
 } else {
@@ -1165,6 +1168,146 @@ function machineNvlReportWriteError(error: { code?: string; message?: string }) 
     return `Bảng ${SUPABASE_MACHINE_NVL_REPORTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bao-cao-may-nvl-ton.sql.`;
   }
   return `Không thể lưu báo cáo NVL tồn theo máy. ${error.message || ''}`.trim();
+}
+
+function parseDowntimeTime(value: unknown) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return trimmed;
+  const hour = Math.min(23, Math.max(0, Number(match[1])));
+  const minute = Math.min(59, Math.max(0, Number(match[2])));
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function calcDowntimeMinutes(start: string, end: string) {
+  if (!start || !end) return null;
+  const startMatch = start.match(/^(\d{1,2}):(\d{2})/);
+  const endMatch = end.match(/^(\d{1,2}):(\d{2})/);
+  if (!startMatch || !endMatch) return null;
+
+  const startMinutes = Number(startMatch[1]) * 60 + Number(startMatch[2]);
+  let endMinutes = Number(endMatch[1]) * 60 + Number(endMatch[2]);
+  if (endMinutes < startMinutes) endMinutes += 24 * 60;
+
+  const diff = endMinutes - startMinutes;
+  return Number.isFinite(diff) && diff >= 0 ? Math.round(diff * 100) / 100 : null;
+}
+
+function generateMachineDowntimeSlipCode() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const time =
+    String(now.getHours()).padStart(2, '0') +
+    String(now.getMinutes()).padStart(2, '0') +
+    String(now.getSeconds()).padStart(2, '0');
+  return `BDM-${date}-${time}`;
+}
+
+function parseMachineDowntimeLine(source: unknown, index: number) {
+  if (!source || typeof source !== 'object') return null;
+  const record = source as Record<string, unknown>;
+  const thoi_gian_bat_dau = parseDowntimeTime(
+    record.thoi_gian_bat_dau ?? record.thoiGianBatDau ?? record.startTime
+  );
+  const thoi_gian_chay_lai = parseDowntimeTime(
+    record.thoi_gian_chay_lai ?? record.thoiGianChayLai ?? record.restartTime
+  );
+  const ly_do_dung_may = String(record.ly_do_dung_may ?? record.lyDo ?? record.reason ?? '').trim();
+  const so_cuon_anh_huong = parseMixingNumber(
+    record.so_cuon_anh_huong ?? record.soCuon ?? record.rollsAffected
+  );
+  const nguoi_xac_nhan = String(record.nguoi_xac_nhan ?? record.confirmedBy ?? '').trim();
+  const ghi_chu = String(record.ghi_chu ?? record.note ?? '').trim();
+  const providedMinutes = parseMixingNumber(
+    record.tong_thoi_gian_dung_phut ?? record.downtimeMinutes ?? record.totalMinutes
+  );
+  const computedMinutes = calcDowntimeMinutes(thoi_gian_bat_dau, thoi_gian_chay_lai);
+  const tong_thoi_gian_dung_phut =
+    providedMinutes !== null ? providedMinutes : computedMinutes !== null ? computedMinutes : null;
+
+  if (!thoi_gian_bat_dau && !thoi_gian_chay_lai && !ly_do_dung_may && so_cuon_anh_huong === null) {
+    return null;
+  }
+
+  return {
+    stt: Number(record.stt ?? index + 1) || index + 1,
+    thoi_gian_bat_dau,
+    thoi_gian_chay_lai,
+    tong_thoi_gian_dung_phut: tong_thoi_gian_dung_phut ?? 0,
+    ly_do_dung_may,
+    so_cuon_anh_huong: so_cuon_anh_huong ?? 0,
+    nguoi_xac_nhan,
+    ghi_chu
+  };
+}
+
+function parseMachineDowntimeBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const ngay = String(source.ngay ?? '').trim();
+  const ca = String(source.ca ?? '').trim();
+  const ma_may = String(source.ma_may ?? source.machineCode ?? '').trim();
+  const ten_may = String(source.ten_may ?? source.machineName ?? '').trim();
+
+  if (!ngay) return { error: 'Vui lòng chọn ngày.' };
+  if (!ca) return { error: 'Vui lòng chọn ca.' };
+  if (!ma_may && !ten_may) return { error: 'Vui lòng chọn máy.' };
+
+  const rawLines = source.chi_tiet ?? source.lines ?? source.items;
+  const list = Array.isArray(rawLines) ? rawLines : [];
+  const chi_tiet = list
+    .map((line, index) => parseMachineDowntimeLine(line, index))
+    .filter((line): line is NonNullable<typeof line> => Boolean(line));
+
+  if (chi_tiet.length === 0) {
+    return { error: 'Vui lòng nhập ít nhất một dòng dừng máy.' };
+  }
+
+  for (const line of chi_tiet) {
+    if (!line.thoi_gian_bat_dau || !line.thoi_gian_chay_lai) {
+      return { error: `Dòng ${line.stt}: vui lòng nhập thời gian bắt đầu dừng và thời gian chạy lại.` };
+    }
+    if (!line.ly_do_dung_may) {
+      return { error: `Dòng ${line.stt}: vui lòng nhập lý do dừng máy.` };
+    }
+  }
+
+  const tong_thoi_gian_dung_phut =
+    Math.round(chi_tiet.reduce((sum, line) => sum + (line.tong_thoi_gian_dung_phut ?? 0), 0) * 100) / 100;
+  const tong_cuon_anh_huong =
+    Math.round(chi_tiet.reduce((sum, line) => sum + (line.so_cuon_anh_huong ?? 0), 0) * 100) / 100;
+
+  const so_phieu =
+    String(source.so_phieu ?? source.slipCode ?? '').trim() || generateMachineDowntimeSlipCode();
+
+  return {
+    record: {
+      so_phieu,
+      ngay,
+      ca,
+      ma_may: ma_may || null,
+      ten_may: ten_may || null,
+      nguoi_lap: String(source.nguoi_lap ?? source.preparedBy ?? '').trim() || null,
+      lenh_sx_lien_quan: String(source.lenh_sx_lien_quan ?? source.productionOrder ?? '').trim() || null,
+      tong_thoi_gian_dung_phut,
+      tong_cuon_anh_huong,
+      ghi_chu_chung: String(source.ghi_chu_chung ?? source.note ?? '').trim() || null,
+      chi_tiet,
+      nguoi_lap_ky: String(source.nguoi_lap_ky ?? '').trim() || null,
+      truong_ca_ky: String(source.truong_ca_ky ?? '').trim() || null,
+      bo_phan_ky: String(source.bo_phan_ky ?? '').trim() || null
+    }
+  };
+}
+
+function machineDowntimeWriteError(error: { code?: string; message?: string }) {
+  if (isMissingTableError(error)) {
+    return `Bảng ${SUPABASE_MACHINE_DOWNTIME_TABLE} chưa tồn tại. Hãy chạy supabase-phieu-bao-dung-may.sql.`;
+  }
+  if (isMissingColumnError(error)) {
+    return `Bảng ${SUPABASE_MACHINE_DOWNTIME_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-phieu-bao-dung-may.sql.`;
+  }
+  return `Không thể lưu phiếu báo dừng máy. ${error.message || ''}`.trim();
 }
 
 function parseAcceptanceNumber(value: unknown) {
@@ -4421,6 +4564,95 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo NVL tồn theo máy.' });
+    }
+  });
+
+  app.get('/api/phieu-bao-dung-may', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 300) : 100;
+
+      let query = supabase
+        .from(SUPABASE_MACHINE_DOWNTIME_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (ngay) query = query.eq('ngay', ngay);
+      if (maMay) query = query.eq('ma_may', maMay);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase machine downtime query error:', error);
+        return res.status(500).json({ error: machineDowntimeWriteError(error) });
+      }
+
+      return res.json({ slips: data || [], total: data?.length || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải phiếu báo dừng máy.' });
+    }
+  });
+
+  app.post('/api/phieu-bao-dung-may', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseMachineDowntimeBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MACHINE_DOWNTIME_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase machine downtime insert error:', error);
+        return res.status(500).json({ error: machineDowntimeWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, slip: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu phiếu báo dừng máy.' });
+    }
+  });
+
+  app.delete('/api/phieu-bao-dung-may/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID phiếu.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MACHINE_DOWNTIME_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Supabase machine downtime delete error:', error);
+        return res.status(500).json({ error: machineDowntimeWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy phiếu.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa phiếu báo dừng máy.' });
     }
   });
 
