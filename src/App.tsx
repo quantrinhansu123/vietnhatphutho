@@ -8338,7 +8338,15 @@ function ProductionOrderPrintSheet({
             <span>(Ký, họ tên)</span>
           </div>
           <div>
-            <p>Kế toán trưởng</p>
+            <p>Trưởng ca</p>
+            <span>(Ký, họ tên)</span>
+          </div>
+          <div>
+            <p>Thủ kho</p>
+            <span>(Ký, họ tên)</span>
+          </div>
+          <div>
+            <p>Kế toán</p>
             <span>(Ký, họ tên)</span>
           </div>
         </div>

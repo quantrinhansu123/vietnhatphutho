@@ -832,11 +832,10 @@ input[type="number"] {
 .production-order-print-grid-table th:nth-child(5) { width: 28%; }
 
 .production-order-print-product-table th:nth-child(1) { width: 11%; }
-.production-order-print-product-table th:nth-child(2) { width: 30%; }
-.production-order-print-product-table th:nth-child(3) { width: 7%; }
-.production-order-print-product-table th:nth-child(4) { width: 9%; }
-.production-order-print-product-table th:nth-child(5) { width: 11%; }
-.production-order-print-product-table th:nth-child(6) { width: 16%; }
+.production-order-print-product-table th:nth-child(2) { width: 34%; }
+.production-order-print-product-table th:nth-child(3) { width: 8%; }
+.production-order-print-product-table th:nth-child(4) { width: 14%; }
+.production-order-print-product-table th:nth-child(5) { width: 33%; }
 
 .production-order-print-materials-table th:nth-child(1) { width: 12%; }
 .production-order-print-materials-table th:nth-child(2) { width: 34%; }
@@ -854,11 +853,11 @@ input[type="number"] {
 
 .production-order-print-signatures {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8mm;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4mm;
   margin-top: 12mm;
   text-align: center;
-  font-size: 11pt;
+  font-size: 10pt;
 }
 
 .production-order-print-signatures p {
