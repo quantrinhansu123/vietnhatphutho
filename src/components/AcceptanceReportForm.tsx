@@ -113,6 +113,16 @@ function lineHasProductCode(line: ProductLine, code: string) {
   return normalizeKey(parseQrProductCode(line.mat_hang)) === target;
 }
 
+function findProductOption(code: string, options: Array<{ code: string; unit: string }>) {
+  const key = normalizeKey(code);
+  if (!key) return null;
+  return options.find(option => normalizeKey(option.code) === key) ?? null;
+}
+
+function isBlankProductLine(line: ProductLine) {
+  return !line.mat_hang.trim() && !line.so_luong.trim();
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -418,7 +428,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       return;
     }
 
-    const match = productOptions.find(option => option.code === mat_hang);
+    const match = findProductOption(mat_hang, productOptions);
     setForm(prev => ({
       ...prev,
       lines: prev.lines.map(line =>
@@ -456,8 +466,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
         return false;
       }
 
-      const unit =
-        productOptions.find(option => normalizeKey(option.code) === normalizeKey(code))?.unit ?? '';
+      const unit = findProductOption(code, productOptions)?.unit ?? '';
 
       let addedLineId = '';
       let accepted = false;
@@ -465,6 +474,19 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       setForm(prev => {
         if (prev.lines.some(line => lineHasProductCode(line, code))) {
           return prev;
+        }
+
+        const emptyLineIndex = prev.lines.findIndex(line => isBlankProductLine(line));
+        if (emptyLineIndex >= 0) {
+          const targetLine = prev.lines[emptyLineIndex];
+          addedLineId = targetLine.id;
+          accepted = true;
+          return {
+            ...prev,
+            lines: prev.lines.map((line, index) =>
+              index === emptyLineIndex ? { ...line, mat_hang: code, don_vi: unit } : line
+            )
+          };
         }
 
         const nextLine = {
@@ -810,21 +832,13 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
                   <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">
                     Mã SP / Mặt hàng *
                   </span>
-                  <select
+                  <input
+                    list="acceptance-product-code-options"
                     value={line.mat_hang}
                     onChange={e => handleLineProductChange(line.id, e.target.value)}
                     className={inputClass}
-                    disabled={!editingId && !form.ca.trim()}
-                  >
-                    <option value="">
-                      {form.ca.trim() ? 'Chọn mã SP...' : 'Chọn ca trước'}
-                    </option>
-                    {productOptions.map(option => (
-                      <option key={option.code} value={option.code}>
-                        {option.code}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Mã SP"
+                  />
                 </label>
                 <label className="w-20 space-y-1">
                   <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">ĐVT</span>
@@ -860,6 +874,11 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
               </RepeatableLineRow>
             ))}
           </RepeatableLinesBlock>
+          <datalist id="acceptance-product-code-options">
+            {productOptions.map(option => (
+              <option key={option.code} value={option.code} />
+            ))}
+          </datalist>
 
           <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>
