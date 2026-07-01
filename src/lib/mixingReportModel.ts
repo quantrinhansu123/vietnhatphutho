@@ -97,6 +97,15 @@ export function normalizePhoiTron(source: unknown): MixingPhoiTron {
     const items = normalizeRoundItems(record[key]);
     if (items.length > 0) phoiTron[key] = items;
   });
+  const rawBatch = record.khoi_luong_me;
+  if (rawBatch && typeof rawBatch === 'object') {
+    const khoi_luong_me: Partial<Record<MixingRoundKey, number | null>> = {};
+    MIXING_ROUND_KEYS.forEach(key => {
+      const val = parseStoredNumber((rawBatch as Record<string, unknown>)[key]);
+      if (val !== null && val > 0) khoi_luong_me[key] = val;
+    });
+    if (Object.keys(khoi_luong_me).length > 0) phoiTron.khoi_luong_me = khoi_luong_me;
+  }
   if (!phoiTron.lan_1) phoiTron.lan_1 = [];
   return phoiTron;
 }
@@ -150,7 +159,8 @@ export function normalizeMixingReportLine(line: Record<string, unknown>, index: 
     ten_vat_tu,
     lan_su_dung,
     tong_nhua_tron,
-    ton_cuoi_ca: parseStoredNumber(line.ton_cuoi_ca)
+    hinh_anh: String(line.hinh_anh ?? '').trim(),
+    hinh_anh_public_id: String(line.hinh_anh_public_id ?? '').trim()
   };
 }
 

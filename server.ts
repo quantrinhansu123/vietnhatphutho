@@ -975,6 +975,15 @@ function parseMixingPhoiTron(source: unknown) {
     const items = parseMixingRoundItems(record[key]);
     if (items.length > 0) phoiTron[key] = items;
   });
+  const rawBatch = record.khoi_luong_me;
+  if (rawBatch && typeof rawBatch === 'object') {
+    const khoi_luong_me: Record<string, number> = {};
+    (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+      const val = parseMixingNumber((rawBatch as Record<string, unknown>)[key]);
+      if (val !== null && val > 0) khoi_luong_me[key] = val;
+    });
+    if (Object.keys(khoi_luong_me).length > 0) phoiTron.khoi_luong_me = khoi_luong_me;
+  }
   if (!phoiTron.lan_1) phoiTron.lan_1 = [{ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: null, ti_le_phan_tram: null }];
   return phoiTron;
 }
@@ -1030,7 +1039,8 @@ function parseMixingReportLine(source: unknown, index: number) {
     lan_su_dung,
     tong_nhua_tron:
       parseMixingNumber(record.tong_nhua_tron) ?? (tongFromRounds > 0 ? tongFromRounds : null),
-    ton_cuoi_ca: parseMixingNumber(record.ton_cuoi_ca)
+    hinh_anh: String(record.hinh_anh ?? record.imageUrl ?? '').trim() || null,
+    hinh_anh_public_id: String(record.hinh_anh_public_id ?? record.imagePublicId ?? '').trim() || null
   };
 }
 

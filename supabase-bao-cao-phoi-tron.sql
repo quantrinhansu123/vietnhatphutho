@@ -42,5 +42,5 @@ create policy "bao_cao_phoi_tron_delete_all"
 
 comment on table public.bao_cao_phoi_tron is 'Bao cao phoi tron vat tu theo ca / may.';
 comment on column public.bao_cao_phoi_tron.chi_tiet is
-  'Mang dong NVL. Moi phan tu: stt, ma_nvl, ten_vat_tu, lan_su_dung {lan_1..lan_5: [{ma_nvl, ten_vat_tu, don_vi, so_luong, ti_le_phan_tram}]}, tong_nhua_tron, ton_cuoi_ca.';
+  'Mang dong NVL. Moi phan tu: stt, ma_nvl, ten_vat_tu, lan_su_dung {khoi_luong_me: {lan_1..lan_5: kg}, lan_1..lan_5: [{ma_nvl, ten_vat_tu, don_vi, so_luong, ti_le_phan_tram}]}, tong_nhua_tron, hinh_anh.';
 comment on column public.bao_cao_phoi_tron.so_lan is 'So lan phoi tron trong ca (1-5).';

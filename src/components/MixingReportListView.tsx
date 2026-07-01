@@ -275,9 +275,19 @@ export default function MixingReportListView({
                           <p className="text-xs font-bold text-zinc-600">
                             Tổng trộn:{' '}
                             <span className="font-black text-emerald-700">{formatOptionalNumber(tongTron) || '-'} kg</span>
-                            {' · '}
-                            Tồn cuối ca:{' '}
-                            <span className="font-mono">{formatOptionalNumber(line.ton_cuoi_ca) || '-'}</span>
+                            {line.hinh_anh ? (
+                              <>
+                                {' · '}
+                                <a
+                                  href={line.hinh_anh}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-semibold text-[#ef1b2d] underline"
+                                >
+                                  Ảnh xác nhận
+                                </a>
+                              </>
+                            ) : null}
                           </p>
                         </div>
 
@@ -288,7 +298,9 @@ export default function MixingReportListView({
                               <div key={`${line.stt}-${roundKey}`} className="overflow-hidden rounded-lg border border-zinc-100">
                                 <div className="border-b border-zinc-100 bg-zinc-50/80 px-3 py-1.5">
                                   <p className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
-                                    Lần {roundIndex + 1}
+                                    {roundIndex === 0 && roundCount === 1
+                                      ? 'KL mẻ'
+                                      : `KL mẻ ${roundIndex + 1}`}
                                   </p>
                                 </div>
                                 <div className="overflow-x-auto">
