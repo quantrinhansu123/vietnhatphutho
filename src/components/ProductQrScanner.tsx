@@ -6,20 +6,38 @@ interface ProductQrScannerProps {
   open: boolean;
   onClose: () => void;
   onScan: (value: string) => void;
+  closeAfterScan?: boolean;
 }
 
-export default function ProductQrScanner({ open, onClose, onScan }: ProductQrScannerProps) {
+export default function ProductQrScanner({
+  open,
+  onClose,
+  onScan,
+  closeAfterScan = false
+}: ProductQrScannerProps) {
   const reactId = useId();
   const regionId = `product-qr-${reactId.replace(/:/g, '')}`;
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const handledRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  const onScanRef = useRef(onScan);
+  const lastScanRef = useRef({ value: '', time: 0 });
   const [error, setError] = useState('');
+  const [lastScanned, setLastScanned] = useState('');
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     if (!open) return;
 
-    handledRef.current = false;
+    lastScanRef.current = { value: '', time: 0 };
     setError('');
+    setLastScanned('');
 
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
@@ -27,13 +45,21 @@ export default function ProductQrScanner({ open, onClose, onScan }: ProductQrSca
     scanner
       .start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        { fps: 20, qrbox: { width: 280, height: 280 }, aspectRatio: 1.333334 },
         decodedText => {
-          if (handledRef.current) return;
-          handledRef.current = true;
-          onScan(decodedText.trim());
-          scanner.stop().catch(() => {});
-          onClose();
+          const value = decodedText.trim();
+          const now = Date.now();
+          const lastScan = lastScanRef.current;
+          if (!value || (lastScan.value === value && now - lastScan.time < 1200)) return;
+
+          lastScanRef.current = { value, time: now };
+          setLastScanned(value);
+          onScanRef.current(value);
+
+          if (closeAfterScan) {
+            scanner.stop().catch(() => {});
+            onCloseRef.current();
+          }
         },
         () => {}
       )
@@ -50,7 +76,7 @@ export default function ProductQrScanner({ open, onClose, onScan }: ProductQrSca
       }
       scannerRef.current = null;
     };
-  }, [open, onClose, onScan, regionId]);
+  }, [open, closeAfterScan, regionId]);
 
   if (!open) return null;
 
@@ -72,9 +98,14 @@ export default function ProductQrScanner({ open, onClose, onScan }: ProductQrSca
         </div>
         <div className="p-4">
           <div id={regionId} className="overflow-hidden rounded-xl bg-zinc-950" />
+          {lastScanned && (
+            <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-center text-xs font-black text-emerald-700">
+              Đã quét và thêm dòng
+            </p>
+          )}
           {error && <p className="mt-3 text-xs font-bold text-rose-600">{error}</p>}
           <p className="mt-3 text-center text-xs font-semibold text-zinc-500">
-            Đưa mã QR vào khung hình — mã sản phẩm sẽ tự điền sau khi quét.
+            Đưa mã QR vào khung hình, hệ thống sẽ tự thêm dòng sau khi quét.
           </p>
         </div>
       </div>

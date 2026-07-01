@@ -95,13 +95,6 @@ function machineMatches(orderMachine: string, machineCode: string, machineName: 
   return [...candidates].some(key => key && (key === refKey || key.includes(refKey) || refKey.includes(key)));
 }
 
-function formatProductLabel(productCode: string, productName: string) {
-  if (productCode && productName && productCode !== productName) {
-    return `${productCode} · ${productName}`;
-  }
-  return productName || productCode;
-}
-
 function parseQrProductCode(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed) return '';
@@ -110,24 +103,8 @@ function parseQrProductCode(raw: string) {
   return trimmed;
 }
 
-function findProductOptionByCode(code: string, options: Array<{ label: string; unit: string }>) {
-  const key = normalizeKey(code);
-  if (!key) return null;
-
-  const byLeadingCode = options.find(option => {
-    const leading = option.label.split('·')[0]?.trim() || option.label;
-    return normalizeKey(leading) === key;
-  });
-  if (byLeadingCode) return byLeadingCode;
-
-  return (
-    options.find(option => normalizeKey(option.label) === key) ??
-    options.find(option => {
-      const labelKey = normalizeKey(option.label);
-      return labelKey.startsWith(`${key}·`) || labelKey.includes(key);
-    }) ??
-    null
-  );
+function productCodeFromOrder(order: ProductionOrderOption) {
+  return order.productCode.trim() || order.productName.trim();
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -356,21 +333,21 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
           machineMatches(order.machine, form.ma_may, form.ten_may, form.machineRef || form.ten_may || form.ma_may)
       )
       .map(order => ({
-        label: formatProductLabel(order.productCode, order.productName),
+        code: productCodeFromOrder(order),
         unit: order.unit
       }))
-      .filter(item => item.label && item.label !== '-');
+      .filter(item => item.code && item.code !== '-');
 
-    const byLabel = new Map<string, string>();
+    const byCode = new Map<string, string>();
     items.forEach(item => {
-      if (!byLabel.has(item.label)) {
-        byLabel.set(item.label, item.unit);
+      if (!byCode.has(item.code)) {
+        byCode.set(item.code, item.unit);
       }
     });
 
-    return [...byLabel.entries()]
-      .map(([label, unit]) => ({ label, unit }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'vi'));
+    return [...byCode.entries()]
+      .map(([code, unit]) => ({ code, unit }))
+      .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
   }, [ordersForSelectedDay, form.ca, form.ma_may, form.ten_may, form.machineRef]);
 
   const handleDateChange = (ngay: string) => {
@@ -420,7 +397,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   };
 
   const handleLineProductChange = (lineId: string, mat_hang: string) => {
-    const match = productOptions.find(option => option.label === mat_hang);
+    const match = productOptions.find(option => option.code === mat_hang);
     setForm(prev => ({
       ...prev,
       lines: prev.lines.map(line =>
@@ -447,47 +424,32 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
     });
   };
 
-  const handleQrScan = useCallback(
-    (raw: string) => {
-      setError('');
-      setMessage('');
+  const handleQrScan = useCallback((raw: string) => {
+    setError('');
+    setMessage('');
 
-      if (!form.ca.trim()) {
-        setError('Vui lòng chọn ca trước khi quét QR.');
-        return;
-      }
-      if (!form.ma_may.trim() && !form.ten_may.trim()) {
-        setError('Vui lòng chọn tổ trước khi quét QR.');
-        return;
-      }
+    const code = parseQrProductCode(raw);
+    if (!code) {
+      setError('Mã QR không hợp lệ.');
+      return;
+    }
 
-      const code = parseQrProductCode(raw);
-      if (!code) {
-        setError('Mã QR không hợp lệ.');
-        return;
-      }
+    const unit =
+      productOptions.find(option => normalizeKey(option.code) === normalizeKey(code))?.unit ?? '';
 
-      const match = findProductOptionByCode(code, productOptions);
-      if (!match) {
-        setError(`Không tìm thấy mã SP "${code}" trong lệnh SX của tổ đã chọn.`);
-        return;
-      }
-
-      setForm(prev => ({
-        ...prev,
-        lines: [
-          ...prev.lines,
-          {
-            ...newProductLine(),
-            mat_hang: match.label,
-            don_vi: match.unit
-          }
-        ]
-      }));
-      setMessage(`Đã thêm dòng: ${match.label}`);
-    },
-    [form.ca, form.ma_may, form.ten_may, productOptions]
-  );
+    setForm(prev => ({
+      ...prev,
+      lines: [
+        ...prev.lines,
+        {
+          ...newProductLine(),
+          mat_hang: code,
+          don_vi: unit
+        }
+      ]
+    }));
+    setMessage(`Đã thêm mã SP: ${code}`);
+  }, [productOptions]);
 
   const handleImagePick = async (file: File | null) => {
     if (!file) return;
@@ -783,8 +745,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
                 <button
                   type="button"
                   onClick={() => setIsQrScannerOpen(true)}
-                  disabled={!form.ca.trim() || (!form.ma_may.trim() && !form.ten_may.trim())}
-                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
                 >
                   <ScanBarcode className="h-3.5 w-3.5" />
                   Quét QR
@@ -808,16 +769,14 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
                     value={line.mat_hang}
                     onChange={e => handleLineProductChange(line.id, e.target.value)}
                     className={inputClass}
-                    disabled={!form.ma_may.trim() && !form.ten_may.trim()}
+                    disabled={!editingId && !form.ca.trim()}
                   >
                     <option value="">
-                      {form.ma_may.trim() || form.ten_may.trim()
-                        ? 'Chọn mã SP từ lệnh SX...'
-                        : 'Chọn tổ trước'}
+                      {form.ca.trim() ? 'Chọn mã SP...' : 'Chọn ca trước'}
                     </option>
                     {productOptions.map(option => (
-                      <option key={option.label} value={option.label}>
-                        {option.label}
+                      <option key={option.code} value={option.code}>
+                        {option.code}
                       </option>
                     ))}
                   </select>

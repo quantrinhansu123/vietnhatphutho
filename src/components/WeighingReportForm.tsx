@@ -1757,6 +1757,7 @@ export default function WeighingReportForm({
         open={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
         onScan={handleProductCodeScan}
+        closeAfterScan
       />
     </div>
   );
