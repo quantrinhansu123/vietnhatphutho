@@ -14,6 +14,7 @@ type RepeatableLinesBlockProps = {
   onAdd: () => void;
   addLabel?: string;
   hideAddButton?: boolean;
+  extraHeaderButtons?: React.ReactNode;
   columns: RepeatableLineColumn[];
   children: React.ReactNode;
   addButtonClassName?: string;
@@ -26,6 +27,7 @@ export function RepeatableLinesBlock({
   onAdd,
   addLabel = 'Thêm dòng',
   hideAddButton = false,
+  extraHeaderButtons,
   columns,
   children,
   addButtonClassName,
@@ -43,11 +45,17 @@ export function RepeatableLinesBlock({
             {required ? ' *' : ''}
           </span>
           {!hideAddButton && (
-            <button type="button" onClick={onAdd} className={addButtonClassName || defaultAddClass}>
-              <Plus className="h-3.5 w-3.5" />
-              {addLabel}
-            </button>
+            <div className="flex items-center gap-2">
+              {extraHeaderButtons}
+              <button type="button" onClick={onAdd} className={addButtonClassName || defaultAddClass}>
+                <Plus className="h-3.5 w-3.5" />
+                {addLabel}
+              </button>
+            </div>
           )}
+          {hideAddButton && extraHeaderButtons ? (
+            <div className="flex items-center gap-2">{extraHeaderButtons}</div>
+          ) : null}
         </div>
 
         {columns.length > 0 && (

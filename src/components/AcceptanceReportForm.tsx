@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   CalendarDays,
@@ -10,11 +10,13 @@ import {
   Loader2,
   Printer,
   Save,
+  ScanBarcode,
   Trash2,
   X
 } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
+import ProductQrScanner from './ProductQrScanner';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips } from './AcceptanceReportPrintSheet';
 
@@ -98,6 +100,34 @@ function formatProductLabel(productCode: string, productName: string) {
     return `${productCode} · ${productName}`;
   }
   return productName || productCode;
+}
+
+function parseQrProductCode(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const plusIdx = trimmed.indexOf('+');
+  if (plusIdx > 0) return trimmed.slice(0, plusIdx).trim();
+  return trimmed;
+}
+
+function findProductOptionByCode(code: string, options: Array<{ label: string; unit: string }>) {
+  const key = normalizeKey(code);
+  if (!key) return null;
+
+  const byLeadingCode = options.find(option => {
+    const leading = option.label.split('·')[0]?.trim() || option.label;
+    return normalizeKey(leading) === key;
+  });
+  if (byLeadingCode) return byLeadingCode;
+
+  return (
+    options.find(option => normalizeKey(option.label) === key) ??
+    options.find(option => {
+      const labelKey = normalizeKey(option.label);
+      return labelKey.startsWith(`${key}·`) || labelKey.includes(key);
+    }) ??
+    null
+  );
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -230,6 +260,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
   const printSlips = useMemo(() => buildAcceptancePrintSlips(reports), [reports]);
 
@@ -415,6 +446,48 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       return { ...prev, lines: prev.lines.filter(line => line.id !== lineId) };
     });
   };
+
+  const handleQrScan = useCallback(
+    (raw: string) => {
+      setError('');
+      setMessage('');
+
+      if (!form.ca.trim()) {
+        setError('Vui lòng chọn ca trước khi quét QR.');
+        return;
+      }
+      if (!form.ma_may.trim() && !form.ten_may.trim()) {
+        setError('Vui lòng chọn tổ trước khi quét QR.');
+        return;
+      }
+
+      const code = parseQrProductCode(raw);
+      if (!code) {
+        setError('Mã QR không hợp lệ.');
+        return;
+      }
+
+      const match = findProductOptionByCode(code, productOptions);
+      if (!match) {
+        setError(`Không tìm thấy mã SP "${code}" trong lệnh SX của tổ đã chọn.`);
+        return;
+      }
+
+      setForm(prev => ({
+        ...prev,
+        lines: [
+          ...prev.lines,
+          {
+            ...newProductLine(),
+            mat_hang: match.label,
+            don_vi: match.unit
+          }
+        ]
+      }));
+      setMessage(`Đã thêm dòng: ${match.label}`);
+    },
+    [form.ca, form.ma_may, form.ten_may, productOptions]
+  );
 
   const handleImagePick = async (file: File | null) => {
     if (!file) return;
@@ -705,6 +778,19 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
             onAdd={addProductLine}
             addLabel="Thêm dòng"
             hideAddButton={Boolean(editingId)}
+            extraHeaderButtons={
+              !editingId ? (
+                <button
+                  type="button"
+                  onClick={() => setIsQrScannerOpen(true)}
+                  disabled={!form.ca.trim() || (!form.ma_may.trim() && !form.ten_may.trim())}
+                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ScanBarcode className="h-3.5 w-3.5" />
+                  Quét QR
+                </button>
+              ) : null
+            }
             columns={[
               { key: 'mat_hang', label: 'Mã SP / Mặt hàng', className: 'min-w-[220px] flex-[2]', required: true },
               { key: 'don_vi', label: 'ĐVT', className: 'w-20' },
@@ -938,6 +1024,12 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       {pendingPrint &&
         printSlips.length > 0 &&
         createPortal(<AcceptanceReportPrintBatch slips={printSlips} />, document.body)}
+
+      <ProductQrScanner
+        open={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onScan={handleQrScan}
+      />
     </div>
   );
 }

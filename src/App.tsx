@@ -6557,7 +6557,7 @@ function ProductionPlanQrPrintSheet({
 }) {
   const footerRows: Array<{ label: string; value: string }> = [
     { label: 'Ca sản xuất', value: '' },
-    { label: 'Máy sản xuất', value: '' },
+    { label: 'Công nhân sx', value: '' },
     { label: 'Ngày sản xuất', value: '' }
   ];
 
