@@ -15,6 +15,7 @@ type RepeatableLinesBlockProps = {
   addLabel?: string;
   hideAddButton?: boolean;
   extraHeaderButtons?: React.ReactNode;
+  showColumnHeaders?: boolean;
   columns: RepeatableLineColumn[];
   children: React.ReactNode;
   addButtonClassName?: string;
@@ -28,6 +29,7 @@ export function RepeatableLinesBlock({
   addLabel = 'Thêm dòng',
   hideAddButton = false,
   extraHeaderButtons,
+  showColumnHeaders = false,
   columns,
   children,
   addButtonClassName,
@@ -59,7 +61,11 @@ export function RepeatableLinesBlock({
         </div>
 
         {columns.length > 0 && (
-          <div className="hidden flex-wrap items-end gap-2 border-b border-zinc-200/80 pb-1.5 sm:flex">
+          <div
+            className={`flex-wrap items-end gap-2 border-b border-zinc-200/80 pb-1.5 ${
+              showColumnHeaders ? 'flex' : 'hidden sm:flex'
+            }`}
+          >
             {columns.map(column => (
               <span
                 key={column.key}

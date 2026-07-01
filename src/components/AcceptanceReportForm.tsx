@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   CalendarDays,
   ChevronLeft,
-  ClipboardCheck,
   Clock3,
   Cpu,
   ImagePlus,
@@ -14,7 +13,6 @@ import {
   Trash2,
   X
 } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
 import ProductQrScanner from './ProductQrScanner';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
@@ -121,6 +119,12 @@ function findProductOption(code: string, options: Array<{ code: string; unit: st
 
 function isBlankProductLine(line: ProductLine) {
   return !line.mat_hang.trim() && !line.so_luong.trim();
+}
+
+function incrementQuantityString(current: string) {
+  const num = Number(String(current).replace(',', '.'));
+  if (!Number.isFinite(num) || num <= 0) return '1';
+  return String(num + 1);
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -457,7 +461,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   };
 
   const handleQrScan = useCallback(
-    (raw: string): boolean => {
+    (raw: string): boolean | 'incremented' => {
       setMessage('');
 
       const code = parseQrProductCode(raw);
@@ -468,23 +472,36 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
 
       const unit = findProductOption(code, productOptions)?.unit ?? '';
 
-      let addedLineId = '';
-      let accepted = false;
+      let targetLineId = '';
+      let result: boolean | 'incremented' = false;
 
       setForm(prev => {
-        if (prev.lines.some(line => lineHasProductCode(line, code))) {
-          return prev;
+        const existingIndex = prev.lines.findIndex(line => lineHasProductCode(line, code));
+        if (existingIndex >= 0) {
+          const existingLine = prev.lines[existingIndex];
+          targetLineId = existingLine.id;
+          result = 'incremented';
+          return {
+            ...prev,
+            lines: prev.lines.map((line, index) =>
+              index === existingIndex
+                ? { ...line, so_luong: incrementQuantityString(line.so_luong) }
+                : line
+            )
+          };
         }
 
         const emptyLineIndex = prev.lines.findIndex(line => isBlankProductLine(line));
         if (emptyLineIndex >= 0) {
           const targetLine = prev.lines[emptyLineIndex];
-          addedLineId = targetLine.id;
-          accepted = true;
+          targetLineId = targetLine.id;
+          result = true;
           return {
             ...prev,
             lines: prev.lines.map((line, index) =>
-              index === emptyLineIndex ? { ...line, mat_hang: code, don_vi: unit } : line
+              index === emptyLineIndex
+                ? { ...line, mat_hang: code, don_vi: unit || line.don_vi, so_luong: '1' }
+                : line
             )
           };
         }
@@ -492,23 +509,29 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
         const nextLine = {
           ...newProductLine(),
           mat_hang: code,
-          don_vi: unit
+          don_vi: unit,
+          so_luong: '1'
         };
-        addedLineId = nextLine.id;
-        accepted = true;
+        targetLineId = nextLine.id;
+        result = true;
         return {
           ...prev,
           lines: [...prev.lines, nextLine]
         };
       });
 
-      if (!accepted) {
-        setError(`Mã SP "${code}" đã có trong danh sách.`);
+      if (!result) {
+        setError('Không thể thêm mã SP.');
         return false;
       }
 
       setError('');
-      setHighlightLineId(addedLineId);
+      setHighlightLineId(targetLineId);
+      if (result === 'incremented') {
+        setMessage(`Đã tăng số lượng mã SP: ${code}`);
+        return 'incremented';
+      }
+
       setMessage(`Đã thêm mã SP: ${code}`);
       return true;
     },
@@ -714,30 +737,19 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   return (
     <div className="space-y-4 pb-24">
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b-4 border-[#ef1b2d] bg-white p-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-3">
-              <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
-              <div>
-                <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Báo cáo sản xuất</p>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">Phiếu báo cáo sản lượng</h2>
-                <p className="mt-1 text-xs font-semibold text-zinc-500">
-                  Chọn tổ một lần, thêm từng mã SP và số lượng, sau đó chụp ảnh chung
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Quay lại
-            </button>
-          </div>
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
+          <h2 className="text-base font-black text-zinc-950">Phiếu báo cáo sản lượng</h2>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Quay lại
+          </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 border-t border-zinc-100 bg-zinc-50 p-4 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-4 md:grid-cols-3 lg:grid-cols-6">
           <label className="space-y-1">
             <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
               <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" /> Ngày
@@ -801,6 +813,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
           <RepeatableLinesBlock
             title="Mã SP & số lượng"
             required
+            showColumnHeaders
             onAdd={addProductLine}
             addLabel="Thêm dòng"
             hideAddButton={Boolean(editingId)}
@@ -817,9 +830,9 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
               ) : null
             }
             columns={[
-              { key: 'mat_hang', label: 'Mã SP / Mặt hàng', className: 'min-w-[220px] flex-[2]', required: true },
+              { key: 'mat_hang', label: 'Mã SP', className: 'min-w-[220px] flex-[2]', required: true },
               { key: 'don_vi', label: 'ĐVT', className: 'w-20' },
-              { key: 'so_luong', label: 'Số lượng', className: 'w-28', required: true },
+              { key: 'so_luong', label: 'SL', className: 'w-28', required: true },
               { key: 'actions', label: '', className: 'w-10' }
             ]}
           >
@@ -828,39 +841,35 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
                 key={line.id}
                 className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
               >
-                <label className="min-w-[220px] flex-[2] space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">
-                    Mã SP / Mặt hàng *
-                  </span>
+                <div className="min-w-[220px] flex-[2]">
                   <input
                     list="acceptance-product-code-options"
                     value={line.mat_hang}
                     onChange={e => handleLineProductChange(line.id, e.target.value)}
                     className={inputClass}
                     placeholder="Mã SP"
+                    aria-label="Mã SP"
                   />
-                </label>
-                <label className="w-20 space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">ĐVT</span>
+                </div>
+                <div className="w-20">
                   <input
                     value={line.don_vi}
                     readOnly
                     className={`${inputClass} bg-zinc-50 text-zinc-600`}
                     placeholder="-"
+                    aria-label="ĐVT"
                   />
-                </label>
-                <label className="w-28 space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">
-                    Số lượng *
-                  </span>
+                </div>
+                <div className="w-28">
                   <input
                     value={line.so_luong}
                     onChange={e => handleLineQuantityChange(line.id, e.target.value)}
                     className={inputClass}
                     inputMode="decimal"
                     placeholder="0"
+                    aria-label="Số lượng"
                   />
-                </label>
+                </div>
                 {!editingId && form.lines.length > 1 && (
                   <button
                     type="button"
@@ -882,9 +891,6 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
 
           <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>
-            <p className="text-[11px] font-semibold text-zinc-500">
-              Chụp một ảnh cho tất cả các dòng sản lượng ở trên
-            </p>
             <div className="flex items-center gap-2">
               <input
                 ref={fileInputRef}
@@ -945,26 +951,20 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       )}
 
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <ClipboardCheck className="h-4 w-4 text-emerald-700" />
-            <p className="text-sm font-black text-zinc-950">Báo cáo đã lưu</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={reports.length === 0}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Printer className="h-4 w-4" />
-              In phiếu
-            </button>
-            <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-              Ngày
-              <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className={inputClass} />
-            </label>
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-zinc-100 px-4 py-2">
+          <button
+            type="button"
+            onClick={handlePrint}
+            disabled={reports.length === 0}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4" />
+            In phiếu
+          </button>
+          <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+            Ngày
+            <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className={inputClass} />
+          </label>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-xs">

@@ -6,7 +6,7 @@ import { ScanBarcode, X } from 'lucide-react';
 interface ProductQrScannerProps {
   open: boolean;
   onClose: () => void;
-  onScan: (value: string) => boolean | void;
+  onScan: (value: string) => boolean | 'incremented' | void;
   closeAfterScan?: boolean;
 }
 
@@ -85,11 +85,15 @@ export default function ProductQrScanner({
       return false;
     }
 
-    const accepted = onScanRef.current(raw) !== false;
+    const scanResult = onScanRef.current(raw);
     setFeedbackPulse(prev => prev + 1);
 
-    if (accepted) {
-      setFeedback({ type: 'success', text: `Đã thêm mã SP: ${code}` });
+    if (scanResult === false) {
+      return false;
+    }
+
+    if (scanResult === 'incremented') {
+      setFeedback({ type: 'success', text: `Đã tăng SL mã ${code}` });
       if (closeAfterScan) {
         void scannerRef.current?.stop().catch(() => {});
         onCloseRef.current();
@@ -97,8 +101,12 @@ export default function ProductQrScanner({
       return true;
     }
 
-    setFeedback({ type: 'duplicate', text: `Mã ${code} đã có — không thêm trùng.` });
-    return false;
+    setFeedback({ type: 'success', text: `Đã thêm mã SP: ${code}` });
+    if (closeAfterScan) {
+      void scannerRef.current?.stop().catch(() => {});
+      onCloseRef.current();
+    }
+    return true;
   };
 
   useEffect(() => {
@@ -121,7 +129,8 @@ export default function ProductQrScanner({
       const value = decodedText.trim();
       const now = Date.now();
       const lastScan = lastScanRef.current;
-      if (!value || (lastScan.value === value && now - lastScan.time < 1200)) return;
+      if (!value) return;
+      if (lastScan.value === value && now - lastScan.time < 500) return;
 
       lastScanRef.current = { value, time: now };
       applyScanResult(value);
