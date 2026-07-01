@@ -1,0 +1,113 @@
+[
+  {
+    "id": "rep_seed_1",
+    "date": "2026-06-20",
+    "shiftInfo": {
+      "machineId": "MÁY SX-01 (Đùn PE)",
+      "shiftName": "Ca 12C1 (08:00 - 20:00)",
+      "operatorName": "Nguyễn Văn Hùng",
+      "assistantName": "Trần Minh Tâm"
+    },
+    "productEntry": {
+      "productCode": "PE-LD100",
+      "rolls": 12,
+      "actualWeight": 295.5
+    },
+    "materials": {
+      "virginPlastic": [
+        100,
+        100
+      ],
+      "recycledPlastic": [
+        50,
+        50
+      ],
+      "brightenerPowder": [
+        1.5
+      ],
+      "dispersionOil": [
+        0.5
+      ],
+      "otherAdditives": [
+        0.3
+      ]
+    },
+    "wasteWeight": 3.2,
+    "notes": "Vận hành ổn định, màng PE bóng dẻo đạt chuẩn. Hao hụt cắt biên mỏng.",
+    "createdAt": "2026-06-20T08:23:00.882Z"
+  },
+  {
+    "id": "rep_seed_2",
+    "date": "2026-06-21",
+    "shiftInfo": {
+      "machineId": "MÁY SX-02 (Đùn PE)",
+      "shiftName": "Ca 12C2 (20:00 - 08:00)",
+      "operatorName": "Lê Hoàng Hải",
+      "assistantName": "Phan Thanh Bình"
+    },
+    "productEntry": {
+      "productCode": "PE-HD200",
+      "rolls": 8,
+      "actualWeight": 402
+    },
+    "materials": {
+      "virginPlastic": [
+        150,
+        150
+      ],
+      "recycledPlastic": [
+        55,
+        50
+      ],
+      "brightenerPowder": [
+        2
+      ],
+      "dispersionOil": [
+        0.8
+      ],
+      "otherAdditives": [
+        0.5
+      ]
+    },
+    "wasteWeight": 2.5,
+    "notes": "Chạy cuộn PE-HD200 dày dặn, tỷ lệ trộn nhựa tái sinh tăng nhẹ nhưng màng dai đạt chuẩn.",
+    "createdAt": "2026-06-21T08:23:00.884Z"
+  },
+  {
+    "id": "rep_seed_3",
+    "date": "2026-06-22",
+    "shiftInfo": {
+      "machineId": "MÁY SX-03 (Dệt PP)",
+      "shiftName": "Ca 12C1 (08:00 - 20:00)",
+      "operatorName": "Nguyễn Văn Hùng",
+      "assistantName": "Trần Minh Tâm"
+    },
+    "productEntry": {
+      "productCode": "PP-Y101",
+      "rolls": 10,
+      "actualWeight": 388
+    },
+    "materials": {
+      "virginPlastic": [
+        180,
+        170
+      ],
+      "recycledPlastic": [
+        25,
+        25
+      ],
+      "brightenerPowder": [
+        3
+      ],
+      "dispersionOil": [
+        1
+      ],
+      "otherAdditives": [
+        1.2
+      ]
+    },
+    "wasteWeight": 10.5,
+    "notes": "Một số cuộn lỗi phế phẩm đầu mẩu do nhiệt độ đầu đùn chưa đều nửa đầu ca, đã căn chỉnh lại.",
+    "createdAt": "2026-06-22T08:23:00.884Z"
+  }
+]

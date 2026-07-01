@@ -11841,6 +11841,15 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
       } else {
         setAcceptanceReports([]);
       }
+
+      const usingLocalFallback = [machineData, staffData, orderData, materialData, productionData].some(
+        payload => payload && typeof payload === 'object' && (payload as { source?: string }).source === 'local'
+      );
+      if (usingLocalFallback) {
+        setLoadError(
+          'Chưa kết nối Supabase — dữ liệu đang rỗng. Kiểm tra file .env (SUPABASE_URL, SUPABASE_SERVICE_KEY) rồi khởi động lại server: npm run dev.'
+        );
+      }
     } catch (error: any) {
       setStaffBranches([]);
       setOrders([]);
