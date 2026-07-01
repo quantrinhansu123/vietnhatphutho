@@ -5336,7 +5336,15 @@ function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
     .filter((report): report is MachineNvlSavedReport => Boolean(report));
 }
 
-function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
+function MachineNvlReportPanel({
+  onBack,
+  initialMachine,
+  onInitialMachineConsumed
+}: {
+  onBack: () => void;
+  initialMachine?: { code: string; name: string } | null;
+  onInitialMachineConsumed?: () => void;
+}) {
   const [activeKind, setActiveKind] = useState<MachineNvlReportKind>('dau_ca');
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
@@ -5392,6 +5400,14 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
       alive = false;
     };
   }, [activeKind]);
+
+  useEffect(() => {
+    if (!initialMachine || machines.length === 0) return;
+    const found =
+      findMachineByRef(machines, initialMachine.code) ?? findMachineByRef(machines, initialMachine.name);
+    setMachineRef(found ? machineSelectValue(found) : initialMachine.name || initialMachine.code);
+    onInitialMachineConsumed?.();
+  }, [initialMachine, machines, onInitialMachineConsumed]);
 
   const switchReportKind = (kind: MachineNvlReportKind) => {
     if (kind === activeKind) return;
@@ -8271,7 +8287,6 @@ function ProductionOrderPrintSheet({
               <th>Mã thành phẩm</th>
               <th>Tên thành phẩm</th>
               <th>ĐVT</th>
-              <th>Số lượng</th>
               <th>Khối lượng (kg)</th>
               <th>Đối tượng THCP</th>
             </tr>
@@ -8281,7 +8296,6 @@ function ProductionOrderPrintSheet({
               <td>{order.productCode || '-'}</td>
               <td>{order.productName || '-'}</td>
               <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
-              <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
               <td className="production-order-print-right">{finishedWeightKg}</td>
               <td>{costObject}</td>
             </tr>
@@ -11907,7 +11921,13 @@ function DashboardWindow({
   );
 }
 
-function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }) {
+function ControlBoardPanel({
+  onNavigate,
+  onMachineReport
+}: {
+  onNavigate: (tab: AppTab) => void;
+  onMachineReport: (machine: MachineRow, type: 'mixing' | 'nvl') => void;
+}) {
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -12642,14 +12662,6 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
           error=""
           onOpen={() => onNavigate('machines')}
           openLabel="Mở"
-          secondaryAction={{
-            label: 'Báo cáo phối trộn',
-            onClick: () => onNavigate('mixing-report')
-          }}
-          tertiaryAction={{
-            label: 'Báo cáo NVL tồn',
-            onClick: () => onNavigate('machine-nvl-report')
-          }}
           compact
         >
           <div className="grid grid-cols-1 gap-1.5 p-0.5">
@@ -12684,6 +12696,22 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
                   <span className="inline-block rounded-full border border-[#ef1b2d]/20 bg-red-50 px-1.5 py-0.5 text-[9px] font-black text-[#ef1b2d]">
                     {machine.status}
                   </span>
+                </div>
+                <div className="flex shrink-0 flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onMachineReport(machine, 'nvl')}
+                    className="rounded-md border border-emerald-500/50 bg-emerald-700 px-2 py-1 text-[9px] font-extrabold leading-tight text-white transition hover:bg-emerald-800"
+                  >
+                    Báo cáo NVL tồn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMachineReport(machine, 'mixing')}
+                    className="rounded-md border border-emerald-500/50 bg-emerald-700 px-2 py-1 text-[9px] font-extrabold leading-tight text-white transition hover:bg-emerald-800"
+                  >
+                    Báo cáo phối trộn
+                  </button>
                 </div>
               </div>
             ))}
@@ -13463,6 +13491,15 @@ export default function App() {
   const [notifications, setNotifications] = useState<{ id: string; text: string; type: 'success' | 'error' | 'warning' }[]>([]);
   const [offlineReports, setOfflineReports] = useState<ProductionReport[]>([]);
   const [acceptanceEditReport, setAcceptanceEditReport] = useState<AcceptanceReport | null>(null);
+  const [mixingReportMachinePrefill, setMixingReportMachinePrefill] = useState<{
+    id: string;
+    code: string;
+    name: string;
+  } | null>(null);
+  const [machineNvlReportPrefill, setMachineNvlReportPrefill] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
     const path = pathFromTab(tab);
 
@@ -13886,7 +13923,25 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ControlBoardPanel onNavigate={navigateToTab} />
+                <ControlBoardPanel
+                  onNavigate={navigateToTab}
+                  onMachineReport={(machine, type) => {
+                    if (type === 'mixing') {
+                      setMixingReportMachinePrefill({
+                        id: machine.id,
+                        code: machine.code,
+                        name: machine.name
+                      });
+                      navigateToTab('mixing-report');
+                      return;
+                    }
+                    setMachineNvlReportPrefill({
+                      code: machine.code,
+                      name: machine.name
+                    });
+                    navigateToTab('machine-nvl-report');
+                  }}
+                />
               </motion.div>
             ) : activeTab === 'menu' ? (
               <motion.div
@@ -14196,6 +14251,8 @@ export default function App() {
                 <MixingReportForm
                   onBack={() => navigateToTab('report-forms')}
                   onOpenList={() => navigateToTab('mixing-report-list')}
+                  initialMachine={mixingReportMachinePrefill}
+                  onInitialMachineConsumed={() => setMixingReportMachinePrefill(null)}
                 />
               </motion.div>
             ) : activeTab === 'mixing-report-list' ? (
@@ -14218,7 +14275,11 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachineNvlReportPanel onBack={() => navigateToTab('report-forms')} />
+                <MachineNvlReportPanel
+                  onBack={() => navigateToTab('report-forms')}
+                  initialMachine={machineNvlReportPrefill}
+                  onInitialMachineConsumed={() => setMachineNvlReportPrefill(null)}
+                />
               </motion.div>
             ) : activeTab === 'acceptance-report' ? (
               <motion.div

@@ -864,7 +864,9 @@ export default function MixingReportForm({
   modalMode = false,
   open = true,
   onClose,
-  onSaved
+  onSaved,
+  initialMachine,
+  onInitialMachineConsumed
 }: {
   onBack?: () => void;
   onOpenList?: () => void;
@@ -872,6 +874,8 @@ export default function MixingReportForm({
   open?: boolean;
   onClose?: () => void;
   onSaved?: () => void | Promise<void>;
+  initialMachine?: { id: string; code: string; name: string } | null;
+  onInitialMachineConsumed?: () => void;
 }) {
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
@@ -995,6 +999,17 @@ export default function MixingReportForm({
       chi_nhanh: machine.branch || prev.chi_nhanh
     }));
   };
+
+  useEffect(() => {
+    if (!initialMachine || machines.length === 0) return;
+    const machine =
+      machines.find(item => item.id === initialMachine.id) ??
+      machines.find(item => item.code === initialMachine.code) ??
+      machines.find(item => item.name === initialMachine.name);
+    if (!machine) return;
+    pickMachine(machine.id);
+    onInitialMachineConsumed?.();
+  }, [initialMachine, machines, onInitialMachineConsumed]);
 
   const pickShift = (ca: string) => {
     setNhanSuManual(false);
