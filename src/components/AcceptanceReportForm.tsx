@@ -1,22 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   CalendarDays,
   ChevronLeft,
   Clock3,
   Cpu,
   ImagePlus,
+  List,
   Loader2,
-  Printer,
   Save,
   ScanBarcode,
-  Trash2,
   X
 } from 'lucide-react';
-import { formatNumber } from '../utils';
 import ProductQrScanner from './ProductQrScanner';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
-import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips } from './AcceptanceReportPrintSheet';
 
 export type AcceptanceReport = {
   id: string;
@@ -191,7 +187,7 @@ function normalizeMachines(data: unknown): MachineOption[] {
     .filter((row): row is MachineOption => Boolean(row));
 }
 
-function normalizeReportFromApi(record: Record<string, unknown>): AcceptanceReport {
+export function normalizeReportFromApi(record: Record<string, unknown>): AcceptanceReport {
   return {
     id: String(record.id ?? ''),
     ngay: String(record.ngay ?? '').slice(0, 10),
@@ -243,64 +239,40 @@ function newReportForm() {
   };
 }
 
-export default function AcceptanceReportForm({ onBack }: { onBack: () => void }) {
+export default function AcceptanceReportForm({
+  onBack,
+  onOpenList,
+  editReport,
+  onEditConsumed
+}: {
+  onBack: () => void;
+  onOpenList?: () => void;
+  editReport?: AcceptanceReport | null;
+  onEditConsumed?: () => void;
+}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrderOption[]>([]);
-  const [reports, setReports] = useState<AcceptanceReport[]>([]);
-  const [filterDate, setFilterDate] = useState(todayIso());
   const [form, setForm] = useState(newReportForm());
   const formLinesRef = useRef(form.lines);
   formLinesRef.current = form.lines;
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [pendingPrint, setPendingPrint] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [highlightLineId, setHighlightLineId] = useState('');
-
-  const printSlips = useMemo(() => buildAcceptancePrintSlips(reports), [reports]);
-
-  useEffect(() => {
-    if (!pendingPrint || printSlips.length === 0) return;
-    const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, [pendingPrint, printSlips]);
-
-  const handlePrint = () => {
-    if (printSlips.length === 0) {
-      setError('Chưa có báo cáo sản lượng để in trong ngày này.');
-      return;
-    }
-    setError('');
-    setPendingPrint(true);
-  };
-
-  const loadReports = async (ngay = filterDate) => {
-    const res = await fetch(`/api/bao-cao-nghiem-thu?ngay=${encodeURIComponent(ngay)}`);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Không thể tải báo cáo sản lượng.');
-    const list = Array.isArray(data.reports) ? data.reports : [];
-    setReports(list.map((item: Record<string, unknown>) => normalizeReportFromApi(item)));
-  };
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      setIsLoading(true);
       setError('');
       try {
         const [machineRes, productionRes] = await Promise.all([
           fetch('/api/danh-sach-may'),
-          fetch('/api/lenh-sx'),
-          loadReports(filterDate)
+          fetch('/api/lenh-sx')
         ]);
         const machineData = await machineRes.json().catch(() => ({}));
         const productionData = await productionRes.json().catch(() => ({}));
@@ -312,8 +284,6 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
         setProductionOrders(normalizeProductionOrders(productionData));
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Không thể tải dữ liệu.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
       }
     })();
 
@@ -323,8 +293,10 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   }, []);
 
   useEffect(() => {
-    loadReports(filterDate).catch(err => setError(err.message || 'Không thể tải báo cáo.'));
-  }, [filterDate]);
+    if (!editReport || machines.length === 0) return;
+    startEdit(editReport);
+    onEditConsumed?.();
+  }, [editReport, machines, onEditConsumed]);
 
   useEffect(() => {
     if (!highlightLineId) return;
@@ -721,24 +693,10 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       }
 
       resetForm();
-      await loadReports(filterDate);
     } catch (err: any) {
       setError(err.message || 'Không thể lưu báo cáo sản lượng.');
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Xóa báo cáo sản lượng này?')) return;
-    try {
-      const res = await fetch(`/api/bao-cao-nghiem-thu/${id}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể xóa báo cáo.');
-      if (editingId === id) resetForm();
-      await loadReports(filterDate);
-    } catch (err: any) {
-      setError(err.message || 'Không thể xóa báo cáo.');
     }
   };
 
@@ -753,14 +711,26 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
           <h2 className="text-base font-black text-zinc-950">Phiếu báo cáo sản lượng</h2>
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Quay lại
-          </button>
+          <div className="flex items-center gap-2">
+            {onOpenList && (
+              <button
+                type="button"
+                onClick={onOpenList}
+                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+              >
+                <List className="h-4 w-4" />
+                Danh sách
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Quay lại
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-4 md:grid-cols-3 lg:grid-cols-6">
@@ -963,104 +933,6 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
           {message}
         </div>
       )}
-
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-zinc-100 px-4 py-2">
-          <button
-            type="button"
-            onClick={handlePrint}
-            disabled={reports.length === 0}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Printer className="h-4 w-4" />
-            In phiếu
-          </button>
-          <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-            Ngày
-            <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className={inputClass} />
-          </label>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-black">Ảnh</th>
-                <th className="px-3 py-2 font-black">Ngày</th>
-                <th className="px-3 py-2 font-black">Ca</th>
-                <th className="px-3 py-2 font-black">Tổ</th>
-                <th className="px-3 py-2 font-black">Lần</th>
-                <th className="px-3 py-2 font-black">Giờ</th>
-                <th className="px-3 py-2 font-black">Mặt hàng</th>
-                <th className="px-3 py-2 font-black">ĐVT</th>
-                <th className="px-3 py-2 font-black">SL</th>
-                <th className="px-3 py-2 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải...
-                  </td>
-                </tr>
-              ) : reports.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
-                    Chưa có báo cáo trong ngày này.
-                  </td>
-                </tr>
-              ) : (
-                reports.map(report => (
-                  <tr key={report.id} className="hover:bg-emerald-50/40">
-                    <td className="px-3 py-2">
-                      {report.hinh_anh ? (
-                        <a href={report.hinh_anh} target="_blank" rel="noreferrer" className="block h-10 w-10 overflow-hidden rounded-lg border border-zinc-200">
-                          <img src={report.hinh_anh} alt="Sản lượng" className="h-full w-full object-cover" />
-                        </a>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                    <td className="px-3 py-2 font-mono font-bold text-zinc-700">{report.ngay || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-800">{report.ca || '-'}</td>
-                    <td className="px-3 py-2 text-zinc-700">{report.ten_may || report.ma_may || '-'}</td>
-                    <td className="px-3 py-2 font-bold text-zinc-700">{report.lan || '-'}</td>
-                    <td className="px-3 py-2 font-mono text-zinc-600">{report.gio || '-'}</td>
-                    <td className="px-3 py-2 text-zinc-700">{report.mat_hang || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-600">{report.don_vi || '-'}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-emerald-700">
-                      {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(report)}
-                          className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 hover:bg-zinc-50"
-                        >
-                          Sửa
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(report.id)}
-                          className="rounded-lg border border-rose-200 px-2 py-1 text-[10px] font-black text-rose-700 hover:bg-rose-50"
-                        >
-                          Xóa
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {pendingPrint &&
-        printSlips.length > 0 &&
-        createPortal(<AcceptanceReportPrintBatch slips={printSlips} />, document.body)}
 
       <ProductQrScanner
         open={isQrScannerOpen}

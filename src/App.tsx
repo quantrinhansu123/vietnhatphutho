@@ -14,6 +14,7 @@ import WeighingShiftSummary from './components/WeighingShiftSummary';
 import MixingReportForm from './components/MixingReportForm';
 import MixingReportListView from './components/MixingReportListView';
 import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
+import AcceptanceReportListView from './components/AcceptanceReportListView';
 import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
 import MachineDowntimeIcon from './components/icons/MachineDowntimeIcon';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from './components/WarehouseSlipPrintModal';
@@ -13230,7 +13231,7 @@ type MenuCardConfig = {
   tab: AppTab;
 };
 
-const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
+const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
   {
     title: 'Phiếu cân ca',
     desc: 'Lập phiếu cân, ghi nhận khối lượng và xem tổng hợp theo ca.',
@@ -13244,12 +13245,6 @@ const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'mixing-report'
   },
   {
-    title: 'Danh sách báo cáo',
-    desc: 'Xem phiếu cân, phối trộn và các báo cáo đã lưu.',
-    icon: ClipboardList,
-    tab: 'report-lists'
-  },
-  {
     title: 'Phiếu báo cáo sản lượng',
     desc: 'Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca.',
     icon: ClipboardCheck,
@@ -13260,6 +13255,27 @@ const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Ghi nhận thời gian dừng, lý do và số cuộn ảnh hưởng theo ca.',
     icon: MachineDowntimeIcon,
     tab: 'machine-downtime-report'
+  },
+  {
+    title: 'Báo cáo máy NVL tồn',
+    desc: 'Theo dõi NVL tồn theo từng máy và ca sản xuất.',
+    icon: Boxes,
+    tab: 'machine-nvl-report'
+  }
+];
+
+const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Phiếu báo cáo',
+    desc: 'Mở các phiếu nhập báo cáo theo ca sản xuất.',
+    icon: FilePlus2,
+    tab: 'report-forms'
+  },
+  {
+    title: 'Danh sách báo cáo',
+    desc: 'Mở danh sách phiếu cân, phối trộn và báo cáo sản lượng đã lưu.',
+    icon: ClipboardList,
+    tab: 'report-lists'
   }
 ];
 
@@ -13293,6 +13309,39 @@ const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
     tab: 'warehouse-history'
+  }
+];
+
+const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Danh sách báo cáo sản lượng',
+    desc: 'Xem, sửa và in các phiếu báo cáo sản lượng đã lưu.',
+    icon: ClipboardList,
+    tab: 'acceptance-report-list'
+  },
+  {
+    title: 'Phiếu cân ca',
+    desc: 'Xem danh sách phiếu cân và cộng dồn theo ca.',
+    icon: History,
+    tab: 'weighing-summary'
+  },
+  {
+    title: 'Danh sách phối trộn',
+    desc: 'Lấy danh sách báo cáo phối trộn đã lưu theo ngày, ca và máy.',
+    icon: Layers,
+    tab: 'mixing-report-list'
+  },
+  {
+    title: 'Danh sách NVL tồn',
+    desc: 'Xem báo cáo NVL tồn theo từng máy và ca sản xuất.',
+    icon: Boxes,
+    tab: 'machine-nvl-report'
+  },
+  {
+    title: 'Danh sách báo cáo dừng máy',
+    desc: 'Xem các phiếu báo dừng máy đã lưu và lịch sử gần nhất.',
+    icon: MachineDowntimeIcon,
+    tab: 'machine-downtime-list'
   }
 ];
 
@@ -13338,21 +13387,6 @@ const FACTORY_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Tra cứu snapshot kế hoạch sản xuất đã lưu, lọc theo ngày hoặc khoảng thời gian.',
     icon: CalendarDays,
     tab: 'production-plan-history'
-  }
-];
-
-const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
-  {
-    title: 'Phiếu cân ca',
-    desc: 'Xem danh sách phiếu cân và cộng dồn theo ca.',
-    icon: History,
-    tab: 'weighing-summary'
-  },
-  {
-    title: 'Danh sách phối trộn',
-    desc: 'Xem các dòng vật tư đã lưu trong báo cáo phối trộn.',
-    icon: Layers,
-    tab: 'mixing-report-list'
   }
 ];
 
@@ -13428,6 +13462,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [notifications, setNotifications] = useState<{ id: string; text: string; type: 'success' | 'error' | 'warning' }[]>([]);
   const [offlineReports, setOfflineReports] = useState<ProductionReport[]>([]);
+  const [acceptanceEditReport, setAcceptanceEditReport] = useState<AcceptanceReport | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
     const path = pathFromTab(tab);
 
@@ -13742,7 +13777,10 @@ export default function App() {
                 activeTab === 'mixing-report-list' ||
                 activeTab === 'machine-nvl-report' ||
                 activeTab === 'machine-downtime-report' ||
-                activeTab === 'acceptance-report'
+                activeTab === 'machine-downtime-list' ||
+                activeTab === 'acceptance-report' ||
+                activeTab === 'acceptance-report-list' ||
+                activeTab === 'report-lists'
               ? 'sm:p-4'
               : 'sm:py-6 sm:px-4'
         }`}
@@ -13751,7 +13789,7 @@ export default function App() {
         <div className={`mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white ${
         activeTab === 'control-board'
           ? 'max-w-none'
-          : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report'
+          : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'machine-downtime-report' || activeTab === 'machine-downtime-list' || activeTab === 'acceptance-report' || activeTab === 'acceptance-report-list' || activeTab === 'report-lists'
           ? 'max-w-none sm:rounded-2xl sm:shadow-2xl sm:border sm:border-zinc-800'
           : 'max-w-4xl sm:rounded-3xl sm:shadow-2xl sm:border sm:border-zinc-800'
       }`}>
@@ -13759,7 +13797,11 @@ export default function App() {
         {/* Device Status Header / Bar */}
         <header className="sticky top-0 z-40 bg-white border-b-4 border-[#ef1b2d] px-4 py-3 shrink-0 flex items-center justify-between pt-safe">
           <div className="flex items-center gap-2">
-            {activeTab === 'report-lists' ? (
+            {activeTab === 'acceptance-report-list' ? (
+              <BackButton onClick={() => navigateToTab('report-lists')} className="h-10 rounded-xl" />
+            ) : activeTab === 'report-lists' ? (
+              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
+            ) : activeTab === 'report-forms' ? (
               <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
             ) : activeTab === 'production-reports' || activeTab === 'facility-management' || activeTab === 'hcns' || activeTab === 'business' || activeTab === 'factory' ? (
               <BackButton onClick={() => navigateToTab('menu')} className="h-10 rounded-xl" />
@@ -13773,10 +13815,14 @@ export default function App() {
               <BackButton onClick={() => navigateToTab('factory')} className="h-10 rounded-xl" />
             ) : activeTab === 'production-plan-history' ? (
               <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
+            ) : activeTab === 'weighing-summary' ? (
+              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
             ) : activeTab === 'machine-nvl-report' ? (
-              <BackButton onClick={() => navigateToTab('control-board')} className="h-10 rounded-xl" />
+              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
+            ) : activeTab === 'machine-downtime-list' ? (
+              <BackButton onClick={() => navigateToTab('report-lists')} className="h-10 rounded-xl" />
             ) : activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report' ? (
-              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
+              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
             ) : null}
             <VietNhatLogo />
           </div>
@@ -13929,6 +13975,21 @@ export default function App() {
                 </div>
                 <MenuCardGrid items={PRODUCTION_REPORT_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
+            ) : activeTab === 'report-forms' ? (
+              <motion.div
+                key="report-forms-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950">Phiếu báo cáo</h2>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Chọn phiếu báo cáo cần lập hoặc mở.</p>
+                </div>
+                <MenuCardGrid items={REPORT_FORM_MENU_ITEMS} onNavigate={navigateToTab} />
+              </motion.div>
             ) : activeTab === 'report-lists' ? (
               <motion.div
                 key="report-lists-menu"
@@ -13940,9 +14001,29 @@ export default function App() {
               >
                 <div>
                   <h2 className="text-xl font-black text-zinc-950">Danh sách báo cáo</h2>
-                  <p className="mt-1 text-sm font-medium text-zinc-500">Xem các báo cáo đã lưu theo từng loại.</p>
+                  <p className="mt-1 text-sm font-medium text-zinc-500">Chọn danh sách báo cáo cần mở.</p>
                 </div>
                 <MenuCardGrid items={REPORT_LIST_MENU_ITEMS} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'acceptance-report-list' ? (
+              <motion.div
+                key="acceptance-report-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <AcceptanceReportListView
+                  onBack={() => navigateToTab('report-lists')}
+                  onCreate={() => {
+                    setAcceptanceEditReport(null);
+                    navigateToTab('acceptance-report');
+                  }}
+                  onEdit={report => {
+                    setAcceptanceEditReport(report);
+                    navigateToTab('acceptance-report');
+                  }}
+                />
               </motion.div>
             ) : activeTab === 'facility-management' ? (
               <motion.div
@@ -14113,7 +14194,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MixingReportForm
-                  onBack={() => navigateToTab('control-board')}
+                  onBack={() => navigateToTab('report-forms')}
                   onOpenList={() => navigateToTab('mixing-report-list')}
                 />
               </motion.div>
@@ -14126,7 +14207,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MixingReportListView
-                  onBack={() => navigateToTab('control-board')}
+                  onBack={() => navigateToTab('report-lists')}
                 />
               </motion.div>
             ) : activeTab === 'machine-nvl-report' ? (
@@ -14137,7 +14218,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachineNvlReportPanel onBack={() => navigateToTab('control-board')} />
+                <MachineNvlReportPanel onBack={() => navigateToTab('report-forms')} />
               </motion.div>
             ) : activeTab === 'acceptance-report' ? (
               <motion.div
@@ -14147,7 +14228,12 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <AcceptanceReportForm onBack={() => navigateToTab('production-reports')} />
+                <AcceptanceReportForm
+                  onBack={() => navigateToTab('report-forms')}
+                  onOpenList={() => navigateToTab('acceptance-report-list')}
+                  editReport={acceptanceEditReport}
+                  onEditConsumed={() => setAcceptanceEditReport(null)}
+                />
               </motion.div>
             ) : activeTab === 'machine-downtime-report' ? (
               <motion.div
@@ -14157,7 +14243,17 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachineDowntimeReportPanel onBack={() => navigateToTab('production-reports')} />
+                <MachineDowntimeReportPanel onBack={() => navigateToTab('report-forms')} />
+              </motion.div>
+            ) : activeTab === 'machine-downtime-list' ? (
+              <motion.div
+                key="machine-downtime-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MachineDowntimeReportPanel onBack={() => navigateToTab('report-lists')} />
               </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div
