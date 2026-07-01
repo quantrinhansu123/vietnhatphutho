@@ -27,7 +27,7 @@ import {
   Building2, UserPlus, Search, MoreVertical, ShieldCheck, BriefcaseBusiness, Package, Cpu, Plus, Boxes, ClipboardList, Settings,
   ImagePlus,
   Eye, Pencil, Trash2, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowUpFromLine, Printer,
-  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, QrCode, Scale, CalendarDays
+  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, QrCode, Scale, CalendarDays, Home
 } from 'lucide-react';
 
 const STORAGE_DRAFT_KEY = 'factory_report_draft_v1';
@@ -321,6 +321,44 @@ function BackButton({
       <ChevronLeft className="h-4 w-4" />
       Quay lại
     </button>
+  );
+}
+
+function HomeNavButton({
+  active,
+  onClick,
+  variant = 'sidebar'
+}: {
+  active: boolean;
+  onClick: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  variant?: 'sidebar' | 'bottom';
+}) {
+  const isSidebar = variant === 'sidebar';
+  const activeClass = active
+    ? isSidebar
+      ? 'bg-[#ef1b2d] text-white shadow-lg shadow-[#ef1b2d]/25'
+      : 'text-[#ef1b2d]'
+    : isSidebar
+      ? 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+      : 'text-zinc-500 hover:text-[#ef1b2d]';
+
+  return (
+    <a
+      href={pathFromTab('menu')}
+      onClick={onClick}
+      aria-label="Trang chủ"
+      aria-current={active ? 'page' : undefined}
+      className={`flex flex-col items-center justify-center gap-0.5 transition active:scale-95 ${
+        isSidebar
+          ? `w-14 rounded-xl px-1 py-2 ${activeClass}`
+          : `min-h-[44px] flex-1 py-1.5 ${activeClass}`
+      }`}
+    >
+      <Home className="h-4 w-4" />
+      <span className={`font-bold uppercase leading-none ${isSidebar ? 'text-[8px] tracking-wide' : 'text-[9px] tracking-wide'}`}>
+        Trang chủ
+      </span>
+    </a>
   );
 }
 
@@ -13222,12 +13260,6 @@ const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Ghi nhận thời gian dừng, lý do và số cuộn ảnh hưởng theo ca.',
     icon: MachineDowntimeIcon,
     tab: 'machine-downtime-report'
-  },
-  {
-    title: 'Kế hoạch SX theo ngày',
-    desc: 'Tra cứu snapshot kế hoạch sản xuất đã lưu, lọc theo ngày hoặc khoảng thời gian.',
-    icon: CalendarDays,
-    tab: 'production-plan-history'
   }
 ];
 
@@ -13300,6 +13332,12 @@ const FACTORY_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Xem danh sách lệnh SX, mã hàng, trạng thái và kế hoạch sản xuất.',
     icon: Factory,
     tab: 'production-orders'
+  },
+  {
+    title: 'Kế hoạch SX theo ngày',
+    desc: 'Tra cứu snapshot kế hoạch sản xuất đã lưu, lọc theo ngày hoặc khoảng thời gian.',
+    icon: CalendarDays,
+    tab: 'production-plan-history'
   }
 ];
 
@@ -13673,15 +13711,44 @@ export default function App() {
   const activeMetrics = computeReportMetrics(reportForm);
 
   return (
-    <div className={`h-[100dvh] overflow-hidden bg-[#151515] flex flex-col font-sans selection:bg-[#ef1b2d] selection:text-white ${
-      activeTab === 'control-board'
-        ? 'p-0'
-        : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report'
-          ? 'sm:p-4'
-          : 'sm:py-6 sm:px-4'
-    }`} id="main-root-container">
-      {/* Smartphone framework emulator on Wide Screens, fullscreen and intuitive on small touch screens */}
-      <div className={`flex-1 min-h-0 w-full mx-auto bg-white overflow-hidden flex flex-col ${
+    <div
+      className="flex h-[100dvh] overflow-hidden bg-[#151515] font-sans selection:bg-[#ef1b2d] selection:text-white"
+      id="main-root-container"
+    >
+      <aside className="hidden shrink-0 flex-col items-center border-r border-zinc-800 bg-zinc-950 py-3 pt-safe sm:flex sm:w-16">
+        <HomeNavButton
+          active={activeTab === 'menu'}
+          onClick={event => handleNavClick(event, 'menu')}
+          variant="sidebar"
+        />
+      </aside>
+
+      <div
+        className={`flex min-h-0 flex-1 flex-col overflow-hidden ${
+          activeTab === 'control-board'
+            ? 'p-0'
+            : activeTab === 'hr' ||
+                activeTab === 'products' ||
+                activeTab === 'machines' ||
+                activeTab === 'materials' ||
+                activeTab === 'warehouse-slip' ||
+                activeTab === 'warehouse-history' ||
+                activeTab === 'orders' ||
+                activeTab === 'customers' ||
+                activeTab === 'production-orders' ||
+                activeTab === 'production-plan-history' ||
+                activeTab === 'settings' ||
+                activeTab === 'mixing-report' ||
+                activeTab === 'mixing-report-list' ||
+                activeTab === 'machine-nvl-report' ||
+                activeTab === 'machine-downtime-report' ||
+                activeTab === 'acceptance-report'
+              ? 'sm:p-4'
+              : 'sm:py-6 sm:px-4'
+        }`}
+      >
+        {/* Smartphone framework emulator on Wide Screens, fullscreen and intuitive on small touch screens */}
+        <div className={`mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white ${
         activeTab === 'control-board'
           ? 'max-w-none'
           : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report'
@@ -14300,6 +14367,14 @@ export default function App() {
           </footer>
         )}
 
+        <nav className="z-40 shrink-0 border-t-2 border-[#ef1b2d]/15 bg-white px-3 pb-safe sm:hidden">
+          <HomeNavButton
+            active={activeTab === 'menu'}
+            onClick={event => handleNavClick(event, 'menu')}
+            variant="bottom"
+          />
+        </nav>
+
         <nav
           className="hidden"
           id="tab-navigation"
@@ -14424,7 +14499,7 @@ export default function App() {
             Đơn Hàng
           </a>
         </nav>
-        
+      </div>
       </div>
     </div>
   );
