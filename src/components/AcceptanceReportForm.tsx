@@ -250,6 +250,8 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   const [reports, setReports] = useState<AcceptanceReport[]>([]);
   const [filterDate, setFilterDate] = useState(todayIso());
   const [form, setForm] = useState(newReportForm());
+  const formLinesRef = useRef(form.lines);
+  formLinesRef.current = form.lines;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -537,6 +539,18 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
     },
     [productOptions]
   );
+
+  const getQrConfirmMessage = useCallback((code: string) => {
+    const exists = formLinesRef.current.some(line => lineHasProductCode(line, code));
+    if (exists) {
+      return `Đã quét mã ${code}. Mã này đã có — bấm Xác nhận để tăng thêm 1 SL.`;
+    }
+    const hasBlankLine = formLinesRef.current.some(line => isBlankProductLine(line));
+    if (hasBlankLine) {
+      return `Đã quét mã ${code}. Bấm Xác nhận để điền vào dòng trống.`;
+    }
+    return `Đã quét mã ${code}. Bấm Xác nhận để thêm dòng mới.`;
+  }, []);
 
   const handleImagePick = async (file: File | null) => {
     if (!file) return;
@@ -1052,6 +1066,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
         open={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
         onScan={handleQrScan}
+        getConfirmMessage={getQrConfirmMessage}
       />
     </div>
   );

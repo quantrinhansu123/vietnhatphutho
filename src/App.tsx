@@ -5112,11 +5112,26 @@ function SimpleSelect({
   );
 }
 
+type MachineNvlReportKind = 'dau_ca' | 'cuoi_ca';
+
+const MACHINE_NVL_REPORT_TABS: { id: MachineNvlReportKind; label: string; hint: string }[] = [
+  { id: 'dau_ca', label: 'Báo cáo đầu ca', hint: 'Kiểm kê NVL tồn khi bắt đầu ca' },
+  { id: 'cuoi_ca', label: 'Báo cáo cuối ca', hint: 'Kiểm kê NVL tồn khi kết thúc ca' }
+];
+
+function normalizeMachineNvlReportKind(value: unknown): MachineNvlReportKind {
+  const raw = String(value ?? 'dau_ca').trim().toLowerCase();
+  if (raw === 'cuoi_ca' || raw === 'cuoi' || raw === 'cuoi-ca') return 'cuoi_ca';
+  return 'dau_ca';
+}
+
 type MachineNvlReportLine = {
   key: string;
   code: string;
   name: string;
   unit: string;
+  previousQuantity: string;
+  standardQuantity: string;
   quantity: string;
   note: string;
 };
@@ -5126,6 +5141,8 @@ type MachineNvlSavedLine = {
   maNvl: string;
   tenNvl: string;
   donVi: string;
+  soLuongTonCaTruoc: number | null;
+  soLuongTonDinhMuc: number | null;
   soLuongTon: number;
   ghiChu: string;
 };
@@ -5140,6 +5157,7 @@ type MachineNvlSavedReport = {
   nhanSu: string;
   total: number;
   note: string;
+  reportKind: MachineNvlReportKind;
   lines: MachineNvlSavedLine[];
   createdAt: string;
 };
@@ -5155,9 +5173,69 @@ const emptyMachineNvlLine = (): MachineNvlReportLine => ({
   code: '',
   name: '',
   unit: 'kg',
+  previousQuantity: '',
+  standardQuantity: '',
   quantity: '',
   note: ''
 });
+
+function machineNvlReportMatchesMachine(
+  report: Pick<MachineNvlSavedReport, 'maMay' | 'tenMay'>,
+  machineCode: string,
+  machineName: string,
+  machineRef: string
+) {
+  const ref = machineRef.trim().toLowerCase();
+  const code = machineCode.trim().toLowerCase();
+  const name = machineName.trim().toLowerCase();
+  const reportCode = report.maMay.trim().toLowerCase();
+  const reportName = report.tenMay.trim().toLowerCase();
+  if (!ref && !code && !name) return false;
+  if (ref && (ref === reportCode || ref === reportName || reportCode.includes(ref) || reportName.includes(ref))) {
+    return true;
+  }
+  if (code && (code === reportCode || reportCode.includes(code) || code.includes(reportCode))) return true;
+  if (name && (name === reportName || reportName.includes(name) || name.includes(reportName))) return true;
+  return false;
+}
+
+function findLatestPreviousCuoiCaReport(
+  reports: MachineNvlSavedReport[],
+  machineCode: string,
+  machineName: string,
+  machineRef: string,
+  ngay: string,
+  ca: string
+) {
+  const shiftKey = ca.trim().toLowerCase();
+  return (
+    reports
+      .filter(report => report.reportKind === 'cuoi_ca')
+      .filter(report => machineNvlReportMatchesMachine(report, machineCode, machineName, machineRef))
+      .filter(report => !(report.ngay === ngay && report.ca.trim().toLowerCase() === shiftKey))
+      .sort((a, b) => {
+        const dateCompare = b.ngay.localeCompare(a.ngay);
+        if (dateCompare !== 0) return dateCompare;
+        return b.createdAt.localeCompare(a.createdAt);
+      })[0] ?? null
+  );
+}
+
+function buildPreviousShiftQuantityMap(report: MachineNvlSavedReport | null) {
+  const map = new Map<string, number>();
+  if (!report) return map;
+  report.lines.forEach(line => {
+    const codeKey = normalizeProductCodeKey(line.maNvl);
+    if (!codeKey) return;
+    map.set(codeKey, line.soLuongTon);
+  });
+  return map;
+}
+
+function formatMachineNvlQuantityValue(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '';
+  return String(value);
+}
 
 function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
   if (!data || typeof data !== 'object') return [];
@@ -5177,11 +5255,24 @@ function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
           const tenNvl = String(detail.ten_nvl ?? detail.ten_npl ?? detail.name ?? '').trim();
           if (!maNvl && !tenNvl) return null;
           const amount = Number(String(detail.so_luong_ton ?? detail.so_luong ?? detail.quantity ?? 0).replace(',', '.'));
+          const standardRaw =
+            detail.so_luong_ton_dinh_muc ?? detail.so_luong_dinh_muc ?? detail.standardQuantity;
+          const standardParsed =
+            standardRaw === null || standardRaw === undefined || standardRaw === ''
+              ? null
+              : Number(String(standardRaw).replace(',', '.'));
+          const prevRaw = detail.so_luong_ton_ca_truoc ?? detail.so_luong_ca_truoc ?? detail.previousQuantity;
+          const prevParsed =
+            prevRaw === null || prevRaw === undefined || prevRaw === ''
+              ? null
+              : Number(String(prevRaw).replace(',', '.'));
           return {
             stt: Number(detail.stt ?? index + 1) || index + 1,
             maNvl,
             tenNvl,
             donVi: String(detail.don_vi ?? detail.unit ?? 'kg').trim() || 'kg',
+            soLuongTonCaTruoc: Number.isFinite(prevParsed) ? prevParsed : null,
+            soLuongTonDinhMuc: Number.isFinite(standardParsed) ? standardParsed : null,
             soLuongTon: Number.isFinite(amount) ? amount : 0,
             ghiChu: String(detail.ghi_chu ?? detail.note ?? '').trim()
           };
@@ -5198,6 +5289,7 @@ function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
         nhanSu: String(record.nhan_su ?? '').trim(),
         total: Number(record.tong_so_luong_ton ?? 0) || 0,
         note: String(record.ghi_chu ?? '').trim(),
+        reportKind: normalizeMachineNvlReportKind(record.loai_bao_cao ?? record.loai ?? record.reportKind),
         lines,
         createdAt: String(record.created_at ?? '').trim()
       };
@@ -5206,9 +5298,11 @@ function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
 }
 
 function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
+  const [activeKind, setActiveKind] = useState<MachineNvlReportKind>('dau_ca');
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [reports, setReports] = useState<MachineNvlSavedReport[]>([]);
+  const [cuoiCaReports, setCuoiCaReports] = useState<MachineNvlSavedReport[]>([]);
   const [date, setDate] = useState(machineNvlToday());
   const [shift, setShift] = useState('');
   const [machineRef, setMachineRef] = useState('');
@@ -5219,8 +5313,8 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
 
-  const loadReports = async () => {
-    const res = await fetch('/api/bao-cao-may-nvl-ton?limit=50');
+  const loadReports = async (kind: MachineNvlReportKind = activeKind) => {
+    const res = await fetch(`/api/bao-cao-may-nvl-ton?limit=50&loai_bao_cao=${encodeURIComponent(kind)}`);
     const data = await res.json().catch(() => ({}));
     if (res.ok) setReports(normalizeMachineNvlReports(data));
   };
@@ -5231,21 +5325,24 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
     const load = async () => {
       setIsLoading(true);
       try {
-        const [machineRes, materialRes, reportRes] = await Promise.all([
+        const [machineRes, materialRes, reportRes, cuoiCaRes] = await Promise.all([
           fetch('/api/danh-sach-may'),
           fetch('/api/kho-nvl'),
-          fetch('/api/bao-cao-may-nvl-ton?limit=50')
+          fetch(`/api/bao-cao-may-nvl-ton?limit=50&loai_bao_cao=${encodeURIComponent(activeKind)}`),
+          fetch('/api/bao-cao-may-nvl-ton?limit=50&loai_bao_cao=cuoi_ca')
         ]);
-        const [machineData, materialData, reportData] = await Promise.all([
+        const [machineData, materialData, reportData, cuoiCaData] = await Promise.all([
           machineRes.json().catch(() => ({})),
           materialRes.json().catch(() => ({})),
-          reportRes.json().catch(() => ({}))
+          reportRes.json().catch(() => ({})),
+          cuoiCaRes.json().catch(() => ({}))
         ]);
 
         if (!alive) return;
         if (machineRes.ok) setMachines(normalizeMachines(machineData));
         if (materialRes.ok) setMaterials(normalizeMaterialsInventory(materialData));
         if (reportRes.ok) setReports(normalizeMachineNvlReports(reportData));
+        if (cuoiCaRes.ok) setCuoiCaReports(normalizeMachineNvlReports(cuoiCaData));
       } finally {
         if (alive) setIsLoading(false);
       }
@@ -5255,9 +5352,54 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [activeKind]);
+
+  const switchReportKind = (kind: MachineNvlReportKind) => {
+    if (kind === activeKind) return;
+    setActiveKind(kind);
+    setLines([emptyMachineNvlLine()]);
+    setNote('');
+    setMessage('');
+  };
+
+  const activeTabMeta = MACHINE_NVL_REPORT_TABS.find(tab => tab.id === activeKind) ?? MACHINE_NVL_REPORT_TABS[0];
+  const isDauCaTab = activeKind === 'dau_ca';
 
   const selectedMachine = findMachineByRef(machines, machineRef);
+  const previousCuoiCaReport = useMemo(
+    () =>
+      isDauCaTab
+        ? findLatestPreviousCuoiCaReport(
+            cuoiCaReports,
+            selectedMachine?.code || machineRef.trim(),
+            selectedMachine?.name || machineRef.trim(),
+            machineRef,
+            date,
+            shift
+          )
+        : null,
+    [isDauCaTab, cuoiCaReports, selectedMachine, machineRef, date, shift]
+  );
+  const previousShiftQtyMap = useMemo(
+    () => buildPreviousShiftQuantityMap(previousCuoiCaReport),
+    [previousCuoiCaReport]
+  );
+
+  useEffect(() => {
+    if (!isDauCaTab || previousShiftQtyMap.size === 0) return;
+    setLines(prev =>
+      prev.map(line => {
+        const codeKey = normalizeProductCodeKey(line.code);
+        if (!codeKey || !previousShiftQtyMap.has(codeKey)) return line;
+        const prevQty = previousShiftQtyMap.get(codeKey);
+        return {
+          ...line,
+          previousQuantity: formatMachineNvlQuantityValue(prevQty)
+        };
+      })
+    );
+  }, [isDauCaTab, previousShiftQtyMap]);
+
   const totalQuantity = lines.reduce((sum, line) => {
     const value = Number(line.quantity.replace(',', '.'));
     return sum + (Number.isFinite(value) ? value : 0);
@@ -5269,25 +5411,49 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
 
   const selectMaterial = (key: string, material: MaterialRow | null) => {
     if (!material) return;
+    const codeKey = normalizeProductCodeKey(material.code);
+    const prevQty = isDauCaTab && codeKey ? previousShiftQtyMap.get(codeKey) : undefined;
     updateLine(key, {
       code: material.code,
       name: material.name,
-      unit: material.unit === '-' ? 'kg' : material.unit
+      unit: material.unit === '-' ? 'kg' : material.unit,
+      previousQuantity:
+        isDauCaTab && prevQty !== undefined ? formatMachineNvlQuantityValue(prevQty) : ''
     });
   };
 
   const saveReport = async () => {
     setMessage('');
     const materialLines = lines
-      .map((line, index) => ({
-        stt: index + 1,
-        ma_nvl: line.code.trim(),
-        ten_nvl: line.name.trim(),
-        don_vi: line.unit.trim() || 'kg',
-        so_luong_ton: Number(line.quantity.replace(',', '.')) || 0,
-        ghi_chu: line.note.trim()
-      }))
-      .filter(line => line.ma_nvl || line.ten_nvl || line.so_luong_ton > 0);
+      .map((line, index) => {
+        const row: Record<string, unknown> = {
+          stt: index + 1,
+          ma_nvl: line.code.trim(),
+          ten_nvl: line.name.trim(),
+          don_vi: line.unit.trim() || 'kg',
+          so_luong_ton: Number(line.quantity.replace(',', '.')) || 0,
+          ghi_chu: line.note.trim()
+        };
+        if (isDauCaTab) {
+          const prevQty = Number(line.previousQuantity.replace(',', '.'));
+          if (Number.isFinite(prevQty) && prevQty >= 0) {
+            row.so_luong_ton_ca_truoc = prevQty;
+          }
+        } else {
+          const standardQty = Number(line.standardQuantity.replace(',', '.'));
+          if (Number.isFinite(standardQty) && standardQty >= 0) {
+            row.so_luong_ton_dinh_muc = standardQty;
+          }
+        }
+        return row;
+      })
+      .filter(
+        line =>
+          line.ma_nvl ||
+          line.ten_nvl ||
+          Number(line.so_luong_ton_dinh_muc) > 0 ||
+          Number(line.so_luong_ton) > 0
+      );
 
     if (!date || !shift || !machineRef.trim() || materialLines.length === 0) {
       setMessage('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng NVL tồn.');
@@ -5307,16 +5473,17 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
           ten_may: selectedMachine?.name || machineRef.trim(),
           nhan_su: staff.trim(),
           ghi_chu: note.trim(),
+          loai_bao_cao: activeKind,
           chi_tiet: materialLines
         })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo NVL tồn theo máy.');
 
-      setMessage('Đã lưu báo cáo NVL tồn theo máy.');
+      setMessage(`Đã lưu ${activeTabMeta.label.toLowerCase()}.`);
       setLines([emptyMachineNvlLine()]);
       setNote('');
-      await loadReports();
+      await loadReports(activeKind);
     } catch (error: any) {
       setMessage(error.message || 'Không thể lưu báo cáo.');
     } finally {
@@ -5343,7 +5510,7 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
             <BackButton onClick={onBack} className="h-10 rounded-xl" />
             <div>
               <h1 className="text-xl font-black text-zinc-900">Báo cáo NVL tồn theo máy</h1>
-              <p className="text-sm font-semibold text-zinc-500">Thủ kho nhập số lượng tồn thực tế cho từng máy.</p>
+              <p className="text-sm font-semibold text-zinc-500">{activeTabMeta.hint}</p>
             </div>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-right">
@@ -5351,11 +5518,30 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
             <p className="text-lg font-black text-emerald-900">{formatNumber(totalQuantity)} kg</p>
           </div>
         </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {MACHINE_NVL_REPORT_TABS.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => switchReportKind(tab.id)}
+              className={`inline-flex h-10 items-center rounded-xl px-4 text-sm font-black transition ${
+                activeKind === tab.id
+                  ? 'bg-[#ef1b2d] text-white shadow-sm'
+                  : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:border-[#ef1b2d]/40 hover:text-[#ef1b2d]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
           <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 border-b border-zinc-100 pb-3">
+              <p className="text-sm font-black text-zinc-900">{activeTabMeta.label}</p>
+            </div>
             <div className="grid gap-3 md:grid-cols-4">
               <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Ngày
@@ -5385,18 +5571,33 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200">
-              <div className="grid grid-cols-[52px_1.2fr_1.5fr_90px_130px_1fr_48px] bg-zinc-950 px-3 py-2 text-xs font-black uppercase tracking-wider text-white">
+              <div
+                className={`grid ${
+                  isDauCaTab
+                    ? 'grid-cols-[52px_1.1fr_1.3fr_70px_120px_120px_1fr_48px]'
+                    : 'grid-cols-[52px_1.1fr_1.3fr_70px_130px_130px_1fr_48px]'
+                } bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white`}
+              >
                 <span>STT</span>
                 <span>Mã NVL</span>
                 <span>Tên NVL</span>
                 <span>ĐVT</span>
-                <span>SL tồn</span>
+                {isDauCaTab ? <span>SL tồn TT ca trước</span> : null}
+                {!isDauCaTab ? <span>SL tồn định mức</span> : null}
+                <span>SL tồn thực tế</span>
                 <span>Ghi chú</span>
                 <span></span>
               </div>
               <div className="divide-y divide-zinc-100">
                 {lines.map((line, index) => (
-                  <div key={line.key} className="grid grid-cols-[52px_1.2fr_1.5fr_90px_130px_1fr_48px] items-center gap-2 px-3 py-2">
+                  <div
+                    key={line.key}
+                    className={`grid ${
+                      isDauCaTab
+                        ? 'grid-cols-[52px_1.1fr_1.3fr_70px_120px_120px_1fr_48px]'
+                        : 'grid-cols-[52px_1.1fr_1.3fr_70px_130px_130px_1fr_48px]'
+                    } items-center gap-2 px-3 py-2`}
+                  >
                     <span className="font-mono text-sm font-black text-[#ef1b2d]">{index + 1}</span>
                     <SearchableSelect
                       value={line.code}
@@ -5411,6 +5612,25 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
                     />
                     <input value={line.name} onChange={event => updateLine(line.key, { name: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
                     <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                    {isDauCaTab ? (
+                      <input
+                        value={line.previousQuantity}
+                        readOnly
+                        className="h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-sm font-black text-zinc-600 outline-none"
+                        placeholder="-"
+                        title="Lấy từ báo cáo cuối ca gần nhất"
+                      />
+                    ) : null}
+                    {!isDauCaTab ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.standardQuantity}
+                        onChange={event => updateLine(line.key, { standardQuantity: event.target.value })}
+                        className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                      />
+                    ) : null}
                     <input type="number" min="0" step="0.01" value={line.quantity} onChange={event => updateLine(line.key, { quantity: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]" />
                     <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
                     <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
@@ -5419,6 +5639,12 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
                   </div>
                 ))}
               </div>
+              {isDauCaTab && previousCuoiCaReport ? (
+                <p className="border-t border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-500">
+                  SL ca trước lấy từ cuối ca: {previousCuoiCaReport.ngay} · {previousCuoiCaReport.ca} ·{' '}
+                  {previousCuoiCaReport.tenMay || previousCuoiCaReport.maMay}
+                </p>
+              ) : null}
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -5439,7 +5665,7 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
           <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-black text-zinc-900">Lịch sử báo cáo máy</h2>
+                <h2 className="text-lg font-black text-zinc-900">Lịch sử {activeTabMeta.label.toLowerCase()}</h2>
                 <p className="text-xs font-semibold text-zinc-500">Các phiếu đã lưu gần nhất.</p>
               </div>
               <Boxes className="h-5 w-5 text-emerald-700" />
@@ -5461,7 +5687,23 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
                     {report.lines.slice(0, 6).map(line => (
                       <div key={`${report.id}-${line.stt}`} className="flex justify-between gap-2">
                         <span className="truncate">{line.maNvl || line.tenNvl}</span>
-                        <span className="font-mono font-black">{formatNumber(line.soLuongTon)} {line.donVi}</span>
+                        <span className="shrink-0 font-mono font-black">
+                          {isDauCaTab && line.soLuongTonCaTruoc !== null ? (
+                            <>
+                              <span className="text-zinc-500">{formatNumber(line.soLuongTonCaTruoc)} → </span>
+                              {formatNumber(line.soLuongTon)} {line.donVi}
+                            </>
+                          ) : !isDauCaTab && line.soLuongTonDinhMuc !== null ? (
+                            <>
+                              <span className="text-zinc-500">{formatNumber(line.soLuongTonDinhMuc)} / </span>
+                              {formatNumber(line.soLuongTon)} {line.donVi}
+                            </>
+                          ) : (
+                            <>
+                              {formatNumber(line.soLuongTon)} {line.donVi}
+                            </>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -5469,7 +5711,7 @@ function MachineNvlReportPanel({ onBack }: { onBack: () => void }) {
               ))}
               {!isLoading && reports.length === 0 && (
                 <div className="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm font-bold text-zinc-400">
-                  Chưa có báo cáo NVL tồn theo máy.
+                  Chưa có {activeTabMeta.label.toLowerCase()}.
                 </div>
               )}
             </div>

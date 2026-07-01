@@ -12,6 +12,7 @@ create table if not exists public.bao_cao_may_nvl_ton (
   tong_so_luong_ton numeric(14,2) not null default 0,
   ghi_chu text,
   chi_tiet jsonb not null default '[]'::jsonb,
+  loai_bao_cao text not null default 'dau_ca',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -24,6 +25,9 @@ create index if not exists idx_bao_cao_may_nvl_ton_ma_may
 
 create index if not exists idx_bao_cao_may_nvl_ton_chi_tiet
   on public.bao_cao_may_nvl_ton using gin (chi_tiet);
+
+create index if not exists idx_bao_cao_may_nvl_ton_loai
+  on public.bao_cao_may_nvl_ton (loai_bao_cao);
 
 create or replace function public.set_bao_cao_may_nvl_ton_updated_at()
 returns trigger
@@ -44,4 +48,5 @@ for each row
 execute function public.set_bao_cao_may_nvl_ton_updated_at();
 
 comment on table public.bao_cao_may_nvl_ton is 'Bao cao NVL ton theo tung may.';
-comment on column public.bao_cao_may_nvl_ton.chi_tiet is 'Danh sach NVL ton: stt, ma_nvl, ten_nvl, don_vi, so_luong_ton, ghi_chu.';
+comment on column public.bao_cao_may_nvl_ton.chi_tiet is 'Danh sach NVL ton: stt, ma_nvl, ten_nvl, don_vi, so_luong_ton_dinh_muc, so_luong_ton, so_luong_ton_ca_truoc, ghi_chu.';
+comment on column public.bao_cao_may_nvl_ton.loai_bao_cao is 'Loai bao cao: dau_ca hoac cuoi_ca.';

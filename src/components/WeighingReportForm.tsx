@@ -1759,6 +1759,7 @@ export default function WeighingReportForm({
         onClose={() => setIsQrScannerOpen(false)}
         onScan={handleProductCodeScan}
         closeAfterScan
+        getConfirmMessage={code => `Đã quét mã ${code}. Bấm Xác nhận để điền mã sản phẩm.`}
       />
     </div>
   );

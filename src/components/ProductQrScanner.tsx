@@ -8,11 +8,18 @@ interface ProductQrScannerProps {
   onClose: () => void;
   onScan: (value: string) => boolean | 'incremented' | void;
   closeAfterScan?: boolean;
+  requireConfirm?: boolean;
+  getConfirmMessage?: (code: string) => string;
 }
 
 type ScanFeedback = {
-  type: 'success' | 'duplicate' | 'error';
+  type: 'success' | 'duplicate' | 'error' | 'pending';
   text: string;
+};
+
+type PendingScan = {
+  raw: string;
+  code: string;
 };
 
 async function pickCameraConfig(): Promise<string | MediaTrackConstraints> {
@@ -55,19 +62,23 @@ export default function ProductQrScanner({
   open,
   onClose,
   onScan,
-  closeAfterScan = false
+  closeAfterScan = false,
+  requireConfirm = true,
+  getConfirmMessage
 }: ProductQrScannerProps) {
   const reactId = useId();
   const regionId = `product-qr-${reactId.replace(/:/g, '')}`;
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const onCloseRef = useRef(onClose);
   const onScanRef = useRef(onScan);
+  const getConfirmMessageRef = useRef(getConfirmMessage);
   const lastScanRef = useRef({ value: '', time: 0 });
   const [error, setError] = useState('');
   const [manualCode, setManualCode] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
   const [feedbackPulse, setFeedbackPulse] = useState(0);
+  const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -77,7 +88,11 @@ export default function ProductQrScanner({
     onScanRef.current = onScan;
   }, [onScan]);
 
-  const applyScanResult = (raw: string) => {
+  useEffect(() => {
+    getConfirmMessageRef.current = getConfirmMessage;
+  }, [getConfirmMessage]);
+
+  const commitScanResult = (raw: string) => {
     const code = parseQrProductCode(raw);
     if (!code) {
       setFeedback({ type: 'error', text: 'Mã QR không hợp lệ.' });
@@ -89,6 +104,7 @@ export default function ProductQrScanner({
     setFeedbackPulse(prev => prev + 1);
 
     if (scanResult === false) {
+      setFeedback({ type: 'error', text: `Không thể thêm mã SP: ${code}` });
       return false;
     }
 
@@ -109,12 +125,48 @@ export default function ProductQrScanner({
     return true;
   };
 
+  const queueScanResult = (raw: string) => {
+    const code = parseQrProductCode(raw);
+    if (!code) {
+      setFeedback({ type: 'error', text: 'Mã QR không hợp lệ.' });
+      setFeedbackPulse(prev => prev + 1);
+      return false;
+    }
+
+    if (requireConfirm) {
+      setPendingScan({ raw, code });
+      const hint = getConfirmMessageRef.current?.(code) ?? `Mã SP: ${code}`;
+      setFeedback({ type: 'pending', text: hint });
+      setFeedbackPulse(prev => prev + 1);
+      return true;
+    }
+
+    return commitScanResult(raw);
+  };
+
+  const confirmPendingScan = () => {
+    if (!pendingScan) return;
+    const { raw } = pendingScan;
+    setPendingScan(null);
+    lastScanRef.current = { value: '', time: 0 };
+    commitScanResult(raw);
+  };
+
+  const cancelPendingScan = () => {
+    setPendingScan(null);
+    lastScanRef.current = { value: '', time: 0 };
+    setFeedback(null);
+  };
+
+  const applyScanResult = (raw: string) => queueScanResult(raw);
+
   useEffect(() => {
     if (!open) {
       setManualCode('');
       setError('');
       setFeedback(null);
       setFeedbackPulse(0);
+      setPendingScan(null);
       return;
     }
 
@@ -123,6 +175,7 @@ export default function ProductQrScanner({
     setError('');
     setFeedback(null);
     setFeedbackPulse(0);
+    setPendingScan(null);
     setIsStarting(true);
 
     const handleDecoded = (decodedText: string) => {
@@ -208,6 +261,8 @@ export default function ProductQrScanner({
   const feedbackClass =
     feedback?.type === 'success'
       ? 'qr-scan-pulse-success'
+      : feedback?.type === 'pending'
+        ? 'qr-scan-pulse-duplicate'
       : feedback?.type === 'duplicate'
         ? 'qr-scan-pulse-duplicate'
         : feedback?.type === 'error'
@@ -243,6 +298,8 @@ export default function ProductQrScanner({
               className={`mt-3 rounded-xl border-2 px-3 py-3 text-center text-sm font-black ${feedbackClass} ${
                 feedback.type === 'success'
                   ? 'border-emerald-500 text-emerald-800'
+                  : feedback.type === 'pending'
+                    ? 'border-[#ef1b2d] text-zinc-900'
                   : feedback.type === 'duplicate'
                     ? 'border-amber-500 text-amber-800'
                     : 'border-rose-500 text-rose-700'
@@ -250,6 +307,24 @@ export default function ProductQrScanner({
             >
               {feedback.text}
             </p>
+          )}
+          {pendingScan && (
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={cancelPendingScan}
+                className="h-11 flex-1 rounded-lg border border-zinc-200 bg-white text-sm font-bold text-zinc-700 transition hover:bg-zinc-50"
+              >
+                Quét lại
+              </button>
+              <button
+                type="button"
+                onClick={confirmPendingScan}
+                className="h-11 flex-1 rounded-lg bg-[#ef1b2d] text-sm font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                Xác nhận
+              </button>
+            </div>
           )}
           {error && <p className="mt-3 text-xs font-bold text-rose-600">{error}</p>}
           <p className="mt-3 text-center text-xs font-semibold text-zinc-500">
@@ -273,7 +348,7 @@ export default function ProductQrScanner({
               onClick={submitManualCode}
               className="h-10 shrink-0 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
             >
-              Thêm
+              {requireConfirm ? 'Kiểm tra' : 'Thêm'}
             </button>
           </div>
         </div>

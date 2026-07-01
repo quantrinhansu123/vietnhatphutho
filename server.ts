@@ -1110,6 +1110,12 @@ function mixingReportWriteError(error: { code?: string; message?: string }) {
   return `Không thể lưu báo cáo phối trộn. ${error.message || ''}`.trim();
 }
 
+function parseMachineNvlReportKind(value: unknown): 'dau_ca' | 'cuoi_ca' {
+  const raw = String(value ?? 'dau_ca').trim().toLowerCase();
+  if (raw === 'cuoi_ca' || raw === 'cuoi' || raw === 'cuoi-ca') return 'cuoi_ca';
+  return 'dau_ca';
+}
+
 function parseMachineNvlReportLine(source: unknown, index: number) {
   if (!source || typeof source !== 'object') return null;
   const record = source as Record<string, unknown>;
@@ -1117,16 +1123,32 @@ function parseMachineNvlReportLine(source: unknown, index: number) {
   const ten_nvl = String(record.ten_nvl ?? record.ten_npl ?? record.name ?? '').trim();
   const don_vi = String(record.don_vi ?? record.unit ?? 'kg').trim() || 'kg';
   const so_luong_ton = parseMixingNumber(record.so_luong_ton ?? record.so_luong ?? record.quantity);
+  const so_luong_ton_dinh_muc = parseMixingNumber(
+    record.so_luong_ton_dinh_muc ?? record.so_luong_dinh_muc ?? record.standardQuantity
+  );
+  const so_luong_ton_ca_truoc = parseMixingNumber(
+    record.so_luong_ton_ca_truoc ?? record.so_luong_ca_truoc ?? record.previousQuantity
+  );
   const ghi_chu = String(record.ghi_chu ?? record.note ?? '').trim();
 
-  if (!ma_nvl && !ten_nvl && so_luong_ton === null) return null;
+  if (
+    !ma_nvl &&
+    !ten_nvl &&
+    so_luong_ton === null &&
+    so_luong_ton_dinh_muc === null &&
+    so_luong_ton_ca_truoc === null
+  ) {
+    return null;
+  }
 
   return {
     stt: Number(record.stt ?? index + 1) || index + 1,
     ma_nvl,
     ten_nvl,
     don_vi,
+    ...(so_luong_ton_dinh_muc !== null ? { so_luong_ton_dinh_muc } : {}),
     so_luong_ton: so_luong_ton ?? 0,
+    ...(so_luong_ton_ca_truoc !== null ? { so_luong_ton_ca_truoc } : {}),
     ghi_chu
   };
 }
@@ -1159,6 +1181,7 @@ function parseMachineNvlReportBody(body: unknown): { error: string } | { record:
     record: {
       ngay,
       ca,
+      loai_bao_cao: parseMachineNvlReportKind(source.loai_bao_cao ?? source.loai ?? source.reportKind),
       gio: String(source.gio ?? '').trim() || null,
       ma_may: ma_may || null,
       ten_may: ten_may || null,
@@ -1175,7 +1198,7 @@ function machineNvlReportWriteError(error: { code?: string; message?: string }) 
     return `Bảng ${SUPABASE_MACHINE_NVL_REPORTS_TABLE} chưa tồn tại. Hãy chạy supabase-bao-cao-may-nvl-ton.sql.`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_MACHINE_NVL_REPORTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bao-cao-may-nvl-ton.sql.`;
+    return `Bảng ${SUPABASE_MACHINE_NVL_REPORTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bao-cao-may-nvl-ton-loai.sql hoặc supabase-bao-cao-may-nvl-ton.sql.`;
   }
   return `Không thể lưu báo cáo NVL tồn theo máy. ${error.message || ''}`.trim();
 }
@@ -4515,6 +4538,7 @@ export function createApp() {
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
+      const loaiBaoCaoRaw = typeof req.query.loai_bao_cao === 'string' ? req.query.loai_bao_cao.trim() : '';
       const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
       const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 300) : 100;
 
@@ -4527,6 +4551,7 @@ export function createApp() {
 
       if (ngay) query = query.eq('ngay', ngay);
       if (maMay) query = query.eq('ma_may', maMay);
+      if (loaiBaoCaoRaw) query = query.eq('loai_bao_cao', parseMachineNvlReportKind(loaiBaoCaoRaw));
 
       const { data, error } = await query;
       if (error) {
