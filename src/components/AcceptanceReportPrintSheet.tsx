@@ -96,7 +96,7 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
           </div>
         </header>
 
-        <h1 className="production-order-print-title">BÁO CÁO NGHIỆM THU</h1>
+        <h1 className="production-order-print-title">BÁO CÁO SẢN LƯỢNG</h1>
 
         <div className="production-order-print-meta">
           <span>Ngày: {formatPrintDate(slip.ngay)}</span>
@@ -108,7 +108,7 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
             <tr>
               <th>Ca</th>
               <th>Lần</th>
-              <th>Máy</th>
+              <th>Tổ</th>
             </tr>
           </thead>
           <tbody>
@@ -120,7 +120,7 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
           </tbody>
         </table>
 
-        <h2 className="production-order-print-section-title">Danh sách sản phẩm nghiệm thu</h2>
+        <h2 className="production-order-print-section-title">Danh sách sản phẩm sản lượng</h2>
         <table className="production-order-print-grid-table acceptance-report-print-table">
           <thead>
             <tr>
@@ -154,7 +154,7 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
 
         <div className="acceptance-report-print-signatures">
           <div>
-            <p>Người nghiệm thu</p>
+            <p>Người ghi nhận</p>
             <span>(Ký, họ tên)</span>
           </div>
           <div>

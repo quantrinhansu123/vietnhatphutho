@@ -6548,34 +6548,17 @@ function buildProductionPlanQrLabels(
   return labels;
 }
 
-type ProductionPlanQrPrintFooter = {
-  shift: string;
-  machine: string;
-  productionDate: string;
-  operatorName: string;
-};
-
-function formatProductionPlanPrintDate(value: string) {
-  if (!value) return '';
-  const [year, month, day] = value.split('-');
-  if (year && month && day) return `${day}/${month}/${year}`;
-  return value;
-}
-
 function ProductionPlanQrPrintSheet({
   labels,
-  qrImages,
-  footer
+  qrImages
 }: {
   labels: ProductionPlanQrLabel[];
   qrImages: Record<string, string>;
-  footer: ProductionPlanQrPrintFooter;
 }) {
   const footerRows: Array<{ label: string; value: string }> = [
-    { label: 'Ca sản xuất', value: footer.shift },
-    { label: 'Máy sản xuất', value: footer.machine },
-    { label: 'Ngày sản xuất', value: formatProductionPlanPrintDate(footer.productionDate) },
-    { label: 'Nhân viên', value: footer.operatorName }
+    { label: 'Ca sản xuất', value: '' },
+    { label: 'Máy sản xuất', value: '' },
+    { label: 'Ngày sản xuất', value: '' }
   ];
 
   return (
@@ -6590,22 +6573,21 @@ function ProductionPlanQrPrintSheet({
                 <img src={qrImages[label.qrPayload]} alt={`QR ${label.qrPayload}`} />
               )}
             </div>
+            <table className="production-plan-qr-print-footer">
+              <tbody>
+                {footerRows.map(row => (
+                  <tr key={row.label}>
+                    <th>{row.label}</th>
+                    <td>
+                      <span className="production-plan-qr-print-footer-field">{row.value}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ))}
       </div>
-
-      <table className="production-plan-qr-print-footer">
-        <tbody>
-          {footerRows.map(row => (
-            <tr key={row.label}>
-              <th>{row.label}</th>
-              <td>
-                <span className="production-plan-qr-print-footer-field">{row.value}</span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -6628,25 +6610,12 @@ function ProductionPlanQrPrintModal({
   );
   const [selectedShift, setSelectedShift] = useState('');
   const [products, setProducts] = useState<ProductRow[]>([]);
-  const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
-  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [formError, setFormError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [printLabels, setPrintLabels] = useState<ProductionPlanQrLabel[]>([]);
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
   const [pendingPrint, setPendingPrint] = useState(false);
-  const [printFooter, setPrintFooter] = useState<ProductionPlanQrPrintFooter>({
-    shift: '',
-    machine: '',
-    productionDate: '',
-    operatorName: ''
-  });
-
-  const shiftLines = useMemo(
-    () => lines.filter(line => line.shift === selectedShift),
-    [lines, selectedShift]
-  );
 
   useEffect(() => {
     if (!open) return;
@@ -6655,37 +6624,7 @@ function ProductionPlanQrPrintModal({
     setPrintLabels([]);
     setQrImages({});
     setPendingPrint(false);
-    setStaffBranches([]);
-    setPrintFooter({
-      shift: '',
-      machine: '',
-      productionDate: '',
-      operatorName: ''
-    });
   }, [open, shiftOptions]);
-
-  useEffect(() => {
-    if (!open || !selectedShift) return;
-
-    const machines = [
-      ...new Set(
-        shiftLines
-          .map(line => (line.position && line.position !== '-' ? line.position : ''))
-          .filter(Boolean)
-      )
-    ];
-    setPrintFooter(prev => ({
-      shift: selectedShift,
-      machine: machines.join(', '),
-      productionDate: prev.productionDate || todayDateInputValue(),
-      operatorName: prev.operatorName
-    }));
-  }, [open, selectedShift, shiftLines]);
-
-  const kinhDoanhStaff = useMemo(
-    () => getHrDepartmentMembers(staffBranches, 'kinh doanh'),
-    [staffBranches]
-  );
 
   useEffect(() => {
     if (!open) return;
@@ -6693,30 +6632,18 @@ function ProductionPlanQrPrintModal({
 
     (async () => {
       setIsLoadingProducts(true);
-      setIsLoadingStaff(true);
       try {
-        const [productRes, staffRes] = await Promise.all([
-          fetch('/api/san-pham?format=table'),
-          fetch('/api/nhan-su?format=groups&scope=all')
-        ]);
+        const productRes = await fetch('/api/san-pham?format=table');
         const productData = await productRes.json().catch(() => ({}));
-        const staffData = await staffRes.json().catch(() => ({}));
         if (!productRes.ok) throw new Error(productData.error || 'Không thể tải danh sách sản phẩm.');
         if (!cancelled) {
           setProducts(normalizeProducts(productData));
-          if (staffRes.ok) {
-            setStaffBranches(normalizeHrBranches(staffData));
-          } else {
-            setStaffBranches([]);
-            setFormError(staffData.error || 'Không thể tải nhân sự phòng Kinh doanh.');
-          }
         }
       } catch (error: any) {
         if (!cancelled) setFormError(error.message || 'Không thể tải dữ liệu in QR.');
       } finally {
         if (!cancelled) {
           setIsLoadingProducts(false);
-          setIsLoadingStaff(false);
         }
       }
     })();
@@ -6766,11 +6693,6 @@ function ProductionPlanQrPrintModal({
   const handlePrint = async () => {
     if (!selectedShift) {
       setFormError('Vui lòng chọn ca.');
-      return;
-    }
-
-    if (!printFooter.operatorName.trim()) {
-      setFormError('Vui lòng chọn nhân viên từ phòng Kinh doanh.');
       return;
     }
 
@@ -6855,66 +6777,6 @@ function ProductionPlanQrPrintModal({
               </select>
             </label>
 
-            <div className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-              <p className="mb-3 text-xs font-black uppercase tracking-wider text-zinc-500">
-                Thông tin in phía dưới tem QR (có thể để trống để điền tay)
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-xs font-bold text-zinc-600">Ca sản xuất</span>
-                  <input
-                    type="text"
-                    value={printFooter.shift}
-                    onChange={event => setPrintFooter(prev => ({ ...prev, shift: event.target.value }))}
-                    placeholder="Để trống nếu điền tay khi in"
-                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-bold text-zinc-600">Máy sản xuất</span>
-                  <input
-                    type="text"
-                    value={printFooter.machine}
-                    onChange={event => setPrintFooter(prev => ({ ...prev, machine: event.target.value }))}
-                    placeholder="Để trống nếu điền tay khi in"
-                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-bold text-zinc-600">Ngày sản xuất</span>
-                  <input
-                    type="date"
-                    value={printFooter.productionDate}
-                    onChange={event => setPrintFooter(prev => ({ ...prev, productionDate: event.target.value }))}
-                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-                <label className="space-y-1 sm:col-span-2">
-                  <span className="text-xs font-bold text-zinc-600">Nhân viên</span>
-                  <span className="block text-[11px] font-medium text-zinc-500">Chọn từ phòng Kinh doanh</span>
-                  <select
-                    value={printFooter.operatorName}
-                    onChange={event => setPrintFooter(prev => ({ ...prev, operatorName: event.target.value }))}
-                    disabled={isLoadingStaff}
-                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:opacity-60"
-                  >
-                    <option value="">-- Chọn nhân viên --</option>
-                    {kinhDoanhStaff.map(member => (
-                      <option key={member.id} value={member.name}>
-                        {member.name}
-                        {member.role && member.role !== 'Nhân sự' ? ` · ${member.role}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {!isLoadingStaff && kinhDoanhStaff.length === 0 ? (
-                    <span className="text-[11px] font-semibold text-amber-700">
-                      Chưa có nhân sự phòng Kinh doanh. Thêm tại Quản lý nhân sự.
-                    </span>
-                  ) : null}
-                </label>
-              </div>
-            </div>
-
             {isLoadingProducts ? (
               <p className="py-6 text-center text-sm font-semibold text-zinc-400">
                 <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
@@ -6972,7 +6834,7 @@ function ProductionPlanQrPrintModal({
       </div>
 
       {pendingPrint && printLabels.length > 0 && (
-        <ProductionPlanQrPrintSheet labels={printLabels} qrImages={qrImages} footer={printFooter} />
+        <ProductionPlanQrPrintSheet labels={printLabels} qrImages={qrImages} />
       )}
     </>
   );
@@ -12333,8 +12195,8 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <DashboardWindow
-          title="Báo cáo nghiệm thu"
-          subtitle="Ghi nhận mặt hàng, số lượng và ảnh nghiệm thu theo ca"
+          title="Báo cáo sản lượng"
+          subtitle="Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca"
           icon={ClipboardCheck}
           accentClass="bg-gradient-to-r from-sky-900 to-sky-700"
           count={acceptanceReports.length}
@@ -12367,7 +12229,7 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
                         rel="noreferrer"
                         className="block h-8 w-8 overflow-hidden rounded-md border border-zinc-200"
                       >
-                        <img src={report.hinh_anh} alt="Nghiệm thu" className="h-full w-full object-cover" />
+                        <img src={report.hinh_anh} alt="Sản lượng" className="h-full w-full object-cover" />
                       </a>
                     ) : (
                       <span className="text-zinc-400">-</span>
@@ -12393,7 +12255,7 @@ function ControlBoardPanel({ onNavigate }: { onNavigate: (tab: AppTab) => void }
               {!isLoading && filteredAcceptanceReports.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
-                    Chưa có báo cáo nghiệm thu.
+                    Chưa có báo cáo sản lượng.
                   </td>
                 </tr>
               )}
@@ -13108,8 +12970,8 @@ const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'report-lists'
   },
   {
-    title: 'Báo cáo nghiệm thu',
-    desc: 'Ghi nhận mặt hàng, số lượng và ảnh nghiệm thu theo ca.',
+    title: 'Phiếu báo cáo sản lượng',
+    desc: 'Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca.',
     icon: ClipboardCheck,
     tab: 'acceptance-report'
   },
@@ -13689,14 +13551,8 @@ export default function App() {
                       action: () => navigateToTab('control-board')
                     },
                     {
-                      title: 'Nhập báo cáo sản xuất',
-                      desc: 'Ghi ca máy, mã hàng, nguyên liệu và phế phẩm.',
-                      icon: FilePlus2,
-                      action: () => navigateToTab('form')
-                    },
-                    {
                       title: 'Báo cáo sản xuất',
-                      desc: 'Phiếu cân ca, phối trộn, nghiệm thu và các báo cáo theo ca.',
+                      desc: 'Phiếu cân ca, phối trộn, sản lượng và các báo cáo theo ca.',
                       icon: Factory,
                       action: () => navigateToTab('production-reports')
                     },
@@ -13723,12 +13579,6 @@ export default function App() {
                       desc: 'Kho NVL, sản phẩm, máy móc và phiếu xuất nhập kho.',
                       icon: Building2,
                       action: () => navigateToTab('facility-management')
-                    },
-                    {
-                      title: 'Phân tích & đối chiếu',
-                      desc: 'Kiểm tra báo cáo đã lưu, biểu đồ và dữ liệu mẫu.',
-                      icon: BarChart3,
-                      action: () => navigateToTab('dashboard')
                     }
                   ].map(item => {
                     const Icon = item.icon;

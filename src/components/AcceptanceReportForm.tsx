@@ -10,10 +10,12 @@ import {
   Loader2,
   Printer,
   Save,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
+import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips } from './AcceptanceReportPrintSheet';
 
 export type AcceptanceReport = {
@@ -96,23 +98,6 @@ function formatProductLabel(productCode: string, productName: string) {
     return `${productCode} · ${productName}`;
   }
   return productName || productCode;
-}
-
-function resolveMachineFromRef(ref: string, machines: MachineOption[]) {
-  const trimmed = ref.trim();
-  if (!trimmed) return { ma_may: '', ten_may: '', machineRef: '' };
-
-  const linked =
-    machines.find(machine => machine.code === trimmed) ??
-    machines.find(machine => machine.name === trimmed) ??
-    machines.find(machine => `${machine.code} · ${machine.name}` === trimmed) ??
-    null;
-
-  if (linked) {
-    return { ma_may: linked.code, ten_may: linked.name, machineRef: trimmed };
-  }
-
-  return { ma_may: trimmed, ten_may: trimmed, machineRef: trimmed };
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -198,6 +183,22 @@ function normalizeReportFromApi(record: Record<string, unknown>): AcceptanceRepo
   };
 }
 
+interface ProductLine {
+  id: string;
+  mat_hang: string;
+  don_vi: string;
+  so_luong: string;
+}
+
+function newProductLine(): ProductLine {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    mat_hang: '',
+    don_vi: '',
+    so_luong: ''
+  };
+}
+
 function newReportForm() {
   return {
     ngay: todayIso(),
@@ -207,9 +208,8 @@ function newReportForm() {
     ma_may: '',
     ten_may: '',
     machineRef: '',
-    mat_hang: '',
-    don_vi: '',
-    so_luong: '',
+    teamId: '',
+    lines: [newProductLine()],
     hinh_anh: '',
     hinh_anh_public_id: '',
     imagePreview: ''
@@ -244,7 +244,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
 
   const handlePrint = () => {
     if (printSlips.length === 0) {
-      setError('Chưa có báo cáo nghiệm thu để in trong ngày này.');
+      setError('Chưa có báo cáo sản lượng để in trong ngày này.');
       return;
     }
     setError('');
@@ -254,7 +254,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   const loadReports = async (ngay = filterDate) => {
     const res = await fetch(`/api/bao-cao-nghiem-thu?ngay=${encodeURIComponent(ngay)}`);
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Không thể tải báo cáo nghiệm thu.');
+    if (!res.ok) throw new Error(data.error || 'Không thể tải báo cáo sản lượng.');
     const list = Array.isArray(data.reports) ? data.reports : [];
     setReports(list.map((item: Record<string, unknown>) => normalizeReportFromApi(item)));
   };
@@ -307,35 +307,22 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
     return [...new Set(shifts)].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [ordersForSelectedDay]);
 
-  const machineOptions = useMemo(() => {
-    const refs = ordersForSelectedDay
-      .filter(order => !form.ca || shiftMatches(order.shift, form.ca))
-      .map(order => order.machine)
-      .filter(machine => machine && machine !== '-');
-
-    const uniqueRefs = [...new Set(refs)];
-    return uniqueRefs
-      .map(ref => {
-        const resolved = resolveMachineFromRef(ref, machines);
-        return {
-          value: ref,
-          label:
-            resolved.ma_may && resolved.ten_may && resolved.ma_may !== resolved.ten_may
-              ? `${resolved.ma_may} · ${resolved.ten_may}`
-              : resolved.ten_may || resolved.ma_may || ref
-        };
-      })
-      .sort((a, b) => a.label.localeCompare(b.label, 'vi'));
-  }, [ordersForSelectedDay, form.ca, machines]);
+  const teamOptions = useMemo(
+    () =>
+      [...machines]
+        .filter(machine => machine.code || machine.name)
+        .sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code, 'vi')),
+    [machines]
+  );
 
   const productOptions = useMemo(() => {
-    if (!form.ca || !form.machineRef) return [];
+    if (!form.ca || (!form.ma_may.trim() && !form.ten_may.trim())) return [];
 
     const items = ordersForSelectedDay
       .filter(
         order =>
           shiftMatches(order.shift, form.ca) &&
-          machineMatches(order.machine, form.ma_may, form.ten_may, form.machineRef)
+          machineMatches(order.machine, form.ma_may, form.ten_may, form.machineRef || form.ten_may || form.ma_may)
       )
       .map(order => ({
         label: formatProductLabel(order.productCode, order.productName),
@@ -363,8 +350,8 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       ma_may: '',
       ten_may: '',
       machineRef: '',
-      mat_hang: '',
-      don_vi: ''
+      teamId: '',
+      lines: [newProductLine()]
     }));
   };
 
@@ -372,33 +359,61 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
     setForm(prev => ({
       ...prev,
       ca,
-      ma_may: '',
-      ten_may: '',
-      machineRef: '',
-      mat_hang: '',
-      don_vi: ''
+      lines: [newProductLine()]
     }));
   };
 
-  const handleMachineChange = (machineRef: string) => {
-    const resolved = resolveMachineFromRef(machineRef, machines);
+  const handleTeamChange = (teamId: string) => {
+    const team = machines.find(machine => machine.id === teamId);
+    if (!team) {
+      setForm(prev => ({
+        ...prev,
+        teamId: '',
+        machineRef: '',
+        ma_may: '',
+        ten_may: '',
+        lines: [newProductLine()]
+      }));
+      return;
+    }
+
+    const machineRef = team.name || team.code;
     setForm(prev => ({
       ...prev,
+      teamId: team.id,
       machineRef,
-      ma_may: resolved.ma_may,
-      ten_may: resolved.ten_may,
-      mat_hang: '',
-      don_vi: ''
+      ma_may: team.code,
+      ten_may: team.name,
+      lines: [newProductLine()]
     }));
   };
 
-  const handleProductChange = (mat_hang: string) => {
+  const handleLineProductChange = (lineId: string, mat_hang: string) => {
     const match = productOptions.find(option => option.label === mat_hang);
     setForm(prev => ({
       ...prev,
-      mat_hang,
-      don_vi: match?.unit || ''
+      lines: prev.lines.map(line =>
+        line.id === lineId ? { ...line, mat_hang, don_vi: match?.unit || '' } : line
+      )
     }));
+  };
+
+  const handleLineQuantityChange = (lineId: string, so_luong: string) => {
+    setForm(prev => ({
+      ...prev,
+      lines: prev.lines.map(line => (line.id === lineId ? { ...line, so_luong } : line))
+    }));
+  };
+
+  const addProductLine = () => {
+    setForm(prev => ({ ...prev, lines: [...prev.lines, newProductLine()] }));
+  };
+
+  const removeProductLine = (lineId: string) => {
+    setForm(prev => {
+      if (prev.lines.length <= 1) return prev;
+      return { ...prev, lines: prev.lines.filter(line => line.id !== lineId) };
+    });
   };
 
   const handleImagePick = async (file: File | null) => {
@@ -430,7 +445,12 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   };
 
   const startEdit = (report: AcceptanceReport) => {
-    const machineRef = report.ma_may || report.ten_may;
+    const linked =
+      machines.find(machine => machine.code === report.ma_may) ??
+      machines.find(machine => machine.name === report.ten_may) ??
+      machines.find(machine => machine.code === report.ten_may || machine.name === report.ma_may) ??
+      null;
+    const machineRef = report.ten_may || report.ma_may;
     setEditingId(report.id);
     setForm({
       ngay: report.ngay || todayIso(),
@@ -440,9 +460,15 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
       ma_may: report.ma_may,
       ten_may: report.ten_may,
       machineRef,
-      mat_hang: report.mat_hang,
-      don_vi: report.don_vi,
-      so_luong: report.so_luong === null ? '' : String(report.so_luong),
+      teamId: linked?.id ?? '',
+      lines: [
+        {
+          id: report.id,
+          mat_hang: report.mat_hang,
+          don_vi: report.don_vi,
+          so_luong: report.so_luong === null ? '' : String(report.so_luong)
+        }
+      ],
       hinh_anh: report.hinh_anh,
       hinh_anh_public_id: report.hinh_anh_public_id || '',
       imagePreview: report.hinh_anh
@@ -450,79 +476,125 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSave = async () => {
+  const parseLineQuantity = (value: string) => Number(String(value).replace(',', '.'));
+
+  const validateForm = () => {
     if (!form.ngay.trim()) {
       setError('Vui lòng chọn ngày.');
-      return;
+      return null;
     }
     if (!form.ca.trim()) {
       setError('Vui lòng chọn ca.');
-      return;
+      return null;
     }
     if (!form.ma_may.trim() && !form.ten_may.trim()) {
-      setError('Vui lòng chọn máy từ lệnh sản xuất.');
-      return;
+      setError('Vui lòng chọn tổ.');
+      return null;
     }
     if (!form.lan.trim()) {
-      setError('Vui lòng nhập lần nghiệm thu.');
-      return;
+      setError('Vui lòng nhập lần ghi nhận.');
+      return null;
     }
-    if (!form.mat_hang.trim()) {
-      setError('Vui lòng chọn mặt hàng.');
-      return;
+
+    const validLines = form.lines
+      .map(line => {
+        const soLuong = parseLineQuantity(line.so_luong);
+        return { ...line, soLuong };
+      })
+      .filter(line => line.mat_hang.trim() || line.so_luong.trim());
+
+    if (validLines.length === 0) {
+      setError('Vui lòng thêm ít nhất một dòng mã SP và số lượng.');
+      return null;
     }
-    const soLuong = Number(String(form.so_luong).replace(',', '.'));
-    if (!Number.isFinite(soLuong) || soLuong <= 0) {
-      setError('Số lượng phải lớn hơn 0.');
-      return;
+
+    for (const line of validLines) {
+      if (!line.mat_hang.trim()) {
+        setError('Vui lòng chọn mã SP cho từng dòng.');
+        return null;
+      }
+      if (!Number.isFinite(line.soLuong) || line.soLuong <= 0) {
+        setError(`Số lượng phải lớn hơn 0 (${line.mat_hang}).`);
+        return null;
+      }
     }
+
     if (!form.hinh_anh.trim()) {
-      setError('Vui lòng chụp hoặc tải ảnh nghiệm thu.');
-      return;
+      setError('Vui lòng chụp ảnh chung cho các dòng sản lượng.');
+      return null;
     }
+
+    return validLines;
+  };
+
+  const handleSave = async () => {
+    const validLines = validateForm();
+    if (!validLines) return;
 
     setIsSaving(true);
     setError('');
     setMessage('');
 
-    const payload = {
+    const sharedPayload = {
       ngay: form.ngay,
       ca: form.ca,
       lan: form.lan,
       gio: form.gio,
       ma_may: form.ma_may,
       ten_may: form.ten_may,
-      mat_hang: form.mat_hang,
-      don_vi: form.don_vi,
-      so_luong: soLuong,
       hinh_anh: form.hinh_anh,
       hinh_anh_public_id: form.hinh_anh_public_id
     };
 
     try {
-      const res = await fetch(
-        editingId ? `/api/bao-cao-nghiem-thu/${editingId}` : '/api/bao-cao-nghiem-thu',
-        {
-          method: editingId ? 'PATCH' : 'POST',
+      if (editingId) {
+        const line = validLines[0];
+        const res = await fetch(`/api/bao-cao-nghiem-thu/${editingId}`, {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            ...sharedPayload,
+            mat_hang: line.mat_hang,
+            don_vi: line.don_vi,
+            so_luong: line.soLuong
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo sản lượng.');
+        setMessage('Đã cập nhật báo cáo sản lượng.');
+      } else {
+        let savedCount = 0;
+        for (const line of validLines) {
+          const res = await fetch('/api/bao-cao-nghiem-thu', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...sharedPayload,
+              mat_hang: line.mat_hang,
+              don_vi: line.don_vi,
+              so_luong: line.soLuong
+            })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo sản lượng.');
+          savedCount += 1;
         }
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo nghiệm thu.');
+        setMessage(
+          savedCount > 1 ? `Đã lưu ${savedCount} dòng sản lượng với ảnh chung.` : 'Đã lưu báo cáo sản lượng.'
+        );
+      }
 
-      setMessage(editingId ? 'Đã cập nhật báo cáo nghiệm thu.' : 'Đã lưu báo cáo nghiệm thu.');
       resetForm();
       await loadReports(filterDate);
     } catch (err: any) {
-      setError(err.message || 'Không thể lưu báo cáo nghiệm thu.');
+      setError(err.message || 'Không thể lưu báo cáo sản lượng.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Xóa báo cáo nghiệm thu này?')) return;
+    if (!window.confirm('Xóa báo cáo sản lượng này?')) return;
     try {
       const res = await fetch(`/api/bao-cao-nghiem-thu/${id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
@@ -534,9 +606,11 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
     }
   };
 
-  const machineSelectValue =
-    machineOptions.find(option => option.value === form.machineRef)?.value ??
-    (form.machineRef || '');
+  const teamSelectValue =
+    form.teamId ||
+    machines.find(machine => machine.id === form.machineRef)?.id ||
+    machines.find(machine => machine.code === form.ma_may || machine.name === form.ten_may)?.id ||
+    '';
 
   return (
     <div className="space-y-4 pb-24">
@@ -546,10 +620,10 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
             <div className="flex items-start gap-3">
               <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
               <div>
-                <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Kiểm tra chất lượng</p>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">Báo cáo nghiệm thu</h2>
+                <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Báo cáo sản xuất</p>
+                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">Phiếu báo cáo sản lượng</h2>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">
-                  Ca, máy và mặt hàng lấy từ lệnh sản xuất trong ngày
+                  Chọn tổ một lần, thêm từng mã SP và số lượng, sau đó chụp ảnh chung
                 </p>
               </div>
             </div>
@@ -584,18 +658,20 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
           </label>
           <label className="space-y-1 lg:col-span-2">
             <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <Cpu className="h-3.5 w-3.5 text-[#ef1b2d]" /> Máy
+              <Cpu className="h-3.5 w-3.5 text-[#ef1b2d]" /> Tổ
             </span>
             <select
-              value={machineSelectValue}
-              onChange={e => handleMachineChange(e.target.value)}
+              value={teamSelectValue}
+              onChange={e => handleTeamChange(e.target.value)}
               className={inputClass}
               disabled={!form.ca}
             >
-              <option value="">{form.ca ? 'Chọn máy từ lệnh SX...' : 'Chọn ca trước'}</option>
-              {machineOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+              <option value="">{form.ca ? 'Chọn tổ...' : 'Chọn ca trước'}</option>
+              {teamOptions.map(team => (
+                <option key={team.id} value={team.id}>
+                  {team.code && team.name && team.code !== team.name
+                    ? `${team.code} · ${team.name}`
+                    : team.name || team.code}
                 </option>
               ))}
             </select>
@@ -620,40 +696,86 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
               className={inputClass}
             />
           </label>
-          <label className="space-y-1 lg:col-span-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mặt hàng</span>
-            <select
-              value={form.mat_hang}
-              onChange={e => handleProductChange(e.target.value)}
-              className={inputClass}
-              disabled={!form.machineRef}
-            >
-              <option value="">
-                {form.machineRef ? 'Chọn mặt hàng từ lệnh SX...' : 'Chọn máy trước'}
-              </option>
-              {productOptions.map(item => (
-                <option key={item.label} value={item.label}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
-            <input value={form.don_vi} readOnly className={`${inputClass} bg-zinc-50 text-zinc-600`} placeholder="Tự điền từ lệnh SX" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng</span>
-            <input
-              value={form.so_luong}
-              onChange={e => setForm(prev => ({ ...prev, so_luong: e.target.value }))}
-              className={inputClass}
-              inputMode="decimal"
-              placeholder="0"
-            />
-          </label>
-          <div className="space-y-1 lg:col-span-2">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Hình ảnh</span>
+        </div>
+
+        <div className="border-t border-zinc-100 bg-white p-4">
+          <RepeatableLinesBlock
+            title="Mã SP & số lượng"
+            required
+            onAdd={addProductLine}
+            addLabel="Thêm dòng"
+            hideAddButton={Boolean(editingId)}
+            columns={[
+              { key: 'mat_hang', label: 'Mã SP / Mặt hàng', className: 'min-w-[220px] flex-[2]', required: true },
+              { key: 'don_vi', label: 'ĐVT', className: 'w-20' },
+              { key: 'so_luong', label: 'Số lượng', className: 'w-28', required: true },
+              { key: 'actions', label: '', className: 'w-10' }
+            ]}
+          >
+            {form.lines.map((line, index) => (
+              <RepeatableLineRow key={line.id}>
+                <label className="min-w-[220px] flex-[2] space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">
+                    Mã SP / Mặt hàng *
+                  </span>
+                  <select
+                    value={line.mat_hang}
+                    onChange={e => handleLineProductChange(line.id, e.target.value)}
+                    className={inputClass}
+                    disabled={!form.ma_may.trim() && !form.ten_may.trim()}
+                  >
+                    <option value="">
+                      {form.ma_may.trim() || form.ten_may.trim()
+                        ? 'Chọn mã SP từ lệnh SX...'
+                        : 'Chọn tổ trước'}
+                    </option>
+                    {productOptions.map(option => (
+                      <option key={option.label} value={option.label}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="w-20 space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">ĐVT</span>
+                  <input
+                    value={line.don_vi}
+                    readOnly
+                    className={`${inputClass} bg-zinc-50 text-zinc-600`}
+                    placeholder="-"
+                  />
+                </label>
+                <label className="w-28 space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">
+                    Số lượng *
+                  </span>
+                  <input
+                    value={line.so_luong}
+                    onChange={e => handleLineQuantityChange(line.id, e.target.value)}
+                    className={inputClass}
+                    inputMode="decimal"
+                    placeholder="0"
+                  />
+                </label>
+                {!editingId && form.lines.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeProductLine(line.id)}
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                    aria-label={`Xóa dòng ${index + 1}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </RepeatableLineRow>
+            ))}
+          </RepeatableLinesBlock>
+
+          <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>
+            <p className="text-[11px] font-semibold text-zinc-500">
+              Chụp một ảnh cho tất cả các dòng sản lượng ở trên
+            </p>
             <div className="flex items-center gap-2">
               <input
                 ref={fileInputRef}
@@ -670,16 +792,16 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
                 className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
               >
                 {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                {isUploading ? 'Đang tải ảnh...' : 'Chụp / chọn ảnh'}
+                {isUploading ? 'Đang tải ảnh...' : 'Chụp / chọn ảnh chung'}
               </button>
               {form.imagePreview && (
                 <a
                   href={form.imagePreview}
                   target="_blank"
                   rel="noreferrer"
-                  className="block h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-zinc-200"
+                  className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200"
                 >
-                  <img src={form.imagePreview} alt="Xem trước" className="h-full w-full object-cover" />
+                  <img src={form.imagePreview} alt="Ảnh chung" className="h-full w-full object-cover" />
                 </a>
               )}
             </div>
@@ -742,7 +864,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
                 <th className="px-3 py-2 font-black">Ảnh</th>
                 <th className="px-3 py-2 font-black">Ngày</th>
                 <th className="px-3 py-2 font-black">Ca</th>
-                <th className="px-3 py-2 font-black">Máy</th>
+                <th className="px-3 py-2 font-black">Tổ</th>
                 <th className="px-3 py-2 font-black">Lần</th>
                 <th className="px-3 py-2 font-black">Giờ</th>
                 <th className="px-3 py-2 font-black">Mặt hàng</th>
@@ -771,7 +893,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
                     <td className="px-3 py-2">
                       {report.hinh_anh ? (
                         <a href={report.hinh_anh} target="_blank" rel="noreferrer" className="block h-10 w-10 overflow-hidden rounded-lg border border-zinc-200">
-                          <img src={report.hinh_anh} alt="Nghiệm thu" className="h-full w-full object-cover" />
+                          <img src={report.hinh_anh} alt="Sản lượng" className="h-full w-full object-cover" />
                         </a>
                       ) : (
                         '-'

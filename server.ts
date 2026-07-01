@@ -1326,7 +1326,7 @@ function parseAcceptanceReportBody(body: unknown): { error: string } | { record:
 
   if (!ngay) return { error: 'Vui lòng chọn ngày.' };
   if (!ca) return { error: 'Vui lòng chọn ca.' };
-  if (!lan) return { error: 'Vui lòng nhập lần nghiệm thu.' };
+  if (!lan) return { error: 'Vui lòng nhập lần ghi nhận.' };
   const ma_may = String(source.ma_may ?? source.machineCode ?? '').trim();
   const ten_may = String(source.ten_may ?? source.machineName ?? source.may ?? '').trim();
   if (!ma_may && !ten_may) return { error: 'Vui lòng chọn máy.' };
@@ -1334,7 +1334,7 @@ function parseAcceptanceReportBody(body: unknown): { error: string } | { record:
   if (so_luong === null || so_luong <= 0) return { error: 'Số lượng phải lớn hơn 0.' };
 
   const hinh_anh = String(source.hinh_anh ?? source.imageUrl ?? '').trim();
-  if (!hinh_anh) return { error: 'Vui lòng chụp hoặc tải ảnh nghiệm thu.' };
+  if (!hinh_anh) return { error: 'Vui lòng chụp hoặc tải ảnh sản lượng.' };
 
   return {
     record: {
@@ -1360,7 +1360,7 @@ function acceptanceReportWriteError(error: { code?: string; message?: string }) 
   if (isMissingColumnError(error)) {
     return `Bảng ${SUPABASE_ACCEPTANCE_REPORTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bao-cao-nghiem-thu.sql.`;
   }
-  return `Không thể lưu báo cáo nghiệm thu. ${error.message || ''}`.trim();
+  return `Không thể lưu báo cáo sản lượng. ${error.message || ''}`.trim();
 }
 
 type SettingWritePayload = {
@@ -4718,7 +4718,7 @@ export function createApp() {
 
       return res.json({ reports: data || [], total: data?.length || 0 });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo nghiệm thu.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo sản lượng.' });
     }
   });
 
@@ -4746,7 +4746,7 @@ export function createApp() {
 
       return res.status(201).json({ success: true, report: data });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo nghiệm thu.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo sản lượng.' });
     }
   });
 
@@ -4779,7 +4779,7 @@ export function createApp() {
       if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo.' });
       return res.json({ success: true, report: data });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật báo cáo nghiệm thu.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật báo cáo sản lượng.' });
     }
   });
 
@@ -4807,7 +4807,7 @@ export function createApp() {
       if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo.' });
       return res.json({ success: true });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo nghiệm thu.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo sản lượng.' });
     }
   });
 

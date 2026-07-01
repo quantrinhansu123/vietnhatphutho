@@ -15,7 +15,7 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'mixing-report-list': '/danh-sach-bao-cao-phoi-tron',
   'machine-nvl-report': '/bao-cao-may-nvl-ton',
   'machine-downtime-report': '/phieu-bao-dung-may',
-  'acceptance-report': '/bao-cao-nghiem-thu',
+  'acceptance-report': '/bao-cao-san-luong',
   hr: '/nhan-su',
   products: '/san-pham',
   machines: '/danh-sach-may',
@@ -34,6 +34,7 @@ const PATH_TO_TAB = new Map<string, AppTab>(
   Object.entries(TAB_ROUTES).map(([tab, path]) => [path, tab as AppTab])
 );
 
+PATH_TO_TAB.set('/bao-cao-nghiem-thu', 'acceptance-report');
 PATH_TO_TAB.set('/menu', 'menu');
 PATH_TO_TAB.set('/bao-cao-can', 'weighing-summary');
 PATH_TO_TAB.set('/nguyen-phu-lieu', 'materials');
