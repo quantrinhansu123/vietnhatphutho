@@ -8370,12 +8370,11 @@ function getAllocatedProductionQuantity(
   productCode: string
 ): number {
   return productionOrders
-    .filter(po => po.orderRef === orderRef)
     .reduce((sum, po) => {
       return (
         sum +
         getProductionOrderProductLines(po)
-          .filter(line => line.productCode === productCode)
+          .filter(line => (line.orderRef || po.orderRef) === orderRef && line.productCode === productCode)
           .reduce((lineSum, line) => lineSum + parseRowQuantity(line.quantity), 0)
       );
     }, 0);
@@ -8516,6 +8515,7 @@ function productionOrderFormToCreatePayload(
 ) {
   const staff = staffText || form.selectedStaffIds.join(', ');
   const products = lines.map(line => ({
+    ma_don_hang: line.orderRef.trim(),
     ma_sp: line.productCode.trim(),
     ten_sp: line.productName.trim(),
     don_vi: line.unit.trim(),
@@ -8530,6 +8530,7 @@ function productionOrderFormToCreatePayload(
     }))
   );
   const primaryLine = lines[0];
+  const orderRefs = [...new Set(lines.map(line => line.orderRef.trim()).filter(Boolean))];
   const defaultName =
     lines.length === 1
       ? primaryLine.productName || primaryLine.productCode
@@ -8547,7 +8548,7 @@ function productionOrderFormToCreatePayload(
     so_luong: Number(summary.quantity),
     don_vi: summary.unit === '-' ? '' : summary.unit,
     trang_thai: form.status,
-    ma_don_hang: primaryLine.orderRef.trim(),
+    ma_don_hang: orderRefs.join(', ') || primaryLine.orderRef.trim(),
     ca: form.shift.trim(),
     nhan_su: staff,
     ngay_gio_bat_dau: form.startDateTime || null,
@@ -8584,12 +8585,18 @@ function AddProductionOrderModal({
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductRow[]>([]);
+  const [showAutofillOrders, setShowAutofillOrders] = useState(false);
+  const [autofillSearch, setAutofillSearch] = useState('');
+  const [selectedAutofillOrderCodes, setSelectedAutofillOrderCodes] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
 
     setForm(emptyProductionOrderForm());
     setFormError('');
+    setShowAutofillOrders(false);
+    setAutofillSearch('');
+    setSelectedAutofillOrderCodes([]);
     setIsLoadingLookups(true);
 
     const loadLookups = async () => {
@@ -8693,6 +8700,62 @@ function AddProductionOrderModal({
       .map(member => member.name)
       .join(', ');
   }, [form.selectedStaffIds, staffOptions]);
+
+  const autofillOrderOptions = useMemo(() => {
+    const normalized = autofillSearch.trim().toLowerCase();
+    return orders
+      .filter(order => getOrderProductLines(order).length > 0)
+      .filter(order => {
+        if (!normalized) return true;
+        return `${order.orderCode} ${order.customer} ${formatOrderProductsSummary(getOrderProductLines(order))}`
+          .toLowerCase()
+          .includes(normalized);
+      })
+      .sort((a, b) => a.orderCode.localeCompare(b.orderCode, 'vi'));
+  }, [autofillSearch, orders]);
+
+  const toggleAutofillOrderCode = (orderCode: string) => {
+    setSelectedAutofillOrderCodes(prev =>
+      prev.includes(orderCode) ? prev.filter(code => code !== orderCode) : [...prev, orderCode]
+    );
+  };
+
+  const applyAutofillOrders = () => {
+    const selectedCodes = [...new Set(selectedAutofillOrderCodes.map(code => code.trim()).filter(Boolean))];
+    if (selectedCodes.length === 0) {
+      setFormError('Vui lòng tick ít nhất một đơn hàng để tự điền.');
+      return;
+    }
+
+    const nextLines = selectedCodes.flatMap(orderRef =>
+      listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef)
+        .filter(product => product.orderQty > 0 && product.remainingQty > 0)
+        .map(product => ({
+          key: `entry-${orderRef}-${product.code}-${Math.random().toString(36).slice(2, 7)}`,
+          orderRef,
+          ...buildProductionEntryLine(
+            orders,
+            productionOrders,
+            orderRef,
+            product.code,
+            product.name,
+            product.unit
+          )
+        }))
+    );
+
+    if (nextLines.length === 0) {
+      setFormError('Các đơn đã chọn không còn sản phẩm có số lượng cần lập lệnh SX.');
+      return;
+    }
+
+    setForm(prev => ({
+      ...prev,
+      entryLines: nextLines
+    }));
+    setFormError('');
+    setShowAutofillOrders(false);
+  };
 
   const updateEntryLine = (key: string, patch: Partial<ProductionOrderEntryLine>) => {
     setForm(prev => ({
@@ -8824,7 +8887,7 @@ function AddProductionOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="h-[96vh] max-h-[98vh] w-full max-w-[1500px] overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm lệnh sản xuất mới</h3>
@@ -8892,6 +8955,21 @@ function AddProductionOrderModal({
               { key: 'actions', label: '', className: 'w-9 shrink-0' }
             ]}
           >
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+              <span className="text-[11px] font-bold text-zinc-500">
+                Chọn từng dòng thủ công hoặc tự điền từ nhiều đơn hàng.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAutofillOrders(true)}
+                disabled={isLoadingLookups || orders.length === 0}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                Tự điền từ đơn hàng
+              </button>
+            </div>
+
             {form.entryLines.map(line => {
               const productOptions = listProductOptionsForOrder(
                 orders,
@@ -9112,6 +9190,107 @@ function AddProductionOrderModal({
           </button>
         </div>
       </div>
+
+      {showAutofillOrders && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[86vh] w-full max-w-3xl overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
+                <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                  Tick nhiều đơn, hệ thống lấy toàn bộ sản phẩm còn cần SX.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAutofillOrders(false)}
+                className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="border-b border-zinc-100 p-4">
+              <label className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+                <Search className="h-4 w-4 text-zinc-400" />
+                <input
+                  value={autofillSearch}
+                  onChange={event => setAutofillSearch(event.target.value)}
+                  placeholder="Tìm mã đơn, khách hàng, mã hàng..."
+                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                />
+              </label>
+            </div>
+
+            <div className="max-h-[48vh] overflow-y-auto p-4">
+              {autofillOrderOptions.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
+                  Không có đơn hàng phù hợp.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {autofillOrderOptions.map(order => {
+                    const checked = selectedAutofillOrderCodes.includes(order.orderCode);
+                    const productLines = getOrderProductLines(order);
+                    return (
+                      <label
+                        key={order.id}
+                        className={`block cursor-pointer rounded-xl border p-3 transition ${
+                          checked ? 'border-[#ef1b2d]/35 bg-red-50' : 'border-zinc-200 bg-white hover:bg-zinc-50'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAutofillOrderCode(order.orderCode)}
+                            className="mt-1 h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-black text-zinc-950">{order.orderCode || '-'}</span>
+                              <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-black text-zinc-600">
+                                {productLines.length} sản phẩm
+                              </span>
+                              <span className="text-xs font-semibold text-zinc-500">{order.customer}</span>
+                            </div>
+                            <p className="mt-1 text-xs font-semibold leading-5 text-zinc-600">
+                              {formatOrderProductsSummary(productLines)}
+                            </p>
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
+              <span className="text-xs font-bold text-zinc-500">
+                Đã chọn {selectedAutofillOrderCodes.length} đơn hàng
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAutofillOrderCodes([])}
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+                >
+                  Bỏ chọn
+                </button>
+                <button
+                  type="button"
+                  onClick={applyAutofillOrders}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  <ClipboardCheck className="h-4 w-4" />
+                  Tự điền
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -9787,6 +9966,7 @@ interface OrderProductLine {
   productName: string;
   unit: string;
   quantity: string;
+  orderRef?: string;
 }
 
 function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderProductLine[] {
@@ -9801,7 +9981,13 @@ function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderPro
         const unit = formatCell(row.don_vi ?? row.unit);
         const quantity = formatCell(row.so_luong ?? row.quantity);
         if (!productCode && !productName) return null;
-        return { productCode, productName, unit, quantity };
+        return {
+          productCode,
+          productName,
+          unit,
+          quantity,
+          orderRef: pickText(row, ['ma_don_hang', 'orderRef', 'order_code'], '')
+        };
       })
       .filter((line): line is OrderProductLine => Boolean(line));
   }
@@ -9815,7 +10001,8 @@ function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderPro
       productCode,
       productName,
       unit: formatCell(record.don_vi),
-      quantity: formatCell(record.so_luong ?? record.sl ?? record.quantity)
+      quantity: formatCell(record.so_luong ?? record.sl ?? record.quantity),
+      orderRef: pickText(record, ['ma_don_hang', 'orderRef', 'order_code'], '')
     }
   ];
 }

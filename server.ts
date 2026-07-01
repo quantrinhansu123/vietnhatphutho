@@ -1891,6 +1891,7 @@ function parseOrderQuantity(value: unknown): number | null {
 }
 
 type OrderProductRecord = {
+  ma_don_hang?: string;
   ma_sp: string;
   ten_sp: string;
   don_vi: string;
@@ -1919,6 +1920,7 @@ function parseOrderProductsInput(
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
+    const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
 
     if (!ma_sp && !ten_sp) {
       return { error: 'Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.' };
@@ -1927,7 +1929,7 @@ function parseOrderProductsInput(
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
 
-    products.push({ ma_sp, ten_sp, don_vi, so_luong });
+    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
   }
 
   if (products.length === 0) {
@@ -1948,6 +1950,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         const ten_sp = pickRowField(record, ['ten_sp', 'ten_hang', 'productName', 'name']);
         if (!ma_sp && !ten_sp) return null;
         return {
+          ma_don_hang: pickRowField(record, ['ma_don_hang', 'orderRef', 'order_code']),
           ma_sp,
           ten_sp,
           don_vi: pickRowField(record, ['don_vi', 'unit']),
@@ -1963,6 +1966,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
 
   return [
     {
+      ma_don_hang: pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']),
       ma_sp,
       ten_sp,
       don_vi: pickRowField(row, ['don_vi', 'unit']),
@@ -2108,6 +2112,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
+    const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
 
     if (!ma_sp && !ten_sp) {
       return null;
@@ -2116,7 +2121,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       return null;
     }
 
-    products.push({ ma_sp, ten_sp, don_vi, so_luong });
+    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
   }
 
   return products.length > 0 ? products : null;
@@ -2163,6 +2168,7 @@ function parseProductionOrderBody(
 
     products = [
       {
+        ma_don_hang: pickRowField(source, ['ma_don_hang', 'orderRef', 'order_code'], ''),
         ma_sp: productCode,
         ten_sp: productName,
         don_vi: pickRowField(source, ['don_vi', 'unit'], ''),
@@ -2172,7 +2178,10 @@ function parseProductionOrderBody(
   }
 
   const summary = summarizeProductionOrderProducts(products);
-  const orderRef = pickRowField(source, ['ma_don_hang', 'orderRef', 'order_code'], '');
+  const productOrderRefs = [
+    ...new Set(products.map(item => String(item.ma_don_hang ?? '').trim()).filter(Boolean))
+  ];
+  const orderRef = pickRowField(source, ['ma_don_hang', 'orderRef', 'order_code'], '') || productOrderRefs.join(', ');
   const manualSeed = `MAN-${Date.now().toString(36).slice(-6).toUpperCase()}`;
   const codeInput = pickRowField(source, ['ma_lenh_sx', 'code'], '');
   const code = codeInput || makeProductionOrderCode(orderRef || manualSeed);
@@ -2417,8 +2426,7 @@ async function getRemainingProductionQuantityForProduct(
 
   const { data: productionRows, error: productionError } = await supabase
     .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-    .select('ma_hang, so_luong')
-    .eq('ma_don_hang', orderRef);
+    .select('ma_don_hang, ma_hang, so_luong, san_pham');
 
   if (productionError) {
     console.error('Supabase lenh_sx remaining qty error:', productionError);
@@ -2426,10 +2434,20 @@ async function getRemainingProductionQuantityForProduct(
   }
 
   const allocated = (productionRows || []).reduce((sum, row) => {
+    const productionRow = row as Record<string, unknown>;
+    const rowOrderRefs = String(productionRow.ma_don_hang ?? '')
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+
     return (
       sum +
-      parseOrderProductsFromRow(row as Record<string, unknown>).reduce((innerSum, item) => {
-        if (item.ma_sp !== productCode) return innerSum;
+      parseOrderProductsFromRow(productionRow).reduce((innerSum, item) => {
+        const itemOrderRef = String(item.ma_don_hang ?? '').trim();
+        const matchesOrder = itemOrderRef
+          ? itemOrderRef === orderRef
+          : rowOrderRefs.length === 0 || rowOrderRefs.includes(orderRef);
+        if (!matchesOrder || item.ma_sp !== productCode) return innerSum;
         return innerSum + (item.so_luong ?? 0);
       }, 0)
     );
@@ -3215,17 +3233,18 @@ export function createApp() {
       for (const product of orderProducts) {
         const productCode = product.ma_sp;
         const requestQuantity = product.so_luong ?? 0;
-        if (!orderRef || !productCode) continue;
+        const productOrderRef = String(product.ma_don_hang ?? '').trim() || orderRef;
+        if (!productOrderRef || !productCode) continue;
 
-        const { ordered, remaining } = await getRemainingProductionQuantityForProduct(orderRef, productCode);
+        const { ordered, remaining } = await getRemainingProductionQuantityForProduct(productOrderRef, productCode);
         if (ordered <= 0) {
           return res.status(400).json({
-            error: `Sản phẩm ${productCode} không có trong đơn ${orderRef} hoặc chưa có số lượng đặt hàng.`
+            error: `Sản phẩm ${productCode} không có trong đơn ${productOrderRef} hoặc chưa có số lượng đặt hàng.`
           });
         }
         if (remaining <= 0) {
           return res.status(400).json({
-            error: `Sản phẩm ${productCode} đã được lập đủ lệnh SX cho đơn ${orderRef}.`
+            error: `Sản phẩm ${productCode} đã được lập đủ lệnh SX cho đơn ${productOrderRef}.`
           });
         }
         if (requestQuantity > remaining) {
