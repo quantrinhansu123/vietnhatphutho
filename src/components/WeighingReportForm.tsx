@@ -451,7 +451,7 @@ export default function WeighingReportForm({
     storeWeigherName(name);
   };
 
-  const handleProductCodeScan = useCallback((code: string) => {
+  const handleProductCodeScan = useCallback((code: string): boolean => {
     const trimmed = code.trim();
     setNewRow(prev => ({
       ...prev,
@@ -459,6 +459,7 @@ export default function WeighingReportForm({
       productName: resolveProductNameFromCode(products, trimmed, prev.productName)
     }));
     setAddFormError('');
+    return true;
   }, [products]);
 
   const applySavedRowIds = (savedRows: WeighingRecord[] | undefined, targetRows: WeighingRow[]) => {

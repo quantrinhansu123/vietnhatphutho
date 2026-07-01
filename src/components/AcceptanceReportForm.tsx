@@ -107,6 +107,12 @@ function productCodeFromOrder(order: ProductionOrderOption) {
   return order.productCode.trim() || order.productName.trim();
 }
 
+function lineHasProductCode(line: ProductLine, code: string) {
+  const target = normalizeKey(code);
+  if (!target) return false;
+  return normalizeKey(parseQrProductCode(line.mat_hang)) === target;
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -238,6 +244,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   const [message, setMessage] = useState('');
   const [pendingPrint, setPendingPrint] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [highlightLineId, setHighlightLineId] = useState('');
 
   const printSlips = useMemo(() => buildAcceptancePrintSlips(reports), [reports]);
 
@@ -302,6 +309,12 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   useEffect(() => {
     loadReports(filterDate).catch(err => setError(err.message || 'Không thể tải báo cáo.'));
   }, [filterDate]);
+
+  useEffect(() => {
+    if (!highlightLineId) return;
+    const timer = window.setTimeout(() => setHighlightLineId(''), 2600);
+    return () => window.clearTimeout(timer);
+  }, [highlightLineId]);
 
   const ordersForSelectedDay = useMemo(
     () => productionOrders.filter(order => order.startDate === form.ngay),
@@ -397,6 +410,14 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
   };
 
   const handleLineProductChange = (lineId: string, mat_hang: string) => {
+    if (
+      mat_hang &&
+      form.lines.some(line => line.id !== lineId && lineHasProductCode(line, mat_hang))
+    ) {
+      setError(`Mã SP "${parseQrProductCode(mat_hang)}" đã có trong danh sách.`);
+      return;
+    }
+
     const match = productOptions.find(option => option.code === mat_hang);
     setForm(prev => ({
       ...prev,
@@ -404,6 +425,7 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
         line.id === lineId ? { ...line, mat_hang, don_vi: match?.unit || '' } : line
       )
     }));
+    setError('');
   };
 
   const handleLineQuantityChange = (lineId: string, so_luong: string) => {
@@ -424,32 +446,52 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
     });
   };
 
-  const handleQrScan = useCallback((raw: string) => {
-    setError('');
-    setMessage('');
+  const handleQrScan = useCallback(
+    (raw: string): boolean => {
+      setMessage('');
 
-    const code = parseQrProductCode(raw);
-    if (!code) {
-      setError('Mã QR không hợp lệ.');
-      return;
-    }
+      const code = parseQrProductCode(raw);
+      if (!code) {
+        setError('Mã QR không hợp lệ.');
+        return false;
+      }
 
-    const unit =
-      productOptions.find(option => normalizeKey(option.code) === normalizeKey(code))?.unit ?? '';
+      const unit =
+        productOptions.find(option => normalizeKey(option.code) === normalizeKey(code))?.unit ?? '';
 
-    setForm(prev => ({
-      ...prev,
-      lines: [
-        ...prev.lines,
-        {
+      let addedLineId = '';
+      let accepted = false;
+
+      setForm(prev => {
+        if (prev.lines.some(line => lineHasProductCode(line, code))) {
+          return prev;
+        }
+
+        const nextLine = {
           ...newProductLine(),
           mat_hang: code,
           don_vi: unit
-        }
-      ]
-    }));
-    setMessage(`Đã thêm mã SP: ${code}`);
-  }, [productOptions]);
+        };
+        addedLineId = nextLine.id;
+        accepted = true;
+        return {
+          ...prev,
+          lines: [...prev.lines, nextLine]
+        };
+      });
+
+      if (!accepted) {
+        setError(`Mã SP "${code}" đã có trong danh sách.`);
+        return false;
+      }
+
+      setError('');
+      setHighlightLineId(addedLineId);
+      setMessage(`Đã thêm mã SP: ${code}`);
+      return true;
+    },
+    [productOptions]
+  );
 
   const handleImagePick = async (file: File | null) => {
     if (!file) return;
@@ -760,7 +802,10 @@ export default function AcceptanceReportForm({ onBack }: { onBack: () => void })
             ]}
           >
             {form.lines.map((line, index) => (
-              <RepeatableLineRow key={line.id}>
+              <RepeatableLineRow
+                key={line.id}
+                className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
+              >
                 <label className="min-w-[220px] flex-[2] space-y-1">
                   <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">
                     Mã SP / Mặt hàng *
