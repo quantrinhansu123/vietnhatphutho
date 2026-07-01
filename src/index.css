@@ -843,9 +843,16 @@ input[type="number"] {
 .production-order-print-materials-table th:nth-child(4) { width: 14%; }
 .production-order-print-materials-table th:nth-child(5) { width: 14%; }
 
-.production-order-print-params-table th:nth-child(1) { width: 18%; }
-.production-order-print-params-table th:nth-child(2) { width: 34%; }
-.production-order-print-params-table th:nth-child(3) { width: 48%; }
+.production-order-print-params-table th:nth-child(1),
+.production-order-print-params-table td:nth-child(1) {
+  width: 26%;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-wrap: normal;
+}
+
+.production-order-print-params-table th:nth-child(2) { width: 30%; }
+.production-order-print-params-table th:nth-child(3) { width: 44%; }
 
 .production-order-print-params-table th {
   text-align: center;
@@ -884,6 +891,10 @@ input[type="number"] {
 
 .production-order-print-center {
   text-align: center;
+}
+
+.production-order-print-shift-cell {
+  white-space: nowrap;
 }
 
 .production-order-print-right {

@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { 
@@ -6,6 +7,11 @@ import {
 } from './types';
 import { computeReportMetrics, formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from './utils';
 import ShiftInfoForm from './components/ShiftInfoForm';
+import {
+  downloadBulkOpeningStockTemplate,
+  parseBulkOpeningStockExcel,
+  type BulkOpeningStockImportRow
+} from './utils/bulkOpeningStockExcel';
 import ProductEntryForm from './components/ProductEntryForm';
 import MaterialsForm from './components/MaterialsForm';
 import WasteForm from './components/WasteForm';
@@ -28,7 +34,7 @@ import {
   Building2, UserPlus, Search, MoreVertical, ShieldCheck, BriefcaseBusiness, Package, Cpu, Plus, Boxes, ClipboardList, Settings,
   ImagePlus,
   Eye, Pencil, Trash2, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowUpFromLine, Printer,
-  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, QrCode, Scale, CalendarDays, Home
+  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, ClipboardPaste, Download, Upload, QrCode, Scale, CalendarDays, Home
 } from 'lucide-react';
 
 const STORAGE_DRAFT_KEY = 'factory_report_draft_v1';
@@ -2826,6 +2832,365 @@ function materialToForm(material: MaterialRow): MaterialFormState {
 const materialFieldClass =
   'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
+type BulkOpeningStockPreviewRow = BulkOpeningStockImportRow & {
+  material: MaterialRow | null;
+  status: 'update' | 'create' | 'invalid' | 'skipped';
+};
+
+function normalizeMaterialCodeKey(code: string) {
+  return code.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function buildBulkOpeningStockPreview(
+  rows: BulkOpeningStockImportRow[],
+  materials: MaterialRow[]
+): BulkOpeningStockPreviewRow[] {
+  const materialByCode = new Map<string, MaterialRow>();
+  materials.forEach(material => {
+    if (material.code && material.code !== '-') {
+      materialByCode.set(normalizeMaterialCodeKey(material.code), material);
+    }
+  });
+
+  return rows.map(row => {
+    const openingValue = row.openingStock.trim().replace(',', '.');
+    const hasOpeningValue = openingValue !== '' && openingValue !== '-';
+    const isValidNumber = hasOpeningValue && Number.isFinite(Number(openingValue));
+    const material = materialByCode.get(normalizeMaterialCodeKey(row.code)) ?? null;
+
+    if (!hasOpeningValue) {
+      return { ...row, material, status: 'skipped' as const };
+    }
+
+    return {
+      ...row,
+      material,
+      status: !isValidNumber ? 'invalid' : material ? 'update' : 'create'
+    };
+  });
+}
+
+function buildBulkOpeningStockPayload(
+  row: BulkOpeningStockPreviewRow,
+  material?: MaterialRow | null
+) {
+  const openingStock = row.openingStock.trim().replace(',', '.');
+  const code = row.code.trim();
+  const name = (row.name || material?.name || code).trim();
+
+  if (material) {
+    return {
+      ...materialToForm(material),
+      code,
+      name: name || material.name.trim(),
+      unit: material.unit === '-' ? '' : material.unit.trim(),
+      openingStock
+    };
+  }
+
+  return {
+    ...emptyMaterialForm(),
+    code,
+    name: name || code,
+    openingStock
+  };
+}
+
+function BulkOpeningStockModal({
+  open,
+  materials,
+  onClose,
+  onApplied
+}: {
+  open: boolean;
+  materials: MaterialRow[];
+  onClose: () => void;
+  onApplied: (message: string) => void;
+}) {
+  const [importRows, setImportRows] = useState<BulkOpeningStockImportRow[]>([]);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [pasteError, setPasteError] = useState('');
+  const [isApplying, setIsApplying] = useState(false);
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setImportRows([]);
+      setUploadedFileName('');
+      setPasteError('');
+      setIsApplying(false);
+      setIsReadingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [open]);
+
+  const previewRows = useMemo(
+    () => (importRows.length > 0 ? buildBulkOpeningStockPreview(importRows, materials) : []),
+    [importRows, materials]
+  );
+  const updateRows = previewRows.filter(row => row.status === 'update');
+  const createRows = previewRows.filter(row => row.status === 'create');
+  const applicableCount = updateRows.length + createRows.length;
+  const invalidCount = previewRows.filter(row => row.status === 'invalid').length;
+  const skippedCount = previewRows.filter(row => row.status === 'skipped').length;
+
+  const handleDownloadTemplate = () => {
+    downloadBulkOpeningStockTemplate(
+      materials.map(material => ({
+        code: material.code,
+        name: material.name,
+        openingStock: material.openingStock
+      }))
+    );
+  };
+
+  const handleFileChange = async (file?: File | null) => {
+    if (!file) return;
+
+    setIsReadingFile(true);
+    setPasteError('');
+    setUploadedFileName(file.name);
+
+    try {
+      const rows = await parseBulkOpeningStockExcel(file);
+      if (rows.length === 0) {
+        throw new Error('File Excel không có dòng dữ liệu hợp lệ.');
+      }
+      setImportRows(rows);
+    } catch (error: any) {
+      setImportRows([]);
+      setPasteError(error.message || 'Không thể đọc file Excel.');
+    } finally {
+      setIsReadingFile(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (applicableCount === 0) {
+      setPasteError('Không có dòng hợp lệ để xử lý. Kiểm tra lại cột Mã NPL và Tồn đầu trong file Excel.');
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Ghi đè Tồn đầu cho ${updateRows.length} NPL và thêm mới ${createRows.length} NPL?`
+      )
+    ) {
+      return;
+    }
+
+    setIsApplying(true);
+    setPasteError('');
+
+    try {
+      const updatedCodes: string[] = [];
+      const createdCodes: string[] = [];
+
+      await Promise.all([
+        ...updateRows.map(async row => {
+          const material = row.material!;
+          const payload = buildBulkOpeningStockPayload(row, material);
+          const res = await fetch(`/api/kho-nvl/${material.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.error || `Không thể cập nhật ${material.code}.`);
+          }
+          updatedCodes.push(material.code);
+        }),
+        ...createRows.map(async row => {
+          const payload = buildBulkOpeningStockPayload(row);
+          const res = await fetch('/api/kho-nvl', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.error || `Không thể thêm mới ${row.code}.`);
+          }
+          createdCodes.push(row.code);
+        })
+      ]);
+
+      const parts: string[] = [];
+      if (updatedCodes.length > 0) parts.push(`ghi đè ${updatedCodes.length} NPL`);
+      if (createdCodes.length > 0) parts.push(`thêm mới ${createdCodes.length} NPL`);
+      onApplied(`Đã ${parts.join(', ')}.`);
+      onClose();
+    } catch (error: any) {
+      setPasteError(error.message || 'Không thể cập nhật tồn đầu hàng loạt.');
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Cập nhật Tồn đầu từ Excel</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+              Mã đã có sẽ ghi đè Tồn đầu; mã chưa có sẽ tự thêm dòng NPL mới
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isApplying}
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Đóng
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+          {pasteError && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
+              {pasteError}
+            </div>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+            >
+              <Download className="h-4 w-4" />
+              Tải mẫu Excel
+            </button>
+            <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
+              {isReadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {isReadingFile ? 'Đang đọc file...' : 'Tải file Excel lên'}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                className="hidden"
+                onChange={event => {
+                  const file = event.target.files?.[0];
+                  void handleFileChange(file);
+                }}
+              />
+            </label>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs leading-5 text-zinc-600">
+            <p className="font-bold text-zinc-800">Hướng dẫn</p>
+            <ol className="mt-1 list-decimal space-y-1 pl-4">
+              <li>Bấm <strong>Tải mẫu Excel</strong> — file có sẵn Mã NPL, Tên NVL và Tồn đầu hiện tại.</li>
+              <li>Sửa cột <strong>Tồn đầu</strong> hoặc thêm dòng mới (Mã NPL + Tên NVL + Tồn đầu).</li>
+              <li>Bấm <strong>Tải file Excel lên</strong> — mã cũ ghi đè, mã mới tự thêm.</li>
+            </ol>
+          </div>
+
+          {uploadedFileName && (
+            <p className="text-xs font-bold text-zinc-500">
+              File: <span className="text-zinc-800">{uploadedFileName}</span>
+            </p>
+          )}
+
+          {previewRows.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2 text-xs font-bold">
+                <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-800">
+                  Ghi đè: {updateRows.length}
+                </span>
+                <span className="rounded-lg bg-sky-50 px-2.5 py-1 text-sky-800">
+                  Thêm mới: {createRows.length}
+                </span>
+                {skippedCount > 0 && (
+                  <span className="rounded-lg bg-zinc-100 px-2.5 py-1 text-zinc-700">
+                    Bỏ qua (trống): {skippedCount}
+                  </span>
+                )}
+                {invalidCount > 0 && (
+                  <span className="rounded-lg bg-rose-50 px-2.5 py-1 text-rose-700">
+                    Tồn đầu không hợp lệ: {invalidCount}
+                  </span>
+                )}
+              </div>
+
+              <div className="overflow-hidden rounded-xl border border-zinc-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                    <tr>
+                      <th className="px-3 py-2 font-black">Mã NPL</th>
+                      <th className="px-3 py-2 font-black">Tên NVL</th>
+                      <th className="px-3 py-2 font-black">Tồn đầu mới</th>
+                      <th className="px-3 py-2 font-black">Tồn đầu hiện tại</th>
+                      <th className="px-3 py-2 font-black">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {previewRows.map((row, index) => (
+                      <tr
+                        key={`${row.code}-${index}`}
+                        className={
+                          row.status === 'update'
+                            ? 'bg-white'
+                            : row.status === 'create'
+                              ? 'bg-sky-50/60'
+                              : row.status === 'skipped'
+                                ? 'bg-zinc-50'
+                                : 'bg-rose-50/60'
+                        }
+                      >
+                        <td className="px-3 py-2 font-black text-zinc-900">{row.code}</td>
+                        <td className="px-3 py-2 font-semibold text-zinc-700">
+                          {row.name || row.material?.name || '-'}
+                        </td>
+                        <td className="px-3 py-2 font-mono font-bold text-zinc-800">{row.openingStock}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-zinc-500">
+                          {row.material?.openingStock ?? '-'}
+                        </td>
+                        <td className="px-3 py-2 font-bold">
+                          {row.status === 'update' && <span className="text-emerald-700">Ghi đè</span>}
+                          {row.status === 'create' && <span className="text-sky-700">Thêm mới</span>}
+                          {row.status === 'skipped' && <span className="text-zinc-500">Bỏ qua</span>}
+                          {row.status === 'invalid' && <span className="text-rose-700">Số không hợp lệ</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isApplying}
+            className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={isApplying || applicableCount === 0}
+            className="flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isApplying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isApplying ? 'Đang xử lý...' : `Áp dụng ${applicableCount} dòng`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MaterialMovementRow {
   slipCode: string;
   slipType: 'nhap' | 'xuat';
@@ -3127,6 +3492,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm);
+  const [showBulkOpeningStock, setShowBulkOpeningStock] = useState(false);
 
   const loadMaterials = async () => {
     setIsLoadingMaterials(true);
@@ -3303,6 +3669,14 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
               <button
                 type="button"
+                onClick={() => setShowBulkOpeningStock(true)}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-extrabold text-white transition hover:bg-white/20"
+              >
+                <ClipboardPaste className="h-4 w-4" />
+                Excel Tồn đầu
+              </button>
+              <button
+                type="button"
                 onClick={openAddForm}
                 className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
               >
@@ -3473,6 +3847,16 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           isDeleting={deletingMaterialId === viewingMaterial.id}
         />
       )}
+
+      <BulkOpeningStockModal
+        open={showBulkOpeningStock}
+        materials={materials}
+        onClose={() => setShowBulkOpeningStock(false)}
+        onApplied={message => {
+          setActionMessage(message);
+          void loadMaterials();
+        }}
+      />
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -4980,6 +5364,8 @@ function SearchableSelect({
   resolveSelectedItem?: (options: unknown[], value: string) => unknown | null;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
   const selectedItem = useMemo(() => {
     if (resolveSelectedItem) {
       return resolveSelectedItem(options, value);
@@ -5062,24 +5448,41 @@ function SearchableSelect({
   const isDisabled = Boolean(disabled || isLoading);
   const emptyText = isLoading ? 'Đang tải...' : options.length === 0 ? 'Không có dữ liệu' : placeholder;
 
-  return (
-    <div className="relative">
-      <input
-        value={query}
-        onChange={event => {
-          setQuery(event.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => {
-          if (!isDisabled) setOpen(true);
-        }}
-        onBlur={handleBlur}
-        disabled={isDisabled}
-        placeholder={emptyText}
-        className={fieldClass}
-      />
-      {open && !isDisabled && filteredOptions.length > 0 && (
-        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg">
+  const updateMenuPosition = () => {
+    const element = inputRef.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    setMenuStyle({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width
+    });
+  };
+
+  useEffect(() => {
+    if (!open) {
+      setMenuStyle(null);
+      return;
+    }
+    updateMenuPosition();
+    const handleReposition = () => updateMenuPosition();
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [open, query, filteredOptions.length]);
+
+  const dropdownPanelClass =
+    'fixed z-[120] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
+
+  const renderDropdown = () => {
+    if (!open || isDisabled || !menuStyle) return null;
+
+    if (filteredOptions.length > 0) {
+      return createPortal(
+        <div className={dropdownPanelClass} style={menuStyle}>
           {allowEmpty && !query.trim() && (
             <button
               type="button"
@@ -5107,13 +5510,41 @@ function SearchableSelect({
               </button>
             );
           })}
-        </div>
-      )}
-      {open && !isDisabled && query.trim() && filteredOptions.length === 0 && (
-        <div className="absolute z-30 mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-500 shadow-lg">
-          Không tìm thấy kết quả
-        </div>
-      )}
+        </div>,
+        document.body
+      );
+    }
+
+    if (query.trim()) {
+      return createPortal(
+        <div className={dropdownPanelClass} style={menuStyle}>
+          <div className="px-3 py-2 text-xs font-semibold text-zinc-500">Không tìm thấy kết quả</div>
+        </div>,
+        document.body
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={event => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          if (!isDisabled) setOpen(true);
+        }}
+        onBlur={handleBlur}
+        disabled={isDisabled}
+        placeholder={emptyText}
+        className={fieldClass}
+      />
+      {renderDropdown()}
     </div>
   );
 }
@@ -8216,18 +8647,20 @@ function ProductionOrderPrintSheet({
   order,
   materials,
   machineLabel,
-  product
+  product,
+  shiftSettings = []
 }: {
   order: ProductionOrderRow;
   materials: ProductionOrderMaterialLine[];
   machineLabel?: string;
   product?: ProductRow | null;
+  shiftSettings?: ProductionOrderLookupSetting[];
 }) {
   const printDate = formatProductionOrderPrintDate(order.startDate);
   const description = buildProductionOrderDescription(order);
   const orderQuantity = parseProductionOrderQuantity(order.quantity);
   const finishedWeightKg = formatProductionOrderFinishedWeight(orderQuantity, product);
-  const shiftLabel = order.shift && order.shift !== '-' ? order.shift : '-';
+  const shiftLabel = formatProductionOrderShiftLabel(order.shift, shiftSettings);
   const staffLabel =
     order.staff && order.staff !== '-'
       ? order.staff.replace(/,/g, ' + ')
@@ -8273,7 +8706,7 @@ function ProductionOrderPrintSheet({
           </thead>
           <tbody>
             <tr>
-              <td className="production-order-print-center">{shiftLabel}</td>
+              <td className="production-order-print-center production-order-print-shift-cell">{shiftLabel}</td>
               <td>{machineName}</td>
               <td>{staffLabel}</td>
             </tr>
@@ -8362,7 +8795,13 @@ type PrintableProductionOrder = {
   product: ProductRow | null;
 };
 
-function ProductionOrderBatchPrintSheets({ items }: { items: PrintableProductionOrder[] }) {
+function ProductionOrderBatchPrintSheets({
+  items,
+  shiftSettings = []
+}: {
+  items: PrintableProductionOrder[];
+  shiftSettings?: ProductionOrderLookupSetting[];
+}) {
   if (items.length === 0) return null;
 
   return (
@@ -8374,6 +8813,7 @@ function ProductionOrderBatchPrintSheets({ items }: { items: PrintableProduction
             materials={item.materials}
             machineLabel={item.machineLabel}
             product={item.product}
+            shiftSettings={shiftSettings}
           />
         </div>
       ))}
@@ -8386,8 +8826,16 @@ function useProductionOrderPrint() {
   const [printingMaterials, setPrintingMaterials] = useState<ProductionOrderMaterialLine[]>([]);
   const [printingProduct, setPrintingProduct] = useState<ProductRow | null>(null);
   const [printingMachineLabel, setPrintingMachineLabel] = useState('');
+  const [shiftSettings, setShiftSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [isLoadingPrint, setIsLoadingPrint] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/cai-dat')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => setShiftSettings(data ? mapProductionOrderSettings(data) : []))
+      .catch(() => setShiftSettings([]));
+  }, []);
 
   const printProductionOrder = async (order: ProductionOrderRow) => {
     setIsLoadingPrint(true);
@@ -8434,7 +8882,7 @@ function useProductionOrderPrint() {
     return () => window.removeEventListener('afterprint', handleAfterPrint);
   }, []);
 
-  return { printingOrder, printingMaterials, printingProduct, printingMachineLabel, isLoadingPrint, printProductionOrder };
+  return { printingOrder, printingMaterials, printingProduct, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder };
 }
 
 const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'];
@@ -8490,17 +8938,30 @@ function settingMatchesShift(setting: ProductionOrderLookupSetting, shift: strin
     .some(value => value && value !== '-' && value.toLowerCase().includes(needle));
 }
 
-function formatProductionOrderShiftLabel(shift: string, settings: ProductionOrderLookupSetting[]) {
+function formatProductionOrderShiftLabel(shift: string, settings: ProductionOrderLookupSetting[] = []) {
   const trimmed = shift.trim();
-  if (!trimmed) return '';
+  if (!trimmed || trimmed === '-') return '-';
+
+  if (/\(\s*\d{1,2}:\d{2}/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const normalized = trimmed.toLowerCase();
 
   const matchedSetting = settings.find(setting => {
     const candidates = [setting.name, setting.code].filter(value => value && value !== '-');
-    return candidates.some(value => value.trim().toLowerCase() === trimmed.toLowerCase());
+    return candidates.some(value => value.trim().toLowerCase() === normalized);
   });
   const timeFrame = matchedSetting?.timeFrame && matchedSetting.timeFrame !== '-' ? matchedSetting.timeFrame : '';
+  if (timeFrame) return `${trimmed} (${timeFrame})`;
 
-  return timeFrame ? `${trimmed} (${timeFrame})` : trimmed;
+  const standardMatch = STANDARD_SHIFTS.find(option => {
+    const base = option.replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
+    return option.toLowerCase() === normalized || base === normalized;
+  });
+  if (standardMatch) return standardMatch;
+
+  return trimmed;
 }
 
 function splitProductionProductCodes(raw: string): string[] {
@@ -8579,6 +9040,10 @@ function buildProductionEntryLine(
     quantity: remaining > 0 ? String(remaining) : '',
     unit: unit || getOrderProductUnit(orders, orderRef, productCode)
   };
+}
+
+function autofillProductKey(orderRef: string, productCode: string) {
+  return `${orderRef}::${productCode}`;
 }
 
 function listProductOptionsForOrder(
@@ -8753,6 +9218,9 @@ function AddProductionOrderModal({
   const [showAutofillOrders, setShowAutofillOrders] = useState(false);
   const [autofillSearch, setAutofillSearch] = useState('');
   const [selectedAutofillOrderCodes, setSelectedAutofillOrderCodes] = useState<string[]>([]);
+  const [selectedAutofillProductKeys, setSelectedAutofillProductKeys] = useState<string[]>([]);
+  const [autofillProductOrderFilter, setAutofillProductOrderFilter] = useState('all');
+  const [autofillProductSearch, setAutofillProductSearch] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -8762,6 +9230,9 @@ function AddProductionOrderModal({
     setShowAutofillOrders(false);
     setAutofillSearch('');
     setSelectedAutofillOrderCodes([]);
+    setSelectedAutofillProductKeys([]);
+    setAutofillProductOrderFilter('all');
+    setAutofillProductSearch('');
     setIsLoadingLookups(true);
 
     const loadLookups = async () => {
@@ -8879,10 +9350,76 @@ function AddProductionOrderModal({
       .sort((a, b) => a.orderCode.localeCompare(b.orderCode, 'vi'));
   }, [autofillSearch, orders]);
 
-  const toggleAutofillOrderCode = (orderCode: string) => {
-    setSelectedAutofillOrderCodes(prev =>
-      prev.includes(orderCode) ? prev.filter(code => code !== orderCode) : [...prev, orderCode]
+  const autofillProductCandidates = useMemo(() => {
+    return selectedAutofillOrderCodes.flatMap(orderRef =>
+      listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef)
+        .filter(product => product.orderQty > 0 && product.remainingQty > 0)
+        .map(product => ({
+          key: autofillProductKey(orderRef, product.code),
+          orderRef,
+          productCode: product.code,
+          productName: product.name,
+          unit: product.unit,
+          remainingQty: product.remainingQty
+        }))
     );
+  }, [selectedAutofillOrderCodes, orders, productionOrders, catalogProducts]);
+
+  const autofillOrderFilterOptions = useMemo(
+    () => [
+      { value: 'all', label: `Tất cả đơn đã chọn (${selectedAutofillOrderCodes.length})` },
+      ...selectedAutofillOrderCodes.map(orderCode => ({ value: orderCode, label: orderCode }))
+    ],
+    [selectedAutofillOrderCodes]
+  );
+
+  const filteredAutofillProducts = useMemo(() => {
+    const byOrder =
+      autofillProductOrderFilter === 'all'
+        ? autofillProductCandidates
+        : autofillProductCandidates.filter(item => item.orderRef === autofillProductOrderFilter);
+
+    const normalized = autofillProductSearch.trim().toLowerCase();
+    if (!normalized) return byOrder;
+
+    return byOrder.filter(item =>
+      `${item.productCode} ${item.productName} ${item.orderRef} ${item.unit}`
+        .toLowerCase()
+        .includes(normalized)
+    );
+  }, [autofillProductCandidates, autofillProductOrderFilter, autofillProductSearch]);
+
+  const allFilteredProductsSelected =
+    filteredAutofillProducts.length > 0 &&
+    filteredAutofillProducts.every(item => selectedAutofillProductKeys.includes(item.key));
+
+  const toggleAutofillOrderCode = (orderCode: string) => {
+    setSelectedAutofillOrderCodes(prev => {
+      const isSelected = prev.includes(orderCode);
+      if (isSelected) {
+        setSelectedAutofillProductKeys(keys =>
+          keys.filter(key => !key.startsWith(`${orderCode}::`))
+        );
+        setAutofillProductOrderFilter(current => (current === orderCode ? 'all' : current));
+        return prev.filter(code => code !== orderCode);
+      }
+      return [...prev, orderCode];
+    });
+  };
+
+  const toggleAutofillProductKey = (key: string) => {
+    setSelectedAutofillProductKeys(prev =>
+      prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]
+    );
+  };
+
+  const toggleAutofillSelectAllFiltered = () => {
+    const keys = filteredAutofillProducts.map(item => item.key);
+    if (allFilteredProductsSelected) {
+      setSelectedAutofillProductKeys(prev => prev.filter(key => !keys.includes(key)));
+      return;
+    }
+    setSelectedAutofillProductKeys(prev => [...new Set([...prev, ...keys])]);
   };
 
   const applyAutofillOrders = () => {
@@ -8892,27 +9429,27 @@ function AddProductionOrderModal({
       return;
     }
 
-    const nextLines = selectedCodes.flatMap(orderRef =>
-      listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef)
-        .filter(product => product.orderQty > 0 && product.remainingQty > 0)
-        .map(product => ({
-          key: `entry-${orderRef}-${product.code}-${Math.random().toString(36).slice(2, 7)}`,
-          orderRef,
-          ...buildProductionEntryLine(
-            orders,
-            productionOrders,
-            orderRef,
-            product.code,
-            product.name,
-            product.unit
-          )
-        }))
+    const selectedProducts = autofillProductCandidates.filter(item =>
+      selectedAutofillProductKeys.includes(item.key)
     );
 
-    if (nextLines.length === 0) {
-      setFormError('Các đơn đã chọn không còn sản phẩm có số lượng cần lập lệnh SX.');
+    if (selectedProducts.length === 0) {
+      setFormError('Vui lòng chọn ít nhất một sản phẩm trong đơn hàng.');
       return;
     }
+
+    const nextLines = selectedProducts.map(product => ({
+      key: `entry-${product.orderRef}-${product.productCode}-${Math.random().toString(36).slice(2, 7)}`,
+      orderRef: product.orderRef,
+      ...buildProductionEntryLine(
+        orders,
+        productionOrders,
+        product.orderRef,
+        product.productCode,
+        product.productName,
+        product.unit
+      )
+    }));
 
     setForm(prev => ({
       ...prev,
@@ -9363,7 +9900,7 @@ function AddProductionOrderModal({
               <div>
                 <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                  Tick nhiều đơn, hệ thống lấy toàn bộ sản phẩm còn cần SX.
+                  Chọn đơn hàng, sau đó tick sản phẩm cần lập lệnh SX.
                 </p>
               </div>
               <button
@@ -9387,7 +9924,7 @@ function AddProductionOrderModal({
               </label>
             </div>
 
-            <div className="max-h-[48vh] overflow-y-auto p-4">
+            <div className="max-h-[34vh] overflow-y-auto p-4">
               {autofillOrderOptions.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
                   Không có đơn hàng phù hợp.
@@ -9431,14 +9968,107 @@ function AddProductionOrderModal({
               )}
             </div>
 
+            {selectedAutofillOrderCodes.length > 0 && (
+              <div className="border-t border-zinc-100 bg-zinc-50/80 p-4">
+                <p className="mb-2 text-xs font-black uppercase tracking-wider text-zinc-500">Chọn sản phẩm trong đơn</p>
+                <div className="flex flex-col gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="min-w-0 space-y-1.5">
+                      <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lọc theo đơn hàng</span>
+                      <SearchableSelect
+                        value={autofillProductOrderFilter}
+                        onChange={setAutofillProductOrderFilter}
+                        options={autofillOrderFilterOptions}
+                        placeholder="Gõ để tìm đơn hàng"
+                        getValue={item => String((item as { value: string }).value)}
+                        getLabel={item => String((item as { label: string }).label)}
+                        allowEmpty={false}
+                        inputClassName={`${orderFieldClass} bg-white`}
+                      />
+                    </label>
+                    <label className="min-w-0 space-y-1.5">
+                      <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tìm sản phẩm</span>
+                      <div className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+                        <Search className="h-4 w-4 shrink-0 text-zinc-400" />
+                        <input
+                          value={autofillProductSearch}
+                          onChange={event => setAutofillProductSearch(event.target.value)}
+                          placeholder="Gõ mã SP, tên hàng, mã đơn..."
+                          className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                        />
+                      </div>
+                    </label>
+                  </div>
+                  <label className="flex h-11 w-fit cursor-pointer items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredProductsSelected}
+                      onChange={toggleAutofillSelectAllFiltered}
+                      disabled={filteredAutofillProducts.length === 0}
+                      className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:opacity-50"
+                    />
+                    <span className="text-xs font-extrabold text-zinc-700">Chọn tất cả (đang lọc)</span>
+                  </label>
+                </div>
+
+                <div className="mt-3 max-h-[28vh] overflow-y-auto rounded-xl border border-zinc-200 bg-white">
+                  {filteredAutofillProducts.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-xs font-bold text-zinc-400">
+                      {autofillProductSearch.trim()
+                        ? 'Không có sản phẩm phù hợp từ khóa tìm kiếm.'
+                        : 'Đơn đã chọn không còn sản phẩm cần lập lệnh SX.'}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-zinc-100">
+                      {filteredAutofillProducts.map(product => {
+                        const checked = selectedAutofillProductKeys.includes(product.key);
+                        return (
+                          <label
+                            key={product.key}
+                            className={`flex cursor-pointer items-start gap-3 px-3 py-2.5 transition ${
+                              checked ? 'bg-red-50/70' : 'hover:bg-zinc-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAutofillProductKey(product.key)}
+                              className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-black text-zinc-950">{product.productCode}</span>
+                                <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-black text-zinc-600">
+                                  {product.orderRef}
+                                </span>
+                                <span className="text-[11px] font-bold text-emerald-700">
+                                  Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 text-xs font-semibold text-zinc-600">{product.productName || '-'}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
               <span className="text-xs font-bold text-zinc-500">
-                Đã chọn {selectedAutofillOrderCodes.length} đơn hàng
+                Đã chọn {selectedAutofillOrderCodes.length} đơn · {selectedAutofillProductKeys.length} sản phẩm
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedAutofillOrderCodes([])}
+                  onClick={() => {
+                    setSelectedAutofillOrderCodes([]);
+                    setSelectedAutofillProductKeys([]);
+                    setAutofillProductOrderFilter('all');
+                    setAutofillProductSearch('');
+                  }}
                   className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
                 >
                   Bỏ chọn
@@ -9875,7 +10505,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
   const [loadError, setLoadError] = useState('');
   const [viewingRow, setViewingRow] = useState<ProductionOrderRow | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
+  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
 
   const loadProductionOrders = async () => {
     setIsLoading(true);
@@ -10120,6 +10750,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
           materials={printingMaterials}
           machineLabel={printingMachineLabel}
           product={printingProduct}
+          shiftSettings={shiftSettings}
         />
       )}
     </div>
@@ -10677,8 +11308,8 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div className="flex max-h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 shrink-0">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
                   {formMode === 'edit' ? 'Sửa đơn hàng' : 'Thêm đơn hàng mới'}
@@ -10698,7 +11329,8 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                 {formError || lookupError}
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3 p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3 p-4">
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn *</span>
                 <input
@@ -10862,8 +11494,9 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   <option key={unit} value={unit} />
                 ))}
               </datalist>
+              </div>
             </div>
-            <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
               <button
                 type="button"
                 onClick={closeForm}
@@ -11850,24 +12483,7 @@ function DashboardWindow({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {tertiaryAction && (
-            <button
-              type="button"
-              onClick={tertiaryAction.onClick}
-              disabled={tertiaryAction.disabled || tertiaryAction.loading}
-              className="rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {tertiaryAction.loading ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Đang in...
-                </span>
-              ) : (
-                tertiaryAction.label
-              )}
-            </button>
-          )}
+        <div className="flex shrink-0 flex-row flex-wrap items-center justify-end gap-1.5">
           {secondaryAction && (
             <button
               type="button"
@@ -11882,6 +12498,23 @@ function DashboardWindow({
                 </span>
               ) : (
                 secondaryAction.label
+              )}
+            </button>
+          )}
+          {tertiaryAction && (
+            <button
+              type="button"
+              onClick={tertiaryAction.onClick}
+              disabled={tertiaryAction.disabled || tertiaryAction.loading}
+              className="rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {tertiaryAction.loading ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Đang in...
+                </span>
+              ) : (
+                tertiaryAction.label
               )}
             </button>
           )}
@@ -11966,7 +12599,7 @@ function ControlBoardPanel({
   const [printingBatchOrders, setPrintingBatchOrders] = useState<PrintableProductionOrder[]>([]);
   const [pendingBatchPrint, setPendingBatchPrint] = useState(false);
   const [isBatchPrinting, setIsBatchPrinting] = useState(false);
-  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
+  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
 
   const loadBoard = async () => {
     setIsLoading(true);
@@ -12767,10 +13400,13 @@ function ControlBoardPanel({
           materials={printingMaterials}
           machineLabel={printingMachineLabel}
           product={printingProduct}
+          shiftSettings={shiftSettings}
         />
       )}
 
-      {printingBatchOrders.length > 0 && <ProductionOrderBatchPrintSheets items={printingBatchOrders} />}
+      {printingBatchOrders.length > 0 && (
+        <ProductionOrderBatchPrintSheets items={printingBatchOrders} shiftSettings={productionOrderSettings} />
+      )}
     </div>
   );
 }
@@ -13803,41 +14439,8 @@ export default function App() {
         />
       </aside>
 
-      <div
-        className={`flex min-h-0 flex-1 flex-col overflow-hidden ${
-          activeTab === 'control-board'
-            ? 'p-0'
-            : activeTab === 'hr' ||
-                activeTab === 'products' ||
-                activeTab === 'machines' ||
-                activeTab === 'materials' ||
-                activeTab === 'warehouse-slip' ||
-                activeTab === 'warehouse-history' ||
-                activeTab === 'orders' ||
-                activeTab === 'customers' ||
-                activeTab === 'production-orders' ||
-                activeTab === 'production-plan-history' ||
-                activeTab === 'settings' ||
-                activeTab === 'mixing-report' ||
-                activeTab === 'mixing-report-list' ||
-                activeTab === 'machine-nvl-report' ||
-                activeTab === 'machine-downtime-report' ||
-                activeTab === 'machine-downtime-list' ||
-                activeTab === 'acceptance-report' ||
-                activeTab === 'acceptance-report-list' ||
-                activeTab === 'report-lists'
-              ? 'sm:p-4'
-              : 'sm:py-6 sm:px-4'
-        }`}
-      >
-        {/* Smartphone framework emulator on Wide Screens, fullscreen and intuitive on small touch screens */}
-        <div className={`mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white ${
-        activeTab === 'control-board'
-          ? 'max-w-none'
-          : activeTab === 'hr' || activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'orders' || activeTab === 'customers' || activeTab === 'production-orders' || activeTab === 'production-plan-history' || activeTab === 'settings' || activeTab === 'mixing-report' || activeTab === 'mixing-report-list' || activeTab === 'machine-nvl-report' || activeTab === 'machine-downtime-report' || activeTab === 'machine-downtime-list' || activeTab === 'acceptance-report' || activeTab === 'acceptance-report-list' || activeTab === 'report-lists'
-          ? 'max-w-none sm:rounded-2xl sm:shadow-2xl sm:border sm:border-zinc-800'
-          : 'max-w-4xl sm:rounded-3xl sm:shadow-2xl sm:border sm:border-zinc-800'
-      }`}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
+        <div className="mx-auto flex min-h-0 w-full max-w-none flex-1 flex-col overflow-hidden bg-white">
         
         {/* Device Status Header / Bar */}
         <header className="sticky top-0 z-40 bg-white border-b-4 border-[#ef1b2d] px-4 py-3 shrink-0 flex items-center justify-between pt-safe">
