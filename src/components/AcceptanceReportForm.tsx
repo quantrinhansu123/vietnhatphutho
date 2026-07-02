@@ -12,6 +12,7 @@ import {
   X
 } from 'lucide-react';
 import ProductQrScanner from './ProductQrScanner';
+import SearchableSelect from './SearchableSelect';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 
 export type AcceptanceReport = {
@@ -43,6 +44,12 @@ interface ProductionOrderOption {
   productName: string;
   unit: string;
   startDate: string;
+}
+
+interface ProductSelectOption {
+  code: string;
+  name: string;
+  unit: string;
 }
 
 const inputClass =
@@ -107,10 +114,34 @@ function lineHasProductCode(line: ProductLine, code: string) {
   return normalizeKey(parseQrProductCode(line.mat_hang)) === target;
 }
 
-function findProductOption(code: string, options: Array<{ code: string; unit: string }>) {
-  const key = normalizeKey(code);
+function findProductOption(code: string, options: ProductSelectOption[]) {
+  const key = normalizeKey(parseQrProductCode(code));
   if (!key) return null;
   return options.find(option => normalizeKey(option.code) === key) ?? null;
+}
+
+function normalizeCatalogProducts(data: unknown): ProductSelectOption[] {
+  const rows = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && Array.isArray((data as { products?: unknown }).products)
+      ? (data as { products: unknown[] }).products
+      : [];
+
+  return rows
+    .map((item): ProductSelectOption | null => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const code = String(
+        record.ma_sp ?? record.ma_san_pham ?? record.productCode ?? record.code ?? ''
+      ).trim();
+      const name = String(
+        record.ten_sp ?? record.ten_san_pham ?? record.productName ?? record.name ?? ''
+      ).trim();
+      const unit = String(record.don_vi ?? record.unit ?? '').trim();
+      if (!code) return null;
+      return { code, name, unit };
+    })
+    .filter((item): item is ProductSelectOption => Boolean(item));
 }
 
 function isBlankProductLine(line: ProductLine) {
@@ -253,6 +284,8 @@ export default function AcceptanceReportForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrderOption[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<ProductSelectOption[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [form, setForm] = useState(newReportForm());
   const formLinesRef = useRef(form.lines);
   formLinesRef.current = form.lines;
@@ -270,20 +303,29 @@ export default function AcceptanceReportForm({
     (async () => {
       setError('');
       try {
-        const [machineRes, productionRes] = await Promise.all([
+        const [machineRes, productionRes, productRes] = await Promise.all([
           fetch('/api/danh-sach-may'),
-          fetch('/api/lenh-sx')
+          fetch('/api/lenh-sx'),
+          fetch('/api/san-pham?format=table')
         ]);
         const machineData = await machineRes.json().catch(() => ({}));
         const productionData = await productionRes.json().catch(() => ({}));
+        const productData = await productRes.json().catch(() => ({}));
         if (!machineRes.ok) throw new Error(machineData.error || 'Không thể tải danh sách máy.');
         if (!productionRes.ok) throw new Error(productionData.error || 'Không thể tải lệnh sản xuất.');
         if (cancelled) return;
 
         setMachines(normalizeMachines(machineData));
         setProductionOrders(normalizeProductionOrders(productionData));
+        if (productRes.ok) {
+          setCatalogProducts(normalizeCatalogProducts(productData));
+        } else {
+          setCatalogProducts([]);
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Không thể tải dữ liệu.');
+      } finally {
+        if (!cancelled) setIsLoadingProducts(false);
       }
     })();
 
@@ -324,10 +366,10 @@ export default function AcceptanceReportForm({
     [machines]
   );
 
-  const productOptions = useMemo(() => {
-    if (!form.ca || (!form.ma_may.trim() && !form.ten_may.trim())) return [];
+  const orderProductOptions = useMemo(() => {
+    if (!form.ca || (!form.ma_may.trim() && !form.ten_may.trim())) return [] as ProductSelectOption[];
 
-    const items = ordersForSelectedDay
+    return ordersForSelectedDay
       .filter(
         order =>
           shiftMatches(order.shift, form.ca) &&
@@ -335,21 +377,34 @@ export default function AcceptanceReportForm({
       )
       .map(order => ({
         code: productCodeFromOrder(order),
-        unit: order.unit
+        name: order.productName,
+        unit: order.unit && order.unit !== '-' ? order.unit : ''
       }))
       .filter(item => item.code && item.code !== '-');
+  }, [ordersForSelectedDay, form.ca, form.ma_may, form.ten_may, form.machineRef]);
 
-    const byCode = new Map<string, string>();
-    items.forEach(item => {
-      if (!byCode.has(item.code)) {
-        byCode.set(item.code, item.unit);
-      }
+  const productSelectOptions = useMemo(() => {
+    const byCode = new Map<string, ProductSelectOption>();
+
+    catalogProducts.forEach(product => {
+      const key = normalizeKey(product.code);
+      if (!key) return;
+      byCode.set(key, product);
     });
 
-    return [...byCode.entries()]
-      .map(([code, unit]) => ({ code, unit }))
-      .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
-  }, [ordersForSelectedDay, form.ca, form.ma_may, form.ten_may, form.machineRef]);
+    orderProductOptions.forEach(product => {
+      const key = normalizeKey(product.code);
+      if (!key) return;
+      const existing = byCode.get(key);
+      byCode.set(key, {
+        code: product.code,
+        name: product.name || existing?.name || '',
+        unit: product.unit || existing?.unit || ''
+      });
+    });
+
+    return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+  }, [catalogProducts, orderProductOptions]);
 
   const handleDateChange = (ngay: string) => {
     setForm(prev => ({
@@ -406,7 +461,7 @@ export default function AcceptanceReportForm({
       return;
     }
 
-    const match = findProductOption(mat_hang, productOptions);
+    const match = findProductOption(mat_hang, productSelectOptions);
     setForm(prev => ({
       ...prev,
       lines: prev.lines.map(line =>
@@ -444,7 +499,7 @@ export default function AcceptanceReportForm({
         return false;
       }
 
-      const unit = findProductOption(code, productOptions)?.unit ?? '';
+      const unit = findProductOption(code, productSelectOptions)?.unit ?? '';
 
       let targetLineId = '';
       let result: boolean | 'incremented' = false;
@@ -509,7 +564,7 @@ export default function AcceptanceReportForm({
       setMessage(`Đã thêm mã SP: ${code}`);
       return true;
     },
-    [productOptions]
+    [productSelectOptions]
   );
 
   const getQrConfirmMessage = useCallback((code: string) => {
@@ -814,25 +869,42 @@ export default function AcceptanceReportForm({
               ) : null
             }
             columns={[
-              { key: 'mat_hang', label: 'Mã SP', className: 'min-w-[220px] flex-[2]', required: true },
+              { key: 'mat_hang', label: 'Mã SP', className: 'min-w-[180px] flex-[1.2]', required: true },
+              { key: 'ten_sp', label: 'Tên SP', className: 'min-w-[220px] flex-[1.5]' },
               { key: 'don_vi', label: 'ĐVT', className: 'w-20' },
               { key: 'so_luong', label: 'SL', className: 'w-28', required: true },
               { key: 'actions', label: '', className: 'w-10' }
             ]}
           >
-            {form.lines.map((line, index) => (
+            {form.lines.map((line, index) => {
+              const matchedProduct = findProductOption(line.mat_hang, productSelectOptions);
+              return (
               <RepeatableLineRow
                 key={line.id}
                 className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
               >
-                <div className="min-w-[220px] flex-[2]">
-                  <input
-                    list="acceptance-product-code-options"
+                <div className="min-w-[180px] flex-[1.2]">
+                  <SearchableSelect
                     value={line.mat_hang}
-                    onChange={e => handleLineProductChange(line.id, e.target.value)}
-                    className={inputClass}
-                    placeholder="Mã SP"
-                    aria-label="Mã SP"
+                    onChange={code => handleLineProductChange(line.id, code)}
+                    options={productSelectOptions}
+                    placeholder="Gõ để tìm mã SP"
+                    isLoading={isLoadingProducts}
+                    inputClassName={inputClass}
+                    getValue={item => (item as ProductSelectOption).code}
+                    getLabel={item => {
+                      const product = item as ProductSelectOption;
+                      return product.name ? `${product.code} · ${product.name}` : product.code;
+                    }}
+                  />
+                </div>
+                <div className="min-w-[220px] flex-[1.5]">
+                  <input
+                    value={matchedProduct?.name || ''}
+                    readOnly
+                    className={`${inputClass} bg-zinc-50 text-zinc-700`}
+                    placeholder="Tự động theo mã SP"
+                    aria-label="Tên SP"
                   />
                 </div>
                 <div className="w-20">
@@ -865,13 +937,9 @@ export default function AcceptanceReportForm({
                   </button>
                 )}
               </RepeatableLineRow>
-            ))}
+            );
+            })}
           </RepeatableLinesBlock>
-          <datalist id="acceptance-product-code-options">
-            {productOptions.map(option => (
-              <option key={option.code} value={option.code} />
-            ))}
-          </datalist>
 
           <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>

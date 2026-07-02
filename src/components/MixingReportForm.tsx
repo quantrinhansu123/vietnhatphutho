@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CalendarDays,
   ChevronLeft,
+  ClipboardCheck,
   ClipboardList,
   Clock3,
   Cpu,
@@ -16,6 +18,30 @@ import {
 } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber, parseMoneyInput } from '../utils';
+import MixingProductionOrderAutofillModal from './MixingProductionOrderAutofillModal';
+import {
+  normalizeMixingCatalogProducts,
+  normalizeMixingProductionOrders,
+  type MixingCatalogProduct,
+  type MixingProductionOrder
+} from '../utils/mixingOrderAutofill';
+import {
+  applyMixingRoundAutofill,
+  deriveLineUnit,
+  getRoundBatchWeightFromLines,
+  listRoundMaterialEntries,
+  mixingRoundColumnLabel,
+  normalizeChiTietLines,
+  parseBatchWeightInput,
+  removeMaterialFromRound,
+  setRoundBatchWeightOnLines,
+  upsertMaterialInRound
+} from '../lib/mixingReportModel';
+import {
+  getProductionShiftOptions,
+  normalizeShiftSettings,
+  type ShiftSetting
+} from '../utils/shiftSettings';
 
 const ROUND_KEYS = ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const;
 type RoundKey = (typeof ROUND_KEYS)[number];
@@ -26,6 +52,11 @@ export type MixingRoundItem = {
   don_vi: string;
   so_luong: number | null;
   ti_le_phan_tram: number | null;
+};
+
+export type MixingRoundPhoto = {
+  url: string;
+  public_id?: string;
 };
 
 export type MixingPhoiTron = {
@@ -62,6 +93,7 @@ export type MixingReport = {
   so_lan: number;
   thuc_te_su_dung: number | null;
   ghi_chu: string;
+  hinh_anh_theo_lan?: Partial<Record<RoundKey, MixingRoundPhoto[]>>;
   chi_tiet: MixingReportLine[];
   created_at?: string;
 };
@@ -79,13 +111,6 @@ interface MaterialOption {
   unit: string;
 }
 
-interface ProductionOrderOption {
-  shift: string;
-  staff: string;
-  machine: string;
-  startDate: string;
-}
-
 function normalizeKey(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '');
 }
@@ -95,27 +120,6 @@ function extractIsoDate(value: string) {
   if (!trimmed || trimmed === '-') return '';
   const match = trimmed.match(/\d{4}-\d{2}-\d{2}/);
   return match ? match[0] : '';
-}
-
-function normalizeProductionOrders(data: unknown): ProductionOrderOption[] {
-  if (!data || typeof data !== 'object') return [];
-  const rows = (data as { productionOrders?: unknown }).productionOrders;
-  if (!Array.isArray(rows)) return [];
-
-  return rows
-    .map((item): ProductionOrderOption | null => {
-      if (!item || typeof item !== 'object') return null;
-      const record = item as Record<string, unknown>;
-      const shift = String(record.ca ?? record.shift ?? '').trim();
-      const staff = String(record.nhan_su ?? record.cong_nhan ?? record.staff ?? '').trim();
-      const machine = String(record.may ?? record.ma_may ?? record.ten_may ?? record.machine ?? '').trim();
-      const startDate = extractIsoDate(
-        String(record.ngay_gio_bat_dau ?? record.ngay_bat_dau ?? record.ngay_san_xuat ?? record.start_date ?? '')
-      );
-      if (!shift && !staff && !machine && !startDate) return null;
-      return { shift, staff, machine, startDate };
-    })
-    .filter((row): row is ProductionOrderOption => Boolean(row));
 }
 
 function shiftMatches(orderShift: string, selectedShift: string) {
@@ -139,24 +143,17 @@ function machineMatches(
   if (machineName) candidates.add(normalizeKey(machineName));
   if (machineCode && machineName) candidates.add(normalizeKey(`${machineCode} · ${machineName}`));
 
-  const linked = machines.find(
-    machine =>
-      machine.code === machineCode ||
-      machine.name === machineName ||
-      machine.code === ref ||
-      machine.name === ref
-  );
-  if (linked) {
-    candidates.add(normalizeKey(linked.code));
-    candidates.add(normalizeKey(linked.name));
-  }
+  machines.forEach(machine => {
+    candidates.add(normalizeKey(machine.code));
+    candidates.add(normalizeKey(machine.name));
+  });
 
   const refKey = normalizeKey(ref);
   return [...candidates].some(key => key && (key === refKey || key.includes(refKey) || refKey.includes(key)));
 }
 
-function resolveStaffFromOrders(
-  orders: ProductionOrderOption[],
+function resolveStaffFromProductionOrders(
+  orders: MixingProductionOrder[],
   ngay: string,
   ca: string,
   maMay: string,
@@ -164,8 +161,9 @@ function resolveStaffFromOrders(
   machines: MachineOption[]
 ) {
   const matched = orders.filter(order => {
-    if (order.startDate && order.startDate !== ngay) return false;
-    if (!shiftMatches(order.shift, ca)) return false;
+    const orderDate = extractIsoDate(order.startDate);
+    if (ngay && orderDate && orderDate !== ngay) return false;
+    if (ca && !shiftMatches(order.shift, ca)) return false;
     return machineMatches(order.machine, maMay, tenMay, machines);
   });
 
@@ -391,17 +389,18 @@ function newReportForm(): Omit<MixingReport, 'id' | 'created_at'> {
     so_lan: 3,
     thuc_te_su_dung: null,
     ghi_chu: '',
+    hinh_anh_theo_lan: {},
     chi_tiet: []
   };
 }
 
-function roundColumnLabel(roundIndex: number, totalRounds: number) {
-  if (totalRounds === 1) return 'KL mẻ';
-  return `KL mẻ ${roundIndex + 1}`;
+function roundColumnLabel(roundIndex: number) {
+  return mixingRoundColumnLabel(roundIndex);
 }
 
 function roundSectionLabel(roundIndex: number, totalRounds: number) {
-  return roundColumnLabel(roundIndex, totalRounds);
+  if (totalRounds === 1) return 'KL mẻ';
+  return `KL mẻ ${roundIndex + 1}`;
 }
 
 function MixingRoundItemFormModal({
@@ -879,7 +878,18 @@ export default function MixingReportForm({
 }) {
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
-  const [productionOrders, setProductionOrders] = useState<ProductionOrderOption[]>([]);
+  const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<MixingCatalogProduct[]>([]);
+  const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
+  const [activeRoundCount, setActiveRoundCount] = useState(0);
+  const [roundBatchWeightDrafts, setRoundBatchWeightDrafts] = useState<Partial<Record<RoundKey, string>>>({});
+  const [productionAutofillRoundKey, setProductionAutofillRoundKey] = useState<RoundKey | null>(null);
+  const [roundItemModal, setRoundItemModal] = useState<{
+    roundKey: RoundKey;
+    edit?: { lineIndex: number; itemIndex: number };
+    draft: MixingRoundItem;
+    error: string;
+  } | null>(null);
   const [form, setForm] = useState(newReportForm());
   const [nhanSuManual, setNhanSuManual] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -889,19 +899,21 @@ export default function MixingReportForm({
   const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
   const [lineDraft, setLineDraft] = useState<MixingReportLine>(emptyLine(1));
   const [lineModalError, setLineModalError] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [photoLineIndex, setPhotoLineIndex] = useState<number | null>(null);
-  const [uploadingLineIndex, setUploadingLineIndex] = useState<number | null>(null);
+  const [uploadingRoundKey, setUploadingRoundKey] = useState<RoundKey | null>(null);
 
   const loadReferenceData = async () => {
-    const [machineRes, materialRes, productionRes] = await Promise.all([
+    const [machineRes, materialRes, productionRes, productRes, settingRes] = await Promise.all([
       fetch('/api/danh-sach-may'),
       fetch('/api/kho-nvl'),
-      fetch('/api/lenh-sx')
+      fetch('/api/lenh-sx'),
+      fetch('/api/san-pham?format=table'),
+      fetch('/api/cai-dat')
     ]);
     const machineData = await machineRes.json().catch(() => ({}));
     const materialData = await materialRes.json().catch(() => ({}));
     const productionData = await productionRes.json().catch(() => ({}));
+    const productData = await productRes.json().catch(() => ({}));
+    const settingData = await settingRes.json().catch(() => ({}));
     if (!machineRes.ok) throw new Error(machineData.error || 'Không thể tải danh sách máy.');
     if (!materialRes.ok) throw new Error(materialData.error || 'Không thể tải kho NVL.');
     if (!productionRes.ok) throw new Error(productionData.error || 'Không thể tải lệnh sản xuất.');
@@ -927,7 +939,9 @@ export default function MixingReportForm({
         .filter(item => item.code || item.name)
     );
 
-    setProductionOrders(normalizeProductionOrders(productionData));
+    setProductionOrders(normalizeMixingProductionOrders(productionData));
+    if (productRes.ok) setCatalogProducts(normalizeMixingCatalogProducts(productData));
+    if (settingRes.ok) setShiftSettings(normalizeShiftSettings(settingData));
   };
 
   useEffect(() => {
@@ -948,20 +962,13 @@ export default function MixingReportForm({
     };
   }, []);
 
-  const shiftOptions = useMemo(() => {
-    const shifts = productionOrders
-      .filter(order => order.startDate === form.ngay)
-      .map(order => order.shift)
-      .filter(shift => shift && shift !== '-');
-
-    return [...new Set(shifts)].sort((a, b) => a.localeCompare(b, 'vi'));
-  }, [productionOrders, form.ngay]);
+  const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
   useEffect(() => {
     if (nhanSuManual || !form.ca.trim()) return;
     if (!form.ma_may.trim() && !form.ten_may.trim()) return;
 
-    const staff = resolveStaffFromOrders(
+    const staff = resolveStaffFromProductionOrders(
       productionOrders,
       form.ngay,
       form.ca,
@@ -982,6 +989,19 @@ export default function MixingReportForm({
       })),
     [form.chi_tiet]
   );
+
+  const expandedLineCount = useMemo(
+    () => normalizeChiTietLines(form.chi_tiet).length,
+    [form.chi_tiet]
+  );
+
+  useEffect(() => {
+    if (expandedLineCount === form.chi_tiet.length) return;
+    setForm(prev => ({
+      ...prev,
+      chi_tiet: normalizeChiTietLines(prev.chi_tiet)
+    }));
+  }, [expandedLineCount, form.chi_tiet.length]);
 
   const computedActualUsage = useMemo(
     () => round2(computedLines.reduce((sum, line) => sum + (line.tong_nhua_tron ?? 0), 0)),
@@ -1018,36 +1038,135 @@ export default function MixingReportForm({
 
   const handleDateChange = (ngay: string) => {
     setNhanSuManual(false);
-    const shiftsForDay = new Set(
-      productionOrders
-        .filter(order => order.startDate === ngay)
-        .map(order => order.shift)
-        .filter(shift => shift && shift !== '-')
-    );
     setForm(prev => ({
       ...prev,
       ngay,
-      ca: prev.ca && shiftsForDay.has(prev.ca) ? prev.ca : '',
-      nhan_su: prev.ca && shiftsForDay.has(prev.ca) ? prev.nhan_su : ''
+      nhan_su: ''
     }));
   };
 
-  const activeRoundCount = useMemo(() => {
+  const displayedRoundCount = useMemo(() => {
     const fromLines = computedLines.reduce(
       (max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)),
-      1
+      0
     );
-    if (lineModalOpen) {
-      return Math.max(fromLines, visibleRoundCount(lineDraft.lan_su_dung));
-    }
-    return fromLines;
-  }, [computedLines, lineModalOpen, lineDraft.lan_su_dung]);
+    return Math.min(5, Math.max(activeRoundCount, fromLines));
+  }, [activeRoundCount, computedLines]);
 
-  const openAddLineModal = () => {
-    setEditingLineIndex(null);
-    setLineDraft(emptyLine(form.chi_tiet.length + 1));
-    setLineModalError('');
-    setLineModalOpen(true);
+  useEffect(() => {
+    const fromLines = form.chi_tiet.reduce(
+      (max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)),
+      0
+    );
+    if (fromLines > activeRoundCount) {
+      setActiveRoundCount(fromLines);
+    }
+  }, [form.chi_tiet, activeRoundCount]);
+
+  const addRound = () => {
+    if (activeRoundCount >= 5) return;
+    const next = activeRoundCount + 1;
+    setActiveRoundCount(next);
+    setForm(prev => ({ ...prev, so_lan: Math.max(prev.so_lan, next) }));
+  };
+
+  const resolveRoundBatchWeight = (
+    chi_tiet: MixingReportLine[],
+    roundKey: RoundKey,
+    drafts: Partial<Record<RoundKey, string>> = roundBatchWeightDrafts
+  ) => {
+    const fromLines = getRoundBatchWeightFromLines(chi_tiet, roundKey);
+    if (fromLines !== null) return fromLines;
+    const draft = drafts[roundKey];
+    if (draft !== undefined && draft.trim()) {
+      return parseBatchWeightInput(draft);
+    }
+    return null;
+  };
+
+  const getRoundBatchWeightInputValue = (roundKey: RoundKey) => {
+    if (roundBatchWeightDrafts[roundKey] !== undefined) {
+      return roundBatchWeightDrafts[roundKey] ?? '';
+    }
+    const fromLines = getRoundBatchWeightFromLines(form.chi_tiet, roundKey);
+    return fromLines !== null ? String(fromLines) : '';
+  };
+
+  const handleRoundBatchWeightChange = (roundKey: RoundKey, value: string) => {
+    setRoundBatchWeightDrafts(prev => ({ ...prev, [roundKey]: value }));
+    setForm(prev => ({
+      ...prev,
+      chi_tiet:
+        prev.chi_tiet.length > 0
+          ? setRoundBatchWeightOnLines(prev.chi_tiet, roundKey, value)
+          : prev.chi_tiet
+    }));
+  };
+
+  const openProductionOrderAutofill = (roundKey: RoundKey) => {
+    setMessage('');
+    if (!form.ma_may.trim() && !form.ten_may.trim()) {
+      setError('Vui lòng chọn máy ở phần thông tin phía trên trước khi lấy NVL theo Lệnh sản xuất.');
+      return;
+    }
+    setError('');
+    setProductionAutofillRoundKey(roundKey);
+  };
+
+  const openRoundMaterialModal = (roundKey: RoundKey, edit?: { lineIndex: number; itemIndex: number }) => {
+    const existing =
+      edit &&
+      form.chi_tiet[edit.lineIndex] &&
+      getRoundItems(form.chi_tiet[edit.lineIndex].lan_su_dung, roundKey)[edit.itemIndex];
+    setRoundItemModal({
+      roundKey,
+      edit,
+      draft: existing ? { ...existing } : emptyRoundItem(),
+      error: ''
+    });
+  };
+
+  const saveRoundMaterialModal = (item: MixingRoundItem) => {
+    if (!roundItemModal) return;
+    if (!item.ma_nvl.trim() && !item.ten_vat_tu.trim()) {
+      setRoundItemModal(prev => (prev ? { ...prev, error: 'Vui lòng chọn mã NVL.' } : prev));
+      return;
+    }
+    setForm(prev => ({
+      ...prev,
+      chi_tiet: upsertMaterialInRound(
+        prev.chi_tiet,
+        roundItemModal.roundKey,
+        item,
+        roundItemModal.edit,
+        resolveRoundBatchWeight(prev.chi_tiet, roundItemModal.roundKey)
+      )
+    }));
+    setRoundItemModal(null);
+  };
+
+  const applyProductionOrderAutofill = (items: MixingRoundItem[]) => {
+    if (!productionAutofillRoundKey) return;
+    if (items.length === 0) {
+      setError(
+        'Sản phẩm đã chọn chưa có định mức NPL (% phối trộn). Vui lòng khai báo định mức trong danh mục sản phẩm trước.'
+      );
+      setProductionAutofillRoundKey(null);
+      return;
+    }
+    const roundKey = productionAutofillRoundKey;
+    setForm(prev => ({
+      ...prev,
+      chi_tiet: applyMixingRoundAutofill(
+        prev.chi_tiet,
+        roundKey,
+        items,
+        resolveRoundBatchWeight(prev.chi_tiet, roundKey)
+      )
+    }));
+    setMessage(`Đã điền ${items.length} NVL vào ${roundColumnLabel(ROUND_KEYS.indexOf(roundKey))}.`);
+    setError('');
+    setProductionAutofillRoundKey(null);
   };
 
   const openEditLineModal = (index: number) => {
@@ -1083,20 +1202,22 @@ export default function MixingReportForm({
       ten_vat_tu,
       tong_nhua_tron: sumMixingRounds(current.lan_su_dung)
     };
+    const normalizedLines = normalizeChiTietLines(
+      editingLineIndex === null
+        ? [...form.chi_tiet, savedLine]
+        : form.chi_tiet.map((line, index) => (index === editingLineIndex ? savedLine : line))
+    );
+    const nextSoLan = Math.max(
+      form.so_lan || 1,
+      visibleRoundCount(savedLine.lan_su_dung),
+      ...normalizedLines.map(line => visibleRoundCount(line.lan_su_dung))
+    );
 
-    if (editingLineIndex === null) {
-      setForm(prev => ({
-        ...prev,
-        chi_tiet: [...prev.chi_tiet, savedLine].map((line, index) => ({ ...line, stt: index + 1 }))
-      }));
-    } else {
-      setForm(prev => ({
-        ...prev,
-        chi_tiet: prev.chi_tiet.map((line, index) =>
-          index === editingLineIndex ? { ...savedLine, stt: index + 1 } : line
-        )
-      }));
-    }
+    setForm(prev => ({
+      ...prev,
+      so_lan: Math.min(5, nextSoLan),
+      chi_tiet: normalizedLines
+    }));
 
     closeLineModal();
   };
@@ -1110,44 +1231,96 @@ export default function MixingReportForm({
     }));
   };
 
-  const triggerLinePhoto = (index: number) => {
-    setPhotoLineIndex(index);
-    fileInputRef.current?.click();
+  const getRoundPhotos = (roundKey: RoundKey) => form.hinh_anh_theo_lan?.[roundKey] ?? [];
+
+  const removeRoundPhoto = (roundKey: RoundKey, photoIndex: number) => {
+    setForm(prev => ({
+      ...prev,
+      hinh_anh_theo_lan: {
+        ...prev.hinh_anh_theo_lan,
+        [roundKey]: (prev.hinh_anh_theo_lan?.[roundKey] ?? []).filter((_, index) => index !== photoIndex)
+      }
+    }));
   };
 
-  const handleLinePhotoFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || photoLineIndex === null) return;
+  const processRoundPhotoFiles = async (files: FileList | File[], roundKey: RoundKey) => {
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
 
-    setUploadingLineIndex(photoLineIndex);
+    setUploadingRoundKey(roundKey);
     setError('');
     try {
-      const dataUrl = await fileToDataUrl(file);
-      const uploaded = await uploadMixingLineImage(dataUrl);
+      const uploadedPhotos: MixingRoundPhoto[] = [];
+      let usedLocalFallback = false;
+      for (const file of fileList) {
+        const dataUrl = await fileToDataUrl(file);
+        try {
+          const uploaded = await uploadMixingLineImage(dataUrl);
+          if (!uploaded.imageUrl) {
+            throw new Error('Upload ảnh không trả về URL.');
+          }
+          uploadedPhotos.push({ url: uploaded.imageUrl, public_id: uploaded.imagePublicId });
+        } catch {
+          uploadedPhotos.push({ url: dataUrl });
+          usedLocalFallback = true;
+        }
+      }
       setForm(prev => ({
         ...prev,
-        chi_tiet: prev.chi_tiet.map((line, index) =>
-          index === photoLineIndex
-            ? {
-                ...line,
-                hinh_anh: uploaded.imageUrl,
-                hinh_anh_public_id: uploaded.imagePublicId
-              }
-            : line
-        )
+        hinh_anh_theo_lan: {
+          ...prev.hinh_anh_theo_lan,
+          [roundKey]: [...(prev.hinh_anh_theo_lan?.[roundKey] ?? []), ...uploadedPhotos]
+        }
       }));
-      setMessage('Đã chụp ảnh xác nhận.');
+      setMessage(
+        usedLocalFallback
+          ? `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(ROUND_KEYS.indexOf(roundKey))} (lưu tạm trên máy — Cloudinary chưa sẵn sàng).`
+          : `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(ROUND_KEYS.indexOf(roundKey))}.`
+      );
     } catch (err: any) {
-      setError(err.message || 'Không thể upload ảnh.');
+      setError(err.message || 'Không thể đọc file ảnh.');
     } finally {
-      setUploadingLineIndex(null);
-      setPhotoLineIndex(null);
+      setUploadingRoundKey(null);
     }
+  };
+
+  const handleRoundPhotoFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    roundKey: RoundKey
+  ) => {
+    const files = event.target.files;
+    event.target.value = '';
+    if (!files?.length) return;
+    await processRoundPhotoFiles(files, roundKey);
+  };
+
+  const pickRoundPhotos = (roundKey: RoundKey) => {
+    if (uploadingRoundKey === roundKey) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    input.addEventListener(
+      'change',
+      () => {
+        const files = input.files;
+        if (files?.length) {
+          void processRoundPhotoFiles(files, roundKey);
+        }
+        input.remove();
+      },
+      { once: true }
+    );
+    input.click();
   };
 
   const resetForm = () => {
     setNhanSuManual(false);
+    setActiveRoundCount(0);
+    setRoundBatchWeightDrafts({});
     setForm(newReportForm());
     setMessage('');
     setError('');
@@ -1169,21 +1342,26 @@ export default function MixingReportForm({
 
     const payload = {
       ...form,
-      so_lan: activeRoundCount,
+      so_lan: displayedRoundCount || 1,
       thuc_te_su_dung: computedActualUsage,
-      chi_tiet: computedLines
-        .filter(line => line.ma_nvl.trim() || line.ten_vat_tu.trim())
-        .map((line, index) => ({ ...line, stt: index + 1 }))
+      chi_tiet: normalizeChiTietLines(
+        computedLines.filter(line => line.ma_nvl.trim() || line.ten_vat_tu.trim())
+      )
     };
 
     if (payload.chi_tiet.length === 0) {
-      setError('Vui lòng nhập ít nhất một dòng vật tư.');
+      setError('Vui lòng thêm ít nhất một lần trộn và nhập NVL.');
       return;
     }
 
-    const missingPhoto = payload.chi_tiet.some(line => !String(line.hinh_anh ?? '').trim());
-    if (missingPhoto) {
-      setError('Vui lòng chụp ảnh xác nhận cho từng dòng vật tư (cột Thao tác).');
+    const missingPhotoRound = ROUND_KEYS.slice(0, displayedRoundCount).find((roundKey, roundIndex) => {
+      const hasNvl = listRoundMaterialEntries(form.chi_tiet, roundKey).length > 0;
+      const hasPhoto = (form.hinh_anh_theo_lan?.[roundKey]?.length ?? 0) > 0;
+      return hasNvl && !hasPhoto;
+    });
+    if (missingPhotoRound) {
+      const roundIndex = ROUND_KEYS.indexOf(missingPhotoRound);
+      setError(`Vui lòng chụp ít nhất một ảnh cho ${roundColumnLabel(roundIndex)}.`);
       return;
     }
 
@@ -1233,12 +1411,12 @@ export default function MixingReportForm({
         <input type="time" value={form.gio} onChange={e => setForm(prev => ({ ...prev, gio: e.target.value }))} className={inputClass} />
       </label>
       <label className="space-y-1">
-        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
+        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca sản xuất</span>
         <select value={form.ca} onChange={e => pickShift(e.target.value)} className={inputClass}>
-          <option value="">Chọn ca từ lệnh SX...</option>
+          <option value="">Chọn ca sản xuất...</option>
           {shiftOptions.map(shift => (
-            <option key={shift} value={shift}>
-              {shift}
+            <option key={shift.value} value={shift.value}>
+              {shift.label}
             </option>
           ))}
         </select>
@@ -1344,145 +1522,302 @@ export default function MixingReportForm({
         </div>
       )}
 
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3">
           <div>
             <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
             <p className="text-xs font-semibold text-zinc-500">
-              Nhập định mức từng lần (Thêm dòng) · chụp ảnh xác nhận ở cột Thao tác trước khi lưu
+              Bấm Thêm dòng để tạo Lần 1, Lần 2... · trong mỗi lần chọn NVL theo Lệnh sản xuất
             </p>
           </div>
-          <button
-            type="button"
-            onClick={openAddLineModal}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-          >
-            <Plus className="h-4 w-4" />
-            Thêm dòng
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-[720px] w-full text-left text-xs">
-            <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-2 py-2 font-black">STT</th>
-                <th className="px-2 py-2 font-black">Mã NVL</th>
-                <th className="px-2 py-2 font-black">Tên vật tư</th>
-                {ROUND_KEYS.slice(0, activeRoundCount).map((_, roundIndex) => (
-                  <th key={`head-lan-${roundIndex}`} className="px-2 py-2 font-black">
-                    {roundColumnLabel(roundIndex, activeRoundCount)}
-                  </th>
-                ))}
-                <th className="px-2 py-2 font-black">Tổng trộn</th>
-                <th className="px-2 py-2 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {computedLines.length === 0 ? (
-                <tr>
-                  <td colSpan={5 + activeRoundCount} className="px-3 py-8 text-center font-bold text-zinc-400">
-                    Chưa có dòng vật tư. Bấm &quot;Thêm dòng&quot; để mở form nhập.
-                  </td>
-                </tr>
-              ) : (
-                computedLines.map((line, index) => (
-                <tr key={`mix-line-${index}`} className="align-top hover:bg-red-50/30">
-                  <td className="px-2 py-2 font-bold text-zinc-600">{index + 1}</td>
-                  <td className="px-2 py-2 font-mono font-semibold text-zinc-700">{line.ma_nvl || '-'}</td>
-                  <td className="px-2 py-2 text-zinc-800">{line.ten_vat_tu || '-'}</td>
-                  {ROUND_KEYS.slice(0, activeRoundCount).map(roundKey => (
-                    <td key={roundKey} className="px-2 py-2 font-mono text-zinc-700">
-                      {formatOptionalNumber(sumRoundQuantity(line.lan_su_dung, roundKey)) || '-'}
-                    </td>
-                  ))}
-                  <td className="px-2 py-2 font-black text-emerald-700">
-                    {formatOptionalNumber(line.tong_nhua_tron) || '-'}
-                  </td>
-                  <td className="px-2 py-2 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      {line.hinh_anh ? (
-                        <a
-                          href={line.hinh_anh}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-emerald-200"
-                          title="Ảnh xác nhận"
-                        >
-                          <img src={line.hinh_anh} alt="Xác nhận" className="h-full w-full object-cover" />
-                        </a>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => triggerLinePhoto(index)}
-                        disabled={uploadingLineIndex === index}
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
-                          line.hinh_anh
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                            : 'border-[#ef1b2d]/30 bg-red-50 text-[#ef1b2d] hover:bg-red-100'
-                        } disabled:opacity-60`}
-                        title={line.hinh_anh ? 'Chụp lại ảnh' : 'Chụp ảnh xác nhận'}
-                      >
-                        {uploadingLineIndex === index ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ImagePlus className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openEditLineModal(index)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                        title="Sửa dòng"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeLine(index)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
-                        title="Xóa dòng"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
-          <div className="text-sm font-bold text-zinc-700">
-            Thực tế sử dụng (tổng trộn):{' '}
-            <span className="font-black text-[#ef1b2d]">{formatNumber(computedActualUsage, 2)} kg</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={resetForm} className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700">
-              Làm mới
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={handleSave}
-              disabled={isSaving}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+              onClick={addRound}
+              disabled={activeRoundCount >= 5}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
             >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Lưu báo cáo
+              <Plus className="h-4 w-4" />
+              Thêm dòng
             </button>
           </div>
         </div>
-      </section>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={handleLinePhotoFile}
-      />
+        {displayedRoundCount > 0 ? (
+          <div className="flex flex-col lg:flex-row lg:items-start">
+            <div className="relative z-10 min-w-0 flex-1 space-y-3 border-b border-zinc-100 p-4 lg:border-b-0">
+            {ROUND_KEYS.slice(0, displayedRoundCount).map((roundKey, roundIndex) => {
+              const entries = listRoundMaterialEntries(form.chi_tiet, roundKey);
+              return (
+                <div key={roundKey} className="relative rounded-xl border border-zinc-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                    <p className="text-xs font-black uppercase tracking-wider text-zinc-700">
+                      {roundColumnLabel(roundIndex)}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-700">
+                        KL 1 mẻ (kg)
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={getRoundBatchWeightInputValue(roundKey)}
+                          onChange={event => handleRoundBatchWeightChange(roundKey, event.target.value)}
+                          className="h-8 w-28 rounded-lg border border-zinc-200 bg-white px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                          placeholder="0"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => openProductionOrderAutofill(roundKey)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-[11px] font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        NVL theo Lệnh sản xuất
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openRoundMaterialModal(roundKey)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Thêm NVL
+                      </button>
+                    </div>
+                  </div>
+                  {entries.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-xs font-semibold text-zinc-400">
+                      Chưa có NVL trong {roundColumnLabel(roundIndex).toLowerCase()}.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-xs">
+                        <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                          <tr>
+                            <th className="px-2 py-2 font-black">Mã NVL</th>
+                            <th className="px-2 py-2 font-black">Tên vật tư</th>
+                            <th className="px-2 py-2 font-black">%</th>
+                            <th className="px-2 py-2 font-black">KL (kg)</th>
+                            <th className="px-2 py-2 text-center font-black">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                          {entries.map(entry => (
+                            <tr key={`${roundKey}-${entry.lineIndex}-${entry.itemIndex}`}>
+                              <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
+                                {entry.item.ma_nvl || '-'}
+                              </td>
+                              <td className="px-2 py-2 text-zinc-800">{entry.item.ten_vat_tu || '-'}</td>
+                              <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
+                                {formatOptionalNumber(entry.item.ti_le_phan_tram) || '-'}
+                              </td>
+                              <td className="px-2 py-2 font-mono font-bold text-emerald-800">
+                                {formatOptionalNumber(entry.item.so_luong) || '-'}
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openRoundMaterialModal(roundKey, {
+                                        lineIndex: entry.lineIndex,
+                                        itemIndex: entry.itemIndex
+                                      })
+                                    }
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                    title="Sửa NVL"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setForm(prev => ({
+                                        ...prev,
+                                        chi_tiet: removeMaterialFromRound(
+                                          prev.chi_tiet,
+                                          roundKey,
+                                          entry.lineIndex,
+                                          entry.itemIndex
+                                        )
+                                      }))
+                                    }
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                                    title="Xóa NVL"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div className="relative z-20 border-t border-zinc-100 bg-zinc-50/50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
+                      Ảnh xác nhận {roundColumnLabel(roundIndex).toLowerCase()}
+                    </p>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={uploadingRoundKey === roundKey}
+                        onChange={event => handleRoundPhotoFile(event, roundKey)}
+                        className="min-w-0 flex-1 rounded-lg border border-dashed border-[#ef1b2d]/35 bg-white px-2 py-2 text-[11px] font-semibold text-zinc-600 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-[#ef1b2d] file:px-3 file:py-1.5 file:text-[10px] file:font-extrabold file:text-white hover:bg-red-50/40 disabled:opacity-60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => pickRoundPhotos(roundKey)}
+                        disabled={uploadingRoundKey === roundKey}
+                        className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:opacity-60"
+                      >
+                        {uploadingRoundKey === roundKey ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ImagePlus className="h-3.5 w-3.5" />
+                        )}
+                        Thêm ảnh
+                      </button>
+                    </div>
+                    {getRoundPhotos(roundKey).length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {getRoundPhotos(roundKey).map((photo, photoIndex) => (
+                          <div
+                            key={`${roundKey}-photo-${photoIndex}`}
+                            className="group relative h-14 w-14 overflow-hidden rounded-lg border border-zinc-200 bg-white"
+                          >
+                            <a href={photo.url} target="_blank" rel="noreferrer" title="Xem ảnh">
+                              <img src={photo.url} alt={`Ảnh ${roundIndex + 1}`} className="h-full w-full object-cover" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => removeRoundPhoto(roundKey, photoIndex)}
+                              className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-950/75 text-white opacity-0 transition group-hover:opacity-100"
+                              title="Xóa ảnh"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
+                        Chọn file bằng ô &quot;Chọn tệp&quot; hoặc bấm Thêm ảnh · có thể chọn nhiều ảnh.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            </div>
+
+            {computedLines.length > 0 ? (
+              <aside className="w-full shrink-0 border-t border-zinc-200 bg-zinc-50/60 lg:w-[min(100%,420px)] lg:border-l lg:border-t-0">
+                <div className="border-b border-zinc-200 bg-white px-3 py-2.5">
+                  <p className="text-xs font-black uppercase tracking-wider text-zinc-800">Bảng tổng</p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
+                    Tổng hợp theo NVL
+                  </p>
+                </div>
+                <div className="max-h-[min(60vh,520px)] overflow-auto overscroll-contain">
+                  <table className="w-full min-w-[320px] text-left text-xs">
+                    <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                      <tr>
+                        <th className="px-2 py-2 font-black">Mã NVL</th>
+                        <th className="px-2 py-2 font-black">Tên vật tư</th>
+                        {ROUND_KEYS.slice(0, displayedRoundCount).map((_, roundIndex) => (
+                          <th
+                            key={`summary-head-lan-${roundIndex}`}
+                            className="min-w-[72px] whitespace-nowrap px-2 py-2 text-right font-black"
+                          >
+                            L{roundIndex + 1}
+                          </th>
+                        ))}
+                        <th className="min-w-[72px] whitespace-nowrap px-2 py-2 text-right font-black">Tổng</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200/80 bg-white">
+                      {computedLines.map((line, index) => (
+                        <tr key={`mix-summary-${line.ma_nvl}-${index}`} className="align-top hover:bg-red-50/20">
+                          <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px] font-semibold text-zinc-700">
+                            {line.ma_nvl || '-'}
+                          </td>
+                          <td className="max-w-[120px] truncate px-2 py-2 text-[11px] text-zinc-800" title={line.ten_vat_tu}>
+                            {line.ten_vat_tu || '-'}
+                          </td>
+                          {ROUND_KEYS.slice(0, displayedRoundCount).map(roundKey => (
+                            <td
+                              key={roundKey}
+                              className="whitespace-nowrap px-2 py-2 text-right font-mono text-[11px] text-zinc-700"
+                            >
+                              {formatOptionalNumber(sumRoundQuantity(line.lan_su_dung, roundKey)) || '-'}
+                            </td>
+                          ))}
+                          <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-[11px] font-black text-[#ef1b2d]">
+                            {formatOptionalNumber(line.tong_nhua_tron) || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="space-y-3 border-t border-zinc-200 bg-white p-3">
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-bold text-zinc-700">
+                    Thực tế sử dụng:{' '}
+                    <span className="font-black text-[#ef1b2d]">{formatNumber(computedActualUsage, 2)} kg</span>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700"
+                    >
+                      Làm mới
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={isSaving}
+                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+                    >
+                      {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Lưu báo cáo
+                    </button>
+                  </div>
+                </div>
+              </aside>
+            ) : null}
+          </div>
+        ) : null}
+
+        {computedLines.length === 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
+            <div className="text-sm font-bold text-zinc-500">
+              Thực tế sử dụng: <span className="font-black text-zinc-400">0 kg</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700"
+              >
+                Làm mới
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+              >
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Lưu báo cáo
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <MixingLineFormModal
         open={lineModalOpen}
@@ -1497,6 +1832,51 @@ export default function MixingReportForm({
         }}
         onSave={saveLineDraft}
       />
+
+      <MixingRoundItemFormModal
+        open={Boolean(roundItemModal)}
+        roundLabel={
+          roundItemModal ? roundColumnLabel(ROUND_KEYS.indexOf(roundItemModal.roundKey)) : ''
+        }
+        draft={roundItemModal?.draft ?? emptyRoundItem()}
+        materials={materials}
+        batchWeight={
+          roundItemModal ? resolveRoundBatchWeight(form.chi_tiet, roundItemModal.roundKey) : null
+        }
+        isEditing={Boolean(roundItemModal?.edit)}
+        errorMessage={roundItemModal?.error}
+        onClose={() => setRoundItemModal(null)}
+        onChange={patch => {
+          setRoundItemModal(prev =>
+            prev ? { ...prev, error: '', draft: { ...prev.draft, ...patch } } : prev
+          );
+        }}
+        onSave={saveRoundMaterialModal}
+      />
+
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <MixingProductionOrderAutofillModal
+            open={productionAutofillRoundKey !== null}
+            roundLabel={
+              productionAutofillRoundKey
+                ? roundColumnLabel(ROUND_KEYS.indexOf(productionAutofillRoundKey))
+                : ''
+            }
+            orders={productionOrders}
+            catalogProducts={catalogProducts}
+            materials={materials}
+            filters={{
+              ngay: form.ngay,
+              ca: form.ca,
+              maMay: form.ma_may,
+              tenMay: form.ten_may
+            }}
+            onClose={() => setProductionAutofillRoundKey(null)}
+            onApply={applyProductionOrderAutofill}
+          />,
+          document.body
+        )}
     </>
   );
 

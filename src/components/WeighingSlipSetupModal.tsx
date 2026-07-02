@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronDown, Factory, FileText, Loader2, Users } from 'lucide-react';
-const SHIFT_OPTIONS = ['Ca sáng', 'Ca chiều', 'Ca tối'] as const;
+import { getProductionShiftOptions, normalizeShiftSettings, type ShiftSetting } from '../utils/shiftSettings';
 const inputClass =
   'h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none transition focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
@@ -76,10 +76,13 @@ export default function WeighingSlipSetupModal({
   const [machineName, setMachineName] = useState('');
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [machines, setMachines] = useState<MachineOption[]>([]);
+  const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [isLoadingMachines, setIsLoadingMachines] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
   useEffect(() => {
     if (!open) return;
@@ -126,6 +129,20 @@ export default function WeighingSlipSetupModal({
 
     loadStaff();
     loadMachines();
+
+    const loadShiftSettings = async () => {
+      try {
+        const res = await fetch('/api/cai-dat');
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) {
+          setShiftSettings(normalizeShiftSettings(data));
+        }
+      } catch {
+        if (!cancelled) setShiftSettings([]);
+      }
+    };
+
+    loadShiftSettings();
 
     return () => {
       cancelled = true;
@@ -212,9 +229,9 @@ export default function WeighingSlipSetupModal({
             </span>
             <select value={shiftName} onChange={e => setShiftName(e.target.value)} className={inputClass}>
               <option value="">Chọn ca</option>
-              {SHIFT_OPTIONS.map(shift => (
-                <option key={shift} value={shift}>
-                  {shift}
+              {shiftOptions.map(shift => (
+                <option key={shift.value} value={shift.value}>
+                  {shift.label}
                 </option>
               ))}
             </select>

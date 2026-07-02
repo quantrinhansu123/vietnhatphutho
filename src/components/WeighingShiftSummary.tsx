@@ -18,6 +18,7 @@ import {
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import WeighingReportForm from './WeighingReportForm';
 import WeighingSlipSetupModal, { type SlipSetupPayload } from './WeighingSlipSetupModal';
+import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/weighingSlipConfig';
 
 const SHIFT_ORDER = ['Ca sáng', 'Ca chiều', 'Ca tối'] as const;
 const FACTORY_PLACEHOLDER = 'Nhà máy Đà Nẵng';
@@ -249,7 +250,13 @@ export function generateWeighingDocumentNo(productionDate?: string) {
   return `P-${datePart}-${hh}${mm}${ss}-${rand}`;
 }
 
-export default function WeighingShiftSummary() {
+export default function WeighingShiftSummary({
+  config = DEFAULT_WEIGHING_SLIP_CONFIG,
+  onBackToMenu
+}: {
+  config?: WeighingSlipConfig;
+  onBackToMenu?: () => void;
+} = {}) {
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [selectedDate, setSelectedDate] = useState(today);
   const [records, setRecords] = useState<WeighingRecord[]>([]);
@@ -285,7 +292,7 @@ export default function WeighingShiftSummary() {
       machineName: payload.machineName
     };
 
-    const res = await fetch('/api/phieu-can-dinh-ki', {
+    const res = await fetch(config.apiBasePath, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -366,7 +373,7 @@ export default function WeighingShiftSummary() {
 
     try {
       const params = new URLSearchParams({ ngay: selectedDate });
-      const res = await fetch(`/api/phieu-can-dinh-ki?${params.toString()}`);
+      const res = await fetch(`${config.apiBasePath}?${params.toString()}`);
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -389,7 +396,7 @@ export default function WeighingShiftSummary() {
     setActiveSlipKey(null);
     setViewingRow(null);
     setActionMessage('');
-  }, [selectedDate]);
+  }, [selectedDate, config.apiBasePath]);
 
   const handleDeleteRow = async (row: WeighingRecord) => {
     if (!row.id) {
@@ -403,7 +410,7 @@ export default function WeighingShiftSummary() {
     setActionMessage('');
 
     try {
-      const res = await fetch(`/api/phieu-can-dinh-ki/${row.id}`, { method: 'DELETE' });
+      const res = await fetch(`${config.apiBasePath}/${row.id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.error || 'Không thể xóa dòng cân.');
@@ -469,7 +476,7 @@ export default function WeighingShiftSummary() {
 
     try {
       for (const row of deletableRows) {
-        const res = await fetch(`/api/phieu-can-dinh-ki/${row.id}`, { method: 'DELETE' });
+        const res = await fetch(`${config.apiBasePath}/${row.id}`, { method: 'DELETE' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data.error || 'Không thể xóa phiếu.');
@@ -511,11 +518,12 @@ export default function WeighingShiftSummary() {
           className="flex h-10 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-600 shadow-sm transition hover:bg-zinc-50"
         >
           <ArrowLeft className="h-4 w-4" />
-          Quay lại Phiếu cân ca
+          {config.backLabel}
         </button>
         <WeighingReportForm
           pendingAdd={pendingAdd}
           onPendingAddHandled={() => setPendingAdd(null)}
+          config={config}
         />
       </div>
     );
@@ -544,8 +552,8 @@ export default function WeighingShiftSummary() {
             <div className="flex items-center gap-3">
               <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
               <div>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">Tổng hợp báo cáo cân</h2>
-                <p className="mt-1 text-xs font-semibold text-zinc-500">Theo dõi phiếu cân theo từng ca sản xuất</p>
+                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">{config.summaryTitle}</h2>
+                <p className="mt-1 text-xs font-semibold text-zinc-500">{config.summarySubtitle}</p>
               </div>
             </div>
             <div className="flex flex-wrap items-end gap-2">

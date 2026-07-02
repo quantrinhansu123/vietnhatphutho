@@ -832,16 +832,28 @@ input[type="number"] {
 .production-order-print-grid-table th:nth-child(5) { width: 28%; }
 
 .production-order-print-product-table th:nth-child(1) { width: 11%; }
-.production-order-print-product-table th:nth-child(2) { width: 34%; }
+.production-order-print-product-table th:nth-child(2) { width: 35%; }
 .production-order-print-product-table th:nth-child(3) { width: 8%; }
-.production-order-print-product-table th:nth-child(4) { width: 14%; }
-.production-order-print-product-table th:nth-child(5) { width: 33%; }
+.production-order-print-product-table th:nth-child(4) { width: 11%; }
+.production-order-print-product-table th:nth-child(5) { width: 35%; }
 
-.production-order-print-materials-table th:nth-child(1) { width: 12%; }
-.production-order-print-materials-table th:nth-child(2) { width: 34%; }
-.production-order-print-materials-table th:nth-child(3) { width: 8%; }
-.production-order-print-materials-table th:nth-child(4) { width: 14%; }
-.production-order-print-materials-table th:nth-child(5) { width: 14%; }
+.production-order-print-product-table td {
+  vertical-align: top;
+}
+
+.production-order-print-product-table tbody tr + tr td {
+  border-top-style: dotted;
+}
+
+.production-order-print-product-name-cell {
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.production-order-print-materials-table th:nth-child(1) { width: 14%; }
+.production-order-print-materials-table th:nth-child(2) { width: 46%; }
+.production-order-print-materials-table th:nth-child(3) { width: 10%; }
+.production-order-print-materials-table th:nth-child(4) { width: 16%; }
 
 .production-order-print-params-table th:nth-child(1),
 .production-order-print-params-table td:nth-child(1) {
@@ -936,6 +948,41 @@ input[type="number"] {
   font-style: italic;
   font-weight: 400;
   color: #444444;
+}
+
+.machine-nvl-print-table th:nth-child(1) { width: 5%; }
+.machine-nvl-print-table th:nth-child(2) { width: 11%; }
+.machine-nvl-print-table th:nth-child(3) { width: 22%; }
+.machine-nvl-print-table th:nth-child(4) { width: 7%; }
+.machine-nvl-print-table th:nth-child(5) { width: 11%; }
+.machine-nvl-print-table th:nth-child(6) { width: 11%; }
+.machine-nvl-print-table th:nth-child(7) { width: 11%; }
+.machine-nvl-print-table th:nth-child(8) { width: 12%; }
+.machine-nvl-print-table th:nth-child(9) { width: 10%; }
+
+.machine-nvl-print-note {
+  margin: 6mm 0 0;
+  font-size: 10.5pt;
+  font-style: italic;
+}
+
+.machine-nvl-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20mm;
+  margin-top: 16mm;
+  text-align: center;
+}
+
+.machine-nvl-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.machine-nvl-print-signatures span {
+  display: block;
+  margin-top: 18mm;
+  font-style: italic;
 }
 
 .machine-downtime-print-table th:nth-child(1) { width: 5%; }

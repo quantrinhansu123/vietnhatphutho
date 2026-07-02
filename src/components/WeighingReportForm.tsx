@@ -29,7 +29,6 @@ interface WeighingRow {
 
 const DEFAULT_ROWS: WeighingRow[] = [];
 
-const SHIFT_OPTIONS = ['Ca sáng', 'Ca chiều', 'Ca tối'] as const;
 const FACTORY_PLACEHOLDER = 'Nhà máy Đà Nẵng';
 
 function isRealMachineName(name?: string) {
@@ -45,20 +44,25 @@ function resolveMachineName(...candidates: Array<string | undefined>) {
   }
   return '—';
 }
-const WEIGHER_STORAGE_KEY = 'weighing-current-weigher';
+import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/weighingSlipConfig';
+import {
+  getProductionShiftOptions,
+  normalizeShiftSettings,
+  type ShiftSetting
+} from '../utils/shiftSettings';
 
-function readStoredWeigherName() {
+function readStoredWeigherName(storageKey: string) {
   try {
-    return localStorage.getItem(WEIGHER_STORAGE_KEY) || '';
+    return localStorage.getItem(storageKey) || '';
   } catch {
     return '';
   }
 }
 
-function storeWeigherName(name: string) {
+function storeWeigherName(storageKey: string, name: string) {
   try {
     if (name.trim()) {
-      localStorage.setItem(WEIGHER_STORAGE_KEY, name.trim());
+      localStorage.setItem(storageKey, name.trim());
     }
   } catch {
     // ignore storage errors
@@ -413,10 +417,12 @@ function rowToNewRowState(row: WeighingRow): Omit<WeighingRow, 'id' | 'weighNo' 
 
 export default function WeighingReportForm({
   pendingAdd = null,
-  onPendingAddHandled
+  onPendingAddHandled,
+  config = DEFAULT_WEIGHING_SLIP_CONFIG
 }: {
   pendingAdd?: WeighingPendingAdd | null;
   onPendingAddHandled?: () => void;
+  config?: WeighingSlipConfig;
 } = {}) {
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [form, setForm] = useState({
@@ -440,15 +446,16 @@ export default function WeighingReportForm({
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [isLoadingMachines, setIsLoadingMachines] = useState(true);
   const [machinesError, setMachinesError] = useState('');
+  const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [viewingRow, setViewingRow] = useState<WeighingRow | null>(null);
   const [editingRow, setEditingRow] = useState<WeighingRow | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<number | null>(null);
-  const [currentWeigherName, setCurrentWeigherName] = useState(readStoredWeigherName);
+  const [currentWeigherName, setCurrentWeigherName] = useState(() => readStoredWeigherName(config.weigherStorageKey));
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
   const updateCurrentWeigherName = (name: string) => {
     setCurrentWeigherName(name);
-    storeWeigherName(name);
+    storeWeigherName(config.weigherStorageKey, name);
   };
 
   const handleProductCodeScan = useCallback((code: string): boolean => {
@@ -462,6 +469,8 @@ export default function WeighingReportForm({
     return true;
   }, [products]);
 
+  const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
+
   const applySavedRowIds = (savedRows: WeighingRecord[] | undefined, targetRows: WeighingRow[]) => {
     if (!savedRows?.length) return targetRows;
 
@@ -474,7 +483,7 @@ export default function WeighingReportForm({
 
   const persistRowsToServer = async (rowsToSave: WeighingRow[]) => {
     const firstRow = rowsToSave[0];
-    const res = await fetch('/api/phieu-can-dinh-ki', {
+    const res = await fetch(config.apiBasePath, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -506,7 +515,7 @@ export default function WeighingReportForm({
       throw new Error('Dòng chưa có ID trên server. Hãy lưu phiếu trước khi sửa.');
     }
 
-    const res = await fetch(`/api/phieu-can-dinh-ki/${row.dbId}`, {
+    const res = await fetch(`${config.apiBasePath}/${row.dbId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -528,7 +537,7 @@ export default function WeighingReportForm({
   };
 
   const deleteRowOnServer = async (dbId: string | number) => {
-    const res = await fetch(`/api/phieu-can-dinh-ki/${dbId}`, { method: 'DELETE' });
+    const res = await fetch(`${config.apiBasePath}/${dbId}`, { method: 'DELETE' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'Không thể xóa dòng cân.');
@@ -651,6 +660,20 @@ export default function WeighingReportForm({
     };
 
     loadMachines();
+
+    const loadShiftSettings = async () => {
+      try {
+        const res = await fetch('/api/cai-dat');
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) {
+          setShiftSettings(normalizeShiftSettings(data));
+        }
+      } catch {
+        if (!cancelled) setShiftSettings([]);
+      }
+    };
+
+    loadShiftSettings();
 
     return () => {
       cancelled = true;
@@ -1418,8 +1441,8 @@ export default function WeighingReportForm({
                   className={inputClass}
                 >
                   <option value="">Chọn ca sản xuất</option>
-                  {SHIFT_OPTIONS.map(shift => (
-                    <option key={shift} value={shift}>{shift}</option>
+                  {shiftOptions.map(shift => (
+                    <option key={shift.value} value={shift.value}>{shift.label}</option>
                   ))}
                 </select>
               </label>

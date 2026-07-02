@@ -1,5 +1,5 @@
 import { formatNumber } from '../utils';
-import type { MixingPhoiTron, MixingReport, MixingReportLine, MixingRoundItem } from '../components/MixingReportForm';
+import type { MixingPhoiTron, MixingReport, MixingReportLine, MixingRoundItem, MixingRoundPhoto } from '../components/MixingReportForm';
 
 export const MIXING_ROUND_KEYS = ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const;
 export type MixingRoundKey = (typeof MIXING_ROUND_KEYS)[number];
@@ -133,6 +133,15 @@ export function sumMixingRounds(phoiTron: MixingPhoiTron) {
   ) / 100;
 }
 
+function normalizeMaterialKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function materialItemKey(item: MixingRoundItem) {
+  const code = item.ma_nvl.trim();
+  return code ? normalizeMaterialKey(code) : normalizeMaterialKey(item.ten_vat_tu);
+}
+
 function deriveLineMaterial(phoiTron: MixingPhoiTron) {
   for (const key of MIXING_ROUND_KEYS) {
     for (const item of getRoundItems(phoiTron, key)) {
@@ -142,6 +151,66 @@ function deriveLineMaterial(phoiTron: MixingPhoiTron) {
     }
   }
   return { ma_nvl: '', ten_vat_tu: '' };
+}
+
+export function deriveLineUnit(phoiTron: MixingPhoiTron) {
+  for (const key of MIXING_ROUND_KEYS) {
+    for (const item of getRoundItems(phoiTron, key)) {
+      if (item.don_vi.trim()) return item.don_vi.trim();
+    }
+  }
+  return 'kg';
+}
+
+export function mixingRoundColumnLabel(roundIndex: number) {
+  return `Lần ${roundIndex + 1} (kg)`;
+}
+
+export function splitMixingLineByMaterial(line: MixingReportLine): MixingReportLine[] {
+  const keys = new Set<string>();
+  MIXING_ROUND_KEYS.forEach(key => {
+    getRoundItems(line.lan_su_dung, key).forEach(item => {
+      if (item.ma_nvl.trim() || item.ten_vat_tu.trim()) keys.add(materialItemKey(item));
+    });
+  });
+
+  if (keys.size <= 1) {
+    const { ma_nvl, ten_vat_tu } = deriveLineMaterial(line.lan_su_dung);
+    return [
+      {
+        ...line,
+        ma_nvl,
+        ten_vat_tu,
+        tong_nhua_tron: sumMixingRounds(line.lan_su_dung)
+      }
+    ];
+  }
+
+  return Array.from(keys).map(key => {
+    const lan_su_dung: MixingPhoiTron = {};
+    MIXING_ROUND_KEYS.forEach(roundKey => {
+      const items = getRoundItems(line.lan_su_dung, roundKey).filter(
+        item => (item.ma_nvl.trim() || item.ten_vat_tu.trim()) && materialItemKey(item) === key
+      );
+      if (items.length > 0) lan_su_dung[roundKey] = items;
+    });
+    const { ma_nvl, ten_vat_tu } = deriveLineMaterial(lan_su_dung);
+    return {
+      ...line,
+      ma_nvl,
+      ten_vat_tu,
+      lan_su_dung,
+      tong_nhua_tron: sumMixingRounds(lan_su_dung),
+      hinh_anh: '',
+      hinh_anh_public_id: ''
+    };
+  });
+}
+
+export function normalizeChiTietLines(lines: MixingReportLine[]): MixingReportLine[] {
+  return lines
+    .flatMap(splitMixingLineByMaterial)
+    .map((line, index) => ({ ...line, stt: index + 1 }));
 }
 
 export function normalizeMixingReportLine(line: Record<string, unknown>, index: number): MixingReportLine {
@@ -164,11 +233,37 @@ export function normalizeMixingReportLine(line: Record<string, unknown>, index: 
   };
 }
 
+export function normalizeMixingRoundPhotos(source: unknown): Partial<Record<MixingRoundKey, MixingRoundPhoto[]>> {
+  if (!source || typeof source !== 'object') return {};
+  const record = source as Record<string, unknown>;
+  const result: Partial<Record<MixingRoundKey, MixingRoundPhoto[]>> = {};
+
+  MIXING_ROUND_KEYS.forEach(key => {
+    const raw = record[key];
+    if (!Array.isArray(raw)) return;
+    const photos = raw
+      .map((item): MixingRoundPhoto | null => {
+        if (!item || typeof item !== 'object') return null;
+        const row = item as Record<string, unknown>;
+        const url = String(row.url ?? row.hinh_anh ?? row.imageUrl ?? '').trim();
+        if (!url) return null;
+        const public_id = String(row.public_id ?? row.hinh_anh_public_id ?? row.imagePublicId ?? '').trim();
+        return { url, ...(public_id ? { public_id } : {}) };
+      })
+      .filter((item): item is MixingRoundPhoto => Boolean(item));
+    if (photos.length > 0) result[key] = photos;
+  });
+
+  return result;
+}
+
 export function normalizeMixingReport(record: Record<string, unknown>): MixingReport {
   const chiTietRaw = record.chi_tiet;
-  const chi_tiet = Array.isArray(chiTietRaw)
-    ? chiTietRaw.map((line, index) => normalizeMixingReportLine(line as Record<string, unknown>, index))
-    : [];
+  const chi_tiet = normalizeChiTietLines(
+    Array.isArray(chiTietRaw)
+      ? chiTietRaw.map((line, index) => normalizeMixingReportLine(line as Record<string, unknown>, index))
+      : []
+  );
   const so_lan_from_lines = chi_tiet.reduce(
     (max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)),
     1
@@ -185,12 +280,13 @@ export function normalizeMixingReport(record: Record<string, unknown>): MixingRe
     nhan_su: String(record.nhan_su ?? ''),
     so_phieu: String(record.so_phieu ?? ''),
     ky_hieu: String(record.ky_hieu ?? 'QT-16-BM02'),
-    so_lan: Number(record.so_lan) || so_lan_from_lines,
+    so_lan: Math.max(Number(record.so_lan) || 0, so_lan_from_lines, 1),
     thuc_te_su_dung:
       record.thuc_te_su_dung === null || record.thuc_te_su_dung === undefined
         ? null
         : Number(record.thuc_te_su_dung),
     ghi_chu: String(record.ghi_chu ?? ''),
+    hinh_anh_theo_lan: normalizeMixingRoundPhotos(record.hinh_anh_theo_lan),
     chi_tiet,
     created_at: String(record.created_at ?? '')
   };
@@ -235,4 +331,190 @@ export function maxRoundCountFromReports(reports: MixingReport[]) {
     );
     return Math.max(max, report.so_lan || 0, reportMax);
   }, 1);
+}
+
+export function parseBatchWeightInput(value: string) {
+  if (!value || !String(value).trim()) return null;
+  const normalized = String(value).replace(/\./g, '').replace(',', '.');
+  const num = Number(normalized);
+  return Number.isFinite(num) ? Math.round(num * 100) / 100 : null;
+}
+
+function calcNormQuantityFromPercent(batchWeight: number | null, percent: number | null) {
+  if (!batchWeight || batchWeight <= 0 || !percent || percent <= 0) return null;
+  return Math.round(((batchWeight * percent) / 100) * 100) / 100;
+}
+
+function applyPercentToRoundItem(item: MixingRoundItem, batchWeight: number | null): MixingRoundItem {
+  const kg = calcNormQuantityFromPercent(batchWeight, item.ti_le_phan_tram);
+  return kg !== null ? { ...item, so_luong: kg } : item;
+}
+
+function recalcRoundItems(phoiTron: MixingPhoiTron, key: MixingRoundKey): MixingPhoiTron {
+  const batchWeight = phoiTron.khoi_luong_me?.[key] ?? null;
+  if (!batchWeight) return phoiTron;
+  return {
+    ...phoiTron,
+    [key]: getRoundItems(phoiTron, key).map(item => applyPercentToRoundItem(item, batchWeight))
+  };
+}
+
+export function getRoundBatchWeightFromLines(chi_tiet: MixingReportLine[], roundKey: MixingRoundKey) {
+  for (const line of chi_tiet) {
+    const weight = line.lan_su_dung.khoi_luong_me?.[roundKey];
+    if (weight !== null && weight !== undefined && weight > 0) return weight;
+  }
+  return null;
+}
+
+export function setRoundBatchWeightOnLines(
+  chi_tiet: MixingReportLine[],
+  roundKey: MixingRoundKey,
+  value: string
+): MixingReportLine[] {
+  const parsed = parseBatchWeightInput(value);
+  if (chi_tiet.length === 0) return chi_tiet;
+
+  return chi_tiet.map(line => {
+    const lan_su_dung: MixingPhoiTron = {
+      ...line.lan_su_dung,
+      khoi_luong_me: { ...line.lan_su_dung.khoi_luong_me, [roundKey]: parsed }
+    };
+    const updated = recalcRoundItems(lan_su_dung, roundKey);
+    return {
+      ...line,
+      lan_su_dung: updated,
+      tong_nhua_tron: sumMixingRounds(updated)
+    };
+  });
+}
+
+export type MixingRoundMaterialEntry = {
+  lineIndex: number;
+  itemIndex: number;
+  item: MixingRoundItem;
+};
+
+export function listRoundMaterialEntries(
+  chi_tiet: MixingReportLine[],
+  roundKey: MixingRoundKey
+): MixingRoundMaterialEntry[] {
+  const entries: MixingRoundMaterialEntry[] = [];
+  chi_tiet.forEach((line, lineIndex) => {
+    getRoundItems(line.lan_su_dung, roundKey).forEach((item, itemIndex) => {
+      if (item.ma_nvl.trim() || item.ten_vat_tu.trim()) {
+        entries.push({ lineIndex, itemIndex, item });
+      }
+    });
+  });
+  return entries;
+}
+
+function updateLineRoundItems(
+  line: MixingReportLine,
+  roundKey: MixingRoundKey,
+  items: MixingRoundItem[]
+): MixingReportLine {
+  const lan_su_dung: MixingPhoiTron = { ...line.lan_su_dung, [roundKey]: items };
+  const batchWeight = lan_su_dung.khoi_luong_me?.[roundKey] ?? null;
+  const recalculated = batchWeight ? recalcRoundItems(lan_su_dung, roundKey) : lan_su_dung;
+  return {
+    ...line,
+    lan_su_dung: recalculated,
+    tong_nhua_tron: sumMixingRounds(recalculated)
+  };
+}
+
+export function upsertMaterialInRound(
+  chi_tiet: MixingReportLine[],
+  roundKey: MixingRoundKey,
+  item: MixingRoundItem,
+  edit?: { lineIndex: number; itemIndex: number },
+  batchWeightFallback?: number | null
+): MixingReportLine[] {
+  const batchWeight = getRoundBatchWeightFromLines(chi_tiet, roundKey) ?? batchWeightFallback ?? null;
+  const savedItem = applyPercentToRoundItem(item, batchWeight);
+  let lines = [...chi_tiet];
+
+  if (edit) {
+    const line = lines[edit.lineIndex];
+    if (!line) return normalizeChiTietLines(lines);
+    const items = [...getRoundItems(line.lan_su_dung, roundKey)];
+    items[edit.itemIndex] = savedItem;
+    lines[edit.lineIndex] = {
+      ...updateLineRoundItems(line, roundKey, items),
+      ma_nvl: savedItem.ma_nvl || line.ma_nvl,
+      ten_vat_tu: savedItem.ten_vat_tu || line.ten_vat_tu
+    };
+    return normalizeChiTietLines(lines);
+  }
+
+  const codeKey = normalizeMaterialKey(savedItem.ma_nvl || savedItem.ten_vat_tu);
+  const existingIndex = lines.findIndex(line => normalizeMaterialKey(line.ma_nvl || line.ten_vat_tu) === codeKey);
+
+  if (existingIndex >= 0) {
+    const line = lines[existingIndex];
+    const items = [...getRoundItems(line.lan_su_dung, roundKey)];
+    const itemKey = normalizeMaterialKey(savedItem.ma_nvl || savedItem.ten_vat_tu);
+    const existingItemIndex = items.findIndex(
+      item => normalizeMaterialKey(item.ma_nvl || item.ten_vat_tu) === itemKey
+    );
+    if (existingItemIndex >= 0) {
+      items[existingItemIndex] = savedItem;
+    } else {
+      items.push(savedItem);
+    }
+    lines[existingIndex] = updateLineRoundItems(line, roundKey, items);
+  } else {
+    const lan_su_dung: MixingPhoiTron = { lan_1: [], [roundKey]: [savedItem] };
+    if (batchWeight) {
+      lan_su_dung.khoi_luong_me = { [roundKey]: batchWeight };
+    }
+    lines.push({
+      stt: lines.length + 1,
+      ma_nvl: savedItem.ma_nvl,
+      ten_vat_tu: savedItem.ten_vat_tu,
+      lan_su_dung,
+      tong_nhua_tron: sumMixingRounds(lan_su_dung),
+      hinh_anh: '',
+      hinh_anh_public_id: ''
+    });
+  }
+
+  return normalizeChiTietLines(lines);
+}
+
+export function removeMaterialFromRound(
+  chi_tiet: MixingReportLine[],
+  roundKey: MixingRoundKey,
+  lineIndex: number,
+  itemIndex: number
+): MixingReportLine[] {
+  const line = chi_tiet[lineIndex];
+  if (!line) return chi_tiet;
+
+  const items = getRoundItems(line.lan_su_dung, roundKey).filter((_, index) => index !== itemIndex);
+  let lines = [...chi_tiet];
+  lines[lineIndex] = updateLineRoundItems(line, roundKey, items);
+
+  const hasAnyRoundData = MIXING_ROUND_KEYS.some(key =>
+    getRoundItems(lines[lineIndex].lan_su_dung, key).some(isMeaningfulRoundItem)
+  );
+  if (!hasAnyRoundData) {
+    lines = lines.filter((_, index) => index !== lineIndex);
+  }
+
+  return normalizeChiTietLines(lines.map((row, index) => ({ ...row, stt: index + 1 })));
+}
+
+export function applyMixingRoundAutofill(
+  chi_tiet: MixingReportLine[],
+  roundKey: MixingRoundKey,
+  items: MixingRoundItem[],
+  batchWeightFallback?: number | null
+): MixingReportLine[] {
+  return items.reduce(
+    (lines, item) => upsertMaterialInRound(lines, roundKey, item, undefined, batchWeightFallback),
+    [...chi_tiet]
+  );
 }

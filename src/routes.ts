@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-downtime-report' | 'machine-downtime-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'damaged-goods-report' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-downtime-report' | 'machine-downtime-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -12,6 +12,7 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'control-board': '/bang-dieu-khien',
   form: '/nhap-bao-cao',
   'weighing-summary': '/tong-hop-ca',
+  'damaged-goods-report': '/bao-cao-hang-hong',
   'mixing-report': '/bao-cao-phoi-tron',
   'mixing-report-list': '/danh-sach-bao-cao-phoi-tron',
   'machine-nvl-report': '/bao-cao-may-nvl-ton',

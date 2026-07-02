@@ -12,17 +12,37 @@ import {
   parseBulkOpeningStockExcel,
   type BulkOpeningStockImportRow
 } from './utils/bulkOpeningStockExcel';
+import {
+  downloadBulkMaterialTotalWeightTemplate,
+  parseBulkMaterialTotalWeightExcel,
+  type BulkMaterialTotalWeightImportRow
+} from './utils/bulkMaterialTotalWeightExcel';
+import {
+  downloadBulkProductNplComponentsTemplate,
+  downloadProductNplComponentsTemplate,
+  parseBulkProductNplComponentsExcel,
+  parseProductNplComponentsExcel,
+  type BulkProductNplComponentsExcelRow,
+  type ProductNplComponentsExcelRow
+} from './utils/productNplComponentsExcel';
 import ProductEntryForm from './components/ProductEntryForm';
 import MaterialsForm from './components/MaterialsForm';
 import WasteForm from './components/WasteForm';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import WeighingShiftSummary from './components/WeighingShiftSummary';
+import { DAMAGED_GOODS_SLIP_CONFIG } from './lib/weighingSlipConfig';
 import MixingReportForm from './components/MixingReportForm';
 import MixingReportListView from './components/MixingReportListView';
 import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
 import AcceptanceReportListView from './components/AcceptanceReportListView';
 import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
 import MachineDowntimeIcon from './components/icons/MachineDowntimeIcon';
+import {
+  MachineNvlPrintBatch,
+  buildMachineNvlPrintReportFromForm,
+  savedReportToMachineNvlPrintReport,
+  type MachineNvlPrintReport
+} from './components/MachineNvlPrintSheet';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from './components/WarehouseSlipPrintModal';
 import { RepeatableLineRow, RepeatableLinesBlock } from './components/RepeatableLinesBlock';
 import { AppTab, pathFromTab, tabFromPath } from './routes';
@@ -34,7 +54,7 @@ import {
   Building2, UserPlus, Search, MoreVertical, ShieldCheck, BriefcaseBusiness, Package, Cpu, Plus, Boxes, ClipboardList, Settings,
   ImagePlus,
   Eye, Pencil, Trash2, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowUpFromLine, Printer,
-  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, ClipboardPaste, Download, Upload, QrCode, Scale, CalendarDays, Home
+  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, ClipboardPaste, Download, Upload, QrCode, Scale, CalendarDays, Home, PackageX
 } from 'lucide-react';
 
 const STORAGE_DRAFT_KEY = 'factory_report_draft_v1';
@@ -300,6 +320,75 @@ function productNplItemsToJson(items: ProductNplItem[]) {
       so_luong: null
     };
   });
+}
+
+function excelRowsToProductNplItems(
+  rows: ProductNplComponentsExcelRow[],
+  materialOptions: MaterialOption[]
+): ProductNplItem[] {
+  return rows.map(row => {
+    const material = materialOptions.find(
+      option => normalizeProductCodeKey(option.code) === normalizeProductCodeKey(row.code)
+    );
+    const name = row.name || material?.name || '';
+    if (row.amountType === 'quantity') {
+      return {
+        code: row.code.trim(),
+        name,
+        amountType: 'quantity',
+        percent: null,
+        quantity: row.value,
+        unit: row.unit || material?.unit || '-'
+      };
+    }
+
+    return {
+      code: row.code.trim(),
+      name,
+      amountType: 'percent',
+      percent: row.value,
+      quantity: null,
+      unit: '-'
+    };
+  });
+}
+
+function bulkExcelRowsToProductMap(
+  rows: BulkProductNplComponentsExcelRow[],
+  materialOptions: MaterialOption[]
+) {
+  const grouped = new Map<string, ProductNplItem[]>();
+
+  rows.forEach(row => {
+    const material = materialOptions.find(
+      option => normalizeProductCodeKey(option.name) === normalizeProductCodeKey(row.componentName)
+    );
+    const item: ProductNplItem =
+      row.amountType === 'quantity'
+        ? {
+            code: material?.code || row.componentName.trim(),
+            name: row.componentName || material?.name || '',
+            amountType: 'quantity',
+            percent: null,
+            quantity: row.value,
+            unit: row.unit || material?.unit || '-'
+          }
+        : {
+            code: material?.code || row.componentName.trim(),
+            name: row.componentName || material?.name || '',
+            amountType: 'percent',
+            percent: row.value,
+            quantity: null,
+            unit: '-'
+          };
+
+    const key = normalizeProductCodeKey(row.productCode);
+    const current = grouped.get(key) || [];
+    current.push(item);
+    grouped.set(key, current);
+  });
+
+  return grouped;
 }
 
 const productFieldClass =
@@ -651,6 +740,10 @@ function ProductViewModal({
   const [detailItem, setDetailItem] = useState<ProductNplItem | null>(null);
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
   const [formIndex, setFormIndex] = useState<number | null>(null);
+  const componentsFileInputRef = useRef<HTMLInputElement>(null);
+  const [isReadingComponentsExcel, setIsReadingComponentsExcel] = useState(false);
+  const [componentsExcelMessage, setComponentsExcelMessage] = useState('');
+  const [componentsExcelError, setComponentsExcelError] = useState('');
 
   useEffect(() => {
     setItems(product.nplItems);
@@ -707,6 +800,58 @@ function ProductViewModal({
       setFormIndex(null);
     } catch {
       // Lỗi đã hiển thị ở ProductsPanel
+    }
+  };
+
+  const handleDownloadComponentsTemplate = () => {
+    downloadProductNplComponentsTemplate(
+      items.map(item => ({
+        code: item.code,
+        name: item.name,
+        amountType: item.amountType,
+        percent: item.percent,
+        quantity: item.quantity,
+        unit: item.unit
+      })),
+      product.code
+    );
+  };
+
+  const handleComponentsExcelChange = async (file?: File | null) => {
+    if (!file) return;
+
+    setIsReadingComponentsExcel(true);
+    setComponentsExcelError('');
+    setComponentsExcelMessage('');
+
+    try {
+      const rows = await parseProductNplComponentsExcel(file);
+      if (rows.length === 0) {
+        throw new Error(
+          'File Excel không có dòng thành phần hợp lệ. Kiểm tra cột Mã NPL, Loại, Giá trị và ĐVT (nếu là Số lượng).'
+        );
+      }
+
+      const nextItems = excelRowsToProductNplItems(rows, materialOptions);
+      const replaceLabel = items.length > 0 ? 'thay thế' : 'nhập';
+      if (
+        !window.confirm(
+          `Tải ${nextItems.length} thành phần từ Excel và ${replaceLabel} danh sách hiện tại?`
+        )
+      ) {
+        return;
+      }
+
+      await onSaveItems(nextItems);
+      setItems(nextItems);
+      setComponentsExcelMessage(`Đã tải ${nextItems.length} thành phần từ Excel.`);
+    } catch (error: any) {
+      setComponentsExcelError(error.message || 'Không thể đọc file Excel.');
+    } finally {
+      setIsReadingComponentsExcel(false);
+      if (componentsFileInputRef.current) {
+        componentsFileInputRef.current.value = '';
+      }
     }
   };
 
@@ -859,12 +1004,40 @@ function ProductViewModal({
                   <p className="text-sm font-black text-zinc-950">Bảng thành phần NVL</p>
                   <p className="mt-0.5 text-xs font-semibold text-zinc-500">Nguyên vật liệu · phần trăm hoặc số lượng</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {percentItemCount > 0 && (
                     <span className={`rounded-full px-2.5 py-1 text-xs font-black ${Math.abs(totalPercent - 100) < 0.01 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
                       Tổng %: {formatPercent(totalPercent)}%
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleDownloadComponentsTemplate}
+                    className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    <Download className="h-4 w-4" />
+                    Tải mẫu Excel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => componentsFileInputRef.current?.click()}
+                    disabled={isSaving || isReadingComponentsExcel}
+                    className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isReadingComponentsExcel ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    {isReadingComponentsExcel ? 'Đang đọc...' : 'Tải Excel lên'}
+                  </button>
+                  <input
+                    ref={componentsFileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={event => handleComponentsExcelChange(event.target.files?.[0])}
+                  />
                   <button
                     type="button"
                     onClick={openAddForm}
@@ -875,6 +1048,22 @@ function ProductViewModal({
                   </button>
                 </div>
               </div>
+
+              {(componentsExcelError || componentsExcelMessage) && (
+                <p
+                  className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                    componentsExcelError
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {componentsExcelError || componentsExcelMessage}
+                </p>
+              )}
+
+              <p className="text-[11px] font-semibold text-zinc-500">
+                Excel gồm các cột: <strong>Mã NPL</strong>, <strong>Tên NVL</strong>, <strong>Loại</strong> (Phần trăm / Số lượng), <strong>Giá trị</strong>, <strong>ĐVT</strong> (bắt buộc nếu Số lượng). Tải lên sẽ thay thế toàn bộ thành phần hiện tại.
+              </p>
 
               <div className="overflow-hidden rounded-xl border border-zinc-200">
                 <table className="min-w-full text-left text-sm">
@@ -1222,6 +1411,8 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [productFormError, setProductFormError] = useState('');
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const bulkComponentsFileInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingBulkProductComponents, setIsImportingBulkProductComponents] = useState(false);
 
   const loadProducts = async () => {
     setIsLoadingProducts(true);
@@ -1263,15 +1454,16 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
         throw new Error(data.error || 'Không thể tải danh sách NPL.');
       }
       const materials = normalizeMaterialsInventory(data);
-      setMaterialOptions(
-        materials.map(material => ({
-          code: material.code,
-          name: material.name,
-          unit: material.unit && material.unit !== '-' ? material.unit : ''
-        }))
-      );
+      const options = materials.map(material => ({
+        code: material.code,
+        name: material.name,
+        unit: material.unit && material.unit !== '-' ? material.unit : ''
+      }));
+      setMaterialOptions(options);
+      return options;
     } catch {
       setMaterialOptions([]);
+      return [];
     } finally {
       setIsLoadingMaterialOptions(false);
     }
@@ -1412,6 +1604,116 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
       throw error;
     } finally {
       setIsSavingProductNpl(false);
+    }
+  };
+
+  const handleDownloadBulkProductComponentsTemplate = () => {
+    downloadBulkProductNplComponentsTemplate(
+      products.flatMap(product =>
+        product.nplItems.map(item => ({
+          productCode: product.code,
+          componentName: item.name,
+          amountType: item.amountType,
+          percent: item.percent,
+          quantity: item.quantity,
+          unit: item.unit
+        }))
+      )
+    );
+  };
+
+  const handleImportBulkProductComponents = async (file?: File | null) => {
+    if (!file) return;
+
+    setIsImportingBulkProductComponents(true);
+    setProductError('');
+    setProductActionMessage('');
+
+    try {
+      const effectiveMaterialOptions =
+        materialOptions.length > 0 ? materialOptions : await loadMaterialOptions();
+
+      const rows = await parseBulkProductNplComponentsExcel(file);
+      if (rows.length === 0) {
+        throw new Error(
+          'File Excel không có dòng hợp lệ. Cần có các cột Mã SP, Tên NVL, Loại, Giá trị và ĐVT nếu là Số lượng.'
+        );
+      }
+
+      const productMap = bulkExcelRowsToProductMap(rows, effectiveMaterialOptions);
+      const unknownMaterialNames = rows
+        .filter(
+          row =>
+            !effectiveMaterialOptions.some(
+              option => normalizeProductCodeKey(option.name) === normalizeProductCodeKey(row.componentName)
+            )
+        )
+        .map(row => row.componentName);
+      if (unknownMaterialNames.length > 0) {
+        const sample = [...new Set(unknownMaterialNames)].slice(0, 5).join(', ');
+        throw new Error(`Không tìm thấy NVL trong kho theo tên: ${sample}.`);
+      }
+      const updates = products
+        .map(product => ({
+          product,
+          key: normalizeProductCodeKey(product.code || product.amisCode || product.newCode || ''),
+          items: productMap.get(normalizeProductCodeKey(product.code || product.amisCode || product.newCode || '')) || []
+        }))
+        .filter(entry => entry.key && entry.items.length > 0);
+
+      if (updates.length === 0) {
+        throw new Error('Không tìm thấy sản phẩm nào trong file khớp với danh sách hiện tại.');
+      }
+
+      const missingProductCodes = [...productMap.keys()].filter(
+        key =>
+          !products.some(product =>
+            [
+              normalizeProductCodeKey(product.code),
+              normalizeProductCodeKey(product.amisCode),
+              normalizeProductCodeKey(product.newCode)
+            ].includes(key)
+          )
+      );
+
+      const confirmMessage = [
+        `Cập nhật thành phần cho ${updates.length} sản phẩm từ Excel?`,
+        missingProductCodes.length > 0 ? `Bỏ qua ${missingProductCodes.length} mã SP không khớp.` : null
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+
+      await Promise.all(
+        updates.map(async entry => {
+          const res = await fetch(`/api/san-pham/${entry.product.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ npl_phan_tram: productNplItemsToJson(entry.items) })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.error || `Không thể cập nhật thành phần cho ${entry.product.code}.`);
+          }
+        })
+      );
+
+      const parts = [`Đã cập nhật thành phần cho ${updates.length} sản phẩm.`];
+      if (missingProductCodes.length > 0) {
+        parts.push(`Bỏ qua ${missingProductCodes.length} mã SP không khớp.`);
+      }
+      setProductActionMessage(parts.join(' '));
+      await loadProducts();
+    } catch (error: any) {
+      setProductError(error.message || 'Không thể tải Excel thành phần sản phẩm.');
+    } finally {
+      setIsImportingBulkProductComponents(false);
+      if (bulkComponentsFileInputRef.current) {
+        bulkComponentsFileInputRef.current.value = '';
+      }
     }
   };
 
@@ -1700,10 +2002,35 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
         <div className="min-w-0">
           <p className="text-sm font-black text-zinc-950">Thao tác hàng loạt</p>
           <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-            Đã chọn {selectedProducts.length} dòng. In QR hoặc xóa các sản phẩm đã tick.
+            Đã chọn {selectedProducts.length} dòng. Có thể nhập Excel thành phần cho nhiều sản phẩm, in QR hoặc xóa các sản phẩm đã tick.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <button
+            type="button"
+            onClick={handleDownloadBulkProductComponentsTemplate}
+            disabled={isLoadingProducts}
+            className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            Tải mẫu Excel TP
+          </button>
+          <button
+            type="button"
+            onClick={() => bulkComponentsFileInputRef.current?.click()}
+            disabled={isLoadingProducts || isImportingBulkProductComponents}
+            className="flex h-11 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-4 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isImportingBulkProductComponents ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {isImportingBulkProductComponents ? 'Đang nhập...' : 'Tải Excel TP lên'}
+          </button>
+          <input
+            ref={bulkComponentsFileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={event => handleImportBulkProductComponents(event.target.files?.[0])}
+          />
           <button
             type="button"
             onClick={toggleFilteredProducts}
@@ -3191,6 +3518,325 @@ function BulkOpeningStockModal({
   );
 }
 
+type BulkMaterialTotalWeightPreviewRow = BulkMaterialTotalWeightImportRow & {
+  material: MaterialRow | null;
+  status: 'update' | 'not_found' | 'invalid' | 'skipped';
+};
+
+function buildBulkMaterialTotalWeightPreview(
+  rows: BulkMaterialTotalWeightImportRow[],
+  materials: MaterialRow[]
+): BulkMaterialTotalWeightPreviewRow[] {
+  const materialByCode = new Map<string, MaterialRow>();
+  materials.forEach(material => {
+    if (material.code && material.code !== '-') {
+      materialByCode.set(normalizeMaterialCodeKey(material.code), material);
+    }
+  });
+
+  return rows.map(row => {
+    const weightValue = row.totalWeight.trim().replace(',', '.');
+    const hasWeightValue = weightValue !== '' && weightValue !== '-';
+    const isValidNumber = hasWeightValue && Number.isFinite(Number(weightValue));
+    const material = materialByCode.get(normalizeMaterialCodeKey(row.code)) ?? null;
+
+    if (!hasWeightValue) {
+      return { ...row, material, status: 'skipped' as const };
+    }
+
+    if (!isValidNumber) {
+      return { ...row, material, status: 'invalid' as const };
+    }
+
+    if (!material) {
+      return { ...row, material, status: 'not_found' as const };
+    }
+
+    return { ...row, material, status: 'update' as const };
+  });
+}
+
+function BulkMaterialTotalWeightModal({
+  open,
+  materials,
+  onClose,
+  onApplied
+}: {
+  open: boolean;
+  materials: MaterialRow[];
+  onClose: () => void;
+  onApplied: (message: string) => void;
+}) {
+  const [importRows, setImportRows] = useState<BulkMaterialTotalWeightImportRow[]>([]);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [pasteError, setPasteError] = useState('');
+  const [isApplying, setIsApplying] = useState(false);
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setImportRows([]);
+      setUploadedFileName('');
+      setPasteError('');
+      setIsApplying(false);
+      setIsReadingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [open]);
+
+  const previewRows = useMemo(
+    () => (importRows.length > 0 ? buildBulkMaterialTotalWeightPreview(importRows, materials) : []),
+    [importRows, materials]
+  );
+  const updateRows = previewRows.filter(row => row.status === 'update');
+  const applicableCount = updateRows.length;
+  const invalidCount = previewRows.filter(row => row.status === 'invalid').length;
+  const notFoundCount = previewRows.filter(row => row.status === 'not_found').length;
+  const skippedCount = previewRows.filter(row => row.status === 'skipped').length;
+
+  const handleDownloadTemplate = () => {
+    downloadBulkMaterialTotalWeightTemplate(
+      materials.map(material => ({
+        code: material.code,
+        totalWeight: material.totalWeight
+      }))
+    );
+  };
+
+  const handleFileChange = async (file?: File | null) => {
+    if (!file) return;
+
+    setIsReadingFile(true);
+    setPasteError('');
+    setUploadedFileName(file.name);
+
+    try {
+      const rows = await parseBulkMaterialTotalWeightExcel(file);
+      if (rows.length === 0) {
+        throw new Error('File Excel không có dòng dữ liệu hợp lệ.');
+      }
+      setImportRows(rows);
+    } catch (error: any) {
+      setImportRows([]);
+      setPasteError(error.message || 'Không thể đọc file Excel.');
+    } finally {
+      setIsReadingFile(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (applicableCount === 0) {
+      setPasteError('Không có dòng hợp lệ để xử lý. Kiểm tra lại cột Mã NVL và Tổng trọng lượng trong file Excel.');
+      return;
+    }
+
+    if (!window.confirm(`Cập nhật Tổng trọng lượng cho ${updateRows.length} NPL?`)) {
+      return;
+    }
+
+    setIsApplying(true);
+    setPasteError('');
+
+    try {
+      const updatedCodes: string[] = [];
+
+      await Promise.all(
+        updateRows.map(async row => {
+          const material = row.material!;
+          const payload = {
+            ...materialToForm(material),
+            totalWeight: row.totalWeight.trim().replace(',', '.')
+          };
+          const res = await fetch(`/api/kho-nvl/${material.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.error || `Không thể cập nhật ${material.code}.`);
+          }
+          updatedCodes.push(material.code);
+        })
+      );
+
+      onApplied(`Đã cập nhật Tổng trọng lượng cho ${updatedCodes.length} NPL.`);
+      onClose();
+    } catch (error: any) {
+      setPasteError(error.message || 'Không thể cập nhật Tổng trọng lượng hàng loạt.');
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
+              Cập nhật Tổng trọng lượng từ Excel
+            </h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+              Khớp theo Mã NVL / Mã NPL và ghi vào cột Tổng kg
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isApplying}
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Đóng
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+          {pasteError && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
+              {pasteError}
+            </div>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+            >
+              <Download className="h-4 w-4" />
+              Tải mẫu Excel
+            </button>
+            <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
+              {isReadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {isReadingFile ? 'Đang đọc file...' : 'Tải file Excel lên'}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                className="hidden"
+                onChange={event => {
+                  const file = event.target.files?.[0];
+                  void handleFileChange(file);
+                }}
+              />
+            </label>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs leading-5 text-zinc-600">
+            <p className="font-bold text-zinc-800">Hướng dẫn</p>
+            <ol className="mt-1 list-decimal space-y-1 pl-4">
+              <li>
+                Bấm <strong>Tải mẫu Excel</strong> — file có 2 cột: <strong>Mã NVL</strong> và{' '}
+                <strong>Tổng trọng lượng</strong>.
+              </li>
+              <li>Sửa cột <strong>Tổng trọng lượng</strong> theo từng mã NPL.</li>
+              <li>
+                Bấm <strong>Tải file Excel lên</strong> — hệ thống khớp Mã NVL và cập nhật cột Tổng kg.
+              </li>
+            </ol>
+          </div>
+
+          {uploadedFileName && (
+            <p className="text-xs font-bold text-zinc-500">
+              File: <span className="text-zinc-800">{uploadedFileName}</span>
+            </p>
+          )}
+
+          {previewRows.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2 text-xs font-bold">
+                <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-800">
+                  Cập nhật: {updateRows.length}
+                </span>
+                {notFoundCount > 0 && (
+                  <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-amber-800">
+                    Không tìm thấy mã: {notFoundCount}
+                  </span>
+                )}
+                {skippedCount > 0 && (
+                  <span className="rounded-lg bg-zinc-100 px-2.5 py-1 text-zinc-700">
+                    Bỏ qua (trống): {skippedCount}
+                  </span>
+                )}
+                {invalidCount > 0 && (
+                  <span className="rounded-lg bg-rose-50 px-2.5 py-1 text-rose-700">
+                    Số không hợp lệ: {invalidCount}
+                  </span>
+                )}
+              </div>
+
+              <div className="overflow-hidden rounded-xl border border-zinc-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                    <tr>
+                      <th className="px-3 py-2 font-black">Mã NVL</th>
+                      <th className="px-3 py-2 font-black">Tổng trọng lượng mới</th>
+                      <th className="px-3 py-2 font-black">Tổng kg hiện tại</th>
+                      <th className="px-3 py-2 font-black">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {previewRows.map((row, index) => (
+                      <tr
+                        key={`${row.code}-${index}`}
+                        className={
+                          row.status === 'update'
+                            ? 'bg-white'
+                            : row.status === 'not_found'
+                              ? 'bg-amber-50/60'
+                              : row.status === 'skipped'
+                                ? 'bg-zinc-50'
+                                : 'bg-rose-50/60'
+                        }
+                      >
+                        <td className="px-3 py-2 font-black text-zinc-900">{row.code}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-zinc-800">{row.totalWeight}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-zinc-500">
+                          {row.material?.totalWeight ?? '-'}
+                        </td>
+                        <td className="px-3 py-2 font-bold">
+                          {row.status === 'update' && <span className="text-emerald-700">Cập nhật</span>}
+                          {row.status === 'not_found' && <span className="text-amber-700">Không tìm thấy</span>}
+                          {row.status === 'skipped' && <span className="text-zinc-500">Bỏ qua</span>}
+                          {row.status === 'invalid' && <span className="text-rose-700">Số không hợp lệ</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isApplying}
+            className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={isApplying || applicableCount === 0}
+            className="flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isApplying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isApplying ? 'Đang xử lý...' : `Áp dụng ${applicableCount} dòng`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MaterialMovementRow {
   slipCode: string;
   slipType: 'nhap' | 'xuat';
@@ -3493,6 +4139,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const [actionMessage, setActionMessage] = useState('');
   const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm);
   const [showBulkOpeningStock, setShowBulkOpeningStock] = useState(false);
+  const [showBulkTotalWeight, setShowBulkTotalWeight] = useState(false);
 
   const loadMaterials = async () => {
     setIsLoadingMaterials(true);
@@ -3542,6 +4189,25 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     const value = parseInventoryNumber(material.totalWeight);
     return Number.isFinite(value) ? sum + value : sum;
   }, 0);
+
+  const handleDownloadTotalWeightTemplate = () => {
+    downloadBulkMaterialTotalWeightTemplate(
+      materials.map(material => ({
+        code: material.code,
+        totalWeight: material.totalWeight
+      }))
+    );
+  };
+
+  const handleDownloadOpeningStockTemplate = () => {
+    downloadBulkOpeningStockTemplate(
+      materials.map(material => ({
+        code: material.code,
+        name: material.name,
+        openingStock: material.openingStock
+      }))
+    );
+  };
 
   const openAddForm = () => {
     setFormError('');
@@ -3666,7 +4332,15 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 Nguyên phụ liệu · dữ liệu từ bảng Supabase kho_nvl.
               </p>
             </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                onClick={handleDownloadOpeningStockTemplate}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 text-xs font-extrabold text-emerald-100 transition hover:bg-emerald-500/25"
+              >
+                <Download className="h-4 w-4" />
+                Tải mẫu Tồn đầu
+              </button>
               <button
                 type="button"
                 onClick={() => setShowBulkOpeningStock(true)}
@@ -3674,6 +4348,22 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               >
                 <ClipboardPaste className="h-4 w-4" />
                 Excel Tồn đầu
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadTotalWeightTemplate}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 text-xs font-extrabold text-emerald-100 transition hover:bg-emerald-500/25"
+              >
+                <Download className="h-4 w-4" />
+                Tải mẫu Excel
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowBulkTotalWeight(true)}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-extrabold text-white transition hover:bg-white/20"
+              >
+                <Upload className="h-4 w-4" />
+                Tải Excel lên
               </button>
               <button
                 type="button"
@@ -3852,6 +4542,16 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         open={showBulkOpeningStock}
         materials={materials}
         onClose={() => setShowBulkOpeningStock(false)}
+        onApplied={message => {
+          setActionMessage(message);
+          void loadMaterials();
+        }}
+      />
+
+      <BulkMaterialTotalWeightModal
+        open={showBulkTotalWeight}
+        materials={materials}
+        onClose={() => setShowBulkTotalWeight(false)}
         onApplied={message => {
           setActionMessage(message);
           void loadMaterials();
@@ -5601,6 +6301,9 @@ type MachineNvlReportLine = {
   name: string;
   unit: string;
   previousQuantity: string;
+  inMachineQuantity: string;
+  inMixerQuantity: string;
+  unblendedQuantity: string;
   standardQuantity: string;
   quantity: string;
   note: string;
@@ -5612,6 +6315,9 @@ type MachineNvlSavedLine = {
   tenNvl: string;
   donVi: string;
   soLuongTonCaTruoc: number | null;
+  soLuongTrongMay: number | null;
+  soLuongTrongBonTron: number | null;
+  soLuongNlChuaTron: number | null;
   soLuongTonDinhMuc: number | null;
   soLuongTon: number;
   ghiChu: string;
@@ -5644,6 +6350,9 @@ const emptyMachineNvlLine = (): MachineNvlReportLine => ({
   name: '',
   unit: 'kg',
   previousQuantity: '',
+  inMachineQuantity: '',
+  inMixerQuantity: '',
+  unblendedQuantity: '',
   standardQuantity: '',
   quantity: '',
   note: ''
@@ -5702,9 +6411,58 @@ function buildPreviousShiftQuantityMap(report: MachineNvlSavedReport | null) {
   return map;
 }
 
+function machineNvlTextKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function machineNvlShiftKey(value: string) {
+  return machineNvlTextKey(value.replace(/\([^)]*\)/g, '').replace(/^ca\s*/i, 'ca'));
+}
+
+function machineNvlShiftMatches(orderShift: string, selectedShift: string) {
+  const orderKey = machineNvlShiftKey(orderShift);
+  const selectedKey = machineNvlShiftKey(selectedShift);
+  if (!orderKey || !selectedKey || orderKey === '-') return false;
+  return orderKey === selectedKey || orderKey.includes(selectedKey) || selectedKey.includes(orderKey);
+}
+
+function machineNvlOrderMatchesMachine(orderMachine: string, selectedMachine: MachineRow | null, machineRef: string) {
+  const raw = String(orderMachine || '').trim();
+  if (!raw || raw === '-') return false;
+
+  const refKey = machineNvlTextKey(machineRef);
+  const orderKey = machineNvlTextKey(raw);
+  const candidateKeys = [
+    selectedMachine?.code || '',
+    selectedMachine?.name || '',
+    selectedMachine ? `${selectedMachine.code} · ${selectedMachine.name}` : '',
+    machineRef
+  ]
+    .map(machineNvlTextKey)
+    .filter(Boolean);
+
+  return candidateKeys.some(key => key === orderKey || key.includes(orderKey) || orderKey.includes(key) || key === refKey);
+}
+
 function formatMachineNvlQuantityValue(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
   return String(value);
+}
+
+function savedMachineNvlLineToFormLine(line: MachineNvlSavedLine): MachineNvlReportLine {
+  return {
+    key: `${Date.now()}-${line.stt}-${Math.random().toString(36).slice(2)}`,
+    code: line.maNvl,
+    name: line.tenNvl,
+    unit: line.donVi || 'kg',
+    previousQuantity: formatMachineNvlQuantityValue(line.soLuongTonCaTruoc),
+    inMachineQuantity: formatMachineNvlQuantityValue(line.soLuongTrongMay),
+    inMixerQuantity: formatMachineNvlQuantityValue(line.soLuongTrongBonTron),
+    unblendedQuantity: formatMachineNvlQuantityValue(line.soLuongNlChuaTron),
+    standardQuantity: formatMachineNvlQuantityValue(line.soLuongTonDinhMuc),
+    quantity: formatMachineNvlQuantityValue(line.soLuongTon),
+    note: line.ghiChu
+  };
 }
 
 function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
@@ -5736,12 +6494,30 @@ function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
             prevRaw === null || prevRaw === undefined || prevRaw === ''
               ? null
               : Number(String(prevRaw).replace(',', '.'));
+          const inMachineRaw = detail.so_luong_trong_may ?? detail.ton_trong_may ?? detail.inMachineQuantity;
+          const inMachineParsed =
+            inMachineRaw === null || inMachineRaw === undefined || inMachineRaw === ''
+              ? null
+              : Number(String(inMachineRaw).replace(',', '.'));
+          const inMixerRaw = detail.so_luong_trong_bon_tron ?? detail.ton_trong_bon_tron ?? detail.inMixerQuantity;
+          const inMixerParsed =
+            inMixerRaw === null || inMixerRaw === undefined || inMixerRaw === ''
+              ? null
+              : Number(String(inMixerRaw).replace(',', '.'));
+          const unblendedRaw = detail.so_luong_nl_chua_tron ?? detail.nl_chua_tron ?? detail.unblendedQuantity;
+          const unblendedParsed =
+            unblendedRaw === null || unblendedRaw === undefined || unblendedRaw === ''
+              ? null
+              : Number(String(unblendedRaw).replace(',', '.'));
           return {
             stt: Number(detail.stt ?? index + 1) || index + 1,
             maNvl,
             tenNvl,
             donVi: String(detail.don_vi ?? detail.unit ?? 'kg').trim() || 'kg',
             soLuongTonCaTruoc: Number.isFinite(prevParsed) ? prevParsed : null,
+            soLuongTrongMay: Number.isFinite(inMachineParsed) ? inMachineParsed : null,
+            soLuongTrongBonTron: Number.isFinite(inMixerParsed) ? inMixerParsed : null,
+            soLuongNlChuaTron: Number.isFinite(unblendedParsed) ? unblendedParsed : null,
             soLuongTonDinhMuc: Number.isFinite(standardParsed) ? standardParsed : null,
             soLuongTon: Number.isFinite(amount) ? amount : 0,
             ghiChu: String(detail.ghi_chu ?? detail.note ?? '').trim()
@@ -5779,6 +6555,8 @@ function MachineNvlReportPanel({
   const [activeKind, setActiveKind] = useState<MachineNvlReportKind>('dau_ca');
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
+  const [shiftSettings, setShiftSettings] = useState<ProductionOrderLookupSetting[]>([]);
+  const [productionOrders, setProductionOrders] = useState<ProductionOrderRow[]>([]);
   const [reports, setReports] = useState<MachineNvlSavedReport[]>([]);
   const [cuoiCaReports, setCuoiCaReports] = useState<MachineNvlSavedReport[]>([]);
   const [date, setDate] = useState(machineNvlToday());
@@ -5790,6 +6568,9 @@ function MachineNvlReportPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [editingReportId, setEditingReportId] = useState<string | null>(null);
+  const [printReport, setPrintReport] = useState<MachineNvlPrintReport | null>(null);
+  const [pendingPrint, setPendingPrint] = useState(false);
 
   const loadReports = async (kind: MachineNvlReportKind = activeKind) => {
     const res = await fetch(`/api/bao-cao-may-nvl-ton?limit=50&loai_bao_cao=${encodeURIComponent(kind)}`);
@@ -5803,15 +6584,19 @@ function MachineNvlReportPanel({
     const load = async () => {
       setIsLoading(true);
       try {
-        const [machineRes, materialRes, reportRes, cuoiCaRes] = await Promise.all([
+        const [machineRes, materialRes, settingsRes, productionRes, reportRes, cuoiCaRes] = await Promise.all([
           fetch('/api/danh-sach-may'),
           fetch('/api/kho-nvl'),
+          fetch('/api/cai-dat'),
+          fetch('/api/lenh-sx'),
           fetch(`/api/bao-cao-may-nvl-ton?limit=50&loai_bao_cao=${encodeURIComponent(activeKind)}`),
           fetch('/api/bao-cao-may-nvl-ton?limit=50&loai_bao_cao=cuoi_ca')
         ]);
-        const [machineData, materialData, reportData, cuoiCaData] = await Promise.all([
+        const [machineData, materialData, settingsData, productionData, reportData, cuoiCaData] = await Promise.all([
           machineRes.json().catch(() => ({})),
           materialRes.json().catch(() => ({})),
+          settingsRes.json().catch(() => ({})),
+          productionRes.json().catch(() => ({})),
           reportRes.json().catch(() => ({})),
           cuoiCaRes.json().catch(() => ({}))
         ]);
@@ -5819,6 +6604,8 @@ function MachineNvlReportPanel({
         if (!alive) return;
         if (machineRes.ok) setMachines(normalizeMachines(machineData));
         if (materialRes.ok) setMaterials(normalizeMaterialsInventory(materialData));
+        if (settingsRes.ok) setShiftSettings(mapProductionOrderSettings(settingsData));
+        if (productionRes.ok) setProductionOrders(normalizeProductionOrders(productionData));
         if (reportRes.ok) setReports(normalizeMachineNvlReports(reportData));
         if (cuoiCaRes.ok) setCuoiCaReports(normalizeMachineNvlReports(cuoiCaData));
       } finally {
@@ -5843,6 +6630,7 @@ function MachineNvlReportPanel({
   const switchReportKind = (kind: MachineNvlReportKind) => {
     if (kind === activeKind) return;
     setActiveKind(kind);
+    setEditingReportId(null);
     setLines([emptyMachineNvlLine()]);
     setNote('');
     setMessage('');
@@ -5852,6 +6640,56 @@ function MachineNvlReportPanel({
   const isDauCaTab = activeKind === 'dau_ca';
 
   const selectedMachine = findMachineByRef(machines, machineRef);
+  const shiftOptions = useMemo(() => {
+    const fromSettings = shiftSettings
+      .filter(
+        setting =>
+          setting.loaiCaiDat === 'Thời gian' ||
+          setting.loaiCaiDat === 'Ca máy' ||
+          setting.loaiCaiDat === 'Sản xuất' ||
+          /ca/i.test(setting.name) ||
+          /ca/i.test(setting.code)
+      )
+      .map(setting => setting.name || setting.code)
+      .filter((name, index, arr) => name && arr.indexOf(name) === index);
+
+    return fromSettings.length > 0 ? fromSettings : [...STANDARD_SHIFTS];
+  }, [shiftSettings]);
+  const staffOptions = useMemo(() => {
+    if (!date || !shift || !machineRef.trim()) return [];
+
+    const matchedOrders = productionOrders.filter(order => {
+      const orderDate = parseProductionOrderFilterDate(order.startDate);
+      if (orderDate && orderDate !== date) return false;
+      if (!machineNvlShiftMatches(order.shift, shift)) return false;
+      return machineNvlOrderMatchesMachine(resolveProductionOrderMachine(order, machines), selectedMachine, machineRef);
+    });
+
+    return Array.from(new Set<string>(matchedOrders.flatMap(order => splitProductionOrderStaffNames(order.staff)))).sort((a, b) =>
+      a.localeCompare(b, 'vi')
+    );
+  }, [date, machines, machineRef, productionOrders, selectedMachine, shift]);
+
+  useEffect(() => {
+    if (!date || !shift || !machineRef.trim()) {
+      if (staff) setStaff('');
+      return;
+    }
+
+    if (staffOptions.length === 1 && staff !== staffOptions[0]) {
+      setStaff(staffOptions[0]);
+      return;
+    }
+
+    if (staffOptions.length === 0 && staff) {
+      setStaff('');
+      return;
+    }
+
+    if (staff && staffOptions.length > 0 && !staffOptions.includes(staff)) {
+      setStaff('');
+    }
+  }, [date, machineRef, shift, staff, staffOptions]);
   const previousCuoiCaReport = useMemo(
     () =>
       isDauCaTab
@@ -5887,7 +6725,11 @@ function MachineNvlReportPanel({
   }, [isDauCaTab, previousShiftQtyMap]);
 
   const totalQuantity = lines.reduce((sum, line) => {
-    const value = Number(line.quantity.replace(',', '.'));
+    const value = isDauCaTab
+      ? (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+        (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+        (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+      : Number(line.quantity.replace(',', '.'));
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
 
@@ -5917,16 +6759,32 @@ function MachineNvlReportPanel({
           ma_nvl: line.code.trim(),
           ten_nvl: line.name.trim(),
           don_vi: line.unit.trim() || 'kg',
-          so_luong_ton: Number(line.quantity.replace(',', '.')) || 0,
           ghi_chu: line.note.trim()
         };
         if (isDauCaTab) {
           const prevQty = Number(line.previousQuantity.replace(',', '.'));
+          const inMachineQty = Number(line.inMachineQuantity.replace(',', '.'));
+          const inMixerQty = Number(line.inMixerQuantity.replace(',', '.'));
+          const unblendedQty = Number(line.unblendedQuantity.replace(',', '.'));
           if (Number.isFinite(prevQty) && prevQty >= 0) {
             row.so_luong_ton_ca_truoc = prevQty;
           }
+          if (Number.isFinite(inMachineQty) && inMachineQty >= 0) {
+            row.so_luong_trong_may = inMachineQty;
+          }
+          if (Number.isFinite(inMixerQty) && inMixerQty >= 0) {
+            row.so_luong_trong_bon_tron = inMixerQty;
+          }
+          if (Number.isFinite(unblendedQty) && unblendedQty >= 0) {
+            row.so_luong_nl_chua_tron = unblendedQty;
+          }
+          row.so_luong_ton =
+            (Number.isFinite(inMachineQty) ? inMachineQty : 0) +
+            (Number.isFinite(inMixerQty) ? inMixerQty : 0) +
+            (Number.isFinite(unblendedQty) ? unblendedQty : 0);
         } else {
           const standardQty = Number(line.standardQuantity.replace(',', '.'));
+          row.so_luong_ton = Number(line.quantity.replace(',', '.')) || 0;
           if (Number.isFinite(standardQty) && standardQty >= 0) {
             row.so_luong_ton_dinh_muc = standardQty;
           }
@@ -5937,6 +6795,9 @@ function MachineNvlReportPanel({
         line =>
           line.ma_nvl ||
           line.ten_nvl ||
+          Number(line.so_luong_trong_may) > 0 ||
+          Number(line.so_luong_trong_bon_tron) > 0 ||
+          Number(line.so_luong_nl_chua_tron) > 0 ||
           Number(line.so_luong_ton_dinh_muc) > 0 ||
           Number(line.so_luong_ton) > 0
       );
@@ -5948,25 +6809,32 @@ function MachineNvlReportPanel({
 
     setIsSaving(true);
     try {
-      const res = await fetch('/api/bao-cao-may-nvl-ton', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ngay: date,
-          ca: shift,
-          gio: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          ma_may: selectedMachine?.code || machineRef.trim(),
-          ten_may: selectedMachine?.name || machineRef.trim(),
-          nhan_su: staff.trim(),
-          ghi_chu: note.trim(),
-          loai_bao_cao: activeKind,
-          chi_tiet: materialLines
-        })
-      });
+      const isEdit = Boolean(editingReportId);
+      const res = await fetch(
+        isEdit ? `/api/bao-cao-may-nvl-ton/${encodeURIComponent(editingReportId!)}` : '/api/bao-cao-may-nvl-ton',
+        {
+          method: isEdit ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ngay: date,
+            ca: shift,
+            gio: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+            ma_may: selectedMachine?.code || machineRef.trim(),
+            ten_may: selectedMachine?.name || machineRef.trim(),
+            nhan_su: staff.trim(),
+            ghi_chu: note.trim(),
+            loai_bao_cao: activeKind,
+            chi_tiet: materialLines
+          })
+        }
+      );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo NVL tồn theo máy.');
+      if (!res.ok) {
+        throw new Error(data.error || `Không thể ${isEdit ? 'cập nhật' : 'lưu'} báo cáo NVL tồn theo máy.`);
+      }
 
-      setMessage(`Đã lưu ${activeTabMeta.label.toLowerCase()}.`);
+      setMessage(isEdit ? `Đã cập nhật ${activeTabMeta.label.toLowerCase()}.` : `Đã lưu ${activeTabMeta.label.toLowerCase()}.`);
+      setEditingReportId(null);
       setLines([emptyMachineNvlLine()]);
       setNote('');
       await loadReports(activeKind);
@@ -5985,8 +6853,82 @@ function MachineNvlReportPanel({
       setMessage(data.error || 'Không thể xóa báo cáo.');
       return;
     }
+    if (editingReportId === id) {
+      setEditingReportId(null);
+      setLines([emptyMachineNvlLine()]);
+      setNote('');
+    }
     setReports(prev => prev.filter(report => report.id !== id));
   };
+
+  const startEditReport = (report: MachineNvlSavedReport) => {
+    const found =
+      findMachineByRef(machines, report.maMay) ?? findMachineByRef(machines, report.tenMay);
+    setEditingReportId(report.id);
+    setDate(report.ngay || machineNvlToday());
+    setShift(report.ca);
+    setMachineRef(found ? machineSelectValue(found) : report.tenMay || report.maMay);
+    setStaff(report.nhanSu);
+    setNote(report.note);
+    setLines(
+      report.lines.length > 0 ? report.lines.map(savedMachineNvlLineToFormLine) : [emptyMachineNvlLine()]
+    );
+    setMessage('');
+  };
+
+  const cancelEditReport = () => {
+    setEditingReportId(null);
+    setLines([emptyMachineNvlLine()]);
+    setNote('');
+    setMessage('');
+  };
+
+  const printReportPayload = (report: MachineNvlPrintReport) => {
+    setPrintReport(report);
+    setPendingPrint(true);
+  };
+
+  const buildCurrentPrintReport = (): MachineNvlPrintReport =>
+    buildMachineNvlPrintReportFromForm({
+      reportKind: activeKind,
+      date,
+      shift,
+      machineCode: selectedMachine?.code || machineRef.trim(),
+      machineName: selectedMachine?.name || machineRef.trim(),
+      staff: staff.trim(),
+      note: note.trim(),
+      lines
+    });
+
+  const canPrintCurrentReport = lines.some(line => {
+    if (line.code.trim() || line.name.trim()) return true;
+    if (isDauCaTab) {
+      return (
+        line.inMachineQuantity.trim() ||
+        line.inMixerQuantity.trim() ||
+        line.unblendedQuantity.trim()
+      );
+    }
+    return line.standardQuantity.trim() || line.quantity.trim();
+  });
+
+  useEffect(() => {
+    if (!pendingPrint || !printReport) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingPrint(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [pendingPrint, printReport]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintReport(null);
+      setPendingPrint(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
 
   return (
     <div className="flex h-full flex-col bg-zinc-50">
@@ -6026,7 +6968,14 @@ function MachineNvlReportPanel({
         <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
           <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-3 border-b border-zinc-100 pb-3">
-              <p className="text-sm font-black text-zinc-900">{activeTabMeta.label}</p>
+              <p className="text-sm font-black text-zinc-900">
+                {editingReportId ? `Đang sửa ${activeTabMeta.label.toLowerCase()}` : activeTabMeta.label}
+              </p>
+              {editingReportId ? (
+                <p className="mt-1 text-xs font-semibold text-[#ef1b2d]">
+                  Chỉnh sửa phiếu đã lưu · bấm Cập nhật để lưu thay đổi
+                </p>
+              ) : null}
             </div>
             <div className="grid gap-3 md:grid-cols-4">
               <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
@@ -6035,7 +6984,14 @@ function MachineNvlReportPanel({
               </label>
               <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Ca
-                <input value={shift} onChange={event => setShift(event.target.value)} placeholder="Ca 1 / Ca 2..." className={`${orderFieldClass} mt-1`} />
+                <select value={shift} onChange={event => setShift(event.target.value)} className={`${orderFieldClass} mt-1`}>
+                  <option value="">Chọn ca</option>
+                  {shiftOptions.map(option => (
+                    <option key={option} value={option}>
+                      {formatProductionOrderShiftLabel(option, shiftSettings)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
                 Máy
@@ -6048,7 +7004,25 @@ function MachineNvlReportPanel({
               </label>
               <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
                 Nhân sự
-                <input value={staff} onChange={event => setStaff(event.target.value)} placeholder="Tên người nhập" className={`${orderFieldClass} mt-1`} />
+                <select
+                  value={staff}
+                  onChange={event => setStaff(event.target.value)}
+                  className={`${orderFieldClass} mt-1`}
+                  disabled={!date || !shift || !machineRef.trim()}
+                >
+                  <option value="">
+                    {date && shift && machineRef.trim()
+                      ? staffOptions.length > 0
+                        ? 'Chọn nhân sự'
+                        : 'Không có nhân sự theo máy/ca/ngày'
+                      : 'Chọn ngày, ca và máy trước'}
+                  </option>
+                  {staffOptions.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
                 Ghi chú
@@ -6060,7 +7034,7 @@ function MachineNvlReportPanel({
               <div
                 className={`grid ${
                   isDauCaTab
-                    ? 'grid-cols-[52px_1.1fr_1.3fr_70px_120px_120px_1fr_48px]'
+                    ? 'grid-cols-[52px_1fr_1.2fr_70px_110px_110px_110px_120px_1fr_48px]'
                     : 'grid-cols-[52px_1.1fr_1.3fr_70px_130px_130px_1fr_48px]'
                 } bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white`}
               >
@@ -6068,7 +7042,10 @@ function MachineNvlReportPanel({
                 <span>Mã NVL</span>
                 <span>Tên NVL</span>
                 <span>ĐVT</span>
-                {isDauCaTab ? <span>SL tồn TT ca trước</span> : null}
+                {isDauCaTab ? <span>Tồn trong máy</span> : null}
+                {isDauCaTab ? <span>Tồn trong bồn trộn</span> : null}
+                {isDauCaTab ? <span>NL chưa trộn</span> : null}
+                {isDauCaTab ? <span>Tổng tồn đầu ca</span> : null}
                 {!isDauCaTab ? <span>SL tồn định mức</span> : null}
                 <span>SL tồn thực tế</span>
                 <span>Ghi chú</span>
@@ -6080,7 +7057,7 @@ function MachineNvlReportPanel({
                     key={line.key}
                     className={`grid ${
                       isDauCaTab
-                        ? 'grid-cols-[52px_1.1fr_1.3fr_70px_120px_120px_1fr_48px]'
+                        ? 'grid-cols-[52px_1fr_1.2fr_70px_110px_110px_110px_120px_1fr_48px]'
                         : 'grid-cols-[52px_1.1fr_1.3fr_70px_130px_130px_1fr_48px]'
                     } items-center gap-2 px-3 py-2`}
                   >
@@ -6100,11 +7077,43 @@ function MachineNvlReportPanel({
                     <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
                     {isDauCaTab ? (
                       <input
-                        value={line.previousQuantity}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.inMachineQuantity}
+                        onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })}
+                        className="h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                      />
+                    ) : null}
+                    {isDauCaTab ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.inMixerQuantity}
+                        onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })}
+                        className="h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                      />
+                    ) : null}
+                    {isDauCaTab ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unblendedQuantity}
+                        onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })}
+                        className="h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                      />
+                    ) : null}
+                    {isDauCaTab ? (
+                      <input
+                        value={formatMachineNvlQuantityValue(
+                          (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                            (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                            (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                        )}
                         readOnly
                         className="h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-sm font-black text-zinc-600 outline-none"
-                        placeholder="-"
-                        title="Lấy từ báo cáo cuối ca gần nhất"
                       />
                     ) : null}
                     {!isDauCaTab ? (
@@ -6117,7 +7126,25 @@ function MachineNvlReportPanel({
                         className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]"
                       />
                     ) : null}
-                    <input type="number" min="0" step="0.01" value={line.quantity} onChange={event => updateLine(line.key, { quantity: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]" />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={
+                        isDauCaTab
+                          ? formatMachineNvlQuantityValue(
+                              (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                                (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                                (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                            )
+                          : line.quantity
+                      }
+                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                      readOnly={isDauCaTab}
+                      className={`h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none ${
+                        isDauCaTab ? 'bg-zinc-50 text-zinc-600' : 'focus:border-[#ef1b2d]'
+                      }`}
+                    />
                     <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
                     <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
                       <Trash2 className="h-4 w-4" />
@@ -6127,7 +7154,7 @@ function MachineNvlReportPanel({
               </div>
               {isDauCaTab && previousCuoiCaReport ? (
                 <p className="border-t border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-500">
-                  SL ca trước lấy từ cuối ca: {previousCuoiCaReport.ngay} · {previousCuoiCaReport.ca} ·{' '}
+                  Tham chiếu cuối ca gần nhất: {previousCuoiCaReport.ngay} · {previousCuoiCaReport.ca} ·{' '}
                   {previousCuoiCaReport.tenMay || previousCuoiCaReport.maMay}
                 </p>
               ) : null}
@@ -6140,9 +7167,27 @@ function MachineNvlReportPanel({
               </button>
               <div className="flex items-center gap-3">
                 {message && <span className="text-sm font-bold text-zinc-600">{message}</span>}
+                {editingReportId ? (
+                  <button
+                    type="button"
+                    onClick={cancelEditReport}
+                    className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-black text-zinc-700 transition hover:border-zinc-400"
+                  >
+                    Hủy sửa
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => printReportPayload(buildCurrentPrintReport())}
+                  disabled={!canPrintCurrentReport}
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-black text-zinc-700 transition hover:border-zinc-400 disabled:opacity-60"
+                >
+                  <Printer className="h-4 w-4" />
+                  In phiếu
+                </button>
                 <button type="button" onClick={saveReport} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-[#ef1b2d] px-5 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-60">
                   {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Lưu báo cáo
+                  {editingReportId ? 'Cập nhật báo cáo' : 'Lưu báo cáo'}
                 </button>
               </div>
             </div>
@@ -6158,15 +7203,38 @@ function MachineNvlReportPanel({
             </div>
             <div className="space-y-2">
               {reports.map(report => (
-                <div key={report.id || `${report.ngay}-${report.maMay}-${report.ca}`} className="rounded-xl border border-zinc-200 p-3">
+                <div
+                  key={report.id || `${report.ngay}-${report.maMay}-${report.ca}`}
+                  className={`rounded-xl border p-3 ${
+                    editingReportId === report.id ? 'border-[#ef1b2d] bg-red-50' : 'border-zinc-200'
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="font-black text-zinc-900">{report.tenMay || report.maMay || '-'}</p>
                       <p className="text-xs font-semibold text-zinc-500">{report.ngay} · {report.ca} · {report.lines.length} NVL</p>
                     </div>
-                    <button type="button" onClick={() => deleteReport(report.id)} className="rounded-lg border border-zinc-200 p-2 text-[#ef1b2d] hover:bg-red-50" title="Xóa báo cáo">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => startEditReport(report)}
+                        className="rounded-lg border border-zinc-200 p-2 text-zinc-700 hover:bg-zinc-50"
+                        title="Sửa báo cáo"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => printReportPayload(savedReportToMachineNvlPrintReport(report))}
+                        className="rounded-lg border border-zinc-200 p-2 text-zinc-700 hover:bg-zinc-50"
+                        title="In phiếu"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={() => deleteReport(report.id)} className="rounded-lg border border-zinc-200 p-2 text-[#ef1b2d] hover:bg-red-50" title="Xóa báo cáo">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-2 text-sm font-black text-emerald-800">{formatNumber(report.total)} kg</p>
                   <div className="mt-2 max-h-28 overflow-y-auto rounded-lg bg-zinc-50 p-2 text-xs font-semibold text-zinc-600">
@@ -6203,6 +7271,7 @@ function MachineNvlReportPanel({
             </div>
           </section>
         </div>
+        {printReport && <MachineNvlPrintBatch reports={[printReport]} />}
       </div>
     </div>
   );
@@ -6356,17 +7425,101 @@ type ProductionPlanLine = {
   note: string;
 };
 
-function getProductionOrderProductLines(row: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>): OrderProductLine[] {
-  if (row.products.length > 0) return row.products;
-  if (!row.productCode && !row.productName) return [];
-  return [
-    {
-      productCode: row.productCode,
-      productName: row.productName,
-      unit: row.unit,
-      quantity: row.quantity
+function splitProductionProductNames(raw: string, expectedCount: number): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '-' || expectedCount <= 1) {
+    return trimmed && trimmed !== '-' ? [trimmed] : [];
+  }
+
+  const matchCount = (parts: string[]) =>
+    parts.length === expectedCount ? parts : null;
+
+  const byPlus = matchCount(trimmed.split(/\s+\+\s+/).map(part => part.trim()).filter(Boolean));
+  if (byPlus) return byPlus;
+
+  const byComma = matchCount(trimmed.split(/,\s+/).map(part => part.trim()).filter(Boolean));
+  if (byComma) return byComma;
+
+  const byProductPrefix = matchCount(
+    trimmed.split(/,\s*(?=Màng\s)/u).map(part => part.trim()).filter(Boolean)
+  );
+  if (byProductPrefix) return byProductPrefix;
+
+  return [trimmed];
+}
+
+function splitProductionFieldValues(
+  raw: string,
+  expectedCount: number,
+  options?: { duplicateSingle?: boolean }
+): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '-' || expectedCount <= 1) {
+    return [trimmed || '-'];
+  }
+
+  const parts = trimmed.split(/,\s+/).map(part => part.trim()).filter(Boolean);
+  if (parts.length === expectedCount) return parts;
+  if (parts.length === 1) {
+    if (options?.duplicateSingle) {
+      return Array(expectedCount).fill(parts[0]);
     }
-  ];
+    return [parts[0], ...Array(expectedCount - 1).fill('-')];
+  }
+
+  return [trimmed, ...Array(expectedCount - 1).fill('-')];
+}
+
+function expandMergedProductionProducts(
+  productCode: string,
+  productName: string,
+  unit: string,
+  quantity: string,
+  orderRef?: string
+): OrderProductLine[] {
+  const codes = splitProductionProductCodes(productCode);
+  if (codes.length <= 1) {
+    if (!productCode && !productName) return [];
+    return [{ productCode, productName, unit, quantity, orderRef }];
+  }
+
+  const names = splitProductionProductNames(productName, codes.length);
+  const units = splitProductionFieldValues(unit, codes.length, { duplicateSingle: true });
+  const quantities = splitProductionFieldValues(quantity, codes.length);
+
+  return codes.map((code, index) => ({
+    productCode: code,
+    productName: names[index] ?? names[0] ?? '',
+    unit: units[index] ?? units[0] ?? unit,
+    quantity: quantities[index] ?? quantities[0] ?? quantity,
+    orderRef
+  }));
+}
+
+function expandProductionOrderProductLines(lines: OrderProductLine[]): OrderProductLine[] {
+  return lines.flatMap(line => {
+    if (splitProductionProductCodes(line.productCode).length <= 1) return [line];
+    return expandMergedProductionProducts(
+      line.productCode,
+      line.productName,
+      line.unit,
+      line.quantity,
+      line.orderRef
+    );
+  });
+}
+
+function getProductionOrderProductLines(row: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>): OrderProductLine[] {
+  if (row.products.length > 0) {
+    return expandProductionOrderProductLines(row.products);
+  }
+  if (!row.productCode && !row.productName) return [];
+  return expandMergedProductionProducts(
+    row.productCode,
+    row.productName,
+    row.unit,
+    row.quantity
+  );
 }
 
 function getProductionPlanLineMaterialKeys(line: ProductionPlanLine): string[] {
@@ -8626,23 +9779,6 @@ function formatProductionOrderPrintDate(value?: string) {
   return value;
 }
 
-function buildProductionOrderDescription(order: ProductionOrderRow) {
-  const name = order.name?.trim();
-  if (name && name !== '-' && name !== order.code) {
-    return name;
-  }
-
-  const date = formatProductionOrderPrintDate(order.startDate);
-  const machine = order.machine && order.machine !== '-' ? order.machine : 'Máy';
-  const shift = order.shift && order.shift !== '-' ? order.shift.replace(/^ca\s*/i, '') : '';
-  const staff = order.staff && order.staff !== '-' ? order.staff.replace(/,/g, ' + ') : '';
-
-  let text = `${machine} ngày ${date}`;
-  if (shift) text += ` ca ${shift}`;
-  if (staff) text += `: ${staff}`;
-  return text;
-}
-
 function ProductionOrderPrintSheet({
   order,
   materials,
@@ -8657,10 +9793,9 @@ function ProductionOrderPrintSheet({
   shiftSettings?: ProductionOrderLookupSetting[];
 }) {
   const printDate = formatProductionOrderPrintDate(order.startDate);
-  const description = buildProductionOrderDescription(order);
   const orderQuantity = parseProductionOrderQuantity(order.quantity);
-  const finishedWeightKg = formatProductionOrderFinishedWeight(orderQuantity, product);
   const shiftLabel = formatProductionOrderShiftLabel(order.shift, shiftSettings);
+  const productLines = getProductionOrderProductLines(order);
   const staffLabel =
     order.staff && order.staff !== '-'
       ? order.staff.replace(/,/g, ' + ')
@@ -8694,8 +9829,6 @@ function ProductionOrderPrintSheet({
           <span>Ngày: {printDate}</span>
         </div>
 
-        <p className="production-order-print-description">Diễn giải: {description}</p>
-
         <table className="production-order-print-grid-table production-order-print-params-table">
           <thead>
             <tr>
@@ -8713,25 +9846,37 @@ function ProductionOrderPrintSheet({
           </tbody>
         </table>
 
-        <h2 className="production-order-print-section-title">1. Thành phẩm</h2>
+        <h2 className="production-order-print-section-title">1. Thành phẩm:</h2>
         <table className="production-order-print-grid-table production-order-print-product-table">
           <thead>
             <tr>
               <th>Mã thành phẩm</th>
               <th>Tên thành phẩm</th>
               <th>ĐVT</th>
-              <th>Khối lượng (kg)</th>
+              <th>Số lượng</th>
               <th>Đối tượng THCP</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>{order.productCode || '-'}</td>
-              <td>{order.productName || '-'}</td>
-              <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
-              <td className="production-order-print-right">{finishedWeightKg}</td>
-              <td>{costObject}</td>
-            </tr>
+            {productLines.length > 0 ? (
+              productLines.map((line, index) => (
+                <tr key={`${line.productCode}-${index}`}>
+                  <td>{line.productCode || '-'}</td>
+                  <td className="production-order-print-product-name-cell">{line.productName || '-'}</td>
+                  <td className="production-order-print-center">{line.unit && line.unit !== '-' ? line.unit : '-'}</td>
+                  <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.quantity)}</td>
+                  <td>{costObject}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td>{order.productCode || '-'}</td>
+                <td className="production-order-print-product-name-cell">{order.productName || '-'}</td>
+                <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
+                <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
+                <td>{costObject}</td>
+              </tr>
+            )}
           </tbody>
         </table>
 
@@ -8747,7 +9892,6 @@ function ProductionOrderPrintSheet({
                 <th>Mã nguyên vật liệu</th>
                 <th>Tên nguyên vật liệu</th>
                 <th>ĐVT</th>
-                <th>Định mức</th>
                 <th>Số lượng</th>
               </tr>
             </thead>
@@ -8757,7 +9901,6 @@ function ProductionOrderPrintSheet({
                   <td>{line.code}</td>
                   <td>{line.name}</td>
                   <td className="production-order-print-center">{line.unit || '-'}</td>
-                  <td className="production-order-print-center">{line.normLabel}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.proposedQuantity)}</td>
                 </tr>
               ))}
@@ -10766,41 +11909,60 @@ interface OrderProductLine {
 }
 
 function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderProductLine[] {
-  const raw = record.san_pham ?? record.products;
+  let raw = record.san_pham ?? record.products;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed) {
+      try {
+        raw = JSON.parse(trimmed);
+      } catch {
+        raw = trimmed;
+      }
+    }
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const nested =
+      (raw as { items?: unknown }).items ??
+      (raw as { products?: unknown }).products ??
+      (raw as { san_pham?: unknown }).san_pham;
+    if (Array.isArray(nested)) {
+      raw = nested;
+    }
+  }
   if (Array.isArray(raw) && raw.length > 0) {
-    return raw
-      .map((item): OrderProductLine | null => {
-        if (!item || typeof item !== 'object') return null;
-        const row = item as Record<string, unknown>;
-        const productCode = pickText(row, ['ma_sp', 'ma_hang', 'productCode', 'code'], '');
-        const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
-        const unit = formatCell(row.don_vi ?? row.unit);
-        const quantity = formatCell(row.so_luong ?? row.quantity);
-        if (!productCode && !productName) return null;
-        return {
-          productCode,
-          productName,
-          unit,
-          quantity,
-          orderRef: pickText(row, ['ma_don_hang', 'orderRef', 'order_code'], '')
-        };
-      })
-      .filter((line): line is OrderProductLine => Boolean(line));
+    return expandProductionOrderProductLines(
+      raw
+        .map((item): OrderProductLine | null => {
+          if (!item || typeof item !== 'object') return null;
+          const row = item as Record<string, unknown>;
+          const productCode = pickText(row, ['ma_sp', 'ma_hang', 'productCode', 'code'], '');
+          const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
+          const unit = formatCell(row.don_vi ?? row.unit);
+          const quantity = formatCell(row.so_luong ?? row.quantity);
+          if (!productCode && !productName) return null;
+          return {
+            productCode,
+            productName,
+            unit,
+            quantity,
+            orderRef: pickText(row, ['ma_don_hang', 'orderRef', 'order_code'], '')
+          };
+        })
+        .filter((line): line is OrderProductLine => Boolean(line))
+    );
   }
 
   const productCode = pickText(record, ['ma_hang', 'ma_sp', 'product_code'], '');
   const productName = pickText(record, ['ten_hang', 'ten_sp', 'product_name'], '');
   if (!productCode && !productName) return [];
 
-  return [
-    {
-      productCode,
-      productName,
-      unit: formatCell(record.don_vi),
-      quantity: formatCell(record.so_luong ?? record.sl ?? record.quantity),
-      orderRef: pickText(record, ['ma_don_hang', 'orderRef', 'order_code'], '')
-    }
-  ];
+  return expandMergedProductionProducts(
+    productCode,
+    productName,
+    formatCell(record.don_vi),
+    formatCell(record.so_luong ?? record.sl ?? record.quantity),
+    pickText(record, ['ma_don_hang', 'orderRef', 'order_code'], '')
+  );
 }
 
 function summarizeOrderProducts(products: OrderProductLine[]) {
@@ -12595,6 +13757,7 @@ function ControlBoardPanel({
   const [viewingProductionOrder, setViewingProductionOrder] = useState<ProductionOrderRow | null>(null);
   const [editingProductionOrder, setEditingProductionOrder] = useState<ProductionOrderRow | null>(null);
   const [deletingProductionOrderId, setDeletingProductionOrderId] = useState('');
+  const [deletingAcceptanceReportId, setDeletingAcceptanceReportId] = useState('');
   const [selectedProductionOrderIds, setSelectedProductionOrderIds] = useState<string[]>([]);
   const [printingBatchOrders, setPrintingBatchOrders] = useState<PrintableProductionOrder[]>([]);
   const [pendingBatchPrint, setPendingBatchPrint] = useState(false);
@@ -12818,6 +13981,25 @@ function ControlBoardPanel({
       window.alert(error.message || 'Không thể xóa lệnh sản xuất.');
     } finally {
       setDeletingProductionOrderId('');
+    }
+  };
+
+  const handleDeleteAcceptanceReport = async (report: AcceptanceReport) => {
+    const label = report.mat_hang || report.ten_may || 'báo cáo sản lượng';
+    if (!window.confirm(`Xóa ${label}?`)) return;
+
+    setDeletingAcceptanceReportId(report.id);
+    try {
+      const res = await fetch(`/api/bao-cao-nghiem-thu/${report.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa báo cáo sản lượng.');
+      }
+      await loadBoard();
+    } catch (error: any) {
+      window.alert(error.message || 'Không thể xóa báo cáo sản lượng.');
+    } finally {
+      setDeletingAcceptanceReportId('');
     }
   };
 
@@ -13158,6 +14340,7 @@ function ControlBoardPanel({
                 <th className="w-[28%] px-2 py-1.5 font-black">Ngày</th>
                 <th className="px-2 py-1.5 font-black">Mặt hàng</th>
                 <th className="w-16 px-2 py-1.5 text-right font-black">SL</th>
+                <th className="w-10 px-1 py-1.5 text-center font-black"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -13192,11 +14375,26 @@ function ControlBoardPanel({
                   <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
                     {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
                   </td>
+                  <td className="px-1 py-1.5 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAcceptanceReport(report)}
+                      disabled={deletingAcceptanceReportId === report.id}
+                      title="Xóa báo cáo"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingAcceptanceReportId === report.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </td>
                 </tr>
               ))}
               {!isLoading && filteredAcceptanceReports.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
+                  <td colSpan={5} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
                     Chưa có báo cáo sản lượng.
                   </td>
                 </tr>
@@ -13911,6 +15109,12 @@ const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'weighing-summary'
   },
   {
+    title: 'Báo cáo hàng hỏng',
+    desc: 'Lập phiếu hàng hỏng với các cột và chức năng giống phiếu cân ca.',
+    icon: PackageX,
+    tab: 'damaged-goods-report'
+  },
+  {
     title: 'Báo cáo phối trộn',
     desc: 'Nhập bảng trộn vật tư theo ca, máy và lần phối trộn.',
     icon: FlaskConical,
@@ -14465,6 +15669,8 @@ export default function App() {
               <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
             ) : activeTab === 'weighing-summary' ? (
               <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
+            ) : activeTab === 'damaged-goods-report' ? (
+              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
             ) : activeTab === 'machine-nvl-report' ? (
               <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
             ) : activeTab === 'machine-downtime-list' ? (
@@ -14850,6 +16056,19 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WeighingShiftSummary />
+              </motion.div>
+            ) : activeTab === 'damaged-goods-report' ? (
+              <motion.div
+                key="damaged-goods-report"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <WeighingShiftSummary
+                  config={DAMAGED_GOODS_SLIP_CONFIG}
+                  onBackToMenu={() => navigateToTab('report-forms')}
+                />
               </motion.div>
             ) : activeTab === 'mixing-report' ? (
               <motion.div

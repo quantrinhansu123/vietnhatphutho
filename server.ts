@@ -15,10 +15,14 @@ const DB_FILE_PATH = process.env.VERCEL
 const WEIGHING_DB_FILE_PATH = process.env.VERCEL
   ? path.join('/tmp', 'phieu-can-dinh-ki-db.json')
   : path.join(process.cwd(), 'phieu-can-dinh-ki-db.json');
+const DAMAGED_GOODS_DB_FILE_PATH = process.env.VERCEL
+  ? path.join('/tmp', 'bao-cao-hang-hong-db.json')
+  : path.join(process.cwd(), 'bao-cao-hang-hong-db.json');
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_KEY;
 const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'reports';
 const SUPABASE_WEIGHING_TABLE = process.env.SUPABASE_WEIGHING_TABLE || 'phieu_can_dinh_ki';
+const SUPABASE_DAMAGED_GOODS_TABLE = process.env.SUPABASE_DAMAGED_GOODS_TABLE || 'bao_cao_hang_hong';
 const SUPABASE_PRODUCTS_TABLE = process.env.SUPABASE_PRODUCTS_TABLE || 'san_pham';
 const SUPABASE_MACHINES_TABLE = process.env.SUPABASE_MACHINES_TABLE || 'danh_sach_may';
 const SUPABASE_MATERIALS_TABLE = process.env.SUPABASE_MATERIALS_TABLE || 'kho_nvl';
@@ -91,6 +95,7 @@ if (useSupabase) {
   console.log('[SUPABASE] Connected to', SUPABASE_URL, 'tables', {
     reports: SUPABASE_TABLE,
     weighing: SUPABASE_WEIGHING_TABLE,
+    damagedGoods: SUPABASE_DAMAGED_GOODS_TABLE,
     products: SUPABASE_PRODUCTS_TABLE,
     machines: SUPABASE_MACHINES_TABLE,
     materials: SUPABASE_MATERIALS_TABLE,
@@ -300,50 +305,196 @@ function mapWeighingRow(row: Record<string, unknown>) {
   };
 }
 
-function getWeighingReportsFromLocal(): ReturnType<typeof mapWeighingRow>[] {
-  try {
-    if (!fs.existsSync(WEIGHING_DB_FILE_PATH)) return [];
+type WeighingSlipApiConfig = {
+  localFilePath: string;
+  supabaseTable: string;
+  sqlMigrationFile: string;
+  entityLabel: string;
+  localEntryPrefix: string;
+};
 
-    const saved = JSON.parse(fs.readFileSync(WEIGHING_DB_FILE_PATH, 'utf-8'));
-    if (!Array.isArray(saved)) return [];
+function createWeighingLocalStore(cfg: Pick<WeighingSlipApiConfig, 'localFilePath' | 'localEntryPrefix'>) {
+  const { localFilePath, localEntryPrefix } = cfg;
 
-    return saved.flatMap((entry: any) => {
+  const readLocalEntries = () => {
+    try {
+      if (!fs.existsSync(localFilePath)) return [];
+      const saved = JSON.parse(fs.readFileSync(localFilePath, 'utf-8'));
+      return Array.isArray(saved) ? saved : [];
+    } catch (error) {
+      console.error('Lỗi khi đọc phiếu local:', error);
+      return [];
+    }
+  };
+
+  const writeLocalEntries = (entries: any[]) => {
+    fs.writeFileSync(localFilePath, JSON.stringify(entries, null, 2), 'utf-8');
+  };
+
+  const getReportsFromLocal = (): ReturnType<typeof mapWeighingRow>[] => {
+    try {
+      if (!fs.existsSync(localFilePath)) return [];
+
+      const saved = JSON.parse(fs.readFileSync(localFilePath, 'utf-8'));
+      if (!Array.isArray(saved)) return [];
+
+      return saved.flatMap((entry: any) => {
+        const rows = Array.isArray(entry?.rows) ? entry.rows : [];
+        return rows.map((row: Record<string, unknown>) =>
+          mapWeighingRow({
+            ...row,
+            document_no: row.document_no ?? entry.documentNo ?? entry.document_no,
+            report_date: row.report_date ?? entry.reportDate ?? entry.report_date,
+            ngay_san_xuat: row.ngay_san_xuat ?? row.productionDate ?? entry.productionDate ?? entry.ngay_san_xuat,
+            ca_san_xuat: row.ca_san_xuat ?? row.shiftName ?? entry.shiftName ?? entry.ca_san_xuat,
+            ten_cn_1: row.ten_cn_1 ?? row.worker1 ?? entry.worker1 ?? entry.ten_cn_1,
+            ten_cn_2: row.ten_cn_2 ?? row.worker2 ?? entry.worker2 ?? entry.ten_cn_2,
+            ten_nguoi_can: row.ten_nguoi_can ?? row.weigherName ?? entry.weigherName ?? entry.ten_nguoi_can,
+            created_at: row.created_at ?? entry.created_at
+          })
+        );
+      });
+    } catch (error) {
+      console.error('Lỗi khi đọc phiếu local:', error);
+      return [];
+    }
+  };
+
+  const saveReportToLocal = async (report: any): Promise<boolean> => {
+    try {
+      const current = fs.existsSync(localFilePath)
+        ? JSON.parse(fs.readFileSync(localFilePath, 'utf-8'))
+        : [];
+      current.unshift(report);
+      fs.writeFileSync(localFilePath, JSON.stringify(current, null, 2), 'utf-8');
+      return true;
+    } catch (error) {
+      console.error('Lỗi khi lưu phiếu local:', error);
+      return false;
+    }
+  };
+
+  const findLocalRow = (id: string) => {
+    const entries = readLocalEntries();
+
+    for (const entry of entries) {
       const rows = Array.isArray(entry?.rows) ? entry.rows : [];
-      return rows.map((row: Record<string, unknown>) =>
-        mapWeighingRow({
-          ...row,
-          document_no: row.document_no ?? entry.documentNo ?? entry.document_no,
-          report_date: row.report_date ?? entry.reportDate ?? entry.report_date,
-          ngay_san_xuat: row.ngay_san_xuat ?? row.productionDate ?? entry.productionDate ?? entry.ngay_san_xuat,
-          ca_san_xuat: row.ca_san_xuat ?? row.shiftName ?? entry.shiftName ?? entry.ca_san_xuat,
-          ten_cn_1: row.ten_cn_1 ?? row.worker1 ?? entry.worker1 ?? entry.ten_cn_1,
-          ten_cn_2: row.ten_cn_2 ?? row.worker2 ?? entry.worker2 ?? entry.ten_cn_2,
-          ten_nguoi_can: row.ten_nguoi_can ?? row.weigherName ?? entry.weigherName ?? entry.ten_nguoi_can,
-          created_at: row.created_at ?? entry.created_at
-        })
+      const index = rows.findIndex(
+        (row: Record<string, unknown>) => String(row.id) === id || String(row.dbId) === id
       );
-    });
-  } catch (error) {
-    console.error('Lỗi khi đọc phiếu cân local:', error);
-    return [];
-  }
-}
+      if (index >= 0) {
+        return { entries, entry, rows, index };
+      }
+    }
 
-async function saveWeighingReportToLocal(report: any): Promise<boolean> {
-  try {
-    const current = fs.existsSync(WEIGHING_DB_FILE_PATH)
-      ? JSON.parse(fs.readFileSync(WEIGHING_DB_FILE_PATH, 'utf-8'))
-      : [];
-    current.unshift(report);
-    fs.writeFileSync(WEIGHING_DB_FILE_PATH, JSON.stringify(current, null, 2), 'utf-8');
+    return null;
+  };
+
+  const updateRecordLocal = (id: string, record: Record<string, unknown>) => {
+    const found = findLocalRow(id);
+    if (!found) return false;
+
+    const dbFields = {
+      document_no: record.document_no,
+      report_date: record.report_date,
+      ngay_san_xuat: record.ngay_san_xuat,
+      ca_san_xuat: record.ca_san_xuat,
+      ten_cn_1: record.ten_cn_1,
+      ten_cn_2: record.ten_cn_2,
+      ten_nguoi_can: record.ten_nguoi_can,
+      ma_san_pham: record.ma_san_pham,
+      ten_san_pham: record.ten_san_pham,
+      trong_luong_loi: record.trong_luong_loi,
+      anh_trong_luong_loi_url: record.anh_trong_luong_loi_url,
+      anh_trong_luong_loi_public_id: record.anh_trong_luong_loi_public_id,
+      ten_may_san_xuat: record.ten_may_san_xuat,
+      lan_can: record.lan_can,
+      gio_can: record.gio_can,
+      trong_luong: record.trong_luong,
+      anh_url: record.anh_url,
+      anh_public_id: record.anh_public_id
+    };
+
+    found.rows[found.index] = {
+      ...found.rows[found.index],
+      ...dbFields,
+      productionDate: record.ngay_san_xuat,
+      shiftName: record.ca_san_xuat,
+      worker1: record.ten_cn_1,
+      worker2: record.ten_cn_2,
+      weigherName: record.ten_nguoi_can,
+      productCode: record.ma_san_pham,
+      productName: record.ten_san_pham,
+      coreWeight: record.trong_luong_loi,
+      coreWeightImageUrl: record.anh_trong_luong_loi_url,
+      coreWeightImagePublicId: record.anh_trong_luong_loi_public_id,
+      machineName: record.ten_may_san_xuat,
+      weighNo: record.lan_can,
+      weighTime: record.gio_can,
+      weight: record.trong_luong,
+      imageUrl: record.anh_url,
+      imagePublicId: record.anh_public_id
+    };
+
+    writeLocalEntries(found.entries);
+    return mapWeighingRow({ ...found.rows[found.index], id });
+  };
+
+  const deleteRecordLocal = (id: string) => {
+    const found = findLocalRow(id);
+    if (!found) return false;
+
+    found.rows.splice(found.index, 1);
+    if (found.rows.length === 0) {
+      const entryIndex = found.entries.indexOf(found.entry);
+      if (entryIndex >= 0) {
+        found.entries.splice(entryIndex, 1);
+      }
+    }
+
+    writeLocalEntries(found.entries);
     return true;
-  } catch (error) {
-    console.error('Lỗi khi lưu phiếu cân local:', error);
-    return false;
-  }
+  };
+
+  const savePayloadLocally = async (payload: any, rows: any[]) => {
+    const stamp = Date.now();
+    const rowsWithIds = rows.map((row, index) => ({
+      ...row,
+      dbId: row.dbId || `local_${stamp}_${index}`,
+      id: row.dbId || `local_${stamp}_${index}`
+    }));
+
+    const success = await saveReportToLocal({
+      id: `${localEntryPrefix}${stamp}_${Math.random().toString(36).substring(2, 7)}`,
+      ...payload,
+      rows: rowsWithIds,
+      created_at: new Date().toISOString()
+    });
+
+    if (!success) {
+      return { ok: false as const };
+    }
+
+    return {
+      ok: true as const,
+      rows: rowsWithIds.map(row => mapWeighingRow(row as Record<string, unknown>))
+    };
+  };
+
+  return {
+    getReportsFromLocal,
+    saveReportToLocal,
+    findLocalRow,
+    updateRecordLocal,
+    deleteRecordLocal,
+    savePayloadLocally
+  };
 }
 
-async function insertWeighingRecords(records: Record<string, unknown>[]) {
+async function insertWeighingRecordsToTable(
+  supabaseTable: string,
+  records: Record<string, unknown>[]
+) {
   if (!supabase) {
     return { ok: false as const, error: { message: 'Supabase chưa được cấu hình.' } };
   }
@@ -351,7 +502,7 @@ async function insertWeighingRecords(records: Record<string, unknown>[]) {
   let lastError: { message?: string; code?: string } | null = null;
 
   for (let attempt = 1; attempt <= SUPABASE_FETCH_RETRIES; attempt++) {
-    const { data, error } = await supabase.from(SUPABASE_WEIGHING_TABLE).insert(records).select('*');
+    const { data, error } = await supabase.from(supabaseTable).insert(records).select('*');
     if (!error) {
       return { ok: true as const, data: data || [] };
     }
@@ -368,19 +519,270 @@ async function insertWeighingRecords(records: Record<string, unknown>[]) {
   return { ok: false as const, error: lastError };
 }
 
-function readWeighingLocalEntries(): any[] {
-  try {
-    if (!fs.existsSync(WEIGHING_DB_FILE_PATH)) return [];
-    const saved = JSON.parse(fs.readFileSync(WEIGHING_DB_FILE_PATH, 'utf-8'));
-    return Array.isArray(saved) ? saved : [];
-  } catch (error) {
-    console.error('Lỗi khi đọc phiếu cân local:', error);
-    return [];
-  }
-}
+function registerWeighingSlipRoutes(app: express.Application, apiPath: string, cfg: WeighingSlipApiConfig) {
+  const store = createWeighingLocalStore(cfg);
 
-function writeWeighingLocalEntries(entries: any[]) {
-  fs.writeFileSync(WEIGHING_DB_FILE_PATH, JSON.stringify(entries, null, 2), 'utf-8');
+  app.get(apiPath, async (req, res) => {
+    try {
+      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const from = typeof req.query.from === 'string' ? req.query.from.trim() : '';
+      const to = typeof req.query.to === 'string' ? req.query.to.trim() : '';
+
+      if (supabase) {
+        let query = supabase
+          .from(cfg.supabaseTable)
+          .select('*')
+          .order('ngay_san_xuat', { ascending: false })
+          .order('ca_san_xuat', { ascending: true })
+          .order('gio_can', { ascending: true });
+
+        if (ngay) {
+          query = query.or(`ngay_san_xuat.eq.${ngay},report_date.eq.${ngay}`);
+        } else {
+          if (from) query = query.gte('ngay_san_xuat', from);
+          if (to) query = query.lte('ngay_san_xuat', to);
+        }
+
+        const { data, error } = await query;
+        if (error) {
+          console.error(`Supabase ${cfg.entityLabel} query error:`, error);
+          return res.status(500).json({
+            error: `Không thể tải ${cfg.entityLabel} từ ${cfg.supabaseTable}. ${error.message}`
+          });
+        }
+
+        return res.json((data || []).map((row) => mapWeighingRow(row as Record<string, unknown>)));
+      }
+
+      let records = store.getReportsFromLocal();
+      if (ngay) {
+        records = records.filter(
+          record => record.productionDate === ngay || record.reportDate === ngay
+        );
+      } else {
+        if (from) records = records.filter(record => record.productionDate >= from);
+        if (to) records = records.filter(record => record.productionDate <= to);
+      }
+
+      return res.json(records);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || `Lỗi khi tải ${cfg.entityLabel}.` });
+    }
+  });
+
+  app.post(apiPath, async (req, res) => {
+    try {
+      const payload = req.body;
+      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+
+      if (rows.length === 0) {
+        return res.status(400).json({ error: 'Vui lòng nhập ít nhất một dòng cân.' });
+      }
+
+      const records = rows
+        .filter((row: any) =>
+          row.productCode || row.productName || row.machineName || row.coreWeight || row.weighNo || row.weight || row.imageUrl || row.coreWeightImageUrl
+        )
+        .map((row: any) => buildDbRecordFromClientRow(row, payload));
+
+      if (records.length === 0) {
+        return res.status(400).json({ error: 'Vui lòng nhập ít nhất một dòng cân có dữ liệu.' });
+      }
+
+      const missingShift = records.find(record => !record.ngay_san_xuat || !record.ca_san_xuat);
+      if (missingShift) {
+        return res.status(400).json({ error: 'Mỗi dòng cần có ngày sản xuất và ca sản xuất.' });
+      }
+
+      if (supabase) {
+        const insertResult = await insertWeighingRecordsToTable(cfg.supabaseTable, records);
+
+        if (!insertResult.ok) {
+          const error = insertResult.error;
+          console.error(`Supabase ${cfg.entityLabel} insert error:`, error);
+
+          if (isSupabaseNetworkError(error)) {
+            const savedLocally = await store.savePayloadLocally(payload, rows);
+            if (savedLocally.ok) {
+              return res.status(201).json({
+                success: true,
+                inserted: records.length,
+                mode: 'local',
+                rows: savedLocally.rows,
+                warning:
+                  'Mất kết nối Supabase tạm thời. Đã lưu tạm vào file local — dữ liệu sẽ cần đồng bộ lại khi mạng ổn định.'
+              });
+            }
+          }
+
+          const missingColumn = error?.code === 'PGRST204';
+          const rlsBlocked = error?.code === '42501';
+          return res.status(500).json({
+            error: missingColumn
+              ? `Bảng ${cfg.supabaseTable} đang thiếu cột. Hãy chạy file ${cfg.sqlMigrationFile} trong Supabase SQL Editor.`
+              : rlsBlocked
+                ? `Supabase đang chặn ghi do RLS trên bảng ${cfg.supabaseTable}. Hãy dùng SUPABASE_SERVICE_KEY ở backend hoặc thêm policy INSERT cho role anon/authenticated.`
+                : isSupabaseNetworkError(error)
+                  ? `Không kết nối được Supabase (lỗi mạng). Kiểm tra internet, firewall và thử lại. Chi tiết: ${error?.message || 'fetch failed'}`
+                  : `Không thể ghi ${cfg.entityLabel} vào bảng ${cfg.supabaseTable}. ${error?.message || ''}`.trim()
+          });
+        }
+
+        return res.status(201).json({
+          success: true,
+          inserted: records.length,
+          mode: 'supabase',
+          rows: (insertResult.data || []).map((row) => mapWeighingRow(row as Record<string, unknown>))
+        });
+      }
+
+      const savedLocally = await store.savePayloadLocally(payload, rows);
+      if (savedLocally.ok) {
+        return res.status(201).json({
+          success: true,
+          inserted: records.length,
+          mode: 'local',
+          rows: savedLocally.rows
+        });
+      }
+
+      return res.status(500).json({ error: `Không thể lưu ${cfg.entityLabel} local.` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || `Lỗi hệ thống khi lưu ${cfg.entityLabel}.` });
+    }
+  });
+
+  app.patch(`${apiPath}/:id`, async (req, res) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) {
+        return res.status(400).json({ error: 'Thiếu ID dòng cân.' });
+      }
+
+      const row = req.body?.row;
+      if (!row || typeof row !== 'object') {
+        return res.status(400).json({ error: 'Thiếu dữ liệu dòng cân.' });
+      }
+
+      const payload = req.body;
+      const record = buildDbRecordFromClientRow(row, payload);
+
+      if (!record.ngay_san_xuat || !record.ca_san_xuat) {
+        return res.status(400).json({ error: 'Mỗi dòng cần có ngày sản xuất và ca sản xuất.' });
+      }
+
+      if (isLocalWeighingId(id)) {
+        const updated = store.updateRecordLocal(id, record);
+        if (!updated) {
+          return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
+        }
+
+        return res.json({ success: true, row: updated, mode: 'local' });
+      }
+
+      if (supabase) {
+        const dbId = parseWeighingId(id);
+        const { data, error } = await supabase
+          .from(cfg.supabaseTable)
+          .update(record)
+          .eq('id', dbId)
+          .select('*')
+          .maybeSingle();
+
+        if (error) {
+          console.error(`Supabase ${cfg.entityLabel} update error:`, error);
+          const rlsBlocked = error.code === '42501';
+          return res.status(500).json({
+            error: rlsBlocked
+              ? `Supabase chặn cập nhật do RLS. Chạy ${cfg.sqlMigrationFile} hoặc dùng SUPABASE_SERVICE_KEY.`
+              : `Không thể cập nhật dòng cân. ${error.message}`
+          });
+        }
+
+        if (data) {
+          return res.json({
+            success: true,
+            row: mapWeighingRow(data as Record<string, unknown>),
+            mode: 'supabase'
+          });
+        }
+
+        const updatedLocally = store.updateRecordLocal(id, record);
+        if (updatedLocally) {
+          return res.json({ success: true, row: updatedLocally, mode: 'local' });
+        }
+
+        return res.status(404).json({ error: 'Không tìm thấy dòng cân.' });
+      }
+
+      const updated = store.updateRecordLocal(id, record);
+      if (!updated) {
+        return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
+      }
+
+      return res.json({ success: true, row: updated, mode: 'local' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật dòng cân.' });
+    }
+  });
+
+  app.delete(`${apiPath}/:id`, async (req, res) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) {
+        return res.status(400).json({ error: 'Thiếu ID dòng cân.' });
+      }
+
+      if (isLocalWeighingId(id)) {
+        const deleted = store.deleteRecordLocal(id);
+        if (!deleted) {
+          return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
+        }
+
+        return res.json({ success: true, mode: 'local' });
+      }
+
+      if (supabase) {
+        const dbId = parseWeighingId(id);
+        const { data, error } = await supabase
+          .from(cfg.supabaseTable)
+          .delete()
+          .eq('id', dbId)
+          .select('id')
+          .maybeSingle();
+
+        if (error) {
+          console.error(`Supabase ${cfg.entityLabel} delete error:`, error);
+          const rlsBlocked = error.code === '42501';
+          return res.status(500).json({
+            error: rlsBlocked
+              ? `Supabase chặn xóa do RLS. Chạy ${cfg.sqlMigrationFile} hoặc dùng SUPABASE_SERVICE_KEY.`
+              : `Không thể xóa dòng cân. ${error.message}`
+          });
+        }
+
+        if (data) {
+          return res.json({ success: true, mode: 'supabase' });
+        }
+
+        const deletedLocally = store.deleteRecordLocal(id);
+        if (deletedLocally) {
+          return res.json({ success: true, mode: 'local' });
+        }
+
+        return res.status(404).json({ error: 'Không tìm thấy dòng cân.' });
+      }
+
+      const deleted = store.deleteRecordLocal(id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
+      }
+
+      return res.json({ success: true, mode: 'local' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa dòng cân.' });
+    }
+  });
 }
 
 function parseWeighingId(id: string): string | number {
@@ -389,113 +791,6 @@ function parseWeighingId(id: string): string | number {
 
 function isLocalWeighingId(id: string) {
   return id.startsWith('local_');
-}
-
-function findLocalWeighingRow(id: string) {
-  const entries = readWeighingLocalEntries();
-
-  for (const entry of entries) {
-    const rows = Array.isArray(entry?.rows) ? entry.rows : [];
-    const index = rows.findIndex(
-      (row: Record<string, unknown>) => String(row.id) === id || String(row.dbId) === id
-    );
-    if (index >= 0) {
-      return { entries, entry, rows, index };
-    }
-  }
-
-  return null;
-}
-
-function updateWeighingRecordLocal(id: string, record: Record<string, unknown>) {
-  const found = findLocalWeighingRow(id);
-  if (!found) return false;
-
-  const dbFields = {
-    document_no: record.document_no,
-    report_date: record.report_date,
-    ngay_san_xuat: record.ngay_san_xuat,
-    ca_san_xuat: record.ca_san_xuat,
-    ten_cn_1: record.ten_cn_1,
-    ten_cn_2: record.ten_cn_2,
-    ten_nguoi_can: record.ten_nguoi_can,
-    ma_san_pham: record.ma_san_pham,
-    ten_san_pham: record.ten_san_pham,
-    trong_luong_loi: record.trong_luong_loi,
-    anh_trong_luong_loi_url: record.anh_trong_luong_loi_url,
-    anh_trong_luong_loi_public_id: record.anh_trong_luong_loi_public_id,
-    ten_may_san_xuat: record.ten_may_san_xuat,
-    lan_can: record.lan_can,
-    gio_can: record.gio_can,
-    trong_luong: record.trong_luong,
-    anh_url: record.anh_url,
-    anh_public_id: record.anh_public_id
-  };
-
-  found.rows[found.index] = {
-    ...found.rows[found.index],
-    ...dbFields,
-    productionDate: record.ngay_san_xuat,
-    shiftName: record.ca_san_xuat,
-    worker1: record.ten_cn_1,
-    worker2: record.ten_cn_2,
-    weigherName: record.ten_nguoi_can,
-    productCode: record.ma_san_pham,
-    productName: record.ten_san_pham,
-    coreWeight: record.trong_luong_loi,
-    coreWeightImageUrl: record.anh_trong_luong_loi_url,
-    coreWeightImagePublicId: record.anh_trong_luong_loi_public_id,
-    machineName: record.ten_may_san_xuat,
-    weighNo: record.lan_can,
-    weighTime: record.gio_can,
-    weight: record.trong_luong,
-    imageUrl: record.anh_url,
-    imagePublicId: record.anh_public_id
-  };
-
-  writeWeighingLocalEntries(found.entries);
-  return mapWeighingRow({ ...found.rows[found.index], id });
-}
-
-function deleteWeighingRecordLocal(id: string) {
-  const found = findLocalWeighingRow(id);
-  if (!found) return false;
-
-  found.rows.splice(found.index, 1);
-  if (found.rows.length === 0) {
-    const entryIndex = found.entries.indexOf(found.entry);
-    if (entryIndex >= 0) {
-      found.entries.splice(entryIndex, 1);
-    }
-  }
-
-  writeWeighingLocalEntries(found.entries);
-  return true;
-}
-
-async function saveWeighingPayloadLocally(payload: any, rows: any[]) {
-  const stamp = Date.now();
-  const rowsWithIds = rows.map((row, index) => ({
-    ...row,
-    dbId: row.dbId || `local_${stamp}_${index}`,
-    id: row.dbId || `local_${stamp}_${index}`
-  }));
-
-  const success = await saveWeighingReportToLocal({
-    id: `pcdk_${stamp}_${Math.random().toString(36).substring(2, 7)}`,
-    ...payload,
-    rows: rowsWithIds,
-    created_at: new Date().toISOString()
-  });
-
-  if (!success) {
-    return { ok: false as const };
-  }
-
-  return {
-    ok: true as const,
-    rows: rowsWithIds.map(row => mapWeighingRow(row as Record<string, unknown>))
-  };
 }
 
 async function uploadImageToCloudinary(imageDataUrl: string, folder = 'phieu_can_dinh_ki') {
@@ -1005,6 +1300,32 @@ function sumPhoiTronQuantity(phoiTron: Record<string, unknown>) {
   return Math.round(total * 100) / 100;
 }
 
+function parseMixingRoundPhotos(source: unknown) {
+  if (!source || typeof source !== 'object') return {};
+  const record = source as Record<string, unknown>;
+  const result: Record<string, Array<{ url: string; public_id: string | null }>> = {};
+
+  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+    const raw = record[key];
+    if (!Array.isArray(raw)) return;
+    const photos = raw
+      .map(item => {
+        if (!item || typeof item !== 'object') return null;
+        const row = item as Record<string, unknown>;
+        const url = String(row.url ?? row.hinh_anh ?? row.imageUrl ?? '').trim();
+        if (!url) return null;
+        return {
+          url,
+          public_id: String(row.public_id ?? row.hinh_anh_public_id ?? row.imagePublicId ?? '').trim() || null
+        };
+      })
+      .filter((item): item is { url: string; public_id: string | null } => Boolean(item));
+    if (photos.length > 0) result[key] = photos;
+  });
+
+  return result;
+}
+
 function parseMixingReportLine(source: unknown, index: number) {
   if (!source || typeof source !== 'object') return null;
   const record = source as Record<string, unknown>;
@@ -1095,6 +1416,7 @@ function parseMixingReportBody(body: unknown): { error: string } | { record: Rec
       so_lan,
       thuc_te_su_dung,
       ghi_chu: String(source.ghi_chu ?? source.note ?? '').trim() || null,
+      hinh_anh_theo_lan: parseMixingRoundPhotos(source.hinh_anh_theo_lan),
       chi_tiet
     }
   };
@@ -1123,6 +1445,15 @@ function parseMachineNvlReportLine(source: unknown, index: number) {
   const ten_nvl = String(record.ten_nvl ?? record.ten_npl ?? record.name ?? '').trim();
   const don_vi = String(record.don_vi ?? record.unit ?? 'kg').trim() || 'kg';
   const so_luong_ton = parseMixingNumber(record.so_luong_ton ?? record.so_luong ?? record.quantity);
+  const so_luong_trong_may = parseMixingNumber(
+    record.so_luong_trong_may ?? record.ton_trong_may ?? record.inMachineQuantity
+  );
+  const so_luong_trong_bon_tron = parseMixingNumber(
+    record.so_luong_trong_bon_tron ?? record.ton_trong_bon_tron ?? record.inMixerQuantity
+  );
+  const so_luong_nl_chua_tron = parseMixingNumber(
+    record.so_luong_nl_chua_tron ?? record.nl_chua_tron ?? record.unblendedQuantity
+  );
   const so_luong_ton_dinh_muc = parseMixingNumber(
     record.so_luong_ton_dinh_muc ?? record.so_luong_dinh_muc ?? record.standardQuantity
   );
@@ -1135,6 +1466,9 @@ function parseMachineNvlReportLine(source: unknown, index: number) {
     !ma_nvl &&
     !ten_nvl &&
     so_luong_ton === null &&
+    so_luong_trong_may === null &&
+    so_luong_trong_bon_tron === null &&
+    so_luong_nl_chua_tron === null &&
     so_luong_ton_dinh_muc === null &&
     so_luong_ton_ca_truoc === null
   ) {
@@ -1146,8 +1480,15 @@ function parseMachineNvlReportLine(source: unknown, index: number) {
     ma_nvl,
     ten_nvl,
     don_vi,
+    ...(so_luong_trong_may !== null ? { so_luong_trong_may } : {}),
+    ...(so_luong_trong_bon_tron !== null ? { so_luong_trong_bon_tron } : {}),
+    ...(so_luong_nl_chua_tron !== null ? { so_luong_nl_chua_tron } : {}),
     ...(so_luong_ton_dinh_muc !== null ? { so_luong_ton_dinh_muc } : {}),
-    so_luong_ton: so_luong_ton ?? 0,
+    so_luong_ton:
+      so_luong_ton ??
+      Math.round(
+        ((so_luong_trong_may ?? 0) + (so_luong_trong_bon_tron ?? 0) + (so_luong_nl_chua_tron ?? 0)) * 100
+      ) / 100,
     ...(so_luong_ton_ca_truoc !== null ? { so_luong_ton_ca_truoc } : {}),
     ghi_chu
   };
@@ -1973,7 +2314,26 @@ function parseOrderProductsInput(
 }
 
 function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRecord[] {
-  const sanPham = row.san_pham;
+  let sanPham = row.san_pham;
+  if (typeof sanPham === 'string') {
+    const trimmed = sanPham.trim();
+    if (trimmed) {
+      try {
+        sanPham = JSON.parse(trimmed);
+      } catch {
+        sanPham = trimmed;
+      }
+    }
+  }
+  if (sanPham && typeof sanPham === 'object' && !Array.isArray(sanPham)) {
+    const nested =
+      (sanPham as { items?: unknown }).items ??
+      (sanPham as { products?: unknown }).products ??
+      (sanPham as { san_pham?: unknown }).san_pham;
+    if (Array.isArray(nested)) {
+      sanPham = nested;
+    }
+  }
   if (Array.isArray(sanPham) && sanPham.length > 0) {
     return sanPham
       .map((item): OrderProductRecord | null => {
@@ -4149,266 +4509,20 @@ export function createApp() {
     }
   });
 
-  app.get('/api/phieu-can-dinh-ki', async (req, res) => {
-    try {
-      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
-      const from = typeof req.query.from === 'string' ? req.query.from.trim() : '';
-      const to = typeof req.query.to === 'string' ? req.query.to.trim() : '';
-
-      if (supabase) {
-        let query = supabase
-          .from(SUPABASE_WEIGHING_TABLE)
-          .select('*')
-          .order('ngay_san_xuat', { ascending: false })
-          .order('ca_san_xuat', { ascending: true })
-          .order('gio_can', { ascending: true });
-
-        if (ngay) {
-          query = query.or(`ngay_san_xuat.eq.${ngay},report_date.eq.${ngay}`);
-        } else {
-          if (from) query = query.gte('ngay_san_xuat', from);
-          if (to) query = query.lte('ngay_san_xuat', to);
-        }
-
-        const { data, error } = await query;
-        if (error) {
-          console.error('Supabase weighing query error:', error);
-          return res.status(500).json({
-            error: `Không thể tải phiếu cân từ ${SUPABASE_WEIGHING_TABLE}. ${error.message}`
-          });
-        }
-
-        return res.json((data || []).map((row) => mapWeighingRow(row as Record<string, unknown>)));
-      }
-
-      let records = getWeighingReportsFromLocal();
-      if (ngay) {
-        records = records.filter(
-          record => record.productionDate === ngay || record.reportDate === ngay
-        );
-      } else {
-        if (from) records = records.filter(record => record.productionDate >= from);
-        if (to) records = records.filter(record => record.productionDate <= to);
-      }
-
-      return res.json(records);
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi tải phiếu cân.' });
-    }
+  registerWeighingSlipRoutes(app, '/api/phieu-can-dinh-ki', {
+    localFilePath: WEIGHING_DB_FILE_PATH,
+    supabaseTable: SUPABASE_WEIGHING_TABLE,
+    sqlMigrationFile: 'supabase-phieu-can-dinh-ki.sql',
+    entityLabel: 'phiếu cân',
+    localEntryPrefix: 'pcdk_'
   });
 
-  app.post('/api/phieu-can-dinh-ki', async (req, res) => {
-    try {
-      const payload = req.body;
-      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
-
-      if (rows.length === 0) {
-        return res.status(400).json({ error: 'Vui lòng nhập ít nhất một dòng cân.' });
-      }
-
-      const records = rows
-        .filter((row: any) =>
-          row.productCode || row.productName || row.machineName || row.coreWeight || row.weighNo || row.weight || row.imageUrl || row.coreWeightImageUrl
-        )
-        .map((row: any) => buildDbRecordFromClientRow(row, payload));
-
-      if (records.length === 0) {
-        return res.status(400).json({ error: 'Vui lòng nhập ít nhất một dòng cân có dữ liệu.' });
-      }
-
-      const missingShift = records.find(record => !record.ngay_san_xuat || !record.ca_san_xuat);
-      if (missingShift) {
-        return res.status(400).json({ error: 'Mỗi dòng cần có ngày sản xuất và ca sản xuất.' });
-      }
-
-      if (supabase) {
-        const insertResult = await insertWeighingRecords(records);
-
-        if (!insertResult.ok) {
-          const error = insertResult.error;
-          console.error('Supabase weighing insert error:', error);
-
-          if (isSupabaseNetworkError(error)) {
-            const savedLocally = await saveWeighingPayloadLocally(payload, rows);
-            if (savedLocally.ok) {
-              return res.status(201).json({
-                success: true,
-                inserted: records.length,
-                mode: 'local',
-                rows: savedLocally.rows,
-                warning:
-                  'Mất kết nối Supabase tạm thời. Đã lưu tạm vào file local — dữ liệu sẽ cần đồng bộ lại khi mạng ổn định.'
-              });
-            }
-          }
-
-          const missingColumn = error?.code === 'PGRST204';
-          const rlsBlocked = error?.code === '42501';
-          return res.status(500).json({
-            error: missingColumn
-              ? `Bảng ${SUPABASE_WEIGHING_TABLE} đang thiếu cột. Hãy chạy file supabase-phieu-can-dinh-ki.sql trong Supabase SQL Editor.`
-              : rlsBlocked
-                ? `Supabase đang chặn ghi do RLS trên bảng ${SUPABASE_WEIGHING_TABLE}. Hãy dùng SUPABASE_SERVICE_KEY ở backend hoặc thêm policy INSERT cho role anon/authenticated.`
-                : isSupabaseNetworkError(error)
-                  ? `Không kết nối được Supabase (lỗi mạng). Kiểm tra internet, firewall và thử lại. Chi tiết: ${error?.message || 'fetch failed'}`
-                  : `Không thể ghi phiếu cân vào bảng ${SUPABASE_WEIGHING_TABLE}. ${error?.message || ''}`.trim()
-          });
-        }
-
-        return res.status(201).json({
-          success: true,
-          inserted: records.length,
-          mode: 'supabase',
-          rows: (insertResult.data || []).map((row) => mapWeighingRow(row as Record<string, unknown>))
-        });
-      }
-
-      const savedLocally = await saveWeighingPayloadLocally(payload, rows);
-      if (savedLocally.ok) {
-        return res.status(201).json({
-          success: true,
-          inserted: records.length,
-          mode: 'local',
-          rows: savedLocally.rows
-        });
-      }
-
-      return res.status(500).json({ error: 'Không thể lưu phiếu cân local.' });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || 'Lỗi hệ thống khi lưu phiếu cân.' });
-    }
-  });
-
-  app.patch('/api/phieu-can-dinh-ki/:id', async (req, res) => {
-    try {
-      const id = String(req.params.id || '').trim();
-      if (!id) {
-        return res.status(400).json({ error: 'Thiếu ID dòng cân.' });
-      }
-
-      const row = req.body?.row;
-      if (!row || typeof row !== 'object') {
-        return res.status(400).json({ error: 'Thiếu dữ liệu dòng cân.' });
-      }
-
-      const payload = req.body;
-      const record = buildDbRecordFromClientRow(row, payload);
-
-      if (!record.ngay_san_xuat || !record.ca_san_xuat) {
-        return res.status(400).json({ error: 'Mỗi dòng cần có ngày sản xuất và ca sản xuất.' });
-      }
-
-      if (isLocalWeighingId(id)) {
-        const updated = updateWeighingRecordLocal(id, record);
-        if (!updated) {
-          return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
-        }
-
-        return res.json({ success: true, row: updated, mode: 'local' });
-      }
-
-      if (supabase) {
-        const dbId = parseWeighingId(id);
-        const { data, error } = await supabase
-          .from(SUPABASE_WEIGHING_TABLE)
-          .update(record)
-          .eq('id', dbId)
-          .select('*')
-          .maybeSingle();
-
-        if (error) {
-          console.error('Supabase weighing update error:', error);
-          const rlsBlocked = error.code === '42501';
-          return res.status(500).json({
-            error: rlsBlocked
-              ? `Supabase chặn cập nhật do RLS. Chạy supabase-phieu-can-dinh-ki.sql hoặc dùng SUPABASE_SERVICE_KEY.`
-              : `Không thể cập nhật dòng cân. ${error.message}`
-          });
-        }
-
-        if (data) {
-          return res.json({
-            success: true,
-            row: mapWeighingRow(data as Record<string, unknown>),
-            mode: 'supabase'
-          });
-        }
-
-        const updatedLocally = updateWeighingRecordLocal(id, record);
-        if (updatedLocally) {
-          return res.json({ success: true, row: updatedLocally, mode: 'local' });
-        }
-
-        return res.status(404).json({ error: 'Không tìm thấy dòng cân.' });
-      }
-
-      const updated = updateWeighingRecordLocal(id, record);
-      if (!updated) {
-        return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
-      }
-
-      return res.json({ success: true, row: updated, mode: 'local' });
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật dòng cân.' });
-    }
-  });
-
-  app.delete('/api/phieu-can-dinh-ki/:id', async (req, res) => {
-    try {
-      const id = String(req.params.id || '').trim();
-      if (!id) {
-        return res.status(400).json({ error: 'Thiếu ID dòng cân.' });
-      }
-
-      if (isLocalWeighingId(id)) {
-        const deleted = deleteWeighingRecordLocal(id);
-        if (!deleted) {
-          return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
-        }
-
-        return res.json({ success: true, mode: 'local' });
-      }
-
-      if (supabase) {
-        const dbId = parseWeighingId(id);
-        const { data, error } = await supabase
-          .from(SUPABASE_WEIGHING_TABLE)
-          .delete()
-          .eq('id', dbId)
-          .select('id')
-          .maybeSingle();
-
-        if (error) {
-          console.error('Supabase weighing delete error:', error);
-          const rlsBlocked = error.code === '42501';
-          return res.status(500).json({
-            error: rlsBlocked
-              ? `Supabase chặn xóa do RLS. Chạy supabase-phieu-can-dinh-ki.sql hoặc dùng SUPABASE_SERVICE_KEY.`
-              : `Không thể xóa dòng cân. ${error.message}`
-          });
-        }
-
-        if (data) {
-          return res.json({ success: true, mode: 'supabase' });
-        }
-
-        const deletedLocally = deleteWeighingRecordLocal(id);
-        if (deletedLocally) {
-          return res.json({ success: true, mode: 'local' });
-        }
-
-        return res.status(404).json({ error: 'Không tìm thấy dòng cân.' });
-      }
-
-      const deleted = deleteWeighingRecordLocal(id);
-      if (!deleted) {
-        return res.status(404).json({ error: 'Không tìm thấy dòng cân trong file local.' });
-      }
-
-      return res.json({ success: true, mode: 'local' });
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi xóa dòng cân.' });
-    }
+  registerWeighingSlipRoutes(app, '/api/bao-cao-hang-hong', {
+    localFilePath: DAMAGED_GOODS_DB_FILE_PATH,
+    supabaseTable: SUPABASE_DAMAGED_GOODS_TABLE,
+    sqlMigrationFile: 'supabase-bao-cao-hang-hong.sql',
+    entityLabel: 'báo cáo hàng hỏng',
+    localEntryPrefix: 'bchh_'
   });
 
   app.get('/api/bao-cao-phoi-tron', async (req, res) => {
@@ -4418,6 +4532,9 @@ export function createApp() {
 
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const tuNgay = parseWarehouseSlipDate(req.query.tu_ngay ?? req.query.fromDate);
+      const denNgay = parseWarehouseSlipDate(req.query.den_ngay ?? req.query.toDate);
+      const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
 
       let query = supabase
@@ -4426,7 +4543,13 @@ export function createApp() {
         .order('ngay', { ascending: false })
         .order('gio', { ascending: false });
 
-      if (ngay) query = query.eq('ngay', ngay);
+      if (ngay) {
+        query = query.eq('ngay', ngay);
+      } else {
+        if (tuNgay) query = query.gte('ngay', tuNgay);
+        if (denNgay) query = query.lte('ngay', denNgay);
+      }
+      if (ca) query = query.eq('ca', ca);
       if (maMay) query = query.eq('ma_may', maMay);
 
       const { data, error } = await query;
@@ -4590,6 +4713,39 @@ export function createApp() {
       return res.status(201).json({ success: true, report: data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo NVL tồn theo máy.' });
+    }
+  });
+
+  app.put('/api/bao-cao-may-nvl-ton/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo.' });
+
+      const parsed = parseMachineNvlReportBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MACHINE_NVL_REPORTS_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase machine NVL report update error:', error);
+        return res.status(500).json({ error: machineNvlReportWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo.' });
+      return res.json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật báo cáo NVL tồn theo máy.' });
     }
   });
 
