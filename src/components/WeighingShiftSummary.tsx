@@ -211,7 +211,29 @@ function groupByShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): S
   });
 }
 
-function normalizeRecords(data: unknown): WeighingRecord[] {
+export function parseWeighingWeight(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '—' || trimmed === '-') return null;
+  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+/** Tổng trọng lượng 1 lần cân = TL lõi + TL bì + TL (báo cáo cân ca) */
+export function sumWeighingRowTotalWeight(
+  row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
+): number {
+  const core = parseWeighingWeight(row.coreWeight) ?? 0;
+  const shell = parseWeighingWeight(row.shellWeight) ?? 0;
+  const weight = parseWeighingWeight(row.weight) ?? 0;
+  const hasValue =
+    parseWeighingWeight(row.coreWeight) !== null ||
+    parseWeighingWeight(row.shellWeight) !== null ||
+    parseWeighingWeight(row.weight) !== null;
+  return hasValue ? core + shell + weight : 0;
+}
+
+export function normalizeWeighingRecords(data: unknown): WeighingRecord[] {
   if (!Array.isArray(data)) return [];
 
   return data
@@ -411,7 +433,7 @@ export default function WeighingShiftSummary({
         throw new Error(data.error || 'Không thể tải báo cáo cân.');
       }
 
-      setRecords(normalizeRecords(data));
+      setRecords(normalizeWeighingRecords(data));
     } catch (err: any) {
       setError(err.message || 'Không thể tải báo cáo cân.');
       setRecords([]);

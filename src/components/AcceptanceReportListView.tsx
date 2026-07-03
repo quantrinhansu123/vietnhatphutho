@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ClipboardList, Eye, Loader2, Plus, Printer, X } from 'lucide-react';
+import { ChevronLeft, ClipboardList, Eye, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
 import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips, sumByUnit } from './AcceptanceReportPrintSheet';
@@ -100,6 +100,7 @@ export default function AcceptanceReportListView({
   const [pendingPrint, setPendingPrint] = useState(false);
   const [activePrintSlips, setActivePrintSlips] = useState<ReturnType<typeof buildAcceptancePrintSlips>>([]);
   const [viewingCa, setViewingCa] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [productNameByCode, setProductNameByCode] = useState<Map<string, string>>(() => new Map());
 
   const shiftGroups = useMemo(() => buildShiftGroups(reports, filterDate), [reports, filterDate]);
@@ -216,10 +217,13 @@ export default function AcceptanceReportListView({
     startPrint(buildAcceptancePrintSlips(addProductNamesForPrint(viewingGroup.reports)));
   };
 
+  const sortedReports = useMemo(() => [...reports].sort(compareAcceptanceReports), [reports]);
+
   const handleDelete = async (id: string) => {
     if (!window.confirm('Xóa báo cáo sản lượng này?')) return;
     setError('');
     setMessage('');
+    setDeletingId(id);
     try {
       const res = await fetch(`/api/bao-cao-nghiem-thu/${id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
@@ -231,8 +235,38 @@ export default function AcceptanceReportListView({
       }
     } catch (err: any) {
       setError(err.message || 'Không thể xóa báo cáo.');
+    } finally {
+      setDeletingId(null);
     }
   };
+
+  const renderReportActions = (report: AcceptanceReport, closeModalOnEdit = false) => (
+    <div className="flex items-center justify-center gap-1">
+      <button
+        type="button"
+        onClick={() => {
+          if (closeModalOnEdit) setViewingCa(null);
+          onEdit(report);
+        }}
+        className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-50"
+        title="Sửa báo cáo"
+      >
+        <span className="inline-flex items-center gap-1">
+          <Pencil className="h-3.5 w-3.5" />
+          Sửa
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => handleDelete(report.id)}
+        disabled={deletingId === report.id}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+        title="Xóa báo cáo"
+      >
+        {deletingId === report.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+      </button>
+    </div>
+  );
 
   return (
     <div className="space-y-4 pb-24">
@@ -356,6 +390,60 @@ export default function AcceptanceReportListView({
         </div>
       </section>
 
+      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="border-b border-zinc-100 px-4 py-3">
+          <p className="text-sm font-black text-zinc-950">Chi tiết từng dòng</p>
+          <p className="mt-0.5 text-xs font-semibold text-zinc-500">Sửa hoặc xóa trực tiếp từng báo cáo sản lượng</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2 font-black">Ca</th>
+                <th className="px-3 py-2 font-black">Tổ</th>
+                <th className="px-3 py-2 font-black">Lần</th>
+                <th className="px-3 py-2 font-black">Giờ</th>
+                <th className="px-3 py-2 font-black">Mặt hàng</th>
+                <th className="px-3 py-2 font-black">ĐVT</th>
+                <th className="px-3 py-2 font-black">SL</th>
+                <th className="px-3 py-2 text-center font-black">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="px-3 py-8 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải...
+                  </td>
+                </tr>
+              ) : sortedReports.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-3 py-8 text-center font-bold text-zinc-400">
+                    Chưa có báo cáo trong ngày này.
+                  </td>
+                </tr>
+              ) : (
+                sortedReports.map(report => (
+                  <tr key={report.id} className="hover:bg-emerald-50/40">
+                    <td className="px-3 py-2 font-semibold text-zinc-800">{report.ca || '-'}</td>
+                    <td className="px-3 py-2 text-zinc-700">{report.ten_may || report.ma_may || '-'}</td>
+                    <td className="px-3 py-2 font-bold text-zinc-700">{report.lan || '-'}</td>
+                    <td className="px-3 py-2 font-mono text-zinc-600">{report.gio || '-'}</td>
+                    <td className="px-3 py-2 text-zinc-700">{report.mat_hang || '-'}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-600">{report.don_vi || '-'}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-emerald-700">
+                      {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
+                    </td>
+                    <td className="px-3 py-2">{renderReportActions(report)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
           {error}
@@ -436,27 +524,7 @@ export default function AcceptanceReportListView({
                         <td className="px-3 py-2 font-mono font-bold text-emerald-700">
                           {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
                         </td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setViewingCa(null);
-                                onEdit(report);
-                              }}
-                              className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 hover:bg-zinc-50"
-                            >
-                              Sửa
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(report.id)}
-                              className="rounded-lg border border-rose-200 px-2 py-1 text-[10px] font-black text-rose-700 hover:bg-rose-50"
-                            >
-                              Xóa
-                            </button>
-                          </div>
-                        </td>
+                        <td className="px-3 py-2">{renderReportActions(report, true)}</td>
                       </tr>
                     ))}
                     {viewingTotalsByUnit.map(([unit, total]) => (

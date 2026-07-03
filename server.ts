@@ -537,8 +537,8 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
   app.get(apiPath, async (req, res) => {
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
-      const from = typeof req.query.from === 'string' ? req.query.from.trim() : '';
-      const to = typeof req.query.to === 'string' ? req.query.to.trim() : '';
+      const from = typeof req.query.from === 'string' ? req.query.from.trim() : parseWarehouseSlipDate(req.query.tu_ngay);
+      const to = typeof req.query.to === 'string' ? req.query.to.trim() : parseWarehouseSlipDate(req.query.den_ngay);
 
       if (supabase) {
         let query = supabase
@@ -550,9 +550,14 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
 
         if (ngay) {
           query = query.or(`ngay_san_xuat.eq.${ngay},report_date.eq.${ngay}`);
-        } else {
-          if (from) query = query.gte('ngay_san_xuat', from);
-          if (to) query = query.lte('ngay_san_xuat', to);
+        } else if (from && to) {
+          query = query.or(
+            `and(ngay_san_xuat.gte.${from},ngay_san_xuat.lte.${to}),and(report_date.gte.${from},report_date.lte.${to})`
+          );
+        } else if (from) {
+          query = query.or(`ngay_san_xuat.gte.${from},report_date.gte.${from}`);
+        } else if (to) {
+          query = query.or(`ngay_san_xuat.lte.${to},report_date.lte.${to}`);
         }
 
         const { data, error } = await query;
@@ -572,8 +577,18 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
           record => record.productionDate === ngay || record.reportDate === ngay
         );
       } else {
-        if (from) records = records.filter(record => record.productionDate >= from);
-        if (to) records = records.filter(record => record.productionDate <= to);
+        if (from) {
+          records = records.filter(record => {
+            const d = record.productionDate || record.reportDate;
+            return d && d >= from;
+          });
+        }
+        if (to) {
+          records = records.filter(record => {
+            const d = record.productionDate || record.reportDate;
+            return d && d <= to;
+          });
+        }
       }
 
       return res.json(records);
@@ -2542,6 +2557,7 @@ function parseWarehouseSlipBody(body: unknown): {
   lyDo: string | null;
   ghiChu: string | null;
   nguoiLap: string | null;
+  ca: string | null;
   items: WarehouseSlipLineInput[];
 } {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
@@ -2567,6 +2583,7 @@ function parseWarehouseSlipBody(body: unknown): {
     lyDo: String(source.lyDo ?? source.ly_do ?? source.reason ?? '').trim() || null,
     ghiChu: String(source.ghiChu ?? source.ghi_chu ?? source.note ?? '').trim() || null,
     nguoiLap: String(source.nguoiLap ?? source.nguoi_lap ?? source.createdBy ?? '').trim() || null,
+    ca: String(source.ca ?? source.shift ?? source.ca_san_xuat ?? '').trim() || null,
     items: parsedItems.items
   };
 }
@@ -3509,6 +3526,34 @@ export function createApp() {
       return res.json(products);
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách sản phẩm.' });
+    }
+  });
+
+  app.post('/api/san-pham', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsedProduct = parseProductPatchBody(req.body);
+      if ('error' in parsedProduct) {
+        return res.status(400).json({ error: parsedProduct.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_PRODUCTS_TABLE)
+        .insert(parsedProduct.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase san_pham insert error:', error);
+        return res.status(500).json({ error: productWriteErrorMessage(error) });
+      }
+
+      return res.status(201).json({ success: true, product: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tạo sản phẩm.' });
     }
   });
 
@@ -4778,7 +4823,8 @@ export function createApp() {
           ly_do: parsed.lyDo || '',
           ghi_chu: parsed.ghiChu || '',
           nguoi_lap: parsed.nguoiLap || nhanSu,
-          nhan_su: nhanSu
+          nhan_su: nhanSu,
+          ca: parsed.ca || ''
         };
 
         if (parsed.loaiKho === 'san_pham') {
@@ -5457,8 +5503,10 @@ export function createApp() {
 
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const tuNgay = parseWarehouseSlipDate(req.query.tu_ngay ?? req.query.fromDate);
+      const denNgay = parseWarehouseSlipDate(req.query.den_ngay ?? req.query.toDate);
       const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 0;
-      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 0;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 0;
 
       let query = supabase
         .from(SUPABASE_ACCEPTANCE_REPORTS_TABLE)
@@ -5466,8 +5514,13 @@ export function createApp() {
         .order('ngay', { ascending: false })
         .order('gio', { ascending: false });
 
-      if (ngay) query = query.eq('ngay', ngay);
-      if (limit) query = query.limit(limit);
+      if (ngay) {
+        query = query.eq('ngay', ngay);
+      } else {
+        if (tuNgay) query = query.gte('ngay', tuNgay);
+        if (denNgay) query = query.lte('ngay', denNgay);
+      }
+      if (limit && !ngay && !tuNgay && !denNgay) query = query.limit(limit);
 
       const { data, error } = await query;
       if (error) {

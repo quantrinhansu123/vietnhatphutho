@@ -29,12 +29,16 @@ import ProductEntryForm from './components/ProductEntryForm';
 import MaterialsForm from './components/MaterialsForm';
 import WasteForm from './components/WasteForm';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
-import WeighingShiftSummary from './components/WeighingShiftSummary';
+import WeighingShiftSummary, { normalizeWeighingRecords, type WeighingRecord } from './components/WeighingShiftSummary';
 import { DAMAGED_GOODS_SLIP_CONFIG } from './lib/weighingSlipConfig';
 import MixingReportForm from './components/MixingReportForm';
 import MixingReportListView from './components/MixingReportListView';
 import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
 import AcceptanceReportListView from './components/AcceptanceReportListView';
+import ControlBoardShiftSummaryTable from './components/ControlBoardShiftSummaryTable';
+import { buildControlBoardShiftSummary, defaultShiftSummaryDateRange } from './utils/controlBoardShiftSummary';
+import { normalizeMixingReport } from './lib/mixingReportModel';
+import type { MixingReport } from './components/MixingReportForm';
 import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
 import MachineDowntimeIcon from './components/icons/MachineDowntimeIcon';
 import {
@@ -1299,24 +1303,78 @@ function productToForm(product: ProductRow): ProductFormState {
   };
 }
 
+function emptyProductForm(): ProductFormState {
+  return {
+    code: '',
+    newCode: '',
+    amisCode: '',
+    name: '',
+    nature: '',
+    group: '',
+    unit: '',
+    totalWeight: '',
+    rollWidth: '',
+    rollLength: '',
+    coreWeight: '',
+    bagWeight: '',
+    plasticWeight: '',
+    openingStock: '',
+    inbound: '',
+    outbound: '',
+    stock: '',
+    minStock: '',
+    origin: '',
+    description: ''
+  };
+}
+
+function productFormToPayload(form: ProductFormState) {
+  return {
+    code: form.code.trim(),
+    newCode: form.newCode.trim(),
+    amisCode: form.amisCode.trim(),
+    name: form.name.trim(),
+    nature: form.nature.trim(),
+    group: form.group.trim(),
+    unit: form.unit.trim(),
+    totalWeight: form.totalWeight.trim(),
+    rollWidth: form.rollWidth.trim(),
+    rollLength: form.rollLength.trim(),
+    coreWeight: form.coreWeight.trim(),
+    bagWeight: form.bagWeight.trim(),
+    plasticWeight: form.plasticWeight.trim(),
+    openingStock: form.openingStock.trim(),
+    inbound: form.inbound.trim(),
+    outbound: form.outbound.trim(),
+    stock: form.stock.trim(),
+    minStock: form.minStock.trim(),
+    origin: form.origin.trim(),
+    description: form.description.trim()
+  };
+}
+
 function ProductEditModal({
+  mode,
   product,
   isSaving,
   formError,
   onClose,
   onSave
 }: {
-  product: ProductRow;
+  mode: 'add' | 'edit';
+  product: ProductRow | null;
   isSaving: boolean;
   formError: string;
   onClose: () => void;
   onSave: (form: ProductFormState) => Promise<void>;
 }) {
-  const [form, setForm] = useState<ProductFormState>(() => productToForm(product));
+  const [form, setForm] = useState<ProductFormState>(() =>
+    mode === 'edit' && product ? productToForm(product) : emptyProductForm()
+  );
 
   useEffect(() => {
-    setForm(productToForm(product));
-  }, [product.id]);
+    setForm(mode === 'edit' && product ? productToForm(product) : emptyProductForm());
+  }, [mode, product?.id]);
 
   const fields: Array<{ key: keyof ProductFormState; label: string; required?: boolean; span?: boolean }> = [
     { key: 'code', label: 'Mã SP', required: true },
@@ -1350,8 +1408,12 @@ function ProductEditModal({
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Sửa sản phẩm</h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product.code}</p>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
+              {mode === 'add' ? 'Thêm sản phẩm mới' : 'Sửa sản phẩm'}
+            </h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+              {mode === 'add' ? 'Ghi vào bảng san_pham trên Supabase' : product?.code || '-'}
+            </p>
           </div>
           <BackButton onClick={onClose} />
         </div>
@@ -1383,7 +1445,7 @@ function ProductEditModal({
             className="flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isSaving ? 'Đang lưu...' : 'Cập nhật'}
+            {isSaving ? 'Đang lưu...' : mode === 'add' ? 'Thêm mới' : 'Cập nhật'}
           </button>
         </div>
       </div>
@@ -1408,6 +1470,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [isLoadingMaterialOptions, setIsLoadingMaterialOptions] = useState(false);
   const [isSavingProductNpl, setIsSavingProductNpl] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+  const [productFormMode, setProductFormMode] = useState<'add' | 'edit' | null>(null);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [productFormError, setProductFormError] = useState('');
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
@@ -1474,11 +1537,21 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
     setProductError('');
     setProductFormError('');
     setEditingProduct(null);
+    setProductFormMode(null);
     setViewingProduct(product);
     setProductViewTab(tab);
     if (materialOptions.length === 0) {
       loadMaterialOptions();
     }
+  };
+
+  const openProductCreate = () => {
+    setProductActionMessage('');
+    setProductError('');
+    setProductFormError('');
+    setViewingProduct(null);
+    setEditingProduct(null);
+    setProductFormMode('add');
   };
 
   const openProductEdit = (product: ProductRow) => {
@@ -1487,6 +1560,44 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
     setProductFormError('');
     setViewingProduct(null);
     setEditingProduct(product);
+    setProductFormMode('edit');
+  };
+
+  const closeProductForm = () => {
+    setProductFormMode(null);
+    setEditingProduct(null);
+    setProductFormError('');
+  };
+
+  const handleCreateProduct = async (form: ProductFormState) => {
+    if (!form.code.trim() && !form.name.trim()) {
+      setProductFormError('Vui lòng nhập mã SP hoặc tên sản phẩm.');
+      return;
+    }
+
+    setIsSavingProduct(true);
+    setProductFormError('');
+
+    try {
+      const res = await fetch('/api/san-pham', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productFormToPayload(form))
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể thêm sản phẩm.');
+      }
+
+      closeProductForm();
+      setProductActionMessage('Đã thêm sản phẩm mới.');
+      await loadProducts();
+    } catch (error: any) {
+      setProductFormError(error.message || 'Không thể thêm sản phẩm.');
+    } finally {
+      setIsSavingProduct(false);
+    }
   };
 
   const handleSaveProduct = async (form: ProductFormState) => {
@@ -1503,28 +1614,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
       const res = await fetch(`/api/san-pham/${editingProduct.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: form.code.trim(),
-          newCode: form.newCode.trim(),
-          amisCode: form.amisCode.trim(),
-          name: form.name.trim(),
-          nature: form.nature.trim(),
-          group: form.group.trim(),
-          unit: form.unit.trim(),
-          totalWeight: form.totalWeight.trim(),
-          rollWidth: form.rollWidth.trim(),
-          rollLength: form.rollLength.trim(),
-          coreWeight: form.coreWeight.trim(),
-          bagWeight: form.bagWeight.trim(),
-          plasticWeight: form.plasticWeight.trim(),
-          openingStock: form.openingStock.trim(),
-          inbound: form.inbound.trim(),
-          outbound: form.outbound.trim(),
-          stock: form.stock.trim(),
-          minStock: form.minStock.trim(),
-          origin: form.origin.trim(),
-          description: form.description.trim()
-        })
+        body: JSON.stringify(productFormToPayload(form))
       });
       const data = await res.json().catch(() => ({}));
 
@@ -1532,7 +1622,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
         throw new Error(data.error || 'Không thể cập nhật sản phẩm.');
       }
 
-      setEditingProduct(null);
+      closeProductForm();
       setProductActionMessage('Đã cập nhật sản phẩm.');
       await loadProducts();
     } catch (error: any) {
@@ -1566,7 +1656,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
       }
 
       if (viewingProduct?.id === product.id) setViewingProduct(null);
-      if (editingProduct?.id === product.id) setEditingProduct(null);
+      if (editingProduct?.id === product.id) closeProductForm();
       setSelectedProductIds(prev => {
         const next = new Set(prev);
         next.delete(product.id);
@@ -1879,7 +1969,17 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
                 Dữ liệu được tải trực tiếp từ bảng Supabase san_pham.
               </p>
             </div>
-            <BackButton onClick={onBack} variant="dark" className="h-10 rounded-xl" />
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={openProductCreate}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm mới
+              </button>
+              <BackButton onClick={onBack} variant="dark" className="h-10 rounded-xl" />
+            </div>
           </div>
 
           <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
@@ -2189,16 +2289,14 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      {editingProduct && (
+      {productFormMode && (
         <ProductEditModal
+          mode={productFormMode}
           product={editingProduct}
           isSaving={isSavingProduct}
           formError={productFormError}
-          onClose={() => {
-            setEditingProduct(null);
-            setProductFormError('');
-          }}
-          onSave={handleSaveProduct}
+          onClose={closeProductForm}
+          onSave={productFormMode === 'add' ? handleCreateProduct : handleSaveProduct}
         />
       )}
 
@@ -4747,6 +4845,7 @@ interface WarehouseMovementRow {
   slipType: WarehouseSlipType;
   warehouseKind: WarehouseKind;
   slipDate: string;
+  shift: string;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -5000,6 +5099,7 @@ function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow[] {
         slipType,
         warehouseKind,
         slipDate: String(record.ngay_phieu ?? record.slipDate ?? '').trim(),
+        shift: String(record.ca ?? record.shift ?? record.ca_san_xuat ?? '').trim(),
         itemCode,
         itemName,
         unit: String(record.don_vi ?? record.unit ?? '').trim() || '-',
@@ -5190,6 +5290,7 @@ function WarehouseSlipPanel({
           lyDo: reason.trim(),
           ghiChu: note.trim(),
           nguoiLap: createdBy.trim(),
+          ca: shift.trim(),
           items: payloadItems
         })
       });
@@ -5556,7 +5657,7 @@ function WarehouseHistoryPanel({
   const filteredMovements = useMemo(() => {
     return movements.filter(row => {
       if (!normalizedSearch) return true;
-      return `${row.slipCode} ${row.itemCode} ${row.itemName} ${row.reason} ${row.createdBy}`
+      return `${row.slipCode} ${row.shift} ${row.itemCode} ${row.itemName} ${row.reason} ${row.createdBy}`
         .toLowerCase()
         .includes(normalizedSearch);
     });
@@ -5597,6 +5698,7 @@ function WarehouseHistoryPanel({
       slipType: header.slipType,
       warehouseKind: header.warehouseKind,
       slipDate: header.slipDate,
+      shift: header.shift,
       reason: header.reason,
       note: header.note,
       createdBy: header.createdBy,
@@ -5750,6 +5852,7 @@ function WarehouseHistoryPanel({
                 <th className="px-4 py-3 font-black">Mã phiếu</th>
                 <th className="px-4 py-3 font-black">Loại</th>
                 <th className="px-4 py-3 font-black">Ngày</th>
+                <th className="px-4 py-3 font-black">Ca</th>
                 <th className="px-4 py-3 font-black">{warehouseItemCodeLabel(warehouseTab)}</th>
                 <th className="px-4 py-3 font-black">{warehouseItemNameLabel(warehouseTab)}</th>
                 <th className="px-4 py-3 font-black">SL</th>
@@ -5770,6 +5873,7 @@ function WarehouseHistoryPanel({
                     </span>
                   </td>
                   <td className="px-4 py-3 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">{row.shift || '-'}</td>
                   <td className="px-4 py-3 font-black text-zinc-950">{row.itemCode || '-'}</td>
                   <td className="px-4 py-3 font-semibold text-zinc-800">{row.itemName || '-'}</td>
                   <td className="px-4 py-3 font-mono font-bold text-zinc-800">{formatNumber(row.quantity, 2)}</td>
@@ -5810,14 +5914,14 @@ function WarehouseHistoryPanel({
               ))}
               {!isLoading && filteredMovements.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center font-bold text-zinc-400">
+                  <td colSpan={12} className="px-4 py-8 text-center font-bold text-zinc-400">
                     Chưa có lịch sử {warehouseKindLabel(warehouseTab).toLowerCase()}.
                   </td>
                 </tr>
               )}
               {isLoading && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={12} className="px-4 py-8 text-center font-bold text-zinc-500">
                     Đang tải Supabase...
                   </td>
                 </tr>
@@ -5842,6 +5946,7 @@ function WarehouseHistoryPanel({
                 ['Kho', warehouseKindLabel(viewingRows[0].warehouseKind)],
                 ['Loại', warehouseSlipTypeLabel(viewingRows[0].slipType)],
                 ['Ngày', viewingRows[0].slipDate || '-'],
+                ['Ca', viewingRows[0].shift || '-'],
                 ['Tổng tiền', `${formatWarehouseMoney(viewingSlipTotal)} đ`],
                 ['Lý do', viewingRows[0].reason || '-'],
                 ['Ghi chú', viewingRows[0].note || '-'],
@@ -13838,6 +13943,7 @@ function DashboardWindow({
   disabled,
   secondaryAction,
   tertiaryAction,
+  summaryExtra,
   compact = false,
   children
 }: {
@@ -13866,6 +13972,7 @@ function DashboardWindow({
     disabled?: boolean;
     loading?: boolean;
   };
+  summaryExtra?: React.ReactNode;
   compact?: boolean;
   children: React.ReactNode;
 }) {
@@ -13890,6 +13997,11 @@ function DashboardWindow({
             <p className={`font-bold uppercase tracking-wider text-white/60 ${compact ? 'mt-0.5 text-[10px]' : 'mt-1 text-[11px]'}`}>
               {countLabel}: <span className="text-white">{isLoading ? '...' : count}</span>
             </p>
+            {summaryExtra ? (
+              <p className={`font-bold uppercase tracking-wider text-white/70 ${compact ? 'mt-0.5 text-[10px]' : 'mt-1 text-[11px]'}`}>
+                {summaryExtra}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex shrink-0 flex-row flex-wrap items-center justify-end gap-1.5">
@@ -13986,6 +14098,12 @@ function ControlBoardPanel({
   const [productionOrders, setProductionOrders] = useState<ProductionOrderRow[]>([]);
   const [productionOrderSettings, setProductionOrderSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [acceptanceReports, setAcceptanceReports] = useState<AcceptanceReport[]>([]);
+  const [shiftSummaryAcceptanceReports, setShiftSummaryAcceptanceReports] = useState<AcceptanceReport[]>([]);
+  const [mixingReports, setMixingReports] = useState<MixingReport[]>([]);
+  const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
+  const defaultShiftSummaryRange = defaultShiftSummaryDateRange(14);
+  const [shiftSummaryDateFrom, setShiftSummaryDateFrom] = useState(defaultShiftSummaryRange.from);
+  const [shiftSummaryDateTo, setShiftSummaryDateTo] = useState(defaultShiftSummaryRange.to);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [staffSearch, setStaffSearch] = useState('');
@@ -14016,7 +14134,10 @@ function ControlBoardPanel({
     setLoadError('');
 
     try {
-      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes] = await Promise.all([
+      const summaryFrom = shiftSummaryDateFrom || defaultShiftSummaryRange.from;
+      const summaryTo = shiftSummaryDateTo || defaultShiftSummaryRange.to;
+      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes] =
+        await Promise.all([
         fetch('/api/nhan-su?format=groups'),
         fetch('/api/don-hang'),
         fetch('/api/san-pham?format=table'),
@@ -14024,7 +14145,12 @@ function ControlBoardPanel({
         fetch('/api/kho-nvl'),
         fetch('/api/lenh-sx'),
         fetch('/api/cai-dat'),
-        fetch('/api/bao-cao-nghiem-thu?limit=30')
+        fetch('/api/bao-cao-nghiem-thu?limit=30'),
+        fetch(
+          `/api/bao-cao-nghiem-thu?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`
+        ),
+        fetch(`/api/bao-cao-phoi-tron?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`),
+        fetch(`/api/phieu-can-dinh-ki?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`)
       ]);
 
       const staffData = await staffRes.json().catch(() => ({}));
@@ -14035,6 +14161,9 @@ function ControlBoardPanel({
       const productionData = await productionRes.json().catch(() => ({}));
       const settingData = await settingRes.json().catch(() => ({}));
       const acceptanceData = await acceptanceRes.json().catch(() => ({}));
+      const shiftSummaryAcceptanceData = await shiftSummaryAcceptanceRes.json().catch(() => ({}));
+      const mixingData = await mixingRes.json().catch(() => ({}));
+      const weighingData = await weighingRes.json().catch(() => ([]));
 
       if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
       if (!orderRes.ok) throw new Error(orderData.error || 'Không thể tải đơn hàng.');
@@ -14056,6 +14185,25 @@ function ControlBoardPanel({
         setAcceptanceReports([]);
       }
 
+      if (shiftSummaryAcceptanceRes.ok) {
+        setShiftSummaryAcceptanceReports(normalizeAcceptanceReports(shiftSummaryAcceptanceData));
+      } else {
+        setShiftSummaryAcceptanceReports([]);
+      }
+
+      if (mixingRes.ok) {
+        const mixingList = Array.isArray(mixingData.reports) ? mixingData.reports : [];
+        setMixingReports(mixingList.map((item: Record<string, unknown>) => normalizeMixingReport(item)));
+      } else {
+        setMixingReports([]);
+      }
+
+      if (weighingRes.ok) {
+        setWeighingRecords(normalizeWeighingRecords(weighingData));
+      } else {
+        setWeighingRecords([]);
+      }
+
       const usingLocalFallback = [machineData, staffData, orderData, materialData, productionData].some(
         payload => payload && typeof payload === 'object' && (payload as { source?: string }).source === 'local'
       );
@@ -14073,6 +14221,9 @@ function ControlBoardPanel({
       setProductionOrders([]);
       setProductionOrderSettings([]);
       setAcceptanceReports([]);
+      setShiftSummaryAcceptanceReports([]);
+      setMixingReports([]);
+      setWeighingRecords([]);
       setLoadError(error.message || 'Không thể tải dữ liệu bảng điều khiển.');
     } finally {
       setIsLoading(false);
@@ -14081,7 +14232,59 @@ function ControlBoardPanel({
 
   useEffect(() => {
     loadBoard();
-  }, []);
+  }, [shiftSummaryDateFrom, shiftSummaryDateTo]);
+
+  const shiftSummaryRows = useMemo(
+    () =>
+      buildControlBoardShiftSummary({
+        shiftSettings: productionOrderSettings,
+        productionOrders,
+        products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
+        acceptanceReports: shiftSummaryAcceptanceReports,
+        mixingReports,
+        weighingRecords,
+        dateFrom: shiftSummaryDateFrom,
+        dateTo: shiftSummaryDateTo
+      }),
+    [
+      productionOrderSettings,
+      productionOrders,
+      products,
+      shiftSummaryAcceptanceReports,
+      mixingReports,
+      weighingRecords,
+      shiftSummaryDateFrom,
+      shiftSummaryDateTo
+    ]
+  );
+
+  const shiftSummaryDetailSources = useMemo(
+    () => ({
+      shiftSettings: productionOrderSettings,
+      productionOrders: productionOrders.map(order => ({
+        code: order.code,
+        startDate: order.startDate,
+        shift: order.shift,
+        productCode: order.productCode,
+        productName: order.productName,
+        quantity: order.quantity,
+        unit: order.unit,
+        products: order.products
+      })),
+      products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
+      acceptanceReports: shiftSummaryAcceptanceReports,
+      mixingReports,
+      weighingRecords
+    }),
+    [
+      productionOrderSettings,
+      productionOrders,
+      products,
+      shiftSummaryAcceptanceReports,
+      mixingReports,
+      weighingRecords
+    ]
+  );
 
   const staffMembers = useMemo(() => flattenHrMembers(staffBranches), [staffBranches]);
   const staffQuery = staffSearch.trim().toLowerCase();
@@ -14190,6 +14393,19 @@ function ControlBoardPanel({
         .includes(acceptanceReportQuery)
     );
   }, [acceptanceReports, acceptanceReportQuery]);
+  const totalAcceptanceRolls = useMemo(
+    () =>
+      acceptanceReports.reduce((sum, report) => {
+        const unit = String(report.don_vi || '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '');
+        if (unit !== 'cuon') return sum;
+        return sum + (report.so_luong ?? 0);
+      }, 0),
+    [acceptanceReports]
+  );
 
   const previewLimit = 12;
   const sidePreviewLimit = 6;
@@ -14344,6 +14560,16 @@ function ControlBoardPanel({
           {loadError}
         </p>
       )}
+
+      <ControlBoardShiftSummaryTable
+        rows={shiftSummaryRows}
+        isLoading={isLoading}
+        dateFrom={shiftSummaryDateFrom}
+        dateTo={shiftSummaryDateTo}
+        onDateFromChange={setShiftSummaryDateFrom}
+        onDateToChange={setShiftSummaryDateTo}
+        detailSources={shiftSummaryDetailSources}
+      />
 
       <div className="grid grid-cols-1 gap-4">
         <DashboardWindow
@@ -14572,6 +14798,11 @@ function ControlBoardPanel({
           accentClass="bg-gradient-to-r from-sky-900 to-sky-700"
           count={acceptanceReports.length}
           countLabel="Báo cáo"
+          summaryExtra={
+            <>
+              Tổng cuộn: <span className="text-white">{isLoading ? '...' : formatNumber(totalAcceptanceRolls, 0)}</span>
+            </>
+          }
           search={acceptanceReportSearch}
           onSearchChange={setAcceptanceReportSearch}
           isLoading={isLoading}

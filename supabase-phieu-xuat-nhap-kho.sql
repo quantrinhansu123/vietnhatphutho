@@ -11,6 +11,7 @@ alter table public.phieu_xuat_nhap_kho
   add column if not exists ma_phieu text,
   add column if not exists loai_phieu text,
   add column if not exists ngay_phieu date,
+  add column if not exists ca text,
   add column if not exists ma_npl text,
   add column if not exists ten_npl text,
   add column if not exists don_vi text,
@@ -50,6 +51,7 @@ create policy "phieu_xuat_nhap_kho_delete_all"
 comment on table public.phieu_xuat_nhap_kho is 'Phieu xuat nhap kho NVL — moi dong la mot mat hang trong phieu.';
 comment on column public.phieu_xuat_nhap_kho.ma_phieu is 'Ma phieu gom nhieu dong chi tiet.';
 comment on column public.phieu_xuat_nhap_kho.loai_phieu is 'nhap hoac xuat.';
+comment on column public.phieu_xuat_nhap_kho.ca is 'Ca san xuat / ca xuat nhap kho.';
 comment on column public.phieu_xuat_nhap_kho.loai_kho is 'nvl hoac san_pham.';
 comment on column public.phieu_xuat_nhap_kho.ma_sp is 'Ma san pham khi loai_kho = san_pham.';
 comment on column public.phieu_xuat_nhap_kho.ten_sp is 'Ten san pham khi loai_kho = san_pham.';
