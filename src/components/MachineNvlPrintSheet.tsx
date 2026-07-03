@@ -129,7 +129,6 @@ function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
       ? `${report.maMay} · ${report.tenMay}`
       : report.tenMay || report.maMay || '-';
   const lines = [...report.lines];
-  const fillerCount = Math.max(0, 10 - lines.length);
   const totalInMachine = lines.reduce((sum, line) => sum + (line.soLuongTrongMay ?? 0), 0);
   const totalInMixer = lines.reduce((sum, line) => sum + (line.soLuongTrongBonTron ?? 0), 0);
   const totalUnblended = lines.reduce((sum, line) => sum + (line.soLuongNlChuaTron ?? 0), 0);
@@ -223,21 +222,6 @@ function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
                   <td className="production-order-print-right">{formatNumber(line.soLuongTon)}</td>
                 ) : null}
                 <td>{line.ghiChu || ''}</td>
-              </tr>
-            ))}
-            {Array.from({ length: fillerCount }).map((_, index) => (
-              <tr key={`filler-${index}`}>
-                <td className="production-order-print-center">{lines.length + index + 1}</td>
-                <td></td>
-                <td></td>
-                <td></td>
-                {isDauCaReport ? <td></td> : null}
-                {isDauCaReport ? <td></td> : null}
-                {isDauCaReport ? <td></td> : null}
-                {isDauCaReport ? <td></td> : null}
-                {!isDauCaReport ? <td></td> : null}
-                {!isDauCaReport ? <td></td> : null}
-                <td></td>
               </tr>
             ))}
             <tr>

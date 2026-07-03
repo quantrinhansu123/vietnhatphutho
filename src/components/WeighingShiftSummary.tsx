@@ -11,6 +11,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Printer,
   RefreshCw,
   Trash2,
   Users
@@ -22,6 +23,7 @@ import WeighingImagePreviewModal, {
   WeighingImageThumbnail,
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
+import { WeighingSlipPrintBatch, type WeighingSlipPrintData } from './WeighingSlipPrintSheet';
 import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/weighingSlipConfig';
 import {
   getProductionShiftOptions,
@@ -298,6 +300,8 @@ export default function WeighingShiftSummary({
     productionDate: today
   });
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
+  const [printSlip, setPrintSlip] = useState<WeighingSlipPrintData | null>(null);
+  const [pendingPrint, setPendingPrint] = useState(false);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
@@ -446,6 +450,47 @@ export default function WeighingShiftSummary({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!printSlip) return;
+    document.body.classList.add('weighing-slip-print-active');
+    return () => {
+      document.body.classList.remove('weighing-slip-print-active');
+    };
+  }, [printSlip]);
+
+  useEffect(() => {
+    if (!pendingPrint || !printSlip) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingPrint(false);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [pendingPrint, printSlip]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintSlip(null);
+      setPendingPrint(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  const handlePrintSlip = (slip: WeighingSlip) => {
+    const machineName = resolveMachineName(slip.machineName, ...slip.rows.map(row => row.machineName));
+    setPrintSlip({
+      documentNo: slip.documentNo,
+      reportDate: slip.reportDate,
+      productionDate: slip.productionDate,
+      shiftName: slip.shiftName,
+      worker1: slip.worker1,
+      worker2: slip.worker2,
+      machineName: machineName !== '—' ? machineName : '',
+      rows: slip.rows
+    });
+    setPendingPrint(true);
+  };
 
   const handleDeleteRow = async (row: WeighingRecord) => {
     if (!row.id) {
@@ -667,12 +712,21 @@ export default function WeighingShiftSummary({
               <ArrowLeft className="h-4 w-4" />
               Quay lại
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-black text-zinc-900">Phiếu {activeSlip.documentNo || '—'}</p>
               <p className="truncate text-xs font-semibold text-zinc-500">
                 {activeShiftSummary.shiftLabel} · {formatDateVi(activeDateGroup.date)}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => handlePrintSlip(activeSlip)}
+              title="In phiếu cân ca"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-black text-zinc-700 transition hover:bg-zinc-50"
+            >
+              <Printer className="h-4 w-4" />
+              In phiếu
+            </button>
           </div>
 
           <div className="space-y-4 p-4">
@@ -1199,6 +1253,8 @@ export default function WeighingShiftSummary({
         onClose={() => setSlipSetupOpen(false)}
         onCreate={handleCreateSlipHeader}
       />
+
+      <WeighingSlipPrintBatch slip={printSlip} title={config.printTitle} />
     </div>
   );
 }

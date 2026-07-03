@@ -218,6 +218,16 @@ input[type="number"] {
     margin: 10mm;
   }
 
+  @page mixing-report-page {
+    size: A4;
+    margin: 0;
+  }
+
+  @page weighing-slip-page {
+    size: A4;
+    margin: 0;
+  }
+
   body {
     background: #ffffff !important;
   }
@@ -431,44 +441,91 @@ input[type="number"] {
   .production-order-print-sheet *,
   .mixing-report-print-batch,
   .mixing-report-print-batch *,
+  .mixing-report-print-page,
+  .mixing-report-print-page *,
   .mixing-report-print-sheet,
-  .mixing-report-print-sheet * {
+  .mixing-report-print-sheet *,
+  .weighing-slip-print-batch,
+  .weighing-slip-print-batch *,
+  .weighing-slip-print-sheet,
+  .weighing-slip-print-sheet * {
     visibility: visible !important;
   }
 
   .mixing-report-print-batch {
     display: block !important;
-    position: absolute;
-    inset: 0;
-    left: 0;
-    top: 0;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
     width: 100%;
-    z-index: 9999;
+    z-index: auto;
     background: #ffffff;
     color: #111111;
     padding: 0;
+    margin: 0;
+    page: mixing-report-page;
+    overflow: visible !important;
   }
 
   .mixing-report-print-sheet {
     display: block !important;
-    position: absolute;
-    inset: 0;
-    left: 0;
-    top: 0;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
     width: 100%;
-    z-index: 9999;
+    z-index: auto;
     background: #ffffff;
     color: #111111;
     padding: 0;
+    margin: 0;
+    page: mixing-report-page;
+    overflow: visible !important;
   }
 
-  .mixing-report-print-batch .mixing-report-print-sheet,
-  .production-order-print-batch .mixing-report-print-sheet {
-    position: relative;
-    inset: auto;
-    left: auto;
-    top: auto;
-    width: auto;
+  .mixing-report-print-batch .mixing-report-print-sheet {
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+  }
+
+  .mixing-report-print-page {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    page: mixing-report-page;
+  }
+
+  body.mixing-report-print-active html,
+  body.mixing-report-print-active body,
+  body.mixing-report-print-active #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.mixing-report-print-active #root {
+    display: none !important;
+  }
+
+  .mixing-report-print-doc {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
+  }
+
+  .mixing-report-print-params-table,
+  .mixing-report-print-table {
+    width: 100% !important;
+    margin: 0 !important;
   }
 
   .production-order-print-batch {
@@ -722,8 +779,93 @@ input[type="number"] {
   .production-order-print-sheet,
   .production-order-print-sheet *,
   .production-order-print-batch,
-  .production-order-print-batch * {
+  .production-order-print-batch *,
+  .mixing-report-print-batch,
+  .mixing-report-print-batch *,
+  .mixing-report-print-page,
+  .mixing-report-print-page *,
+  .mixing-report-print-sheet,
+  .mixing-report-print-sheet *,
+  .weighing-slip-print-sheet,
+  .weighing-slip-print-sheet *,
+  .weighing-slip-print-batch,
+  .weighing-slip-print-batch * {
     visibility: visible !important;
+  }
+
+  .mixing-report-print-batch {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    z-index: auto !important;
+    background: #ffffff;
+    color: #111111;
+    padding: 0 !important;
+    margin: 0 !important;
+    page: mixing-report-page;
+    overflow: visible !important;
+  }
+
+  .mixing-report-print-sheet {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    z-index: auto !important;
+    background: #ffffff;
+    color: #111111;
+    padding: 0 !important;
+    margin: 0 !important;
+    page: mixing-report-page;
+    overflow: visible !important;
+  }
+
+  .mixing-report-print-batch .mixing-report-print-sheet {
+    position: static !important;
+    width: 100% !important;
+  }
+
+  .mixing-report-print-page {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    page: mixing-report-page;
+  }
+
+  body.mixing-report-print-active html,
+  body.mixing-report-print-active body,
+  body.mixing-report-print-active #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.mixing-report-print-active #root {
+    display: none !important;
+  }
+
+  body.mixing-report-print-active .mixing-report-print-batch {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.mixing-report-print-active .mixing-report-print-doc {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .production-order-print-batch {
@@ -739,6 +881,21 @@ input[type="number"] {
     padding: 0;
   }
 
+  .weighing-slip-print-batch {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 9999;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+    margin: 0;
+    page: weighing-slip-page;
+  }
+
   .production-order-print-sheet {
     display: block !important;
     position: absolute;
@@ -752,12 +909,112 @@ input[type="number"] {
     padding: 0;
   }
 
+  .weighing-slip-print-sheet {
+    display: block !important;
+    position: relative;
+    inset: auto;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: auto;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+    margin: 0;
+    page: weighing-slip-page;
+  }
+
   .production-order-print-batch .production-order-print-sheet {
     position: relative;
     inset: auto;
     left: auto;
     top: auto;
     width: auto;
+  }
+
+  .weighing-slip-print-batch .weighing-slip-print-sheet {
+    position: relative;
+    inset: auto;
+    left: auto;
+    top: auto;
+    width: 100%;
+  }
+
+  .weighing-slip-print-page {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    page: weighing-slip-page;
+  }
+
+  .weighing-slip-print-doc {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+  }
+
+  .weighing-slip-print-params-table,
+  .weighing-slip-print-table {
+    width: 100%;
+  }
+
+  body.weighing-slip-print-active {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.weighing-slip-print-active .weighing-slip-print-batch {
+    position: fixed !important;
+    inset: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.weighing-slip-print-active .weighing-slip-print-doc {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.mixing-report-print-active {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.mixing-report-print-active .mixing-report-print-batch {
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.mixing-report-print-active .mixing-report-print-sheet {
+    position: static !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  body.mixing-report-print-active .mixing-report-print-doc {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.mixing-report-print-active .mixing-report-print-params-table,
+  body.mixing-report-print-active .mixing-report-print-table {
+    width: 100% !important;
+    margin: 0 !important;
   }
 }
 
@@ -773,8 +1030,288 @@ input[type="number"] {
   display: none;
 }
 
+.mixing-report-print-page,
+.mixing-report-print-sheet {
+  page: mixing-report-page;
+}
+
+.mixing-report-print-page {
+  break-after: page;
+  page-break-after: always;
+}
+
+.mixing-report-print-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
+.weighing-slip-print-batch {
+  display: none;
+}
+
+.weighing-slip-print-sheet {
+  display: none;
+}
+
+.weighing-slip-print-doc {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.weighing-slip-print-header {
+  margin-bottom: 4mm;
+}
+
+.weighing-slip-print-header-top {
+  display: flex;
+  align-items: center;
+  gap: 4mm;
+  border-bottom: 1.5px solid #111111;
+  padding-bottom: 3mm;
+}
+
+.weighing-slip-print-brand {
+  display: flex;
+  align-items: center;
+  gap: 4mm;
+  min-width: 0;
+}
+
+.weighing-slip-print-logo {
+  height: 14mm;
+  width: auto;
+  max-width: 42mm;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.weighing-slip-print-company-name {
+  margin: 0;
+  font-size: 12pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+
+.weighing-slip-print-title {
+  margin: 4mm 0 0;
+  text-align: center;
+  font-size: 15pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.weighing-slip-print-params-table,
+.weighing-slip-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.weighing-slip-print-params-table {
+  margin-bottom: 4mm;
+}
+
+.weighing-slip-print-params-table th,
+.weighing-slip-print-params-table td {
+  border: 1px solid #222222;
+  padding: 1.4mm 1.2mm;
+  font-family: 'Times New Roman', Times, serif;
+  vertical-align: middle;
+}
+
+.weighing-slip-print-table th,
+.weighing-slip-print-table td {
+  border: 1px solid #222222;
+  padding: 1.2mm 0.8mm;
+  font-family: 'Times New Roman', Times, serif;
+  vertical-align: middle;
+}
+
+.weighing-slip-print-table td {
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.weighing-slip-print-params-table th {
+  width: 16%;
+  font-size: 10.5pt;
+  font-weight: 700;
+  text-align: left;
+  background: #f5f5f5;
+}
+
+.weighing-slip-print-params-table td {
+  width: 34%;
+  font-size: 10.5pt;
+}
+
+.weighing-slip-print-doc-no {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 10pt;
+}
+
+.weighing-slip-print-section-title {
+  margin: 0 0 2mm;
+  font-size: 11pt;
+  font-weight: 700;
+}
+
+.weighing-slip-print-table td {
+  padding: 1.2mm 0.8mm;
+  font-size: 9pt;
+}
+
+.weighing-slip-print-table th {
+  font-weight: 700;
+  text-align: center;
+  background: #f5f5f5;
+  font-size: 8pt;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-wrap: normal;
+  word-break: keep-all;
+  padding: 1.4mm 0.8mm;
+}
+
+.weighing-slip-print-col-lan { width: 10mm; }
+.weighing-slip-print-col-code { width: 16mm; }
+.weighing-slip-print-col-name { width: auto; }
+.weighing-slip-print-col-core { width: 10mm; }
+.weighing-slip-print-col-shell { width: 10mm; }
+.weighing-slip-print-col-weight { width: 10mm; }
+.weighing-slip-print-col-total { width: 22mm; }
+.weighing-slip-print-col-time { width: 9mm; }
+.weighing-slip-print-col-status { width: 10mm; }
+.weighing-slip-print-col-note { width: 18mm; }
+.weighing-slip-print-col-photo { width: 9mm; }
+
+.weighing-slip-print-total-head {
+  font-size: 7.5pt;
+}
+
+.weighing-slip-print-center {
+  text-align: center;
+}
+
+.weighing-slip-print-right {
+  text-align: right;
+}
+
+.weighing-slip-print-lan,
+.weighing-slip-print-time,
+.weighing-slip-print-num,
+.weighing-slip-print-weight,
+.weighing-slip-print-total,
+.weighing-slip-print-status,
+.weighing-slip-print-photo {
+  white-space: nowrap;
+}
+
+.weighing-slip-print-code {
+  font-size: 8.5pt;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.weighing-slip-print-product-name {
+  text-align: left;
+  line-height: 1.2;
+  font-size: 8.5pt;
+  white-space: normal;
+}
+
+.weighing-slip-print-note {
+  text-align: left;
+  font-size: 8pt;
+  white-space: normal;
+}
+
+.weighing-slip-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6mm;
+  margin-top: 12mm;
+  text-align: center;
+  font-size: 11pt;
+}
+
+.weighing-slip-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.weighing-slip-print-signatures span {
+  display: block;
+  margin-top: 18mm;
+  font-style: italic;
+  font-weight: 400;
+  color: #444444;
+}
+
+.weighing-slip-print-page {
+  break-after: page;
+  page-break-after: always;
+}
+
+.weighing-slip-print-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
 .mixing-report-print-sheet {
   display: none;
+}
+
+.mixing-report-print-doc {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.mixing-report-print-grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.mixing-report-print-grid-table th,
+.mixing-report-print-grid-table td {
+  border: 1px solid #222222;
+  padding: 2mm 2.2mm;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  text-align: left;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.mixing-report-print-grid-table th {
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.mixing-report-print-center {
+  text-align: center;
+}
+
+.mixing-report-print-right {
+  text-align: right;
 }
 
 .mixing-report-print-header {
@@ -841,7 +1378,7 @@ input[type="number"] {
 }
 
 .mixing-report-print-params-table {
-  margin-bottom: 4mm;
+  margin-bottom: 8mm;
 }
 
 .mixing-report-print-params-table th {
@@ -858,25 +1395,56 @@ input[type="number"] {
 .mixing-report-print-table {
   table-layout: fixed;
   width: 100%;
+  margin: 6mm 0 0;
 }
 
 .mixing-report-print-table th,
 .mixing-report-print-table td {
-  padding: 1.4mm 1mm;
+  padding: 1.3mm 0.8mm;
   word-break: break-word;
   overflow-wrap: anywhere;
   vertical-align: middle;
 }
 
-.mixing-report-print-col-lan { width: 8%; }
-.mixing-report-print-col-time { width: 10mm; }
-.mixing-report-print-col-code { width: 11%; }
-.mixing-report-print-col-name { width: auto; }
-.mixing-report-print-col-unit { width: 7mm; }
-.mixing-report-print-col-weight { width: 14mm; }
-.mixing-report-print-col-photo { width: 7mm; }
-.mixing-report-print-col-note { width: 16%; }
+.mixing-report-print-table th {
+  text-align: center;
+  font-size: 9pt;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-wrap: normal;
+}
 
+.mixing-report-print-table thead {
+  display: table-header-group;
+}
+
+.mixing-report-print-table tbody tr {
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.mixing-report-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8mm;
+  margin-top: 12mm;
+  text-align: center;
+  font-size: 11pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.mixing-report-print-col-lan { width: 7mm; }
+.mixing-report-print-col-time { width: 11mm; }
+.mixing-report-print-col-code { width: 14mm; }
+.mixing-report-print-col-name { width: 47%; }
+.mixing-report-print-col-unit { width: 7mm; }
+.mixing-report-print-col-weight { width: 8mm; }
+.mixing-report-print-col-photo { width: 8mm; }
+.mixing-report-print-col-note { width: 12mm; }
+
+.mixing-report-print-lan,
 .mixing-report-print-time,
 .mixing-report-print-unit,
 .mixing-report-print-weight,
@@ -884,32 +1452,52 @@ input[type="number"] {
   white-space: nowrap;
 }
 
+.mixing-report-print-lan {
+  font-size: 8.5pt;
+  padding-left: 0.2mm !important;
+  padding-right: 0.2mm !important;
+}
+
 .mixing-report-print-time {
-  font-size: 9.5pt;
-  padding-left: 0.5mm !important;
-  padding-right: 0.5mm !important;
+  font-size: 8.5pt;
+  padding-left: 0.2mm !important;
+  padding-right: 0.2mm !important;
 }
 
 .mixing-report-print-unit {
-  font-size: 9.5pt;
-  padding-left: 0.4mm !important;
-  padding-right: 0.4mm !important;
+  font-size: 8.5pt;
+  padding-left: 0.2mm !important;
+  padding-right: 0.2mm !important;
 }
 
 .mixing-report-print-weight {
-  padding-left: 0.8mm !important;
-  padding-right: 0.8mm !important;
+  font-size: 8.5pt;
+  padding-left: 0.2mm !important;
+  padding-right: 0.2mm !important;
 }
 
 .mixing-report-print-photo {
-  font-size: 9.5pt;
-  padding-left: 0.4mm !important;
-  padding-right: 0.4mm !important;
+  font-size: 8.5pt;
+  padding-left: 0.2mm !important;
+  padding-right: 0.2mm !important;
 }
 
 .mixing-report-print-material-name {
   text-align: left;
-  line-height: 1.3;
+  vertical-align: middle;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.mixing-report-print-material-name-text {
+  display: block;
+  width: 100%;
+  line-height: 1.2;
+  font-size: 8pt;
+  max-height: calc(1.2em * 2);
+  overflow: hidden;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .mixing-report-print-note-cell {
@@ -931,15 +1519,6 @@ input[type="number"] {
   margin: 5mm 0 0;
   font-size: 10.5pt;
   line-height: 1.45;
-}
-
-.mixing-report-print-signatures {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8mm;
-  margin-top: 12mm;
-  text-align: center;
-  font-size: 11pt;
 }
 
 .mixing-report-print-signatures p {
@@ -1148,9 +1727,10 @@ input[type="number"] {
 }
 
 .acceptance-report-print-table th:nth-child(1) { width: 8%; }
-.acceptance-report-print-table th:nth-child(2) { width: 52%; }
-.acceptance-report-print-table th:nth-child(3) { width: 12%; }
-.acceptance-report-print-table th:nth-child(4) { width: 18%; }
+.acceptance-report-print-table th:nth-child(2) { width: 28%; }
+.acceptance-report-print-table th:nth-child(3) { width: 34%; }
+.acceptance-report-print-table th:nth-child(4) { width: 12%; }
+.acceptance-report-print-table th:nth-child(5) { width: 18%; }
 
 .acceptance-report-print-signatures {
   display: grid;
@@ -1174,15 +1754,28 @@ input[type="number"] {
   color: #444444;
 }
 
-.machine-nvl-print-table th:nth-child(1) { width: 5%; }
-.machine-nvl-print-table th:nth-child(2) { width: 11%; }
-.machine-nvl-print-table th:nth-child(3) { width: 22%; }
-.machine-nvl-print-table th:nth-child(4) { width: 7%; }
-.machine-nvl-print-table th:nth-child(5) { width: 11%; }
-.machine-nvl-print-table th:nth-child(6) { width: 11%; }
+.machine-nvl-print-table th,
+.machine-nvl-print-table td {
+  padding-left: 1.5mm;
+  padding-right: 1.5mm;
+}
+
+.machine-nvl-print-table th {
+  font-size: 10pt;
+  line-height: 1.15;
+  overflow-wrap: normal;
+  word-wrap: normal;
+}
+
+.machine-nvl-print-table th:nth-child(1) { width: 4.5%; }
+.machine-nvl-print-table th:nth-child(2) { width: 10.5%; }
+.machine-nvl-print-table th:nth-child(3) { width: 21%; }
+.machine-nvl-print-table th:nth-child(4) { width: 6%; }
+.machine-nvl-print-table th:nth-child(5) { width: 13%; }
+.machine-nvl-print-table th:nth-child(6) { width: 12%; }
 .machine-nvl-print-table th:nth-child(7) { width: 11%; }
-.machine-nvl-print-table th:nth-child(8) { width: 12%; }
-.machine-nvl-print-table th:nth-child(9) { width: 10%; }
+.machine-nvl-print-table th:nth-child(8) { width: 13%; }
+.machine-nvl-print-table th:nth-child(9) { width: 9%; }
 
 .machine-nvl-print-note {
   margin: 6mm 0 0;

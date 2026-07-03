@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import {
   MIXING_ROUND_KEYS,
@@ -51,9 +52,17 @@ function formatPrintTime(value: string) {
   return `${match[1]}h${match[2]}`;
 }
 
+function trimTrailingDecimalZeros(formatted: string) {
+  const match = formatted.match(/^(.+),(\d+)$/);
+  if (!match) return formatted;
+  const [, intPart, decPart] = match;
+  const trimmedDec = decPart.replace(/0+$/, '');
+  return trimmedDec ? `${intPart},${trimmedDec}` : intPart;
+}
+
 function formatPrintWeight(value: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return '';
-  return formatNormWeight(value);
+  return trimTrailingDecimalZeros(formatNormWeight(value));
 }
 
 function hasMeaningfulPrintWeight(value: number | null | undefined) {
@@ -134,8 +143,8 @@ function MixingReportPrintSheet({
       : context.tenMay || context.maMay || '-';
 
   return (
-    <div className="production-order-print-sheet mixing-report-print-sheet">
-      <div className="production-order-print-doc mixing-report-print-doc">
+    <div className="mixing-report-print-sheet">
+      <div className="mixing-report-print-doc">
         <header className="mixing-report-print-header">
           <div className="mixing-report-print-header-top">
             <div className="mixing-report-print-brand">
@@ -153,7 +162,7 @@ function MixingReportPrintSheet({
           <h1 className="mixing-report-print-title">NHẬT KÝ TRỘN NGUYÊN LIỆU</h1>
         </header>
 
-        <table className="production-order-print-grid-table mixing-report-print-params-table">
+        <table className="mixing-report-print-grid-table mixing-report-print-params-table">
           <tbody>
             <tr>
               <th>Ngày sản xuất</th>
@@ -164,13 +173,13 @@ function MixingReportPrintSheet({
             <tr>
               <th>Máy</th>
               <td>{machineLabel}</td>
-              <th>Công nhân chính máy</th>
+              <th>Công nhân</th>
               <td>{context.nhanSu || '-'}</td>
             </tr>
           </tbody>
         </table>
 
-        <table className="production-order-print-grid-table mixing-report-print-table">
+        <table className="mixing-report-print-grid-table mixing-report-print-table">
           <colgroup>
             <col className="mixing-report-print-col-lan" />
             <col className="mixing-report-print-col-time" />
@@ -183,10 +192,10 @@ function MixingReportPrintSheet({
           </colgroup>
           <thead>
             <tr>
-              <th>Lần trộn</th>
+              <th>Lần</th>
               <th>Thời gian</th>
               <th>Mã NL</th>
-              <th>Tên nguyên liệu</th>
+              <th>Tên NL</th>
               <th>ĐVT</th>
               <th>KL</th>
               <th>Ảnh</th>
@@ -196,7 +205,7 @@ function MixingReportPrintSheet({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="production-order-print-center">
+                <td colSpan={8} className="mixing-report-print-center">
                   Chưa có dữ liệu trộn nguyên liệu.
                 </td>
               </tr>
@@ -204,26 +213,31 @@ function MixingReportPrintSheet({
               rows.map((row, index) => (
                 <tr key={`${row.lanTron}-${row.maNl}-${row.tenNl}-${index}`}>
                   {row.showLanTron ? (
-                    <td rowSpan={row.lanTronRowSpan} className="production-order-print-center mixing-report-print-merged">
+                    <td
+                      rowSpan={row.lanTronRowSpan}
+                      className="mixing-report-print-center mixing-report-print-merged mixing-report-print-lan"
+                    >
                       {row.lanTron}
                     </td>
                   ) : null}
                   {row.showThoiGian ? (
                     <td
                       rowSpan={row.thoiGianRowSpan}
-                      className="production-order-print-center mixing-report-print-merged mixing-report-print-time"
+                      className="mixing-report-print-center mixing-report-print-merged mixing-report-print-time"
                     >
                       {row.thoiGian}
                     </td>
                   ) : null}
                   <td className="mixing-report-print-code">{row.maNl || ''}</td>
-                  <td className="mixing-report-print-material-name">{row.tenNl || ''}</td>
-                  <td className="production-order-print-center mixing-report-print-unit">{row.donVi || ''}</td>
-                  <td className="production-order-print-right mixing-report-print-weight">
+                  <td className="mixing-report-print-material-name">
+                    <span className="mixing-report-print-material-name-text">{row.tenNl || ''}</span>
+                  </td>
+                  <td className="mixing-report-print-center mixing-report-print-unit">{row.donVi || ''}</td>
+                  <td className="mixing-report-print-right mixing-report-print-weight">
                     {formatPrintWeight(row.khoiLuong)}
                   </td>
                   {row.showAnhChup ? (
-                    <td rowSpan={row.anhChupRowSpan} className="production-order-print-center mixing-report-print-merged mixing-report-print-photo">
+                    <td rowSpan={row.anhChupRowSpan} className="mixing-report-print-center mixing-report-print-merged mixing-report-print-photo">
                       {row.anhChup}
                     </td>
                   ) : null}
@@ -232,10 +246,10 @@ function MixingReportPrintSheet({
               ))
             )}
             <tr>
-              <td colSpan={5} className="production-order-print-center mixing-report-print-total-label">
+              <td colSpan={5} className="mixing-report-print-center mixing-report-print-total-label">
                 TỔNG CỘNG
               </td>
-              <td className="production-order-print-right mixing-report-print-total-value mixing-report-print-weight">
+              <td className="mixing-report-print-right mixing-report-print-total-value mixing-report-print-weight">
                 {rows.length > 0 ? formatPrintWeight(totalWeight) : ''}
               </td>
               <td colSpan={2}></td>
@@ -250,7 +264,7 @@ function MixingReportPrintSheet({
 
         <div className="mixing-report-print-signatures">
           <div>
-            <p>Công nhân chính máy</p>
+            <p>Công nhân</p>
             <span>(Ký, ghi rõ họ tên)</span>
           </div>
           <div>
@@ -267,17 +281,18 @@ export function MixingReportPrintBatch({ reports }: { reports: MixingReport[] })
   const groups = groupMixingReportsForPrint(reports);
   if (groups.length === 0) return null;
 
-  return (
-    <div className="production-order-print-batch mixing-report-print-batch">
+  return createPortal(
+    <div className="mixing-report-print-batch">
       {groups.map(group => {
         const context = buildMixingReportPrintContext(group);
         const key = `${context.ngay}|${context.ca}|${context.maMay}|${context.tenMay}`;
         return (
-          <div key={key} className="production-order-print-page">
+          <div key={key} className="mixing-report-print-page">
             <MixingReportPrintSheet reports={group} context={context} />
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body
   );
 }

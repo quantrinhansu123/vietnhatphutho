@@ -21,6 +21,29 @@ alter table public.phieu_can_dinh_ki
   add column if not exists anh_trong_luong_loi_public_id text,
   add column if not exists trong_luong_bi text,
   add column if not exists trong_luong text,
+  add column if not exists tong_trong_luong numeric generated always as (
+    (
+      case
+        when replace(trim(coalesce(trong_luong_loi, '')), ',', '.') ~ '^-?[0-9]+(\.[0-9]+)?$'
+          then replace(trim(trong_luong_loi), ',', '.')::numeric
+        else 0
+      end
+    ) +
+    (
+      case
+        when replace(trim(coalesce(trong_luong_bi, '')), ',', '.') ~ '^-?[0-9]+(\.[0-9]+)?$'
+          then replace(trim(trong_luong_bi), ',', '.')::numeric
+        else 0
+      end
+    ) +
+    (
+      case
+        when replace(trim(coalesce(trong_luong, '')), ',', '.') ~ '^-?[0-9]+(\.[0-9]+)?$'
+          then replace(trim(trong_luong), ',', '.')::numeric
+        else 0
+      end
+    )
+  ) stored,
   add column if not exists anh_url text,
   add column if not exists anh_public_id text,
   add column if not exists nghiem_thu text,
@@ -58,6 +81,7 @@ comment on column public.phieu_can_dinh_ki.ten_san_pham is 'Ten san pham lay tu 
 comment on column public.phieu_can_dinh_ki.ten_may_san_xuat is 'Ten may san xuat nhap tay.';
 comment on column public.phieu_can_dinh_ki.trong_luong_loi is 'Trong luong loi.';
 comment on column public.phieu_can_dinh_ki.trong_luong_bi is 'Trong luong bi (kg).';
+comment on column public.phieu_can_dinh_ki.tong_trong_luong is 'Tong trong luong = trong_luong_loi + trong_luong_bi + trong_luong.';
 comment on column public.phieu_can_dinh_ki.anh_trong_luong_loi_url is 'Cloudinary secure URL cua anh trong luong loi.';
 comment on column public.phieu_can_dinh_ki.anh_url is 'Cloudinary secure URL cua anh can.';
 comment on column public.phieu_can_dinh_ki.nghiem_thu is 'Ket qua nghiem thu: Dat hoac Khong dat.';

@@ -16,6 +16,11 @@ type AcceptanceShiftGroup = {
   reports: AcceptanceReport[];
 };
 
+type ProductNameOption = {
+  code: string;
+  name: string;
+};
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -30,6 +35,33 @@ function compareAcceptanceReports(a: AcceptanceReport, b: AcceptanceReport) {
   const byTime = String(a.gio).localeCompare(String(b.gio));
   if (byTime !== 0) return byTime;
   return String(a.mat_hang).localeCompare(String(b.mat_hang), 'vi');
+}
+
+function normalizeProductKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function normalizeProductNames(data: unknown): ProductNameOption[] {
+  const rows = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && Array.isArray((data as { products?: unknown }).products)
+      ? (data as { products: unknown[] }).products
+      : [];
+
+  return rows
+    .map((item): ProductNameOption | null => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const code = String(
+        record.ma_sp ?? record.ma_san_pham ?? record.productCode ?? record.code ?? ''
+      ).trim();
+      const name = String(
+        record.ten_sp ?? record.ten_san_pham ?? record.productName ?? record.name ?? ''
+      ).trim();
+      if (!code || !name) return null;
+      return { code, name };
+    })
+    .filter((item): item is ProductNameOption => Boolean(item));
 }
 
 function buildShiftGroups(reports: AcceptanceReport[], ngay: string): AcceptanceShiftGroup[] {
@@ -66,14 +98,15 @@ export default function AcceptanceReportListView({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [activePrintSlips, setActivePrintSlips] = useState<ReturnType<typeof buildAcceptancePrintSlips>>([]);
   const [viewingCa, setViewingCa] = useState<string | null>(null);
+  const [productNameByCode, setProductNameByCode] = useState<Map<string, string>>(() => new Map());
 
   const shiftGroups = useMemo(() => buildShiftGroups(reports, filterDate), [reports, filterDate]);
   const viewingGroup = useMemo(
     () => shiftGroups.find(group => group.ca === viewingCa) ?? null,
     [shiftGroups, viewingCa]
   );
-  const printSlips = useMemo(() => buildAcceptancePrintSlips(reports), [reports]);
   const viewingTotalsByUnit = useMemo(
     () =>
       viewingGroup
@@ -88,14 +121,54 @@ export default function AcceptanceReportListView({
     [viewingGroup]
   );
 
+  const addProductNamesForPrint = (sourceReports: AcceptanceReport[]) =>
+    sourceReports.map(report => ({
+      ...report,
+      ten_sp: productNameByCode.get(normalizeProductKey(report.mat_hang)) || ''
+    }));
+
   useEffect(() => {
-    if (!pendingPrint || printSlips.length === 0) return;
+    if (!pendingPrint || activePrintSlips.length === 0) return;
     const timer = window.setTimeout(() => {
       window.print();
       setPendingPrint(false);
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [pendingPrint, printSlips]);
+  }, [pendingPrint, activePrintSlips]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setActivePrintSlips([]);
+      setPendingPrint(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch('/api/san-pham?format=table');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+
+        const next = new Map<string, string>();
+        normalizeProductNames(data).forEach(product => {
+          const key = normalizeProductKey(product.code);
+          if (key) next.set(key, product.name);
+        });
+        setProductNameByCode(next);
+      } catch {
+        if (!cancelled) setProductNameByCode(new Map());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadReports = async (ngay = filterDate) => {
     const res = await fetch(`/api/bao-cao-nghiem-thu?ngay=${encodeURIComponent(ngay)}`);
@@ -124,13 +197,23 @@ export default function AcceptanceReportListView({
     };
   }, [filterDate]);
 
-  const handlePrint = () => {
-    if (printSlips.length === 0) {
-      setError('Chưa có báo cáo sản lượng để in trong ngày này.');
+  const startPrint = (slips: ReturnType<typeof buildAcceptancePrintSlips>) => {
+    if (slips.length === 0) {
+      setError('Chưa có báo cáo sản lượng để in.');
       return;
     }
     setError('');
+    setActivePrintSlips(slips);
     setPendingPrint(true);
+  };
+
+  const handlePrint = () => {
+    startPrint(buildAcceptancePrintSlips(addProductNamesForPrint(reports)));
+  };
+
+  const handlePrintGroup = () => {
+    if (!viewingGroup) return;
+    startPrint(buildAcceptancePrintSlips(addProductNamesForPrint(viewingGroup.reports)));
   };
 
   const handleDelete = async (id: string) => {
@@ -294,13 +377,23 @@ export default function AcceptanceReportListView({
                   {viewingGroup.ngay || '-'} · Ca {viewingGroup.ca} · {viewingGroup.reports.length} dòng
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setViewingCa(null)}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintGroup}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                >
+                  <Printer className="h-4 w-4" />
+                  In phiếu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingCa(null)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
@@ -381,13 +474,23 @@ export default function AcceptanceReportListView({
                 </table>
               </div>
             </div>
+
+            <div className="border-t border-zinc-200 px-4 py-3 sm:px-5">
+              <button
+                type="button"
+                onClick={() => setViewingCa(null)}
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-zinc-200 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 sm:w-auto sm:px-4"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {pendingPrint &&
-        printSlips.length > 0 &&
-        createPortal(<AcceptanceReportPrintBatch slips={printSlips} />, document.body)}
+        activePrintSlips.length > 0 &&
+        createPortal(<AcceptanceReportPrintBatch slips={activePrintSlips} />, document.body)}
     </div>
   );
 }

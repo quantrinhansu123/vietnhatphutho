@@ -12,12 +12,14 @@ type AcceptanceReportSource = {
   ma_may: string;
   ten_may: string;
   mat_hang: string;
+  ten_sp?: string;
   don_vi: string;
   so_luong: number | null;
 };
 
 export type AcceptancePrintLine = {
   mat_hang: string;
+  ten_sp?: string;
   don_vi: string;
   so_luong: number | null;
 };
@@ -84,6 +86,7 @@ export function buildAcceptancePrintSlips(reports: AcceptanceReportSource[]): Ac
 
     slip.lines.push({
       mat_hang: report.mat_hang,
+      ten_sp: report.ten_sp,
       don_vi: report.don_vi,
       so_luong: report.so_luong
     });
@@ -147,6 +150,7 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
             <tr>
               <th>STT</th>
               <th>Mặt hàng</th>
+              <th>Tên SP</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
             </tr>
@@ -156,6 +160,7 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
               <tr key={`${line.mat_hang}-${index}`}>
                 <td className="production-order-print-center">{index + 1}</td>
                 <td>{line.mat_hang || '-'}</td>
+                <td>{line.ten_sp || '-'}</td>
                 <td className="production-order-print-center">{line.don_vi || '-'}</td>
                 <td className="production-order-print-right">
                   {line.so_luong === null ? '-' : formatNumber(line.so_luong, 2)}
@@ -164,7 +169,7 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
             ))}
             {totalsByUnit.map(([unit, total]) => (
               <tr key={unit}>
-                <td colSpan={3} className="production-order-print-right" style={{ fontWeight: 700 }}>
+                <td colSpan={4} className="production-order-print-right" style={{ fontWeight: 700 }}>
                   Tổng cộng ({unit})
                 </td>
                 <td className="production-order-print-right" style={{ fontWeight: 700 }}>

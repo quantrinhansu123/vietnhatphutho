@@ -276,6 +276,14 @@ export default function MixingReportListView({
   }, [viewingReportId]);
 
   useEffect(() => {
+    if (printReports.length === 0) return;
+    document.body.classList.add('mixing-report-print-active');
+    return () => {
+      document.body.classList.remove('mixing-report-print-active');
+    };
+  }, [printReports]);
+
+  useEffect(() => {
     if (!pendingPrint || printReports.length === 0) return;
     const timer = window.setTimeout(() => {
       window.print();
