@@ -1,0 +1,283 @@
+import React from 'react';
+import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import {
+  MIXING_ROUND_KEYS,
+  buildMixingReportPrintContext,
+  formatNormWeight,
+  groupMixingReportsForPrint,
+  listRoundMaterialEntries,
+  mixingSessionColumnLabel,
+  resolveMixingReportRoundPhotos,
+  sumReportNormTotal,
+  visibleRoundCount,
+  type MixingReportPrintContext
+} from '../lib/mixingReportModel';
+import type { MixingReport } from './MixingReportForm';
+
+const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
+const PRINT_PROJECT_NAME = 'Dự án Chuyển đổi số sản xuất';
+const PRINT_DOC_CODE = 'BM-SX-06';
+const PRINT_DOC_VERSION = 'Phiên bản 1.0';
+
+export type MixingReportPrintRow = {
+  lanTron: string;
+  thoiGian: string;
+  maNl: string;
+  tenNl: string;
+  donVi: string;
+  khoiLuong: number | null;
+  anhChup: 'Có' | 'Không';
+  ghiChu: string;
+  showLanTron: boolean;
+  showThoiGian: boolean;
+  showAnhChup: boolean;
+  lanTronRowSpan: number;
+  thoiGianRowSpan: number;
+  anhChupRowSpan: number;
+};
+
+function formatPrintDate(iso: string) {
+  if (!iso) return '-';
+  const [year, month, day] = iso.split('-');
+  if (!year || !month || !day) return iso;
+  return `${day}/${month}/${year}`;
+}
+
+function formatPrintTime(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '-';
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return trimmed;
+  return `${match[1]}h${match[2]}`;
+}
+
+function formatPrintWeight(value: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '';
+  return formatNormWeight(value);
+}
+
+function hasMeaningfulPrintWeight(value: number | null | undefined) {
+  return value !== null && value !== undefined && Number.isFinite(value) && value > 0;
+}
+
+function buildRowsForReport(report: MixingReport): MixingReportPrintRow[] {
+  const sessionStart = report.lan_thu && report.lan_thu > 0 ? report.lan_thu : 1;
+  const roundCount = Math.min(
+    5,
+    Math.max(
+      report.so_lan || 1,
+      report.chi_tiet.reduce((max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)), 1)
+    )
+  );
+  const roundPhotos = resolveMixingReportRoundPhotos(report);
+  const rows: MixingReportPrintRow[] = [];
+
+  for (let roundIndex = 0; roundIndex < roundCount; roundIndex += 1) {
+    const roundKey = MIXING_ROUND_KEYS[roundIndex];
+    const entries = listRoundMaterialEntries(report.chi_tiet, roundKey).filter(entry => {
+      const weight = entry.item.kl_thuc_te ?? entry.item.so_luong;
+      return (
+        entry.item.ma_nvl.trim() ||
+        entry.item.ten_vat_tu.trim() ||
+        hasMeaningfulPrintWeight(weight)
+      );
+    });
+    if (entries.length === 0) continue;
+
+    const lanLabel = mixingSessionColumnLabel(sessionStart, roundIndex);
+    const thoiGian = formatPrintTime(report.gio);
+    const hasPhoto = (roundPhotos[roundKey]?.length ?? 0) > 0;
+    const anhChup: 'Có' | 'Không' = hasPhoto ? 'Có' : 'Không';
+    const ghiChu = report.ghi_chu.trim();
+
+    entries.forEach((entry, entryIndex) => {
+      const weight = entry.item.kl_thuc_te ?? entry.item.so_luong;
+      rows.push({
+        lanTron: lanLabel,
+        thoiGian,
+        maNl: entry.item.ma_nvl.trim(),
+        tenNl: entry.item.ten_vat_tu.trim(),
+        donVi: (entry.item.don_vi || 'KG').toUpperCase(),
+        khoiLuong: weight,
+        anhChup,
+        ghiChu: entryIndex === 0 ? ghiChu : '',
+        showLanTron: entryIndex === 0,
+        showThoiGian: entryIndex === 0,
+        showAnhChup: entryIndex === 0,
+        lanTronRowSpan: entries.length,
+        thoiGianRowSpan: entries.length,
+        anhChupRowSpan: entries.length
+      });
+    });
+  }
+
+  return rows;
+}
+
+export function buildMixingReportPrintRows(reports: MixingReport | MixingReport[]): MixingReportPrintRow[] {
+  const reportList = Array.isArray(reports) ? reports : [reports];
+  return reportList.flatMap(report => buildRowsForReport(report));
+}
+
+function MixingReportPrintSheet({
+  reports,
+  context
+}: {
+  reports: MixingReport[];
+  context: MixingReportPrintContext;
+}) {
+  const rows = buildMixingReportPrintRows(reports);
+  const totalWeight = reports.reduce((sum, report) => sum + sumReportNormTotal(report.chi_tiet), 0);
+  const machineLabel =
+    context.tenMay && context.maMay && context.maMay !== context.tenMay
+      ? `${context.maMay} · ${context.tenMay}`
+      : context.tenMay || context.maMay || '-';
+
+  return (
+    <div className="production-order-print-sheet mixing-report-print-sheet">
+      <div className="production-order-print-doc mixing-report-print-doc">
+        <header className="mixing-report-print-header">
+          <div className="mixing-report-print-header-top">
+            <div className="mixing-report-print-brand">
+              <img src={vietNhatLogoUrl} alt="Logo Viet Nhat" className="mixing-report-print-logo" />
+              <div>
+                <p className="mixing-report-print-company-name">{PRINT_COMPANY_NAME}</p>
+                <p className="mixing-report-print-project-name">{PRINT_PROJECT_NAME}</p>
+              </div>
+            </div>
+            <div className="mixing-report-print-doc-meta">
+              <p>{PRINT_DOC_CODE}</p>
+              <p>{PRINT_DOC_VERSION}</p>
+            </div>
+          </div>
+          <h1 className="mixing-report-print-title">NHẬT KÝ TRỘN NGUYÊN LIỆU</h1>
+        </header>
+
+        <table className="production-order-print-grid-table mixing-report-print-params-table">
+          <tbody>
+            <tr>
+              <th>Ngày sản xuất</th>
+              <td>{formatPrintDate(context.ngay)}</td>
+              <th>Ca</th>
+              <td>{context.ca || '-'}</td>
+            </tr>
+            <tr>
+              <th>Máy</th>
+              <td>{machineLabel}</td>
+              <th>Công nhân chính máy</th>
+              <td>{context.nhanSu || '-'}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table className="production-order-print-grid-table mixing-report-print-table">
+          <colgroup>
+            <col className="mixing-report-print-col-lan" />
+            <col className="mixing-report-print-col-time" />
+            <col className="mixing-report-print-col-code" />
+            <col className="mixing-report-print-col-name" />
+            <col className="mixing-report-print-col-unit" />
+            <col className="mixing-report-print-col-weight" />
+            <col className="mixing-report-print-col-photo" />
+            <col className="mixing-report-print-col-note" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Lần trộn</th>
+              <th>Thời gian</th>
+              <th>Mã NL</th>
+              <th>Tên nguyên liệu</th>
+              <th>ĐVT</th>
+              <th>KL</th>
+              <th>Ảnh</th>
+              <th>Ghi chú</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="production-order-print-center">
+                  Chưa có dữ liệu trộn nguyên liệu.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, index) => (
+                <tr key={`${row.lanTron}-${row.maNl}-${row.tenNl}-${index}`}>
+                  {row.showLanTron ? (
+                    <td rowSpan={row.lanTronRowSpan} className="production-order-print-center mixing-report-print-merged">
+                      {row.lanTron}
+                    </td>
+                  ) : null}
+                  {row.showThoiGian ? (
+                    <td
+                      rowSpan={row.thoiGianRowSpan}
+                      className="production-order-print-center mixing-report-print-merged mixing-report-print-time"
+                    >
+                      {row.thoiGian}
+                    </td>
+                  ) : null}
+                  <td className="mixing-report-print-code">{row.maNl || ''}</td>
+                  <td className="mixing-report-print-material-name">{row.tenNl || ''}</td>
+                  <td className="production-order-print-center mixing-report-print-unit">{row.donVi || ''}</td>
+                  <td className="production-order-print-right mixing-report-print-weight">
+                    {formatPrintWeight(row.khoiLuong)}
+                  </td>
+                  {row.showAnhChup ? (
+                    <td rowSpan={row.anhChupRowSpan} className="production-order-print-center mixing-report-print-merged mixing-report-print-photo">
+                      {row.anhChup}
+                    </td>
+                  ) : null}
+                  <td className="mixing-report-print-note-cell">{row.ghiChu}</td>
+                </tr>
+              ))
+            )}
+            <tr>
+              <td colSpan={5} className="production-order-print-center mixing-report-print-total-label">
+                TỔNG CỘNG
+              </td>
+              <td className="production-order-print-right mixing-report-print-total-value mixing-report-print-weight">
+                {rows.length > 0 ? formatPrintWeight(totalWeight) : ''}
+              </td>
+              <td colSpan={2}></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p className="mixing-report-print-note">
+          Ghi chú: Mỗi mẻ trộn phải gắn thẻ trộn (số lần trộn, ca, ngày SX...) và chụp ảnh lưu vết trước khi cập nhật
+          hệ thống.
+        </p>
+
+        <div className="mixing-report-print-signatures">
+          <div>
+            <p>Công nhân chính máy</p>
+            <span>(Ký, ghi rõ họ tên)</span>
+          </div>
+          <div>
+            <p>Trưởng ca xác nhận</p>
+            <span>(Ký, ghi rõ họ tên)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function MixingReportPrintBatch({ reports }: { reports: MixingReport[] }) {
+  const groups = groupMixingReportsForPrint(reports);
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="production-order-print-batch mixing-report-print-batch">
+      {groups.map(group => {
+        const context = buildMixingReportPrintContext(group);
+        const key = `${context.ngay}|${context.ca}|${context.maMay}|${context.tenMay}`;
+        return (
+          <div key={key} className="production-order-print-page">
+            <MixingReportPrintSheet reports={group} context={context} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}

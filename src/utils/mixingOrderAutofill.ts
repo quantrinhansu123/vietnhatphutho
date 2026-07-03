@@ -1,4 +1,5 @@
 import { parsePercentInput } from '../utils';
+import { shiftNamesMatch } from './shiftSettings';
 import type { MixingPhoiTron, MixingReportLine, MixingRoundItem } from '../components/MixingReportForm';
 
 export type MixingBomItem = {
@@ -336,37 +337,105 @@ function extractIsoDate(value: string) {
 
 function shiftMatches(orderShift: string, selectedShift: string) {
   if (!orderShift || !selectedShift) return false;
+  if (shiftNamesMatch(orderShift, selectedShift)) return true;
   const left = orderShift.replace(/^ca\s*/i, '').trim().toLowerCase();
   const right = selectedShift.replace(/^ca\s*/i, '').trim().toLowerCase();
   return left === right || left.includes(right) || right.includes(left);
 }
 
-function machineMatches(orderMachine: string, machineCode: string, machineName: string) {
+function machineMatches(
+  orderMachine: string,
+  machineCode: string,
+  machineName: string,
+  machines: Array<{ code: string; name: string }> = []
+) {
   const ref = orderMachine.trim();
   if (!ref || ref === '-') return false;
+
+  const candidates = new Set<string>();
+  if (machineCode) candidates.add(normalizeKey(machineCode));
+  if (machineName) candidates.add(normalizeKey(machineName));
+  if (machineCode && machineName) candidates.add(normalizeKey(`${machineCode} · ${machineName}`));
+
+  machines.forEach(machine => {
+    if (machine.code) candidates.add(normalizeKey(machine.code));
+    if (machine.name) candidates.add(normalizeKey(machine.name));
+    if (machine.code && machine.name) candidates.add(normalizeKey(`${machine.code} · ${machine.name}`));
+  });
+
   const refKey = normalizeKey(ref);
-  const candidates = [machineCode, machineName, `${machineCode} · ${machineName}`]
-    .map(normalizeKey)
-    .filter(Boolean);
-  return candidates.some(key => key === refKey || key.includes(refKey) || refKey.includes(key));
+  return [...candidates].some(key => key && (key === refKey || key.includes(refKey) || refKey.includes(key)));
 }
 
 export function filterMixingProductionOrders(
   orders: MixingProductionOrder[],
-  filters: { ngay: string; ca: string; maMay: string; tenMay: string }
+  filters: { ngay: string; ca: string; maMay: string; tenMay: string },
+  machines: Array<{ code: string; name: string }> = []
 ) {
+  const selectedCa = filters.ca.trim();
+  const hasMachine = Boolean(filters.maMay.trim() || filters.tenMay.trim());
+  if (!selectedCa || !hasMachine) return [];
+
   return orders.filter(order => {
     const orderDate = extractIsoDate(order.startDate);
     if (filters.ngay && orderDate && orderDate !== filters.ngay) return false;
-    if (filters.ca && !shiftMatches(order.shift, filters.ca)) return false;
-    if (
-      (filters.maMay || filters.tenMay) &&
-      !machineMatches(order.machine, filters.maMay, filters.tenMay)
-    ) {
-      return false;
-    }
+    if (!shiftMatches(order.shift, selectedCa)) return false;
+    if (!machineMatches(order.machine, filters.maMay, filters.tenMay, machines)) return false;
     return order.productLines.some(line => line.productCode.trim());
   });
+}
+
+export type WeighingOrderProductOption = {
+  productCode: string;
+  productName: string;
+  newCode?: string;
+};
+
+export function buildWeighingProductOptionsFromOrders(
+  orders: MixingProductionOrder[],
+  filters: { ngay: string; ca: string; machineName: string },
+  machines: Array<{ code: string; name: string }> = [],
+  catalogProducts: Array<{ productCode: string; productName: string; newCode?: string }> = []
+): WeighingOrderProductOption[] {
+  const machineName = filters.machineName.trim();
+  if (!filters.ngay.trim() || !filters.ca.trim() || !machineName) return [];
+
+  const selectedMachine = machines.find(
+    machine => machine.name === machineName || machine.code === machineName
+  );
+  const maMay = selectedMachine?.code ?? '';
+  const tenMay = selectedMachine?.name || machineName;
+
+  const matchedOrders = filterMixingProductionOrders(
+    orders,
+    { ngay: filters.ngay.trim(), ca: filters.ca.trim(), maMay, tenMay },
+    machines
+  );
+
+  const byCode = new Map<string, WeighingOrderProductOption>();
+
+  const findCatalog = (code: string) =>
+    catalogProducts.find(
+      product =>
+        product.productCode.toLowerCase() === code.toLowerCase() ||
+        product.newCode?.toLowerCase() === code.toLowerCase()
+    );
+
+  matchedOrders.forEach(order => {
+    order.productLines.forEach(line => {
+      const productCode = line.productCode.trim();
+      if (!productCode) return;
+      const key = productCode.toLowerCase();
+      const catalog = findCatalog(productCode);
+      byCode.set(key, {
+        productCode,
+        productName: line.productName || catalog?.productName || productCode,
+        newCode: catalog?.newCode
+      });
+    });
+  });
+
+  return [...byCode.values()].sort((a, b) => a.productCode.localeCompare(b.productCode, 'vi'));
 }
 
 export function buildMixingProductionOrderProductCandidates(
@@ -518,7 +587,8 @@ function bomToRoundItems(
       ten_vat_tu: item.name || matched?.name || item.code,
       don_vi: item.unit && item.unit !== '-' ? item.unit : matched?.unit || 'kg',
       ti_le_phan_tram: item.amountType === 'percent' ? item.percent : null,
-      so_luong: item.amountType === 'quantity' ? item.quantity : null
+      so_luong: item.amountType === 'quantity' ? item.quantity : null,
+      kl_thuc_te: null
     };
   });
 }

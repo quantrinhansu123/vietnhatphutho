@@ -21,7 +21,10 @@ alter table public.bao_cao_phoi_tron
   add column if not exists thuc_te_su_dung numeric,
   add column if not exists ghi_chu text,
   add column if not exists chi_tiet jsonb not null default '[]'::jsonb,
-  add column if not exists hinh_anh_theo_lan jsonb not null default '{}'::jsonb;
+  add column if not exists hinh_anh_theo_lan jsonb not null default '{}'::jsonb,
+  add column if not exists ly_do_theo_lan jsonb not null default '{}'::jsonb,
+  add column if not exists giai_trinh_theo_lan jsonb not null default '{}'::jsonb,
+  add column if not exists lan_thu integer default 1;
 
 alter table public.bao_cao_phoi_tron enable row level security;
 
@@ -46,4 +49,10 @@ comment on column public.bao_cao_phoi_tron.chi_tiet is
   'Mang dong NVL. Moi phan tu: stt, ma_nvl, ten_vat_tu, lan_su_dung {khoi_luong_me: {lan_1..lan_5: kg}, lan_1..lan_5: [{ma_nvl, ten_vat_tu, don_vi, so_luong, ti_le_phan_tram}]}, tong_nhua_tron.';
 comment on column public.bao_cao_phoi_tron.hinh_anh_theo_lan is
   'Anh xac nhan theo lan phoi tron: {lan_1: [{url, public_id}], lan_2: [...], ...}.';
+comment on column public.bao_cao_phoi_tron.ly_do_theo_lan is
+  'Ly do theo lan phoi tron: {lan_1: ["Ly do 1", ...], lan_2: [...], ...}.';
+comment on column public.bao_cao_phoi_tron.giai_trinh_theo_lan is
+  'Giai trinh theo lan phoi tron: {lan_1: "Ly do 1; Ly do 2", lan_2: "...", ...}.';
+comment on column public.bao_cao_phoi_tron.lan_thu is
+  'Thu tu lan phoi tron trong ca / ngay / may (Lần 1, 2, 3...).';
 comment on column public.bao_cao_phoi_tron.so_lan is 'So lan phoi tron trong ca (1-5).';

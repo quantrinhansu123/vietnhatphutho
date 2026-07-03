@@ -19,6 +19,7 @@ import {
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber, parseMoneyInput } from '../utils';
 import MixingProductionOrderAutofillModal from './MixingProductionOrderAutofillModal';
+import SearchableMultiSelect from './SearchableMultiSelect';
 import {
   normalizeMixingCatalogProducts,
   normalizeMixingProductionOrders,
@@ -27,14 +28,31 @@ import {
 } from '../utils/mixingOrderAutofill';
 import {
   applyMixingRoundAutofill,
+  calcNormQuantityFromPercent,
+  computeNextMixingSessionStart,
   deriveLineUnit,
+  formatNormWeight,
+  formatMixingReasonsExplanation,
   getRoundBatchWeightFromLines,
   listRoundMaterialEntries,
-  mixingRoundColumnLabel,
+  MAX_MIXING_SESSIONS_PER_SHIFT,
+  mixingSessionColumnLabel,
+  mixingSessionLabel,
   normalizeChiTietLines,
+  normalizeMixingReport,
+  prepareMixingChiTietForSave,
   parseBatchWeightInput,
+  parseDecimalWeightInput,
+  recalcRoundItems,
+  sanitizeDecimalTyping,
+  clearRoundFromLines,
   removeMaterialFromRound,
   setRoundBatchWeightOnLines,
+  sumMixingRounds,
+  sumMixingRoundsActual,
+  sumRoundQuantity,
+  hasMixingActualWeights,
+  updateMaterialActualWeightInRound,
   upsertMaterialInRound
 } from '../lib/mixingReportModel';
 import {
@@ -51,6 +69,7 @@ export type MixingRoundItem = {
   ten_vat_tu: string;
   don_vi: string;
   so_luong: number | null;
+  kl_thuc_te: number | null;
   ti_le_phan_tram: number | null;
 };
 
@@ -75,6 +94,8 @@ export type MixingReportLine = {
   ten_vat_tu: string;
   lan_su_dung: MixingPhoiTron;
   tong_nhua_tron: number | null;
+  /** KL thực tế tổng theo dòng — lưu kèm để xem/lịch sử khi cần */
+  kl_thuc_te?: number | null;
   hinh_anh?: string;
   hinh_anh_public_id?: string;
 };
@@ -90,10 +111,13 @@ export type MixingReport = {
   nhan_su: string;
   so_phieu: string;
   ky_hieu: string;
+  lan_thu?: number;
   so_lan: number;
   thuc_te_su_dung: number | null;
   ghi_chu: string;
   hinh_anh_theo_lan?: Partial<Record<RoundKey, MixingRoundPhoto[]>>;
+  ly_do_theo_lan?: Partial<Record<RoundKey, string[]>>;
+  giai_trinh_theo_lan?: Partial<Record<RoundKey, string>>;
   chi_tiet: MixingReportLine[];
   created_at?: string;
 };
@@ -194,7 +218,7 @@ function parseOptionalNumber(value: string) {
 
 function quantityInputText(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '';
-  return String(value);
+  return String(value).replace('.', ',');
 }
 
 function formatOptionalNumber(value: number | null | undefined) {
@@ -207,13 +231,13 @@ function round2(value: number) {
 }
 
 function emptyRoundItem(): MixingRoundItem {
-  return { ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: null, ti_le_phan_tram: null };
+  return { ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: null, kl_thuc_te: null, ti_le_phan_tram: null };
 }
 
 function normalizeRoundItems(value: unknown): MixingRoundItem[] {
   if (value === null || value === undefined) return [];
   if (typeof value === 'number') {
-    return [{ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: value, ti_le_phan_tram: null }];
+    return [{ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: value, kl_thuc_te: null, ti_le_phan_tram: null }];
   }
   if (!Array.isArray(value)) {
     if (typeof value === 'object') {
@@ -236,6 +260,7 @@ function parseRoundItemRecord(record: Record<string, unknown>): MixingRoundItem 
     ten_vat_tu: String(record.ten_vat_tu ?? record.ten_npl ?? '').trim(),
     don_vi: String(record.don_vi ?? record.unit ?? 'kg').trim() || 'kg',
     so_luong: parseOptionalNumber(String(record.so_luong ?? record.so_luong_kg ?? '')),
+    kl_thuc_te: parseDecimalWeightInput(String(record.kl_thuc_te ?? record.so_luong_thuc_te ?? '')),
     ti_le_phan_tram: parseOptionalNumber(String(record.ti_le_phan_tram ?? record.phan_tram ?? ''))
   };
 }
@@ -260,25 +285,6 @@ function hasPhoiTronMaterial(phoiTron: MixingPhoiTron) {
 function getRoundBatchWeight(phoiTron: MixingPhoiTron, key: RoundKey) {
   const value = phoiTron.khoi_luong_me?.[key];
   return value === null || value === undefined ? null : value;
-}
-
-function calcNormQuantityFromPercent(batchWeight: number | null, percent: number | null) {
-  if (!batchWeight || batchWeight <= 0 || !percent || percent <= 0) return null;
-  return round2((batchWeight * percent) / 100);
-}
-
-function applyPercentToRoundItem(item: MixingRoundItem, batchWeight: number | null): MixingRoundItem {
-  const kg = calcNormQuantityFromPercent(batchWeight, item.ti_le_phan_tram);
-  return kg !== null ? { ...item, so_luong: kg } : item;
-}
-
-function recalcRoundItems(phoiTron: MixingPhoiTron, key: RoundKey): MixingPhoiTron {
-  const batchWeight = getRoundBatchWeight(phoiTron, key);
-  if (!batchWeight) return phoiTron;
-  return {
-    ...phoiTron,
-    [key]: getRoundItems(phoiTron, key).map(item => applyPercentToRoundItem(item, batchWeight))
-  };
 }
 
 function setRoundBatchWeight(phoiTron: MixingPhoiTron, key: RoundKey, value: string): MixingPhoiTron {
@@ -332,14 +338,6 @@ function getRoundItems(phoiTron: MixingPhoiTron, key: RoundKey): MixingRoundItem
   return phoiTron[key] ?? [];
 }
 
-function sumRoundQuantity(phoiTron: MixingPhoiTron, key: RoundKey) {
-  return round2(getRoundItems(phoiTron, key).reduce((sum, item) => sum + (item.so_luong ?? 0), 0));
-}
-
-function sumMixingRounds(phoiTron: MixingPhoiTron) {
-  return round2(ROUND_KEYS.reduce((sum, key) => sum + sumRoundQuantity(phoiTron, key), 0));
-}
-
 function emptyLine(stt: number): MixingReportLine {
   return {
     stt,
@@ -386,16 +384,19 @@ function newReportForm(): Omit<MixingReport, 'id' | 'created_at'> {
     nhan_su: '',
     so_phieu: '',
     ky_hieu: 'QT-16-BM02',
-    so_lan: 3,
+    lan_thu: 1,
+    so_lan: 1,
     thuc_te_su_dung: null,
     ghi_chu: '',
     hinh_anh_theo_lan: {},
+    ly_do_theo_lan: {},
+    giai_trinh_theo_lan: {},
     chi_tiet: []
   };
 }
 
-function roundColumnLabel(roundIndex: number) {
-  return mixingRoundColumnLabel(roundIndex);
+function roundColumnLabel(sessionStart: number, roundIndex: number) {
+  return mixingSessionColumnLabel(sessionStart, roundIndex);
 }
 
 function roundSectionLabel(roundIndex: number, totalRounds: number) {
@@ -427,14 +428,16 @@ function MixingRoundItemFormModal({
   onSave: (item: MixingRoundItem) => void;
 }) {
   const [soLuongText, setSoLuongText] = useState('');
+  const [klThucTeText, setKlThucTeText] = useState('');
   const [percentText, setPercentText] = useState('');
 
   useEffect(() => {
     if (open) {
       setPercentText(quantityInputText(draft.ti_le_phan_tram));
       setSoLuongText(quantityInputText(draft.so_luong));
+      setKlThucTeText(quantityInputText(draft.kl_thuc_te));
     }
-  }, [open, draft.so_luong, draft.ti_le_phan_tram]);
+  }, [open, draft.so_luong, draft.kl_thuc_te, draft.ti_le_phan_tram]);
 
   useEffect(() => {
     if (!open) return;
@@ -463,7 +466,8 @@ function MixingRoundItemFormModal({
     onSave({
       ...draft,
       ti_le_phan_tram,
-      so_luong: autoKg ?? parseOptionalNumber(soLuongText)
+      so_luong: autoKg ?? parseOptionalNumber(soLuongText),
+      kl_thuc_te: parseDecimalWeightInput(klThucTeText)
     });
   };
 
@@ -539,14 +543,23 @@ function MixingRoundItemFormModal({
               />
             </label>
             <label className="space-y-1">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khối lượng (kg)</span>
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">KL định mức (kg)</span>
               <input
                 value={soLuongText}
-                onChange={e => setSoLuongText(e.target.value)}
-                className={`${modalInputClass}${batchWeight && percentText ? ' bg-emerald-50 font-black text-emerald-800' : ''}`}
+                readOnly
+                className={`${modalInputClass} bg-emerald-50/80 font-black text-emerald-800`}
                 inputMode="decimal"
-                placeholder={batchWeight ? 'Tự tính theo %' : 'VD: 1500'}
-                readOnly={Boolean(batchWeight && parseOptionalNumber(percentText))}
+                placeholder={batchWeight ? 'Tự tính theo %' : '-'}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">KL thực tế (kg)</span>
+              <input
+                value={klThucTeText}
+                onChange={e => setKlThucTeText(sanitizeDecimalTyping(e.target.value))}
+                className={modalInputClass}
+                inputMode="decimal"
+                placeholder="VD: 12,5"
               />
             </label>
           </div>
@@ -636,16 +649,17 @@ function MixingLineFormModal({
     }
 
     const batchWeight = getRoundBatchWeight(draft.lan_su_dung, editingRoundKey);
-    const savedItem = applyPercentToRoundItem(item, batchWeight);
-
     const items = [...getRoundItems(draft.lan_su_dung, editingRoundKey)];
     if (editingRowIndex === null) {
-      items.push({ ...savedItem });
+      items.push({ ...item });
     } else {
-      items[editingRowIndex] = { ...savedItem };
+      items[editingRowIndex] = { ...item };
     }
 
-    const lan_su_dung = { ...draft.lan_su_dung, [editingRoundKey]: items };
+    let lan_su_dung: MixingPhoiTron = { ...draft.lan_su_dung, [editingRoundKey]: items };
+    if (batchWeight) {
+      lan_su_dung = recalcRoundItems(lan_su_dung, editingRoundKey);
+    }
     onChange({ lan_su_dung, tong_nhua_tron: sumMixingRounds(lan_su_dung) });
     closeRoundItemModal();
   };
@@ -733,14 +747,15 @@ function MixingLineFormModal({
                         <tr>
                           <th className="px-2 py-2 font-black">Mã NVL</th>
                           <th className="px-2 py-2 font-black">%</th>
-                          <th className="px-2 py-2 font-black">KL (kg)</th>
+                          <th className="px-2 py-2 font-black">KL định mức</th>
+                          <th className="px-2 py-2 font-black">KL thực tế</th>
                           <th className="px-2 py-2 text-center font-black">Thao tác</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
                         {items.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="px-3 py-6 text-center font-semibold text-zinc-400">
+                            <td colSpan={5} className="px-3 py-6 text-center font-semibold text-zinc-400">
                               Chưa có định mức. Bấm &quot;Thêm dòng&quot; để nhập mã NVL và %.
                             </td>
                           </tr>
@@ -752,7 +767,10 @@ function MixingLineFormModal({
                               {formatOptionalNumber(item.ti_le_phan_tram) || '-'}
                             </td>
                             <td className="px-2 py-2 font-mono font-bold text-emerald-800">
-                              {formatOptionalNumber(item.so_luong) || '-'}
+                              {formatNormWeight(item.so_luong) || '-'}
+                            </td>
+                            <td className="px-2 py-2 font-mono font-bold text-[#ef1b2d]">
+                              {formatOptionalNumber(item.kl_thuc_te) || '-'}
                             </td>
                             <td className="px-2 py-2 text-center">
                               <div className="flex items-center justify-center gap-1">
@@ -777,7 +795,7 @@ function MixingLineFormModal({
                           </tr>
                         )))}
                         <tr>
-                          <td colSpan={4} className="px-2 py-2">
+                          <td colSpan={5} className="px-2 py-2">
                             <button
                               type="button"
                               onClick={() => openAddRoundItem(roundKey)}
@@ -865,7 +883,9 @@ export default function MixingReportForm({
   onClose,
   onSaved,
   initialMachine,
-  onInitialMachineConsumed
+  onInitialMachineConsumed,
+  editReport,
+  onEditConsumed
 }: {
   onBack?: () => void;
   onOpenList?: () => void;
@@ -875,13 +895,16 @@ export default function MixingReportForm({
   onSaved?: () => void | Promise<void>;
   initialMachine?: { id: string; code: string; name: string } | null;
   onInitialMachineConsumed?: () => void;
+  editReport?: MixingReport | null;
+  onEditConsumed?: () => void;
 }) {
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<MixingCatalogProduct[]>([]);
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
-  const [activeRoundCount, setActiveRoundCount] = useState(0);
+  const [activeRoundCount, setActiveRoundCount] = useState(1);
+  const [sessionRoundStart, setSessionRoundStart] = useState(1);
   const [roundBatchWeightDrafts, setRoundBatchWeightDrafts] = useState<Partial<Record<RoundKey, string>>>({});
   const [productionAutofillRoundKey, setProductionAutofillRoundKey] = useState<RoundKey | null>(null);
   const [roundItemModal, setRoundItemModal] = useState<{
@@ -891,6 +914,7 @@ export default function MixingReportForm({
     error: string;
   } | null>(null);
   const [form, setForm] = useState(newReportForm());
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [nhanSuManual, setNhanSuManual] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -900,6 +924,19 @@ export default function MixingReportForm({
   const [lineDraft, setLineDraft] = useState<MixingReportLine>(emptyLine(1));
   const [lineModalError, setLineModalError] = useState('');
   const [uploadingRoundKey, setUploadingRoundKey] = useState<RoundKey | null>(null);
+  const [actualWeightDrafts, setActualWeightDrafts] = useState<Record<string, string>>({});
+  const [reasonOptions, setReasonOptions] = useState<string[]>([]);
+
+  const allReasonOptions = useMemo(() => {
+    const merged = new Set<string>(reasonOptions);
+    ROUND_KEYS.forEach(key => {
+      form.ly_do_theo_lan?.[key]?.forEach(item => {
+        const normalized = item.trim();
+        if (normalized) merged.add(normalized);
+      });
+    });
+    return [...merged].sort((left, right) => left.localeCompare(right, 'vi'));
+  }, [reasonOptions, form.ly_do_theo_lan]);
 
   const loadReferenceData = async () => {
     const [machineRes, materialRes, productionRes, productRes, settingRes] = await Promise.all([
@@ -957,6 +994,19 @@ export default function MixingReportForm({
       }
     })();
 
+    void fetch('/api/bao-cao-phoi-tron/ly-do-goi-y')
+      .then(res => res.json().catch(() => ({})))
+      .then(data => {
+        if (cancelled) return;
+        const reasons = Array.isArray(data.reasons) ? data.reasons : [];
+        setReasonOptions(
+          reasons
+            .map((item: unknown) => String(item ?? '').trim())
+            .filter(Boolean)
+        );
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -1004,7 +1054,17 @@ export default function MixingReportForm({
   }, [expandedLineCount, form.chi_tiet.length]);
 
   const computedActualUsage = useMemo(
-    () => round2(computedLines.reduce((sum, line) => sum + (line.tong_nhua_tron ?? 0), 0)),
+    () =>
+      round2(
+        computedLines.reduce((sum, line) => {
+          const actual = sumMixingRoundsActual(line.lan_su_dung);
+          const hasActual = hasMixingActualWeights(line.lan_su_dung);
+          const lineTotal = hasActual
+            ? actual
+            : line.tong_nhua_tron ?? sumMixingRounds(line.lan_su_dung);
+          return sum + lineTotal;
+        }, 0)
+      ),
     [computedLines]
   );
 
@@ -1045,6 +1105,97 @@ export default function MixingReportForm({
     }));
   };
 
+  useEffect(() => {
+    if (editingId) return;
+    if (!form.ca.trim() || !form.ngay.trim() || !form.ma_may.trim()) {
+      setSessionRoundStart(1);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          tu_ngay: form.ngay,
+          den_ngay: form.ngay,
+          ca: form.ca,
+          ma_may: form.ma_may
+        });
+        const res = await fetch(`/api/bao-cao-phoi-tron?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok) return;
+        const reports = Array.isArray(data.reports)
+          ? data.reports.map((item: Record<string, unknown>) => normalizeMixingReport(item))
+          : [];
+        const nextStart = computeNextMixingSessionStart(reports);
+        setSessionRoundStart(nextStart);
+        setActiveRoundCount(prev => Math.max(prev, 1));
+      } catch {
+        if (!cancelled) setSessionRoundStart(1);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.ca, form.ngay, form.ma_may, editingId]);
+
+  const startEdit = (report: MixingReport) => {
+    const roundCount = Math.min(
+      5,
+      Math.max(
+        report.so_lan || 1,
+        report.chi_tiet.reduce((max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)), 0)
+      )
+    );
+    const batchDrafts: Partial<Record<RoundKey, string>> = {};
+    report.chi_tiet.forEach(line => {
+      ROUND_KEYS.forEach(key => {
+        const weight = line.lan_su_dung.khoi_luong_me?.[key];
+        if (weight !== null && weight !== undefined && weight > 0 && batchDrafts[key] === undefined) {
+          batchDrafts[key] = String(weight);
+        }
+      });
+    });
+
+    setNhanSuManual(true);
+    setEditingId(report.id);
+    setActiveRoundCount(roundCount);
+    setSessionRoundStart(report.lan_thu && report.lan_thu > 0 ? report.lan_thu : 1);
+    setRoundBatchWeightDrafts(batchDrafts);
+    setActualWeightDrafts({});
+    setForm({
+      ca: report.ca,
+      ngay: report.ngay || todayIso(),
+      gio: report.gio || nowTimeValue(),
+      chi_nhanh: report.chi_nhanh || 'Đà Nẵng',
+      ma_may: report.ma_may,
+      ten_may: report.ten_may,
+      nhan_su: report.nhan_su,
+      so_phieu: report.so_phieu,
+      ky_hieu: report.ky_hieu || 'QT-16-BM02',
+      lan_thu: report.lan_thu && report.lan_thu > 0 ? report.lan_thu : 1,
+      so_lan: roundCount,
+      thuc_te_su_dung: report.thuc_te_su_dung,
+      ghi_chu: report.ghi_chu,
+      hinh_anh_theo_lan: report.hinh_anh_theo_lan ?? {},
+      ly_do_theo_lan: report.ly_do_theo_lan ?? {},
+      giai_trinh_theo_lan: report.giai_trinh_theo_lan ?? {},
+      chi_tiet: report.chi_tiet
+    });
+    setMessage('');
+    setError('');
+  };
+
+  useEffect(() => {
+    if (!editReport || machines.length === 0) return;
+    startEdit(editReport);
+    onEditConsumed?.();
+  }, [editReport, machines, onEditConsumed]);
+
+  const sessionRoundEnd = sessionRoundStart + Math.max(activeRoundCount, 1) - 1;
+  const canAddSessionRound = sessionRoundEnd < MAX_MIXING_SESSIONS_PER_SHIFT;
+
   const displayedRoundCount = useMemo(() => {
     const fromLines = computedLines.reduce(
       (max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)),
@@ -1064,10 +1215,52 @@ export default function MixingReportForm({
   }, [form.chi_tiet, activeRoundCount]);
 
   const addRound = () => {
-    if (activeRoundCount >= 5) return;
+    if (!canAddSessionRound || activeRoundCount >= 5) return;
     const next = activeRoundCount + 1;
     setActiveRoundCount(next);
     setForm(prev => ({ ...prev, so_lan: Math.max(prev.so_lan, next) }));
+  };
+
+  const removeSessionRound = (roundKey: RoundKey, roundIndex: number) => {
+    const lastRoundKey = ROUND_KEYS[displayedRoundCount - 1];
+    if (displayedRoundCount <= 1 || roundKey !== lastRoundKey) return;
+
+    const label = roundColumnLabel(sessionRoundStart, roundIndex);
+    if (!window.confirm(`Xóa ${label}? Dữ liệu NVL, ảnh và lý do của lần này sẽ bị xóa.`)) return;
+
+    const nextCount = displayedRoundCount - 1;
+    setForm(prev => {
+      const hinh_anh_theo_lan = { ...prev.hinh_anh_theo_lan };
+      delete hinh_anh_theo_lan[roundKey];
+      const ly_do_theo_lan = { ...prev.ly_do_theo_lan };
+      delete ly_do_theo_lan[roundKey];
+      const giai_trinh_theo_lan = { ...prev.giai_trinh_theo_lan };
+      delete giai_trinh_theo_lan[roundKey];
+      return {
+        ...prev,
+        chi_tiet: clearRoundFromLines(prev.chi_tiet, roundKey),
+        hinh_anh_theo_lan,
+        ly_do_theo_lan,
+        giai_trinh_theo_lan,
+        so_lan: Math.max(1, nextCount)
+      };
+    });
+    setActiveRoundCount(nextCount);
+    setRoundBatchWeightDrafts(prev => {
+      const next = { ...prev };
+      delete next[roundKey];
+      return next;
+    });
+    setActualWeightDrafts(prev => {
+      const prefix = `${roundKey}-`;
+      const next = { ...prev };
+      Object.keys(next).forEach(key => {
+        if (key.startsWith(prefix)) delete next[key];
+      });
+      return next;
+    });
+    setMessage(`Đã xóa ${label}.`);
+    setError('');
   };
 
   const resolveRoundBatchWeight = (
@@ -1103,8 +1296,40 @@ export default function MixingReportForm({
     }));
   };
 
+  const handleMaterialActualWeightChange = (
+    roundKey: RoundKey,
+    lineIndex: number,
+    itemIndex: number,
+    value: string
+  ) => {
+    setForm(prev => ({
+      ...prev,
+      chi_tiet: updateMaterialActualWeightInRound(prev.chi_tiet, roundKey, lineIndex, itemIndex, value)
+    }));
+  };
+
+  const actualWeightDraftKey = (roundKey: RoundKey, lineIndex: number, itemIndex: number) =>
+    `${roundKey}-${lineIndex}-${itemIndex}`;
+
+  const applyActualWeightDrafts = (lines: MixingReportLine[]) =>
+    Object.entries(actualWeightDrafts).reduce((current, [key, text]) => {
+      const [roundKey, lineIndex, itemIndex] = key.split('-');
+      if (!ROUND_KEYS.includes(roundKey as RoundKey)) return current;
+      return updateMaterialActualWeightInRound(
+        current,
+        roundKey as RoundKey,
+        Number(lineIndex),
+        Number(itemIndex),
+        text
+      );
+    }, lines);
+
   const openProductionOrderAutofill = (roundKey: RoundKey) => {
     setMessage('');
+    if (!form.ca.trim()) {
+      setError('Vui lòng chọn ca trước khi lấy NVL theo Lệnh sản xuất.');
+      return;
+    }
     if (!form.ma_may.trim() && !form.ten_may.trim()) {
       setError('Vui lòng chọn máy ở phần thông tin phía trên trước khi lấy NVL theo Lệnh sản xuất.');
       return;
@@ -1164,7 +1389,7 @@ export default function MixingReportForm({
         resolveRoundBatchWeight(prev.chi_tiet, roundKey)
       )
     }));
-    setMessage(`Đã điền ${items.length} NVL vào ${roundColumnLabel(ROUND_KEYS.indexOf(roundKey))}.`);
+    setMessage(`Đã điền ${items.length} NVL vào ${roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundKey))}.`);
     setError('');
     setProductionAutofillRoundKey(null);
   };
@@ -1233,6 +1458,26 @@ export default function MixingReportForm({
 
   const getRoundPhotos = (roundKey: RoundKey) => form.hinh_anh_theo_lan?.[roundKey] ?? [];
 
+  const getRoundReasons = (roundKey: RoundKey) => form.ly_do_theo_lan?.[roundKey] ?? [];
+
+  const handleRoundReasonsChange = (roundKey: RoundKey, reasons: string[]) => {
+    setForm(prev => ({
+      ...prev,
+      ly_do_theo_lan: { ...prev.ly_do_theo_lan, [roundKey]: reasons },
+      giai_trinh_theo_lan: {
+        ...prev.giai_trinh_theo_lan,
+        [roundKey]: formatMixingReasonsExplanation(reasons)
+      }
+    }));
+  };
+
+  const handleRoundExplanationChange = (roundKey: RoundKey, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      giai_trinh_theo_lan: { ...prev.giai_trinh_theo_lan, [roundKey]: value }
+    }));
+  };
+
   const removeRoundPhoto = (roundKey: RoundKey, photoIndex: number) => {
     setForm(prev => ({
       ...prev,
@@ -1274,8 +1519,8 @@ export default function MixingReportForm({
       }));
       setMessage(
         usedLocalFallback
-          ? `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(ROUND_KEYS.indexOf(roundKey))} (lưu tạm trên máy — Cloudinary chưa sẵn sàng).`
-          : `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(ROUND_KEYS.indexOf(roundKey))}.`
+          ? `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundKey))} (lưu tạm trên máy — Cloudinary chưa sẵn sàng).`
+          : `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundKey))}.`
       );
     } catch (err: any) {
       setError(err.message || 'Không thể đọc file ảnh.');
@@ -1319,8 +1564,11 @@ export default function MixingReportForm({
 
   const resetForm = () => {
     setNhanSuManual(false);
-    setActiveRoundCount(0);
+    setEditingId(null);
+    setActiveRoundCount(1);
+    setSessionRoundStart(1);
     setRoundBatchWeightDrafts({});
+    setActualWeightDrafts({});
     setForm(newReportForm());
     setMessage('');
     setError('');
@@ -1340,13 +1588,56 @@ export default function MixingReportForm({
       return;
     }
 
+    if (!editingId) {
+      if (sessionRoundStart > MAX_MIXING_SESSIONS_PER_SHIFT) {
+        setError(`Ca · ngày · máy này đã đủ ${MAX_MIXING_SESSIONS_PER_SHIFT} lần trộn.`);
+        return;
+      }
+
+      if (sessionRoundEnd > MAX_MIXING_SESSIONS_PER_SHIFT) {
+        setError(`Chỉ còn tối đa ${MAX_MIXING_SESSIONS_PER_SHIFT - sessionRoundStart + 1} lần trộn cho ca · ngày · máy này.`);
+        return;
+      }
+    }
+
+    const chiTietReady = applyActualWeightDrafts(form.chi_tiet);
+    const linesToSave = chiTietReady
+      .filter(line => line.ma_nvl.trim() || line.ten_vat_tu.trim())
+      .map(line => ({
+        ...line,
+        tong_nhua_tron: sumMixingRounds(line.lan_su_dung)
+      }));
+    let chi_tiet = prepareMixingChiTietForSave(linesToSave);
+    if (chi_tiet.length > 0) {
+      chi_tiet = chi_tiet.map((line, index) =>
+        index === 0
+          ? ({
+              ...line,
+              _ly_do_theo_lan: form.ly_do_theo_lan ?? {},
+              _giai_trinh_theo_lan: form.giai_trinh_theo_lan ?? {}
+            } as MixingReportLine)
+          : line
+      );
+    }
+    const thucTeSuDung = round2(
+      linesToSave.reduce((sum, line) => {
+        const actual = sumMixingRoundsActual(line.lan_su_dung);
+        const hasActual = hasMixingActualWeights(line.lan_su_dung);
+        const lineTotal = hasActual
+          ? actual
+          : line.tong_nhua_tron ?? sumMixingRounds(line.lan_su_dung);
+        return sum + lineTotal;
+      }, 0)
+    );
+
     const payload = {
       ...form,
+      lan_thu: sessionRoundStart,
       so_lan: displayedRoundCount || 1,
-      thuc_te_su_dung: computedActualUsage,
-      chi_tiet: normalizeChiTietLines(
-        computedLines.filter(line => line.ma_nvl.trim() || line.ten_vat_tu.trim())
-      )
+      thuc_te_su_dung: thucTeSuDung,
+      ly_do_theo_lan: form.ly_do_theo_lan ?? {},
+      giai_trinh_theo_lan: form.giai_trinh_theo_lan ?? {},
+      chi_tiet
     };
 
     if (payload.chi_tiet.length === 0) {
@@ -1361,29 +1652,34 @@ export default function MixingReportForm({
     });
     if (missingPhotoRound) {
       const roundIndex = ROUND_KEYS.indexOf(missingPhotoRound);
-      setError(`Vui lòng chụp ít nhất một ảnh cho ${roundColumnLabel(roundIndex)}.`);
+      setError(`Vui lòng chụp ít nhất một ảnh cho ${roundColumnLabel(sessionRoundStart, roundIndex)}.`);
       return;
     }
 
     setIsSaving(true);
     setError('');
     setMessage('');
+    const wasEditing = Boolean(editingId);
 
     try {
-      const res = await fetch('/api/bao-cao-phoi-tron', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const res = await fetch(
+        editingId ? `/api/bao-cao-phoi-tron/${editingId}` : '/api/bao-cao-phoi-tron',
+        {
+          method: editingId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo phối trộn.');
 
+      setActualWeightDrafts({});
       resetForm();
       if (modalMode) {
         await onSaved?.();
         onClose?.();
       } else {
-        setMessage('Đã lưu báo cáo phối trộn.');
+        setMessage(wasEditing ? 'Đã cập nhật báo cáo phối trộn.' : 'Đã lưu báo cáo phối trộn.');
       }
     } catch (err: any) {
       setError(err.message || 'Không thể lưu báo cáo phối trộn.');
@@ -1527,14 +1823,18 @@ export default function MixingReportForm({
           <div>
             <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
             <p className="text-xs font-semibold text-zinc-500">
-              Bấm Thêm dòng để tạo Lần 1, Lần 2... · trong mỗi lần chọn NVL theo Lệnh sản xuất
+              Cùng ca · ngày · máy tự tăng {mixingSessionLabel(sessionRoundStart)}
+              {displayedRoundCount > 1
+                ? ` → ${mixingSessionLabel(sessionRoundStart + displayedRoundCount - 1)}`
+                : ''}
+              · bấm Thêm dòng để thêm lần tiếp theo
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={addRound}
-              disabled={activeRoundCount >= 5}
+              disabled={!canAddSessionRound || activeRoundCount >= 5}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
             >
               <Plus className="h-4 w-4" />
@@ -1544,17 +1844,30 @@ export default function MixingReportForm({
         </div>
 
         {displayedRoundCount > 0 ? (
-          <div className="flex flex-col lg:flex-row lg:items-start">
-            <div className="relative z-10 min-w-0 flex-1 space-y-3 border-b border-zinc-100 p-4 lg:border-b-0">
+          <>
+            <div className="relative z-10 space-y-3 p-4">
             {ROUND_KEYS.slice(0, displayedRoundCount).map((roundKey, roundIndex) => {
               const entries = listRoundMaterialEntries(form.chi_tiet, roundKey);
+              const isLastRound = roundIndex === displayedRoundCount - 1;
+              const canRemoveRound = displayedRoundCount > 1 && isLastRound;
               return (
                 <div key={roundKey} className="relative rounded-xl border border-zinc-200">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
                     <p className="text-xs font-black uppercase tracking-wider text-zinc-700">
-                      {roundColumnLabel(roundIndex)}
+                      {roundColumnLabel(sessionRoundStart, roundIndex)}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
+                      {canRemoveRound ? (
+                        <button
+                          type="button"
+                          onClick={() => removeSessionRound(roundKey, roundIndex)}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-extrabold text-rose-700 transition hover:bg-rose-100"
+                          title={`Xóa ${roundColumnLabel(sessionRoundStart, roundIndex)}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Xóa lần
+                        </button>
+                      ) : null}
                       <label className="flex items-center gap-2 text-xs font-bold text-zinc-700">
                         KL 1 mẻ (kg)
                         <input
@@ -1586,7 +1899,7 @@ export default function MixingReportForm({
                   </div>
                   {entries.length === 0 ? (
                     <p className="px-3 py-4 text-center text-xs font-semibold text-zinc-400">
-                      Chưa có NVL trong {roundColumnLabel(roundIndex).toLowerCase()}.
+                      Chưa có NVL trong {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}.
                     </p>
                   ) : (
                     <div className="overflow-x-auto">
@@ -1596,7 +1909,8 @@ export default function MixingReportForm({
                             <th className="px-2 py-2 font-black">Mã NVL</th>
                             <th className="px-2 py-2 font-black">Tên vật tư</th>
                             <th className="px-2 py-2 font-black">%</th>
-                            <th className="px-2 py-2 font-black">KL (kg)</th>
+                            <th className="px-2 py-2 font-black">KL định mức</th>
+                            <th className="px-2 py-2 font-black">KL thực tế</th>
                             <th className="px-2 py-2 text-center font-black">Thao tác</th>
                           </tr>
                         </thead>
@@ -1611,7 +1925,65 @@ export default function MixingReportForm({
                                 {formatOptionalNumber(entry.item.ti_le_phan_tram) || '-'}
                               </td>
                               <td className="px-2 py-2 font-mono font-bold text-emerald-800">
-                                {formatOptionalNumber(entry.item.so_luong) || '-'}
+                                {formatNormWeight(entry.item.so_luong) || '-'}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={
+                                    actualWeightDrafts[
+                                      actualWeightDraftKey(roundKey, entry.lineIndex, entry.itemIndex)
+                                    ] ??
+                                    (entry.item.kl_thuc_te === null || entry.item.kl_thuc_te === undefined
+                                      ? ''
+                                      : quantityInputText(entry.item.kl_thuc_te))
+                                  }
+                                  onFocus={() => {
+                                    const key = actualWeightDraftKey(
+                                      roundKey,
+                                      entry.lineIndex,
+                                      entry.itemIndex
+                                    );
+                                    setActualWeightDrafts(prev => {
+                                      if (prev[key] !== undefined) return prev;
+                                      return {
+                                        ...prev,
+                                        [key]:
+                                          entry.item.kl_thuc_te === null || entry.item.kl_thuc_te === undefined
+                                            ? ''
+                                            : quantityInputText(entry.item.kl_thuc_te)
+                                      };
+                                    });
+                                  }}
+                                  onChange={event => {
+                                    const text = sanitizeDecimalTyping(event.target.value);
+                                    const key = actualWeightDraftKey(
+                                      roundKey,
+                                      entry.lineIndex,
+                                      entry.itemIndex
+                                    );
+                                    setActualWeightDrafts(prev => ({ ...prev, [key]: text }));
+                                  }}
+                                  onBlur={() => {
+                                    const key = actualWeightDraftKey(roundKey, entry.lineIndex, entry.itemIndex);
+                                    const draft = actualWeightDrafts[key];
+                                    if (draft === undefined) return;
+                                    handleMaterialActualWeightChange(
+                                      roundKey,
+                                      entry.lineIndex,
+                                      entry.itemIndex,
+                                      draft
+                                    );
+                                    setActualWeightDrafts(prev => {
+                                      const next = { ...prev };
+                                      delete next[key];
+                                      return next;
+                                    });
+                                  }}
+                                  className="h-8 w-24 rounded-lg border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                                  placeholder="0"
+                                />
                               </td>
                               <td className="px-2 py-2 text-center">
                                 <div className="flex items-center justify-center gap-1">
@@ -1651,12 +2023,63 @@ export default function MixingReportForm({
                             </tr>
                           ))}
                         </tbody>
+                        {entries.length > 0 ? (
+                          <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-700">
+                            <tr>
+                              <td colSpan={3} className="px-2 py-2 text-right">
+                                Tổng
+                              </td>
+                              <td className="px-2 py-2 text-right font-mono font-bold text-emerald-800">
+                                {formatNormWeight(
+                                  sumRoundQuantity(
+                                    form.chi_tiet[0]?.lan_su_dung ?? { lan_1: [] },
+                                    roundKey
+                                  )
+                                ) || formatNormWeight(resolveRoundBatchWeight(form.chi_tiet, roundKey)) || '-'}
+                              </td>
+                              <td className="px-2 py-2 text-right font-mono font-bold text-[#ef1b2d]">
+                                {formatNormWeight(
+                                  entries.reduce((sum, entry) => sum + (entry.item.kl_thuc_te ?? 0), 0)
+                                ) || '-'}
+                              </td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        ) : null}
                       </table>
                     </div>
                   )}
+                  <div className="relative z-20 border-t border-zinc-100 bg-white px-3 py-3">
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
+                          Lý do
+                        </span>
+                        <SearchableMultiSelect
+                          values={getRoundReasons(roundKey)}
+                          onChange={reasons => handleRoundReasonsChange(roundKey, reasons)}
+                          options={allReasonOptions}
+                          placeholder="Gõ để tìm hoặc chọn lý do..."
+                          inputClassName="min-h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
+                          Giải trình
+                        </span>
+                        <textarea
+                          value={form.giai_trinh_theo_lan?.[roundKey] ?? ''}
+                          onChange={event => handleRoundExplanationChange(roundKey, event.target.value)}
+                          rows={3}
+                          placeholder="Tự điền theo lý do đã chọn"
+                          className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-200 bg-white px-2 py-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                        />
+                      </label>
+                    </div>
+                  </div>
                   <div className="relative z-20 border-t border-zinc-100 bg-zinc-50/50 px-3 py-2.5">
                     <p className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
-                      Ảnh xác nhận {roundColumnLabel(roundIndex).toLowerCase()}
+                      Ảnh xác nhận {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}
                     </p>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                       <input
@@ -1713,109 +2136,31 @@ export default function MixingReportForm({
             })}
             </div>
 
-            {computedLines.length > 0 ? (
-              <aside className="w-full shrink-0 border-t border-zinc-200 bg-zinc-50/60 lg:w-[min(100%,420px)] lg:border-l lg:border-t-0">
-                <div className="border-b border-zinc-200 bg-white px-3 py-2.5">
-                  <p className="text-xs font-black uppercase tracking-wider text-zinc-800">Bảng tổng</p>
-                  <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
-                    Tổng hợp theo NVL
-                  </p>
-                </div>
-                <div className="max-h-[min(60vh,520px)] overflow-auto overscroll-contain">
-                  <table className="w-full min-w-[320px] text-left text-xs">
-                    <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
-                      <tr>
-                        <th className="px-2 py-2 font-black">Mã NVL</th>
-                        <th className="px-2 py-2 font-black">Tên vật tư</th>
-                        {ROUND_KEYS.slice(0, displayedRoundCount).map((_, roundIndex) => (
-                          <th
-                            key={`summary-head-lan-${roundIndex}`}
-                            className="min-w-[72px] whitespace-nowrap px-2 py-2 text-right font-black"
-                          >
-                            L{roundIndex + 1}
-                          </th>
-                        ))}
-                        <th className="min-w-[72px] whitespace-nowrap px-2 py-2 text-right font-black">Tổng</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-200/80 bg-white">
-                      {computedLines.map((line, index) => (
-                        <tr key={`mix-summary-${line.ma_nvl}-${index}`} className="align-top hover:bg-red-50/20">
-                          <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px] font-semibold text-zinc-700">
-                            {line.ma_nvl || '-'}
-                          </td>
-                          <td className="max-w-[120px] truncate px-2 py-2 text-[11px] text-zinc-800" title={line.ten_vat_tu}>
-                            {line.ten_vat_tu || '-'}
-                          </td>
-                          {ROUND_KEYS.slice(0, displayedRoundCount).map(roundKey => (
-                            <td
-                              key={roundKey}
-                              className="whitespace-nowrap px-2 py-2 text-right font-mono text-[11px] text-zinc-700"
-                            >
-                              {formatOptionalNumber(sumRoundQuantity(line.lan_su_dung, roundKey)) || '-'}
-                            </td>
-                          ))}
-                          <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-[11px] font-black text-[#ef1b2d]">
-                            {formatOptionalNumber(line.tong_nhua_tron) || '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="space-y-3 border-t border-zinc-200 bg-white p-3">
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-bold text-zinc-700">
-                    Thực tế sử dụng:{' '}
-                    <span className="font-black text-[#ef1b2d]">{formatNumber(computedActualUsage, 2)} kg</span>
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700"
-                    >
-                      Làm mới
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSave}
-                      disabled={isSaving}
-                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
-                    >
-                      {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      Lưu báo cáo
-                    </button>
-                  </div>
-                </div>
-              </aside>
-            ) : null}
-          </div>
-        ) : null}
-
-        {computedLines.length === 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
-            <div className="text-sm font-bold text-zinc-500">
-              Thực tế sử dụng: <span className="font-black text-zinc-400">0 kg</span>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
+              <div className="text-sm font-bold text-zinc-700">
+                Thực tế sử dụng:{' '}
+                <span className="font-black text-[#ef1b2d]">{formatNumber(computedActualUsage, 2)} kg</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700"
+                >
+                  Làm mới
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+                >
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {editingId ? 'Cập nhật' : 'Lưu báo cáo'}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={resetForm}
-                className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700"
-              >
-                Làm mới
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSaving}
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
-              >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Lưu báo cáo
-              </button>
-            </div>
-          </div>
+          </>
         ) : null}
       </section>
 
@@ -1836,7 +2181,9 @@ export default function MixingReportForm({
       <MixingRoundItemFormModal
         open={Boolean(roundItemModal)}
         roundLabel={
-          roundItemModal ? roundColumnLabel(ROUND_KEYS.indexOf(roundItemModal.roundKey)) : ''
+          roundItemModal
+            ? roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundItemModal.roundKey))
+            : ''
         }
         draft={roundItemModal?.draft ?? emptyRoundItem()}
         materials={materials}
@@ -1860,7 +2207,7 @@ export default function MixingReportForm({
             open={productionAutofillRoundKey !== null}
             roundLabel={
               productionAutofillRoundKey
-                ? roundColumnLabel(ROUND_KEYS.indexOf(productionAutofillRoundKey))
+                ? roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(productionAutofillRoundKey))
                 : ''
             }
             orders={productionOrders}
@@ -1872,6 +2219,7 @@ export default function MixingReportForm({
               maMay: form.ma_may,
               tenMay: form.ten_may
             }}
+            machines={machines.map(machine => ({ code: machine.code, name: machine.name }))}
             onClose={() => setProductionAutofillRoundKey(null)}
             onApply={applyProductionOrderAutofill}
           />,
@@ -1886,7 +2234,9 @@ export default function MixingReportForm({
         <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-zinc-100 shadow-2xl sm:rounded-2xl">
           <div className="flex items-start justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-4 sm:px-5">
             <div>
-              <h3 className="text-lg font-black text-zinc-950">Thêm báo cáo phối trộn</h3>
+              <h3 className="text-lg font-black text-zinc-950">
+                {editingId ? 'Sửa báo cáo phối trộn' : 'Thêm báo cáo phối trộn'}
+              </h3>
               <p className="mt-1 text-sm font-medium text-zinc-500">
                 Nhật ký sản xuất kiêm phiếu giao ca · QT-16-BM02
               </p>

@@ -17,10 +17,20 @@ import {
 } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import WeighingReportForm from './WeighingReportForm';
-import WeighingSlipSetupModal, { type SlipSetupPayload } from './WeighingSlipSetupModal';
+import WeighingSlipSetupModal from './WeighingSlipSetupModal';
+import WeighingImagePreviewModal, {
+  WeighingImageThumbnail,
+  type WeighingPreviewImage
+} from './WeighingImagePreviewModal';
 import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/weighingSlipConfig';
+import {
+  getProductionShiftOptions,
+  normalizeShiftSettings,
+  resolveShiftName,
+  type ShiftOption,
+  type ShiftSetting
+} from '../utils/shiftSettings';
 
-const SHIFT_ORDER = ['Ca sáng', 'Ca chiều', 'Ca tối'] as const;
 const FACTORY_PLACEHOLDER = 'Nhà máy Đà Nẵng';
 
 function isRealMachineName(name?: string) {
@@ -35,14 +45,6 @@ function resolveMachineName(...candidates: Array<string | undefined>) {
     }
   }
   return '—';
-}
-
-function normalizeShiftName(shiftName: string) {
-  const value = shiftName.trim().toLowerCase();
-  if (value.includes('sáng') || value.includes('sang')) return 'Ca sáng';
-  if (value.includes('chiều') || value.includes('chieu')) return 'Ca chiều';
-  if (value.includes('tối') || value.includes('toi')) return 'Ca tối';
-  return shiftName.trim();
 }
 
 export interface WeighingRecord {
@@ -60,7 +62,10 @@ export interface WeighingRecord {
   weighNo: string;
   weighTime: string;
   coreWeight: string;
+  shellWeight: string;
   weight: string;
+  acceptanceStatus: string;
+  note: string;
   imageUrl?: string;
   coreWeightImageUrl?: string;
   createdAt?: string;
@@ -96,13 +101,16 @@ function slipKey(record: WeighingRecord) {
   ].join('|');
 }
 
-export function isSlipHeaderRow(row: Pick<WeighingRecord, 'weighNo' | 'productName' | 'productCode' | 'weight' | 'coreWeight' | 'imageUrl' | 'coreWeightImageUrl'>) {
+export function isSlipHeaderRow(row: Pick<WeighingRecord, 'weighNo' | 'productName' | 'productCode' | 'weight' | 'coreWeight' | 'shellWeight' | 'acceptanceStatus' | 'note' | 'imageUrl' | 'coreWeightImageUrl'>) {
   return (
     !row.weighNo?.trim() &&
     !row.productName?.trim() &&
     !row.productCode?.trim() &&
     !row.weight?.trim() &&
     !row.coreWeight?.trim() &&
+    !row.shellWeight?.trim() &&
+    !row.acceptanceStatus?.trim() &&
+    !row.note?.trim() &&
     !row.imageUrl &&
     !row.coreWeightImageUrl
   );
@@ -119,6 +127,15 @@ function countWeighingRounds(rows: WeighingRecord[]) {
 interface DateSlipGroup {
   date: string;
   slips: WeighingSlip[];
+  slipCount: number;
+  totalWeighRounds: number;
+}
+
+interface ShiftSummary {
+  shiftKey: string;
+  shiftLabel: string;
+  slips: WeighingSlip[];
+  dateGroups: DateSlipGroup[];
   slipCount: number;
   totalWeighRounds: number;
 }
@@ -143,7 +160,7 @@ function groupSlipsByDate(slips: WeighingSlip[]): DateSlipGroup[] {
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-function groupByShift(records: WeighingRecord[]) {
+function groupByShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): ShiftSummary[] {
   const slipMap = new Map<string, WeighingSlip>();
 
   records.forEach(record => {
@@ -176,13 +193,14 @@ function groupByShift(records: WeighingRecord[]) {
     rows: [...slip.rows].sort((a, b) => Number(a.weighNo) - Number(b.weighNo))
   }));
 
-  return SHIFT_ORDER.map(shiftName => {
+  return shiftOptions.map(option => {
     const shiftSlips = slips
-      .filter(slip => slip.shiftName === shiftName)
+      .filter(slip => resolveShiftName(slip.shiftName, shiftOptions) === option.value)
       .sort((a, b) => b.reportDate.localeCompare(a.reportDate));
 
     return {
-      shiftName,
+      shiftKey: option.value,
+      shiftLabel: option.label,
       slips: shiftSlips,
       dateGroups: groupSlipsByDate(shiftSlips),
       slipCount: shiftSlips.length,
@@ -203,7 +221,7 @@ function normalizeRecords(data: unknown): WeighingRecord[] {
         documentNo: String(row.documentNo ?? row.document_no ?? '').trim(),
         reportDate: String(row.reportDate ?? row.report_date ?? '').trim(),
         productionDate: String(row.productionDate ?? row.ngay_san_xuat ?? '').trim(),
-        shiftName: normalizeShiftName(String(row.shiftName ?? row.ca_san_xuat ?? '').trim()),
+        shiftName: String(row.shiftName ?? row.ca_san_xuat ?? '').trim(),
         worker1: String(row.worker1 ?? row.ten_cn_1 ?? '').trim(),
         worker2: String(row.worker2 ?? row.ten_cn_2 ?? '').trim(),
         weigherName: String(row.weigherName ?? row.ten_nguoi_can ?? '').trim(),
@@ -216,6 +234,9 @@ function normalizeRecords(data: unknown): WeighingRecord[] {
         weighNo: String(row.weighNo ?? row.lan_can ?? '').trim(),
         weighTime: String(row.weighTime ?? row.gio_can ?? '').trim(),
         coreWeight: String(row.coreWeight ?? row.trong_luong_loi ?? '').trim(),
+        shellWeight: String(row.shellWeight ?? row.trong_luong_bi ?? '').trim(),
+        acceptanceStatus: String(row.acceptanceStatus ?? row.nghiem_thu ?? '').trim(),
+        note: String(row.note ?? row.ghi_chu ?? '').trim(),
         weight: String(row.weight ?? row.trong_luong ?? '').trim(),
         imageUrl: String(row.imageUrl ?? row.anh_url ?? '').trim() || undefined,
         coreWeightImageUrl: String(row.coreWeightImageUrl ?? row.anh_trong_luong_loi_url ?? '').trim() || undefined,
@@ -266,7 +287,7 @@ export default function WeighingShiftSummary({
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const [activeSlipKey, setActiveSlipKey] = useState<string | null>(null);
   const [viewingRow, setViewingRow] = useState<WeighingRecord | null>(null);
-  const [viewingImage, setViewingImage] = useState<{ url: string; title: string } | null>(null);
+  const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<string | number | null>(null);
   const [deletingSlipKey, setDeletingSlipKey] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
@@ -276,6 +297,9 @@ export default function WeighingShiftSummary({
   const [slipSetupDefaults, setSlipSetupDefaults] = useState<{ productionDate: string; shiftName?: string }>({
     productionDate: today
   });
+  const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
+
+  const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
   const handleOpenSlipSetup = (options: { productionDate: string; shiftName?: string }) => {
     setSlipSetupDefaults(options);
@@ -327,6 +351,9 @@ export default function WeighingShiftSummary({
       weighNo: '',
       weighTime: '',
       coreWeight: '',
+      shellWeight: '',
+      acceptanceStatus: '',
+      note: '',
       weight: ''
     });
 
@@ -347,9 +374,9 @@ export default function WeighingShiftSummary({
     await loadReports();
   };
 
-  const shiftSummaries = useMemo(() => groupByShift(records), [records]);
+  const shiftSummaries = useMemo(() => groupByShift(records, shiftOptions), [records, shiftOptions]);
   const activeShiftSummary = useMemo(
-    () => shiftSummaries.find(shift => shift.shiftName === activeShift) ?? null,
+    () => shiftSummaries.find(shift => shift.shiftKey === activeShift) ?? null,
     [shiftSummaries, activeShift]
   );
   const activeDateGroup = useMemo(
@@ -397,6 +424,28 @@ export default function WeighingShiftSummary({
     setViewingRow(null);
     setActionMessage('');
   }, [selectedDate, config.apiBasePath]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadShiftSettings = async () => {
+      try {
+        const res = await fetch('/api/cai-dat');
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) {
+          setShiftSettings(normalizeShiftSettings(data));
+        }
+      } catch {
+        if (!cancelled) setShiftSettings([]);
+      }
+    };
+
+    loadShiftSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleDeleteRow = async (row: WeighingRecord) => {
     if (!row.id) {
@@ -583,7 +632,7 @@ export default function WeighingShiftSummary({
                 onClick={() =>
                   handleOpenSlipSetup({
                     productionDate: selectedDate,
-                    shiftName: activeShiftSummary?.shiftName
+                    shiftName: activeShiftSummary?.shiftKey
                   })
                 }
                 className="hidden h-11 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c] sm:flex"
@@ -621,7 +670,7 @@ export default function WeighingShiftSummary({
             <div className="min-w-0">
               <p className="truncate text-sm font-black text-zinc-900">Phiếu {activeSlip.documentNo || '—'}</p>
               <p className="truncate text-xs font-semibold text-zinc-500">
-                {activeShiftSummary.shiftName} · {formatDateVi(activeDateGroup.date)}
+                {activeShiftSummary.shiftLabel} · {formatDateVi(activeDateGroup.date)}
               </p>
             </div>
           </div>
@@ -662,8 +711,11 @@ export default function WeighingShiftSummary({
                     <th className="px-3 py-2 text-center">Lần</th>
                     <th className="px-3 py-2">Người cân</th>
                     <th className="px-3 py-2">TL lõi</th>
+                    <th className="px-3 py-2">TL bì</th>
                     <th className="px-3 py-2">Trọng lượng</th>
                     <th className="px-3 py-2">Giờ</th>
+                    <th className="px-3 py-2">Nghiệm thu</th>
+                    <th className="px-3 py-2">Ghi chú</th>
                     <th className="px-3 py-2">Ảnh TL lõi</th>
                     <th className="px-3 py-2">Ảnh</th>
                     <th className="px-3 py-2 text-center">Thao tác</th>
@@ -672,7 +724,7 @@ export default function WeighingShiftSummary({
                 <tbody className="divide-y divide-zinc-100">
                   {activeSlipWeighingRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
+                      <td colSpan={11} className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
                         Chưa có lần cân. Bấm Bổ sung lần cân để thêm dòng.
                       </td>
                     </tr>
@@ -682,30 +734,49 @@ export default function WeighingShiftSummary({
                       <td className="px-3 py-2 text-center font-black text-zinc-800">{row.weighNo || index + 1}</td>
                       <td className="px-3 py-2 font-semibold text-zinc-600">{row.weigherName || '—'}</td>
                       <td className="px-3 py-2 font-semibold text-zinc-700">{row.coreWeight || '—'}</td>
+                      <td className="px-3 py-2 font-semibold text-zinc-700">{row.shellWeight || '—'}</td>
                       <td className="px-3 py-2 font-bold text-zinc-900">{row.weight || '—'}</td>
                       <td className="px-3 py-2 font-semibold text-zinc-600">{row.weighTime || '—'}</td>
                       <td className="px-3 py-2">
-                        {row.coreWeightImageUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setViewingImage({ url: row.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })}
-                            className="block h-12 w-16 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition hover:border-[#ef1b2d]"
+                        {row.acceptanceStatus ? (
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                              row.acceptanceStatus === 'Đạt'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-rose-50 text-rose-700'
+                            }`}
                           >
-                            <img src={row.coreWeightImageUrl} alt="Ảnh trọng lượng lõi" crossOrigin="anonymous" className="h-full w-full object-cover" />
-                          </button>
+                            {row.acceptanceStatus}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-300">—</span>
+                        )}
+                      </td>
+                      <td className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600" title={row.note || undefined}>
+                        {row.note || '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        {row.coreWeightImageUrl ? (
+                          <WeighingImageThumbnail
+                            url={row.coreWeightImageUrl}
+                            alt="Ảnh trọng lượng lõi"
+                            title="Ảnh trọng lượng lõi"
+                            onView={() =>
+                              setViewingImage({ url: row.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })
+                            }
+                          />
                         ) : (
                           <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                         )}
                       </td>
                       <td className="px-3 py-2">
                         {row.imageUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setViewingImage({ url: row.imageUrl!, title: 'Ảnh cân' })}
-                            className="block h-12 w-16 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition hover:border-[#ef1b2d]"
-                          >
-                            <img src={row.imageUrl} alt="Ảnh cân" crossOrigin="anonymous" className="h-full w-full object-cover" />
-                          </button>
+                          <WeighingImageThumbnail
+                            url={row.imageUrl}
+                            alt="Ảnh cân"
+                            title="Ảnh cân"
+                            onView={() => setViewingImage({ url: row.imageUrl!, title: 'Ảnh cân' })}
+                          />
                         ) : (
                           <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                         )}
@@ -793,14 +864,14 @@ export default function WeighingShiftSummary({
               </button>
               <div className="min-w-0">
                 <p className="truncate text-sm font-black text-zinc-900">{formatDateVi(activeDateGroup.date)}</p>
-                <p className="truncate text-xs font-semibold text-zinc-500">{activeShiftSummary.shiftName}</p>
+                <p className="truncate text-xs font-semibold text-zinc-500">{activeShiftSummary.shiftLabel}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => handleOpenSlipSetup({
                 productionDate: activeDateGroup.date || selectedDate,
-                shiftName: activeShiftSummary.shiftName
+                shiftName: activeShiftSummary.shiftKey
               })}
               className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 text-xs font-bold text-[#ef1b2d] transition hover:bg-red-100"
             >
@@ -901,7 +972,7 @@ export default function WeighingShiftSummary({
                 Quay lại
               </button>
               <div className="min-w-0">
-                <p className="truncate text-sm font-black uppercase tracking-wider text-zinc-900">{activeShiftSummary.shiftName}</p>
+                <p className="truncate text-sm font-black uppercase tracking-wider text-zinc-900">{activeShiftSummary.shiftLabel}</p>
                 <p className="truncate text-xs font-semibold text-zinc-500">
                   {activeShiftSummary.slipCount} phiếu · {activeShiftSummary.totalWeighRounds} lần cân
                 </p>
@@ -912,7 +983,7 @@ export default function WeighingShiftSummary({
               onClick={() =>
                 handleOpenSlipSetup({
                   productionDate: selectedDate,
-                  shiftName: activeShiftSummary.shiftName
+                  shiftName: activeShiftSummary.shiftKey
                 })
               }
               className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 text-xs font-bold text-[#ef1b2d] transition hover:bg-red-100"
@@ -931,7 +1002,7 @@ export default function WeighingShiftSummary({
                   onClick={() =>
                     handleOpenSlipSetup({
                       productionDate: selectedDate,
-                      shiftName: activeShiftSummary.shiftName
+                      shiftName: activeShiftSummary.shiftKey
                     })
                   }
                   className="flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c]"
@@ -943,7 +1014,7 @@ export default function WeighingShiftSummary({
             ) : (
               activeShiftSummary.dateGroups.map(dateGroup => (
                 <button
-                  key={`${activeShiftSummary.shiftName}-${dateGroup.date || 'unknown'}`}
+                  key={`${activeShiftSummary.shiftKey}-${dateGroup.date || 'unknown'}`}
                   type="button"
                   onClick={() => setActiveDate(dateGroup.date)}
                   className="rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-red-200 hover:bg-red-50/30"
@@ -979,15 +1050,15 @@ export default function WeighingShiftSummary({
             ];
 
             return (
-              <section key={shift.shiftName} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              <section key={shift.shiftKey} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
                 <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
                   <button
                     type="button"
-                    onClick={() => setActiveShift(shift.shiftName)}
+                    onClick={() => setActiveShift(shift.shiftKey)}
                     className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left transition hover:opacity-80"
                   >
                     <div>
-                      <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">{shift.shiftName}</h3>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">{shift.shiftLabel}</h3>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">
                         {shift.slipCount} phiếu · {shift.totalWeighRounds} lần cân
                         {machines.length > 0 ? ` · ${machines.length} máy` : ''}
@@ -1011,33 +1082,7 @@ export default function WeighingShiftSummary({
         Thêm báo cáo
       </button>
 
-      {viewingImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">{viewingImage.title}</h3>
-                <p className="mt-0.5 text-xs font-semibold text-zinc-400">Click Đóng để quay lại bảng cân</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewingImage(null)}
-                className="h-9 rounded-lg bg-[#ef1b2d] px-3 text-xs font-bold text-white transition hover:bg-[#b30d1c]"
-              >
-                Đóng
-              </button>
-            </div>
-            <div className="flex max-h-[calc(90vh-58px)] items-center justify-center bg-black p-3">
-              <img
-                src={viewingImage.url}
-                alt={viewingImage.title}
-                crossOrigin="anonymous"
-                className="max-h-[calc(90vh-82px)] max-w-full rounded-lg object-contain"
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
 
       {viewingRow && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -1063,6 +1108,10 @@ export default function WeighingShiftSummary({
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.coreWeight || '—'}</p>
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                <span className="font-black uppercase tracking-wider text-zinc-400">TL bì</span>
+                <p className="mt-1 font-bold text-zinc-800">{viewingRow.shellWeight || '—'}</p>
+              </div>
+              <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Trọng lượng</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.weight || '—'}</p>
               </div>
@@ -1079,11 +1128,25 @@ export default function WeighingShiftSummary({
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.weigherName || '—'}</p>
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                <span className="font-black uppercase tracking-wider text-zinc-400">Nghiệm thu</span>
+                <p className="mt-1 font-bold text-zinc-800">{viewingRow.acceptanceStatus || '—'}</p>
+              </div>
+              <div className="col-span-2 rounded-lg bg-zinc-50 px-3 py-2">
+                <span className="font-black uppercase tracking-wider text-zinc-400">Ghi chú</span>
+                <p className="mt-1 font-bold text-zinc-800">{viewingRow.note || '—'}</p>
+              </div>
+              <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Ảnh TL lõi</span>
                 {viewingRow.coreWeightImageUrl ? (
-                  <a href={viewingRow.coreWeightImageUrl} target="_blank" rel="noreferrer" className="mt-2 block h-24 overflow-hidden rounded-lg border border-zinc-200">
-                    <img src={viewingRow.coreWeightImageUrl} alt="Ảnh TL lõi" className="h-full w-full object-cover" />
-                  </a>
+                  <WeighingImageThumbnail
+                    url={viewingRow.coreWeightImageUrl}
+                    alt="Ảnh TL lõi"
+                    title="Ảnh trọng lượng lõi"
+                    onView={() =>
+                      setViewingImage({ url: viewingRow.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })
+                    }
+                    className="mt-2 block h-24 w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition hover:border-[#ef1b2d]"
+                  />
                 ) : (
                   <p className="mt-1 font-semibold text-zinc-400">Chưa có</p>
                 )}
@@ -1091,9 +1154,13 @@ export default function WeighingShiftSummary({
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Ảnh cân</span>
                 {viewingRow.imageUrl ? (
-                  <a href={viewingRow.imageUrl} target="_blank" rel="noreferrer" className="mt-2 block h-24 overflow-hidden rounded-lg border border-zinc-200">
-                    <img src={viewingRow.imageUrl} alt="Ảnh cân" className="h-full w-full object-cover" />
-                  </a>
+                  <WeighingImageThumbnail
+                    url={viewingRow.imageUrl}
+                    alt="Ảnh cân"
+                    title="Ảnh cân"
+                    onView={() => setViewingImage({ url: viewingRow.imageUrl!, title: 'Ảnh cân' })}
+                    className="mt-2 block h-24 w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition hover:border-[#ef1b2d]"
+                  />
                 ) : (
                   <p className="mt-1 font-semibold text-zinc-400">Chưa có</p>
                 )}

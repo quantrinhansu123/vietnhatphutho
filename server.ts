@@ -273,12 +273,15 @@ function buildDbRecordFromClientRow(row: Record<string, unknown>, payload?: Reco
     trong_luong_loi: emptyToNull(row.coreWeight),
     anh_trong_luong_loi_url: emptyToNull(row.coreWeightImageUrl),
     anh_trong_luong_loi_public_id: emptyToNull(row.coreWeightImagePublicId),
+    trong_luong_bi: emptyToNull(row.shellWeight),
     ten_may_san_xuat: emptyToNull(row.machineName),
     lan_can: parseOptionalInt(weighNo),
     gio_can: weighTime || normalizeWeighTime(new Date().toTimeString().slice(0, 5)),
     trong_luong: emptyToNull(row.weight),
     anh_url: emptyToNull(row.imageUrl),
-    anh_public_id: emptyToNull(row.imagePublicId)
+    anh_public_id: emptyToNull(row.imagePublicId),
+    nghiem_thu: emptyToNull(row.acceptanceStatus),
+    ghi_chu: emptyToNull(row.note)
   };
 }
 
@@ -298,9 +301,12 @@ function mapWeighingRow(row: Record<string, unknown>) {
     weighNo: String(row.lan_can ?? '').trim(),
     weighTime: String(row.gio_can ?? '').trim(),
     coreWeight: String(row.trong_luong_loi ?? '').trim(),
+    shellWeight: String(row.trong_luong_bi ?? '').trim(),
     weight: String(row.trong_luong ?? '').trim(),
     imageUrl: String(row.anh_url ?? '').trim() || undefined,
     coreWeightImageUrl: String(row.anh_trong_luong_loi_url ?? '').trim() || undefined,
+    acceptanceStatus: String(row.nghiem_thu ?? '').trim(),
+    note: String(row.ghi_chu ?? '').trim(),
     createdAt: String(row.created_at ?? '').trim() || undefined
   };
 }
@@ -407,12 +413,15 @@ function createWeighingLocalStore(cfg: Pick<WeighingSlipApiConfig, 'localFilePat
       trong_luong_loi: record.trong_luong_loi,
       anh_trong_luong_loi_url: record.anh_trong_luong_loi_url,
       anh_trong_luong_loi_public_id: record.anh_trong_luong_loi_public_id,
+      trong_luong_bi: record.trong_luong_bi,
       ten_may_san_xuat: record.ten_may_san_xuat,
       lan_can: record.lan_can,
       gio_can: record.gio_can,
       trong_luong: record.trong_luong,
       anh_url: record.anh_url,
-      anh_public_id: record.anh_public_id
+      anh_public_id: record.anh_public_id,
+      nghiem_thu: record.nghiem_thu,
+      ghi_chu: record.ghi_chu
     };
 
     found.rows[found.index] = {
@@ -428,12 +437,15 @@ function createWeighingLocalStore(cfg: Pick<WeighingSlipApiConfig, 'localFilePat
       coreWeight: record.trong_luong_loi,
       coreWeightImageUrl: record.anh_trong_luong_loi_url,
       coreWeightImagePublicId: record.anh_trong_luong_loi_public_id,
+      shellWeight: record.trong_luong_bi,
       machineName: record.ten_may_san_xuat,
       weighNo: record.lan_can,
       weighTime: record.gio_can,
       weight: record.trong_luong,
       imageUrl: record.anh_url,
-      imagePublicId: record.anh_public_id
+      imagePublicId: record.anh_public_id,
+      acceptanceStatus: record.nghiem_thu,
+      note: record.ghi_chu
     };
 
     writeLocalEntries(found.entries);
@@ -581,7 +593,7 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
 
       const records = rows
         .filter((row: any) =>
-          row.productCode || row.productName || row.machineName || row.coreWeight || row.weighNo || row.weight || row.imageUrl || row.coreWeightImageUrl
+          row.productCode || row.productName || row.machineName || row.coreWeight || row.shellWeight || row.weighNo || row.weight || row.imageUrl || row.coreWeightImageUrl || row.acceptanceStatus || row.note
         )
         .map((row: any) => buildDbRecordFromClientRow(row, payload));
 
@@ -1207,25 +1219,37 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
 function parseMixingNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const num = Number(String(value).replace(',', '.'));
-  return Number.isFinite(num) ? Math.round(num * 100) / 100 : null;
+  return Number.isFinite(num) ? Math.round(num * 1000) / 1000 : null;
 }
 
-function parseMixingRoundItem(source: unknown): { ma_nvl: string; ten_vat_tu: string; don_vi: string; so_luong: number | null; ti_le_phan_tram: number | null } | null {
+function roundMixingWeight(value: number) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function parseMixingRoundItem(source: unknown): {
+  ma_nvl: string;
+  ten_vat_tu: string;
+  don_vi: string;
+  so_luong: number | null;
+  kl_thuc_te: number | null;
+  ti_le_phan_tram: number | null;
+} | null {
   if (!source || typeof source !== 'object') return null;
   const record = source as Record<string, unknown>;
   const ma_nvl = String(record.ma_npl ?? record.ma_nvl ?? record.code ?? '').trim();
   const ten_vat_tu = String(record.ten_vat_tu ?? record.ten_npl ?? '').trim();
   const don_vi = String(record.don_vi ?? record.unit ?? 'kg').trim() || 'kg';
   const so_luong = parseMixingNumber(record.so_luong ?? record.so_luong_kg);
+  const kl_thuc_te = parseMixingNumber(record.kl_thuc_te ?? record.so_luong_thuc_te);
   const ti_le_phan_tram = parseMixingNumber(record.ti_le_phan_tram ?? record.phan_tram ?? record.percent);
-  if (!ma_nvl && !ten_vat_tu && so_luong === null && ti_le_phan_tram === null) return null;
-  return { ma_nvl, ten_vat_tu, don_vi, so_luong, ti_le_phan_tram };
+  if (!ma_nvl && !ten_vat_tu && so_luong === null && kl_thuc_te === null && ti_le_phan_tram === null) return null;
+  return { ma_nvl, ten_vat_tu, don_vi, so_luong, kl_thuc_te, ti_le_phan_tram };
 }
 
 function hasMixingRoundMaterial(phoiTron: Record<string, unknown>) {
   return (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).some(key =>
     parseMixingRoundItems(phoiTron[key]).some(
-      item => item.ma_nvl || item.ten_vat_tu || item.so_luong !== null
+      item => item.ma_nvl || item.ten_vat_tu || item.so_luong !== null || item.kl_thuc_te !== null
     )
   );
 }
@@ -1245,14 +1269,14 @@ function backfillLegacyMixingPhoiTron(
 
   return {
     ...phoiTron,
-    lan_1: [{ ma_nvl, ten_vat_tu, don_vi, so_luong: tong_nhua_tron, ti_le_phan_tram }]
+    lan_1: [{ ma_nvl, ten_vat_tu, don_vi, so_luong: tong_nhua_tron, kl_thuc_te: null, ti_le_phan_tram }]
   };
 }
 
 function parseMixingRoundItems(source: unknown) {
   if (source === null || source === undefined) return [];
   if (typeof source === 'number') {
-    return [{ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: source, ti_le_phan_tram: null }];
+    return [{ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: source, kl_thuc_te: null, ti_le_phan_tram: null }];
   }
   if (Array.isArray(source)) {
     return source
@@ -1267,8 +1291,20 @@ function parseMixingPhoiTron(source: unknown) {
   const record = source && typeof source === 'object' ? (source as Record<string, unknown>) : {};
   const phoiTron: Record<string, unknown> = {};
   (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
-    const items = parseMixingRoundItems(record[key]);
-    if (items.length > 0) phoiTron[key] = items;
+    const rawItems = record[key];
+    const items = parseMixingRoundItems(rawItems);
+    if (items.length > 0) {
+      if (Array.isArray(rawItems)) {
+        phoiTron[key] = items.map((item, index) => {
+          const rawItem = rawItems[index];
+          if (!rawItem || typeof rawItem !== 'object') return item;
+          const kl = parseMixingNumber((rawItem as Record<string, unknown>).kl_thuc_te);
+          return kl !== null ? { ...item, kl_thuc_te: kl } : item;
+        });
+      } else {
+        phoiTron[key] = items;
+      }
+    }
   });
   const rawBatch = record.khoi_luong_me;
   if (rawBatch && typeof rawBatch === 'object') {
@@ -1279,7 +1315,9 @@ function parseMixingPhoiTron(source: unknown) {
     });
     if (Object.keys(khoi_luong_me).length > 0) phoiTron.khoi_luong_me = khoi_luong_me;
   }
-  if (!phoiTron.lan_1) phoiTron.lan_1 = [{ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: null, ti_le_phan_tram: null }];
+  if (!phoiTron.lan_1) {
+    phoiTron.lan_1 = [{ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg', so_luong: null, kl_thuc_te: null, ti_le_phan_tram: null }];
+  }
   return phoiTron;
 }
 
@@ -1291,18 +1329,56 @@ function visiblePhoiTronRoundCount(phoiTron: Record<string, unknown>) {
   return 1;
 }
 
+function sumPhoiTronActualQuantity(phoiTron: Record<string, unknown>) {
+  let total = 0;
+  let hasAny = false;
+  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+    const items = parseMixingRoundItems(phoiTron[key]);
+    items.forEach(item => {
+      if (item.kl_thuc_te !== null && item.kl_thuc_te !== undefined) {
+        hasAny = true;
+        total += item.kl_thuc_te;
+      }
+    });
+  });
+  return hasAny ? roundMixingWeight(total) : null;
+}
+
 function sumPhoiTronQuantity(phoiTron: Record<string, unknown>) {
+  const rawBatch = phoiTron.khoi_luong_me;
+  if (rawBatch && typeof rawBatch === 'object') {
+    const roundCount = visiblePhoiTronRoundCount(phoiTron);
+    let total = 0;
+    let hasAny = false;
+    (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).slice(0, roundCount).forEach(key => {
+      const val = parseMixingNumber((rawBatch as Record<string, unknown>)[key]);
+      if (val !== null && val > 0) {
+        total += val;
+        hasAny = true;
+      }
+    });
+    if (hasAny) return roundMixingWeight(total);
+  }
+
   let total = 0;
   (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
     const items = parseMixingRoundItems(phoiTron[key]);
     total += items.reduce((sum, item) => sum + (item.so_luong ?? 0), 0);
   });
-  return Math.round(total * 100) / 100;
+  return roundMixingWeight(total);
 }
 
 function parseMixingRoundPhotos(source: unknown) {
-  if (!source || typeof source !== 'object') return {};
-  const record = source as Record<string, unknown>;
+  let value = source;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== 'object') return {};
+  const record = value as Record<string, unknown>;
   const result: Record<string, Array<{ url: string; public_id: string | null }>> = {};
 
   (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
@@ -1324,6 +1400,321 @@ function parseMixingRoundPhotos(source: unknown) {
   });
 
   return result;
+}
+
+function extractMixingReportPhotosFromChiTiet(chiTietRaw: unknown) {
+  if (!Array.isArray(chiTietRaw)) return {};
+  for (const line of chiTietRaw) {
+    if (!line || typeof line !== 'object') continue;
+    const embedded = (line as Record<string, unknown>)._hinh_anh_theo_lan;
+    const photos = parseMixingRoundPhotos(embedded);
+    if (Object.keys(photos).length > 0) return photos;
+  }
+  return {};
+}
+
+function extractMixingReportPhotos(row: Record<string, unknown>) {
+  const fromColumn = parseMixingRoundPhotos(row.hinh_anh_theo_lan);
+  if (Object.keys(fromColumn).length > 0) return fromColumn;
+  return extractMixingReportPhotosFromChiTiet(row.chi_tiet);
+}
+
+function normalizeMixingReasonList(source: unknown) {
+  if (!Array.isArray(source)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  source.forEach(item => {
+    const value = String(item ?? '').trim();
+    if (!value) return;
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(value);
+  });
+  return result;
+}
+
+function parseMixingRoundReasons(source: unknown) {
+  let value = source;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== 'object') return {};
+  const record = value as Record<string, unknown>;
+  const result: Record<string, string[]> = {};
+  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+    const reasons = normalizeMixingReasonList(record[key]);
+    if (reasons.length > 0) result[key] = reasons;
+  });
+  return result;
+}
+
+function parseMixingRoundExplanations(source: unknown) {
+  let value = source;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== 'object') return {};
+  const record = value as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+    const text = String(record[key] ?? '').trim();
+    if (text) result[key] = text;
+  });
+  return result;
+}
+
+function mergeMixingRoundReasons(...sources: unknown[]) {
+  const result: Record<string, string[]> = {};
+  sources.forEach(source => {
+    const parsed = parseMixingRoundReasons(source);
+    Object.entries(parsed).forEach(([key, values]) => {
+      if (values.length > 0) result[key] = values;
+    });
+  });
+  return result;
+}
+
+function mergeMixingRoundExplanations(...sources: unknown[]) {
+  const result: Record<string, string> = {};
+  sources.forEach(source => {
+    const parsed = parseMixingRoundExplanations(source);
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (value) result[key] = value;
+    });
+  });
+  return result;
+}
+
+function extractMixingReportReasonsFromChiTiet(chiTietRaw: unknown) {
+  if (!Array.isArray(chiTietRaw)) return {};
+  for (const line of chiTietRaw) {
+    if (!line || typeof line !== 'object') continue;
+    const embedded = (line as Record<string, unknown>)._ly_do_theo_lan;
+    const reasons = parseMixingRoundReasons(embedded);
+    if (Object.keys(reasons).length > 0) return reasons;
+  }
+  return {};
+}
+
+function extractMixingReportExplanationsFromChiTiet(chiTietRaw: unknown) {
+  if (!Array.isArray(chiTietRaw)) return {};
+  for (const line of chiTietRaw) {
+    if (!line || typeof line !== 'object') continue;
+    const embedded = (line as Record<string, unknown>)._giai_trinh_theo_lan;
+    const explanations = parseMixingRoundExplanations(embedded);
+    if (Object.keys(explanations).length > 0) return explanations;
+  }
+  return {};
+}
+
+function extractMixingReportReasons(row: Record<string, unknown>) {
+  const fromColumn = parseMixingRoundReasons(row.ly_do_theo_lan);
+  if (Object.keys(fromColumn).length > 0) return fromColumn;
+  return extractMixingReportReasonsFromChiTiet(row.chi_tiet);
+}
+
+function extractMixingReportExplanations(row: Record<string, unknown>) {
+  const fromColumn = parseMixingRoundExplanations(row.giai_trinh_theo_lan);
+  if (Object.keys(fromColumn).length > 0) return fromColumn;
+  const fromReasons = parseMixingRoundReasons(extractMixingReportReasons(row));
+  const derived: Record<string, string> = {};
+  Object.entries(fromReasons).forEach(([key, reasons]) => {
+    if (reasons.length > 0) derived[key] = formatMixingReasonsExplanation(reasons);
+  });
+  if (Object.keys(derived).length > 0) return derived;
+  return extractMixingReportExplanationsFromChiTiet(row.chi_tiet);
+}
+
+function formatMixingReasonsExplanation(reasons: string[]) {
+  return reasons.map(item => item.trim()).filter(Boolean).join('; ');
+}
+
+function embedMixingReportReasonsInChiTiet(
+  chi_tiet: Array<Record<string, unknown>>,
+  ly_do_theo_lan: Record<string, string[]>,
+  giai_trinh_theo_lan: Record<string, string>
+) {
+  if (chi_tiet.length === 0) return chi_tiet;
+  if (Object.keys(ly_do_theo_lan).length === 0 && Object.keys(giai_trinh_theo_lan).length === 0) {
+    return chi_tiet;
+  }
+  return chi_tiet.map((line, index) =>
+    index === 0
+      ? {
+          ...line,
+          _ly_do_theo_lan: ly_do_theo_lan,
+          _giai_trinh_theo_lan: giai_trinh_theo_lan
+        }
+      : line
+  );
+}
+
+function collectMixingReasonSuggestions(rows: Array<Record<string, unknown>>) {
+  const seen = new Set<string>();
+  rows.forEach(row => {
+    const reasonsByRound = extractMixingReportReasons(row);
+    Object.values(reasonsByRound).forEach(list => {
+      list.forEach(reason => {
+        const normalized = reason.trim();
+        if (normalized) seen.add(normalized);
+      });
+    });
+  });
+  return [...seen].sort((left, right) => left.localeCompare(right, 'vi'));
+}
+
+function embedMixingReportPhotosInChiTiet(
+  chi_tiet: Array<Record<string, unknown>>,
+  photos: Record<string, Array<{ url: string; public_id: string | null }>>
+) {
+  if (chi_tiet.length === 0 || Object.keys(photos).length === 0) return chi_tiet;
+  return chi_tiet.map((line, index) =>
+    index === 0 ? { ...line, _hinh_anh_theo_lan: photos } : line
+  );
+}
+
+function embedMixingReportLanThuInChiTiet(chi_tiet: Array<Record<string, unknown>>, lan_thu: number) {
+  if (chi_tiet.length === 0 || !Number.isFinite(lan_thu) || lan_thu <= 0) return chi_tiet;
+  return chi_tiet.map((line, index) => (index === 0 ? { ...line, _lan_thu: lan_thu } : line));
+}
+
+function extractMixingReportLanThu(row: Record<string, unknown>) {
+  const fromColumn = Number(row.lan_thu);
+  if (Number.isFinite(fromColumn) && fromColumn > 0) return fromColumn;
+  return extractMixingReportLanThuFromChiTiet(row.chi_tiet);
+}
+
+function extractMixingReportLanThuFromChiTiet(chiTietRaw: unknown) {
+  if (!Array.isArray(chiTietRaw)) return 1;
+  for (const line of chiTietRaw) {
+    if (!line || typeof line !== 'object') continue;
+    const embedded = Number((line as Record<string, unknown>)._lan_thu);
+    if (Number.isFinite(embedded) && embedded > 0) return embedded;
+  }
+  return 1;
+}
+
+function isMissingMixingPhotosColumnError(error: { code?: string; message?: string } | null) {
+  return (
+    isMissingColumnError(error) &&
+    String(error?.message ?? '')
+      .toLowerCase()
+      .includes('hinh_anh_theo_lan')
+  );
+}
+
+function isMissingMixingLanThuColumnError(error: { code?: string; message?: string } | null) {
+  return (
+    isMissingColumnError(error) &&
+    String(error?.message ?? '')
+      .toLowerCase()
+      .includes('lan_thu')
+  );
+}
+
+function isMissingMixingReasonColumnError(error: { code?: string; message?: string } | null) {
+  const message = String(error?.message ?? '').toLowerCase();
+  return (
+    isMissingColumnError(error) &&
+    (message.includes('ly_do_theo_lan') || message.includes('giai_trinh_theo_lan'))
+  );
+}
+
+async function writeMixingReportRecord(
+  record: Record<string, unknown>,
+  mode: 'insert' | 'update',
+  id?: string
+) {
+  if (!supabase) throw new Error('Supabase chưa được cấu hình.');
+
+  const runWrite = (payload: Record<string, unknown>) => {
+    if (mode === 'insert') {
+      return supabase.from(SUPABASE_MIXING_REPORTS_TABLE).insert(payload).select('*').single();
+    }
+    return supabase.from(SUPABASE_MIXING_REPORTS_TABLE).update(payload).eq('id', id).select('*').single();
+  };
+
+  let payload = { ...record };
+  let result = await runWrite(payload);
+
+  while (result.error && isMissingColumnError(result.error)) {
+    const nextPayload = { ...payload };
+    let changed = false;
+
+    if (isMissingMixingPhotosColumnError(result.error)) {
+      delete nextPayload.hinh_anh_theo_lan;
+      changed = true;
+    }
+    if (isMissingMixingLanThuColumnError(result.error)) {
+      delete nextPayload.lan_thu;
+      changed = true;
+    }
+    if (isMissingMixingReasonColumnError(result.error)) {
+      delete nextPayload.ly_do_theo_lan;
+      delete nextPayload.giai_trinh_theo_lan;
+      changed = true;
+    }
+
+    if (!changed) break;
+    payload = nextPayload;
+    result = await runWrite(payload);
+  }
+
+  return result;
+}
+
+function backfillMixingItemKlFromLine(
+  phoiTron: Record<string, unknown>,
+  ma_nvl: string,
+  ten_vat_tu: string,
+  kl: number
+) {
+  const hasItemKl = (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).some(key =>
+    parseMixingRoundItems(phoiTron[key]).some(
+      item => item.kl_thuc_te !== null && item.kl_thuc_te !== undefined
+    )
+  );
+  if (hasItemKl) return phoiTron;
+
+  const codeKey = ma_nvl.trim().toLowerCase() || ten_vat_tu.trim().toLowerCase();
+  for (const key of ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const) {
+    const items = parseMixingRoundItems(phoiTron[key]);
+    if (items.length === 0) continue;
+    const updated = items.map(item => {
+      const itemKey = (item.ma_nvl || item.ten_vat_tu).trim().toLowerCase();
+      const matches = !codeKey || !itemKey || codeKey === itemKey || items.length === 1;
+      return matches ? { ...item, kl_thuc_te: kl } : item;
+    });
+    return { ...phoiTron, [key]: updated };
+  }
+  return phoiTron;
+}
+
+function resolveMixingLineKlFromPhoiTron(
+  phoiTron: Record<string, unknown>,
+  lineKl: number | null
+) {
+  let total = 0;
+  let hasAny = false;
+  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+    parseMixingRoundItems(phoiTron[key]).forEach(item => {
+      if (item.kl_thuc_te !== null && item.kl_thuc_te !== undefined) {
+        hasAny = true;
+        total += item.kl_thuc_te;
+      }
+    });
+  });
+  if (hasAny) return Math.round(total * 100) / 100;
+  return lineKl;
 }
 
 function parseMixingReportLine(source: unknown, index: number) {
@@ -1351,13 +1742,19 @@ function parseMixingReportLine(source: unknown, index: number) {
   if (!ma_nvl && !ten_vat_tu) return null;
 
   lan_su_dung = backfillLegacyMixingPhoiTron(record, lan_su_dung, ma_nvl, ten_vat_tu);
+  const lineKl = parseMixingNumber(record.kl_thuc_te ?? record.so_luong_thuc_te);
+  if (lineKl !== null) {
+    lan_su_dung = backfillMixingItemKlFromLine(lan_su_dung, ma_nvl, ten_vat_tu, lineKl);
+  }
   const tongFromRounds = sumPhoiTronQuantity(lan_su_dung);
+  const kl_thuc_te = resolveMixingLineKlFromPhoiTron(lan_su_dung, lineKl);
 
   return {
     stt: Number(record.stt ?? index + 1) || index + 1,
     ma_nvl,
     ten_vat_tu,
     lan_su_dung,
+    kl_thuc_te,
     tong_nhua_tron:
       parseMixingNumber(record.tong_nhua_tron) ?? (tongFromRounds > 0 ? tongFromRounds : null),
     hinh_anh: String(record.hinh_anh ?? record.imageUrl ?? '').trim() || null,
@@ -1388,7 +1785,13 @@ function parseMixingReportBody(body: unknown): { error: string } | { record: Rec
 
   const thuc_te_su_dung =
     parseMixingNumber(source.thuc_te_su_dung) ??
-    Math.round(chi_tiet.reduce((sum, line) => sum + (line.tong_nhua_tron ?? 0), 0) * 100) / 100;
+    Math.round(
+      chi_tiet.reduce((sum, line) => {
+        const actual = sumPhoiTronActualQuantity(line.lan_su_dung as Record<string, unknown>);
+        if (actual !== null) return sum + actual;
+        return sum + (line.tong_nhua_tron ?? 0);
+      }, 0) * 100
+    ) / 100;
 
   const so_lan = Math.min(
     5,
@@ -1402,6 +1805,32 @@ function parseMixingReportBody(body: unknown): { error: string } | { record: Rec
     )
   );
 
+  const hinh_anh_theo_lan = parseMixingRoundPhotos(source.hinh_anh_theo_lan);
+  const ly_do_theo_lan = mergeMixingRoundReasons(
+    source.ly_do_theo_lan,
+    extractMixingReportReasonsFromChiTiet(chiTietRaw)
+  );
+  const giai_trinh_theo_lan = mergeMixingRoundExplanations(
+    source.giai_trinh_theo_lan,
+    extractMixingReportExplanationsFromChiTiet(chiTietRaw)
+  );
+  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+    if (!giai_trinh_theo_lan[key] && ly_do_theo_lan[key]?.length) {
+      giai_trinh_theo_lan[key] = formatMixingReasonsExplanation(ly_do_theo_lan[key]);
+    }
+  });
+  const lan_thu = Math.min(
+    5,
+    Math.max(1, Number(source.lan_thu) || 1)
+  );
+  let chi_tiet_with_photos = embedMixingReportPhotosInChiTiet(chi_tiet, hinh_anh_theo_lan);
+  chi_tiet_with_photos = embedMixingReportReasonsInChiTiet(
+    chi_tiet_with_photos,
+    ly_do_theo_lan,
+    giai_trinh_theo_lan
+  );
+  chi_tiet_with_photos = embedMixingReportLanThuInChiTiet(chi_tiet_with_photos, lan_thu);
+
   return {
     record: {
       ca,
@@ -1413,11 +1842,14 @@ function parseMixingReportBody(body: unknown): { error: string } | { record: Rec
       nhan_su: String(source.nhan_su ?? source.staff ?? '').trim() || null,
       so_phieu: String(source.so_phieu ?? source.documentNo ?? '').trim() || null,
       ky_hieu: String(source.ky_hieu ?? 'QT-16-BM02').trim() || 'QT-16-BM02',
+      lan_thu,
       so_lan,
       thuc_te_su_dung,
       ghi_chu: String(source.ghi_chu ?? source.note ?? '').trim() || null,
-      hinh_anh_theo_lan: parseMixingRoundPhotos(source.hinh_anh_theo_lan),
-      chi_tiet
+      hinh_anh_theo_lan,
+      ly_do_theo_lan,
+      giai_trinh_theo_lan,
+      chi_tiet: chi_tiet_with_photos
     }
   };
 }
@@ -1859,6 +2291,21 @@ function parseOptionalMaterialNumber(value: unknown): number | null {
 
 function parseMaterialText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isUuidValue(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function resolveMaterialRowFilter(id: string) {
+  const value = id.trim();
+  if (!value) return null;
+  if (isUuidValue(value)) return { column: 'id' as const, value };
+  return { column: 'ma_npl' as const, value };
+}
+
+function isMaterialKgUnitValue(value: unknown) {
+  return String(value ?? '').trim().toLowerCase() === 'kg';
 }
 
 function parseMachineBody(body: unknown): { error: string } | { record: Record<string, string> } {
@@ -4129,6 +4576,58 @@ export function createApp() {
     }
   });
 
+  app.post('/api/kho-nvl/fill-total-kg', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const value = parseOptionalMaterialNumber(req.body?.value ?? req.body?.totalWeight ?? 25);
+      if (value === null || value <= 0) {
+        return res.status(400).json({ error: 'Giá trị Tổng kg không hợp lệ.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MATERIALS_TABLE)
+        .select('ma_npl, don_vi');
+
+      if (error) {
+        console.error('Supabase kho_nvl fill-total-kg read error:', error);
+        return res.status(500).json({ error: materialWriteErrorMessage(error) });
+      }
+
+      const codes = (data || [])
+        .filter(row => {
+          const code = String(row.ma_npl ?? '').trim();
+          return code && isMaterialKgUnitValue(row.don_vi);
+        })
+        .map(row => String(row.ma_npl).trim());
+
+      if (codes.length === 0) {
+        return res.status(400).json({ error: 'Không có NPL nào có đơn vị Kg.' });
+      }
+
+      const { error: updateError } = await supabase
+        .from(SUPABASE_MATERIALS_TABLE)
+        .update({ tong_trong_luong: value })
+        .in('ma_npl', codes);
+
+      if (updateError) {
+        console.error('Supabase kho_nvl fill-total-kg update error:', updateError);
+        return res.status(500).json({ error: materialWriteErrorMessage(updateError) });
+      }
+
+      return res.json({
+        success: true,
+        updated: codes.length,
+        value,
+        codes
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi điền Tổng kg hàng loạt.' });
+    }
+  });
+
   app.patch('/api/kho-nvl/:id', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -4136,7 +4635,8 @@ export function createApp() {
 
     try {
       const id = String(req.params.id || '').trim();
-      if (!id) {
+      const filter = resolveMaterialRowFilter(id);
+      if (!filter) {
         return res.status(400).json({ error: 'Thiếu ID nguyên phụ liệu.' });
       }
 
@@ -4148,7 +4648,7 @@ export function createApp() {
       const { data, error } = await supabase
         .from(SUPABASE_MATERIALS_TABLE)
         .update(parsed.record)
-        .eq('id', id)
+        .eq(filter.column, filter.value)
         .select('*')
         .single();
 
@@ -4174,15 +4674,16 @@ export function createApp() {
 
     try {
       const id = String(req.params.id || '').trim();
-      if (!id) {
+      const filter = resolveMaterialRowFilter(id);
+      if (!filter) {
         return res.status(400).json({ error: 'Thiếu ID nguyên phụ liệu.' });
       }
 
       const { data, error } = await supabase
         .from(SUPABASE_MATERIALS_TABLE)
         .delete()
-        .eq('id', id)
-        .select('id')
+        .eq(filter.column, filter.value)
+        .select(filter.column)
         .maybeSingle();
 
       if (error) {
@@ -4558,9 +5059,64 @@ export function createApp() {
         return res.status(500).json({ error: mixingReportWriteError(error) });
       }
 
-      return res.json({ reports: data || [], total: data?.length || 0 });
+      const reports = (data || []).map(row =>
+        row && typeof row === 'object'
+          ? {
+              ...row,
+              lan_thu: extractMixingReportLanThu(row as Record<string, unknown>),
+              hinh_anh_theo_lan: extractMixingReportPhotos(row as Record<string, unknown>),
+              ly_do_theo_lan: extractMixingReportReasons(row as Record<string, unknown>),
+              giai_trinh_theo_lan: extractMixingReportExplanations(row as Record<string, unknown>)
+            }
+          : row
+      );
+
+      return res.json({ reports, total: reports.length });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo phối trộn.' });
+    }
+  });
+
+  app.get('/api/bao-cao-phoi-tron/ly-do-goi-y', async (_req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_MIXING_REPORTS_TABLE)
+        .select('ly_do_theo_lan, chi_tiet')
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      if (error) {
+        if (isMissingColumnError(error) && String(error.message ?? '').toLowerCase().includes('ly_do_theo_lan')) {
+          const fallback = await supabase
+            .from(SUPABASE_MIXING_REPORTS_TABLE)
+            .select('chi_tiet')
+            .order('created_at', { ascending: false })
+            .limit(500);
+          if (fallback.error) {
+            return res.status(500).json({ error: mixingReportWriteError(fallback.error) });
+          }
+          return res.json({
+            reasons: collectMixingReasonSuggestions(
+              (fallback.data || []).filter(
+                (row): row is Record<string, unknown> => Boolean(row && typeof row === 'object')
+              )
+            )
+          });
+        }
+        return res.status(500).json({ error: mixingReportWriteError(error) });
+      }
+
+      return res.json({
+        reasons: collectMixingReasonSuggestions(
+          (data || []).filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+        )
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Không thể tải gợi ý lý do.' });
     }
   });
 
@@ -4575,18 +5131,25 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
-      const { data, error } = await supabase
-        .from(SUPABASE_MIXING_REPORTS_TABLE)
-        .insert(parsed.record)
-        .select('*')
-        .single();
+      const { data, error } = await writeMixingReportRecord(parsed.record, 'insert');
 
       if (error) {
         console.error('Supabase mixing report insert error:', error);
         return res.status(500).json({ error: mixingReportWriteError(error) });
       }
 
-      return res.status(201).json({ success: true, report: data });
+      return res.status(201).json({
+        success: true,
+        report: data
+          ? {
+              ...data,
+              lan_thu: extractMixingReportLanThu(data as Record<string, unknown>),
+              hinh_anh_theo_lan: extractMixingReportPhotos(data as Record<string, unknown>),
+              ly_do_theo_lan: extractMixingReportReasons(data as Record<string, unknown>),
+              giai_trinh_theo_lan: extractMixingReportExplanations(data as Record<string, unknown>)
+            }
+          : data
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo phối trộn.' });
     }
@@ -4606,12 +5169,7 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
-      const { data, error } = await supabase
-        .from(SUPABASE_MIXING_REPORTS_TABLE)
-        .update(parsed.record)
-        .eq('id', id)
-        .select('*')
-        .single();
+      const { data, error } = await writeMixingReportRecord(parsed.record, 'update', id);
 
       if (error) {
         console.error('Supabase mixing report update error:', error);
@@ -4619,7 +5177,16 @@ export function createApp() {
       }
 
       if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo.' });
-      return res.json({ success: true, report: data });
+      return res.json({
+        success: true,
+        report: {
+          ...data,
+          lan_thu: extractMixingReportLanThu(data as Record<string, unknown>),
+          hinh_anh_theo_lan: extractMixingReportPhotos(data as Record<string, unknown>),
+          ly_do_theo_lan: extractMixingReportReasons(data as Record<string, unknown>),
+          giai_trinh_theo_lan: extractMixingReportExplanations(data as Record<string, unknown>)
+        }
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật báo cáo phối trộn.' });
     }

@@ -104,6 +104,14 @@ export default function SearchableSelect({
         return;
       }
 
+      if (resolveSelectedItem) {
+        const resolved = resolveSelectedItem(options, normalized);
+        if (resolved) {
+          commitValue(getValue(resolved), resolved);
+          return;
+        }
+      }
+
       if (filteredOptions.length === 1) {
         commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
         return;

@@ -3065,6 +3065,11 @@ function parseInventoryNumber(value: string): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function isMaterialKgUnit(unit: string) {
+  const normalized = unit.trim().toLowerCase();
+  return normalized === 'kg';
+}
+
 function computeClosingStock(opening: string, inbound: string, outbound: string): string {
   const openingVal = parseInventoryNumber(opening);
   if (openingVal === null) return '-';
@@ -3086,8 +3091,11 @@ function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
       const name = String(record.ten_npl ?? '').trim();
       if (!code && !name) return null;
 
+      const rawId = String(record.id ?? '').trim();
       return {
-        id: String(record.id ?? '').trim() || code || name,
+        id: rawId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawId)
+          ? rawId
+          : code || rawId || name,
         code,
         name,
         unit: formatCell(record.don_vi),
@@ -3154,6 +3162,33 @@ function materialToForm(material: MaterialRow): MaterialFormState {
     inbound: materialCellToInput(material.inbound),
     outbound: materialCellToInput(material.outbound)
   };
+}
+
+async function patchMaterialsTotalWeight(materials: MaterialRow[], totalWeight: string) {
+  await Promise.all(
+    materials.map(async material => {
+      const payload = {
+        ...materialToForm(material),
+        totalWeight
+      };
+      const res = await fetch(`/api/kho-nvl/${encodeURIComponent(material.code)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Không thể cập nhật ${material.code}.`);
+      }
+    })
+  );
+  return materials.length;
+}
+
+function isFetchNetworkError(error: unknown) {
+  if (error instanceof TypeError) return true;
+  const message = String((error as { message?: string })?.message ?? error ?? '').toLowerCase();
+  return message.includes('failed to fetch') || message.includes('networkerror');
 }
 
 const materialFieldClass =
@@ -4140,6 +4175,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm);
   const [showBulkOpeningStock, setShowBulkOpeningStock] = useState(false);
   const [showBulkTotalWeight, setShowBulkTotalWeight] = useState(false);
+  const [isFillingKgTotalWeight, setIsFillingKgTotalWeight] = useState(false);
 
   const loadMaterials = async () => {
     setIsLoadingMaterials(true);
@@ -4207,6 +4243,61 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         openingStock: material.openingStock
       }))
     );
+  };
+
+  const handleFillKgTotalWeight25 = async () => {
+    const kgMaterials = materials.filter(
+      material => material.code && isMaterialKgUnit(material.unit)
+    );
+    if (kgMaterials.length === 0) {
+      setMaterialsError('Không có NPL nào có đơn vị Kg.');
+      return;
+    }
+
+    if (!window.confirm(`Điền Tổng kg = 25 cho ${kgMaterials.length} NPL có đơn vị Kg?`)) {
+      return;
+    }
+
+    setIsFillingKgTotalWeight(true);
+    setMaterialsError('');
+    setActionMessage('');
+
+    try {
+      let updated = 0;
+
+      try {
+        const res = await fetch('/api/kho-nvl/fill-total-kg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: 25 })
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+          updated = data.updated ?? kgMaterials.length;
+        } else if (res.status === 404) {
+          updated = await patchMaterialsTotalWeight(kgMaterials, '25');
+        } else {
+          throw new Error(data.error || 'Không thể điền Tổng kg hàng loạt.');
+        }
+      } catch (error) {
+        if (!isFetchNetworkError(error)) throw error;
+        updated = await patchMaterialsTotalWeight(kgMaterials, '25');
+      }
+
+      setActionMessage(`Đã điền Tổng kg = 25 cho ${updated} NPL (đơn vị Kg).`);
+      await loadMaterials();
+    } catch (error: any) {
+      if (isFetchNetworkError(error)) {
+        setMaterialsError(
+          'Mất kết nối server (Failed to fetch). Chạy `npm run dev` trong thư mục dự án, đợi dòng "Server running on http://0.0.0.0:3001", rồi tải lại trang.'
+        );
+        return;
+      }
+      setMaterialsError(error.message || 'Không thể điền Tổng kg hàng loạt.');
+    } finally {
+      setIsFillingKgTotalWeight(false);
+    }
   };
 
   const openAddForm = () => {
@@ -4364,6 +4455,15 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               >
                 <Upload className="h-4 w-4" />
                 Tải Excel lên
+              </button>
+              <button
+                type="button"
+                onClick={handleFillKgTotalWeight25}
+                disabled={isFillingKgTotalWeight || isLoadingMaterials || materials.length === 0}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-300/40 bg-amber-500/15 px-3 text-xs font-extrabold text-amber-100 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isFillingKgTotalWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
+                Điền 25 kg (Kg)
               </button>
               <button
                 type="button"
@@ -4666,15 +4766,28 @@ interface WarehouseSlipLineDraft {
   unit: string;
   quantity: string;
   unitPrice: string;
+  quotaQuantity?: string;
+  suggestedQuantity?: string;
+  lineNote?: string;
 }
 
 type WarehouseSlipPrefillDraft = {
   slipType: WarehouseSlipType;
   warehouseKind: WarehouseKind;
+  slipDate?: string;
   reason: string;
   note: string;
   createdBy: string;
-  lines: Array<Pick<WarehouseSlipLineDraft, 'code' | 'name' | 'unit' | 'quantity' | 'unitPrice'>>;
+  productionOrderRef?: string;
+  machine?: string;
+  shift?: string;
+  recipient?: string;
+  lines: Array<
+    Pick<
+      WarehouseSlipLineDraft,
+      'code' | 'name' | 'unit' | 'quantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
+    >
+  >;
 };
 
 const warehouseFieldClass =
@@ -4717,25 +4830,36 @@ type WarehouseSlipPayloadItem = {
   unit: string;
   quantity: number;
   unitPrice: number;
+  quotaQuantity?: number;
+  suggestedQuantity?: number;
+  lineNote?: string;
 };
 
 function parseWarehouseSlipPayloadItems(
   lines: WarehouseSlipLineDraft[],
-  warehouseKind: WarehouseKind
+  warehouseKind: WarehouseKind,
+  options?: { allowMissingUnitPrice?: boolean }
 ): { error: string } | { items: WarehouseSlipPayloadItem[] } {
   const itemLabel = warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL';
   const codeLabel = warehouseItemCodeLabel(warehouseKind);
+  const allowMissingUnitPrice = options?.allowMissingUnitPrice ?? false;
 
   const payloadItems = lines
     .map(line => {
       const quantity = parsePercentInput(line.quantity);
       const unitPrice = parseMoneyInput(line.unitPrice);
+      const quotaQuantity = parsePercentInput(line.quotaQuantity ?? '');
+      const suggestedQuantity = parsePercentInput(line.suggestedQuantity ?? '');
       return {
         code: line.code.trim(),
         name: line.name.trim(),
         unit: line.unit.trim(),
         quantity,
-        unitPrice: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0
+        unitPrice: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0,
+        quotaQuantity: Number.isFinite(quotaQuantity) && quotaQuantity > 0 ? quotaQuantity : undefined,
+        suggestedQuantity:
+          Number.isFinite(suggestedQuantity) && suggestedQuantity > 0 ? suggestedQuantity : undefined,
+        lineNote: line.lineNote?.trim() || undefined
       };
     })
     .filter(line => line.code || line.quantity);
@@ -4751,7 +4875,7 @@ function parseWarehouseSlipPayloadItems(
     if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
       return { error: `Số lượng của ${item.code} phải lớn hơn 0.` };
     }
-    if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
+    if (!allowMissingUnitPrice && (!Number.isFinite(item.unitPrice) || item.unitPrice < 0)) {
       return { error: `Giá của ${item.code} không hợp lệ.` };
     }
   }
@@ -4769,6 +4893,10 @@ function buildWarehouseSlipPrintData(
     reason: string;
     note: string;
     createdBy: string;
+    productionOrderRef?: string;
+    machine?: string;
+    shift?: string;
+    recipient?: string;
   }
 ): WarehouseSlipPrintData {
   const printLines = items.map(item => ({
@@ -4777,7 +4905,10 @@ function buildWarehouseSlipPrintData(
     unit: item.unit,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
-    lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100
+    lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100,
+    quotaQuantity: item.quotaQuantity ?? null,
+    suggestedQuantity: item.suggestedQuantity ?? null,
+    lineNote: item.lineNote
   }));
 
   return {
@@ -4788,6 +4919,10 @@ function buildWarehouseSlipPrintData(
     reason: options.reason,
     note: options.note,
     createdBy: options.createdBy,
+    productionOrderRef: options.productionOrderRef,
+    machine: options.machine,
+    shift: options.shift,
+    recipient: options.recipient,
     totalAmount: printLines.reduce((sum, line) => sum + line.lineAmount, 0),
     lines: printLines
   };
@@ -4809,7 +4944,10 @@ function createWarehouseLineDraft(): WarehouseSlipLineDraft {
 }
 
 function createWarehouseLineDraftFromPrefill(
-  line: Pick<WarehouseSlipLineDraft, 'code' | 'name' | 'unit' | 'quantity' | 'unitPrice'>
+  line: Pick<
+    WarehouseSlipLineDraft,
+    'code' | 'name' | 'unit' | 'quantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
+  >
 ): WarehouseSlipLineDraft {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -4817,7 +4955,10 @@ function createWarehouseLineDraftFromPrefill(
     name: line.name || '',
     unit: line.unit || '',
     quantity: line.quantity || '',
-    unitPrice: line.unitPrice || ''
+    unitPrice: line.unitPrice || '',
+    quotaQuantity: line.quotaQuantity || '',
+    suggestedQuantity: line.suggestedQuantity || '',
+    lineNote: line.lineNote || ''
   };
 }
 
@@ -4887,6 +5028,10 @@ function WarehouseSlipPanel({
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [createdBy, setCreatedBy] = useState('');
+  const [productionOrderRef, setProductionOrderRef] = useState('');
+  const [machine, setMachine] = useState('');
+  const [shift, setShift] = useState('');
+  const [recipient, setRecipient] = useState('');
   const [lines, setLines] = useState<WarehouseSlipLineDraft[]>(() => [createWarehouseLineDraft()]);
   const [itemOptions, setItemOptions] = useState<MaterialOption[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
@@ -4907,9 +5052,14 @@ function WarehouseSlipPanel({
 
       setWarehouseKind(draft.warehouseKind === 'san_pham' ? 'san_pham' : 'nvl');
       setSlipType(draft.slipType === 'nhap' ? 'nhap' : 'xuat');
+      if (draft.slipDate) setSlipDate(draft.slipDate);
       setReason(draft.reason || '');
       setNote(draft.note || '');
       setCreatedBy(draft.createdBy || '');
+      setProductionOrderRef(draft.productionOrderRef || '');
+      setMachine(draft.machine || '');
+      setShift(draft.shift || '');
+      setRecipient(draft.recipient || '');
       setLines(draft.lines.map(createWarehouseLineDraftFromPrefill));
       setActionMessage('Đã điền sẵn phiếu xuất kho từ hạch toán định mức NVL.');
       setFormError('');
@@ -4985,7 +5135,9 @@ function WarehouseSlipPanel({
   );
 
   const handlePrintPreview = () => {
-    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind);
+    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind, {
+      allowMissingUnitPrice: warehouseKind === 'nvl' && slipType === 'xuat'
+    });
     if ('error' in parsed) {
       setFormError(parsed.error);
       setActionMessage('');
@@ -5002,7 +5154,11 @@ function WarehouseSlipPanel({
         slipDate,
         reason: reason.trim(),
         note: note.trim(),
-        createdBy: createdBy.trim()
+        createdBy: createdBy.trim(),
+        productionOrderRef: productionOrderRef.trim(),
+        machine: machine.trim(),
+        shift: shift.trim(),
+        recipient: recipient.trim()
       })
     );
     setPrintAutoTrigger(true);
@@ -5010,7 +5166,9 @@ function WarehouseSlipPanel({
   };
 
   const handleSave = async () => {
-    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind);
+    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind, {
+      allowMissingUnitPrice: warehouseKind === 'nvl' && slipType === 'xuat'
+    });
     if ('error' in parsed) {
       setFormError(parsed.error);
       return;
@@ -5049,7 +5207,11 @@ function WarehouseSlipPanel({
           slipDate,
           reason: reason.trim(),
           note: note.trim(),
-          createdBy: createdBy.trim()
+          createdBy: createdBy.trim(),
+          productionOrderRef: productionOrderRef.trim(),
+          machine: machine.trim(),
+          shift: shift.trim(),
+          recipient: recipient.trim()
         })
       );
       setPrintAutoTrigger(true);
@@ -6562,7 +6724,7 @@ function MachineNvlReportPanel({
   const [date, setDate] = useState(machineNvlToday());
   const [shift, setShift] = useState('');
   const [machineRef, setMachineRef] = useState('');
-  const [staff, setStaff] = useState('');
+  const [selectedStaffNames, setSelectedStaffNames] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<MachineNvlReportLine[]>([emptyMachineNvlLine()]);
   const [isLoading, setIsLoading] = useState(true);
@@ -6632,6 +6794,7 @@ function MachineNvlReportPanel({
     setActiveKind(kind);
     setEditingReportId(null);
     setLines([emptyMachineNvlLine()]);
+    setSelectedStaffNames([]);
     setNote('');
     setMessage('');
   };
@@ -6672,24 +6835,30 @@ function MachineNvlReportPanel({
 
   useEffect(() => {
     if (!date || !shift || !machineRef.trim()) {
-      if (staff) setStaff('');
+      if (selectedStaffNames.length > 0) setSelectedStaffNames([]);
       return;
     }
 
-    if (staffOptions.length === 1 && staff !== staffOptions[0]) {
-      setStaff(staffOptions[0]);
+    if (staffOptions.length === 1) {
+      setSelectedStaffNames(prev =>
+        prev.length === 1 && prev[0] === staffOptions[0] ? prev : [staffOptions[0]]
+      );
       return;
     }
 
-    if (staffOptions.length === 0 && staff) {
-      setStaff('');
-      return;
-    }
+    setSelectedStaffNames(prev => {
+      const next = prev.filter(name => staffOptions.includes(name));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [date, machineRef, shift, staffOptions]);
 
-    if (staff && staffOptions.length > 0 && !staffOptions.includes(staff)) {
-      setStaff('');
-    }
-  }, [date, machineRef, shift, staff, staffOptions]);
+  const toggleStaffName = (name: string) => {
+    setSelectedStaffNames(prev =>
+      prev.includes(name) ? prev.filter(item => item !== name) : [...prev, name]
+    );
+  };
+
+  const machineNvlStaffText = selectedStaffNames.join(', ');
   const previousCuoiCaReport = useMemo(
     () =>
       isDauCaTab
@@ -6821,7 +6990,7 @@ function MachineNvlReportPanel({
             gio: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
             ma_may: selectedMachine?.code || machineRef.trim(),
             ten_may: selectedMachine?.name || machineRef.trim(),
-            nhan_su: staff.trim(),
+            nhan_su: machineNvlStaffText,
             ghi_chu: note.trim(),
             loai_bao_cao: activeKind,
             chi_tiet: materialLines
@@ -6868,7 +7037,7 @@ function MachineNvlReportPanel({
     setDate(report.ngay || machineNvlToday());
     setShift(report.ca);
     setMachineRef(found ? machineSelectValue(found) : report.tenMay || report.maMay);
-    setStaff(report.nhanSu);
+    setSelectedStaffNames(splitProductionOrderStaffNames(report.nhanSu));
     setNote(report.note);
     setLines(
       report.lines.length > 0 ? report.lines.map(savedMachineNvlLineToFormLine) : [emptyMachineNvlLine()]
@@ -6879,6 +7048,7 @@ function MachineNvlReportPanel({
   const cancelEditReport = () => {
     setEditingReportId(null);
     setLines([emptyMachineNvlLine()]);
+    setSelectedStaffNames([]);
     setNote('');
     setMessage('');
   };
@@ -6895,7 +7065,7 @@ function MachineNvlReportPanel({
       shift,
       machineCode: selectedMachine?.code || machineRef.trim(),
       machineName: selectedMachine?.name || machineRef.trim(),
-      staff: staff.trim(),
+      staff: machineNvlStaffText,
       note: note.trim(),
       lines
     });
@@ -7002,28 +7172,40 @@ function MachineNvlReportPanel({
                   })}
                 </div>
               </label>
-              <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
-                Nhân sự
-                <select
-                  value={staff}
-                  onChange={event => setStaff(event.target.value)}
-                  className={`${orderFieldClass} mt-1`}
-                  disabled={!date || !shift || !machineRef.trim()}
-                >
-                  <option value="">
-                    {date && shift && machineRef.trim()
-                      ? staffOptions.length > 0
-                        ? 'Chọn nhân sự'
-                        : 'Không có nhân sự theo máy/ca/ngày'
-                      : 'Chọn ngày, ca và máy trước'}
-                  </option>
-                  {staffOptions.map(option => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
+                Nhân sự (chọn nhiều)
+                <div className="mt-1 max-h-40 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+                  {!date || !shift || !machineRef.trim() ? (
+                    <p className="px-2 py-3 text-xs font-semibold text-zinc-400">Chọn ngày, ca và máy trước.</p>
+                  ) : staffOptions.length === 0 ? (
+                    <p className="px-2 py-3 text-xs font-semibold text-zinc-400">
+                      Không có nhân sự theo máy/ca/ngày.
+                    </p>
+                  ) : (
+                    staffOptions.map(option => {
+                      const checked = selectedStaffNames.includes(option);
+                      return (
+                        <label
+                          key={option}
+                          className={`mb-1 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition last:mb-0 ${
+                            checked
+                              ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
+                              : 'border-zinc-200 bg-white text-zinc-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleStaffName(option)}
+                            className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                          />
+                          <span className="font-black">{option}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
               <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
                 Ghi chú
                 <input value={note} onChange={event => setNote(event.target.value)} placeholder="Ghi chú chung" className={`${orderFieldClass} mt-1`} />
@@ -7522,6 +7704,21 @@ function getProductionOrderProductLines(row: Pick<ProductionOrderRow, 'products'
   );
 }
 
+function getProductionPlanProductCodes(
+  line: Pick<ProductionPlanLine, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>
+) {
+  return getProductionOrderProductLines(line)
+    .map(product => product.productCode.trim())
+    .filter(code => code && code !== '-');
+}
+
+function formatProductionPlanProductCodes(
+  line: Pick<ProductionPlanLine, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>
+) {
+  const codes = getProductionPlanProductCodes(line);
+  return codes.length > 0 ? codes.join(', ') : '-';
+}
+
 function getProductionPlanLineMaterialKeys(line: ProductionPlanLine): string[] {
   if (line.products.length > 1) {
     return line.products.map(product => `${line.id}__${product.productCode}`);
@@ -7721,24 +7918,12 @@ function ProductionPlanPrintSheet({
                   <td>{row.line.shift && row.line.shift !== '-' ? row.line.shift : '-'}</td>
                   <td>{row.line.staff && row.line.staff !== '-' ? row.line.staff : '-'}</td>
                   <td>
-                    <div className="production-plan-print-order-code">{row.line.code || '-'}</div>
-                    {(row.line.products.length > 0
-                      ? row.line.products
-                      : [{ productCode: row.line.productCode, productName: row.line.productName, quantity: row.line.quantity, unit: row.line.unit }]
-                    ).map(product => (
-                      <div key={`${row.line.id}-${product.productCode}`} className="production-plan-print-product-block">
-                        <div className="production-plan-print-product-name">
-                          {product.productName || product.productCode || '-'}
-                        </div>
-                        <div className="production-plan-print-order-meta">
-                          {product.quantity || '-'}
-                          {product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}
-                        </div>
+                    {getProductionPlanProductCodes(row.line).map(code => (
+                      <div key={`${row.line.id}-${code}`} className="production-plan-print-product-name font-mono">
+                        {code}
                       </div>
                     ))}
-                    {row.line.orderRef ? (
-                      <div className="production-plan-print-order-meta">{row.line.orderRef}</div>
-                    ) : null}
+                    {getProductionPlanProductCodes(row.line).length === 0 ? '-' : null}
                   </td>
                   <td>
                     {materials.length === 0 ? (
@@ -7840,6 +8025,8 @@ type ProductionPlanWarehouseExportLine = {
   code: string;
   name: string;
   unit: string;
+  quotaQuantity: number;
+  suggestedQuantity: number;
   actualQuantity: number;
 };
 
@@ -8036,8 +8223,8 @@ function ProductionPlanMaterialAccountingModal({
     () => buildInventoryTotalKgMap(inventoryMaterials),
     [inventoryMaterials]
   );
-  const [actualQuantities, setActualQuantities] = useState<Record<string, string>>({});
   const [packageQuantities, setPackageQuantities] = useState<Record<string, string>>({});
+  const [expectedExportWeights, setExpectedExportWeights] = useState<Record<string, string>>({});
   const totalOrderCount = lines.length;
   const totalMaterialCount = useMemo(
     () =>
@@ -8051,12 +8238,29 @@ function ProductionPlanMaterialAccountingModal({
 
   const buildActualExportLinesForShift = (shift: string) =>
     (accountingShiftGroups.find(group => group.shift === shift)?.lines ?? [])
-      .map(material => ({
-        code: material.code,
-        name: material.name,
-        unit: material.unit && material.unit !== '-' ? material.unit : '',
-        actualQuantity: parsePercentInput(actualQuantities[productionPlanAccountingKey(shift, material)] ?? '')
-      }))
+      .map(material => {
+        const key = productionPlanAccountingKey(shift, material);
+        const packageQty = parsePercentInput(packageQuantities[key] ?? '');
+        const totalKg = lookupInventoryTotalKg(material.code, inventoryTotalKgByCode);
+        const manualExpected = expectedExportWeights[key];
+        const actualQuantity =
+          manualExpected !== undefined && manualExpected.trim() !== ''
+            ? parsePercentInput(manualExpected)
+            : parsePercentInput(calcProductionPlanExpectedWeight(packageQty, totalKg));
+        const autoSuggested = parsePercentInput(calcProductionPlanExpectedWeight(packageQty, totalKg));
+        const suggestedQuantity =
+          manualExpected !== undefined && manualExpected.trim() !== ''
+            ? parsePercentInput(manualExpected)
+            : autoSuggested;
+        return {
+          code: material.code,
+          name: material.name,
+          unit: material.unit && material.unit !== '-' ? material.unit : '',
+          quotaQuantity: material.totalQuantity,
+          suggestedQuantity: Number.isFinite(suggestedQuantity) ? suggestedQuantity : 0,
+          actualQuantity
+        };
+      })
       .filter(line => Number.isFinite(line.actualQuantity) && line.actualQuantity > 0);
 
   const allExportLines = useMemo(() => {
@@ -8067,6 +8271,8 @@ function ProductionPlanMaterialAccountingModal({
         const key = `${normalizeProductCodeKey(line.code)}__${line.unit}`;
         const existing = merged.get(key);
         if (existing) {
+          existing.quotaQuantity = roundNplNumber(existing.quotaQuantity + line.quotaQuantity);
+          existing.suggestedQuantity = roundNplNumber(existing.suggestedQuantity + line.suggestedQuantity);
           existing.actualQuantity = roundNplNumber(existing.actualQuantity + line.actualQuantity);
         } else {
           merged.set(key, { ...line });
@@ -8075,26 +8281,25 @@ function ProductionPlanMaterialAccountingModal({
     });
 
     return [...merged.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
-  }, [accountingShiftGroups, actualQuantities]);
+  }, [accountingShiftGroups, packageQuantities, expectedExportWeights, inventoryTotalKgByCode]);
 
   useEffect(() => {
     if (!open || accountingShiftGroups.length === 0) return;
 
     const suggestedPackages: Record<string, string> = {};
-    const suggestedWeights: Record<string, string> = {};
+    const suggestedExpected: Record<string, string> = {};
 
     accountingShiftGroups.forEach(group => {
       group.lines.forEach(material => {
         const key = productionPlanAccountingKey(group.shift, material);
         const totalKg = lookupInventoryTotalKg(material.code, inventoryTotalKgByCode);
         const suggestedPackage = suggestProductionPlanPackageQuantity(material.totalQuantity, totalKg);
-        const suggestedWeight = calcProductionPlanExpectedWeight(
-          parsePercentInput(suggestedPackage),
-          totalKg
-        );
 
-        if (suggestedPackage) suggestedPackages[key] = suggestedPackage;
-        if (suggestedWeight) suggestedWeights[key] = suggestedWeight;
+        if (suggestedPackage) {
+          suggestedPackages[key] = suggestedPackage;
+          const expected = calcProductionPlanExpectedWeight(parsePercentInput(suggestedPackage), totalKg);
+          if (expected) suggestedExpected[key] = expected;
+        }
       });
     });
 
@@ -8110,10 +8315,10 @@ function ProductionPlanMaterialAccountingModal({
       return changed ? next : prev;
     });
 
-    setActualQuantities(prev => {
+    setExpectedExportWeights(prev => {
       const next = { ...prev };
       let changed = false;
-      Object.entries(suggestedWeights).forEach(([key, value]) => {
+      Object.entries(suggestedExpected).forEach(([key, value]) => {
         if (next[key] === undefined) {
           next[key] = value;
           changed = true;
@@ -8123,34 +8328,35 @@ function ProductionPlanMaterialAccountingModal({
     });
   }, [open, accountingShiftGroups, inventoryTotalKgByCode]);
 
-  const handleActualQuantityChange = (
-    shift: string,
-    material: ProductionPlanMaterialAccountingLine,
-    value: string
-  ) => {
-    setActualQuantities(prev => ({
-      ...prev,
-      [productionPlanAccountingKey(shift, material)]: value
-    }));
-  };
-
   const handlePackageQuantityChange = (
     shift: string,
     material: ProductionPlanMaterialAccountingLine,
     value: string
   ) => {
     const key = productionPlanAccountingKey(shift, material);
-    const packageQuantity = parsePercentInput(value);
     const totalKg = lookupInventoryTotalKg(material.code, inventoryTotalKgByCode);
+    const expected = calcProductionPlanExpectedWeight(parsePercentInput(value), totalKg);
 
     setPackageQuantities(prev => ({
       ...prev,
       [key]: value
     }));
-
-    setActualQuantities(prev => ({
+    setExpectedExportWeights(prev => ({
       ...prev,
-      [key]: calcProductionPlanExpectedWeight(packageQuantity, totalKg)
+      [key]: expected
+    }));
+  };
+
+  const handleExpectedExportWeightChange = (
+    shift: string,
+    material: ProductionPlanMaterialAccountingLine,
+    value: string
+  ) => {
+    const key = productionPlanAccountingKey(shift, material);
+
+    setExpectedExportWeights(prev => ({
+      ...prev,
+      [key]: value
     }));
   };
 
@@ -8182,7 +8388,7 @@ function ProductionPlanMaterialAccountingModal({
             </p>
           )}
 
-          <div className="mb-3 grid gap-2 sm:grid-cols-4">
+          <div className="mb-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
               <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lệnh SX</p>
               <p className="mt-1 text-xl font-black text-zinc-950">{totalOrderCount}</p>
@@ -8194,10 +8400,6 @@ function ProductionPlanMaterialAccountingModal({
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
               <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Mã NVL</p>
               <p className="mt-1 text-xl font-black text-emerald-800">{totalMaterialCount}</p>
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-white px-3 py-2">
-              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tổng kg / kiện</p>
-              <p className="mt-1 text-sm font-extrabold text-zinc-800">Tra từ Kho NVL theo mã NVL</p>
             </div>
           </div>
 
@@ -8211,7 +8413,7 @@ function ProductionPlanMaterialAccountingModal({
               Chưa có NVL để hạch toán. Kiểm tra thành phần NPL trong danh mục sản phẩm.
             </p>
           ) : (
-            <div className="space-y-5">
+            <div className="space-y-3">
               {accountingShiftGroups.map(group => {
                 const shiftExportLines = buildActualExportLinesForShift(group.shift);
 
@@ -8243,19 +8445,25 @@ function ProductionPlanMaterialAccountingModal({
                       </p>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="min-w-[1680px] w-full text-left text-sm">
+                        <table className="w-full table-fixed text-left text-xs">
+                          <colgroup>
+                            <col className="w-[5%]" />
+                            <col className="w-[10%]" />
+                            <col className="w-[32%]" />
+                            <col className="w-[8%]" />
+                            <col className="w-[15%]" />
+                            <col className="w-[15%]" />
+                            <col className="w-[15%]" />
+                          </colgroup>
                           <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-700">
                             <tr>
-                              <th className="px-3 py-2 font-black">STT</th>
-                              <th className="min-w-[148px] px-3 py-2 font-black">Mã NVL</th>
-                              <th className="px-3 py-2 font-black">Tên NVL</th>
-                              <th className="px-3 py-2 font-black">ĐVT</th>
-                              <th className="px-3 py-2 text-right font-black">Tổng định mức</th>
-                              <th className="px-3 py-2 text-right font-black">Tổng kg</th>
-                              <th className="w-[88px] max-w-[88px] px-2 py-2 font-black leading-tight">Số lượng xuất kiện</th>
-                              <th className="w-[88px] max-w-[88px] px-2 py-2 text-right font-black leading-tight">Khối lượng xuất dự kiến</th>
-                              <th className="w-[88px] max-w-[88px] px-2 py-2 font-black leading-tight">Số lượng xuất thực tế</th>
-                              <th className="max-w-[220px] px-3 py-2 font-black">Chi tiết lệnh SX</th>
+                              <th className="px-2 py-1.5 font-black">STT</th>
+                              <th className="px-2 py-1.5 font-black">Mã NVL</th>
+                              <th className="px-2 py-1.5 font-black">Tên NVL</th>
+                              <th className="px-2 py-1.5 font-black">ĐVT</th>
+                              <th className="px-2 py-1.5 text-right font-black">Tổng định mức</th>
+                              <th className="px-2 py-1.5 text-center font-black leading-tight">Số lượng xuất kiện</th>
+                              <th className="px-2 py-1.5 text-right font-black leading-tight">Khối lượng xuất dự kiến</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-100">
@@ -8263,23 +8471,24 @@ function ProductionPlanMaterialAccountingModal({
                               const totalKg = lookupInventoryTotalKg(material.code, inventoryTotalKgByCode);
                               const accountingKey = productionPlanAccountingKey(group.shift, material);
                               const packageQty = parsePercentInput(packageQuantities[accountingKey] ?? '');
-                              const expectedExportWeight = calcProductionPlanExpectedWeight(packageQty, totalKg);
+                              const autoExpectedExportWeight = calcProductionPlanExpectedWeight(packageQty, totalKg);
+                              const expectedExportDisplay =
+                                expectedExportWeights[accountingKey] ?? autoExpectedExportWeight;
 
                               return (
-                              <tr key={`${group.shift}-${material.code}-${material.unit}`}>
-                                <td className="px-3 py-2 font-black text-emerald-700">{index + 1}</td>
-                                <td className="min-w-[148px] whitespace-nowrap px-3 py-2 font-mono font-bold text-zinc-900">
+                              <tr key={`${group.shift}-${material.code}-${material.unit}`} className="leading-tight">
+                                <td className="px-2 py-1.5 text-center font-black text-emerald-700">{index + 1}</td>
+                                <td className="truncate px-2 py-1.5 font-mono text-[11px] font-bold text-zinc-900" title={material.code}>
                                   {material.code}
                                 </td>
-                                <td className="px-3 py-2 font-semibold text-zinc-800">{material.name}</td>
-                                <td className="px-3 py-2 text-zinc-700">{material.unit}</td>
-                                <td className="px-3 py-2 text-right font-black text-[#ef1b2d]">
+                                <td className="truncate px-2 py-1.5 font-semibold text-zinc-800" title={material.name}>
+                                  {material.name}
+                                </td>
+                                <td className="px-2 py-1.5 text-center text-zinc-700">{material.unit}</td>
+                                <td className="px-2 py-1.5 text-right font-black text-[#ef1b2d]">
                                   {formatProductionOrderPrintQuantity(material.totalQuantity)}
                                 </td>
-                                <td className="px-3 py-2 text-right font-mono font-bold text-zinc-800">
-                                  {totalKg !== null ? formatNumber(totalKg, 2) : '-'}
-                                </td>
-                                <td className="w-[88px] max-w-[88px] px-2 py-2">
+                                <td className="px-2 py-1.5">
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -8292,54 +8501,26 @@ function ProductionPlanMaterialAccountingModal({
                                         ? `Tổng định mức ÷ ${formatNumber(totalKg, 2)} kg`
                                         : 'Chưa tìm thấy Tổng kg trong Kho NVL'
                                     }
-                                    className="h-9 w-[84px] rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-xs font-black text-emerald-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                                    className="h-7 w-full min-w-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-center text-[11px] font-black text-emerald-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                                     placeholder={totalKg ? 'Kiện' : '-'}
                                   />
                                 </td>
-                                <td className="w-[88px] max-w-[88px] px-2 py-2 text-right">
-                                  <p
-                                    className="font-mono text-sm font-black text-sky-800"
-                                    title={
-                                      totalKg && expectedExportWeight
-                                        ? `Số kiện × ${formatNumber(totalKg, 2)} kg`
-                                        : undefined
-                                    }
-                                  >
-                                    {expectedExportWeight || '-'}
-                                  </p>
-                                </td>
-                                <td className="w-[88px] max-w-[88px] px-2 py-2">
+                                <td className="px-2 py-1.5">
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    value={actualQuantities[accountingKey] ?? ''}
+                                    value={expectedExportDisplay}
                                     onChange={event =>
-                                      handleActualQuantityChange(group.shift, material, event.target.value)
+                                      handleExpectedExportWeightChange(group.shift, material, event.target.value)
                                     }
-                                    className="h-9 w-[84px] rounded-lg border border-amber-200 bg-amber-50 px-2 text-xs font-black text-amber-900 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-                                    placeholder="Thực tế"
+                                    title={
+                                      totalKg && autoExpectedExportWeight
+                                        ? `Tự tính: Số kiện × ${formatNumber(totalKg, 2)} kg`
+                                        : 'Có thể nhập tay khối lượng xuất dự kiến'
+                                    }
+                                    className="h-7 w-full min-w-0 rounded-md border border-sky-200 bg-sky-50 px-2 text-right text-[11px] font-black text-sky-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                    placeholder="kg"
                                   />
-                                </td>
-                                <td className="max-w-[220px] px-3 py-2 align-top">
-                                  <div className="space-y-1.5">
-                                    {material.details.map(detail => (
-                                      <div
-                                        key={`${group.shift}-${material.code}-${detail.lineId}-${detail.normLabel}`}
-                                        className="rounded-lg bg-zinc-50 px-2 py-1.5"
-                                      >
-                                        <p className="font-bold leading-snug text-zinc-900">
-                                          {detail.orderCode} · {detail.productName}
-                                        </p>
-                                        <p className="text-xs font-semibold leading-snug text-zinc-500">
-                                          SL lệnh: {detail.orderQuantity}
-                                        </p>
-                                        <p className="text-xs font-semibold leading-snug text-zinc-500">
-                                          Định mức: {detail.normLabel} · NVL:{' '}
-                                          {formatProductionOrderPrintQuantity(detail.proposedQuantity)} {material.unit}
-                                        </p>
-                                      </div>
-                                    ))}
-                                  </div>
                                 </td>
                               </tr>
                             );
@@ -8845,13 +9026,8 @@ function normalizeProductionPlanHistoryLines(data: unknown): ProductionPlanHisto
 
 function formatProductionPlanHistoryProducts(products: OrderProductLine[]) {
   if (products.length === 0) return '-';
-  return products
-    .map(product => {
-      const qty = product.quantity && product.quantity !== '-' ? product.quantity : '';
-      const unit = product.unit && product.unit !== '-' ? ` ${product.unit}` : '';
-      return `${product.productName || product.productCode || '-'}${qty ? ` (${qty}${unit})` : ''}`;
-    })
-    .join(' · ');
+  const codes = products.map(product => product.productCode.trim()).filter(code => code && code !== '-');
+  return codes.length > 0 ? codes.join(', ') : '-';
 }
 
 function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
@@ -9326,7 +9502,7 @@ function ProductionPlanModal({
 
   const handleExportWarehouseSlip = (materialLines: ProductionPlanWarehouseExportLine[], shift: string) => {
     if (materialLines.length === 0) {
-      setMaterialAccountingError('Vui lòng nhập số lượng xuất thực tế lớn hơn 0 cho ít nhất một NVL trong ca này.');
+      setMaterialAccountingError('Vui lòng nhập khối lượng xuất dự kiến lớn hơn 0 cho ít nhất một NVL trong ca này.');
       return;
     }
 
@@ -9337,18 +9513,35 @@ function ProductionPlanModal({
             line => normalizeProductionPlanShift(line.shift) === normalizeProductionPlanShift(shift)
           ).length;
 
+    const shiftLines =
+      normalizeProductionPlanShift(shift) === 'Tất cả các ca'
+        ? displayLines
+        : displayLines.filter(
+            line => normalizeProductionPlanShift(line.shift) === normalizeProductionPlanShift(shift)
+          );
+
     const draft: WarehouseSlipPrefillDraft = {
       slipType: 'xuat',
       warehouseKind: 'nvl',
+      slipDate: planDate,
       reason: `Xuất NVL theo kế hoạch sản xuất - ${shift}`,
       note: `Tạo từ hạch toán định mức NVL (${shift}, ${shiftOrderCount} lệnh SX).`,
       createdBy: '',
+      productionOrderRef: [...new Set(shiftLines.map(line => line.code).filter(code => code && code !== '-'))].join(
+        ', '
+      ),
+      machine: [...new Set(shiftLines.map(line => line.position).filter(value => value && value !== '-'))].join(', '),
+      shift: normalizeProductionPlanShift(shift),
+      recipient: [...new Set(shiftLines.map(line => line.staff).filter(value => value && value !== '-'))].join(', '),
       lines: materialLines.map(line => ({
         code: line.code,
         name: line.name,
         unit: line.unit,
         quantity: String(roundNplNumber(line.actualQuantity)),
-        unitPrice: ''
+        quotaQuantity: String(roundNplNumber(line.quotaQuantity)),
+        suggestedQuantity: String(roundNplNumber(line.suggestedQuantity)),
+        unitPrice: '',
+        lineNote: ''
       }))
     };
 
@@ -9449,20 +9642,8 @@ function ProductionPlanModal({
                         <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
                         <td className="px-2 py-2 text-zinc-600">{line.staff && line.staff !== '-' ? line.staff : '-'}</td>
-                        <td className="px-2 py-2 text-zinc-800">
-                          <div className="font-bold text-zinc-900">{line.code || '-'}</div>
-                          {(line.products.length > 0 ? line.products : [{ productCode: line.productCode, productName: line.productName, quantity: line.quantity, unit: line.unit }]).map(product => (
-                            <div key={`${line.id}-${product.productCode}`} className="mt-1">
-                              <div>{product.productName || product.productCode || '-'}</div>
-                              <div className="font-mono font-bold text-zinc-700">
-                                {product.quantity}
-                                {product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}
-                              </div>
-                            </div>
-                          ))}
-                          {line.orderRef ? (
-                            <div className="mt-1 text-xs font-semibold text-zinc-500">{line.orderRef}</div>
-                          ) : null}
+                        <td className="px-2 py-2 font-mono text-xs font-bold text-zinc-900">
+                          {formatProductionPlanProductCodes(line)}
                         </td>
                         <td className="px-2 py-2 align-top">
                           <textarea
@@ -10074,6 +10255,25 @@ function toDatetimeLocalInputValue(value: string) {
   return toDatetimeLocalValue(parsed);
 }
 
+function todayIsoDate(date = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function extractProductionOrderDate(datetimeLocal: string) {
+  if (!datetimeLocal) return todayIsoDate();
+  const datePart = datetimeLocal.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : todayIsoDate();
+}
+
+function mergeProductionOrderDateTime(date: string, datetimeLocal: string) {
+  const timePart =
+    datetimeLocal && datetimeLocal.includes('T')
+      ? datetimeLocal.split('T')[1]?.slice(0, 5) || '08:00'
+      : '08:00';
+  return date ? `${date}T${timePart}` : datetimeLocal;
+}
+
 function settingMatchesShift(setting: ProductionOrderLookupSetting, shift: string) {
   if (!shift) return false;
   const needle = shift.toLowerCase();
@@ -10249,6 +10449,7 @@ type ProductionOrderFormState = {
   status: string;
   shift: string;
   selectedStaffIds: string[];
+  startDate: string;
   startDateTime: string;
   endDateTime: string;
   machine: string;
@@ -10267,6 +10468,7 @@ function newProductionOrderEntryLine(): ProductionOrderEntryLine {
 }
 
 function emptyProductionOrderForm(): ProductionOrderFormState {
+  const startDateTime = toDatetimeLocalValue();
   return {
     code: '',
     name: '',
@@ -10274,7 +10476,8 @@ function emptyProductionOrderForm(): ProductionOrderFormState {
     status: 'Chờ sx',
     shift: '',
     selectedStaffIds: [],
-    startDateTime: toDatetimeLocalValue(),
+    startDate: extractProductionOrderDate(startDateTime),
+    startDateTime,
     endDateTime: '',
     machine: '',
     note: ''
@@ -10324,7 +10527,7 @@ function productionOrderFormToCreatePayload(
     ma_don_hang: orderRefs.join(', ') || primaryLine.orderRef.trim(),
     ca: form.shift.trim(),
     nhan_su: staff,
-    ngay_gio_bat_dau: form.startDateTime || null,
+    ngay_gio_bat_dau: mergeProductionOrderDateTime(form.startDate, form.startDateTime) || null,
     ngay_gio_ket_thuc: form.endDateTime.trim() || null,
     may: form.machine.trim(),
     ghi_chu: form.note.trim()
@@ -10705,6 +10908,10 @@ function AddProductionOrderModal({
       setFormError('Vui lòng chọn máy.');
       return;
     }
+    if (!form.startDate.trim()) {
+      setFormError('Vui lòng chọn ngày.');
+      return;
+    }
 
     setIsSaving(true);
     setFormError('');
@@ -10772,12 +10979,19 @@ function AddProductionOrderModal({
             />
           </label>
           <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên lệnh</span>
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
             <input
-              value={form.name}
-              onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+              type="date"
+              value={form.startDate}
+              onChange={e => {
+                const startDate = e.target.value;
+                setForm(prev => ({
+                  ...prev,
+                  startDate,
+                  startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
+                }));
+              }}
               className={orderFieldClass}
-              placeholder="Tự điền theo tên hàng"
             />
           </label>
 
@@ -10986,11 +11200,17 @@ function AddProductionOrderModal({
           </div>
 
           <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ bắt đầu</span>
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
             <input
-              type="datetime-local"
-              value={form.startDateTime}
-              onChange={e => setForm(prev => ({ ...prev, startDateTime: e.target.value }))}
+              type="time"
+              value={form.startDateTime.includes('T') ? form.startDateTime.split('T')[1]?.slice(0, 5) || '' : ''}
+              onChange={e => {
+                const time = e.target.value;
+                setForm(prev => ({
+                  ...prev,
+                  startDateTime: mergeProductionOrderDateTime(prev.startDate, `${prev.startDate}T${time}`)
+                }));
+              }}
               className={orderFieldClass}
             />
           </label>
@@ -11038,8 +11258,8 @@ function AddProductionOrderModal({
 
       {showAutofillOrders && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[86vh] w-full max-w-3xl overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div className="flex h-[94vh] max-h-[96vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
@@ -11055,7 +11275,7 @@ function AddProductionOrderModal({
               </button>
             </div>
 
-            <div className="border-b border-zinc-100 p-4">
+            <div className="shrink-0 border-b border-zinc-100 p-4">
               <label className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
                 <Search className="h-4 w-4 text-zinc-400" />
                 <input
@@ -11067,139 +11287,141 @@ function AddProductionOrderModal({
               </label>
             </div>
 
-            <div className="max-h-[34vh] overflow-y-auto p-4">
-              {autofillOrderOptions.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
-                  Không có đơn hàng phù hợp.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {autofillOrderOptions.map(order => {
-                    const checked = selectedAutofillOrderCodes.includes(order.orderCode);
-                    const productLines = getOrderProductLines(order);
-                    return (
-                      <label
-                        key={order.id}
-                        className={`block cursor-pointer rounded-xl border p-3 transition ${
-                          checked ? 'border-[#ef1b2d]/35 bg-red-50' : 'border-zinc-200 bg-white hover:bg-zinc-50'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleAutofillOrderCode(order.orderCode)}
-                            className="mt-1 h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-black text-zinc-950">{order.orderCode || '-'}</span>
-                              <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-black text-zinc-600">
-                                {productLines.length} sản phẩm
-                              </span>
-                              <span className="text-xs font-semibold text-zinc-500">{order.customer}</span>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="p-4">
+                {autofillOrderOptions.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
+                    Không có đơn hàng phù hợp.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {autofillOrderOptions.map(order => {
+                      const checked = selectedAutofillOrderCodes.includes(order.orderCode);
+                      const productLines = getOrderProductLines(order);
+                      return (
+                        <label
+                          key={order.id}
+                          className={`block cursor-pointer rounded-xl border p-3 transition ${
+                            checked ? 'border-[#ef1b2d]/35 bg-red-50' : 'border-zinc-200 bg-white hover:bg-zinc-50'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAutofillOrderCode(order.orderCode)}
+                              className="mt-1 h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-black text-zinc-950">{order.orderCode || '-'}</span>
+                                <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-black text-zinc-600">
+                                  {productLines.length} sản phẩm
+                                </span>
+                                <span className="text-xs font-semibold text-zinc-500">{order.customer}</span>
+                              </div>
+                              <p className="mt-1 text-xs font-semibold leading-5 text-zinc-600">
+                                {formatOrderProductsSummary(productLines)}
+                              </p>
                             </div>
-                            <p className="mt-1 text-xs font-semibold leading-5 text-zinc-600">
-                              {formatOrderProductsSummary(productLines)}
-                            </p>
                           </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {selectedAutofillOrderCodes.length > 0 && (
+                <div className="border-t border-zinc-100 bg-zinc-50/80 p-4 pb-6">
+                  <p className="mb-2 text-xs font-black uppercase tracking-wider text-zinc-500">Chọn sản phẩm trong đơn</p>
+                  <div className="flex flex-col gap-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="min-w-0 space-y-1.5">
+                        <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lọc theo đơn hàng</span>
+                        <SearchableSelect
+                          value={autofillProductOrderFilter}
+                          onChange={setAutofillProductOrderFilter}
+                          options={autofillOrderFilterOptions}
+                          placeholder="Gõ để tìm đơn hàng"
+                          getValue={item => String((item as { value: string }).value)}
+                          getLabel={item => String((item as { label: string }).label)}
+                          allowEmpty={false}
+                          inputClassName={`${orderFieldClass} bg-white`}
+                        />
+                      </label>
+                      <label className="min-w-0 space-y-1.5">
+                        <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tìm sản phẩm</span>
+                        <div className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+                          <Search className="h-4 w-4 shrink-0 text-zinc-400" />
+                          <input
+                            value={autofillProductSearch}
+                            onChange={event => setAutofillProductSearch(event.target.value)}
+                            placeholder="Gõ mã SP, tên hàng, mã đơn..."
+                            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                          />
                         </div>
                       </label>
-                    );
-                  })}
+                    </div>
+                    <label className="flex h-11 w-fit cursor-pointer items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredProductsSelected}
+                        onChange={toggleAutofillSelectAllFiltered}
+                        disabled={filteredAutofillProducts.length === 0}
+                        className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:opacity-50"
+                      />
+                      <span className="text-xs font-extrabold text-zinc-700">Chọn tất cả (đang lọc)</span>
+                    </label>
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-zinc-200 bg-white">
+                    {filteredAutofillProducts.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs font-bold text-zinc-400">
+                        {autofillProductSearch.trim()
+                          ? 'Không có sản phẩm phù hợp từ khóa tìm kiếm.'
+                          : 'Đơn đã chọn không còn sản phẩm cần lập lệnh SX.'}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-zinc-100">
+                        {filteredAutofillProducts.map(product => {
+                          const checked = selectedAutofillProductKeys.includes(product.key);
+                          return (
+                            <label
+                              key={product.key}
+                              className={`flex cursor-pointer items-start gap-3 px-3 py-2.5 transition ${
+                                checked ? 'bg-red-50/70' : 'hover:bg-zinc-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleAutofillProductKey(product.key)}
+                                className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-black text-zinc-950">{product.productCode}</span>
+                                  <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-black text-zinc-600">
+                                    {product.orderRef}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-emerald-700">
+                                    Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 text-xs font-semibold text-zinc-600">{product.productName || '-'}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
 
-            {selectedAutofillOrderCodes.length > 0 && (
-              <div className="border-t border-zinc-100 bg-zinc-50/80 p-4">
-                <p className="mb-2 text-xs font-black uppercase tracking-wider text-zinc-500">Chọn sản phẩm trong đơn</p>
-                <div className="flex flex-col gap-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="min-w-0 space-y-1.5">
-                      <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lọc theo đơn hàng</span>
-                      <SearchableSelect
-                        value={autofillProductOrderFilter}
-                        onChange={setAutofillProductOrderFilter}
-                        options={autofillOrderFilterOptions}
-                        placeholder="Gõ để tìm đơn hàng"
-                        getValue={item => String((item as { value: string }).value)}
-                        getLabel={item => String((item as { label: string }).label)}
-                        allowEmpty={false}
-                        inputClassName={`${orderFieldClass} bg-white`}
-                      />
-                    </label>
-                    <label className="min-w-0 space-y-1.5">
-                      <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tìm sản phẩm</span>
-                      <div className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
-                        <Search className="h-4 w-4 shrink-0 text-zinc-400" />
-                        <input
-                          value={autofillProductSearch}
-                          onChange={event => setAutofillProductSearch(event.target.value)}
-                          placeholder="Gõ mã SP, tên hàng, mã đơn..."
-                          className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-                        />
-                      </div>
-                    </label>
-                  </div>
-                  <label className="flex h-11 w-fit cursor-pointer items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3">
-                    <input
-                      type="checkbox"
-                      checked={allFilteredProductsSelected}
-                      onChange={toggleAutofillSelectAllFiltered}
-                      disabled={filteredAutofillProducts.length === 0}
-                      className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:opacity-50"
-                    />
-                    <span className="text-xs font-extrabold text-zinc-700">Chọn tất cả (đang lọc)</span>
-                  </label>
-                </div>
-
-                <div className="mt-3 max-h-[28vh] overflow-y-auto rounded-xl border border-zinc-200 bg-white">
-                  {filteredAutofillProducts.length === 0 ? (
-                    <div className="px-4 py-6 text-center text-xs font-bold text-zinc-400">
-                      {autofillProductSearch.trim()
-                        ? 'Không có sản phẩm phù hợp từ khóa tìm kiếm.'
-                        : 'Đơn đã chọn không còn sản phẩm cần lập lệnh SX.'}
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-zinc-100">
-                      {filteredAutofillProducts.map(product => {
-                        const checked = selectedAutofillProductKeys.includes(product.key);
-                        return (
-                          <label
-                            key={product.key}
-                            className={`flex cursor-pointer items-start gap-3 px-3 py-2.5 transition ${
-                              checked ? 'bg-red-50/70' : 'hover:bg-zinc-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleAutofillProductKey(product.key)}
-                              className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-black text-zinc-950">{product.productCode}</span>
-                                <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-black text-zinc-600">
-                                  {product.orderRef}
-                                </span>
-                                <span className="text-[11px] font-bold text-emerald-700">
-                                  Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''}
-                                </span>
-                              </div>
-                              <p className="mt-0.5 text-xs font-semibold text-zinc-600">{product.productName || '-'}</p>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
               <span className="text-xs font-bold text-zinc-500">
                 Đã chọn {selectedAutofillOrderCodes.length} đơn · {selectedAutofillProductKeys.length} sản phẩm
               </span>
@@ -11307,6 +11529,7 @@ function EditProductionOrderModal({
   useEffect(() => {
     if (!open || !row) return;
     const productLines = getProductionOrderProductLines(row);
+    const startDateTime = toDatetimeLocalInputValue(row.startDate);
     setForm({
       code: row.code === '-' ? '' : row.code,
       name: row.name === '-' ? '' : row.name,
@@ -11324,7 +11547,8 @@ function EditProductionOrderModal({
       status: row.status === '-' ? 'Chờ sx' : row.status,
       shift: row.shift === '-' ? '' : row.shift,
       selectedStaffIds: [],
-      startDateTime: toDatetimeLocalInputValue(row.startDate),
+      startDate: extractProductionOrderDate(startDateTime),
+      startDateTime,
       endDateTime: toDatetimeLocalInputValue(row.endDate),
       machine: row.machine === '-' ? '' : row.machine,
       note: row.note
@@ -11458,8 +11682,20 @@ function EditProductionOrderModal({
             <input value={form.code} onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))} className={orderFieldClass} />
           </label>
           <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên lệnh</span>
-            <input value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} className={orderFieldClass} />
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
+            <input
+              type="date"
+              value={form.startDate}
+              onChange={e => {
+                const startDate = e.target.value;
+                setForm(prev => ({
+                  ...prev,
+                  startDate,
+                  startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
+                }));
+              }}
+              className={orderFieldClass}
+            />
           </label>
 
           <RepeatableLinesBlock
@@ -11597,8 +11833,19 @@ function EditProductionOrderModal({
           </label>
 
           <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ bắt đầu</span>
-            <input type="datetime-local" value={form.startDateTime} onChange={e => setForm(prev => ({ ...prev, startDateTime: e.target.value }))} className={orderFieldClass} />
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
+            <input
+              type="time"
+              value={form.startDateTime.includes('T') ? form.startDateTime.split('T')[1]?.slice(0, 5) || '' : ''}
+              onChange={e => {
+                const time = e.target.value;
+                setForm(prev => ({
+                  ...prev,
+                  startDateTime: mergeProductionOrderDateTime(prev.startDate, `${prev.startDate}T${time}`)
+                }));
+              }}
+              className={orderFieldClass}
+            />
           </label>
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>

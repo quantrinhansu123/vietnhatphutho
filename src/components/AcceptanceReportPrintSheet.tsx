@@ -45,6 +45,27 @@ function machineLabelFromReport(report: AcceptanceReportSource) {
   return report.ten_may || report.ma_may || '-';
 }
 
+function normalizeUnitKey(unit: string) {
+  const trimmed = unit.trim();
+  if (!trimmed) return '-';
+  if (/^kg$/i.test(trimmed)) return 'kg';
+  return trimmed;
+}
+
+export function sumByUnit(lines: AcceptancePrintLine[]) {
+  const totals = new Map<string, number>();
+  for (const line of lines) {
+    const unitKey = normalizeUnitKey(line.don_vi || '');
+    totals.set(unitKey, (totals.get(unitKey) ?? 0) + (line.so_luong ?? 0));
+  }
+  const unitOrder = (a: string, b: string) => {
+    if (a === 'kg' && b !== 'kg') return 1;
+    if (b === 'kg' && a !== 'kg') return -1;
+    return a.localeCompare(b, 'vi');
+  };
+  return [...totals.entries()].sort(([a], [b]) => unitOrder(a, b));
+}
+
 export function buildAcceptancePrintSlips(reports: AcceptanceReportSource[]): AcceptancePrintSlip[] {
   const grouped = new Map<string, AcceptancePrintSlip>();
 
@@ -84,7 +105,7 @@ export function buildAcceptancePrintSlips(reports: AcceptanceReportSource[]): Ac
 }
 
 function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
-  const totalQty = slip.lines.reduce((sum, line) => sum + (line.so_luong ?? 0), 0);
+  const totalsByUnit = sumByUnit(slip.lines);
 
   return (
     <div className="production-order-print-sheet">
@@ -141,14 +162,16 @@ function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
                 </td>
               </tr>
             ))}
-            <tr>
-              <td colSpan={3} className="production-order-print-right" style={{ fontWeight: 700 }}>
-                Tổng cộng
-              </td>
-              <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                {formatNumber(totalQty, 2)}
-              </td>
-            </tr>
+            {totalsByUnit.map(([unit, total]) => (
+              <tr key={unit}>
+                <td colSpan={3} className="production-order-print-right" style={{ fontWeight: 700 }}>
+                  Tổng cộng ({unit})
+                </td>
+                <td className="production-order-print-right" style={{ fontWeight: 700 }}>
+                  {formatNumber(total, 2)}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
 

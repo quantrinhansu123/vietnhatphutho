@@ -17,6 +17,7 @@ export default function MixingProductionOrderAutofillModal({
   catalogProducts,
   materials,
   filters,
+  machines,
   onClose,
   onApply
 }: {
@@ -26,6 +27,7 @@ export default function MixingProductionOrderAutofillModal({
   catalogProducts: MixingCatalogProduct[];
   materials: Array<{ code: string; name: string; unit: string }>;
   filters: { ngay: string; ca: string; maMay: string; tenMay: string };
+  machines: Array<{ code: string; name: string }>;
   onClose: () => void;
   onApply: (items: MixingRoundItem[]) => void;
 }) {
@@ -44,9 +46,11 @@ export default function MixingProductionOrderAutofillModal({
   }, [open]);
 
   const matchedOrders = useMemo(
-    () => filterMixingProductionOrders(orders, filters),
-    [orders, filters]
+    () => filterMixingProductionOrders(orders, filters, machines),
+    [orders, filters, machines]
   );
+
+  const filtersReady = Boolean(filters.ca.trim() && (filters.maMay.trim() || filters.tenMay.trim()));
 
   const orderOptions = useMemo(() => {
     const normalized = orderSearch.trim().toLowerCase();
@@ -112,8 +116,10 @@ export default function MixingProductionOrderAutofillModal({
               Nguyên liệu theo Lệnh sản xuất · {roundLabel}
             </h4>
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              Lọc theo ngày, ca và máy đang nhập — chọn lệnh SX và sản phẩm để điền định mức NVL
-              {!filters.ca.trim() ? ' · Chưa chọn ca: hiển thị mọi lệnh SX trong ngày/máy' : ''}
+              Chỉ gợi ý lệnh SX trùng ngày · ca · máy đang nhập
+              {filters.ca.trim() && (filters.maMay.trim() || filters.tenMay.trim())
+                ? ` (${filters.ca}${filters.maMay ? ` · ${filters.maMay}` : filters.tenMay ? ` · ${filters.tenMay}` : ''})`
+                : ''}
             </p>
           </div>
           <button
@@ -125,9 +131,13 @@ export default function MixingProductionOrderAutofillModal({
           </button>
         </div>
 
-        {matchedOrders.length === 0 ? (
+        {!filtersReady ? (
           <div className="p-6 text-center text-sm font-bold text-zinc-500">
-            Không có lệnh sản xuất phù hợp ngày/ca/máy hiện tại.
+            Vui lòng chọn đủ ca và máy ở phần thông tin phía trên trước khi lấy NVL theo Lệnh sản xuất.
+          </div>
+        ) : matchedOrders.length === 0 ? (
+          <div className="p-6 text-center text-sm font-bold text-zinc-500">
+            Không có lệnh sản xuất phù hợp ngày · ca · máy đang chọn.
           </div>
         ) : (
           <>

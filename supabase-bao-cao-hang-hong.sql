@@ -19,9 +19,12 @@ alter table public.bao_cao_hang_hong
   add column if not exists trong_luong_loi text,
   add column if not exists anh_trong_luong_loi_url text,
   add column if not exists anh_trong_luong_loi_public_id text,
+  add column if not exists trong_luong_bi text,
   add column if not exists trong_luong text,
   add column if not exists anh_url text,
-  add column if not exists anh_public_id text;
+  add column if not exists anh_public_id text,
+  add column if not exists nghiem_thu text,
+  add column if not exists ghi_chu text;
 
 alter table public.bao_cao_hang_hong enable row level security;
 
@@ -54,5 +57,8 @@ comment on column public.bao_cao_hang_hong.ma_san_pham is 'Ma san pham (ma_sp) q
 comment on column public.bao_cao_hang_hong.ten_san_pham is 'Ten san pham lay tu san_pham.ten_sp.';
 comment on column public.bao_cao_hang_hong.ten_may_san_xuat is 'Ten may san xuat nhap tay.';
 comment on column public.bao_cao_hang_hong.trong_luong_loi is 'Trong luong loi.';
+comment on column public.bao_cao_hang_hong.trong_luong_bi is 'Trong luong bi (kg).';
 comment on column public.bao_cao_hang_hong.anh_trong_luong_loi_url is 'Cloudinary secure URL cua anh trong luong loi.';
 comment on column public.bao_cao_hang_hong.anh_url is 'Cloudinary secure URL cua anh can.';
+comment on column public.bao_cao_hang_hong.nghiem_thu is 'Ket qua nghiem thu: Dat hoac Khong dat.';
+comment on column public.bao_cao_hang_hong.ghi_chu is 'Ghi chu tung lan can.';

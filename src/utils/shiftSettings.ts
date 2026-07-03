@@ -115,3 +115,33 @@ export function shiftNamesMatch(left: string, right: string) {
   if (!a || !b) return false;
   return a === b || a.includes(b) || b.includes(a);
 }
+
+export function resolveShiftName(rawName: string, options: ShiftOption[]): string {
+  const trimmed = rawName.trim();
+  if (!trimmed || options.length === 0) return trimmed;
+
+  for (const option of options) {
+    if (trimmed === option.value || shiftNamesMatch(trimmed, option.value)) {
+      return option.value;
+    }
+    if (shiftNamesMatch(trimmed, option.label)) {
+      return option.value;
+    }
+  }
+
+  const lower = trimmed.toLowerCase();
+  const legacyIndex =
+    lower.includes('sáng') || lower.includes('sang')
+      ? 0
+      : lower.includes('chiều') || lower.includes('chieu')
+        ? 1
+        : lower.includes('tối') || lower.includes('toi')
+          ? 2
+          : -1;
+
+  if (legacyIndex >= 0 && legacyIndex < options.length) {
+    return options[legacyIndex].value;
+  }
+
+  return trimmed;
+}

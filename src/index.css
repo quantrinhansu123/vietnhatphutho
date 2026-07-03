@@ -428,8 +428,47 @@ input[type="number"] {
   .production-order-print-batch,
   .production-order-print-batch *,
   .production-order-print-sheet,
-  .production-order-print-sheet * {
+  .production-order-print-sheet *,
+  .mixing-report-print-batch,
+  .mixing-report-print-batch *,
+  .mixing-report-print-sheet,
+  .mixing-report-print-sheet * {
     visibility: visible !important;
+  }
+
+  .mixing-report-print-batch {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 9999;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+  }
+
+  .mixing-report-print-sheet {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 9999;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+  }
+
+  .mixing-report-print-batch .mixing-report-print-sheet,
+  .production-order-print-batch .mixing-report-print-sheet {
+    position: relative;
+    inset: auto;
+    left: auto;
+    top: auto;
+    width: auto;
   }
 
   .production-order-print-batch {
@@ -728,6 +767,191 @@ input[type="number"] {
 
 .production-order-print-batch {
   display: none;
+}
+
+.mixing-report-print-batch {
+  display: none;
+}
+
+.mixing-report-print-sheet {
+  display: none;
+}
+
+.mixing-report-print-header {
+  margin-bottom: 4mm;
+}
+
+.mixing-report-print-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6mm;
+  border-bottom: 1.5px solid #111111;
+  padding-bottom: 3mm;
+}
+
+.mixing-report-print-brand {
+  display: flex;
+  align-items: center;
+  gap: 4mm;
+  min-width: 0;
+}
+
+.mixing-report-print-logo {
+  height: 16mm;
+  width: auto;
+  max-width: 48mm;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.mixing-report-print-company-name {
+  margin: 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 13pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+
+.mixing-report-print-project-name {
+  margin: 1.5mm 0 0;
+  font-size: 10.5pt;
+  font-weight: 400;
+}
+
+.mixing-report-print-doc-meta {
+  text-align: right;
+  font-size: 10.5pt;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.mixing-report-print-doc-meta p {
+  margin: 0;
+}
+
+.mixing-report-print-title {
+  margin: 4mm 0 0;
+  text-align: center;
+  font-size: 15pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.mixing-report-print-params-table {
+  margin-bottom: 4mm;
+}
+
+.mixing-report-print-params-table th {
+  width: 18%;
+  font-weight: 700;
+  text-align: left;
+  background: #f5f5f5;
+}
+
+.mixing-report-print-params-table td {
+  width: 32%;
+}
+
+.mixing-report-print-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.mixing-report-print-table th,
+.mixing-report-print-table td {
+  padding: 1.4mm 1mm;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+
+.mixing-report-print-col-lan { width: 8%; }
+.mixing-report-print-col-time { width: 10mm; }
+.mixing-report-print-col-code { width: 11%; }
+.mixing-report-print-col-name { width: auto; }
+.mixing-report-print-col-unit { width: 7mm; }
+.mixing-report-print-col-weight { width: 14mm; }
+.mixing-report-print-col-photo { width: 7mm; }
+.mixing-report-print-col-note { width: 16%; }
+
+.mixing-report-print-time,
+.mixing-report-print-unit,
+.mixing-report-print-weight,
+.mixing-report-print-photo {
+  white-space: nowrap;
+}
+
+.mixing-report-print-time {
+  font-size: 9.5pt;
+  padding-left: 0.5mm !important;
+  padding-right: 0.5mm !important;
+}
+
+.mixing-report-print-unit {
+  font-size: 9.5pt;
+  padding-left: 0.4mm !important;
+  padding-right: 0.4mm !important;
+}
+
+.mixing-report-print-weight {
+  padding-left: 0.8mm !important;
+  padding-right: 0.8mm !important;
+}
+
+.mixing-report-print-photo {
+  font-size: 9.5pt;
+  padding-left: 0.4mm !important;
+  padding-right: 0.4mm !important;
+}
+
+.mixing-report-print-material-name {
+  text-align: left;
+  line-height: 1.3;
+}
+
+.mixing-report-print-note-cell {
+  text-align: left;
+  font-size: 9.5pt;
+}
+
+.mixing-report-print-merged {
+  vertical-align: middle;
+  font-weight: 700;
+}
+
+.mixing-report-print-total-label,
+.mixing-report-print-total-value {
+  font-weight: 700;
+}
+
+.mixing-report-print-note {
+  margin: 5mm 0 0;
+  font-size: 10.5pt;
+  line-height: 1.45;
+}
+
+.mixing-report-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8mm;
+  margin-top: 12mm;
+  text-align: center;
+  font-size: 11pt;
+}
+
+.mixing-report-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.mixing-report-print-signatures span {
+  display: block;
+  margin-top: 18mm;
+  font-style: italic;
+  font-weight: 400;
 }
 
 .production-order-print-doc {
@@ -1058,22 +1282,24 @@ input[type="number"] {
 }
 
 .warehouse-slip-print-header {
-  text-align: center;
   margin-bottom: 6mm;
 }
 
 .warehouse-slip-print-brand {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4mm;
-  margin-bottom: 3mm;
+  margin: 0 0 3mm;
+  padding: 0;
 }
 
 .warehouse-slip-print-logo {
   height: 16mm;
   width: auto;
+  max-width: 48mm;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .warehouse-slip-print-company-name {
@@ -1081,12 +1307,15 @@ input[type="number"] {
   font-size: 13pt;
   font-weight: 900;
   text-transform: uppercase;
+  line-height: 1.25;
 }
 
-.warehouse-slip-print-company-branch {
-  margin: 1mm 0 0;
-  font-size: 10pt;
-  font-weight: 700;
+.warehouse-slip-print-project-name {
+  margin: 1.5mm 0 0;
+  font-size: 10.5pt;
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.3;
 }
 
 .warehouse-slip-print-title {
@@ -1095,6 +1324,7 @@ input[type="number"] {
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  text-align: center;
 }
 
 .warehouse-slip-print-meta {
@@ -1167,6 +1397,29 @@ input[type="number"] {
   font-weight: 400;
 }
 
+.warehouse-slip-print-meta--nvl-export {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.warehouse-slip-print-table--nvl-export {
+  font-size: 10pt;
+}
+
+.warehouse-slip-print-table--nvl-export th,
+.warehouse-slip-print-table--nvl-export td {
+  padding: 1.5mm 1.5mm;
+}
+
+.warehouse-slip-print-footnote {
+  margin: 0 0 6mm;
+  font-size: 10pt;
+  line-height: 1.4;
+}
+
+.warehouse-slip-print-signatures--nvl-export {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 @media print {
   .warehouse-slip-print-batch,
   .warehouse-slip-print-batch * {
@@ -1197,7 +1450,8 @@ input[type="number"] {
 
   .warehouse-slip-print-batch .warehouse-slip-print-doc {
     width: 190mm;
-    margin: 0 auto;
+    margin: 0;
+    padding: 0;
   }
 }
 
