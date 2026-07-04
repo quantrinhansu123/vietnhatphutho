@@ -29,6 +29,7 @@ type DetailSources = {
   acceptanceReports: AcceptanceReport[];
   mixingReports: MixingReport[];
   weighingRecords: WeighingRecord[];
+  machineNvlReports?: import('../utils/machineNvlReports').MachineNvlSavedReport[];
 };
 
 function formatCellValue(
@@ -43,6 +44,20 @@ function formatCellValue(
   return String(value);
 }
 
+function getRowSelectionKey(row: ShiftSummaryDetailRow) {
+  const rowKey = row.rowKey;
+  if (rowKey !== null && rowKey !== undefined && rowKey !== '') return String(rowKey);
+  const recordId = row.recordId;
+  if (recordId !== null && recordId !== undefined && recordId !== '') return String(recordId);
+  return '';
+}
+
+function getRowDeleteTargetId(row: ShiftSummaryDetailRow) {
+  const recordId = row.recordId;
+  if (recordId === null || recordId === undefined || recordId === '') return null;
+  return recordId;
+}
+
 export default function ControlBoardShiftDetailModal({
   ngay,
   ca,
@@ -51,7 +66,11 @@ export default function ControlBoardShiftDetailModal({
   onClose,
   onEditWeighingRecord,
   onDeleteWeighingRecord,
-  onDeleteWeighingRecords
+  onDeleteWeighingRecords,
+  onDeleteMixingReport,
+  onDeleteMixingReports,
+  onDeleteMachineNvlReport,
+  onDeleteMachineNvlReports
 }: {
   ngay: string;
   ca: string;
@@ -61,10 +80,14 @@ export default function ControlBoardShiftDetailModal({
   onEditWeighingRecord?: (recordId: string | number) => void;
   onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
   onDeleteWeighingRecords?: (recordIds: Array<string | number>) => Promise<void>;
+  onDeleteMixingReport?: (reportId: string) => Promise<void>;
+  onDeleteMixingReports?: (reportIds: string[]) => Promise<void>;
+  onDeleteMachineNvlReport?: (reportId: string) => Promise<void>;
+  onDeleteMachineNvlReports?: (reportIds: string[]) => Promise<void>;
 }) {
   const meta = SHIFT_SUMMARY_METRIC_META[metric];
   const [deletingId, setDeletingId] = useState<string | number | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const detail = useMemo(
@@ -78,57 +101,164 @@ export default function ControlBoardShiftDetailModal({
     [metric, ngay, ca, sources]
   );
 
+  const isWeighingMetric = metric === 'khoiLuongHangThucTe';
+  const isMixingMetric = metric === 'khoiLuongNpl';
+  const isMachineNvlMetric = metric === 'tonDauCa';
+  const canDeleteWeighing = Boolean(onDeleteWeighingRecord || onDeleteWeighingRecords);
+  const canDeleteMixing = Boolean(onDeleteMixingReport || onDeleteMixingReports);
+  const canDeleteMachineNvl = Boolean(onDeleteMachineNvlReport || onDeleteMachineNvlReports);
   const showWeighingActions =
-    metric === 'khoiLuongHangThucTe' && detail.showActions && Boolean(onEditWeighingRecord || onDeleteWeighingRecord);
+    isWeighingMetric && detail.showActions && Boolean(onEditWeighingRecord || canDeleteWeighing);
+  const showMixingDelete = isMixingMetric && detail.showActions && canDeleteMixing;
+  const showMachineNvlDelete = isMachineNvlMetric && detail.showActions && canDeleteMachineNvl;
+  const showActionColumn = showWeighingActions || showMixingDelete || showMachineNvlDelete;
   const showEditAction = showWeighingActions && Boolean(onEditWeighingRecord);
-  const showDeleteAction = showWeighingActions && Boolean(onDeleteWeighingRecord || onDeleteWeighingRecords);
+  const showDeleteAction =
+    (showWeighingActions && canDeleteWeighing) || showMixingDelete || showMachineNvlDelete;
   const showBulkSelect = showDeleteAction;
 
-  const deletableIds = useMemo(
-    () =>
-      detail.rows
-        .filter(row => row.recordId !== null && row.recordId !== undefined && row.recordId !== '')
-        .map(row => String(row.recordId)),
+  const selectableKeys = useMemo(
+    () => detail.rows.map(getRowSelectionKey).filter(Boolean),
     [detail.rows]
   );
 
   useEffect(() => {
-    setSelectedIds(new Set());
-  }, [metric, ngay, ca, deletableIds.join('|')]);
+    setSelectedKeys(new Set());
+  }, [metric, ngay, ca, selectableKeys.join('|')]);
 
-  const allSelected = deletableIds.length > 0 && deletableIds.every(id => selectedIds.has(id));
-  const selectedCount = selectedIds.size;
-  const extraColumnCount = (showBulkSelect ? 1 : 0) + (showWeighingActions ? 1 : 0);
+  const allSelected = selectableKeys.length > 0 && selectableKeys.every(key => selectedKeys.has(key));
+  const selectedCount = selectedKeys.size;
+  const extraColumnCount = (showBulkSelect ? 1 : 0) + (showActionColumn ? 1 : 0);
 
-  const toggleRowSelection = (recordId: string | number) => {
-    const key = String(recordId);
-    setSelectedIds(prev => {
+  const toggleRowSelection = (selectionKey: string) => {
+    setSelectedKeys(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(selectionKey)) next.delete(selectionKey);
+      else next.add(selectionKey);
       return next;
     });
   };
 
   const toggleSelectAll = () => {
-    setSelectedIds(allSelected ? new Set() : new Set(deletableIds));
+    setSelectedKeys(allSelected ? new Set() : new Set(selectableKeys));
   };
 
-  const resolveRecordIds = (keys: Iterable<string>) =>
-    Array.from(keys).map(key => {
-      const row = detail.rows.find(item => String(item.recordId) === key);
-      return row?.recordId as string | number;
-    });
+  const resolveDeleteTargetIds = (keys: Iterable<string>) => {
+    const targetIds = new Set<string>();
+    for (const key of keys) {
+      const row = detail.rows.find(item => getRowSelectionKey(item) === key);
+      const targetId = row ? getRowDeleteTargetId(row) : null;
+      if (targetId !== null && targetId !== undefined && targetId !== '') {
+        targetIds.add(String(targetId));
+      }
+    }
+    return Array.from(targetIds);
+  };
 
-  const handleDelete = async (recordId: string | number) => {
-    if (!onDeleteWeighingRecord) return;
-    if (!window.confirm('Bạn có chắc muốn xóa dòng cân này?')) return;
+  const deleteSingleTarget = async (targetId: string | number) => {
+    if (isWeighingMetric && onDeleteWeighingRecord) {
+      await onDeleteWeighingRecord(targetId);
+      return;
+    }
+    if (isMixingMetric && onDeleteMixingReport) {
+      await onDeleteMixingReport(String(targetId));
+      return;
+    }
+    if (isMachineNvlMetric && onDeleteMachineNvlReport) {
+      await onDeleteMachineNvlReport(String(targetId));
+    }
+  };
 
-    setDeletingId(recordId);
+  const deleteMultipleTargets = async (targetIds: string[]) => {
+    if (isWeighingMetric) {
+      if (onDeleteWeighingRecords) {
+        await onDeleteWeighingRecords(targetIds);
+        return;
+      }
+      if (onDeleteWeighingRecord) {
+        for (const targetId of targetIds) {
+          await onDeleteWeighingRecord(targetId);
+        }
+      }
+      return;
+    }
+
+    if (isMixingMetric) {
+      if (onDeleteMixingReports) {
+        await onDeleteMixingReports(targetIds);
+        return;
+      }
+      if (onDeleteMixingReport) {
+        for (const targetId of targetIds) {
+          await onDeleteMixingReport(targetId);
+        }
+      }
+      return;
+    }
+
+    if (isMachineNvlMetric) {
+      if (onDeleteMachineNvlReports) {
+        await onDeleteMachineNvlReports(targetIds);
+        return;
+      }
+      if (onDeleteMachineNvlReport) {
+        for (const targetId of targetIds) {
+          await onDeleteMachineNvlReport(targetId);
+        }
+      }
+    }
+  };
+
+  const buildSingleDeleteMessage = (row: ShiftSummaryDetailRow) => {
+    if (isMixingMetric) {
+      const soPhieu = row.soPhieu ? String(row.soPhieu) : '—';
+      return `Bạn có chắc muốn xóa báo cáo phối trộn ${soPhieu}? Toàn bộ NVL trong phiếu sẽ bị xóa.`;
+    }
+    if (isMachineNvlMetric) {
+      const may = row.may ? String(row.may) : '—';
+      return `Bạn có chắc muốn xóa báo cáo tồn NVL đầu ca của máy ${may}? Toàn bộ NVL trong phiếu sẽ bị xóa.`;
+    }
+    return 'Bạn có chắc muốn xóa dòng cân này?';
+  };
+
+  const buildBulkDeleteMessage = (targetCount: number, selectedRowCount: number) => {
+    if (isMixingMetric) {
+      if (targetCount === selectedRowCount) {
+        return `Bạn có chắc muốn xóa ${targetCount} báo cáo phối trộn đã chọn?`;
+      }
+      return `Bạn có chắc muốn xóa ${targetCount} báo cáo phối trộn (${selectedRowCount} dòng đã chọn)? Một phiếu có thể chứa nhiều dòng NVL.`;
+    }
+    if (isMachineNvlMetric) {
+      if (targetCount === selectedRowCount) {
+        return `Bạn có chắc muốn xóa ${targetCount} báo cáo tồn NVL đầu ca đã chọn?`;
+      }
+      return `Bạn có chắc muốn xóa ${targetCount} báo cáo tồn NVL đầu ca (${selectedRowCount} dòng NVL đã chọn)? Một phiếu có thể chứa nhiều dòng NVL.`;
+    }
+    return `Bạn có chắc muốn xóa ${selectedRowCount} dòng cân đã chọn?`;
+  };
+
+  const handleDelete = async (row: ShiftSummaryDetailRow) => {
+    const targetId = getRowDeleteTargetId(row);
+    if (!targetId || !showDeleteAction) return;
+    if (!window.confirm(buildSingleDeleteMessage(row))) return;
+
+    setDeletingId(targetId);
     try {
-      await onDeleteWeighingRecord(recordId);
+      await deleteSingleTarget(targetId);
+      setSelectedKeys(prev => {
+        const next = new Set(prev);
+        next.delete(getRowSelectionKey(row));
+        return next;
+      });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Không thể xóa dòng cân.';
+      const message =
+        err instanceof Error
+          ? err.message
+          : isMixingMetric
+            ? 'Không thể xóa báo cáo phối trộn.'
+            : isMachineNvlMetric
+              ? 'Không thể xóa báo cáo tồn NVL đầu ca.'
+              : 'Không thể xóa dòng cân.';
       window.alert(message);
     } finally {
       setDeletingId(null);
@@ -136,23 +266,25 @@ export default function ControlBoardShiftDetailModal({
   };
 
   const handleBulkDelete = async () => {
-    const deleteHandler = onDeleteWeighingRecords ?? onDeleteWeighingRecord;
-    if (!deleteHandler || selectedCount === 0) return;
-    if (!window.confirm(`Bạn có chắc muốn xóa ${selectedCount} dòng cân đã chọn?`)) return;
+    if (!showDeleteAction || selectedCount === 0) return;
 
-    const recordIds = resolveRecordIds(selectedIds);
+    const targetIds = resolveDeleteTargetIds(selectedKeys);
+    if (targetIds.length === 0) return;
+    if (!window.confirm(buildBulkDeleteMessage(targetIds.length, selectedCount))) return;
+
     setIsBulkDeleting(true);
     try {
-      if (onDeleteWeighingRecords) {
-        await onDeleteWeighingRecords(recordIds);
-      } else if (onDeleteWeighingRecord) {
-        for (const recordId of recordIds) {
-          await onDeleteWeighingRecord(recordId);
-        }
-      }
-      setSelectedIds(new Set());
+      await deleteMultipleTargets(targetIds);
+      setSelectedKeys(new Set());
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Không thể xóa các dòng cân đã chọn.';
+      const message =
+        err instanceof Error
+          ? err.message
+          : isMixingMetric
+            ? 'Không thể xóa các báo cáo phối trộn đã chọn.'
+            : isMachineNvlMetric
+              ? 'Không thể xóa các báo cáo tồn NVL đầu ca đã chọn.'
+              : 'Không thể xóa các dòng cân đã chọn.';
       window.alert(message);
     } finally {
       setIsBulkDeleting(false);
@@ -186,7 +318,7 @@ export default function ControlBoardShiftDetailModal({
             </p>
           ) : (
             <>
-              {showBulkSelect && deletableIds.length > 0 ? (
+              {showBulkSelect && selectableKeys.length > 0 ? (
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-zinc-500">
                     {selectedCount > 0 ? `Đã chọn ${selectedCount} dòng` : 'Chọn dòng để xóa nhiều'}
@@ -202,132 +334,138 @@ export default function ControlBoardShiftDetailModal({
                   </button>
                 </div>
               ) : null}
-            <div className="overflow-x-auto rounded-xl border border-zinc-200">
-              <table className="min-w-full text-left text-xs">
-                <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-                  <tr>
-                    {showBulkSelect ? (
-                      <th className="w-10 px-3 py-2 text-center font-black">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={toggleSelectAll}
-                          disabled={deletableIds.length === 0 || isBulkDeleting || Boolean(deletingId)}
-                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                          title="Chọn tất cả"
-                        />
-                      </th>
-                    ) : null}
-                    {detail.columns.map(column => (
-                      <th
-                        key={column.key}
-                        className={`px-3 py-2 font-black ${column.align === 'right' ? 'text-right' : ''}`}
-                      >
-                        {column.label}
-                      </th>
-                    ))}
-                    {showWeighingActions ? (
-                      <th className="px-3 py-2 text-center font-black">Thao tác</th>
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {detail.rows.map((row, index) => {
-                    const recordId = row.recordId;
-                    const hasRecordId = recordId !== null && recordId !== undefined && recordId !== '';
-                    const selectionKey = hasRecordId ? String(recordId) : '';
-                    const isSelected = hasRecordId && selectedIds.has(selectionKey);
+              <div className="overflow-x-auto rounded-xl border border-zinc-200">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+                    <tr>
+                      {showBulkSelect ? (
+                        <th className="w-10 px-3 py-2 text-center font-black">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={toggleSelectAll}
+                            disabled={selectableKeys.length === 0 || isBulkDeleting || Boolean(deletingId)}
+                            className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                            title="Chọn tất cả"
+                          />
+                        </th>
+                      ) : null}
+                      {detail.columns.map(column => (
+                        <th
+                          key={column.key}
+                          className={`px-3 py-2 font-black ${column.align === 'right' ? 'text-right' : ''}`}
+                        >
+                          {column.label}
+                        </th>
+                      ))}
+                      {showActionColumn ? (
+                        <th className="px-3 py-2 text-center font-black">Thao tác</th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {detail.rows.map((row, index) => {
+                      const selectionKey = getRowSelectionKey(row);
+                      const targetId = getRowDeleteTargetId(row);
+                      const hasTargetId = targetId !== null;
+                      const isSelected = Boolean(selectionKey) && selectedKeys.has(selectionKey);
 
-                    return (
-                      <tr key={hasRecordId ? String(recordId) : index} className="hover:bg-indigo-50/40">
-                        {showBulkSelect ? (
-                          <td className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              disabled={!hasRecordId || isBulkDeleting || deletingId === recordId}
-                              onChange={() => {
-                                if (!hasRecordId) return;
-                                toggleRowSelection(recordId as string | number);
-                              }}
-                              className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
-                              title="Chọn dòng"
-                            />
-                          </td>
-                        ) : null}
-                        {detail.columns.map(column => (
-                          <td
-                            key={column.key}
-                            className={`px-3 py-2 ${
-                              column.align === 'right' ? 'text-right' : ''
-                            } ${column.mono ? 'font-mono' : ''} ${
-                              column.accent ? 'font-bold text-[#ef1b2d]' : 'text-zinc-700'
-                            }`}
-                          >
-                            {formatCellValue(column, row)}
-                          </td>
-                        ))}
-                        {showWeighingActions ? (
-                          <td className="px-3 py-2">
-                            <div className="flex items-center justify-center gap-1">
-                              {showEditAction ? (
-                                <button
-                                  type="button"
-                                  disabled={!hasRecordId}
-                                  onClick={() => {
-                                    if (!hasRecordId || !onEditWeighingRecord) return;
-                                    onClose();
-                                    onEditWeighingRecord(recordId as string | number);
-                                  }}
-                                  className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                  title="Sửa dòng cân"
-                                >
-                                  <span className="inline-flex items-center gap-1">
-                                    <Pencil className="h-3.5 w-3.5" />
-                                    Sửa
-                                  </span>
-                                </button>
-                              ) : null}
-                              {showDeleteAction ? (
-                                <button
-                                  type="button"
-                                  disabled={!hasRecordId || deletingId === recordId}
-                                  onClick={() => {
-                                    if (!hasRecordId) return;
-                                    void handleDelete(recordId as string | number);
-                                  }}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                  title="Xóa dòng cân"
-                                >
-                                  {deletingId === recordId ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </button>
-                              ) : null}
-                            </div>
-                          </td>
-                        ) : null}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot className="border-t border-zinc-200 bg-zinc-50">
-                  <tr>
-                    <td
-                      colSpan={Math.max(1, detail.columns.length - 1 + extraColumnCount)}
-                      className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wider text-zinc-600"
-                    >
-                      {detail.totalLabel}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-sm font-black text-zinc-900">
-                      {detail.totalValue}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                      return (
+                        <tr key={selectionKey || index} className="hover:bg-indigo-50/40">
+                          {showBulkSelect ? (
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={!selectionKey || isBulkDeleting || deletingId === targetId}
+                                onChange={() => {
+                                  if (!selectionKey) return;
+                                  toggleRowSelection(selectionKey);
+                                }}
+                                className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                title="Chọn dòng"
+                              />
+                            </td>
+                          ) : null}
+                          {detail.columns.map(column => (
+                            <td
+                              key={column.key}
+                              className={`px-3 py-2 ${
+                                column.align === 'right' ? 'text-right' : ''
+                              } ${column.mono ? 'font-mono' : ''} ${
+                                column.accent ? 'font-bold text-[#ef1b2d]' : 'text-zinc-700'
+                              }`}
+                            >
+                              {formatCellValue(column, row)}
+                            </td>
+                          ))}
+                          {showActionColumn ? (
+                            <td className="px-3 py-2">
+                              <div className="flex items-center justify-center gap-1">
+                                {showEditAction ? (
+                                  <button
+                                    type="button"
+                                    disabled={!hasTargetId}
+                                    onClick={() => {
+                                      if (!hasTargetId || !onEditWeighingRecord || targetId === null) return;
+                                      onClose();
+                                      onEditWeighingRecord(targetId);
+                                    }}
+                                    className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                    title="Sửa dòng cân"
+                                  >
+                                    <span className="inline-flex items-center gap-1">
+                                      <Pencil className="h-3.5 w-3.5" />
+                                      Sửa
+                                    </span>
+                                  </button>
+                                ) : null}
+                                {showDeleteAction ? (
+                                  <button
+                                    type="button"
+                                    disabled={!hasTargetId || deletingId === targetId}
+                                    onClick={() => {
+                                      if (!hasTargetId) return;
+                                      void handleDelete(row);
+                                    }}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    title={
+                                      isMixingMetric
+                                        ? 'Xóa báo cáo phối trộn'
+                                        : isMachineNvlMetric
+                                          ? 'Xóa báo cáo tồn NVL đầu ca'
+                                          : 'Xóa dòng cân'
+                                    }
+                                  >
+                                    {deletingId === targetId ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="border-t border-zinc-200 bg-zinc-50">
+                    <tr>
+                      <td
+                        colSpan={Math.max(1, detail.columns.length - 1 + extraColumnCount)}
+                        className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wider text-zinc-600"
+                      >
+                        {detail.totalLabel}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-sm font-black text-zinc-900">
+                        {detail.totalValue}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </>
           )}
         </div>

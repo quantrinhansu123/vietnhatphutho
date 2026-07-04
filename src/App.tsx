@@ -41,7 +41,15 @@ import MixingReportListView from './components/MixingReportListView';
 import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
 import AcceptanceReportListView from './components/AcceptanceReportListView';
 import ControlBoardShiftSummaryTable from './components/ControlBoardShiftSummaryTable';
-import { buildControlBoardShiftSummary, defaultShiftSummaryDateRange } from './utils/controlBoardShiftSummary';
+import ProductionPlanNvlPrintSheet from './components/ProductionPlanNvlPrintSheet';
+import type { ProductionPlanNvlPrintShiftGroup } from './components/ProductionPlanNvlPrintSheet';
+import { buildControlBoardShiftSummary, collectShiftSummaryStaffOptions, defaultShiftSummaryDateRange } from './utils/controlBoardShiftSummary';
+import {
+  normalizeMachineNvlReports,
+  type MachineNvlReportKind,
+  type MachineNvlSavedReport
+} from './utils/machineNvlReports';
+import { getProductionShiftOptions, normalizeShiftSettings } from './utils/shiftSettings';
 import { normalizeMixingReport } from './lib/mixingReportModel';
 import type { MixingReport } from './components/MixingReportForm';
 import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
@@ -4890,6 +4898,7 @@ type WarehouseSlipPrefillDraft = {
   recipient?: string;
   deliverer?: string;
   warehouseLocation?: string;
+  editSlipCode?: string;
   lines: Array<
     Pick<
       WarehouseSlipLineDraft,
@@ -4898,8 +4907,58 @@ type WarehouseSlipPrefillDraft = {
   >;
 };
 
+function buildWarehouseSlipDraftFromHistoryRows(
+  rows: WarehouseMovementRow[],
+  slipCode: string
+): WarehouseSlipPrefillDraft | null {
+  const header = rows[0];
+  if (!header) return null;
+
+  return {
+    slipType: header.slipType,
+    warehouseKind: header.warehouseKind,
+    slipDate: header.slipDate,
+    reason: header.reason || '',
+    note: header.note || '',
+    createdBy: header.createdBy || '',
+    shift: header.shift || '',
+    editSlipCode: slipCode,
+    lines: rows.map(row => ({
+      code: row.itemCode,
+      name: row.itemName,
+      unit: row.unit,
+      quantity: formatNumber(row.quantity, 2),
+      documentQuantity:
+        row.documentQuantity != null && Number.isFinite(row.documentQuantity)
+          ? formatNumber(row.documentQuantity, 2)
+          : '',
+      unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : ''
+    }))
+  };
+}
+
 const warehouseFieldClass =
   'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+
+function parseWarehouseShiftSelection(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) {
+    return value.map(item => item.trim()).filter(Boolean);
+  }
+  return String(value || '')
+    .split(/[,;+]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function formatWarehouseShiftSelection(shifts: string[]): string {
+  return shifts.join(', ');
+}
+
+function toggleWarehouseShiftSelection(current: string[], shiftValue: string): string[] {
+  return current.includes(shiftValue)
+    ? current.filter(item => item !== shiftValue)
+    : [...current, shiftValue];
+}
 
 function warehouseSlipTypeLabel(type: WarehouseSlipType) {
   return type === 'nhap' ? 'Nhập kho' : 'Xuất kho';
@@ -5152,7 +5211,7 @@ function WarehouseSlipPanel({
   const [createdBy, setCreatedBy] = useState('');
   const [productionOrderRef, setProductionOrderRef] = useState('');
   const [machine, setMachine] = useState('');
-  const [shift, setShift] = useState('');
+  const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
   const [recipient, setRecipient] = useState('');
   const [deliverer, setDeliverer] = useState('');
   const [warehouseLocation, setWarehouseLocation] = useState('Đà Nẵng');
@@ -5165,6 +5224,25 @@ function WarehouseSlipPanel({
   const [printSlip, setPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [printAutoTrigger, setPrintAutoTrigger] = useState(false);
+  const [editSlipCode, setEditSlipCode] = useState<string | null>(null);
+  const [shiftSettings, setShiftSettings] = useState<ReturnType<typeof normalizeShiftSettings>>([]);
+
+  const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
+
+  useEffect(() => {
+    const loadShiftSettings = async () => {
+      try {
+        const res = await fetch('/api/cai-dat');
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setShiftSettings(normalizeShiftSettings(data));
+        }
+      } catch {
+        setShiftSettings([]);
+      }
+    };
+    void loadShiftSettings();
+  }, []);
 
   useEffect(() => {
     const rawDraft = localStorage.getItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY);
@@ -5182,12 +5260,18 @@ function WarehouseSlipPanel({
       setCreatedBy(draft.createdBy || '');
       setProductionOrderRef(draft.productionOrderRef || '');
       setMachine(draft.machine || '');
-      setShift(draft.shift || '');
+      setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
       setRecipient(draft.recipient || '');
       setDeliverer(draft.deliverer || draft.recipient || '');
       setWarehouseLocation(draft.warehouseLocation || 'Đà Nẵng');
       setLines(draft.lines.map(createWarehouseLineDraftFromPrefill));
-      setActionMessage('Đã điền sẵn phiếu xuất kho từ hạch toán định mức NVL.');
+      const editingCode = String(draft.editSlipCode || '').trim();
+      if (editingCode) {
+        setEditSlipCode(editingCode);
+        setActionMessage(`Đang sửa phiếu ${editingCode}. Chỉnh sửa và bấm cập nhật để lưu.`);
+      } else {
+        setActionMessage('Đã điền sẵn phiếu xuất kho từ hạch toán định mức NVL.');
+      }
       setFormError('');
     } catch {
       setFormError('Không thể đọc dữ liệu phiếu xuất kho đã chuyển sang.');
@@ -5260,6 +5344,8 @@ function WarehouseSlipPanel({
     [lines]
   );
 
+  const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
+
   const handlePrintPreview = () => {
     const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind, {
       allowMissingUnitPrice: warehouseKind === 'nvl' && slipType === 'xuat'
@@ -5283,7 +5369,7 @@ function WarehouseSlipPanel({
         createdBy: createdBy.trim(),
         productionOrderRef: productionOrderRef.trim(),
         machine: machine.trim(),
-        shift: shift.trim(),
+        shift: shiftLabel,
         recipient: recipient.trim(),
         deliverer: deliverer.trim(),
         warehouseLocation: warehouseLocation.trim()
@@ -5307,30 +5393,38 @@ function WarehouseSlipPanel({
     setFormError('');
     setActionMessage('');
 
+    const isEditing = Boolean(editSlipCode);
+    const slipPayload = {
+      loaiPhieu: slipType,
+      loaiKho: warehouseKind,
+      ngayPhieu: slipDate,
+      lyDo: reason.trim(),
+      ghiChu: note.trim(),
+      nguoiLap: createdBy.trim(),
+      ca: shiftLabel || null,
+      items: payloadItems
+    };
+
     try {
-      const res = await fetch('/api/phieu-xuat-nhap-kho', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          loaiPhieu: slipType,
-          loaiKho: warehouseKind,
-          ngayPhieu: slipDate,
-          lyDo: reason.trim(),
-          ghiChu: note.trim(),
-          nguoiLap: createdBy.trim(),
-          ca: shift.trim(),
-          items: payloadItems
-        })
-      });
+      const res = await fetch(
+        isEditing ? `/api/phieu-xuat-nhap-kho/${encodeURIComponent(editSlipCode!)}` : '/api/phieu-xuat-nhap-kho',
+        {
+          method: isEditing ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(slipPayload)
+        }
+      );
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error || 'Không thể lưu phiếu xuất nhập kho.');
+        throw new Error(data.error || (isEditing ? 'Không thể cập nhật phiếu xuất nhập kho.' : 'Không thể lưu phiếu xuất nhập kho.'));
       }
+
+      const savedSlipCode = String(data.slipCode || editSlipCode || '').trim();
 
       setPrintSlip(
         buildWarehouseSlipPrintData(payloadItems, {
-          slipCode: String(data.slipCode || '').trim(),
+          slipCode: savedSlipCode,
           slipType,
           warehouseKind,
           slipDate,
@@ -5339,7 +5433,7 @@ function WarehouseSlipPanel({
           createdBy: createdBy.trim(),
           productionOrderRef: productionOrderRef.trim(),
           machine: machine.trim(),
-          shift: shift.trim(),
+          shift: shiftLabel,
           recipient: recipient.trim(),
           deliverer: deliverer.trim(),
           warehouseLocation: warehouseLocation.trim()
@@ -5347,7 +5441,12 @@ function WarehouseSlipPanel({
       );
       setPrintAutoTrigger(false);
       setPrintModalOpen(true);
-      setActionMessage(`Đã lưu phiếu ${data.slipCode || ''} (${warehouseKindLabel(warehouseKind)}).`.trim());
+      setActionMessage(
+        isEditing
+          ? `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}).`.trim()
+          : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}).`.trim()
+      );
+      setEditSlipCode(null);
       setReason('');
       setNote('');
       setDeliverer('');
@@ -5386,6 +5485,15 @@ function WarehouseSlipPanel({
           </div>
         </div>
       </section>
+
+      {editSlipCode ? (
+        <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-wider text-amber-800">Chế độ sửa phiếu</p>
+          <p className="mt-1 text-sm font-bold text-amber-950">
+            Mã phiếu: <span className="font-black">{editSlipCode}</span> — thay đổi sẽ ghi đè toàn bộ dòng của phiếu này.
+          </p>
+        </section>
+      ) : null}
 
       {(formError || actionMessage) && (
         <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
@@ -5474,6 +5582,45 @@ function WarehouseSlipPanel({
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người lập</span>
             <input value={createdBy} onChange={event => setCreatedBy(event.target.value)} className={warehouseFieldClass} placeholder="Tên người lập phiếu" />
           </label>
+          <div className="block space-y-1.5 sm:col-span-2">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+              {shiftOptions.length === 0 ? (
+                <p className="text-xs font-semibold text-zinc-400">Chưa có ca trong cài đặt.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {shiftOptions.map(option => {
+                    const checked = selectedShifts.includes(option.value);
+                    return (
+                      <label
+                        key={option.value}
+                        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                          checked
+                            ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
+                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setSelectedShifts(current => toggleWarehouseShiftSelection(current, option.value))
+                          }
+                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                        />
+                        {option.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedShifts.length > 0 ? (
+                <p className="mt-2 text-[11px] font-semibold text-zinc-500">
+                  Đã chọn: {shiftLabel}
+                </p>
+              ) : null}
+            </div>
+          </div>
           <label className="block space-y-1.5 sm:col-span-2">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
             <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Nhập mua ngoài, xuất sản xuất..." />
@@ -5692,7 +5839,13 @@ function WarehouseSlipPanel({
             className="flex h-11 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-5 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isSaving ? 'Đang lưu...' : `Lưu & in phiếu ${warehouseSlipTypeLabel(slipType).toLowerCase()}`}
+            {isSaving
+              ? editSlipCode
+                ? 'Đang cập nhật...'
+                : 'Đang lưu...'
+              : editSlipCode
+                ? `Cập nhật phiếu ${editSlipCode}`
+                : `Lưu & in phiếu ${warehouseSlipTypeLabel(slipType).toLowerCase()}`}
           </button>
         </div>
       </section>
@@ -5727,7 +5880,9 @@ function WarehouseHistoryPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [viewingSlipCode, setViewingSlipCode] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingSlipCode, setDeletingSlipCode] = useState<string | null>(null);
+  const [selectedSlipCodes, setSelectedSlipCodes] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [historyPrintSlip, setHistoryPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
   const [historyPrintOpen, setHistoryPrintOpen] = useState(false);
   const [historyPrintAutoTrigger, setHistoryPrintAutoTrigger] = useState(false);
@@ -5761,6 +5916,7 @@ function WarehouseHistoryPanel({
 
   useEffect(() => {
     setViewingSlipCode(null);
+    setSelectedSlipCodes(new Set());
     loadMovements();
   }, [warehouseTab, selectedType, fromDate, toDate]);
 
@@ -5774,6 +5930,10 @@ function WarehouseHistoryPanel({
     });
   }, [movements, normalizedSearch]);
 
+  useEffect(() => {
+    setSelectedSlipCodes(new Set());
+  }, [normalizedSearch]);
+
   const slipGroups = useMemo(() => {
     const map = new Map<string, WarehouseMovementRow[]>();
     filteredMovements.forEach(row => {
@@ -5782,12 +5942,42 @@ function WarehouseHistoryPanel({
       current.push(row);
       map.set(key, current);
     });
-    return [...map.entries()].map(([slipCode, rows]) => ({
-      slipCode,
-      rows,
-      header: rows[0]
-    }));
+    return [...map.entries()]
+      .map(([slipCode, rows]) => ({
+        slipCode,
+        rows,
+        header: rows[0],
+        totalAmount: rows.reduce((sum, row) => sum + row.lineAmount, 0)
+      }))
+      .sort((a, b) => {
+        const byDate = (b.header.slipDate || '').localeCompare(a.header.slipDate || '');
+        if (byDate !== 0) return byDate;
+        return (b.slipCode || '').localeCompare(a.slipCode || '', 'vi');
+      });
   }, [filteredMovements]);
+
+  const selectableSlips = useMemo(
+    () => slipGroups.filter(group => group.slipCode && group.rows.some(row => row.id)),
+    [slipGroups]
+  );
+  const allSelected =
+    selectableSlips.length > 0 && selectableSlips.every(group => selectedSlipCodes.has(group.slipCode));
+  const selectedCount = selectedSlipCodes.size;
+
+  const toggleSlipSelection = (slipCode: string) => {
+    setSelectedSlipCodes(prev => {
+      const next = new Set(prev);
+      if (next.has(slipCode)) next.delete(slipCode);
+      else next.add(slipCode);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedSlipCodes(
+      allSelected ? new Set() : new Set(selectableSlips.map(group => group.slipCode))
+    );
+  };
 
   const viewingRows = viewingSlipCode
     ? filteredMovements.filter(row => row.slipCode === viewingSlipCode)
@@ -5833,21 +6023,65 @@ function WarehouseHistoryPanel({
     handlePrintSlipByCode(viewingSlipCode, autoPrint);
   };
 
-  const handleDeleteRow = async (row: WarehouseMovementRow) => {
-    if (!row.id) return;
-    if (!window.confirm(`Xóa dòng ${row.itemCode} khỏi phiếu ${row.slipCode}?`)) return;
+  const handleEditSlip = (slipCode: string) => {
+    const rows = filteredMovements.filter(row => row.slipCode === slipCode);
+    const draft = buildWarehouseSlipDraftFromHistoryRows(rows, slipCode);
+    if (!draft) return;
 
-    setDeletingId(row.id);
+    localStorage.setItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY, JSON.stringify(draft));
+    setViewingSlipCode(null);
+    onOpenSlip();
+  };
+
+  const handleDeleteSlip = async (slipCode: string, lineCount: number) => {
+    if (!slipCode) return;
+    if (!window.confirm(`Xóa toàn bộ phiếu ${slipCode} (${lineCount} dòng)?`)) return;
+
+    setDeletingSlipCode(slipCode);
+    setError('');
     try {
-      const res = await fetch(`/api/phieu-xuat-nhap-kho/${row.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/phieu-xuat-nhap-kho/slip/${encodeURIComponent(slipCode)}`, {
+        method: 'DELETE'
+      });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể xóa dòng phiếu.');
-      if (viewingSlipCode && viewingRows.length <= 1) setViewingSlipCode(null);
+      if (!res.ok) throw new Error(data.error || 'Không thể xóa phiếu.');
+      setSelectedSlipCodes(prev => {
+        const next = new Set(prev);
+        next.delete(slipCode);
+        return next;
+      });
+      if (viewingSlipCode === slipCode) setViewingSlipCode(null);
       await loadMovements();
     } catch (deleteError: any) {
-      setError(deleteError.message || 'Không thể xóa dòng phiếu.');
+      setError(deleteError.message || 'Không thể xóa phiếu.');
     } finally {
-      setDeletingId(null);
+      setDeletingSlipCode(null);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedCount === 0) return;
+    if (!window.confirm(`Bạn có chắc muốn xóa ${selectedCount} phiếu đã chọn?`)) return;
+
+    setIsBulkDeleting(true);
+    setError('');
+    try {
+      for (const slipCode of selectedSlipCodes) {
+        const res = await fetch(`/api/phieu-xuat-nhap-kho/slip/${encodeURIComponent(slipCode)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Không thể xóa phiếu.');
+      }
+      if (viewingSlipCode && selectedSlipCodes.has(viewingSlipCode)) {
+        setViewingSlipCode(null);
+      }
+      setSelectedSlipCodes(new Set());
+      await loadMovements();
+    } catch (deleteError: any) {
+      setError(deleteError.message || 'Không thể xóa các phiếu đã chọn.');
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -5860,7 +6094,7 @@ function WarehouseHistoryPanel({
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý kho</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Lịch sử xuất nhập kho</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Tra cứu phiếu theo kho NVL hoặc kho Sản phẩm.
+                Mỗi dòng là một phiếu · bấm Xem để xem chi tiết NVL/SP bên trong.
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
@@ -5957,86 +6191,143 @@ function WarehouseHistoryPanel({
       )}
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+        {selectableSlips.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-4 py-3">
+            <p className="text-xs font-semibold text-zinc-600">
+              {selectedCount > 0 ? `Đã chọn ${selectedCount} phiếu` : 'Chọn phiếu để xóa nhiều'}
+            </p>
+            <button
+              type="button"
+              disabled={selectedCount === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
+              onClick={() => void handleBulkDelete()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isBulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Xóa đã chọn{selectedCount > 0 ? ` (${selectedCount})` : ''}
+            </button>
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
               <tr>
+                <th className="w-10 px-3 py-3 text-center font-black">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    disabled={selectableSlips.length === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
+                    className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                    title="Chọn tất cả"
+                  />
+                </th>
                 <th className="px-4 py-3 font-black">Mã phiếu</th>
                 <th className="px-4 py-3 font-black">Loại</th>
                 <th className="px-4 py-3 font-black">Ngày</th>
                 <th className="px-4 py-3 font-black">Ca</th>
-                <th className="px-4 py-3 font-black">{warehouseItemCodeLabel(warehouseTab)}</th>
-                <th className="px-4 py-3 font-black">{warehouseItemNameLabel(warehouseTab)}</th>
-                <th className="px-4 py-3 font-black">SL</th>
-                <th className="px-4 py-3 font-black">ĐVT</th>
-                <th className="px-4 py-3 font-black">Giá</th>
-                <th className="px-4 py-3 font-black">Thành tiền</th>
                 <th className="px-4 py-3 font-black">Người lập</th>
                 <th className="px-4 py-3 text-center font-black">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {filteredMovements.map(row => (
-                <tr key={row.id || `${row.slipCode}-${row.itemCode}`} className="hover:bg-red-50/40">
-                  <td className="px-4 py-3 font-black text-zinc-950">{row.slipCode || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-black ${row.slipType === 'nhap' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
-                      {warehouseSlipTypeLabel(row.slipType)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
-                  <td className="px-4 py-3 font-semibold text-zinc-700">{row.shift || '-'}</td>
-                  <td className="px-4 py-3 font-black text-zinc-950">{row.itemCode || '-'}</td>
-                  <td className="px-4 py-3 font-semibold text-zinc-800">{row.itemName || '-'}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-800">{formatNumber(row.quantity, 2)}</td>
-                  <td className="px-4 py-3 font-bold text-zinc-700">{row.unit}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-800">{formatWarehouseMoney(row.unitPrice)} đ</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-900">{formatWarehouseMoney(row.lineAmount)} đ</td>
-                  <td className="px-4 py-3 font-semibold text-zinc-600">{row.createdBy || '-'}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setViewingSlipCode(row.slipCode)}
-                        title="Xem phiếu"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handlePrintSlipByCode(row.slipCode, true)}
-                        title="In phiếu"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                      >
-                        <Printer className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRow(row)}
-                        disabled={deletingId === row.id}
-                        title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {deletingId === row.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && filteredMovements.length === 0 && (
+              {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center font-bold text-zinc-400">
-                    Chưa có lịch sử {warehouseKindLabel(warehouseTab).toLowerCase()}.
-                  </td>
-                </tr>
-              )}
-              {isLoading && (
-                <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={7} className="px-4 py-8 text-center font-bold text-zinc-500">
                     Đang tải Supabase...
                   </td>
                 </tr>
+              ) : slipGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center font-bold text-zinc-400">
+                    Chưa có lịch sử {warehouseKindLabel(warehouseTab).toLowerCase()}.
+                  </td>
+                </tr>
+              ) : (
+                slipGroups.map(group => {
+                  const header = group.header;
+                  const lineCount = group.rows.length;
+                  const isSelected = selectedSlipCodes.has(group.slipCode);
+                  const isDeleting = deletingSlipCode === group.slipCode;
+
+                  return (
+                    <tr
+                      key={group.slipCode}
+                      className={`hover:bg-red-50/40 ${isSelected ? 'bg-red-50/30' : ''}`}
+                    >
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={!group.slipCode || isBulkDeleting || isDeleting}
+                          onChange={() => toggleSlipSelection(group.slipCode)}
+                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Chọn phiếu"
+                        />
+                      </td>
+                      <td className="px-4 py-3 font-black text-zinc-950">
+                        <div>{group.slipCode || '-'}</div>
+                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                          {lineCount} dòng · {formatWarehouseMoney(group.totalAmount)} đ
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-black ${
+                            header.slipType === 'nhap'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-50 text-amber-800'
+                          }`}
+                        >
+                          {warehouseSlipTypeLabel(header.slipType)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-zinc-700">{header.slipDate || '-'}</td>
+                      <td className="px-4 py-3 font-semibold text-zinc-700">{header.shift || '-'}</td>
+                      <td className="px-4 py-3 font-semibold text-zinc-600">{header.createdBy || '-'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingSlipCode(group.slipCode)}
+                            title="Xem chi tiết NVL"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditSlip(group.slipCode)}
+                            title="Sửa phiếu"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-amber-700 transition hover:bg-amber-50"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePrintSlipByCode(group.slipCode, true)}
+                            title="In phiếu"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteSlip(group.slipCode, lineCount)}
+                            disabled={isDeleting || isBulkDeleting}
+                            title="Xóa phiếu"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -6049,7 +6340,9 @@ function WarehouseHistoryPanel({
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết phiếu</h3>
-                <p className="mt-0.5 text-xs font-semibold text-zinc-500">{viewingSlipCode}</p>
+                <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                  {viewingSlipCode} · {viewingRows.length} dòng {warehouseTab === 'san_pham' ? 'SP' : 'NVL'}
+                </p>
               </div>
               <BackButton onClick={() => setViewingSlipCode(null)} />
             </div>
@@ -6099,14 +6392,24 @@ function WarehouseHistoryPanel({
                 <p className="text-sm font-black text-zinc-950">
                   Tổng tiền: <span className="text-[#ef1b2d]">{formatWarehouseMoney(viewingSlipTotal)} đ</span>
                 </p>
-                <button
-                  type="button"
-                  onClick={() => handlePrintViewingSlip(true)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-                >
-                  <Printer className="h-4 w-4" />
-                  In phiếu
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEditSlip(viewingSlipCode!)}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Sửa phiếu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintViewingSlip(true)}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                  >
+                    <Printer className="h-4 w-4" />
+                    In phiếu
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -6661,18 +6964,10 @@ function SimpleSelect({
   );
 }
 
-type MachineNvlReportKind = 'dau_ca' | 'cuoi_ca';
-
 const MACHINE_NVL_REPORT_TABS: { id: MachineNvlReportKind; label: string; hint: string }[] = [
   { id: 'dau_ca', label: 'Báo cáo đầu ca', hint: 'Kiểm kê NVL tồn khi bắt đầu ca' },
   { id: 'cuoi_ca', label: 'Báo cáo cuối ca', hint: 'Kiểm kê NVL tồn khi kết thúc ca' }
 ];
-
-function normalizeMachineNvlReportKind(value: unknown): MachineNvlReportKind {
-  const raw = String(value ?? 'dau_ca').trim().toLowerCase();
-  if (raw === 'cuoi_ca' || raw === 'cuoi' || raw === 'cuoi-ca') return 'cuoi_ca';
-  return 'dau_ca';
-}
 
 type MachineNvlReportLine = {
   key: string;
@@ -6686,35 +6981,6 @@ type MachineNvlReportLine = {
   standardQuantity: string;
   quantity: string;
   note: string;
-};
-
-type MachineNvlSavedLine = {
-  stt: number;
-  maNvl: string;
-  tenNvl: string;
-  donVi: string;
-  soLuongTonCaTruoc: number | null;
-  soLuongTrongMay: number | null;
-  soLuongTrongBonTron: number | null;
-  soLuongNlChuaTron: number | null;
-  soLuongTonDinhMuc: number | null;
-  soLuongTon: number;
-  ghiChu: string;
-};
-
-type MachineNvlSavedReport = {
-  id: string;
-  ngay: string;
-  ca: string;
-  gio: string;
-  maMay: string;
-  tenMay: string;
-  nhanSu: string;
-  total: number;
-  note: string;
-  reportKind: MachineNvlReportKind;
-  lines: MachineNvlSavedLine[];
-  createdAt: string;
 };
 
 const machineNvlToday = () => {
@@ -6842,84 +7108,6 @@ function savedMachineNvlLineToFormLine(line: MachineNvlSavedLine): MachineNvlRep
     quantity: formatMachineNvlQuantityValue(line.soLuongTon),
     note: line.ghiChu
   };
-}
-
-function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport[] {
-  if (!data || typeof data !== 'object') return [];
-  const reports = (data as { reports?: unknown }).reports;
-  if (!Array.isArray(reports)) return [];
-
-  return reports
-    .map((item): MachineNvlSavedReport | null => {
-      if (!item || typeof item !== 'object') return null;
-      const record = item as Record<string, unknown>;
-      const rawLines = Array.isArray(record.chi_tiet) ? record.chi_tiet : [];
-      const lines = rawLines
-        .map((line, index): MachineNvlSavedLine | null => {
-          if (!line || typeof line !== 'object') return null;
-          const detail = line as Record<string, unknown>;
-          const maNvl = String(detail.ma_nvl ?? detail.ma_npl ?? detail.code ?? '').trim();
-          const tenNvl = String(detail.ten_nvl ?? detail.ten_npl ?? detail.name ?? '').trim();
-          if (!maNvl && !tenNvl) return null;
-          const amount = Number(String(detail.so_luong_ton ?? detail.so_luong ?? detail.quantity ?? 0).replace(',', '.'));
-          const standardRaw =
-            detail.so_luong_ton_dinh_muc ?? detail.so_luong_dinh_muc ?? detail.standardQuantity;
-          const standardParsed =
-            standardRaw === null || standardRaw === undefined || standardRaw === ''
-              ? null
-              : Number(String(standardRaw).replace(',', '.'));
-          const prevRaw = detail.so_luong_ton_ca_truoc ?? detail.so_luong_ca_truoc ?? detail.previousQuantity;
-          const prevParsed =
-            prevRaw === null || prevRaw === undefined || prevRaw === ''
-              ? null
-              : Number(String(prevRaw).replace(',', '.'));
-          const inMachineRaw = detail.so_luong_trong_may ?? detail.ton_trong_may ?? detail.inMachineQuantity;
-          const inMachineParsed =
-            inMachineRaw === null || inMachineRaw === undefined || inMachineRaw === ''
-              ? null
-              : Number(String(inMachineRaw).replace(',', '.'));
-          const inMixerRaw = detail.so_luong_trong_bon_tron ?? detail.ton_trong_bon_tron ?? detail.inMixerQuantity;
-          const inMixerParsed =
-            inMixerRaw === null || inMixerRaw === undefined || inMixerRaw === ''
-              ? null
-              : Number(String(inMixerRaw).replace(',', '.'));
-          const unblendedRaw = detail.so_luong_nl_chua_tron ?? detail.nl_chua_tron ?? detail.unblendedQuantity;
-          const unblendedParsed =
-            unblendedRaw === null || unblendedRaw === undefined || unblendedRaw === ''
-              ? null
-              : Number(String(unblendedRaw).replace(',', '.'));
-          return {
-            stt: Number(detail.stt ?? index + 1) || index + 1,
-            maNvl,
-            tenNvl,
-            donVi: String(detail.don_vi ?? detail.unit ?? 'kg').trim() || 'kg',
-            soLuongTonCaTruoc: Number.isFinite(prevParsed) ? prevParsed : null,
-            soLuongTrongMay: Number.isFinite(inMachineParsed) ? inMachineParsed : null,
-            soLuongTrongBonTron: Number.isFinite(inMixerParsed) ? inMixerParsed : null,
-            soLuongNlChuaTron: Number.isFinite(unblendedParsed) ? unblendedParsed : null,
-            soLuongTonDinhMuc: Number.isFinite(standardParsed) ? standardParsed : null,
-            soLuongTon: Number.isFinite(amount) ? amount : 0,
-            ghiChu: String(detail.ghi_chu ?? detail.note ?? '').trim()
-          };
-        })
-        .filter((line): line is MachineNvlSavedLine => Boolean(line));
-
-      return {
-        id: String(record.id ?? '').trim(),
-        ngay: String(record.ngay ?? '').slice(0, 10),
-        ca: String(record.ca ?? '').trim(),
-        gio: String(record.gio ?? '').trim(),
-        maMay: String(record.ma_may ?? '').trim(),
-        tenMay: String(record.ten_may ?? '').trim(),
-        nhanSu: String(record.nhan_su ?? '').trim(),
-        total: Number(record.tong_so_luong_ton ?? 0) || 0,
-        note: String(record.ghi_chu ?? '').trim(),
-        reportKind: normalizeMachineNvlReportKind(record.loai_bao_cao ?? record.loai ?? record.reportKind),
-        lines,
-        createdAt: String(record.created_at ?? '').trim()
-      };
-    })
-    .filter((report): report is MachineNvlSavedReport => Boolean(report));
 }
 
 function MachineNvlReportPanel({
@@ -8411,6 +8599,30 @@ function buildProductionPlanMaterialAccounting(
   return buildProductionPlanMaterialAccountingForLines(lines, materialsByLine);
 }
 
+function buildProductionPlanNvlPrintGroups(
+  lines: ProductionPlanLine[],
+  materialsByLine: Record<string, ProductionOrderMaterialLine[]>
+): ProductionPlanNvlPrintShiftGroup[] {
+  return buildProductionPlanMaterialAccountingByShift(lines, materialsByLine).map(group => ({
+    shift: group.shift,
+    orderCount: group.orderCount,
+    orderCodes: [
+      ...new Set(
+        lines
+          .filter(line => normalizeProductionPlanShift(line.shift) === group.shift)
+          .map(line => line.code)
+          .filter(code => code && code !== '-')
+      )
+    ],
+    lines: group.lines.map(line => ({
+      code: line.code,
+      name: line.name,
+      unit: line.unit,
+      totalQuantity: line.totalQuantity
+    }))
+  }));
+}
+
 function ProductionPlanMaterialAccountingModal({
   open,
   onClose,
@@ -9582,8 +9794,14 @@ function ProductionPlanModal({
   const [isSaving, setIsSaving] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [pendingNvlPrint, setPendingNvlPrint] = useState(false);
+  const [showNvlPrintSheet, setShowNvlPrintSheet] = useState(false);
   const [isLoadingPlanPrint, setIsLoadingPlanPrint] = useState(false);
+  const [isLoadingNvlPrint, setIsLoadingNvlPrint] = useState(false);
   const [printMaterialsByLine, setPrintMaterialsByLine] = useState<Record<string, ProductionOrderMaterialLine[]>>({});
+  const [nvlPrintMaterialsByLine, setNvlPrintMaterialsByLine] = useState<
+    Record<string, ProductionOrderMaterialLine[]>
+  >({});
   const [showMaterialAccountingModal, setShowMaterialAccountingModal] = useState(false);
   const [isLoadingMaterialAccounting, setIsLoadingMaterialAccounting] = useState(false);
   const [materialAccountingError, setMaterialAccountingError] = useState('');
@@ -9599,8 +9817,12 @@ function ProductionPlanModal({
     setFormError('');
     setDragIndex(null);
     setPendingPrint(false);
+    setPendingNvlPrint(false);
+    setShowNvlPrintSheet(false);
     setIsLoadingPlanPrint(false);
+    setIsLoadingNvlPrint(false);
     setPrintMaterialsByLine({});
+    setNvlPrintMaterialsByLine({});
     setShowMaterialAccountingModal(false);
     setIsLoadingMaterialAccounting(false);
     setMaterialAccountingError('');
@@ -9624,6 +9846,27 @@ function ProductionPlanModal({
     }, 150);
     return () => window.clearTimeout(timer);
   }, [pendingPrint, displayLines]);
+
+  useEffect(() => {
+    if (!pendingNvlPrint || displayLines.length === 0) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingNvlPrint(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [pendingNvlPrint, displayLines]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPendingPrint(false);
+      setPendingNvlPrint(false);
+      setShowNvlPrintSheet(false);
+      setPrintMaterialsByLine({});
+      setNvlPrintMaterialsByLine({});
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
 
   const reorderLine = (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
@@ -9684,6 +9927,22 @@ function ProductionPlanModal({
       setFormError(error.message || 'Không thể tải thành phần sản phẩm để in kế hoạch.');
     } finally {
       setIsLoadingPlanPrint(false);
+    }
+  };
+
+  const handlePrintNvl = async () => {
+    if (displayLines.length === 0) return;
+    setIsLoadingNvlPrint(true);
+    setFormError('');
+
+    try {
+      setNvlPrintMaterialsByLine(await loadProductionPlanMaterials(displayLines));
+      setShowNvlPrintSheet(true);
+      setPendingNvlPrint(true);
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể tải thành phần NVL để in phiếu.');
+    } finally {
+      setIsLoadingNvlPrint(false);
     }
   };
 
@@ -9925,6 +10184,15 @@ function ProductionPlanModal({
             </button>
             <button
               type="button"
+              onClick={handlePrintNvl}
+              disabled={displayLines.length === 0 || isLoadingNvlPrint}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-extrabold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoadingNvlPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              In phiếu NVL
+            </button>
+            <button
+              type="button"
               onClick={handlePrint}
               disabled={displayLines.length === 0 || isLoadingPlanPrint}
               className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
@@ -9947,6 +10215,14 @@ function ProductionPlanModal({
 
       {pendingPrint && displayLines.length > 0 && (
         <ProductionPlanPrintSheet lines={displayLines} materialsByLine={printMaterialsByLine} />
+      )}
+
+      {showNvlPrintSheet && displayLines.length > 0 && (
+        <ProductionPlanNvlPrintSheet
+          planDate={planDate}
+          planNote={planHeaderNote}
+          shiftGroups={buildProductionPlanNvlPrintGroups(displayLines, nvlPrintMaterialsByLine)}
+        />
       )}
 
       <ProductionPlanMaterialAccountingModal
@@ -14215,6 +14491,7 @@ function ControlBoardPanel({
   const [shiftSummaryAcceptanceReports, setShiftSummaryAcceptanceReports] = useState<AcceptanceReport[]>([]);
   const [mixingReports, setMixingReports] = useState<MixingReport[]>([]);
   const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
+  const [machineNvlReports, setMachineNvlReports] = useState<MachineNvlSavedReport[]>([]);
   const defaultShiftSummaryRange = defaultShiftSummaryDateRange(14);
   const [shiftSummaryDateFrom, setShiftSummaryDateFrom] = useState(defaultShiftSummaryRange.from);
   const [shiftSummaryDateTo, setShiftSummaryDateTo] = useState(defaultShiftSummaryRange.to);
@@ -14250,7 +14527,7 @@ function ControlBoardPanel({
     try {
       const summaryFrom = shiftSummaryDateFrom || defaultShiftSummaryRange.from;
       const summaryTo = shiftSummaryDateTo || defaultShiftSummaryRange.to;
-      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes] =
+      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, machineNvlRes] =
         await Promise.all([
         fetch('/api/nhan-su?format=groups'),
         fetch('/api/don-hang'),
@@ -14264,7 +14541,8 @@ function ControlBoardPanel({
           `/api/bao-cao-nghiem-thu?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`
         ),
         fetch(`/api/bao-cao-phoi-tron?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`),
-        fetch(`/api/phieu-can-dinh-ki?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`)
+        fetch(`/api/phieu-can-dinh-ki?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
+        fetch('/api/bao-cao-may-nvl-ton?limit=300&loai_bao_cao=dau_ca')
       ]);
 
       const staffData = await staffRes.json().catch(() => ({}));
@@ -14278,6 +14556,7 @@ function ControlBoardPanel({
       const shiftSummaryAcceptanceData = await shiftSummaryAcceptanceRes.json().catch(() => ({}));
       const mixingData = await mixingRes.json().catch(() => ({}));
       const weighingData = await weighingRes.json().catch(() => ([]));
+      const machineNvlData = await machineNvlRes.json().catch(() => ({}));
 
       if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
       if (!orderRes.ok) throw new Error(orderData.error || 'Không thể tải đơn hàng.');
@@ -14318,6 +14597,12 @@ function ControlBoardPanel({
         setWeighingRecords([]);
       }
 
+      if (machineNvlRes.ok) {
+        setMachineNvlReports(normalizeMachineNvlReports(machineNvlData));
+      } else {
+        setMachineNvlReports([]);
+      }
+
       const usingLocalFallback = [machineData, staffData, orderData, materialData, productionData].some(
         payload => payload && typeof payload === 'object' && (payload as { source?: string }).source === 'local'
       );
@@ -14338,6 +14623,7 @@ function ControlBoardPanel({
       setShiftSummaryAcceptanceReports([]);
       setMixingReports([]);
       setWeighingRecords([]);
+      setMachineNvlReports([]);
       setLoadError(error.message || 'Không thể tải dữ liệu bảng điều khiển.');
     } finally {
       setIsLoading(false);
@@ -14357,6 +14643,7 @@ function ControlBoardPanel({
         acceptanceReports: shiftSummaryAcceptanceReports,
         mixingReports,
         weighingRecords,
+        machineNvlReports,
         dateFrom: shiftSummaryDateFrom,
         dateTo: shiftSummaryDateTo
       }),
@@ -14367,9 +14654,56 @@ function ControlBoardPanel({
       shiftSummaryAcceptanceReports,
       mixingReports,
       weighingRecords,
+      machineNvlReports,
       shiftSummaryDateFrom,
       shiftSummaryDateTo
     ]
+  );
+
+  const shiftSummaryFilterSources = useMemo(
+    () => ({
+      shiftSettings: productionOrderSettings,
+      productionOrders: productionOrders.map(order => ({
+        startDate: order.startDate,
+        shift: order.shift,
+        staff: order.staff
+      })),
+      mixingReports: mixingReports.map(report => ({
+        ngay: report.ngay,
+        ca: report.ca,
+        nhan_su: report.nhan_su
+      })),
+      machineNvlReports: machineNvlReports.map(report => ({
+        ngay: report.ngay,
+        ca: report.ca,
+        nhanSu: report.nhanSu
+      })),
+      weighingRecords: weighingRecords.map(record => ({
+        productionDate: record.productionDate,
+        reportDate: record.reportDate,
+        shiftName: record.shiftName,
+        worker1: record.worker1,
+        worker2: record.worker2
+      }))
+    }),
+    [productionOrderSettings, productionOrders, mixingReports, machineNvlReports, weighingRecords]
+  );
+
+  const shiftSummaryShiftOptions = useMemo(() => {
+    const fromSettings = productionOrderSettings
+      .filter(setting => setting.loaiCaiDat === 'Thời gian')
+      .map(setting => setting.name || setting.code)
+      .filter(value => value && value !== '-');
+
+    const fromRows = shiftSummaryRows.map(row => row.ca).filter(Boolean);
+    return [...new Set(fromSettings.length > 0 ? fromSettings : fromRows)].sort((a, b) =>
+      a.localeCompare(b, 'vi', { numeric: true })
+    );
+  }, [productionOrderSettings, shiftSummaryRows]);
+
+  const shiftSummaryStaffOptions = useMemo(
+    () => collectShiftSummaryStaffOptions(shiftSummaryFilterSources),
+    [shiftSummaryFilterSources]
   );
 
   const handleDeleteWeighingRecord = async (recordId: string | number) => {
@@ -14387,6 +14721,48 @@ function ControlBoardPanel({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.error || 'Không thể xóa dòng cân.');
+      }
+    }
+    await loadBoard();
+  };
+
+  const handleDeleteMixingReport = async (reportId: string) => {
+    const res = await fetch(`/api/bao-cao-phoi-tron/${reportId}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Không thể xóa báo cáo phối trộn.');
+    }
+    await loadBoard();
+  };
+
+  const handleDeleteMixingReports = async (reportIds: string[]) => {
+    const uniqueIds = Array.from(new Set(reportIds.filter(Boolean)));
+    for (const reportId of uniqueIds) {
+      const res = await fetch(`/api/bao-cao-phoi-tron/${reportId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa báo cáo phối trộn.');
+      }
+    }
+    await loadBoard();
+  };
+
+  const handleDeleteMachineNvlReport = async (reportId: string) => {
+    const res = await fetch(`/api/bao-cao-may-nvl-ton/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Không thể xóa báo cáo tồn NVL đầu ca.');
+    }
+    await loadBoard();
+  };
+
+  const handleDeleteMachineNvlReports = async (reportIds: string[]) => {
+    const uniqueIds = Array.from(new Set(reportIds.filter(Boolean)));
+    for (const reportId of uniqueIds) {
+      const res = await fetch(`/api/bao-cao-may-nvl-ton/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa báo cáo tồn NVL đầu ca.');
       }
     }
     await loadBoard();
@@ -14414,7 +14790,8 @@ function ControlBoardPanel({
       products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
       acceptanceReports: shiftSummaryAcceptanceReports,
       mixingReports,
-      weighingRecords
+      weighingRecords,
+      machineNvlReports
     }),
     [
       productionOrderSettings,
@@ -14422,7 +14799,8 @@ function ControlBoardPanel({
       products,
       shiftSummaryAcceptanceReports,
       mixingReports,
-      weighingRecords
+      weighingRecords,
+      machineNvlReports
     ]
   );
 
@@ -14709,9 +15087,16 @@ function ControlBoardPanel({
         onDateFromChange={setShiftSummaryDateFrom}
         onDateToChange={setShiftSummaryDateTo}
         detailSources={shiftSummaryDetailSources}
+        filterSources={shiftSummaryFilterSources}
+        shiftOptions={shiftSummaryShiftOptions}
+        staffOptions={shiftSummaryStaffOptions}
         onEditWeighingRecord={onEditWeighing ? handleEditWeighingRecord : undefined}
         onDeleteWeighingRecord={handleDeleteWeighingRecord}
         onDeleteWeighingRecords={handleDeleteWeighingRecords}
+        onDeleteMixingReport={handleDeleteMixingReport}
+        onDeleteMixingReports={handleDeleteMixingReports}
+        onDeleteMachineNvlReport={handleDeleteMachineNvlReport}
+        onDeleteMachineNvlReports={handleDeleteMachineNvlReports}
       />
 
       <div className="grid grid-cols-1 gap-4">

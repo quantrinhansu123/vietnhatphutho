@@ -421,11 +421,14 @@ input[type="number"] {
   }
 
   .production-plan-print-sheet,
-  .production-plan-print-sheet * {
+  .production-plan-print-sheet *,
+  .production-plan-nvl-print-sheet,
+  .production-plan-nvl-print-sheet * {
     visibility: visible !important;
   }
 
-  .production-plan-print-sheet {
+  .production-plan-print-sheet,
+  .production-plan-nvl-print-sheet {
     display: block !important;
     position: absolute;
     inset: 0;
@@ -433,6 +436,12 @@ input[type="number"] {
     background: #ffffff;
     color: #111111;
     padding: 0;
+  }
+
+  .production-plan-nvl-print-sheet .production-plan-print-doc {
+    width: 190mm !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
   }
 
   .production-order-print-batch,
@@ -560,6 +569,49 @@ input[type="number"] {
     left: auto;
     top: auto;
     width: auto;
+  }
+
+  .shift-summary-print-batch,
+  .shift-summary-print-batch *,
+  .shift-summary-print-sheet,
+  .shift-summary-print-sheet * {
+    visibility: visible !important;
+  }
+
+  .shift-summary-print-batch {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 9999;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+  }
+
+  .shift-summary-print-batch .shift-summary-print-sheet {
+    position: relative;
+    inset: auto;
+    left: auto;
+    top: auto;
+    width: auto;
+  }
+
+  .shift-summary-print-doc {
+    width: 190mm !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .shift-summary-print-table {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
 }
 
@@ -773,6 +825,104 @@ input[type="number"] {
   font-size: 10.5pt;
   font-style: italic;
   color: #333333;
+}
+
+.production-plan-nvl-print-sheet {
+  display: none;
+}
+
+.production-plan-nvl-print-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin-bottom: 4mm;
+}
+
+.production-plan-nvl-print-meta-table th,
+.production-plan-nvl-print-meta-table td {
+  border: 1px solid #222222;
+  padding: 1.8mm 2mm;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 10.5pt;
+  vertical-align: middle;
+}
+
+.production-plan-nvl-print-meta-table th {
+  width: 18%;
+  font-weight: 700;
+  background: #f7f7f7;
+  text-align: left;
+}
+
+.production-plan-nvl-print-shift-block {
+  margin-bottom: 5mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.production-plan-nvl-print-shift-title {
+  margin: 0 0 2mm;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11.5pt;
+  font-weight: 700;
+}
+
+.production-plan-nvl-print-shift-title span {
+  font-size: 10.5pt;
+  font-weight: 400;
+  color: #444444;
+}
+
+.production-plan-nvl-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.production-plan-nvl-print-table th,
+.production-plan-nvl-print-table td {
+  border: 1px solid #222222;
+  padding: 1.8mm 2mm;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 10.5pt;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.production-plan-nvl-print-table th {
+  background: #f7f7f7;
+  font-weight: 700;
+  text-align: center;
+}
+
+.production-plan-nvl-print-col-stt { width: 8%; }
+.production-plan-nvl-print-col-code { width: 14%; }
+.production-plan-nvl-print-col-name { width: 46%; }
+.production-plan-nvl-print-col-unit { width: 10%; }
+.production-plan-nvl-print-col-qty { width: 22%; }
+
+.production-plan-nvl-print-code {
+  font-weight: 700;
+}
+
+.production-plan-nvl-print-qty {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.production-plan-nvl-print-total-row td {
+  font-weight: 700;
+  background: #fafafa;
+}
+
+.production-plan-nvl-print-empty {
+  margin: 4mm 0;
+  padding: 4mm;
+  border: 1px dashed #888888;
+  text-align: center;
+  font-size: 10.5pt;
+  color: #555555;
 }
 
 @media print {
@@ -1732,6 +1882,90 @@ input[type="number"] {
 .acceptance-report-print-table th:nth-child(4) { width: 12%; }
 .acceptance-report-print-table th:nth-child(5) { width: 18%; }
 
+.shift-summary-print-doc {
+  width: 190mm;
+  max-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.shift-summary-print-filter-table {
+  margin-bottom: 4mm;
+}
+
+.shift-summary-print-table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin-bottom: 5mm;
+  box-sizing: border-box;
+}
+
+.shift-summary-print-table th,
+.shift-summary-print-table td {
+  border: 1px solid #222222;
+  padding: 1.6mm 1.4mm;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 10pt;
+  line-height: 1.25;
+  text-align: left;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+
+.shift-summary-print-table th {
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.shift-summary-print-col-date { width: 12%; }
+.shift-summary-print-col-shift { width: 9%; }
+.shift-summary-print-col-num { width: 15.8%; }
+
+.shift-summary-print-center {
+  text-align: center;
+}
+
+.shift-summary-print-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.shift-summary-print-total-row td {
+  font-weight: 700;
+  background: #fafafa;
+}
+
+.shift-summary-print-total-label {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.shift-summary-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12mm;
+  margin-top: 10mm;
+  text-align: center;
+  font-size: 10.5pt;
+}
+
+.shift-summary-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.shift-summary-print-signatures span {
+  display: block;
+  margin-top: 16mm;
+  font-style: italic;
+  font-weight: 400;
+  color: #444444;
+}
+
 .acceptance-report-print-signatures {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1825,25 +2059,18 @@ input[type="number"] {
 }
 
 .machine-downtime-print-signatures {
-  margin-top: 12mm;
-  font-size: 11pt;
-}
-
-.machine-downtime-print-signatures-row {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8mm;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4mm;
+  margin-top: 12mm;
   text-align: center;
-}
-
-.machine-downtime-print-signatures-full {
-  margin-top: 8mm;
-  text-align: center;
+  font-size: 10pt;
 }
 
 .machine-downtime-print-signatures p {
   margin: 0;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .machine-downtime-print-signatures span {
@@ -1852,6 +2079,7 @@ input[type="number"] {
   font-style: italic;
   font-weight: 400;
   color: #444444;
+  white-space: nowrap;
 }
 
 .warehouse-slip-print-sheet {

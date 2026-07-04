@@ -10,13 +10,15 @@ import {
   type ControlBoardShiftSummaryRow
 } from './controlBoardShiftSummary';
 import { formatNumber } from '../utils';
+import { sumMachineNvlDauCaLineTotal, type MachineNvlSavedReport } from './machineNvlReports';
 
 export type ShiftSummaryMetric =
   | 'slHang'
   | 'khoiLuongHang'
   | 'slHangThucTe'
   | 'khoiLuongHangThucTe'
-  | 'khoiLuongNpl';
+  | 'khoiLuongNpl'
+  | 'tonDauCa';
 
 export const SHIFT_SUMMARY_METRIC_META: Record<
   ShiftSummaryMetric,
@@ -26,7 +28,8 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   khoiLuongHang: { label: 'Khối lượng hàng', source: 'Lệnh sản xuất' },
   slHangThucTe: { label: 'Số lượng hàng TT', source: 'Báo cáo sản lượng' },
   khoiLuongHangThucTe: { label: 'Khối lượng hàng TT', source: 'Báo cáo cân ca' },
-  khoiLuongNpl: { label: 'Khối lượng NPL', source: 'Báo cáo phối trộn (kg)' }
+  khoiLuongNpl: { label: 'Khối lượng NPL', source: 'Báo cáo phối trộn (kg)' },
+  tonDauCa: { label: 'Tồn đầu ca', source: 'Bảng tồn NVL (đầu ca)' }
 };
 
 export type ShiftSummaryDetailColumn = {
@@ -126,6 +129,7 @@ export function getShiftSummaryDetail(input: {
   acceptanceReports: AcceptanceReport[];
   mixingReports: MixingReport[];
   weighingRecords: WeighingRecord[];
+  machineNvlReports?: MachineNvlSavedReport[];
 }): ShiftSummaryDetailView {
   const shiftOptions = getProductionShiftOptions(input.shiftSettings);
   const { ngay, ca, metric } = input;
@@ -269,43 +273,104 @@ export function getShiftSummaryDetail(input: {
     };
   }
 
-  const rows: ShiftSummaryDetailRow[] = [];
-  let total = 0;
+  if (metric === 'tonDauCa') {
+    const rows: ShiftSummaryDetailRow[] = [];
+    let total = 0;
 
-  for (const report of input.mixingReports) {
-    if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
+    for (const report of input.machineNvlReports ?? []) {
+      if (report.reportKind !== 'dau_ca') continue;
+      if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
 
-    for (const line of report.chi_tiet) {
-      for (const key of MIXING_ROUND_KEYS) {
-        for (const item of getRoundItems(line.lan_su_dung, key)) {
-          if (!isKgUnit(item.don_vi)) continue;
-          const kl = item.kl_thuc_te ?? item.so_luong;
-          if (kl === null || kl === undefined || !Number.isFinite(kl) || kl <= 0) continue;
+      const machineLabel = report.tenMay || report.maMay || '-';
 
-          total += kl;
-          rows.push({
-            soPhieu: report.so_phieu || '-',
-            maNvl: line.ma_nvl || item.ma_nvl || '-',
-            tenNvl: line.ten_vat_tu || item.ten_vat_tu || '-',
-            lan: roundLabelFromKey(key),
-            khoiLuong: formatDetailNumber(kl, 3)
-          });
+      for (const line of report.lines) {
+        const lineTotal = sumMachineNvlDauCaLineTotal(line);
+        if (lineTotal <= 0 && !line.maNvl && !line.tenNvl) continue;
+
+        total += lineTotal;
+
+        rows.push({
+          rowKey: `${report.id}|${line.stt}|${line.maNvl}`,
+          recordId: report.id || '',
+          may: machineLabel,
+          maNvl: line.maNvl || '-',
+          tenNvl: line.tenNvl || '-',
+          donVi: line.donVi || '-',
+          tonTrongMay: formatDetailNumber(line.soLuongTrongMay, 3),
+          tonTrongBonTron: formatDetailNumber(line.soLuongTrongBonTron, 3),
+          nlChuaTron: formatDetailNumber(line.soLuongNlChuaTron, 3),
+          tongTon: formatDetailNumber(lineTotal, 3)
+        });
+      }
+    }
+
+    return {
+      columns: [
+        { key: 'may', label: 'Máy' },
+        { key: 'maNvl', label: 'Mã NVL' },
+        { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'donVi', label: 'ĐVT' },
+        { key: 'tonTrongMay', label: 'Tồn máy', align: 'right', mono: true },
+        { key: 'tonTrongBonTron', label: 'Tồn bồn', align: 'right', mono: true },
+        { key: 'nlChuaTron', label: 'NL chưa trộn', align: 'right', mono: true },
+        { key: 'tongTon', label: 'Tổng tồn', align: 'right', mono: true, accent: true }
+      ],
+      rows,
+      totalLabel: 'Tổng tồn đầu ca',
+      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
+      showActions: true
+    };
+  }
+
+  if (metric === 'khoiLuongNpl') {
+    const rows: ShiftSummaryDetailRow[] = [];
+    let total = 0;
+
+    for (const report of input.mixingReports) {
+      if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
+
+      for (const line of report.chi_tiet) {
+        for (const key of MIXING_ROUND_KEYS) {
+          for (const item of getRoundItems(line.lan_su_dung, key)) {
+            if (!isKgUnit(item.don_vi)) continue;
+            const kl = item.kl_thuc_te ?? item.so_luong;
+            if (kl === null || kl === undefined || !Number.isFinite(kl) || kl <= 0) continue;
+
+            total += kl;
+            rows.push({
+              rowKey: `${report.id}|${line.stt}|${key}|${(line.ma_nvl || item.ma_nvl || '').trim()}`,
+              recordId: report.id || '',
+              soPhieu: report.so_phieu || '-',
+              maNvl: line.ma_nvl || item.ma_nvl || '-',
+              tenNvl: line.ten_vat_tu || item.ten_vat_tu || '-',
+              lan: roundLabelFromKey(key),
+              khoiLuong: formatDetailNumber(kl, 3)
+            });
+          }
         }
       }
     }
+
+    return {
+      columns: [
+        { key: 'soPhieu', label: 'Số phiếu' },
+        { key: 'maNvl', label: 'Mã NVL' },
+        { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'lan', label: 'Lần' },
+        { key: 'khoiLuong', label: 'KL (kg)', align: 'right', mono: true, accent: true }
+      ],
+      rows,
+      totalLabel: 'Tổng NPL',
+      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
+      showActions: true
+    };
   }
 
   return {
-    columns: [
-      { key: 'soPhieu', label: 'Số phiếu' },
-      { key: 'maNvl', label: 'Mã NVL' },
-      { key: 'tenNvl', label: 'Tên NVL' },
-      { key: 'lan', label: 'Lần' },
-      { key: 'khoiLuong', label: 'KL (kg)', align: 'right', mono: true, accent: true }
-    ],
-    rows,
-    totalLabel: 'Tổng NPL',
-    totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3)
+    columns: [],
+    rows: [],
+    totalLabel: 'Tổng',
+    totalValue: '-'
   };
 }
 

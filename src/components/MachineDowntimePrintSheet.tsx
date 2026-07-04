@@ -67,7 +67,6 @@ function MachineDowntimePrintSheet({ slip }: { slip: MachineDowntimePrintSlip })
               <th>Ca</th>
               <th>Máy</th>
               <th>Người lập</th>
-              <th>Lệnh SX liên quan</th>
             </tr>
           </thead>
           <tbody>
@@ -75,7 +74,6 @@ function MachineDowntimePrintSheet({ slip }: { slip: MachineDowntimePrintSlip })
               <td className="production-order-print-center">{slip.shift || '-'}</td>
               <td>{slip.machineLabel || '-'}</td>
               <td>{slip.preparedBy || '-'}</td>
-              <td>{slip.productionOrder || '-'}</td>
             </tr>
           </tbody>
         </table>
@@ -134,21 +132,17 @@ function MachineDowntimePrintSheet({ slip }: { slip: MachineDowntimePrintSlip })
         </p>
 
         <div className="machine-downtime-print-signatures">
-          <div className="machine-downtime-print-signatures-row">
-            <div>
-              <p>Người lập</p>
-              <span>(Ký, ghi rõ họ tên)</span>
-            </div>
-            <div>
-              <p>Trưởng ca</p>
-              <span>(Ký, ghi rõ họ tên)</span>
-            </div>
+          <div>
+            <p>Người lập</p>
+            <span>(Ký, ghi rõ họ tên)</span>
           </div>
-          <div className="machine-downtime-print-signatures-full">
-            <div>
-              <p>Bộ phận kế hoạch / kỹ thuật</p>
-              <span>(Ký, ghi rõ họ tên)</span>
-            </div>
+          <div>
+            <p>Trưởng ca</p>
+            <span>(Ký, ghi rõ họ tên)</span>
+          </div>
+          <div>
+            <p>Bộ phận kế hoạch / kỹ thuật</p>
+            <span>(Ký, ghi rõ họ tên)</span>
           </div>
         </div>
       </div>

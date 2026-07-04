@@ -4880,6 +4880,177 @@ export function createApp() {
     }
   });
 
+  app.put('/api/phieu-xuat-nhap-kho/:slipCode', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const slipCode = String(req.params.slipCode || '').trim();
+      if (!slipCode) {
+        return res.status(400).json({ error: 'Thiếu mã phiếu.' });
+      }
+
+      const parsed = parseWarehouseSlipBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data: existing, error: fetchError } = await supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .select('ma_npl, loai_kho')
+        .eq('ma_phieu', slipCode);
+
+      if (fetchError) {
+        console.error('Supabase phieu_xuat_nhap_kho fetch for update error:', fetchError);
+        return res.status(500).json({
+          error: `Không thể tải phiếu cần cập nhật từ ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE}. ${fetchError.message}`
+        });
+      }
+
+      if (!existing || existing.length === 0) {
+        return res.status(404).json({ error: 'Không tìm thấy phiếu cần cập nhật.' });
+      }
+
+      const affectedNvlCodes = new Set<string>();
+      existing.forEach(row => {
+        const code = String(row.ma_npl || '').trim();
+        if (code && String(row.loai_kho || 'nvl') !== 'san_pham') {
+          affectedNvlCodes.add(code);
+        }
+      });
+      if (parsed.loaiKho === 'nvl') {
+        parsed.items.forEach(item => {
+          const code = item.code.trim();
+          if (code) affectedNvlCodes.add(code);
+        });
+      }
+
+      const { error: deleteError } = await supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .delete()
+        .eq('ma_phieu', slipCode);
+
+      if (deleteError) {
+        console.error('Supabase phieu_xuat_nhap_kho delete for update error:', deleteError);
+        return res.status(500).json({ error: `Không thể xóa dữ liệu phiếu cũ. ${deleteError.message}` });
+      }
+
+      const nhanSu = parsed.nguoiLap || 'Hệ thống';
+      const records = parsed.items.map(item => {
+        const base = {
+          ma_phieu: slipCode,
+          loai_phieu: parsed.loaiPhieu,
+          loai_kho: parsed.loaiKho,
+          ngay_phieu: parsed.ngayPhieu,
+          don_vi: item.unit || '',
+          so_luong: item.quantity,
+          so_luong_chung_tu: item.documentQuantity ?? null,
+          don_gia: item.unitPrice,
+          thanh_tien: item.lineAmount,
+          ly_do: parsed.lyDo || '',
+          ghi_chu: parsed.ghiChu || '',
+          nguoi_lap: parsed.nguoiLap || nhanSu,
+          nhan_su: nhanSu,
+          ca: parsed.ca || ''
+        };
+
+        if (parsed.loaiKho === 'san_pham') {
+          return {
+            ...base,
+            ma_sp: item.code,
+            ten_sp: item.name || '',
+            ma_npl: '',
+            ten_npl: ''
+          };
+        }
+
+        return {
+          ...base,
+          ma_npl: item.code,
+          ten_npl: item.name || '',
+          ma_sp: '',
+          ten_sp: ''
+        };
+      });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .insert(records)
+        .select('*');
+
+      if (error) {
+        console.error('Supabase phieu_xuat_nhap_kho update insert error:', error);
+        return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error) });
+      }
+
+      if (affectedNvlCodes.size > 0) {
+        await Promise.all([...affectedNvlCodes].map(code => syncMaterialInventoryFromMovements(code)));
+      }
+
+      return res.json({
+        success: true,
+        slipCode,
+        movements: data || []
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật phiếu xuất nhập kho.' });
+    }
+  });
+
+  app.delete('/api/phieu-xuat-nhap-kho/slip/:slipCode', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const slipCode = String(req.params.slipCode || '').trim();
+      if (!slipCode) {
+        return res.status(400).json({ error: 'Thiếu mã phiếu.' });
+      }
+
+      const { data: existing, error: fetchError } = await supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .select('id, ma_npl, loai_kho')
+        .eq('ma_phieu', slipCode);
+
+      if (fetchError) {
+        console.error('Supabase phieu_xuat_nhap_kho fetch for slip delete error:', fetchError);
+        return res.status(500).json({ error: `Không thể tải phiếu cần xóa. ${fetchError.message}` });
+      }
+
+      if (!existing || existing.length === 0) {
+        return res.status(404).json({ error: 'Không tìm thấy phiếu cần xóa.' });
+      }
+
+      const affectedNvlCodes = new Set<string>();
+      existing.forEach(row => {
+        const code = String(row.ma_npl || '').trim();
+        if (code && String(row.loai_kho || 'nvl') !== 'san_pham') {
+          affectedNvlCodes.add(code);
+        }
+      });
+
+      const { error: deleteError } = await supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .delete()
+        .eq('ma_phieu', slipCode);
+
+      if (deleteError) {
+        console.error('Supabase phieu_xuat_nhap_kho slip delete error:', deleteError);
+        return res.status(500).json({ error: `Không thể xóa phiếu. ${deleteError.message}` });
+      }
+
+      if (affectedNvlCodes.size > 0) {
+        await Promise.all([...affectedNvlCodes].map(code => syncMaterialInventoryFromMovements(code)));
+      }
+
+      return res.json({ success: true, deletedCount: existing.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa phiếu xuất nhập kho.' });
+    }
+  });
+
   app.delete('/api/phieu-xuat-nhap-kho/:id', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });

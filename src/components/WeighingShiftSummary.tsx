@@ -255,6 +255,29 @@ export function sumWeighingRowTotalWeight(
   return hasValue ? core + shell + weight : 0;
 }
 
+function trimTrailingDecimalZeros(formatted: string) {
+  const match = formatted.match(/^(.+),(\d+)$/);
+  if (!match) return formatted;
+  const [, intPart, decPart] = match;
+  const trimmedDec = decPart.replace(/0+$/, '');
+  return trimmedDec ? `${intPart},${trimmedDec}` : intPart;
+}
+
+export function formatWeighingRowTotalWeight(
+  row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
+): string {
+  const hasValue =
+    parseWeighingWeight(row.coreWeight) !== null ||
+    parseWeighingWeight(row.shellWeight) !== null ||
+    parseWeighingWeight(row.weight) !== null;
+  if (!hasValue) return '—';
+  const formatted = new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3
+  }).format(sumWeighingRowTotalWeight(row));
+  return trimTrailingDecimalZeros(formatted);
+}
+
 export function normalizeWeighingRecords(data: unknown): WeighingRecord[] {
   if (!Array.isArray(data)) return [];
 
@@ -817,7 +840,7 @@ export default function WeighingShiftSummary({
                   {actionMessage}
                 </p>
               )}
-              <table className="w-full min-w-[960px] border-collapse text-left text-xs">
+              <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
                 <thead>
                   <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
                     <th className="px-3 py-2 text-center">Lần</th>
@@ -825,6 +848,7 @@ export default function WeighingShiftSummary({
                     <th className="px-3 py-2">TL lõi</th>
                     <th className="px-3 py-2">TL bì</th>
                     <th className="px-3 py-2">Trọng lượng</th>
+                    <th className="px-3 py-2">Tổng trọng lượng</th>
                     <th className="px-3 py-2">Giờ</th>
                     <th className="px-3 py-2">Nghiệm thu</th>
                     <th className="px-3 py-2">Ghi chú</th>
@@ -836,7 +860,7 @@ export default function WeighingShiftSummary({
                 <tbody className="divide-y divide-zinc-100">
                   {activeSlipWeighingRows.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
+                      <td colSpan={12} className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
                         Chưa có lần cân. Bấm Bổ sung lần cân để thêm dòng.
                       </td>
                     </tr>
@@ -848,6 +872,9 @@ export default function WeighingShiftSummary({
                       <td className="px-3 py-2 font-semibold text-zinc-700">{row.coreWeight || '—'}</td>
                       <td className="px-3 py-2 font-semibold text-zinc-700">{row.shellWeight || '—'}</td>
                       <td className="px-3 py-2 font-bold text-zinc-900">{row.weight || '—'}</td>
+                      <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                        {formatWeighingRowTotalWeight(row)}
+                      </td>
                       <td className="px-3 py-2 font-semibold text-zinc-600">{row.weighTime || '—'}</td>
                       <td className="px-3 py-2">
                         {row.acceptanceStatus ? (
@@ -1226,6 +1253,10 @@ export default function WeighingShiftSummary({
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Trọng lượng</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.weight || '—'}</p>
+              </div>
+              <div className="rounded-lg bg-red-50 px-3 py-2">
+                <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
+                <p className="mt-1 font-black text-[#ef1b2d]">{formatWeighingRowTotalWeight(viewingRow)}</p>
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Mã SP</span>

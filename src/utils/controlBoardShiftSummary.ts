@@ -3,6 +3,7 @@ import type { MixingReport } from '../components/MixingReportForm';
 import type { WeighingRecord } from '../components/WeighingShiftSummary';
 import { getWeighingDataRows, sumWeighingRowTotalWeight } from '../components/WeighingShiftSummary';
 import { getRoundItems, MIXING_ROUND_KEYS, roundNormWeight } from '../lib/mixingReportModel';
+import { sumMachineNvlDauCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import {
   getProductionShiftOptions,
   resolveShiftName,
@@ -11,6 +12,20 @@ import {
   type ShiftSetting
 } from './shiftSettings';
 import { formatNumber } from '../utils';
+
+export type ShiftSummaryFilterSources = {
+  shiftSettings: ShiftSetting[];
+  productionOrders: Array<{ startDate: string; shift: string; staff: string }>;
+  mixingReports: Array<{ ngay: string; ca: string; nhan_su: string }>;
+  machineNvlReports: Array<{ ngay: string; ca: string; nhanSu: string }>;
+  weighingRecords: Array<{
+    productionDate: string;
+    reportDate: string;
+    shiftName: string;
+    worker1: string;
+    worker2: string;
+  }>;
+};
 
 export type ControlBoardShiftSummaryRow = {
   key: string;
@@ -21,6 +36,7 @@ export type ControlBoardShiftSummaryRow = {
   slHangThucTe: number;
   khoiLuongHangThucTe: number;
   khoiLuongNpl: number;
+  tonDauCa: number;
 };
 
 type ProductRef = {
@@ -46,6 +62,7 @@ type SummaryBucket = {
   slHangThucTe: number;
   khoiLuongHangThucTe: number;
   khoiLuongNpl: number;
+  tonDauCa: number;
 };
 
 function parseFlexibleNumber(value: string | number | null | undefined) {
@@ -105,7 +122,8 @@ function getOrCreateBucket(
     khoiLuongHang: 0,
     slHangThucTe: 0,
     khoiLuongHangThucTe: 0,
-    khoiLuongNpl: 0
+    khoiLuongNpl: 0,
+    tonDauCa: 0
   };
   map.set(key, bucket);
   return bucket;
@@ -192,6 +210,7 @@ export function buildControlBoardShiftSummary(input: {
   acceptanceReports: AcceptanceReport[];
   mixingReports: MixingReport[];
   weighingRecords: WeighingRecord[];
+  machineNvlReports?: MachineNvlSavedReport[];
   dateFrom?: string;
   dateTo?: string;
 }): ControlBoardShiftSummaryRow[] {
@@ -251,6 +270,14 @@ export function buildControlBoardShiftSummary(input: {
     bucket.khoiLuongNpl += sumMixingReportNplKg(report);
   }
 
+  for (const report of input.machineNvlReports ?? []) {
+    if (report.reportKind !== 'dau_ca') continue;
+    if (!inRange(report.ngay)) continue;
+    const bucket = getOrCreateBucket(map, report.ngay, report.ca, shiftOptions);
+    if (!bucket) continue;
+    bucket.tonDauCa += sumMachineNvlDauCaReportTotal(report);
+  }
+
   return [...map.values()]
     .map(bucket => ({
       key: `${bucket.ngay}|${bucket.ca}`,
@@ -260,7 +287,8 @@ export function buildControlBoardShiftSummary(input: {
       khoiLuongHang: roundNormWeight(bucket.khoiLuongHang),
       slHangThucTe: bucket.slHangThucTe,
       khoiLuongHangThucTe: roundNormWeight(bucket.khoiLuongHangThucTe),
-      khoiLuongNpl: roundNormWeight(bucket.khoiLuongNpl)
+      khoiLuongNpl: roundNormWeight(bucket.khoiLuongNpl),
+      tonDauCa: roundNormWeight(bucket.tonDauCa)
     }))
     .sort((a, b) => compareSummaryRows(a, b, shiftOptions));
 }
@@ -283,4 +311,94 @@ export function defaultShiftSummaryDateRange(days = 14) {
     from: from.toISOString().slice(0, 10),
     to: today.toISOString().slice(0, 10)
   };
+}
+
+export function splitStaffNames(value: string) {
+  return String(value || '')
+    .split(/[,;+]/)
+    .map(name => name.trim())
+    .filter(name => name && name !== '-');
+}
+
+function staffNameMatches(value: string, staffFilter: string) {
+  const target = staffFilter.trim().toLowerCase();
+  if (!target) return true;
+  return splitStaffNames(value).some(name => name.toLowerCase() === target);
+}
+
+export function shiftSummaryRowHasStaff(
+  row: Pick<ControlBoardShiftSummaryRow, 'ngay' | 'ca'>,
+  staffFilter: string,
+  sources: ShiftSummaryFilterSources
+) {
+  const target = staffFilter.trim();
+  if (!target || target === 'all') return true;
+
+  const shiftOptions = getProductionShiftOptions(sources.shiftSettings);
+
+  for (const order of sources.productionOrders) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, order.startDate, order.shift, shiftOptions)) continue;
+    if (staffNameMatches(order.staff, target)) return true;
+  }
+
+  for (const report of sources.mixingReports) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, report.ngay, report.ca, shiftOptions)) continue;
+    if (staffNameMatches(report.nhan_su, target)) return true;
+  }
+
+  for (const report of sources.machineNvlReports) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, report.ngay, report.ca, shiftOptions)) continue;
+    if (staffNameMatches(report.nhanSu, target)) return true;
+  }
+
+  for (const record of sources.weighingRecords) {
+    const recordNgay = record.productionDate || record.reportDate;
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, recordNgay, record.shiftName, shiftOptions)) continue;
+    if (staffNameMatches(record.worker1, target) || staffNameMatches(record.worker2, target)) return true;
+  }
+
+  return false;
+}
+
+export function filterControlBoardShiftSummaryRows(
+  rows: ControlBoardShiftSummaryRow[],
+  filters: {
+    shiftFilter: string;
+    staffFilter: string;
+  },
+  sources: ShiftSummaryFilterSources
+) {
+  const shiftOptions = getProductionShiftOptions(sources.shiftSettings);
+
+  return rows.filter(row => {
+    if (filters.shiftFilter !== 'all') {
+      const rowShift = normalizeShiftKey(row.ca, shiftOptions);
+      const filterShift = normalizeShiftKey(filters.shiftFilter, shiftOptions);
+      if (rowShift !== filterShift && !shiftNamesMatch(row.ca, filters.shiftFilter)) {
+        return false;
+      }
+    }
+
+    return shiftSummaryRowHasStaff(row, filters.staffFilter, sources);
+  });
+}
+
+export function collectShiftSummaryStaffOptions(sources: ShiftSummaryFilterSources) {
+  const names = new Set<string>();
+
+  sources.productionOrders.forEach(order => {
+    splitStaffNames(order.staff).forEach(name => names.add(name));
+  });
+  sources.mixingReports.forEach(report => {
+    splitStaffNames(report.nhan_su).forEach(name => names.add(name));
+  });
+  sources.machineNvlReports.forEach(report => {
+    splitStaffNames(report.nhanSu).forEach(name => names.add(name));
+  });
+  sources.weighingRecords.forEach(record => {
+    if (record.worker1?.trim()) names.add(record.worker1.trim());
+    if (record.worker2?.trim()) names.add(record.worker2.trim());
+  });
+
+  return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
 }
