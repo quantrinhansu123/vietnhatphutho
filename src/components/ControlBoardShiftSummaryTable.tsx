@@ -40,6 +40,7 @@ type DetailSources = {
   products: Array<{ code: string; totalWeight: string }>;
   acceptanceReports: AcceptanceReport[];
   mixingReports: MixingReport[];
+  warehouseMovements?: import('../utils/controlBoardShiftSummary').ShiftSummaryWarehouseMovement[];
   weighingRecords: WeighingRecord[];
   machineNvlReports?: import('../utils/machineNvlReports').MachineNvlSavedReport[];
 };
@@ -91,8 +92,8 @@ export default function ControlBoardShiftSummaryTable({
   onEditWeighingRecord,
   onDeleteWeighingRecord,
   onDeleteWeighingRecords,
-  onDeleteMixingReport,
-  onDeleteMixingReports,
+  onDeleteWarehouseSlip,
+  onDeleteWarehouseSlips,
   onDeleteMachineNvlReport,
   onDeleteMachineNvlReports
 }: {
@@ -109,8 +110,8 @@ export default function ControlBoardShiftSummaryTable({
   onEditWeighingRecord?: (recordId: string | number) => void;
   onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
   onDeleteWeighingRecords?: (recordIds: Array<string | number>) => Promise<void>;
-  onDeleteMixingReport?: (reportId: string) => Promise<void>;
-  onDeleteMixingReports?: (reportIds: string[]) => Promise<void>;
+  onDeleteWarehouseSlip?: (slipCode: string) => Promise<void>;
+  onDeleteWarehouseSlips?: (slipCodes: string[]) => Promise<void>;
   onDeleteMachineNvlReport?: (reportId: string) => Promise<void>;
   onDeleteMachineNvlReports?: (reportIds: string[]) => Promise<void>;
 }) {
@@ -145,7 +146,9 @@ export default function ControlBoardShiftSummaryTable({
     khoiLuongHang: sumShiftSummaryColumn(filteredRows, 'khoiLuongHang'),
     khoiLuongHangThucTe: sumShiftSummaryColumn(filteredRows, 'khoiLuongHangThucTe'),
     khoiLuongNpl: sumShiftSummaryColumn(filteredRows, 'khoiLuongNpl'),
-    tonDauCa: sumShiftSummaryColumn(filteredRows, 'tonDauCa')
+    tonDauCa: sumShiftSummaryColumn(filteredRows, 'tonDauCa'),
+    tonCuoiCa: sumShiftSummaryColumn(filteredRows, 'tonCuoiCa'),
+    tongVatLieu: sumShiftSummaryColumn(filteredRows, 'tongVatLieu')
   };
 
   const shiftFilterLabel = shiftFilter === 'all' ? 'Tất cả ca' : shiftFilter;
@@ -196,8 +199,8 @@ export default function ControlBoardShiftSummaryTable({
       onEditWeighingRecord={onEditWeighingRecord}
       onDeleteWeighingRecord={onDeleteWeighingRecord}
       onDeleteWeighingRecords={onDeleteWeighingRecords}
-      onDeleteMixingReport={onDeleteMixingReport}
-      onDeleteMixingReports={onDeleteMixingReports}
+      onDeleteWarehouseSlip={onDeleteWarehouseSlip}
+      onDeleteWarehouseSlips={onDeleteWarehouseSlips}
       onDeleteMachineNvlReport={onDeleteMachineNvlReport}
       onDeleteMachineNvlReports={onDeleteMachineNvlReports}
     />
@@ -212,7 +215,7 @@ export default function ControlBoardShiftSummaryTable({
               <p className="text-xs font-black uppercase tracking-wider text-indigo-200">Tổng hợp sản xuất</p>
               <h3 className="text-lg font-black">Bảng tổng hợp theo ca</h3>
               <p className="mt-1 text-xs font-medium text-indigo-100/90">
-                SL/KL hàng kế hoạch từ lệnh SX · Khối lượng hàng TT từ báo cáo cân ca · NPL chỉ tính đơn vị kg · Tồn đầu ca từ bảng tồn NVL · Bấm vào số để xem chi tiết
+                SL/KL hàng kế hoạch từ lệnh SX · Khối lượng hàng TT từ báo cáo cân ca · Khối lượng NPL từ lịch sử xuất nhập kho · Tồn đầu/cuối ca từ bảng tồn NVL · Tổng vật liệu = KL NPL + Tồn đầu ca − Tồn cuối ca
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -279,7 +282,7 @@ export default function ControlBoardShiftSummaryTable({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-[980px] w-full text-left text-xs">
+          <table className="min-w-[1180px] w-full text-left text-xs">
             <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -289,19 +292,21 @@ export default function ControlBoardShiftSummaryTable({
                 <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng TT</th>
                 <th className="px-3 py-2.5 text-right font-black">Khối lượng NPL</th>
                 <th className="px-3 py-2.5 text-right font-black">Tồn đầu ca</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng vật liệu</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải dữ liệu tổng hợp...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có dữ liệu theo bộ lọc đã chọn.
                   </td>
                 </tr>
@@ -345,6 +350,16 @@ export default function ControlBoardShiftSummaryTable({
                       className="px-3 py-2 text-right font-mono font-bold text-indigo-700"
                       onOpen={openDetail}
                     />
+                    <SummaryValueCell
+                      row={row}
+                      metric="tonCuoiCa"
+                      formatted={formatShiftSummaryNumber(row.tonCuoiCa, 3)}
+                      className="px-3 py-2 text-right font-mono font-bold text-violet-700"
+                      onOpen={openDetail}
+                    />
+                    <td className="px-3 py-2 text-right font-mono font-bold text-teal-800">
+                      {formatShiftSummaryNumber(row.tongVatLieu, 3)}
+                    </td>
                   </tr>
                 ))
               )}
@@ -367,6 +382,12 @@ export default function ControlBoardShiftSummaryTable({
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-indigo-700">
                     {formatShiftSummaryNumber(totals.tonDauCa, 3)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-violet-700">
+                    {formatShiftSummaryNumber(totals.tonCuoiCa, 3)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-teal-800">
+                    {formatShiftSummaryNumber(totals.tongVatLieu, 3)}
                   </td>
                 </tr>
               </tfoot>

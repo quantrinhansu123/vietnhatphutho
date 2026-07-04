@@ -1923,7 +1923,7 @@ input[type="number"] {
 
 .shift-summary-print-col-date { width: 12%; }
 .shift-summary-print-col-shift { width: 9%; }
-.shift-summary-print-col-num { width: 15.8%; }
+.shift-summary-print-col-num { width: 11%; }
 
 .shift-summary-print-center {
   text-align: center;

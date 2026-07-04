@@ -43,7 +43,7 @@ import AcceptanceReportListView from './components/AcceptanceReportListView';
 import ControlBoardShiftSummaryTable from './components/ControlBoardShiftSummaryTable';
 import ProductionPlanNvlPrintSheet from './components/ProductionPlanNvlPrintSheet';
 import type { ProductionPlanNvlPrintShiftGroup } from './components/ProductionPlanNvlPrintSheet';
-import { buildControlBoardShiftSummary, collectShiftSummaryStaffOptions, defaultShiftSummaryDateRange } from './utils/controlBoardShiftSummary';
+import { buildControlBoardShiftSummary, collectShiftSummaryStaffOptions, defaultShiftSummaryDateRange, type ShiftSummaryWarehouseMovement } from './utils/controlBoardShiftSummary';
 import {
   normalizeMachineNvlReports,
   type MachineNvlReportKind,
@@ -5196,6 +5196,22 @@ function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow[] {
     .filter((row): row is WarehouseMovementRow => Boolean(row.id || row.slipCode));
 }
 
+function mapWarehouseMovementsForShiftSummary(rows: WarehouseMovementRow[]): ShiftSummaryWarehouseMovement[] {
+  return rows.map(row => ({
+    id: row.id,
+    slipCode: row.slipCode,
+    slipDate: row.slipDate,
+    shift: row.shift,
+    slipType: row.slipType,
+    warehouseKind: row.warehouseKind,
+    itemCode: row.itemCode,
+    itemName: row.itemName,
+    unit: row.unit,
+    quantity: row.quantity,
+    createdBy: row.createdBy
+  }));
+}
+
 function WarehouseSlipPanel({
   onBack,
   onOpenHistory
@@ -9996,18 +10012,25 @@ function ProductionPlanModal({
             line => normalizeProductionPlanShift(line.shift) === normalizeProductionPlanShift(shift)
           );
 
+    const resolvedShift =
+      normalizeProductionPlanShift(shift) === 'Tất cả các ca'
+        ? [...new Set(shiftLines.map(line => normalizeProductionPlanShift(line.shift)).filter(Boolean))].join(', ')
+        : normalizeProductionPlanShift(shift);
+
     const draft: WarehouseSlipPrefillDraft = {
       slipType: 'xuat',
       warehouseKind: 'nvl',
       slipDate: planDate,
-      reason: `Xuất NVL theo kế hoạch sản xuất - ${shift}`,
-      note: `Tạo từ hạch toán định mức NVL (${shift}, ${shiftOrderCount} lệnh SX).`,
+      reason: resolvedShift ? `Xuất NVL theo kế hoạch sản xuất - ${resolvedShift}` : 'Xuất NVL theo kế hoạch sản xuất',
+      note: resolvedShift
+        ? `Tạo từ hạch toán định mức NVL (${resolvedShift}, ${shiftOrderCount} lệnh SX).`
+        : `Tạo từ hạch toán định mức NVL (${shiftOrderCount} lệnh SX).`,
       createdBy: '',
       productionOrderRef: [...new Set(shiftLines.map(line => line.code).filter(code => code && code !== '-'))].join(
         ', '
       ),
       machine: [...new Set(shiftLines.map(line => line.position).filter(value => value && value !== '-'))].join(', '),
-      shift: normalizeProductionPlanShift(shift),
+      shift: resolvedShift,
       recipient: [...new Set(shiftLines.map(line => line.staff).filter(value => value && value !== '-'))].join(', '),
       lines: materialLines.map(line => ({
         code: line.code,
@@ -14492,6 +14515,7 @@ function ControlBoardPanel({
   const [mixingReports, setMixingReports] = useState<MixingReport[]>([]);
   const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
   const [machineNvlReports, setMachineNvlReports] = useState<MachineNvlSavedReport[]>([]);
+  const [shiftSummaryWarehouseMovements, setShiftSummaryWarehouseMovements] = useState<WarehouseMovementRow[]>([]);
   const defaultShiftSummaryRange = defaultShiftSummaryDateRange(14);
   const [shiftSummaryDateFrom, setShiftSummaryDateFrom] = useState(defaultShiftSummaryRange.from);
   const [shiftSummaryDateTo, setShiftSummaryDateTo] = useState(defaultShiftSummaryRange.to);
@@ -14527,7 +14551,7 @@ function ControlBoardPanel({
     try {
       const summaryFrom = shiftSummaryDateFrom || defaultShiftSummaryRange.from;
       const summaryTo = shiftSummaryDateTo || defaultShiftSummaryRange.to;
-      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, machineNvlRes] =
+      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, machineNvlRes, warehouseMovementRes] =
         await Promise.all([
         fetch('/api/nhan-su?format=groups'),
         fetch('/api/don-hang'),
@@ -14542,7 +14566,10 @@ function ControlBoardPanel({
         ),
         fetch(`/api/bao-cao-phoi-tron?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`),
         fetch(`/api/phieu-can-dinh-ki?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
-        fetch('/api/bao-cao-may-nvl-ton?limit=300&loai_bao_cao=dau_ca')
+        fetch('/api/bao-cao-may-nvl-ton?limit=300'),
+        fetch(
+          `/api/phieu-xuat-nhap-kho?loai_kho=nvl&from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`
+        )
       ]);
 
       const staffData = await staffRes.json().catch(() => ({}));
@@ -14557,6 +14584,7 @@ function ControlBoardPanel({
       const mixingData = await mixingRes.json().catch(() => ({}));
       const weighingData = await weighingRes.json().catch(() => ([]));
       const machineNvlData = await machineNvlRes.json().catch(() => ({}));
+      const warehouseMovementData = await warehouseMovementRes.json().catch(() => ({}));
 
       if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
       if (!orderRes.ok) throw new Error(orderData.error || 'Không thể tải đơn hàng.');
@@ -14603,6 +14631,12 @@ function ControlBoardPanel({
         setMachineNvlReports([]);
       }
 
+      if (warehouseMovementRes.ok) {
+        setShiftSummaryWarehouseMovements(normalizeWarehouseMovements(warehouseMovementData));
+      } else {
+        setShiftSummaryWarehouseMovements([]);
+      }
+
       const usingLocalFallback = [machineData, staffData, orderData, materialData, productionData].some(
         payload => payload && typeof payload === 'object' && (payload as { source?: string }).source === 'local'
       );
@@ -14624,6 +14658,7 @@ function ControlBoardPanel({
       setMixingReports([]);
       setWeighingRecords([]);
       setMachineNvlReports([]);
+      setShiftSummaryWarehouseMovements([]);
       setLoadError(error.message || 'Không thể tải dữ liệu bảng điều khiển.');
     } finally {
       setIsLoading(false);
@@ -14634,6 +14669,11 @@ function ControlBoardPanel({
     loadBoard();
   }, [shiftSummaryDateFrom, shiftSummaryDateTo]);
 
+  const shiftSummaryWarehouseMovementRefs = useMemo(
+    () => mapWarehouseMovementsForShiftSummary(shiftSummaryWarehouseMovements),
+    [shiftSummaryWarehouseMovements]
+  );
+
   const shiftSummaryRows = useMemo(
     () =>
       buildControlBoardShiftSummary({
@@ -14641,7 +14681,7 @@ function ControlBoardPanel({
         productionOrders,
         products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
         acceptanceReports: shiftSummaryAcceptanceReports,
-        mixingReports,
+        warehouseMovements: shiftSummaryWarehouseMovementRefs,
         weighingRecords,
         machineNvlReports,
         dateFrom: shiftSummaryDateFrom,
@@ -14652,7 +14692,7 @@ function ControlBoardPanel({
       productionOrders,
       products,
       shiftSummaryAcceptanceReports,
-      mixingReports,
+      shiftSummaryWarehouseMovementRefs,
       weighingRecords,
       machineNvlReports,
       shiftSummaryDateFrom,
@@ -14673,6 +14713,11 @@ function ControlBoardPanel({
         ca: report.ca,
         nhan_su: report.nhan_su
       })),
+      warehouseMovements: shiftSummaryWarehouseMovementRefs.map(movement => ({
+        slipDate: movement.slipDate,
+        shift: movement.shift,
+        createdBy: movement.createdBy
+      })),
       machineNvlReports: machineNvlReports.map(report => ({
         ngay: report.ngay,
         ca: report.ca,
@@ -14686,7 +14731,7 @@ function ControlBoardPanel({
         worker2: record.worker2
       }))
     }),
-    [productionOrderSettings, productionOrders, mixingReports, machineNvlReports, weighingRecords]
+    [productionOrderSettings, productionOrders, mixingReports, shiftSummaryWarehouseMovementRefs, machineNvlReports, weighingRecords]
   );
 
   const shiftSummaryShiftOptions = useMemo(() => {
@@ -14721,6 +14766,27 @@ function ControlBoardPanel({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.error || 'Không thể xóa dòng cân.');
+      }
+    }
+    await loadBoard();
+  };
+
+  const handleDeleteWarehouseSlip = async (slipCode: string) => {
+    const res = await fetch(`/api/phieu-xuat-nhap-kho/slip/${encodeURIComponent(slipCode)}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Không thể xóa phiếu xuất nhập kho.');
+    }
+    await loadBoard();
+  };
+
+  const handleDeleteWarehouseSlips = async (slipCodes: string[]) => {
+    const uniqueIds = Array.from(new Set(slipCodes.filter(Boolean)));
+    for (const slipCode of uniqueIds) {
+      const res = await fetch(`/api/phieu-xuat-nhap-kho/slip/${encodeURIComponent(slipCode)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa phiếu xuất nhập kho.');
       }
     }
     await loadBoard();
@@ -14789,7 +14855,7 @@ function ControlBoardPanel({
       })),
       products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
       acceptanceReports: shiftSummaryAcceptanceReports,
-      mixingReports,
+      warehouseMovements: shiftSummaryWarehouseMovementRefs,
       weighingRecords,
       machineNvlReports
     }),
@@ -14798,7 +14864,7 @@ function ControlBoardPanel({
       productionOrders,
       products,
       shiftSummaryAcceptanceReports,
-      mixingReports,
+      shiftSummaryWarehouseMovementRefs,
       weighingRecords,
       machineNvlReports
     ]
@@ -15093,8 +15159,8 @@ function ControlBoardPanel({
         onEditWeighingRecord={onEditWeighing ? handleEditWeighingRecord : undefined}
         onDeleteWeighingRecord={handleDeleteWeighingRecord}
         onDeleteWeighingRecords={handleDeleteWeighingRecords}
-        onDeleteMixingReport={handleDeleteMixingReport}
-        onDeleteMixingReports={handleDeleteMixingReports}
+        onDeleteWarehouseSlip={handleDeleteWarehouseSlip}
+        onDeleteWarehouseSlips={handleDeleteWarehouseSlips}
         onDeleteMachineNvlReport={handleDeleteMachineNvlReport}
         onDeleteMachineNvlReports={handleDeleteMachineNvlReports}
       />

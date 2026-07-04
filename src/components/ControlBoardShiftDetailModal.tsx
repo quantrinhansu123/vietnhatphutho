@@ -28,6 +28,7 @@ type DetailSources = {
   products: Array<{ code: string; totalWeight: string }>;
   acceptanceReports: AcceptanceReport[];
   mixingReports: MixingReport[];
+  warehouseMovements?: import('../utils/controlBoardShiftSummary').ShiftSummaryWarehouseMovement[];
   weighingRecords: WeighingRecord[];
   machineNvlReports?: import('../utils/machineNvlReports').MachineNvlSavedReport[];
 };
@@ -67,8 +68,8 @@ export default function ControlBoardShiftDetailModal({
   onEditWeighingRecord,
   onDeleteWeighingRecord,
   onDeleteWeighingRecords,
-  onDeleteMixingReport,
-  onDeleteMixingReports,
+  onDeleteWarehouseSlip,
+  onDeleteWarehouseSlips,
   onDeleteMachineNvlReport,
   onDeleteMachineNvlReports
 }: {
@@ -80,8 +81,8 @@ export default function ControlBoardShiftDetailModal({
   onEditWeighingRecord?: (recordId: string | number) => void;
   onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
   onDeleteWeighingRecords?: (recordIds: Array<string | number>) => Promise<void>;
-  onDeleteMixingReport?: (reportId: string) => Promise<void>;
-  onDeleteMixingReports?: (reportIds: string[]) => Promise<void>;
+  onDeleteWarehouseSlip?: (slipCode: string) => Promise<void>;
+  onDeleteWarehouseSlips?: (slipCodes: string[]) => Promise<void>;
   onDeleteMachineNvlReport?: (reportId: string) => Promise<void>;
   onDeleteMachineNvlReports?: (reportIds: string[]) => Promise<void>;
 }) {
@@ -102,19 +103,21 @@ export default function ControlBoardShiftDetailModal({
   );
 
   const isWeighingMetric = metric === 'khoiLuongHangThucTe';
-  const isMixingMetric = metric === 'khoiLuongNpl';
-  const isMachineNvlMetric = metric === 'tonDauCa';
+  const isWarehouseNplMetric = metric === 'khoiLuongNpl';
+  const isMachineNvlDauCaMetric = metric === 'tonDauCa';
+  const isMachineNvlCuoiCaMetric = metric === 'tonCuoiCa';
+  const isMachineNvlMetric = isMachineNvlDauCaMetric || isMachineNvlCuoiCaMetric;
   const canDeleteWeighing = Boolean(onDeleteWeighingRecord || onDeleteWeighingRecords);
-  const canDeleteMixing = Boolean(onDeleteMixingReport || onDeleteMixingReports);
+  const canDeleteWarehouseNpl = Boolean(onDeleteWarehouseSlip || onDeleteWarehouseSlips);
   const canDeleteMachineNvl = Boolean(onDeleteMachineNvlReport || onDeleteMachineNvlReports);
   const showWeighingActions =
     isWeighingMetric && detail.showActions && Boolean(onEditWeighingRecord || canDeleteWeighing);
-  const showMixingDelete = isMixingMetric && detail.showActions && canDeleteMixing;
+  const showWarehouseNplDelete = isWarehouseNplMetric && detail.showActions && canDeleteWarehouseNpl;
   const showMachineNvlDelete = isMachineNvlMetric && detail.showActions && canDeleteMachineNvl;
-  const showActionColumn = showWeighingActions || showMixingDelete || showMachineNvlDelete;
+  const showActionColumn = showWeighingActions || showWarehouseNplDelete || showMachineNvlDelete;
   const showEditAction = showWeighingActions && Boolean(onEditWeighingRecord);
   const showDeleteAction =
-    (showWeighingActions && canDeleteWeighing) || showMixingDelete || showMachineNvlDelete;
+    (showWeighingActions && canDeleteWeighing) || showWarehouseNplDelete || showMachineNvlDelete;
   const showBulkSelect = showDeleteAction;
 
   const selectableKeys = useMemo(
@@ -160,8 +163,8 @@ export default function ControlBoardShiftDetailModal({
       await onDeleteWeighingRecord(targetId);
       return;
     }
-    if (isMixingMetric && onDeleteMixingReport) {
-      await onDeleteMixingReport(String(targetId));
+    if (isWarehouseNplMetric && onDeleteWarehouseSlip) {
+      await onDeleteWarehouseSlip(String(targetId));
       return;
     }
     if (isMachineNvlMetric && onDeleteMachineNvlReport) {
@@ -183,14 +186,14 @@ export default function ControlBoardShiftDetailModal({
       return;
     }
 
-    if (isMixingMetric) {
-      if (onDeleteMixingReports) {
-        await onDeleteMixingReports(targetIds);
+    if (isWarehouseNplMetric) {
+      if (onDeleteWarehouseSlips) {
+        await onDeleteWarehouseSlips(targetIds);
         return;
       }
-      if (onDeleteMixingReport) {
+      if (onDeleteWarehouseSlip) {
         for (const targetId of targetIds) {
-          await onDeleteMixingReport(targetId);
+          await onDeleteWarehouseSlip(targetId);
         }
       }
       return;
@@ -210,29 +213,31 @@ export default function ControlBoardShiftDetailModal({
   };
 
   const buildSingleDeleteMessage = (row: ShiftSummaryDetailRow) => {
-    if (isMixingMetric) {
+    if (isWarehouseNplMetric) {
       const soPhieu = row.soPhieu ? String(row.soPhieu) : '—';
-      return `Bạn có chắc muốn xóa báo cáo phối trộn ${soPhieu}? Toàn bộ NVL trong phiếu sẽ bị xóa.`;
+      return `Bạn có chắc muốn xóa phiếu xuất nhập kho ${soPhieu}? Toàn bộ NVL trong phiếu sẽ bị xóa.`;
     }
     if (isMachineNvlMetric) {
       const may = row.may ? String(row.may) : '—';
-      return `Bạn có chắc muốn xóa báo cáo tồn NVL đầu ca của máy ${may}? Toàn bộ NVL trong phiếu sẽ bị xóa.`;
+      const reportLabel = isMachineNvlCuoiCaMetric ? 'báo cáo tồn NVL cuối ca' : 'báo cáo tồn NVL đầu ca';
+      return `Bạn có chắc muốn xóa ${reportLabel} của máy ${may}? Toàn bộ NVL trong phiếu sẽ bị xóa.`;
     }
     return 'Bạn có chắc muốn xóa dòng cân này?';
   };
 
   const buildBulkDeleteMessage = (targetCount: number, selectedRowCount: number) => {
-    if (isMixingMetric) {
+    if (isWarehouseNplMetric) {
       if (targetCount === selectedRowCount) {
-        return `Bạn có chắc muốn xóa ${targetCount} báo cáo phối trộn đã chọn?`;
+        return `Bạn có chắc muốn xóa ${targetCount} phiếu xuất nhập kho đã chọn?`;
       }
-      return `Bạn có chắc muốn xóa ${targetCount} báo cáo phối trộn (${selectedRowCount} dòng đã chọn)? Một phiếu có thể chứa nhiều dòng NVL.`;
+      return `Bạn có chắc muốn xóa ${targetCount} phiếu xuất nhập kho (${selectedRowCount} dòng NVL đã chọn)? Một phiếu có thể chứa nhiều dòng NVL.`;
     }
     if (isMachineNvlMetric) {
+      const reportLabel = isMachineNvlCuoiCaMetric ? 'báo cáo tồn NVL cuối ca' : 'báo cáo tồn NVL đầu ca';
       if (targetCount === selectedRowCount) {
-        return `Bạn có chắc muốn xóa ${targetCount} báo cáo tồn NVL đầu ca đã chọn?`;
+        return `Bạn có chắc muốn xóa ${targetCount} ${reportLabel} đã chọn?`;
       }
-      return `Bạn có chắc muốn xóa ${targetCount} báo cáo tồn NVL đầu ca (${selectedRowCount} dòng NVL đã chọn)? Một phiếu có thể chứa nhiều dòng NVL.`;
+      return `Bạn có chắc muốn xóa ${targetCount} ${reportLabel} (${selectedRowCount} dòng NVL đã chọn)? Một phiếu có thể chứa nhiều dòng NVL.`;
     }
     return `Bạn có chắc muốn xóa ${selectedRowCount} dòng cân đã chọn?`;
   };
@@ -254,8 +259,8 @@ export default function ControlBoardShiftDetailModal({
       const message =
         err instanceof Error
           ? err.message
-          : isMixingMetric
-            ? 'Không thể xóa báo cáo phối trộn.'
+          : isWarehouseNplMetric
+            ? 'Không thể xóa phiếu xuất nhập kho.'
             : isMachineNvlMetric
               ? 'Không thể xóa báo cáo tồn NVL đầu ca.'
               : 'Không thể xóa dòng cân.';
@@ -280,8 +285,8 @@ export default function ControlBoardShiftDetailModal({
       const message =
         err instanceof Error
           ? err.message
-          : isMixingMetric
-            ? 'Không thể xóa các báo cáo phối trộn đã chọn.'
+          : isWarehouseNplMetric
+            ? 'Không thể xóa các phiếu xuất nhập kho đã chọn.'
             : isMachineNvlMetric
               ? 'Không thể xóa các báo cáo tồn NVL đầu ca đã chọn.'
               : 'Không thể xóa các dòng cân đã chọn.';
@@ -430,11 +435,13 @@ export default function ControlBoardShiftDetailModal({
                                     }}
                                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                                     title={
-                                      isMixingMetric
-                                        ? 'Xóa báo cáo phối trộn'
-                                        : isMachineNvlMetric
-                                          ? 'Xóa báo cáo tồn NVL đầu ca'
-                                          : 'Xóa dòng cân'
+                                      isWarehouseNplMetric
+                                        ? 'Xóa phiếu xuất nhập kho'
+                                        : isMachineNvlCuoiCaMetric
+                                          ? 'Xóa báo cáo tồn NVL cuối ca'
+                                          : isMachineNvlDauCaMetric
+                                            ? 'Xóa báo cáo tồn NVL đầu ca'
+                                            : 'Xóa dòng cân'
                                     }
                                   >
                                     {deletingId === targetId ? (

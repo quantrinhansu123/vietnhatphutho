@@ -69,6 +69,15 @@ function formatSlipDate(value: string) {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function formatPrintShift(shift?: string): string {
+  if (!shift?.trim()) return '';
+  return shift
+    .split(/[,;+]/)
+    .map(item => item.trim())
+    .filter(item => item && item !== 'Tất cả các ca')
+    .join(', ');
+}
+
 function formatSlipDateShort(value: string) {
   if (!value) return '';
   const date = new Date(`${value}T00:00:00`);
@@ -308,6 +317,7 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
 function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
   const totalQuota = sumPrintQty(data.lines, 'quotaQuantity');
   const totalActual = sumPrintQty(data.lines, 'quantity');
+  const printShift = formatPrintShift(data.shift);
 
   return (
     <>
@@ -324,9 +334,11 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
         <p>
           <strong>Máy:</strong> {data.machine || ''}
         </p>
-        <p>
-          <strong>Ca:</strong> {data.shift || ''}
-        </p>
+        {printShift ? (
+          <p>
+            <strong>Ca:</strong> {printShift}
+          </p>
+        ) : null}
         <p>
           <strong>Người nhận:</strong> {data.recipient || data.createdBy || ''}
         </p>

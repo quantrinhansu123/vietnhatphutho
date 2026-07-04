@@ -1,9 +1,8 @@
 import type { AcceptanceReport } from '../components/AcceptanceReportForm';
-import type { MixingReport } from '../components/MixingReportForm';
 import type { WeighingRecord } from '../components/WeighingShiftSummary';
 import { getWeighingDataRows, sumWeighingRowTotalWeight } from '../components/WeighingShiftSummary';
-import { getRoundItems, MIXING_ROUND_KEYS, roundNormWeight } from '../lib/mixingReportModel';
-import { sumMachineNvlDauCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
+import { roundNormWeight } from '../lib/mixingReportModel';
+import { sumMachineNvlDauCaReportTotal, sumMachineNvlCuoiCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import {
   getProductionShiftOptions,
   resolveShiftName,
@@ -13,10 +12,25 @@ import {
 } from './shiftSettings';
 import { formatNumber } from '../utils';
 
+export type ShiftSummaryWarehouseMovement = {
+  id: string;
+  slipCode: string;
+  slipDate: string;
+  shift: string;
+  slipType: 'nhap' | 'xuat';
+  warehouseKind: 'nvl' | 'san_pham';
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  quantity: number;
+  createdBy: string;
+};
+
 export type ShiftSummaryFilterSources = {
   shiftSettings: ShiftSetting[];
   productionOrders: Array<{ startDate: string; shift: string; staff: string }>;
   mixingReports: Array<{ ngay: string; ca: string; nhan_su: string }>;
+  warehouseMovements: Array<{ slipDate: string; shift: string; createdBy: string }>;
   machineNvlReports: Array<{ ngay: string; ca: string; nhanSu: string }>;
   weighingRecords: Array<{
     productionDate: string;
@@ -37,6 +51,8 @@ export type ControlBoardShiftSummaryRow = {
   khoiLuongHangThucTe: number;
   khoiLuongNpl: number;
   tonDauCa: number;
+  tonCuoiCa: number;
+  tongVatLieu: number;
 };
 
 type ProductRef = {
@@ -63,6 +79,7 @@ type SummaryBucket = {
   khoiLuongHangThucTe: number;
   khoiLuongNpl: number;
   tonDauCa: number;
+  tonCuoiCa: number;
 };
 
 function parseFlexibleNumber(value: string | number | null | undefined) {
@@ -123,7 +140,8 @@ function getOrCreateBucket(
     slHangThucTe: 0,
     khoiLuongHangThucTe: 0,
     khoiLuongNpl: 0,
-    tonDauCa: 0
+    tonDauCa: 0,
+    tonCuoiCa: 0
   };
   map.set(key, bucket);
   return bucket;
@@ -159,22 +177,19 @@ function isKgUnit(unit: string) {
   return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
 }
 
-function sumMixingReportNplKg(report: MixingReport) {
-  let total = 0;
+function splitShiftLabels(label: string) {
+  return String(label || '')
+    .split(/[,;+]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
 
-  for (const line of report.chi_tiet) {
-    for (const key of MIXING_ROUND_KEYS) {
-      for (const item of getRoundItems(line.lan_su_dung, key)) {
-        if (!isKgUnit(item.don_vi)) continue;
-        const kl = item.kl_thuc_te ?? item.so_luong;
-        if (kl !== null && kl !== undefined && Number.isFinite(kl)) {
-          total += kl;
-        }
-      }
-    }
-  }
-
-  return roundNormWeight(total);
+function sumWarehouseMovementNplKg(movement: ShiftSummaryWarehouseMovement) {
+  if (movement.warehouseKind !== 'nvl') return 0;
+  if (movement.slipType !== 'xuat') return 0;
+  if (!isKgUnit(movement.unit)) return 0;
+  const qty = movement.quantity;
+  return Number.isFinite(qty) && qty > 0 ? qty : 0;
 }
 
 export function matchesShiftSummaryBucket(
@@ -186,7 +201,13 @@ export function matchesShiftSummaryBucket(
 ) {
   const date = parseIsoDate(rowNgay);
   if (!date || date !== parseIsoDate(bucketNgay)) return false;
-  return normalizeShiftKey(rowCa, shiftOptions) === normalizeShiftKey(bucketCa, shiftOptions);
+  const bucketShift = normalizeShiftKey(bucketCa, shiftOptions);
+  const rowShiftParts = splitShiftLabels(rowCa);
+  const candidates = rowShiftParts.length > 0 ? rowShiftParts : [rowCa];
+  return candidates.some(
+    part =>
+      normalizeShiftKey(part, shiftOptions) === bucketShift || shiftNamesMatch(part, bucketCa)
+  );
 }
 
 function compareSummaryRows(a: ControlBoardShiftSummaryRow, b: ControlBoardShiftSummaryRow, shiftOptions: ShiftOption[]) {
@@ -208,7 +229,7 @@ export function buildControlBoardShiftSummary(input: {
   productionOrders: ProductionOrderRef[];
   products: ProductRef[];
   acceptanceReports: AcceptanceReport[];
-  mixingReports: MixingReport[];
+  warehouseMovements?: ShiftSummaryWarehouseMovement[];
   weighingRecords: WeighingRecord[];
   machineNvlReports?: MachineNvlSavedReport[];
   dateFrom?: string;
@@ -263,33 +284,43 @@ export function buildControlBoardShiftSummary(input: {
     bucket.khoiLuongHangThucTe += sumWeighingRowTotalWeight(record);
   }
 
-  for (const report of input.mixingReports) {
-    if (!inRange(report.ngay)) continue;
-    const bucket = getOrCreateBucket(map, report.ngay, report.ca, shiftOptions);
+  for (const movement of input.warehouseMovements ?? []) {
+    if (!inRange(movement.slipDate)) continue;
+    const bucket = getOrCreateBucket(map, movement.slipDate, movement.shift, shiftOptions);
     if (!bucket) continue;
-    bucket.khoiLuongNpl += sumMixingReportNplKg(report);
+    bucket.khoiLuongNpl += sumWarehouseMovementNplKg(movement);
   }
 
   for (const report of input.machineNvlReports ?? []) {
-    if (report.reportKind !== 'dau_ca') continue;
     if (!inRange(report.ngay)) continue;
     const bucket = getOrCreateBucket(map, report.ngay, report.ca, shiftOptions);
     if (!bucket) continue;
-    bucket.tonDauCa += sumMachineNvlDauCaReportTotal(report);
+    if (report.reportKind === 'dau_ca') {
+      bucket.tonDauCa += sumMachineNvlDauCaReportTotal(report);
+    } else if (report.reportKind === 'cuoi_ca') {
+      bucket.tonCuoiCa += sumMachineNvlCuoiCaReportTotal(report);
+    }
   }
 
   return [...map.values()]
-    .map(bucket => ({
-      key: `${bucket.ngay}|${bucket.ca}`,
-      ngay: bucket.ngay,
-      ca: bucket.ca,
-      slHang: bucket.slHang,
-      khoiLuongHang: roundNormWeight(bucket.khoiLuongHang),
-      slHangThucTe: bucket.slHangThucTe,
-      khoiLuongHangThucTe: roundNormWeight(bucket.khoiLuongHangThucTe),
-      khoiLuongNpl: roundNormWeight(bucket.khoiLuongNpl),
-      tonDauCa: roundNormWeight(bucket.tonDauCa)
-    }))
+    .map(bucket => {
+      const khoiLuongNpl = roundNormWeight(bucket.khoiLuongNpl);
+      const tonDauCa = roundNormWeight(bucket.tonDauCa);
+      const tonCuoiCa = roundNormWeight(bucket.tonCuoiCa);
+      return {
+        key: `${bucket.ngay}|${bucket.ca}`,
+        ngay: bucket.ngay,
+        ca: bucket.ca,
+        slHang: bucket.slHang,
+        khoiLuongHang: roundNormWeight(bucket.khoiLuongHang),
+        slHangThucTe: bucket.slHangThucTe,
+        khoiLuongHangThucTe: roundNormWeight(bucket.khoiLuongHangThucTe),
+        khoiLuongNpl,
+        tonDauCa,
+        tonCuoiCa,
+        tongVatLieu: roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa)
+      };
+    })
     .sort((a, b) => compareSummaryRows(a, b, shiftOptions));
 }
 
@@ -346,6 +377,11 @@ export function shiftSummaryRowHasStaff(
     if (staffNameMatches(report.nhan_su, target)) return true;
   }
 
+  for (const movement of sources.warehouseMovements) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, movement.slipDate, movement.shift, shiftOptions)) continue;
+    if (staffNameMatches(movement.createdBy, target)) return true;
+  }
+
   for (const report of sources.machineNvlReports) {
     if (!matchesShiftSummaryBucket(row.ngay, row.ca, report.ngay, report.ca, shiftOptions)) continue;
     if (staffNameMatches(report.nhanSu, target)) return true;
@@ -391,6 +427,9 @@ export function collectShiftSummaryStaffOptions(sources: ShiftSummaryFilterSourc
   });
   sources.mixingReports.forEach(report => {
     splitStaffNames(report.nhan_su).forEach(name => names.add(name));
+  });
+  sources.warehouseMovements.forEach(movement => {
+    splitStaffNames(movement.createdBy).forEach(name => names.add(name));
   });
   sources.machineNvlReports.forEach(report => {
     splitStaffNames(report.nhanSu).forEach(name => names.add(name));

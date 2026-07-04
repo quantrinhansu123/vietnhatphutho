@@ -128,3 +128,16 @@ export function sumMachineNvlDauCaReportTotal(report: Pick<MachineNvlSavedReport
   if (fromLines > 0) return fromLines;
   return report.total > 0 ? report.total : 0;
 }
+
+/** Tổng tồn cuối ca 1 dòng NVL = SL tồn đã lưu. */
+export function sumMachineNvlCuoiCaLineTotal(line: Pick<MachineNvlSavedLine, 'soLuongTon'>) {
+  return Number.isFinite(line.soLuongTon) && line.soLuongTon > 0 ? line.soLuongTon : 0;
+}
+
+/** Tổng tồn cuối ca của 1 báo cáo = tổng SL tồn các dòng. */
+export function sumMachineNvlCuoiCaReportTotal(report: Pick<MachineNvlSavedReport, 'reportKind' | 'total' | 'lines'>) {
+  if (report.reportKind !== 'cuoi_ca') return 0;
+  const fromLines = report.lines.reduce((sum, line) => sum + sumMachineNvlCuoiCaLineTotal(line), 0);
+  if (fromLines > 0) return fromLines;
+  return report.total > 0 ? report.total : 0;
+}
