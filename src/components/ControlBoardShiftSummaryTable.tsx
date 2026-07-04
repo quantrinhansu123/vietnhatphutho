@@ -76,7 +76,10 @@ export default function ControlBoardShiftSummaryTable({
   dateTo,
   onDateFromChange,
   onDateToChange,
-  detailSources
+  detailSources,
+  onEditWeighingRecord,
+  onDeleteWeighingRecord,
+  onDeleteWeighingRecords
 }: {
   rows: ControlBoardShiftSummaryRow[];
   isLoading: boolean;
@@ -85,6 +88,9 @@ export default function ControlBoardShiftSummaryTable({
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
   detailSources: DetailSources;
+  onEditWeighingRecord?: (recordId: string | number) => void;
+  onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
+  onDeleteWeighingRecords?: (recordIds: Array<string | number>) => Promise<void>;
 }) {
   const [detailContext, setDetailContext] = useState<{
     ngay: string;
@@ -111,6 +117,9 @@ export default function ControlBoardShiftSummaryTable({
       metric={detailContext.metric}
       sources={detailSources}
       onClose={() => setDetailContext(null)}
+      onEditWeighingRecord={onEditWeighingRecord}
+      onDeleteWeighingRecord={onDeleteWeighingRecord}
+      onDeleteWeighingRecords={onDeleteWeighingRecords}
     />
   ) : null;
 

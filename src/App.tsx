@@ -14202,7 +14202,7 @@ function ControlBoardPanel({
 }: {
   onNavigate: (tab: AppTab) => void;
   onMachineReport: (machine: MachineRow, type: 'mixing' | 'nvl') => void;
-  onEditWeighing: (pending: WeighingPendingAdd) => void;
+  onEditWeighing?: (pending: WeighingPendingAdd) => void;
 }) {
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -14371,6 +14371,32 @@ function ControlBoardPanel({
       shiftSummaryDateTo
     ]
   );
+
+  const handleDeleteWeighingRecord = async (recordId: string | number) => {
+    const res = await fetch(`/api/phieu-can-dinh-ki/${recordId}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Không thể xóa dòng cân.');
+    }
+    await loadBoard();
+  };
+
+  const handleDeleteWeighingRecords = async (recordIds: Array<string | number>) => {
+    for (const recordId of recordIds) {
+      const res = await fetch(`/api/phieu-can-dinh-ki/${recordId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa dòng cân.');
+      }
+    }
+    await loadBoard();
+  };
+
+  const handleEditWeighingRecord = (recordId: string | number) => {
+    const record = weighingRecords.find(item => item.id === recordId);
+    if (!record || !onEditWeighing) return;
+    onEditWeighing(buildWeighingEditPending(record, weighingRecords));
+  };
 
   const shiftSummaryDetailSources = useMemo(
     () => ({
@@ -14683,6 +14709,9 @@ function ControlBoardPanel({
         onDateFromChange={setShiftSummaryDateFrom}
         onDateToChange={setShiftSummaryDateTo}
         detailSources={shiftSummaryDetailSources}
+        onEditWeighingRecord={onEditWeighing ? handleEditWeighingRecord : undefined}
+        onDeleteWeighingRecord={handleDeleteWeighingRecord}
+        onDeleteWeighingRecords={handleDeleteWeighingRecords}
       />
 
       <div className="grid grid-cols-1 gap-4">

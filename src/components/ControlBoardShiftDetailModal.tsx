@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Pencil, Trash2, X } from 'lucide-react';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import type { MixingReport } from './MixingReportForm';
@@ -50,7 +50,8 @@ export default function ControlBoardShiftDetailModal({
   sources,
   onClose,
   onEditWeighingRecord,
-  onDeleteWeighingRecord
+  onDeleteWeighingRecord,
+  onDeleteWeighingRecords
 }: {
   ngay: string;
   ca: string;
@@ -59,9 +60,12 @@ export default function ControlBoardShiftDetailModal({
   onClose: () => void;
   onEditWeighingRecord?: (recordId: string | number) => void;
   onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
+  onDeleteWeighingRecords?: (recordIds: Array<string | number>) => Promise<void>;
 }) {
   const meta = SHIFT_SUMMARY_METRIC_META[metric];
   const [deletingId, setDeletingId] = useState<string | number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const detail = useMemo(
     () =>
@@ -76,6 +80,45 @@ export default function ControlBoardShiftDetailModal({
 
   const showWeighingActions =
     metric === 'khoiLuongHangThucTe' && detail.showActions && Boolean(onEditWeighingRecord || onDeleteWeighingRecord);
+  const showEditAction = showWeighingActions && Boolean(onEditWeighingRecord);
+  const showDeleteAction = showWeighingActions && Boolean(onDeleteWeighingRecord || onDeleteWeighingRecords);
+  const showBulkSelect = showDeleteAction;
+
+  const deletableIds = useMemo(
+    () =>
+      detail.rows
+        .filter(row => row.recordId !== null && row.recordId !== undefined && row.recordId !== '')
+        .map(row => String(row.recordId)),
+    [detail.rows]
+  );
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [metric, ngay, ca, deletableIds.join('|')]);
+
+  const allSelected = deletableIds.length > 0 && deletableIds.every(id => selectedIds.has(id));
+  const selectedCount = selectedIds.size;
+  const extraColumnCount = (showBulkSelect ? 1 : 0) + (showWeighingActions ? 1 : 0);
+
+  const toggleRowSelection = (recordId: string | number) => {
+    const key = String(recordId);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(deletableIds));
+  };
+
+  const resolveRecordIds = (keys: Iterable<string>) =>
+    Array.from(keys).map(key => {
+      const row = detail.rows.find(item => String(item.recordId) === key);
+      return row?.recordId as string | number;
+    });
 
   const handleDelete = async (recordId: string | number) => {
     if (!onDeleteWeighingRecord) return;
@@ -84,8 +127,35 @@ export default function ControlBoardShiftDetailModal({
     setDeletingId(recordId);
     try {
       await onDeleteWeighingRecord(recordId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Không thể xóa dòng cân.';
+      window.alert(message);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const deleteHandler = onDeleteWeighingRecords ?? onDeleteWeighingRecord;
+    if (!deleteHandler || selectedCount === 0) return;
+    if (!window.confirm(`Bạn có chắc muốn xóa ${selectedCount} dòng cân đã chọn?`)) return;
+
+    const recordIds = resolveRecordIds(selectedIds);
+    setIsBulkDeleting(true);
+    try {
+      if (onDeleteWeighingRecords) {
+        await onDeleteWeighingRecords(recordIds);
+      } else if (onDeleteWeighingRecord) {
+        for (const recordId of recordIds) {
+          await onDeleteWeighingRecord(recordId);
+        }
+      }
+      setSelectedIds(new Set());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Không thể xóa các dòng cân đã chọn.';
+      window.alert(message);
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -115,10 +185,39 @@ export default function ControlBoardShiftDetailModal({
               Không có dòng chi tiết cho ô này.
             </p>
           ) : (
+            <>
+              {showBulkSelect && deletableIds.length > 0 ? (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-zinc-500">
+                    {selectedCount > 0 ? `Đã chọn ${selectedCount} dòng` : 'Chọn dòng để xóa nhiều'}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={selectedCount === 0 || isBulkDeleting || Boolean(deletingId)}
+                    onClick={() => void handleBulkDelete()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isBulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    Xóa đã chọn{selectedCount > 0 ? ` (${selectedCount})` : ''}
+                  </button>
+                </div>
+              ) : null}
             <div className="overflow-x-auto rounded-xl border border-zinc-200">
               <table className="min-w-full text-left text-xs">
                 <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
                   <tr>
+                    {showBulkSelect ? (
+                      <th className="w-10 px-3 py-2 text-center font-black">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleSelectAll}
+                          disabled={deletableIds.length === 0 || isBulkDeleting || Boolean(deletingId)}
+                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                          title="Chọn tất cả"
+                        />
+                      </th>
+                    ) : null}
                     {detail.columns.map(column => (
                       <th
                         key={column.key}
@@ -136,9 +235,26 @@ export default function ControlBoardShiftDetailModal({
                   {detail.rows.map((row, index) => {
                     const recordId = row.recordId;
                     const hasRecordId = recordId !== null && recordId !== undefined && recordId !== '';
+                    const selectionKey = hasRecordId ? String(recordId) : '';
+                    const isSelected = hasRecordId && selectedIds.has(selectionKey);
 
                     return (
                       <tr key={hasRecordId ? String(recordId) : index} className="hover:bg-indigo-50/40">
+                        {showBulkSelect ? (
+                          <td className="px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={!hasRecordId || isBulkDeleting || deletingId === recordId}
+                              onChange={() => {
+                                if (!hasRecordId) return;
+                                toggleRowSelection(recordId as string | number);
+                              }}
+                              className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                              title="Chọn dòng"
+                            />
+                          </td>
+                        ) : null}
                         {detail.columns.map(column => (
                           <td
                             key={column.key}
@@ -154,38 +270,42 @@ export default function ControlBoardShiftDetailModal({
                         {showWeighingActions ? (
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                disabled={!hasRecordId}
-                                onClick={() => {
-                                  if (!hasRecordId || !onEditWeighingRecord) return;
-                                  onClose();
-                                  onEditWeighingRecord(recordId as string | number);
-                                }}
-                                className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                title="Sửa dòng cân"
-                              >
-                                <span className="inline-flex items-center gap-1">
-                                  <Pencil className="h-3.5 w-3.5" />
-                                  Sửa
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                disabled={!hasRecordId || deletingId === recordId}
-                                onClick={() => {
-                                  if (!hasRecordId) return;
-                                  void handleDelete(recordId as string | number);
-                                }}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                title="Xóa dòng cân"
-                              >
-                                {deletingId === recordId ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
-                                )}
-                              </button>
+                              {showEditAction ? (
+                                <button
+                                  type="button"
+                                  disabled={!hasRecordId}
+                                  onClick={() => {
+                                    if (!hasRecordId || !onEditWeighingRecord) return;
+                                    onClose();
+                                    onEditWeighingRecord(recordId as string | number);
+                                  }}
+                                  className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                  title="Sửa dòng cân"
+                                >
+                                  <span className="inline-flex items-center gap-1">
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    Sửa
+                                  </span>
+                                </button>
+                              ) : null}
+                              {showDeleteAction ? (
+                                <button
+                                  type="button"
+                                  disabled={!hasRecordId || deletingId === recordId}
+                                  onClick={() => {
+                                    if (!hasRecordId) return;
+                                    void handleDelete(recordId as string | number);
+                                  }}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  title="Xóa dòng cân"
+                                >
+                                  {deletingId === recordId ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         ) : null}
@@ -196,7 +316,7 @@ export default function ControlBoardShiftDetailModal({
                 <tfoot className="border-t border-zinc-200 bg-zinc-50">
                   <tr>
                     <td
-                      colSpan={Math.max(1, detail.columns.length - 1 + (showWeighingActions ? 1 : 0))}
+                      colSpan={Math.max(1, detail.columns.length - 1 + extraColumnCount)}
                       className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wider text-zinc-600"
                     >
                       {detail.totalLabel}
@@ -208,6 +328,7 @@ export default function ControlBoardShiftDetailModal({
                 </tfoot>
               </table>
             </div>
+            </>
           )}
         </div>
       </div>
