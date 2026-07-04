@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Loader2, Pencil, Trash2, X } from 'lucide-react';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import type { MixingReport } from './MixingReportForm';
 import type { WeighingRecord } from './WeighingShiftSummary';
@@ -48,15 +48,20 @@ export default function ControlBoardShiftDetailModal({
   ca,
   metric,
   sources,
-  onClose
+  onClose,
+  onEditWeighingRecord,
+  onDeleteWeighingRecord
 }: {
   ngay: string;
   ca: string;
   metric: ShiftSummaryMetric;
   sources: DetailSources;
   onClose: () => void;
+  onEditWeighingRecord?: (recordId: string | number) => void;
+  onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
 }) {
   const meta = SHIFT_SUMMARY_METRIC_META[metric];
+  const [deletingId, setDeletingId] = useState<string | number | null>(null);
 
   const detail = useMemo(
     () =>
@@ -68,6 +73,21 @@ export default function ControlBoardShiftDetailModal({
       }),
     [metric, ngay, ca, sources]
   );
+
+  const showWeighingActions =
+    metric === 'khoiLuongHangThucTe' && detail.showActions && Boolean(onEditWeighingRecord || onDeleteWeighingRecord);
+
+  const handleDelete = async (recordId: string | number) => {
+    if (!onDeleteWeighingRecord) return;
+    if (!window.confirm('Bạn có chắc muốn xóa dòng cân này?')) return;
+
+    setDeletingId(recordId);
+    try {
+      await onDeleteWeighingRecord(recordId);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -107,30 +127,76 @@ export default function ControlBoardShiftDetailModal({
                         {column.label}
                       </th>
                     ))}
+                    {showWeighingActions ? (
+                      <th className="px-3 py-2 text-center font-black">Thao tác</th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {detail.rows.map((row, index) => (
-                    <tr key={index} className="hover:bg-indigo-50/40">
-                      {detail.columns.map(column => (
-                        <td
-                          key={column.key}
-                          className={`px-3 py-2 ${
-                            column.align === 'right' ? 'text-right' : ''
-                          } ${column.mono ? 'font-mono' : ''} ${
-                            column.accent ? 'font-bold text-[#ef1b2d]' : 'text-zinc-700'
-                          }`}
-                        >
-                          {formatCellValue(column, row)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {detail.rows.map((row, index) => {
+                    const recordId = row.recordId;
+                    const hasRecordId = recordId !== null && recordId !== undefined && recordId !== '';
+
+                    return (
+                      <tr key={hasRecordId ? String(recordId) : index} className="hover:bg-indigo-50/40">
+                        {detail.columns.map(column => (
+                          <td
+                            key={column.key}
+                            className={`px-3 py-2 ${
+                              column.align === 'right' ? 'text-right' : ''
+                            } ${column.mono ? 'font-mono' : ''} ${
+                              column.accent ? 'font-bold text-[#ef1b2d]' : 'text-zinc-700'
+                            }`}
+                          >
+                            {formatCellValue(column, row)}
+                          </td>
+                        ))}
+                        {showWeighingActions ? (
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                disabled={!hasRecordId}
+                                onClick={() => {
+                                  if (!hasRecordId || !onEditWeighingRecord) return;
+                                  onClose();
+                                  onEditWeighingRecord(recordId as string | number);
+                                }}
+                                className="rounded-lg border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                title="Sửa dòng cân"
+                              >
+                                <span className="inline-flex items-center gap-1">
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  Sửa
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!hasRecordId || deletingId === recordId}
+                                onClick={() => {
+                                  if (!hasRecordId) return;
+                                  void handleDelete(recordId as string | number);
+                                }}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Xóa dòng cân"
+                              >
+                                {deletingId === recordId ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot className="border-t border-zinc-200 bg-zinc-50">
                   <tr>
                     <td
-                      colSpan={Math.max(1, detail.columns.length - 1)}
+                      colSpan={Math.max(1, detail.columns.length - 1 + (showWeighingActions ? 1 : 0))}
                       className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wider text-zinc-600"
                     >
                       {detail.totalLabel}

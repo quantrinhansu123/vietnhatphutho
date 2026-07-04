@@ -103,6 +103,28 @@ function slipKey(record: WeighingRecord) {
   ].join('|');
 }
 
+export function buildWeighingEditPending(
+  record: WeighingRecord,
+  allRecords: WeighingRecord[]
+): WeighingPendingAdd {
+  const key = slipKey(record);
+  const existingRows = allRecords.filter(item => slipKey(item) === key);
+
+  return {
+    productionDate: record.productionDate,
+    shiftName: record.shiftName,
+    worker1: record.worker1,
+    worker2: record.worker2,
+    documentNo: record.documentNo,
+    reportDate: record.reportDate,
+    productCode: record.productCode,
+    productName: record.productName,
+    machineName: record.machineName,
+    existingRows,
+    editingRow: record
+  };
+}
+
 export function isSlipHeaderRow(row: Pick<WeighingRecord, 'weighNo' | 'productName' | 'productCode' | 'weight' | 'coreWeight' | 'shellWeight' | 'acceptanceStatus' | 'note' | 'imageUrl' | 'coreWeightImageUrl'>) {
   return (
     !row.weighNo?.trim() &&
@@ -297,10 +319,14 @@ export function generateWeighingDocumentNo(productionDate?: string) {
 
 export default function WeighingShiftSummary({
   config = DEFAULT_WEIGHING_SLIP_CONFIG,
-  onBackToMenu
+  onBackToMenu,
+  initialPendingAdd = null,
+  onInitialPendingConsumed
 }: {
   config?: WeighingSlipConfig;
   onBackToMenu?: () => void;
+  initialPendingAdd?: WeighingPendingAdd | null;
+  onInitialPendingConsumed?: () => void;
 } = {}) {
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [selectedDate, setSelectedDate] = useState(today);
@@ -326,6 +352,16 @@ export default function WeighingShiftSummary({
   const [pendingPrint, setPendingPrint] = useState(false);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
+
+  useEffect(() => {
+    if (!initialPendingAdd) return;
+    if (initialPendingAdd.productionDate) {
+      setSelectedDate(initialPendingAdd.productionDate);
+    }
+    setPendingAdd(initialPendingAdd);
+    setShowReportForm(true);
+    onInitialPendingConsumed?.();
+  }, [initialPendingAdd, onInitialPendingConsumed]);
 
   const handleOpenSlipSetup = (options: { productionDate: string; shiftName?: string }) => {
     setSlipSetupDefaults(options);

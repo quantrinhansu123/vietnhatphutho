@@ -44,6 +44,7 @@ export type ShiftSummaryDetailView = {
   rows: ShiftSummaryDetailRow[];
   totalLabel: string;
   totalValue: string;
+  showActions?: boolean;
 };
 
 type ProductRef = { code: string; totalWeight: string };
@@ -240,6 +241,7 @@ export function getShiftSummaryDetail(input: {
       total += rowTotal;
 
       rows.push({
+        recordId: record.id ?? '',
         soPhieu: record.documentNo || '-',
         sanPham: record.productName || record.productCode || '-',
         gioCan: record.weighTime || '-',
@@ -262,7 +264,8 @@ export function getShiftSummaryDetail(input: {
       ],
       rows,
       totalLabel: 'Tổng KL',
-      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3)
+      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
+      showActions: true
     };
   }
 

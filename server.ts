@@ -2462,6 +2462,7 @@ type WarehouseSlipLineInput = {
   name: string;
   unit: string;
   quantity: number;
+  documentQuantity?: number;
   unitPrice: number;
   lineAmount: number;
 };
@@ -2518,6 +2519,9 @@ function parseWarehouseSlipLines(
     ).trim();
     const unit = String(record.unit ?? record.don_vi ?? '').trim();
     const quantity = parseOptionalMaterialNumber(record.quantity ?? record.so_luong);
+    const documentQuantity = parseOptionalMaterialNumber(
+      record.documentQuantity ?? record.so_luong_chung_tu ?? record.document_qty
+    );
     const unitPriceRaw = record.unitPrice ?? record.don_gia ?? record.price ?? record.gia;
     const unitPrice = parseOptionalMaterialNumber(unitPriceRaw) ?? 0;
 
@@ -2536,6 +2540,10 @@ function parseWarehouseSlipLines(
       name,
       unit,
       quantity: roundWarehouseMoney(quantity),
+      documentQuantity:
+        documentQuantity !== null && documentQuantity > 0
+          ? roundWarehouseMoney(documentQuantity)
+          : undefined,
       unitPrice: roundWarehouseMoney(unitPrice),
       lineAmount: roundWarehouseMoney(quantity * unitPrice)
     });
@@ -4818,6 +4826,7 @@ export function createApp() {
           ngay_phieu: parsed.ngayPhieu,
           don_vi: item.unit || '',
           so_luong: item.quantity,
+          so_luong_chung_tu: item.documentQuantity ?? null,
           don_gia: item.unitPrice,
           thanh_tien: item.lineAmount,
           ly_do: parsed.lyDo || '',

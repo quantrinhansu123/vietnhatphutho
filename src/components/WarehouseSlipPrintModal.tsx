@@ -3,15 +3,16 @@ import { createPortal } from 'react-dom';
 import { Loader2, Printer, X } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatMoney, formatNumber } from '../utils';
+import { formatVietnameseMoneyWords } from '../utils/vietnameseMoneyWords';
 
 const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
-const PRINT_PROJECT_NAME = 'Dự án Chuyển đổi số sản xuất';
 
 export type WarehouseSlipPrintLine = {
   code: string;
   name: string;
   unit: string;
   quantity: number;
+  documentQuantity?: number | null;
   unitPrice: number;
   lineAmount: number;
   quotaQuantity?: number | null;
@@ -32,14 +33,21 @@ export type WarehouseSlipPrintData = {
   machine?: string;
   shift?: string;
   recipient?: string;
+  deliverer?: string;
+  warehouseLocation?: string;
   lines: WarehouseSlipPrintLine[];
 };
+
+function isNhapKhoPrintLayout(data: WarehouseSlipPrintData) {
+  return data.slipType === 'nhap';
+}
 
 function isNvlExportPrintLayout(data: WarehouseSlipPrintData) {
   return data.slipType === 'xuat' && data.warehouseKind === 'nvl';
 }
 
 function slipTypeTitle(data: WarehouseSlipPrintData) {
+  if (isNhapKhoPrintLayout(data)) return 'PHIẾU NHẬP KHO';
   if (isNvlExportPrintLayout(data)) return 'PHIẾU XUẤT KHO VẬT TƯ';
   const action = data.slipType === 'nhap' ? 'NHẬP KHO' : 'XUẤT KHO';
   const warehouse = data.warehouseKind === 'san_pham' ? 'SẢN PHẨM' : 'NVL';
@@ -77,11 +85,224 @@ function formatPrintQty(value: number | null | undefined, fractionDigits = 2) {
   return formatNumber(value, fractionDigits);
 }
 
-function sumPrintQty(lines: WarehouseSlipPrintLine[], key: 'quotaQuantity' | 'quantity') {
+function sumPrintQty(
+  lines: WarehouseSlipPrintLine[],
+  key: 'quotaQuantity' | 'quantity' | 'documentQuantity' | 'suggestedQuantity'
+) {
   return lines.reduce((sum, line) => {
-    const value = key === 'quantity' ? line.quantity : line.quotaQuantity;
+    const value =
+      key === 'quantity'
+        ? line.quantity
+        : key === 'documentQuantity'
+          ? line.documentQuantity
+          : key === 'suggestedQuantity'
+            ? line.suggestedQuantity
+            : line.quotaQuantity;
     return Number.isFinite(value) && value! > 0 ? sum + (value as number) : sum;
   }, 0);
+}
+
+function formatNhapKhoDateParts(value: string) {
+  if (!value) return { day: '', month: '', year: '' };
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return { day: '', month: '', year: '' };
+  return {
+    day: String(date.getDate()).padStart(2, '0'),
+    month: String(date.getMonth() + 1).padStart(2, '0'),
+    year: String(date.getFullYear())
+  };
+}
+
+function warehouseImportLabel(kind: WarehouseSlipPrintData['warehouseKind']) {
+  return kind === 'san_pham' ? 'Kho Thành phẩm - Đà Nẵng' : 'Kho NVL - Đà Nẵng';
+}
+
+function nhapKhoAccountingCodes(kind: WarehouseSlipPrintData['warehouseKind']) {
+  return kind === 'san_pham' ? { no: '155', co: '154' } : { no: '152', co: '331' };
+}
+
+function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
+  const dateParts = formatNhapKhoDateParts(data.slipDate);
+  const accounts = nhapKhoAccountingCodes(data.warehouseKind);
+  const totalQtyDoc = sumPrintQty(data.lines, 'documentQuantity');
+  const totalQtyActual = sumPrintQty(data.lines, 'quantity');
+  const deliverer = data.deliverer || data.recipient || '';
+  const location = data.warehouseLocation || '';
+  const referenceText = data.productionOrderRef || data.reason || '';
+  const paddedRows = [...data.lines];
+  const minRows = 8;
+  while (paddedRows.length < minRows) {
+    paddedRows.push({
+      code: '',
+      name: '',
+      unit: '',
+      quantity: 0,
+      unitPrice: 0,
+      lineAmount: 0
+    });
+  }
+
+  return (
+    <>
+      <div className="warehouse-nhap-kho-print-top">
+        <div className="warehouse-nhap-kho-print-brand">
+          <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="warehouse-nhap-kho-print-logo" />
+          <div className="warehouse-nhap-kho-print-company">
+            <p className="warehouse-nhap-kho-print-company-name">{PRINT_COMPANY_NAME}</p>
+          </div>
+        </div>
+        <div className="warehouse-nhap-kho-print-accounts">
+          <p>
+            <em>Nợ:</em> {accounts.no}
+          </p>
+          <p>
+            <em>Có:</em> {accounts.co}
+          </p>
+        </div>
+      </div>
+
+      <div className="warehouse-nhap-kho-print-heading">
+        <h1 className="warehouse-nhap-kho-print-title">PHIẾU NHẬP KHO</h1>
+        <p className="warehouse-nhap-kho-print-date">
+          <em>
+            Ngày {dateParts.day || '……'} tháng {dateParts.month || '……'} năm {dateParts.year || '……'}
+          </em>
+        </p>
+        <p className="warehouse-nhap-kho-print-code">
+          <strong>Số:</strong> {data.slipCode || '…………'}
+        </p>
+      </div>
+
+      <div className="warehouse-nhap-kho-print-meta">
+        <p>
+          <span>- Họ và tên người giao:</span> {deliverer || '.................................................................'}
+        </p>
+        <p>
+          <span>- Theo</span> ............ <span>số</span> {referenceText || '..............'}{' '}
+          <span>ngày</span> {dateParts.day || '.....'} <span>tháng</span> {dateParts.month || '.....'}{' '}
+          <span>năm</span> {dateParts.year || '.....'} <span>của</span>{' '}
+          .........................................................
+        </p>
+        <p>
+          <span>- Nhập tại kho:</span> {warehouseImportLabel(data.warehouseKind)}
+        </p>
+        <p>
+          <span>Địa điểm:</span> {location || '.................................................................'}
+        </p>
+      </div>
+
+      <table className="warehouse-nhap-kho-print-table">
+        <thead>
+          <tr>
+            <th rowSpan={2} className="warehouse-nhap-kho-col-stt">
+              STT
+            </th>
+            <th rowSpan={2} className="warehouse-nhap-kho-col-name">
+              Tên, nhãn hiệu, quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa
+            </th>
+            <th rowSpan={2} className="warehouse-nhap-kho-col-code">
+              Mã số
+            </th>
+            <th rowSpan={2} className="warehouse-nhap-kho-col-unit">
+              Đơn vị tính
+            </th>
+            <th colSpan={2}>Số lượng</th>
+            <th rowSpan={2} className="warehouse-nhap-kho-col-price">
+              Đơn giá
+            </th>
+            <th rowSpan={2} className="warehouse-nhap-kho-col-amount">
+              Thành tiền
+            </th>
+          </tr>
+          <tr>
+            <th className="warehouse-nhap-kho-col-qty">Theo chứng từ</th>
+            <th className="warehouse-nhap-kho-col-qty">Thực nhập</th>
+          </tr>
+        </thead>
+        <tbody>
+          {paddedRows.map((line, index) => {
+            const hasData = Boolean(line.code || line.name || line.quantity > 0 || (line.documentQuantity ?? 0) > 0);
+            const docQty = line.documentQuantity;
+            return (
+              <tr key={`${line.code}-${index}`}>
+                <td className="warehouse-slip-print-center">{hasData ? index + 1 : ''}</td>
+                <td>{line.name || ''}</td>
+                <td className="warehouse-slip-print-center">{line.code || ''}</td>
+                <td className="warehouse-slip-print-center">{line.unit || ''}</td>
+                <td className="warehouse-slip-print-right">
+                  {hasData && docQty !== null && docQty !== undefined && docQty > 0
+                    ? formatPrintQty(docQty, 2)
+                    : ''}
+                </td>
+                <td className="warehouse-slip-print-right">
+                  {hasData ? formatPrintQty(line.quantity, 2) : ''}
+                </td>
+                <td className="warehouse-slip-print-right">
+                  {hasData && line.unitPrice > 0 ? formatMoney(line.unitPrice, 0) : ''}
+                </td>
+                <td className="warehouse-slip-print-right">
+                  {hasData && line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={4} className="warehouse-nhap-kho-total-label">
+              Cộng
+            </td>
+            <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
+              {totalQtyDoc > 0 ? formatNumber(totalQtyDoc, 2) : ''}
+            </td>
+            <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
+              {totalQtyActual > 0 ? formatNumber(totalQtyActual, 2) : ''}
+            </td>
+            <td />
+            <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
+              {data.totalAmount > 0 ? formatMoney(data.totalAmount, 0) : ''}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div className="warehouse-nhap-kho-print-footer">
+        <p>
+          <span>- Tổng số tiền (Viết bằng chữ):</span>{' '}
+          {data.totalAmount > 0 ? formatVietnameseMoneyWords(data.totalAmount) : '.................................................................'}
+        </p>
+        <p>
+          <span>- Số chứng từ gốc kèm theo:</span> {data.note || '.................................................................'}
+        </p>
+      </div>
+
+      <div className="warehouse-nhap-kho-print-signatures">
+        <div>
+          <p>Người lập biểu</p>
+          <span>(Ký, họ tên)</span>
+          <strong>{data.createdBy || ''}</strong>
+        </div>
+        <div>
+          <p>Người giao hàng</p>
+          <span>(Ký, họ tên)</span>
+          <strong>{deliverer}</strong>
+        </div>
+        <div>
+          <p>Thủ kho</p>
+          <span>(Ký, họ tên)</span>
+        </div>
+        <div>
+          <p className="warehouse-nhap-kho-signature-date">
+            <em>
+              Ngày {dateParts.day || '……'} tháng {dateParts.month || '……'} năm {dateParts.year || '……'}
+            </em>
+          </p>
+          <p>Kế toán trưởng</p>
+          <span className="warehouse-nhap-kho-signature-note">(Hoặc bộ phận có nhu cầu nhập)</span>
+        </div>
+      </div>
+    </>
+  );
 }
 
 function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
@@ -181,6 +402,17 @@ export function WarehouseSlipPrintSheet({ data }: { data: WarehouseSlipPrintData
     year: 'numeric'
   });
   const nvlExport = isNvlExportPrintLayout(data);
+  const nhapKho = isNhapKhoPrintLayout(data);
+
+  if (nhapKho) {
+    return (
+      <div className="warehouse-slip-print-sheet warehouse-slip-print-sheet--nhap-kho">
+        <div className="warehouse-slip-print-doc warehouse-slip-print-doc--nhap-kho">
+          <NhapKhoPrintBody data={data} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="warehouse-slip-print-sheet">
@@ -190,7 +422,6 @@ export function WarehouseSlipPrintSheet({ data }: { data: WarehouseSlipPrintData
             <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="warehouse-slip-print-logo" />
             <div className="warehouse-slip-print-company">
               <p className="warehouse-slip-print-company-name">{PRINT_COMPANY_NAME}</p>
-              <p className="warehouse-slip-print-project-name">{PRINT_PROJECT_NAME}</p>
             </div>
           </div>
           <h1 className="warehouse-slip-print-title">{slipTypeTitle(data)}</h1>
@@ -309,11 +540,16 @@ export default function WarehouseSlipPrintModal({
 
   useEffect(() => {
     if (!pendingPrint || !data) return;
+    document.body.classList.add('warehouse-slip-print-active');
     const timer = window.setTimeout(() => {
       window.print();
       setPendingPrint(false);
+      document.body.classList.remove('warehouse-slip-print-active');
     }, 200);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      document.body.classList.remove('warehouse-slip-print-active');
+    };
   }, [pendingPrint, data]);
 
   if (!open || !data) {
@@ -341,7 +577,9 @@ export default function WarehouseSlipPrintModal({
         <div className="warehouse-slip-print-modal-chrome flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
           <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
             <div>
-              <h3 className="text-lg font-black text-zinc-950">Mẫu in phiếu xuất nhập kho</h3>
+              <h3 className="text-lg font-black text-zinc-950">
+                {isNhapKhoPrintLayout(data) ? 'Mẫu phiếu nhập kho' : 'Mẫu in phiếu xuất nhập kho'}
+              </h3>
               <p className="mt-1 text-sm font-medium text-zinc-500">
                 {data.slipCode} · {slipTypeTitle(data)}
               </p>

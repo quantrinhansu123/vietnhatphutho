@@ -29,7 +29,12 @@ import ProductEntryForm from './components/ProductEntryForm';
 import MaterialsForm from './components/MaterialsForm';
 import WasteForm from './components/WasteForm';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
-import WeighingShiftSummary, { normalizeWeighingRecords, type WeighingRecord } from './components/WeighingShiftSummary';
+import WeighingShiftSummary, {
+  buildWeighingEditPending,
+  normalizeWeighingRecords,
+  type WeighingPendingAdd,
+  type WeighingRecord
+} from './components/WeighingShiftSummary';
 import { DAMAGED_GOODS_SLIP_CONFIG } from './lib/weighingSlipConfig';
 import MixingReportForm from './components/MixingReportForm';
 import MixingReportListView from './components/MixingReportListView';
@@ -4850,6 +4855,7 @@ interface WarehouseMovementRow {
   itemName: string;
   unit: string;
   quantity: number;
+  documentQuantity?: number;
   unitPrice: number;
   lineAmount: number;
   reason: string;
@@ -4864,6 +4870,7 @@ interface WarehouseSlipLineDraft {
   name: string;
   unit: string;
   quantity: string;
+  documentQuantity?: string;
   unitPrice: string;
   quotaQuantity?: string;
   suggestedQuantity?: string;
@@ -4881,10 +4888,12 @@ type WarehouseSlipPrefillDraft = {
   machine?: string;
   shift?: string;
   recipient?: string;
+  deliverer?: string;
+  warehouseLocation?: string;
   lines: Array<
     Pick<
       WarehouseSlipLineDraft,
-      'code' | 'name' | 'unit' | 'quantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
+      'code' | 'name' | 'unit' | 'quantity' | 'documentQuantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
     >
   >;
 };
@@ -4928,6 +4937,7 @@ type WarehouseSlipPayloadItem = {
   name: string;
   unit: string;
   quantity: number;
+  documentQuantity?: number;
   unitPrice: number;
   quotaQuantity?: number;
   suggestedQuantity?: number;
@@ -4946,6 +4956,7 @@ function parseWarehouseSlipPayloadItems(
   const payloadItems = lines
     .map(line => {
       const quantity = parsePercentInput(line.quantity);
+      const documentQuantity = parsePercentInput(line.documentQuantity ?? line.suggestedQuantity ?? '');
       const unitPrice = parseMoneyInput(line.unitPrice);
       const quotaQuantity = parsePercentInput(line.quotaQuantity ?? '');
       const suggestedQuantity = parsePercentInput(line.suggestedQuantity ?? '');
@@ -4954,6 +4965,8 @@ function parseWarehouseSlipPayloadItems(
         name: line.name.trim(),
         unit: line.unit.trim(),
         quantity,
+        documentQuantity:
+          Number.isFinite(documentQuantity) && documentQuantity > 0 ? documentQuantity : undefined,
         unitPrice: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0,
         quotaQuantity: Number.isFinite(quotaQuantity) && quotaQuantity > 0 ? quotaQuantity : undefined,
         suggestedQuantity:
@@ -4996,6 +5009,8 @@ function buildWarehouseSlipPrintData(
     machine?: string;
     shift?: string;
     recipient?: string;
+    deliverer?: string;
+    warehouseLocation?: string;
   }
 ): WarehouseSlipPrintData {
   const printLines = items.map(item => ({
@@ -5003,6 +5018,7 @@ function buildWarehouseSlipPrintData(
     name: item.name,
     unit: item.unit,
     quantity: item.quantity,
+    documentQuantity: item.documentQuantity ?? item.suggestedQuantity ?? null,
     unitPrice: item.unitPrice,
     lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100,
     quotaQuantity: item.quotaQuantity ?? null,
@@ -5022,6 +5038,8 @@ function buildWarehouseSlipPrintData(
     machine: options.machine,
     shift: options.shift,
     recipient: options.recipient,
+    deliverer: options.deliverer,
+    warehouseLocation: options.warehouseLocation,
     totalAmount: printLines.reduce((sum, line) => sum + line.lineAmount, 0),
     lines: printLines
   };
@@ -5038,6 +5056,7 @@ function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     name: '',
     unit: '',
     quantity: '',
+    documentQuantity: '',
     unitPrice: ''
   };
 }
@@ -5045,7 +5064,7 @@ function createWarehouseLineDraft(): WarehouseSlipLineDraft {
 function createWarehouseLineDraftFromPrefill(
   line: Pick<
     WarehouseSlipLineDraft,
-    'code' | 'name' | 'unit' | 'quantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
+    'code' | 'name' | 'unit' | 'quantity' | 'documentQuantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
   >
 ): WarehouseSlipLineDraft {
   return {
@@ -5054,6 +5073,7 @@ function createWarehouseLineDraftFromPrefill(
     name: line.name || '',
     unit: line.unit || '',
     quantity: line.quantity || '',
+    documentQuantity: line.documentQuantity || line.suggestedQuantity || '',
     unitPrice: line.unitPrice || '',
     quotaQuantity: line.quotaQuantity || '',
     suggestedQuantity: line.suggestedQuantity || '',
@@ -5077,6 +5097,7 @@ function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow[] {
       const warehouseKindRaw = String(record.loai_kho ?? record.warehouseKind ?? 'nvl').trim().toLowerCase();
       const warehouseKind: WarehouseKind = warehouseKindRaw === 'san_pham' ? 'san_pham' : 'nvl';
       const quantity = Number(record.so_luong ?? record.quantity);
+      const documentQuantity = Number(record.so_luong_chung_tu ?? record.documentQuantity);
       const unitPrice = Number(record.don_gia ?? record.unitPrice ?? record.price ?? 0);
       const lineAmountRaw = Number(record.thanh_tien ?? record.lineAmount ?? record.amount);
       const lineAmount = Number.isFinite(lineAmountRaw)
@@ -5104,6 +5125,7 @@ function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow[] {
         itemName,
         unit: String(record.don_vi ?? record.unit ?? '').trim() || '-',
         quantity: Number.isFinite(quantity) ? quantity : 0,
+        documentQuantity: Number.isFinite(documentQuantity) && documentQuantity > 0 ? documentQuantity : undefined,
         unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
         lineAmount: Number.isFinite(lineAmount) ? lineAmount : 0,
         reason: String(record.ly_do ?? record.reason ?? '').trim(),
@@ -5132,6 +5154,8 @@ function WarehouseSlipPanel({
   const [machine, setMachine] = useState('');
   const [shift, setShift] = useState('');
   const [recipient, setRecipient] = useState('');
+  const [deliverer, setDeliverer] = useState('');
+  const [warehouseLocation, setWarehouseLocation] = useState('Đà Nẵng');
   const [lines, setLines] = useState<WarehouseSlipLineDraft[]>(() => [createWarehouseLineDraft()]);
   const [itemOptions, setItemOptions] = useState<MaterialOption[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
@@ -5160,6 +5184,8 @@ function WarehouseSlipPanel({
       setMachine(draft.machine || '');
       setShift(draft.shift || '');
       setRecipient(draft.recipient || '');
+      setDeliverer(draft.deliverer || draft.recipient || '');
+      setWarehouseLocation(draft.warehouseLocation || 'Đà Nẵng');
       setLines(draft.lines.map(createWarehouseLineDraftFromPrefill));
       setActionMessage('Đã điền sẵn phiếu xuất kho từ hạch toán định mức NVL.');
       setFormError('');
@@ -5258,10 +5284,12 @@ function WarehouseSlipPanel({
         productionOrderRef: productionOrderRef.trim(),
         machine: machine.trim(),
         shift: shift.trim(),
-        recipient: recipient.trim()
+        recipient: recipient.trim(),
+        deliverer: deliverer.trim(),
+        warehouseLocation: warehouseLocation.trim()
       })
     );
-    setPrintAutoTrigger(true);
+    setPrintAutoTrigger(false);
     setPrintModalOpen(true);
   };
 
@@ -5312,14 +5340,18 @@ function WarehouseSlipPanel({
           productionOrderRef: productionOrderRef.trim(),
           machine: machine.trim(),
           shift: shift.trim(),
-          recipient: recipient.trim()
+          recipient: recipient.trim(),
+          deliverer: deliverer.trim(),
+          warehouseLocation: warehouseLocation.trim()
         })
       );
-      setPrintAutoTrigger(true);
+      setPrintAutoTrigger(false);
       setPrintModalOpen(true);
       setActionMessage(`Đã lưu phiếu ${data.slipCode || ''} (${warehouseKindLabel(warehouseKind)}).`.trim());
       setReason('');
       setNote('');
+      setDeliverer('');
+      setProductionOrderRef('');
       setLines([createWarehouseLineDraft()]);
     } catch (error: any) {
       setFormError(error.message || 'Không thể lưu phiếu xuất nhập kho.');
@@ -5448,8 +5480,39 @@ function WarehouseSlipPanel({
           </label>
           <label className="block space-y-1.5 sm:col-span-2">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-            <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder="Ghi chú thêm (tuỳ chọn)" />
+            <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder={slipType === 'nhap' ? 'Số chứng từ gốc kèm theo...' : 'Ghi chú thêm (tuỳ chọn)'} />
           </label>
+          {slipType === 'nhap' && (
+            <>
+              <label className="block space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Theo số chứng từ / lệnh SX</span>
+                <input
+                  value={productionOrderRef}
+                  onChange={event => setProductionOrderRef(event.target.value)}
+                  className={warehouseFieldClass}
+                  placeholder="Số hóa đơn, lệnh SX, biên bản giao nhận..."
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người giao hàng</span>
+                <input
+                  value={deliverer}
+                  onChange={event => setDeliverer(event.target.value)}
+                  className={warehouseFieldClass}
+                  placeholder="Họ tên người giao hàng"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Địa điểm</span>
+                <input
+                  value={warehouseLocation}
+                  onChange={event => setWarehouseLocation(event.target.value)}
+                  className={warehouseFieldClass}
+                  placeholder="VD: Đà Nẵng"
+                />
+              </label>
+            </>
+          )}
         </div>
       </section>
 
@@ -5474,7 +5537,13 @@ function WarehouseSlipPanel({
             </button>
           </div>
 
-          <div className="hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5">
+          <div
+            className={
+              slipType === 'nhap'
+                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+            }
+          >
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
               {warehouseItemCodeLabel(warehouseKind)} *
             </span>
@@ -5482,7 +5551,14 @@ function WarehouseSlipPanel({
               {warehouseItemNameLabel(warehouseKind)}
             </span>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
+            {slipType === 'nhap' ? (
+              <>
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Theo chứng từ</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thực nhập *</span>
+              </>
+            ) : (
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
+            )}
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thành tiền</span>
             <span />
@@ -5492,7 +5568,11 @@ function WarehouseSlipPanel({
             {lines.map(line => (
               <div
                 key={line.key}
-                className="grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3"
+                className={
+                  slipType === 'nhap'
+                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:items-end xl:gap-3'
+                    : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3'
+                }
               >
                 <div className="sm:col-span-2 xl:col-span-1">
                   <SearchableSelect
@@ -5524,16 +5604,47 @@ function WarehouseSlipPanel({
                     className={warehouseFieldClass}
                   />
                 </div>
-                <div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={line.quantity}
-                    onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                    className={warehouseFieldClass}
-                    placeholder="VD: 100,00"
-                  />
-                </div>
+                {slipType === 'nhap' ? (
+                  <>
+                    <div>
+                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                        Theo chứng từ
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={line.documentQuantity || ''}
+                        onChange={event => updateLine(line.key, { documentQuantity: event.target.value })}
+                        className={warehouseFieldClass}
+                        placeholder="SL CT"
+                      />
+                    </div>
+                    <div>
+                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                        Thực nhập *
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={line.quantity}
+                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                        className={warehouseFieldClass}
+                        placeholder="SL thực"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={line.quantity}
+                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                      className={warehouseFieldClass}
+                      placeholder="VD: 100,00"
+                    />
+                  </div>
+                )}
                 <div>
                   <input
                     type="text"
@@ -5708,6 +5819,7 @@ function WarehouseHistoryPanel({
         name: row.itemName,
         unit: row.unit,
         quantity: row.quantity,
+        documentQuantity: row.documentQuantity ?? null,
         unitPrice: row.unitPrice,
         lineAmount: row.lineAmount
       }))
@@ -14085,10 +14197,12 @@ function DashboardWindow({
 
 function ControlBoardPanel({
   onNavigate,
-  onMachineReport
+  onMachineReport,
+  onEditWeighing
 }: {
   onNavigate: (tab: AppTab) => void;
   onMachineReport: (machine: MachineRow, type: 'mixing' | 'nvl') => void;
+  onEditWeighing: (pending: WeighingPendingAdd) => void;
 }) {
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);

@@ -2013,6 +2013,195 @@ input[type="number"] {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.warehouse-slip-print-sheet--nhap-kho,
+.warehouse-slip-print-doc--nhap-kho {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.warehouse-nhap-kho-print-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6mm;
+  margin-bottom: 2mm;
+}
+
+.warehouse-nhap-kho-print-brand {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  min-width: 0;
+}
+
+.warehouse-nhap-kho-print-logo {
+  height: 14mm;
+  width: auto;
+  max-width: 42mm;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.warehouse-nhap-kho-print-company-name {
+  margin: 0;
+  font-size: 11pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+
+.warehouse-nhap-kho-print-accounts {
+  flex-shrink: 0;
+  text-align: left;
+  font-size: 10.5pt;
+}
+
+.warehouse-nhap-kho-print-accounts p {
+  margin: 0 0 1mm;
+}
+
+.warehouse-nhap-kho-print-heading {
+  text-align: center;
+  margin: 0 0 4mm;
+}
+
+.warehouse-nhap-kho-print-title {
+  margin: 0;
+  font-size: 15pt;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.warehouse-nhap-kho-print-date,
+.warehouse-nhap-kho-print-code {
+  margin: 1.5mm 0 0;
+  font-size: 11pt;
+}
+
+.warehouse-nhap-kho-print-meta {
+  margin-bottom: 3mm;
+  font-size: 10.5pt;
+}
+
+.warehouse-nhap-kho-print-meta p {
+  margin: 0 0 1.5mm;
+}
+
+.warehouse-nhap-kho-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 4mm;
+  table-layout: fixed;
+}
+
+.warehouse-nhap-kho-print-table th,
+.warehouse-nhap-kho-print-table td {
+  border: 1px solid #111111;
+  padding: 1.5mm 1.8mm;
+  vertical-align: middle;
+  word-break: break-word;
+}
+
+.warehouse-nhap-kho-print-table th {
+  font-weight: 700;
+  text-align: center;
+  font-size: 9.5pt;
+  line-height: 1.2;
+}
+
+.warehouse-nhap-kho-col-stt {
+  width: 7%;
+}
+
+.warehouse-nhap-kho-col-name {
+  width: 34%;
+}
+
+.warehouse-nhap-kho-col-code {
+  width: 11%;
+}
+
+.warehouse-nhap-kho-col-unit {
+  width: 8%;
+}
+
+.warehouse-nhap-kho-col-qty {
+  width: 9%;
+}
+
+.warehouse-nhap-kho-col-price,
+.warehouse-nhap-kho-col-amount {
+  width: 11%;
+}
+
+.warehouse-nhap-kho-total-label {
+  text-align: center;
+  font-weight: 700;
+}
+
+.warehouse-nhap-kho-total-value {
+  font-weight: 700;
+}
+
+.warehouse-nhap-kho-print-footer {
+  margin-bottom: 6mm;
+  font-size: 10.5pt;
+}
+
+.warehouse-nhap-kho-print-footer p {
+  margin: 0 0 2mm;
+}
+
+.warehouse-nhap-kho-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3mm;
+  text-align: center;
+  font-size: 10pt;
+}
+
+.warehouse-nhap-kho-print-signatures p {
+  margin: 0 0 1mm;
+  font-weight: 700;
+}
+
+.warehouse-nhap-kho-print-signatures span {
+  display: block;
+  font-style: italic;
+  font-size: 9pt;
+  margin-bottom: 14mm;
+}
+
+.warehouse-nhap-kho-print-signatures strong {
+  display: block;
+  min-height: 4mm;
+  font-size: 9.5pt;
+  font-weight: 600;
+}
+
+.warehouse-nhap-kho-signature-date {
+  font-weight: 400 !important;
+  margin-bottom: 2mm !important;
+}
+
+.warehouse-nhap-kho-signature-note {
+  font-size: 8.5pt !important;
+  margin-bottom: 10mm !important;
+}
+
+@media print {
+  body.warehouse-slip-print-active #root,
+  body.warehouse-slip-print-active .warehouse-slip-print-modal {
+    display: none !important;
+  }
+
+  body.warehouse-slip-print-active .warehouse-slip-print-batch {
+    display: block !important;
+  }
+}
+
 @media print {
   .warehouse-slip-print-batch,
   .warehouse-slip-print-batch * {
