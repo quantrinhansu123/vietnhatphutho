@@ -2,6 +2,14 @@ export function formatCell(value: unknown) {
   return value === null || value === undefined || String(value).trim() === '' ? '-' : String(value);
 }
 
+export function formatTimeCell(value: unknown): string {
+  if (value === null || value === undefined || String(value).trim() === '') return '-';
+  const text = String(value).trim();
+  const match = text.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return text;
+  return `${match[1].padStart(2, '0')}:${match[2]}`;
+}
+
 export function pickText(record: Record<string, unknown>, keys: string[], fallback = '-') {
   for (const key of keys) {
     const value = record[key];

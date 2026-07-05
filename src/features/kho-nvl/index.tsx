@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
-import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
+import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { downloadBulkOpeningStockTemplate, parseBulkOpeningStockExcel } from '../../utils/bulkOpeningStockExcel';
 import { downloadBulkMaterialTotalWeightTemplate, parseBulkMaterialTotalWeightExcel } from '../../utils/bulkMaterialTotalWeightExcel';
 import { productFieldClass } from '../san-pham/productFieldClass';
@@ -23,10 +23,6 @@ export interface MaterialRow {
   openingStock: string;
   inbound: string;
   outbound: string;
-}
-
-export function formatCell(value: unknown) {
-  return value === null || value === undefined || String(value).trim() === '' ? '-' : String(value);
 }
 
 export function parseInventoryNumber(value: string): number | null {

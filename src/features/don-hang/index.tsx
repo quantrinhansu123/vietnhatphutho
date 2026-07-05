@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
-import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
+import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
 import {
   ORDER_TYPE_OPTIONS,
@@ -916,11 +916,4 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   );
 }
 
-export function formatTimeCell(value: unknown): string {
-  if (value === null || value === undefined || String(value).trim() === '') return '-';
-  const text = String(value).trim();
-  const match = text.match(/(\d{1,2}):(\d{2})/);
-  if (!match) return text;
-  return `${match[1].padStart(2, '0')}:${match[2]}`;
-}
-
+export { formatTimeCell } from '../_shared/recordHelpers';
