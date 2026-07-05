@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -47,7 +47,8 @@ import { buildControlBoardShiftSummary, collectShiftSummaryStaffOptions, default
 import {
   normalizeMachineNvlReports,
   type MachineNvlReportKind,
-  type MachineNvlSavedReport
+  type MachineNvlSavedReport,
+  type MachineNvlSavedLine
 } from './utils/machineNvlReports';
 import { getProductionShiftOptions, normalizeShiftSettings } from './utils/shiftSettings';
 import { normalizeMixingReport } from './lib/mixingReportModel';
@@ -6751,7 +6752,7 @@ function readUnitSuggestions(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_ORDER_UNIT_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim()) : [];
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim() !== '') : [];
   } catch {
     return [];
   }
@@ -7732,7 +7733,7 @@ function MachineNvlReportPanel({
                   <p className="text-sm font-bold text-zinc-500">Chưa có dòng NVL nào.</p>
                   <button
                     type="button"
-                    onClick={openNewLineSheet}
+                    onClick={() => setLines(prev => [...prev, emptyMachineNvlLine()])}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-extrabold text-zinc-700 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]"
                   >
                     <Plus className="h-3.5 w-3.5" />
@@ -7744,8 +7745,123 @@ function MachineNvlReportPanel({
                 {lines.map((line, index) => (
                   <div
                     key={line.key}
-                    className={`grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} items-center px-3 py-2 ${isDauCaTab ? 'min-w-[1120px]' : 'min-w-[980px]'}`}
+                    className={`px-3 py-3 md:py-2 ${isDauCaTab ? 'md:min-w-[1120px]' : 'md:min-w-[980px]'}`}
                   >
+                    <div className="md:hidden mb-3 flex items-center justify-between gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500 text-xs font-black text-white">
+                        {index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 px-2.5 text-xs font-extrabold text-rose-600 transition hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Xóa dòng
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 md:hidden">
+                      <label className="col-span-2 block space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã NVL</span>
+                        <SearchableSelect
+                          value={line.code}
+                          onChange={value => {
+                            const material = findMaterialByCode(materials, value);
+                            if (material) {
+                              selectMaterial(line.key, material);
+                              return;
+                            }
+                            updateLine(line.key, { code: value, name: '', unit: '' });
+                          }}
+                          options={materials}
+                          placeholder="Mã NVL"
+                          isLoading={isLoading}
+                          displaySelectedAsValue
+                          inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-bold outline-none focus:border-[#ef1b2d]"
+                          getLabel={item => (item as MaterialRow).code}
+                          getSearchText={item => {
+                            const material = item as MaterialRow;
+                            return `${material.code} ${material.name}`;
+                          }}
+                          getOptionLabel={item => {
+                            const material = item as MaterialRow;
+                            return `${material.code} — ${material.name}`;
+                          }}
+                          getValue={item => (item as MaterialRow).code}
+                          onSelectOption={item => selectMaterial(line.key, item as MaterialRow | null)}
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên NVL</span>
+                        <input value={line.name} readOnly className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-semibold text-zinc-700 outline-none" />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">ĐVT</span>
+                        <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                      </label>
+                      {isDauCaTab ? (
+                        <>
+                          <label className="block space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Trong máy</span>
+                            <input type="number" min="0" step="0.01" value={line.inMachineQuantity} onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })} className="h-10 w-full rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]" />
+                          </label>
+                          <label className="block space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Trong bồn trộn</span>
+                            <input type="number" min="0" step="0.01" value={line.inMixerQuantity} onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })} className="h-10 w-full rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]" />
+                          </label>
+                          <label className="col-span-2 block space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">NL chưa trộn</span>
+                            <input type="number" min="0" step="0.01" value={line.unblendedQuantity} onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })} className="h-10 w-full rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]" />
+                          </label>
+                          <label className="col-span-2 block space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tổng tồn đầu ca</span>
+                            <input
+                              value={formatMachineNvlQuantityValue(
+                                (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                                  (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                                  (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                              )}
+                              readOnly
+                              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-black text-zinc-600 outline-none"
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <label className="col-span-2 block space-y-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL tồn định mức</span>
+                          <input type="number" min="0" step="0.01" value={line.standardQuantity} onChange={event => updateLine(line.key, { standardQuantity: event.target.value })} className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]" />
+                        </label>
+                      )}
+                      <label className="block space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL tồn TT</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={
+                            isDauCaTab
+                              ? formatMachineNvlQuantityValue(
+                                  (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                                    (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                                    (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                                )
+                              : line.quantity
+                          }
+                          onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                          readOnly={isDauCaTab}
+                          className={`h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none ${
+                            isDauCaTab ? 'bg-zinc-50 text-zinc-600' : 'focus:border-[#ef1b2d]'
+                          }`}
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+                        <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                      </label>
+                    </div>
+                    <div
+                      className={`hidden md:grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} items-center ${isDauCaTab ? 'md:min-w-[1120px]' : 'md:min-w-[980px]'}`}
+                    >
                     <span className="min-w-0 font-mono text-sm font-black text-[#ef1b2d]">{index + 1}</span>
                     <div className="min-w-0">
                     <SearchableSelect
@@ -7852,6 +7968,7 @@ function MachineNvlReportPanel({
                     <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
                       <Trash2 className="h-4 w-4" />
                     </button>
+                    </div>
                   </div>
                 ))}
               </div>
