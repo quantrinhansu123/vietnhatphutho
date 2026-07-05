@@ -144,8 +144,40 @@ export function getWeighingDataRows<T extends WeighingRecord>(rows: T[]) {
   return rows.filter(row => !isSlipHeaderRow(row));
 }
 
-function countWeighingRounds(rows: WeighingRecord[]) {
-  return getWeighingDataRows(rows).length;
+function parseWeighRoundNumber(weighNo: string | number | undefined) {
+  const value = Number(String(weighNo ?? '').trim());
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+export function getMaxWeighRoundNumber(rows: WeighingRecord[]) {
+  return getWeighingDataRows(rows).reduce(
+    (max, row) => Math.max(max, parseWeighRoundNumber(row.weighNo)),
+    0
+  );
+}
+
+/** Lần cân đang nhập — giữ nguyên lần hiện tại để thêm nhiều SP trong cùng lần. */
+export function getCurrentWeighRound(rows: WeighingRecord[]) {
+  const maxRound = getMaxWeighRoundNumber(rows);
+  return maxRound > 0 ? String(maxRound) : '1';
+}
+
+/** Lần cân tiếp theo — khi bắt đầu lần cân mới. */
+export function getNextWeighRoundNumber(rows: WeighingRecord[]) {
+  return String(getMaxWeighRoundNumber(rows) + 1);
+}
+
+export function countWeighingRounds(rows: WeighingRecord[]) {
+  const dataRows = getWeighingDataRows(rows);
+  if (dataRows.length === 0) return 0;
+
+  const rounds = new Set(
+    dataRows
+      .map(row => String(row.weighNo ?? '').trim())
+      .filter(Boolean)
+  );
+
+  return rounds.size > 0 ? rounds.size : 1;
 }
 
 interface DateSlipGroup {
@@ -328,6 +360,8 @@ export interface WeighingPendingAdd {
   existingRows?: WeighingRecord[];
   editingRow?: WeighingRecord;
   createNewSlip?: boolean;
+  /** true = bắt đầu lần cân mới; false/mặc định = thêm SP vào lần cân hiện tại */
+  newWeighRound?: boolean;
 }
 
 export function generateWeighingDocumentNo(productionDate?: string) {
@@ -834,14 +868,14 @@ export default function WeighingShiftSummary({
               </div>
             </div>
 
-            <div className="md:overflow-x-auto overflow-x-visible rounded-xl border border-zinc-200">
+            <div className="overflow-x-auto rounded-xl border border-zinc-200">
               {actionMessage && (
                 <p className="border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-bold text-[#ef1b2d]">
                   {actionMessage}
                 </p>
               )}
-              <table className="responsive-table w-full md:min-w-[1080px] border-collapse text-left text-xs">
-                <thead className="hidden md:table-header-group">
+              <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
+                <thead>
                   <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
                     <th className="px-3 py-2 text-center">Lần</th>
                     <th className="px-3 py-2">Người cân</th>
@@ -857,31 +891,31 @@ export default function WeighingShiftSummary({
                     <th className="px-3 py-2 text-center">Thao tác</th>
                   </tr>
                 </thead>
-                <tbody className="block md:table-row-group md:divide-y md:divide-zinc-100">
+                <tbody className="divide-y divide-zinc-100">
                   {activeSlipWeighingRows.length === 0 ? (
-                    <tr className="block md:table-row">
-                      <td colSpan={12} className="block md:table-cell px-4 py-10 text-center text-sm font-semibold text-zinc-400">
+                    <tr>
+                      <td colSpan={12} className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
                         Chưa có lần cân. Bấm Bổ sung lần cân để thêm dòng.
                       </td>
                     </tr>
                   ) : (
                   activeSlipWeighingRows.map((row, index) => (
-                    <tr key={row.id ?? `${activeSlip.key}-${index}`} className="block border border-ink-200 rounded-xl mb-2 p-2 md:table-row md:border md:border-zinc-100 md:rounded-none md:mb-0 md:p-0">
-                      <td data-label="Lần" className="block md:table-cell px-3 py-2 text-center font-black text-zinc-800 before:content-[attr(data-label)]">{row.weighNo || index + 1}</td>
-                      <td data-label="Người cân" className="block md:table-cell px-3 py-2 font-semibold text-zinc-600 before:content-[attr(data-label)]">{row.weigherName || '—'}</td>
-                      <td data-label="TL lõi" className="block md:table-cell px-3 py-2 font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.coreWeight || '—'}</td>
-                      <td data-label="TL bì" className="block md:table-cell px-3 py-2 font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.shellWeight || '—'}</td>
-                      <td data-label="Trọng lượng" className="block md:table-cell px-3 py-2 font-bold text-zinc-900 before:content-[attr(data-label)]">{row.weight || '—'}</td>
-                      <td data-label="Tổng trọng lượng" className="block md:table-cell px-3 py-2 font-black text-[#ef1b2d] before:content-[attr(data-label)]">
+                    <tr key={row.id ?? `${activeSlip.key}-${index}`}>
+                      <td className="px-3 py-2 text-center font-black text-zinc-800">{row.weighNo || index + 1}</td>
+                      <td className="px-3 py-2 font-semibold text-zinc-600">{row.weigherName || '—'}</td>
+                      <td className="px-3 py-2 font-semibold text-zinc-700">{row.coreWeight || '—'}</td>
+                      <td className="px-3 py-2 font-semibold text-zinc-700">{row.shellWeight || '—'}</td>
+                      <td className="px-3 py-2 font-bold text-zinc-900">{row.weight || '—'}</td>
+                      <td className="px-3 py-2 font-black text-[#ef1b2d]">
                         {formatWeighingRowTotalWeight(row)}
                       </td>
-                      <td data-label="Giờ" className="block md:table-cell px-3 py-2 font-semibold text-zinc-600 before:content-[attr(data-label)]">{row.weighTime || '—'}</td>
-                      <td data-label="Nghiệm thu" className="block md:table-cell px-3 py-2 before:content-[attr(data-label)]">
+                      <td className="px-3 py-2 font-semibold text-zinc-600">{row.weighTime || '—'}</td>
+                      <td className="px-3 py-2">
                         {row.acceptanceStatus ? (
                           <span
                             className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
                               row.acceptanceStatus === 'Đạt'
-                                ? 'bg-success-50 text-success-700'
+                                ? 'bg-emerald-50 text-emerald-700'
                                 : 'bg-rose-50 text-rose-700'
                             }`}
                           >
@@ -891,10 +925,10 @@ export default function WeighingShiftSummary({
                           <span className="text-zinc-300">—</span>
                         )}
                       </td>
-                      <td data-label="Ghi chú" className="block md:table-cell max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600 before:content-[attr(data-label)]" title={row.note || undefined}>
+                      <td className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600" title={row.note || undefined}>
                         {row.note || '—'}
                       </td>
-                      <td data-label="Ảnh TL lõi" className="block md:table-cell px-3 py-2 before:content-[attr(data-label)]">
+                      <td className="px-3 py-2">
                         {row.coreWeightImageUrl ? (
                           <WeighingImageThumbnail
                             url={row.coreWeightImageUrl}
@@ -908,7 +942,7 @@ export default function WeighingShiftSummary({
                           <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                         )}
                       </td>
-                      <td data-label="Ảnh" className="block md:table-cell px-3 py-2 before:content-[attr(data-label)]">
+                      <td className="px-3 py-2">
                         {row.imageUrl ? (
                           <WeighingImageThumbnail
                             url={row.imageUrl}
@@ -920,35 +954,35 @@ export default function WeighingShiftSummary({
                           <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                         )}
                       </td>
-                      <td data-label="Thao tác" data-mobile="icon-only" className="block md:table-cell px-3 py-2 md:text-center before:content-[attr(data-label)]">
-                        <div className="flex items-center justify-end md:justify-center gap-1">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
                             onClick={() => setViewingRow(row)}
                             title="Xem"
-                            className="flex h-9 w-9 md:h-7 md:w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                           >
-                            <Eye className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                            <Eye className="h-3.5 w-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleEditRow(row)}
                             title="Sửa"
-                            className="flex h-9 w-9 md:h-7 md:w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
                           >
-                            <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                            <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteRow(row)}
                             disabled={deletingRowId === row.id}
                             title="Xóa"
-                            className="flex h-9 w-9 md:h-7 md:w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {deletingRowId === row.id ? (
-                              <Loader2 className="h-4 md:h-3.5 w-4 md:w-3.5 animate-spin" />
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
-                              <Trash2 className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             )}
                           </button>
                         </div>
@@ -979,7 +1013,8 @@ export default function WeighingShiftSummary({
                     );
                     return name !== '—' ? name : undefined;
                   })(),
-                  existingRows: activeSlip.rows
+                  existingRows: activeSlip.rows,
+                  newWeighRound: true
                 })}
                 className="flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c]"
               >

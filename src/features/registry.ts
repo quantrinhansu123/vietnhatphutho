@@ -1,0 +1,242 @@
+/**
+ * Registry: bảng Supabase → file code.
+ * AI: đọc manifest `docs/ai-tables/<table>.md` trước — frontend đã tách vào `src/features/<slug>/`.
+ */
+export type TableId =
+  | 'reports'
+  | 'phieu_can_dinh_ki'
+  | 'bao_cao_hang_hong'
+  | 'san_pham'
+  | 'danh_sach_may'
+  | 'kho_nvl'
+  | 'phieu_xuat_nhap_kho'
+  | 'don_hang'
+  | 'khach_hang'
+  | 'lenh_sx'
+  | 'ke_hoach_san_xuat'
+  | 'nhan_su'
+  | 'cai_dat_thoi_gian'
+  | 'bao_cao_phoi_tron'
+  | 'bao_cao_nghiem_thu'
+  | 'bao_cao_may_nvl_ton'
+  | 'phieu_bao_dung_may'
+  | 'control_board';
+
+export interface TableRegistryEntry {
+  table: TableId;
+  label: string;
+  sql: string[];
+  apiPrefix: string;
+  serverLines: string;
+  appTab: string;
+  appLines: string;
+  components: string[];
+  utils: string[];
+}
+
+export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
+  reports: {
+    table: 'reports',
+    label: 'Báo cáo sản lượng ca (legacy)',
+    sql: ['supabase-reports.sql'],
+    apiPrefix: '/api/reports',
+    serverLines: '3440–3505',
+    appTab: 'form',
+    appLines: 'src/App.tsx (wizard báo cáo ca ~dòng 900+)',
+    components: ['src/components/ShiftInfoForm.tsx', 'src/components/ProductEntryForm.tsx', 'src/components/MaterialsForm.tsx', 'src/components/WasteForm.tsx'],
+    utils: ['src/utils.ts', 'src/types.ts']
+  },
+  phieu_can_dinh_ki: {
+    table: 'phieu_can_dinh_ki',
+    label: 'Phiếu cân định kỳ',
+    sql: ['supabase-phieu-can-dinh-ki.sql'],
+    apiPrefix: '/api/phieu-can-dinh-ki',
+    serverLines: '5268–5274 (registerWeighingSlipRoutes)',
+    appTab: 'weighing-summary',
+    appLines: 'src/components/WeighingShiftSummary.tsx',
+    components: ['src/components/WeighingShiftSummary.tsx', 'src/components/WeighingReportForm.tsx', 'src/components/WeighingSlipPrintSheet.tsx', 'src/components/WeighingImagePreviewModal.tsx', 'src/lib/weighingSlipConfig.ts'],
+    utils: []
+  },
+  bao_cao_hang_hong: {
+    table: 'bao_cao_hang_hong',
+    label: 'Báo cáo hàng hỏng',
+    sql: ['supabase-bao-cao-hang-hong.sql'],
+    apiPrefix: '/api/bao-cao-hang-hong',
+    serverLines: '5276–5282 (registerWeighingSlipRoutes)',
+    appTab: 'damaged-goods-report',
+    appLines: 'src/components/WeighingShiftSummary.tsx',
+    components: ['src/components/WeighingShiftSummary.tsx', 'src/components/WeighingReportForm.tsx'],
+    utils: ['src/lib/weighingSlipConfig.ts']
+  },
+  san_pham: {
+    table: 'san_pham',
+    label: 'Danh mục sản phẩm',
+    sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-ton-dau-ky.sql'],
+    apiPrefix: '/api/san-pham',
+    serverLines: '3507–3695',
+    appTab: 'products',
+    appLines: 'src/features/san-pham/index.tsx, src/features/san-pham/types.ts, src/features/san-pham/productFieldClass.ts',
+    components: ['src/components/ProductQrScanner.tsx', 'src/components/LineEditorSheet.tsx'],
+    utils: ['src/utils/productNplComponentsExcel.ts']
+  },
+  danh_sach_may: {
+    table: 'danh_sach_may',
+    label: 'Danh sách máy',
+    sql: ['supabase-danh-sach-may.sql', 'supabase-san-pham-ten-may.sql'],
+    apiPrefix: '/api/danh-sach-may',
+    serverLines: '3697–3870',
+    appTab: 'machines',
+    appLines: 'src/features/danh-sach-may/index.tsx',
+    components: [],
+    utils: []
+  },
+  kho_nvl: {
+    table: 'kho_nvl',
+    label: 'Kho nguyên vật liệu',
+    sql: ['supabase-kho-nvl.sql'],
+    apiPrefix: '/api/kho-nvl',
+    serverLines: '4605–4784',
+    appTab: 'materials',
+    appLines: 'src/features/kho-nvl/index.tsx',
+    components: ['src/components/MaterialsForm.tsx'],
+    utils: ['src/utils/bulkOpeningStockExcel.ts', 'src/utils/bulkMaterialTotalWeightExcel.ts']
+  },
+  phieu_xuat_nhap_kho: {
+    table: 'phieu_xuat_nhap_kho',
+    label: 'Phiếu xuất nhập kho',
+    sql: ['supabase-phieu-xuat-nhap-kho.sql', 'supabase-phieu-xuat-nhap-kho-*.sql'],
+    apiPrefix: '/api/phieu-xuat-nhap-kho',
+    serverLines: '4786–5118',
+    appTab: 'warehouse-slip | warehouse-history',
+    appLines: 'src/features/phieu-xuat-nhap-kho/index.tsx',
+    components: ['src/components/WarehouseSlipPrintModal.tsx'],
+    utils: ['scripts/sync-kho-nvl-from-phieu.mjs']
+  },
+  don_hang: {
+    table: 'don_hang',
+    label: 'Đơn hàng',
+    sql: ['supabase-don-hang-*.sql'],
+    apiPrefix: '/api/don-hang',
+    serverLines: '3872–3999',
+    appTab: 'orders',
+    appLines: 'src/features/don-hang/index.tsx, src/features/_shared/orderHelpers.ts',
+    components: [],
+    utils: []
+  },
+  khach_hang: {
+    table: 'khach_hang',
+    label: 'Khách hàng',
+    sql: ['supabase-don-hang-san-pham.sql'],
+    apiPrefix: '/api/khach-hang',
+    serverLines: '4436–4479',
+    appTab: 'customers',
+    appLines: 'src/features/khach-hang/index.tsx',
+    components: [],
+    utils: []
+  },
+  lenh_sx: {
+    table: 'lenh_sx',
+    label: 'Lệnh sản xuất',
+    sql: ['supabase-lenh-sx.sql'],
+    apiPrefix: '/api/lenh-sx',
+    serverLines: '4001–4434',
+    appTab: 'production-orders',
+    appLines: 'src/features/lenh-sx/index.tsx',
+    components: ['src/components/MixingProductionOrderAutofillModal.tsx'],
+    utils: []
+  },
+  ke_hoach_san_xuat: {
+    table: 'ke_hoach_san_xuat',
+    label: 'Kế hoạch sản xuất',
+    sql: ['supabase-ke-hoach-sx.sql', 'supabase-ke-hoach-san-xuat.sql'],
+    apiPrefix: '/api/ke-hoach-sx',
+    serverLines: '4200–4360',
+    appTab: 'production-plan-history',
+    appLines: 'src/features/ke-hoach-san-xuat/index.tsx',
+    components: ['src/components/ProductionPlanNvlPrintSheet.tsx', 'src/components/ControlBoardShiftSummaryTable.tsx'],
+    utils: ['src/utils/controlBoardShiftSummary.ts', 'src/utils/controlBoardShiftSummaryDetails.ts']
+  },
+  nhan_su: {
+    table: 'nhan_su',
+    label: 'Nhân sự',
+    sql: ['supabase-nhan-su.sql'],
+    apiPrefix: '/api/nhan-su',
+    serverLines: '5120–5266',
+    appTab: 'hr',
+    appLines: 'src/features/nhan-su/index.tsx',
+    components: ['src/components/ShiftInfoForm.tsx'],
+    utils: ['src/utils/shiftSettings.ts']
+  },
+  cai_dat_thoi_gian: {
+    table: 'cai_dat_thoi_gian',
+    label: 'Cài đặt ca / thời gian',
+    sql: ['supabase-cai-dat-thoi-gian.sql'],
+    apiPrefix: '/api/cai-dat',
+    serverLines: '4481–4603',
+    appTab: 'settings',
+    appLines: 'src/features/cai-dat-thoi-gian/index.tsx',
+    components: [],
+    utils: ['src/utils/shiftSettings.ts']
+  },
+  bao_cao_phoi_tron: {
+    table: 'bao_cao_phoi_tron',
+    label: 'Báo cáo phối trộn',
+    sql: ['supabase-bao-cao-phoi-tron.sql'],
+    apiPrefix: '/api/bao-cao-phoi-tron',
+    serverLines: '5284–5476',
+    appTab: 'mixing-report | mixing-report-list',
+    appLines: 'src/components/MixingReportForm.tsx, src/components/MixingReportListView.tsx',
+    components: ['src/components/MixingReportForm.tsx', 'src/components/MixingReportListView.tsx', 'src/components/MixingReportPrintSheet.tsx', 'src/components/MixingOrderAutofillModal.tsx'],
+    utils: ['src/lib/mixingReportModel.ts', 'src/utils/mixingOrderAutofill.ts']
+  },
+  bao_cao_nghiem_thu: {
+    table: 'bao_cao_nghiem_thu',
+    label: 'Báo cáo sản lượng / nghiệm thu',
+    sql: ['supabase-bao-cao-nghiem-thu.sql'],
+    apiPrefix: '/api/bao-cao-nghiem-thu',
+    serverLines: '5708–5833',
+    appTab: 'acceptance-report | acceptance-report-list',
+    appLines: 'src/components/AcceptanceReportForm.tsx, src/components/AcceptanceReportListView.tsx',
+    components: ['src/components/AcceptanceReportForm.tsx', 'src/components/AcceptanceReportListView.tsx', 'src/components/AcceptanceReportPrintSheet.tsx'],
+    utils: []
+  },
+  bao_cao_may_nvl_ton: {
+    table: 'bao_cao_may_nvl_ton',
+    label: 'Báo cáo tồn NVL theo máy',
+    sql: ['supabase-bao-cao-may-nvl-ton.sql', 'supabase-bao-cao-may-nvl-ton-loai.sql'],
+    apiPrefix: '/api/bao-cao-may-nvl-ton',
+    serverLines: '5478–5600',
+    appTab: 'machine-nvl-report',
+    appLines: 'src/features/bao-cao-may-nvl-ton/index.tsx',
+    components: ['src/components/MachineNvlPrintSheet.tsx', 'src/components/MachineNvlReportListView.tsx'],
+    utils: ['src/utils/machineNvlReports.ts']
+  },
+  phieu_bao_dung_may: {
+    table: 'phieu_bao_dung_may',
+    label: 'Phiếu báo dừng máy',
+    sql: ['supabase-phieu-bao-dung-may.sql'],
+    apiPrefix: '/api/phieu-bao-dung-may',
+    serverLines: '5602–5689',
+    appTab: 'machine-downtime-report | machine-downtime-list',
+    appLines: 'src/components/MachineDowntimeReportPanel.tsx',
+    components: ['src/components/MachineDowntimeReportPanel.tsx', 'src/components/MachineDowntimePrintSheet.tsx', 'src/components/icons/MachineDowntimeIcon.tsx'],
+    utils: []
+  },
+  control_board: {
+    table: 'control_board',
+    label: 'Bảng điều khiển (đa bảng)',
+    sql: [],
+    apiPrefix: '—',
+    serverLines: '—',
+    appTab: 'control-board',
+    appLines: 'src/features/control-board/index.tsx, src/features/dashboard/index.tsx',
+    components: ['src/components/ControlBoardShiftSummaryTable.tsx', 'src/components/ControlBoardShiftDetailModal.tsx', 'src/components/ControlBoardShiftSummaryPrintSheet.tsx'],
+    utils: ['src/utils/controlBoardShiftSummary.ts']
+  }
+};
+
+export function getTableByTab(tab: string): TableRegistryEntry | undefined {
+  return Object.values(TABLE_REGISTRY).find(entry =>
+    entry.appTab.split('|').some(t => t.trim() === tab)
+  );
+}

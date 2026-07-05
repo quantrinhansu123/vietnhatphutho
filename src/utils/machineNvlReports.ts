@@ -141,3 +141,76 @@ export function sumMachineNvlCuoiCaReportTotal(report: Pick<MachineNvlSavedRepor
   if (fromLines > 0) return fromLines;
   return report.total > 0 ? report.total : 0;
 }
+
+export type MachineNvlReportMachineGroup = {
+  key: string;
+  maMay: string;
+  tenMay: string;
+  reports: MachineNvlSavedReport[];
+};
+
+export type MachineNvlReportShiftGroup = {
+  ca: string;
+  machines: MachineNvlReportMachineGroup[];
+};
+
+export type MachineNvlReportDateGroup = {
+  ngay: string;
+  shifts: MachineNvlReportShiftGroup[];
+};
+
+export function machineNvlReportMachineKey(report: MachineNvlSavedReport) {
+  const maMay = report.maMay.trim();
+  const tenMay = report.tenMay.trim();
+  return maMay || tenMay || '-';
+}
+
+export function buildMachineNvlReportGroups(
+  reports: MachineNvlSavedReport[],
+  shiftOrder: (ca: string) => number = () => 999
+): MachineNvlReportDateGroup[] {
+  const byDate = new Map<string, Map<string, Map<string, MachineNvlSavedReport[]>>>();
+
+  for (const report of reports) {
+    const ngay = report.ngay || '-';
+    const ca = report.ca || '-';
+    const machineKey = machineNvlReportMachineKey(report);
+
+    if (!byDate.has(ngay)) byDate.set(ngay, new Map());
+    const byShift = byDate.get(ngay)!;
+    if (!byShift.has(ca)) byShift.set(ca, new Map());
+    const byMachine = byShift.get(ca)!;
+    const list = byMachine.get(machineKey) ?? [];
+    list.push(report);
+    byMachine.set(machineKey, list);
+  }
+
+  return [...byDate.entries()]
+    .map(([ngay, byShift]) => ({
+      ngay,
+      shifts: [...byShift.entries()]
+        .map(([ca, byMachine]) => ({
+          ca,
+          machines: [...byMachine.entries()]
+            .map(([machineKey, groupReports]) => ({
+              key: `${ngay}|${ca}|${machineKey}`,
+              maMay: groupReports[0]?.maMay ?? '',
+              tenMay: groupReports[0]?.tenMay ?? '',
+              reports: [...groupReports].sort(
+                (left, right) =>
+                  (right.createdAt || '').localeCompare(left.createdAt || '') ||
+                  (right.gio || '').localeCompare(left.gio || '')
+              )
+            }))
+            .sort((left, right) =>
+              (left.tenMay || left.maMay || '').localeCompare(right.tenMay || right.maMay || '', 'vi')
+            )
+        }))
+        .sort((left, right) => {
+          const byShiftIndex = shiftOrder(left.ca) - shiftOrder(right.ca);
+          if (byShiftIndex !== 0) return byShiftIndex;
+          return left.ca.localeCompare(right.ca, 'vi');
+        })
+    }))
+    .sort((left, right) => right.ngay.localeCompare(left.ngay));
+}

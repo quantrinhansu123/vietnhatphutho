@@ -199,7 +199,7 @@ function resolveStaffFromProductionOrders(
 }
 
 const inputClass =
-  'h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
+  'h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -371,7 +371,7 @@ async function uploadMixingLineImage(imageDataUrl: string) {
 }
 
 const modalInputClass =
-  'h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
+  'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 function newReportForm(): Omit<MixingReport, 'id' | 'created_at'> {
   return {
@@ -547,7 +547,7 @@ function MixingRoundItemFormModal({
               <input
                 value={soLuongText}
                 readOnly
-                className={`${modalInputClass} bg-success-50/80 font-black text-success-800`}
+                className={`${modalInputClass} bg-emerald-50/80 font-black text-emerald-800`}
                 inputMode="decimal"
                 placeholder={batchWeight ? 'Tự tính theo %' : '-'}
               />
@@ -736,13 +736,13 @@ function MixingLineFormModal({
                           const lan_su_dung = setRoundBatchWeight(draft.lan_su_dung, roundKey, e.target.value);
                           onChange({ lan_su_dung, tong_nhua_tron: sumMixingRounds(lan_su_dung) });
                         }}
-                        className="h-8 w-24 rounded-md border border-ink-200 bg-white px-2 text-[13px] font-bold num outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20"
+                        className="h-8 w-28 rounded-lg border border-zinc-200 bg-white px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
                         placeholder="0"
                       />
                     </label>
                   </div>
-                  <div className="md:overflow-x-auto overflow-x-visible">
-                    <table className="responsive-table min-w-full text-left text-xs">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-xs">
                       <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                         <tr>
                           <th className="px-2 py-2 font-black">Mã NVL</th>
@@ -752,56 +752,56 @@ function MixingLineFormModal({
                           <th className="px-2 py-2 text-center font-black">Thao tác</th>
                         </tr>
                       </thead>
-                      <tbody className="md:divide-y md:divide-zinc-100">
+                      <tbody className="divide-y divide-zinc-100">
                         {items.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="md:px-3 md:py-6 md:text-center px-1 py-2 font-semibold text-zinc-400">
+                            <td colSpan={5} className="px-3 py-6 text-center font-semibold text-zinc-400">
                               Chưa có định mức. Bấm &quot;Thêm dòng&quot; để nhập mã NVL và %.
                             </td>
                           </tr>
                         ) : (
                           items.map((item, rowIndex) => (
                           <tr key={`${roundKey}-${rowIndex}`}>
-                            <td data-label="Mã NVL" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">{item.ma_nvl || '-'}</td>
-                            <td data-label="%" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">
+                            <td className="px-2 py-2 font-mono font-semibold text-zinc-700">{item.ma_nvl || '-'}</td>
+                            <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
                               {formatOptionalNumber(item.ti_le_phan_tram) || '-'}
                             </td>
-                            <td data-label="KL định mức" className="md:px-2 md:py-2 px-1 py-1 font-mono font-bold text-success-800 before:content-[attr(data-label)]">
+                            <td className="px-2 py-2 font-mono font-bold text-emerald-800">
                               {formatNormWeight(item.so_luong) || '-'}
                             </td>
-                            <td data-label="KL thực tế" className="md:px-2 md:py-2 px-1 py-1 font-mono font-bold text-[#ef1b2d] before:content-[attr(data-label)]">
+                            <td className="px-2 py-2 font-mono font-bold text-[#ef1b2d]">
                               {formatOptionalNumber(item.kl_thuc_te) || '-'}
                             </td>
-                            <td data-label="Thao tác" data-mobile="icon-only" className="md:px-2 md:py-2 px-1 py-1 md:text-center">
-                              <div className="flex items-center justify-end md:justify-center gap-1">
+                            <td className="px-2 py-2 text-center">
+                              <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
                                   onClick={() => openEditRoundItem(roundKey, rowIndex)}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-ink-200 text-ink-600 transition hover:bg-ink-50"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                                   title="Sửa dòng"
                                 >
-                                  <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                                  <Pencil className="h-3.5 w-3.5" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => removeRoundItem(roundKey, rowIndex)}
-                                  className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
                                   title="Xóa dòng"
                                 >
-                                  <Trash2 className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
                             </td>
                           </tr>
                         )))}
-                        <tr className="border-b-0">
-                          <td colSpan={5} className="md:px-2 md:py-2 px-0 py-1">
+                        <tr>
+                          <td colSpan={5} className="px-2 py-2">
                             <button
                               type="button"
                               onClick={() => openAddRoundItem(roundKey)}
-                              className="inline-flex h-9 md:h-8 items-center gap-1.5 rounded-lg border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-3 text-xs md:text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
                             >
-                              <Plus className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                              <Plus className="h-3.5 w-3.5" />
                               Thêm dòng
                             </button>
                           </td>
@@ -830,7 +830,7 @@ function MixingLineFormModal({
               <input
                 value={formatOptionalNumber(tongTron)}
                 readOnly
-                className={`${modalInputClass} bg-success-50 font-black text-success-700`}
+                className={`${modalInputClass} bg-emerald-50 font-black text-emerald-700`}
               />
             </label>
           </div>
@@ -1758,7 +1758,7 @@ export default function MixingReportForm({
   const formBody = (
     <>
       {!modalMode && (
-        <section className="overflow-hidden rounded-lg border border-ink-200 bg-white" style={{ boxShadow: 'var(--shadow-card)' }}>
+        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
           <div className="border-b-4 border-[#ef1b2d] bg-white p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex items-start gap-3">
@@ -1778,7 +1778,7 @@ export default function MixingReportForm({
                   <button
                     type="button"
                     onClick={onOpenList}
-                    className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-success-200 bg-success-50 px-3 text-xs font-extrabold text-success-800 transition hover:bg-success-100"
+                    className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
                   >
                     <ClipboardList className="h-4 w-4" />
                     Danh sách
@@ -1813,13 +1813,13 @@ export default function MixingReportForm({
         </div>
       )}
       {message && !modalMode && (
-        <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-semibold text-success-700">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
           {message}
         </div>
       )}
 
-      <section className="rounded-lg border border-ink-200 bg-white" style={{ boxShadow: 'var(--shadow-card)' }}>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3">
+      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-2 py-2 sm:px-4 sm:py-3">
           <div>
             <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
             <p className="text-xs font-semibold text-zinc-500">
@@ -1845,91 +1845,131 @@ export default function MixingReportForm({
 
         {displayedRoundCount > 0 ? (
           <>
-            <div className="relative z-10 space-y-3 p-4">
+            <div className="relative z-10 space-y-2 p-2 sm:space-y-3 sm:p-4">
             {ROUND_KEYS.slice(0, displayedRoundCount).map((roundKey, roundIndex) => {
               const entries = listRoundMaterialEntries(form.chi_tiet, roundKey);
               const isLastRound = roundIndex === displayedRoundCount - 1;
               const canRemoveRound = displayedRoundCount > 1 && isLastRound;
               return (
-                <div key={roundKey} className="relative rounded-xl border border-zinc-200">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
-                    <p className="text-xs font-black uppercase tracking-wider text-zinc-700">
-                      {roundColumnLabel(sessionRoundStart, roundIndex)}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {canRemoveRound ? (
-                        <button
-                          type="button"
-                          onClick={() => removeSessionRound(roundKey, roundIndex)}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-extrabold text-rose-700 transition hover:bg-rose-100"
-                          title={`Xóa ${roundColumnLabel(sessionRoundStart, roundIndex)}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Xóa lần
-                        </button>
-                      ) : null}
-                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-700">
-                        KL 1 mẻ (kg)
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={getRoundBatchWeightInputValue(roundKey)}
-                          onChange={event => handleRoundBatchWeightChange(roundKey, event.target.value)}
-                          className="h-8 w-24 rounded-md border border-ink-200 bg-white px-2 text-[13px] font-bold num outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20"
-                          placeholder="0"
-                        />
-                      </label>
+                <div key={roundKey} className="mixing-round-card relative rounded-lg border border-zinc-200 sm:rounded-xl">
+                  <div className="border-b border-zinc-100 bg-zinc-50 px-2 py-1.5 sm:px-3 sm:py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-zinc-700 sm:text-xs">
+                        {roundColumnLabel(sessionRoundStart, roundIndex)}
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        {canRemoveRound ? (
+                          <button
+                            type="button"
+                            onClick={() => removeSessionRound(roundKey, roundIndex)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100 sm:h-8 sm:w-auto sm:gap-1.5 sm:px-3 sm:text-[11px] sm:font-extrabold"
+                            title={`Xóa ${roundColumnLabel(sessionRoundStart, roundIndex)}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Xóa lần</span>
+                          </button>
+                        ) : null}
+                        <label className="flex items-center gap-1 text-[9px] font-bold text-zinc-700 sm:gap-2 sm:text-xs">
+                          <span className="whitespace-nowrap">KL 1 mẻ (kg)</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={getRoundBatchWeightInputValue(roundKey)}
+                            onChange={event => handleRoundBatchWeightChange(roundKey, event.target.value)}
+                            className="mixing-round-batch-input h-7 w-14 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] font-black outline-none focus:border-[#ef1b2d] sm:h-8 sm:w-28 sm:rounded-lg sm:px-2 sm:text-sm"
+                            placeholder="0"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-2 gap-1 sm:mt-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
                       <button
                         type="button"
                         onClick={() => openProductionOrderAutofill(roundKey)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-success-200 bg-success-50 px-3 text-[11px] font-extrabold text-success-800 transition hover:bg-success-100"
+                        className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 text-[9px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 sm:h-8 sm:justify-start sm:rounded-lg sm:px-3 sm:text-[11px]"
                       >
-                        <ClipboardCheck className="h-3.5 w-3.5" />
-                        NVL theo Lệnh sản xuất
+                        <ClipboardCheck className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
+                        <span className="truncate sm:hidden">Theo LSX</span>
+                        <span className="hidden truncate sm:inline">NVL theo Lệnh sản xuất</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => openRoundMaterialModal(roundKey)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
+                        className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-1.5 text-[9px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 sm:h-8 sm:justify-start sm:rounded-lg sm:px-3 sm:text-[11px]"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
                         Thêm NVL
                       </button>
                     </div>
                   </div>
                   {entries.length === 0 ? (
-                    <p className="px-3 py-4 text-center text-xs font-semibold text-zinc-400">
+                    <p className="px-2 py-2 text-center text-[10px] font-semibold text-zinc-400 sm:px-3 sm:py-3 sm:text-xs">
                       Chưa có NVL trong {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}.
                     </p>
                   ) : (
-                    <div className="md:overflow-x-auto overflow-x-visible">
-                      <table className="responsive-table min-w-full text-left text-xs">
-                        <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
-                          <tr>
-                            <th className="px-2 py-2 font-black">Mã NVL</th>
-                            <th className="px-2 py-2 font-black">Tên vật tư</th>
-                            <th className="px-2 py-2 font-black">%</th>
-                            <th className="px-2 py-2 font-black">KL định mức</th>
-                            <th className="px-2 py-2 font-black">KL thực tế</th>
-                            <th className="px-2 py-2 text-center font-black">Thao tác</th>
-                          </tr>
-                        </thead>
-                        <tbody className="md:divide-y md:divide-zinc-100">
-                          {entries.map(entry => (
-                            <tr key={`${roundKey}-${entry.lineIndex}-${entry.itemIndex}`}>
-                              <td data-label="Mã NVL" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">
+                    <>
+                      <div className="divide-y divide-zinc-100 md:hidden">
+                        {entries.map(entry => (
+                          <div
+                            key={`${roundKey}-${entry.lineIndex}-${entry.itemIndex}-mobile`}
+                            className="mixing-round-item-mobile px-2 py-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span className="truncate font-mono text-[11px] font-bold text-zinc-800">
                                 {entry.item.ma_nvl || '-'}
-                              </td>
-                              <td data-label="Tên vật tư" className="md:px-2 md:py-2 px-1 py-1 text-zinc-800 before:content-[attr(data-label)]">
-                                {entry.item.ten_vat_tu || '-'}
-                              </td>
-                              <td data-label="%" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">
-                                {formatOptionalNumber(entry.item.ti_le_phan_tram) || '-'}
-                              </td>
-                              <td data-label="KL định mức" className="md:px-2 md:py-2 px-1 py-1 font-mono font-bold text-success-800 before:content-[attr(data-label)]">
-                                {formatNormWeight(entry.item.so_luong) || '-'}
-                              </td>
-                              <td data-label="KL thực tế" className="md:px-2 md:py-2 px-1 py-1 before:content-[attr(data-label)]">
+                              </span>
+                              <div className="flex shrink-0 items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openRoundMaterialModal(roundKey, {
+                                      lineIndex: entry.lineIndex,
+                                      itemIndex: entry.itemIndex
+                                    })
+                                  }
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                  title="Sửa NVL"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setForm(prev => ({
+                                      ...prev,
+                                      chi_tiet: removeMaterialFromRound(
+                                        prev.chi_tiet,
+                                        roundKey,
+                                        entry.lineIndex,
+                                        entry.itemIndex
+                                      )
+                                    }))
+                                  }
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                                  title="Xóa NVL"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                            <p className="mt-0.5 line-clamp-1 text-[10px] font-semibold leading-tight text-zinc-600">
+                              {entry.item.ten_vat_tu || '-'}
+                            </p>
+                            <div className="mt-1 grid grid-cols-3 gap-1">
+                              <div>
+                                <span className="mixing-round-item-mobile-label">%</span>
+                                <p className="font-mono text-[11px] font-bold text-zinc-800">
+                                  {formatOptionalNumber(entry.item.ti_le_phan_tram) || '-'}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="mixing-round-item-mobile-label">KL ĐM</span>
+                                <p className="font-mono text-[11px] font-bold text-emerald-800">
+                                  {formatNormWeight(entry.item.so_luong) || '-'}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="mixing-round-item-mobile-label">KL TT</span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1983,12 +2023,115 @@ export default function MixingReportForm({
                                       return next;
                                     });
                                   }}
-                                  className="h-8 w-20 md:h-7 md:w-16 rounded-md border border-ink-200 bg-white px-1.5 text-right num text-[12px] font-bold text-brand-600 outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20"
+                                  className="mixing-round-item-mobile-input h-7 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-1 text-right font-mono text-[11px] font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                                  placeholder="0"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-[10px] font-bold text-zinc-700">
+                          <span>Tổng</span>
+                          <span className="font-mono text-emerald-800">
+                            {formatNormWeight(
+                              sumRoundQuantity(
+                                form.chi_tiet[0]?.lan_su_dung ?? { lan_1: [] },
+                                roundKey
+                              )
+                            ) || formatNormWeight(resolveRoundBatchWeight(form.chi_tiet, roundKey)) || '-'}
+                          </span>
+                          <span className="font-mono text-[#ef1b2d]">
+                            {formatNormWeight(
+                              entries.reduce((sum, entry) => sum + (entry.item.kl_thuc_te ?? 0), 0)
+                            ) || '-'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="hidden overflow-x-auto md:block">
+                      <table className="min-w-full text-left text-xs">
+                        <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                          <tr>
+                            <th className="px-2 py-2 font-black">Mã NVL</th>
+                            <th className="px-2 py-2 font-black">Tên vật tư</th>
+                            <th className="px-2 py-2 font-black">%</th>
+                            <th className="px-2 py-2 font-black">KL định mức</th>
+                            <th className="px-2 py-2 font-black">KL thực tế</th>
+                            <th className="px-2 py-2 text-center font-black">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                          {entries.map(entry => (
+                            <tr key={`${roundKey}-${entry.lineIndex}-${entry.itemIndex}`}>
+                              <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
+                                {entry.item.ma_nvl || '-'}
+                              </td>
+                              <td className="px-2 py-2 text-zinc-800">{entry.item.ten_vat_tu || '-'}</td>
+                              <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
+                                {formatOptionalNumber(entry.item.ti_le_phan_tram) || '-'}
+                              </td>
+                              <td className="px-2 py-2 font-mono font-bold text-emerald-800">
+                                {formatNormWeight(entry.item.so_luong) || '-'}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={
+                                    actualWeightDrafts[
+                                      actualWeightDraftKey(roundKey, entry.lineIndex, entry.itemIndex)
+                                    ] ??
+                                    (entry.item.kl_thuc_te === null || entry.item.kl_thuc_te === undefined
+                                      ? ''
+                                      : quantityInputText(entry.item.kl_thuc_te))
+                                  }
+                                  onFocus={() => {
+                                    const key = actualWeightDraftKey(
+                                      roundKey,
+                                      entry.lineIndex,
+                                      entry.itemIndex
+                                    );
+                                    setActualWeightDrafts(prev => {
+                                      if (prev[key] !== undefined) return prev;
+                                      return {
+                                        ...prev,
+                                        [key]:
+                                          entry.item.kl_thuc_te === null || entry.item.kl_thuc_te === undefined
+                                            ? ''
+                                            : quantityInputText(entry.item.kl_thuc_te)
+                                      };
+                                    });
+                                  }}
+                                  onChange={event => {
+                                    const text = sanitizeDecimalTyping(event.target.value);
+                                    const key = actualWeightDraftKey(
+                                      roundKey,
+                                      entry.lineIndex,
+                                      entry.itemIndex
+                                    );
+                                    setActualWeightDrafts(prev => ({ ...prev, [key]: text }));
+                                  }}
+                                  onBlur={() => {
+                                    const key = actualWeightDraftKey(roundKey, entry.lineIndex, entry.itemIndex);
+                                    const draft = actualWeightDrafts[key];
+                                    if (draft === undefined) return;
+                                    handleMaterialActualWeightChange(
+                                      roundKey,
+                                      entry.lineIndex,
+                                      entry.itemIndex,
+                                      draft
+                                    );
+                                    setActualWeightDrafts(prev => {
+                                      const next = { ...prev };
+                                      delete next[key];
+                                      return next;
+                                    });
+                                  }}
+                                  className="h-8 w-24 rounded-lg border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
                                   placeholder="0"
                                 />
                               </td>
-                              <td data-label="Thao tác" data-mobile="icon-only" className="md:px-2 md:py-2 px-1 py-1 md:text-center">
-                                <div className="flex items-center justify-end md:justify-center gap-1">
+                              <td className="px-2 py-2 text-center">
+                                <div className="flex items-center justify-center gap-1">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1997,10 +2140,10 @@ export default function MixingReportForm({
                                         itemIndex: entry.itemIndex
                                       })
                                     }
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-ink-200 text-ink-600 transition hover:bg-ink-50"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                                     title="Sửa NVL"
                                   >
-                                    <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                                    <Pencil className="h-3.5 w-3.5" />
                                   </button>
                                   <button
                                     type="button"
@@ -2015,10 +2158,10 @@ export default function MixingReportForm({
                                         )
                                       }))
                                     }
-                                    className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
                                     title="Xóa NVL"
                                   >
-                                    <Trash2 className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
                               </td>
@@ -2026,12 +2169,12 @@ export default function MixingReportForm({
                           ))}
                         </tbody>
                         {entries.length > 0 ? (
-                          <tfoot className="hidden md:table-footer-group border-t border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-700">
+                          <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-700">
                             <tr>
                               <td colSpan={3} className="px-2 py-2 text-right">
                                 Tổng
                               </td>
-                              <td className="px-2 py-2 text-right font-mono font-bold text-success-800">
+                              <td className="px-2 py-2 text-right font-mono font-bold text-emerald-800">
                                 {formatNormWeight(
                                   sumRoundQuantity(
                                     form.chi_tiet[0]?.lan_su_dung ?? { lan_1: [] },
@@ -2049,12 +2192,13 @@ export default function MixingReportForm({
                           </tfoot>
                         ) : null}
                       </table>
-                    </div>
+                      </div>
+                    </>
                   )}
-                  <div className="relative z-20 border-t border-zinc-100 bg-white px-3 py-3">
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
+                  <div className="relative z-20 border-t border-zinc-100 bg-white px-2 py-2 sm:px-3 sm:py-3">
+                    <div className="mixing-round-meta-grid grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-2">
+                      <label className="space-y-0.5">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
                           Lý do
                         </span>
                         <SearchableMultiSelect
@@ -2062,56 +2206,56 @@ export default function MixingReportForm({
                           onChange={reasons => handleRoundReasonsChange(roundKey, reasons)}
                           options={allReasonOptions}
                           placeholder="Gõ để tìm hoặc chọn lý do..."
-                          inputClassName="min-h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                          inputClassName="mixing-round-reason-input min-h-8 w-full rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:min-h-9 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-xs"
                         />
                       </label>
-                      <label className="space-y-1">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
+                      <label className="space-y-0.5">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
                           Giải trình
                         </span>
                         <textarea
                           value={form.giai_trinh_theo_lan?.[roundKey] ?? ''}
                           onChange={event => handleRoundExplanationChange(roundKey, event.target.value)}
-                          rows={3}
+                          rows={2}
                           placeholder="Tự điền theo lý do đã chọn"
-                          className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-200 bg-white px-2 py-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                          className="mixing-round-explain-input min-h-[52px] w-full resize-y rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:min-h-[72px] sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs"
                         />
                       </label>
                     </div>
                   </div>
-                  <div className="relative z-20 border-t border-zinc-100 bg-zinc-50/50 px-3 py-2.5">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-600">
+                  <div className="relative z-20 border-t border-zinc-100 bg-zinc-50/50 px-2 py-2 sm:px-3 sm:py-2.5">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
                       Ảnh xác nhận {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}
                     </p>
-                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="mt-1.5 flex flex-col gap-1.5 sm:mt-2 sm:flex-row sm:items-center sm:gap-2">
                       <input
                         type="file"
                         accept="image/*"
                         multiple
                         disabled={uploadingRoundKey === roundKey}
                         onChange={event => handleRoundPhotoFile(event, roundKey)}
-                        className="min-w-0 flex-1 rounded-lg border border-dashed border-[#ef1b2d]/35 bg-white px-2 py-2 text-[11px] font-semibold text-zinc-600 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-[#ef1b2d] file:px-3 file:py-1.5 file:text-[10px] file:font-extrabold file:text-white hover:bg-red-50/40 disabled:opacity-60"
+                        className="min-w-0 flex-1 rounded-md border border-dashed border-[#ef1b2d]/35 bg-white px-1.5 py-1.5 text-[10px] font-semibold text-zinc-600 file:mr-1.5 file:cursor-pointer file:rounded file:border-0 file:bg-[#ef1b2d] file:px-2 file:py-1 file:text-[9px] file:font-extrabold file:text-white hover:bg-red-50/40 disabled:opacity-60 sm:rounded-lg sm:px-2 sm:py-2 sm:text-[11px] sm:file:mr-2 sm:file:rounded-md sm:file:px-3 sm:file:py-1.5 sm:file:text-[10px]"
                       />
                       <button
                         type="button"
                         onClick={() => pickRoundPhotos(roundKey)}
                         disabled={uploadingRoundKey === roundKey}
-                        className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:opacity-60"
+                        className="inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-md border border-[#ef1b2d]/30 bg-red-50 px-2 text-[10px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:opacity-60 sm:h-9 sm:rounded-lg sm:gap-1.5 sm:px-3 sm:text-[11px]"
                       >
                         {uploadingRoundKey === roundKey ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <Loader2 className="h-3 w-3 animate-spin sm:h-3.5 sm:w-3.5" />
                         ) : (
-                          <ImagePlus className="h-3.5 w-3.5" />
+                          <ImagePlus className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                         )}
                         Thêm ảnh
                       </button>
                     </div>
                     {getRoundPhotos(roundKey).length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                         {getRoundPhotos(roundKey).map((photo, photoIndex) => (
                           <div
                             key={`${roundKey}-photo-${photoIndex}`}
-                            className="group relative h-14 w-14 overflow-hidden rounded-lg border border-zinc-200 bg-white"
+                            className="group relative h-12 w-12 overflow-hidden rounded-md border border-zinc-200 bg-white sm:h-14 sm:w-14 sm:rounded-lg"
                           >
                             <a href={photo.url} target="_blank" rel="noreferrer" title="Xem ảnh">
                               <img src={photo.url} alt={`Ảnh ${roundIndex + 1}`} className="h-full w-full object-cover" />
@@ -2128,7 +2272,7 @@ export default function MixingReportForm({
                         ))}
                       </div>
                     ) : (
-                      <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
+                      <p className="mt-1 hidden text-[10px] font-semibold text-zinc-400 sm:block sm:text-[11px]">
                         Chọn file bằng ô &quot;Chọn tệp&quot; hoặc bấm Thêm ảnh · có thể chọn nhiều ảnh.
                       </p>
                     )}
@@ -2257,5 +2401,5 @@ export default function MixingReportForm({
     );
   }
 
-  return <div className="space-y-3 pb-24">{formBody}</div>;
+  return <div className="space-y-4 pb-24">{formBody}</div>;
 }

@@ -304,7 +304,7 @@ export default function AcceptanceReportListView({
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3">
           <div className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-success-700" />
+            <ClipboardList className="h-4 w-4 text-emerald-700" />
             <span className="text-xs font-black uppercase tracking-wider text-zinc-600">
               {shiftGroups.length} ca · {reports.length} dòng trong ngày
             </span>
@@ -314,7 +314,7 @@ export default function AcceptanceReportListView({
               type="button"
               onClick={handlePrint}
               disabled={reports.length === 0}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-success-200 bg-success-50 px-3 text-xs font-extrabold text-success-800 transition hover:bg-success-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Printer className="h-4 w-4" />
               In phiếu
@@ -363,7 +363,7 @@ export default function AcceptanceReportListView({
                   ).size;
 
                   return (
-                    <tr key={group.ca} className="hover:bg-success-50/40">
+                    <tr key={group.ca} className="hover:bg-emerald-50/40">
                       <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '-'}</td>
                       <td className="px-3 py-2 font-semibold text-zinc-800">{group.ca}</td>
                       <td className="px-3 py-2 font-bold text-zinc-700">{group.reports.length}</td>
@@ -425,14 +425,14 @@ export default function AcceptanceReportListView({
                 </tr>
               ) : (
                 sortedReports.map(report => (
-                  <tr key={report.id} className="hover:bg-success-50/40">
+                  <tr key={report.id} className="hover:bg-emerald-50/40">
                     <td className="px-3 py-2 font-semibold text-zinc-800">{report.ca || '-'}</td>
                     <td className="px-3 py-2 text-zinc-700">{report.ten_may || report.ma_may || '-'}</td>
                     <td className="px-3 py-2 font-bold text-zinc-700">{report.lan || '-'}</td>
                     <td className="px-3 py-2 font-mono text-zinc-600">{report.gio || '-'}</td>
                     <td className="px-3 py-2 text-zinc-700">{report.mat_hang || '-'}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-600">{report.don_vi || '-'}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-success-700">
+                    <td className="px-3 py-2 font-mono font-bold text-emerald-700">
                       {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
                     </td>
                     <td className="px-3 py-2">{renderReportActions(report)}</td>
@@ -450,7 +450,7 @@ export default function AcceptanceReportListView({
         </div>
       )}
       {message && (
-        <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-semibold text-success-700">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
           {message}
         </div>
       )}
@@ -469,7 +469,7 @@ export default function AcceptanceReportListView({
                 <button
                   type="button"
                   onClick={handlePrintGroup}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-success-200 bg-success-50 px-3 text-xs font-extrabold text-success-800 transition hover:bg-success-100"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
                 >
                   <Printer className="h-4 w-4" />
                   In phiếu
@@ -501,7 +501,7 @@ export default function AcceptanceReportListView({
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
                     {viewingGroup.reports.map(report => (
-                      <tr key={report.id} className="hover:bg-success-50/40">
+                      <tr key={report.id} className="hover:bg-emerald-50/40">
                         <td className="px-3 py-2">
                           {report.hinh_anh ? (
                             <a
@@ -521,7 +521,7 @@ export default function AcceptanceReportListView({
                         <td className="px-3 py-2 font-mono text-zinc-600">{report.gio || '-'}</td>
                         <td className="px-3 py-2 text-zinc-700">{report.mat_hang || '-'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-600">{report.don_vi || '-'}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-success-700">
+                        <td className="px-3 py-2 font-mono font-bold text-emerald-700">
                           {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
                         </td>
                         <td className="px-3 py-2">{renderReportActions(report, true)}</td>
@@ -532,7 +532,7 @@ export default function AcceptanceReportListView({
                         <td colSpan={6} className="px-3 py-2 text-right font-black text-zinc-800">
                           Tổng cộng ({unit})
                         </td>
-                        <td className="px-3 py-2 font-mono font-black text-success-700">
+                        <td className="px-3 py-2 font-mono font-black text-emerald-700">
                           {formatNumber(total, 2)}
                         </td>
                         <td />

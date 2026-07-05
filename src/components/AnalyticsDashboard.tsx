@@ -136,7 +136,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
         <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Báo cấu / Ca máy</span>
-            <Activity className="w-5 h-5 text-success-600" />
+            <Activity className="w-5 h-5 text-emerald-600" />
           </div>
           <div className="mt-2">
             <p className="text-2xl font-black text-slate-800">{summaryMetrics.totalReports}</p>
@@ -148,7 +148,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
         <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Tổng Polymer Nạp</span>
-            <Scale className="w-5 h-5 text-brand-500" />
+            <Scale className="w-5 h-5 text-indigo-500" />
           </div>
           <div className="mt-2">
             <p className="text-2xl font-black text-slate-800">{formatNumber(summaryMetrics.totalPlasticKg, 0)} <span className="text-xs font-bold text-slate-500">kg</span></p>
@@ -171,10 +171,10 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
         </div>
 
         {/* Metric 4 */}
-        <div className="bg-gradient-to-br from-success-800 to-slate-900 p-4 rounded-xl text-slate-100 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-success-300">
-            <span className="text-xs font-bold uppercase tracking-wider text-success-400">Hiệu Suất Chỉ Số</span>
-            <Award className="w-5 h-5 text-success-400" />
+        <div className="bg-gradient-to-br from-emerald-800 to-slate-900 p-4 rounded-xl text-slate-100 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-emerald-300">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Hiệu Suất Chỉ Số</span>
+            <Award className="w-5 h-5 text-emerald-400" />
           </div>
           <div className="mt-2">
             <p className="text-2xl font-black text-white">
@@ -183,7 +183,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
                 : '0%'
               }
             </p>
-            <p className="text-[10px] text-success-200 mt-1 font-medium">Đạt mức tiêu chuẩn xanh</p>
+            <p className="text-[10px] text-emerald-200 mt-1 font-medium">Đạt mức tiêu chuẩn xanh</p>
           </div>
         </div>
       </div>
@@ -195,7 +195,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
           <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
             <div className="flex justify-between items-center pb-2">
               <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-success-500" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                 Sản Lượng Thành Phẩm & Vật Tư Nhập Ca
               </h4>
               <span className="text-[10px] font-bold text-slate-400 uppercase">Đối chiếu kg</span>
@@ -258,7 +258,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
             type="button"
             id="reset-db-btn"
             onClick={onResetDb}
-            className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-success-700 bg-slate-50 hover:bg-success-50 border border-slate-200 rounded-xl px-3 py-2 transition h-9 min-h-[36px]"
+            className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-emerald-700 bg-slate-50 hover:bg-emerald-50 border border-slate-200 rounded-xl px-3 py-2 transition h-9 min-h-[36px]"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Khôi phục dữ liệu mẫu
@@ -272,7 +272,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
             <input
               type="text"
               id="report-search-bar"
-              className="w-full h-10 pl-9 pr-4 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-success-500 placeholder:text-slate-400"
+              className="w-full h-10 pl-9 pr-4 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-emerald-500 placeholder:text-slate-400"
               placeholder="Tìm theo thợ chính, thợ phụ, mã hàng PE/PP..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -287,7 +287,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
           <div className="sm:col-span-5 relative">
             <select
               id="machine-filter-select"
-              className="w-full h-10 px-3 pr-8 bg-slate-50 hover:bg-slate-100/50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-success-500 cursor-pointer appearance-none"
+              className="w-full h-10 px-3 pr-8 bg-slate-50 hover:bg-slate-100/50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer appearance-none"
               value={machineFilter}
               onChange={(e) => setMachineFilter(e.target.value)}
               style={{ minHeight: '44px' }}
@@ -312,8 +312,8 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
           <div className="space-y-2.5 divide-y divide-slate-50 max-h-[460px] overflow-y-auto pr-1">
             {filteredReports.map(({ report, metrics }, index) => {
               const statusColors = {
-                optimal: { bg: 'bg-success-50', text: 'text-success-700', border: 'border-success-200', icon: CheckCircle },
-                warning: { bg: 'bg-warning-50', text: 'text-warning-700', border: 'border-warning-200', icon: HelpCircle },
+                optimal: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircle },
+                warning: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: HelpCircle },
                 error: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: ShieldAlert }
               };
               const style = statusColors[metrics.status];
@@ -363,7 +363,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
                     </div>
 
                     {/* Small layout fallback */}
-                    <div className={`xs:hidden w-2 h-2 rounded-full ${metrics.status === 'optimal' ? 'bg-success-500' : metrics.status === 'warning' ? 'bg-warning-400' : 'bg-rose-500'}`} />
+                    <div className={`xs:hidden w-2 h-2 rounded-full ${metrics.status === 'optimal' ? 'bg-emerald-500' : metrics.status === 'warning' ? 'bg-amber-400' : 'bg-rose-500'}`} />
 
                     <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-slate-500 transition-all shrink-0" />
                   </div>
@@ -386,7 +386,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
             {/* Header */}
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
               <div>
-                <span className="text-[10px] font-extrabold bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full uppercase">
+                <span className="text-[10px] font-extrabold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full uppercase">
                   BÁO CÁO CHI TIẾT
                 </span>
                 <h3 className="text-base font-extrabold text-slate-800 mt-1">
@@ -425,13 +425,13 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
               {/* Product summary */}
               <div className="space-y-2">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Thành Phẩm Ca Máy</span>
-                <div className="p-3 bg-success-50/50 rounded-xl border border-success-100 flex justify-between items-center text-sm font-semibold text-slate-700">
+                <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100 flex justify-between items-center text-sm font-semibold text-slate-700">
                   <div>
                     <p className="font-extrabold text-slate-900">{selectedReportDetails.report.productEntry.productCode}</p>
                     <p className="text-[11px] text-slate-500">Quy cách: {STANDARD_PRODUCTS.find(p => p.code === selectedReportDetails.report.productEntry.productCode)?.name || 'Khác'}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-extrabold text-success-800">{selectedReportDetails.report.productEntry.rolls} cuộn đạt</p>
+                    <p className="font-extrabold text-emerald-800">{selectedReportDetails.report.productEntry.rolls} cuộn đạt</p>
                     <p className="text-xs text-slate-500 font-bold">Thực tế: {selectedReportDetails.metrics.actualProductWeight} kg</p>
                   </div>
                 </div>
@@ -444,9 +444,9 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
                 {/* Variance indicator */}
                 <div className={`p-4 rounded-xl border ${
                   selectedReportDetails.metrics.status === 'optimal' 
-                    ? 'bg-success-50 border-success-200 text-success-800' 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
                     : selectedReportDetails.metrics.status === 'warning' 
-                    ? 'bg-warning-50 border-warning-200 text-warning-800' 
+                    ? 'bg-amber-50 border-amber-200 text-amber-800' 
                     : 'bg-rose-50 border-rose-200 text-rose-800'
                 } space-y-1.5`}>
                   <div className="flex items-center justify-between font-bold text-sm">

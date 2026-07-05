@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'damaged-goods-report' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-downtime-report' | 'machine-downtime-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'damaged-goods-report' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -12,10 +12,12 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'control-board': '/bang-dieu-khien',
   form: '/nhap-bao-cao',
   'weighing-summary': '/tong-hop-ca',
+  'weighing-summary-list': '/danh-sach-phieu-can-ca',
   'damaged-goods-report': '/bao-cao-hang-hong',
   'mixing-report': '/bao-cao-phoi-tron',
   'mixing-report-list': '/danh-sach-bao-cao-phoi-tron',
   'machine-nvl-report': '/bao-cao-may-nvl-ton',
+  'machine-nvl-report-list': '/danh-sach-bao-cao-may-nvl-ton',
   'machine-downtime-report': '/phieu-bao-dung-may',
   'machine-downtime-list': '/danh-sach-bao-cao-dung-may',
   'acceptance-report': '/bao-cao-san-luong',
@@ -42,6 +44,8 @@ PATH_TO_TAB.set('/bao-cao-nghiem-thu', 'acceptance-report');
 PATH_TO_TAB.set('/menu', 'menu');
 PATH_TO_TAB.set('/bao-cao-can', 'weighing-summary');
 PATH_TO_TAB.set('/nguyen-phu-lieu', 'materials');
+PATH_TO_TAB.set('/tong-hop-ca', 'weighing-summary');
+PATH_TO_TAB.set('/danh-sach-phieu-can-ca', 'weighing-summary-list');
 
 export function tabFromPath(pathname: string): AppTab {
   const normalized = pathname.replace(/\/+$/, '') || '/';
@@ -50,4 +54,17 @@ export function tabFromPath(pathname: string): AppTab {
 
 export function pathFromTab(tab: AppTab): string {
   return TAB_ROUTES[tab];
+}
+
+export function normalizeAppPath(pathname: string): string {
+  return pathname.replace(/\/+$/, '') || '/';
+}
+
+export function isWeighingFormPath(pathname: string): boolean {
+  const path = normalizeAppPath(pathname);
+  return path === '/tong-hop-ca' || path === '/bao-cao-can';
+}
+
+export function isWeighingListPath(pathname: string): boolean {
+  return normalizeAppPath(pathname) === '/danh-sach-phieu-can-ca';
 }

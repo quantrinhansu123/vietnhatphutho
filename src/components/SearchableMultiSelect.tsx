@@ -23,7 +23,7 @@ export default function SearchableMultiSelect({
 }) {
   const fieldClass =
     inputClassName ||
-    'min-h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 py-1.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
+    'min-h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
@@ -121,7 +121,7 @@ export default function SearchableMultiSelect({
 
     return createPortal(
       <div
-        className="fixed z-[120] max-h-56 overflow-y-auto rounded-md border border-ink-200 bg-white shadow-lg"
+        className="fixed z-[120] max-h-56 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg"
         style={menuStyle}
         onMouseDown={event => event.preventDefault()}
       >

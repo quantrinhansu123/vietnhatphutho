@@ -118,9 +118,9 @@ export default function MixingOrderAutofillModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-ink-900/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-lg border border-ink-200 bg-white shadow-2xl sm:rounded-lg">
-        <div className="flex items-center justify-between border-b border-dashed border-ink-200 px-3 py-2.5">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Lấy SP từ đơn hàng</h4>
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">
@@ -130,7 +130,7 @@ export default function MixingOrderAutofillModal({
           <button
             type="button"
             onClick={onClose}
-            className="h-8 rounded-md border border-ink-200 px-2.5 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
           >
             Đóng
           </button>
@@ -160,8 +160,8 @@ export default function MixingOrderAutofillModal({
                 return (
                   <label
                     key={order.id}
-                    className={`block cursor-pointer rounded-md border p-2.5 transition ${
-                      checked ? 'border-brand-500/35 bg-brand-50' : 'border-ink-200 bg-white hover:bg-ink-50'
+                    className={`block cursor-pointer rounded-xl border p-3 transition ${
+                      checked ? 'border-[#ef1b2d]/35 bg-red-50' : 'border-zinc-200 bg-white hover:bg-zinc-50'
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -249,8 +249,8 @@ export default function MixingOrderAutofillModal({
                     return (
                       <label
                         key={product.key}
-                        className={`flex cursor-pointer items-start gap-2.5 px-2.5 py-2 transition ${
-                          checked ? 'bg-brand-50/70' : 'hover:bg-ink-50'
+                        className={`flex cursor-pointer items-start gap-3 px-3 py-2.5 transition ${
+                          checked ? 'bg-red-50/70' : 'hover:bg-zinc-50'
                         }`}
                       >
                         <input
@@ -267,7 +267,7 @@ export default function MixingOrderAutofillModal({
                             </span>
                             <span
                               className={`text-[10px] font-bold ${
-                                product.bomItems.length > 0 ? 'text-success-700' : 'text-warning-700'
+                                product.bomItems.length > 0 ? 'text-emerald-700' : 'text-amber-700'
                               }`}
                             >
                               {product.bomItems.length > 0
@@ -302,7 +302,7 @@ export default function MixingOrderAutofillModal({
                 setProductOrderFilter('all');
                 setProductSearch('');
               }}
-              className="h-9 rounded-md border border-ink-200 bg-white px-3 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
+              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
             >
               Bỏ chọn
             </button>

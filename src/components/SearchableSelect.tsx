@@ -32,7 +32,7 @@ export default function SearchableSelect({
 }) {
   const fieldClass =
     inputClassName ||
-    'h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
+    'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
   const inputRef = useRef<HTMLInputElement>(null);
   const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
   const selectedItem = useMemo(() => {
@@ -152,7 +152,7 @@ export default function SearchableSelect({
   }, [open, query, filteredOptions.length]);
 
   const dropdownPanelClass =
-    'fixed z-[120] max-h-52 overflow-y-auto rounded-md border border-ink-200 bg-white shadow-lg';
+    'fixed z-[120] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
 
   const renderDropdown = () => {
     if (!open || isDisabled || !menuStyle) return null;
@@ -179,8 +179,8 @@ export default function SearchableSelect({
                 type="button"
                 onMouseDown={event => event.preventDefault()}
                 onClick={() => commitValue(optionValue, item)}
-                className={`block w-full px-2.5 py-1.5 text-left text-[13px] transition hover:bg-ink-50 ${
-                  optionValue === value ? 'bg-accent-50 font-bold text-accent-800' : 'font-medium text-ink-900'
+                className={`block w-full px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
+                  optionValue === value ? 'bg-red-50 font-black text-[#ef1b2d]' : 'font-semibold text-zinc-800'
                 }`}
               >
                 {optionLabel}

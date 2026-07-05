@@ -297,20 +297,20 @@ export default function ControlBoardShiftDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="relative flex max-h-[96vh] w-full max-w-[min(96vw,1100px)] flex-col overflow-hidden rounded-t-lg border border-ink-200 bg-white shadow-2xl sm:rounded-lg">
-        <div className="flex items-start justify-between gap-2 border-b border-dashed border-ink-200 px-3 py-2.5 sm:px-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="relative flex max-h-[96vh] w-full max-w-[min(96vw,1100px)] flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-brand-600">{meta.source}</p>
-            <h3 className="text-[14px] font-semibold text-ink-900 tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>Chi tiết {meta.label}</h3>
-            <p className="mt-0.5 text-[11px] font-medium italic text-ink-500">
+            <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600">{meta.source}</p>
+            <h3 className="text-lg font-black text-zinc-950">Chi tiết {meta.label}</h3>
+            <p className="mt-1 text-sm font-medium text-zinc-500">
               {ngay} · Ca {ca} · {detail.rows.length} dòng
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-ink-200 text-ink-600 transition hover:bg-ink-50"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
           >
             <X className="h-4 w-4" />
           </button>
@@ -376,7 +376,7 @@ export default function ControlBoardShiftDetailModal({
                       const isSelected = Boolean(selectionKey) && selectedKeys.has(selectionKey);
 
                       return (
-                        <tr key={selectionKey || index} className="hover:bg-brand-50/40">
+                        <tr key={selectionKey || index} className="hover:bg-indigo-50/40">
                           {showBulkSelect ? (
                             <td className="px-3 py-2 text-center">
                               <input

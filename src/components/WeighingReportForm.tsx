@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronDown, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, ScanBarcode, Trash2, UserCheck, Users } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, ScanBarcode, Trash2, UserCheck, Users } from 'lucide-react';
 import type { WeighingPendingAdd, WeighingRecord } from './WeighingShiftSummary';
-import { generateWeighingDocumentNo, getWeighingDataRows, isSlipHeaderRow } from './WeighingShiftSummary';
+import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, isSlipHeaderRow } from './WeighingShiftSummary';
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import WeighingImagePreviewModal, {
@@ -87,6 +86,8 @@ function storeWeigherName(storageKey: string, name: string) {
 }
 
 const inputClass = 'h-9 w-full rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
+const compactHeaderInputClass =
+  'mt-0.5 h-8 w-full rounded-md border border-ink-200 bg-white px-2 text-[11px] font-semibold text-ink-900 outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 const modalInputClass =
   'h-9 w-full rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 const modalFileClass =
@@ -108,10 +109,6 @@ function getCurrentWeighTime() {
     minute: '2-digit',
     hour12: false
   }).format(new Date());
-}
-
-function getNextWeighRound(rowCount: number) {
-  return String(rowCount + 1);
 }
 
 function formatWeighRound(round: string | number) {
@@ -452,10 +449,16 @@ function rowToNewRowState(row: WeighingRow): Omit<WeighingRow, 'id' | 'weighNo' 
 export default function WeighingReportForm({
   pendingAdd = null,
   onPendingAddHandled,
+  autoOpenNewSlip = false,
+  onBack,
+  onOpenList,
   config = DEFAULT_WEIGHING_SLIP_CONFIG
 }: {
   pendingAdd?: WeighingPendingAdd | null;
   onPendingAddHandled?: () => void;
+  autoOpenNewSlip?: boolean;
+  onBack?: () => void;
+  onOpenList?: () => void;
   config?: WeighingSlipConfig;
 } = {}) {
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -487,9 +490,11 @@ export default function WeighingReportForm({
   const [viewingRow, setViewingRow] = useState<WeighingRow | null>(null);
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const [editingRow, setEditingRow] = useState<WeighingRow | null>(null);
+  const [activeWeighRound, setActiveWeighRound] = useState('1');
   const [deletingRowId, setDeletingRowId] = useState<number | null>(null);
   const [currentWeigherName, setCurrentWeigherName] = useState(() => readStoredWeigherName(config.weigherStorageKey));
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const hasAutoOpenedNewSlip = useRef(false);
 
   const updateCurrentWeigherName = (name: string) => {
     setCurrentWeigherName(name);
@@ -759,10 +764,16 @@ export default function WeighingReportForm({
     productName?: string;
     productCode?: string;
     machineName?: string;
+    newWeighRound?: boolean;
   }) => {
     const slip = rows.length > 0 ? getSlipContextFromRows(rows) : null;
     const lastRow = rows[rows.length - 1];
     const productionDate = options?.productionDate || slip?.productionDate || lastRow?.productionDate || today;
+    const dataRows = getWeighingDataRows(rows);
+    const nextRound = options?.newWeighRound
+      ? getNextWeighRoundNumber(dataRows)
+      : getCurrentWeighRound(dataRows);
+    setActiveWeighRound(nextRound);
     setNewRow({
       productionDate,
       shiftName: options?.shiftName || slip?.shiftName || lastRow?.shiftName || '',
@@ -900,12 +911,34 @@ export default function WeighingReportForm({
           ? pendingAdd.machineName
           : isRealMachineName(lastRecord?.machineName)
             ? lastRecord.machineName
-            : ''
+            : '',
+        newWeighRound: pendingAdd.newWeighRound
       });
     }
 
     onPendingAddHandled?.();
   }, [pendingAdd]);
+
+  useLayoutEffect(() => {
+    if (!autoOpenNewSlip || pendingAdd || hasAutoOpenedNewSlip.current) return;
+    hasAutoOpenedNewSlip.current = true;
+    const productionDate = today;
+    const documentNo = generateWeighingDocumentNo(productionDate);
+    setRows([]);
+    setForm({
+      documentNo,
+      reportDate: productionDate
+    });
+    openAddForm({
+      productionDate,
+      shiftName: '',
+      worker1: '',
+      worker2: '',
+      productCode: '',
+      productName: '',
+      machineName: ''
+    });
+  }, [autoOpenNewSlip, pendingAdd, today]);
 
   const addFormRow = async () => {
     const slip = rows.length > 0 ? getSlipContextFromRows(rows) : null;
@@ -1035,7 +1068,7 @@ export default function WeighingReportForm({
         note: newRow.note || '',
         machineName,
         weight: newRow.weight || '',
-        weighNo: getNextWeighRound(getWeighingDataRows(rows).length),
+        weighNo: activeWeighRound,
         weighTime: getCurrentWeighTime(),
         savedToDb: false,
         ...imagePayload,
@@ -1193,7 +1226,17 @@ export default function WeighingReportForm({
 
   const slipInfo = getSlipInfo(rows);
   const modalSlipInfo = slipInfo ?? (editingRow ? getSlipInfo([editingRow]) : null);
-  const weighingRows = getWeighingDataRows(rows);
+  const weighingRows = useMemo(() => {
+    const dataRows = getWeighingDataRows(rows);
+    return [...dataRows].sort((a, b) => {
+      const roundCmp = Number(a.weighNo) - Number(b.weighNo);
+      if (roundCmp !== 0) return roundCmp;
+      const timeCmp = (a.weighTime || '').localeCompare(b.weighTime || '');
+      if (timeCmp !== 0) return timeCmp;
+      return a.id - b.id;
+    });
+  }, [rows]);
+  const weighRoundCount = useMemo(() => countWeighingRounds(rows), [rows]);
   const showSlipFields = !editingRow && weighingRows.length === 0 && rows.length === 0;
   const slipContext = rows.length > 0 ? getSlipContextFromRows(rows) : null;
 
@@ -1291,91 +1334,248 @@ export default function WeighingReportForm({
   return (
     <div className="space-y-3">
       <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
-        <div className="border-b border-brand-500 bg-white px-3 py-2.5" style={{ borderBottomWidth: '3px' }}>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-center gap-3">
-              <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" crossOrigin="anonymous" className="h-14 w-auto max-w-[190px] object-contain" />
-              <div className="hidden h-12 w-px bg-zinc-200 sm:block" />
-              <div>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">Báo cáo trọng lượng</h2>
-                <p className="mt-1 text-xs font-semibold text-zinc-500">Phiếu ghi nhận trọng lượng lõi, trọng lượng và ảnh cân</p>
-              </div>
+        <div className="border-b border-brand-500 bg-white px-2 py-2 sm:px-3" style={{ borderBottomWidth: '3px' }}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-black uppercase tracking-tight text-zinc-950 sm:text-base">
+                Báo cáo trọng lượng
+              </h2>
+              <p className="hidden text-[10px] font-semibold text-zinc-500 sm:block">
+                Phiếu ghi nhận trọng lượng lõi, trọng lượng và ảnh cân
+              </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600 sm:w-72">
-              <label className="space-y-1">
-                <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" /> Ngày lập</span>
-                <input
-                  type="date"
-                  value={form.reportDate}
-                  onChange={e => setForm(prev => ({ ...prev, reportDate: e.target.value }))}
-                  className={inputClass}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="flex items-center gap-1"><Hash className="h-3.5 w-3.5 text-[#ef1b2d]" /> Bản số</span>
-                <input
-                  value={form.documentNo}
-                  onChange={e => setForm(prev => ({ ...prev, documentNo: e.target.value }))}
-                  className={inputClass}
-                  placeholder="..."
-                />
-              </label>
+            <div className="flex shrink-0 items-center gap-1">
+              {onOpenList ? (
+                <button
+                  type="button"
+                  onClick={onOpenList}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[10px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 sm:h-9 sm:gap-1.5 sm:px-3 sm:text-xs"
+                >
+                  <ClipboardList className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline sm:inline">Danh sách</span>
+                </button>
+              ) : null}
+              {onBack ? (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[10px] font-bold text-zinc-700 transition hover:bg-zinc-50 sm:h-9 sm:gap-1.5 sm:px-3 sm:text-xs"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden sm:inline">Quay lại</span>
+                </button>
+              ) : null}
             </div>
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:mt-2 sm:gap-2">
+            <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              <span className="flex items-center gap-1">
+                <CalendarDays className="h-3 w-3 text-[#ef1b2d]" />
+                Ngày lập
+              </span>
+              <input
+                type="date"
+                value={form.reportDate}
+                onChange={e => setForm(prev => ({ ...prev, reportDate: e.target.value }))}
+                className={compactHeaderInputClass}
+              />
+            </label>
+            <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              <span className="flex items-center gap-1">
+                <Hash className="h-3 w-3 text-[#ef1b2d]" />
+                Bản số
+              </span>
+              <input
+                value={form.documentNo}
+                onChange={e => setForm(prev => ({ ...prev, documentNo: e.target.value }))}
+                className={compactHeaderInputClass}
+                placeholder="..."
+              />
+            </label>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 border-t border-zinc-100 bg-zinc-50 p-4 md:grid-cols-3 lg:grid-cols-5">
-          <div className="space-y-1">
-            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-500">
-              <CalendarDays className="h-4 w-4 text-[#ef1b2d]" />
+        <div className="grid grid-cols-2 gap-1.5 border-t border-zinc-100 bg-zinc-50 p-2 sm:grid-cols-3 sm:gap-2 sm:p-3 lg:grid-cols-5">
+          <div className="min-w-0 space-y-0.5">
+            <p className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              <CalendarDays className="h-3 w-3 shrink-0 text-[#ef1b2d]" />
               Ngày SX
             </p>
-            <p className="text-sm font-bold text-zinc-900">{slipInfo?.productionDate ?? '—'}</p>
+            <p className="truncate text-[11px] font-bold text-zinc-900 sm:text-sm">{slipInfo?.productionDate ?? '—'}</p>
           </div>
-          <div className="space-y-1">
-            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-500">
-              <FileText className="h-4 w-4 text-[#ef1b2d]" />
+          <div className="min-w-0 space-y-0.5">
+            <p className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              <FileText className="h-3 w-3 shrink-0 text-[#ef1b2d]" />
               Ca SX
             </p>
-            <p className="text-sm font-bold text-zinc-900">{slipInfo?.shiftName ?? '—'}</p>
+            <p className="truncate text-[11px] font-bold text-zinc-900 sm:text-sm">{slipInfo?.shiftName ?? '—'}</p>
           </div>
-          <div className="space-y-1">
-            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-500">
-              <Users className="h-4 w-4 text-[#ef1b2d]" />
+          <div className="min-w-0 space-y-0.5">
+            <p className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              <Users className="h-3 w-3 shrink-0 text-[#ef1b2d]" />
               Tên CN 1
             </p>
-            <p className="text-sm font-bold text-zinc-900">{slipInfo?.worker1 ?? '—'}</p>
+            <p className="truncate text-[11px] font-bold text-zinc-900 sm:text-sm">{slipInfo?.worker1 ?? '—'}</p>
           </div>
-          <div className="space-y-1">
-            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-500">
-              <Users className="h-4 w-4 text-[#ef1b2d]" />
+          <div className="min-w-0 space-y-0.5">
+            <p className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              <Users className="h-3 w-3 shrink-0 text-[#ef1b2d]" />
               Tên CN 2
             </p>
-            <p className="text-sm font-bold text-zinc-900">{slipInfo?.worker2 ?? '—'}</p>
+            <p className="truncate text-[11px] font-bold text-zinc-900 sm:text-sm">{slipInfo?.worker2 ?? '—'}</p>
           </div>
-          <div className="space-y-1">
-            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-500">
-              <Factory className="h-4 w-4 text-[#ef1b2d]" />
-              Tên máy sản xuất
+          <div className="col-span-2 min-w-0 space-y-0.5 sm:col-span-1">
+            <p className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              <Factory className="h-3 w-3 shrink-0 text-[#ef1b2d]" />
+              Tên máy
             </p>
-            <p className="text-sm font-bold text-zinc-900">{slipInfo?.machineName ?? '—'}</p>
+            <p className="truncate text-[11px] font-bold text-zinc-900 sm:text-sm">{slipInfo?.machineName ?? '—'}</p>
           </div>
         </div>
       </section>
 
       <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
-        <div className="border-b border-ink-100 px-3 py-2.5">
-          <h3 className="text-[12px] font-mono uppercase tracking-wider text-ink-900 font-semibold">Bảng chi tiết cân</h3>
-          <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+        <div className="border-b border-ink-100 px-2 py-1.5 sm:px-3 sm:py-2">
+          <h3 className="text-[11px] font-mono uppercase tracking-wider text-ink-900 font-semibold sm:text-[12px]">
+            Bảng chi tiết cân
+          </h3>
+          <p className="mt-0.5 truncate text-[10px] font-semibold text-zinc-500 sm:text-xs">
             Tổng số dòng: {weighingRows.length}
-            {form.documentNo ? ` · Bản số: ${form.documentNo}` : ''}
-            {weighingRows.length > 0 ? ` · ${weighingRows.length} lần cân` : ''}
+            {weighRoundCount > 0 ? ` · ${weighRoundCount} lần cân` : ''}
           </p>
         </div>
 
-        <div className="md:overflow-x-auto overflow-x-visible">
+        {weighingRows.length === 0 ? (
+          <p className="px-3 py-8 text-center text-xs font-semibold text-zinc-400 sm:py-10 sm:text-sm">
+            Chưa có dòng cân. Bấm Nhập liệu để thêm lần cân.
+          </p>
+        ) : (
+          <>
+            <div className="divide-y divide-zinc-100 md:hidden">
+              {weighingRows.map((row, index) => {
+                const showRoundHeader = index === 0 || weighingRows[index - 1].weighNo !== row.weighNo;
+                return (
+                <div key={`mobile-${row.id}`} className="weighing-row-mobile px-2 py-1.5">
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="flex min-w-0 flex-1 items-center gap-1">
+                      {showRoundHeader ? (
+                        <span className="shrink-0 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-[#ef1b2d]">
+                          {row.weighNo ? formatWeighRound(row.weighNo) : '—'}
+                        </span>
+                      ) : null}
+                      <span className="shrink-0 font-mono text-[9px] font-bold text-zinc-600">
+                        {row.weighTime || '—'}
+                      </span>
+                      <span className="truncate font-mono text-[10px] font-bold text-zinc-800">
+                        {row.productCode || '—'}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        {row.acceptanceStatus ? (
+                          <span
+                            className={`rounded-full px-1 py-0.5 text-[8px] font-black uppercase tracking-wider ${
+                              row.acceptanceStatus === 'Đạt'
+                                ? 'bg-success-50 text-success-700'
+                                : 'bg-rose-50 text-rose-700'
+                            }`}
+                          >
+                            {row.acceptanceStatus}
+                          </span>
+                        ) : null}
+                        <span className="font-mono text-[9px] font-black text-[#ef1b2d]">
+                          Tổng {formatWeighingRowTotalWeight(row)}
+                        </span>
+                      </div>
+                      {row.coreWeightImageUrl || row.imageUrl ? (
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          {row.coreWeightImageUrl ? (
+                            <WeighingImageThumbnail
+                              url={row.coreWeightImageUrl}
+                              alt="Ảnh TL lõi"
+                              title="Ảnh trọng lượng lõi"
+                              className="block h-6 w-8 overflow-hidden rounded border border-ink-200 bg-ink-50"
+                              onView={() =>
+                                setViewingImage({ url: row.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })
+                              }
+                            />
+                          ) : null}
+                          {row.imageUrl ? (
+                            <WeighingImageThumbnail
+                              url={row.imageUrl}
+                              alt="Ảnh cân"
+                              title="Ảnh cân"
+                              className="block h-6 w-8 overflow-hidden rounded border border-ink-200 bg-ink-50"
+                              onView={() => setViewingImage({ url: row.imageUrl!, title: 'Ảnh cân' })}
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingRow(row)}
+                        title="Xem"
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditRow(row)}
+                        title="Sửa"
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRow(row)}
+                        disabled={deletingRowId === row.id}
+                        title="Xóa"
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingRowId === row.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-1 grid grid-cols-5 gap-0.5">
+                    <div className="min-w-0">
+                      <span className="weighing-row-mobile-label">CN</span>
+                      <p className="truncate text-[10px] font-bold text-zinc-800" title={row.weigherName || undefined}>
+                        {row.weigherName || '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="weighing-row-mobile-label">Lõi</span>
+                      <p className="font-mono text-[10px] font-bold text-zinc-800">{row.coreWeight || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="weighing-row-mobile-label">Bì</span>
+                      <p className="font-mono text-[10px] font-bold text-zinc-800">{row.shellWeight || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="weighing-row-mobile-label">TL</span>
+                      <p className="font-mono text-[10px] font-black text-zinc-900">{row.weight || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="weighing-row-mobile-label">Tổng</span>
+                      <p className="font-mono text-[10px] font-black text-[#ef1b2d]">
+                        {formatWeighingRowTotalWeight(row)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block md:overflow-x-auto">
           <table className="responsive-table w-full md:min-w-[760px] border-collapse text-left">
-            <thead className="hidden md:table-header-group">
+            <thead className="table-header-group">
               <tr className="bg-zinc-950 text-xs font-black uppercase tracking-wider text-white">
                 <th className="w-20 px-3 py-3 text-center">Lần cân</th>
                 <th className="w-28 px-3 py-3">Mã SP</th>
@@ -1384,6 +1584,7 @@ export default function WeighingReportForm({
                 <th className="px-3 py-3">Trọng lượng lõi</th>
                 <th className="px-3 py-3">Trọng lượng bì</th>
                 <th className="px-3 py-3">Trọng lượng</th>
+                <th className="px-3 py-3">Tổng cân</th>
                 <th className="px-3 py-3">Giờ cân</th>
                 <th className="px-3 py-3">Nghiệm thu</th>
                 <th className="px-3 py-3">Ghi chú</th>
@@ -1392,26 +1593,23 @@ export default function WeighingReportForm({
                 <th className="w-28 px-3 py-3 text-center">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="block md:table-row-group md:divide-y md:divide-zinc-100">
-              {weighingRows.length === 0 ? (
-                <tr className="block md:table-row">
-                  <td colSpan={13} className="block md:table-cell px-4 py-10 text-center text-sm font-semibold text-zinc-400">
-                    Chưa có dòng cân. Bấm Nhập liệu để thêm lần cân.
-                  </td>
-                </tr>
-              ) : weighingRows.map(row => (
-                <tr key={row.id} className="block border border-ink-200 rounded-xl mb-2 p-2 transition hover:bg-red-50/40 md:table-row md:border md:border-zinc-100 md:rounded-none md:mb-0 md:p-0">
-                  <td data-label="Lần cân" className="block md:table-cell md:border-r md:border-zinc-100 px-3 py-2 text-center text-sm font-black text-zinc-800 before:content-[attr(data-label)]">
+            <tbody className="divide-y divide-zinc-100">
+              {weighingRows.map(row => (
+                <tr key={row.id} className="transition hover:bg-red-50/40">
+                  <td className="border-r border-zinc-100 px-3 py-2 text-center text-sm font-black text-[#ef1b2d]">
                     {row.weighNo ? formatWeighRound(row.weighNo) : '—'}
                   </td>
-                  <td data-label="Mã SP" className="block md:table-cell px-2 py-2 text-sm font-bold text-zinc-800 before:content-[attr(data-label)]">{row.productCode || '—'}</td>
-                  <td data-label="Tên sản phẩm" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.productName || '—'}</td>
-                  <td data-label="Người cân" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-600 before:content-[attr(data-label)]">{row.weigherName || '—'}</td>
-                  <td data-label="Trọng lượng lõi" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.coreWeight || '—'}</td>
-                  <td data-label="Trọng lượng bì" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.shellWeight || '—'}</td>
-                  <td data-label="Trọng lượng" className="block md:table-cell px-2 py-2 text-sm font-bold text-zinc-900 before:content-[attr(data-label)]">{row.weight || '—'}</td>
-                  <td data-label="Giờ cân" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-600 before:content-[attr(data-label)]">{row.weighTime || '—'}</td>
-                  <td data-label="Nghiệm thu" className="block md:table-cell px-2 py-2 before:content-[attr(data-label)]">
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-800">{row.productCode || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.productName || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weigherName || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.coreWeight || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.shellWeight || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">{row.weight || '—'}</td>
+                  <td className="px-2 py-2 font-mono text-sm font-black text-[#ef1b2d]">
+                    Tổng {formatWeighingRowTotalWeight(row)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weighTime || '—'}</td>
+                  <td className="px-2 py-2">
                     {row.acceptanceStatus ? (
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
@@ -1426,10 +1624,10 @@ export default function WeighingReportForm({
                       <span className="text-xs font-semibold text-zinc-300">—</span>
                     )}
                   </td>
-                  <td data-label="Ghi chú" className="block md:table-cell max-w-[120px] truncate px-2 py-2 text-sm font-semibold text-zinc-600 before:content-[attr(data-label)]" title={row.note || undefined}>
+                  <td className="max-w-[120px] truncate px-2 py-2 text-sm font-semibold text-zinc-600" title={row.note || undefined}>
                     {row.note || '—'}
                   </td>
-                  <td data-label="Ảnh TL lõi" className="block md:table-cell px-2 py-2 before:content-[attr(data-label)]">
+                  <td className="px-2 py-2">
                     {row.coreWeightImageUrl ? (
                       <WeighingImageThumbnail
                         url={row.coreWeightImageUrl}
@@ -1443,7 +1641,7 @@ export default function WeighingReportForm({
                       <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                     )}
                   </td>
-                  <td data-label="Ảnh" className="block md:table-cell px-2 py-2 before:content-[attr(data-label)]">
+                  <td className="px-2 py-2">
                     {row.imageUrl ? (
                       <WeighingImageThumbnail
                         url={row.imageUrl}
@@ -1455,35 +1653,35 @@ export default function WeighingReportForm({
                       <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                     )}
                   </td>
-                  <td data-label="Thao tác" data-mobile="icon-only" className="block md:table-cell px-2 py-2 md:text-center before:content-[attr(data-label)]">
-                    <div className="flex items-center justify-end md:justify-center gap-1">
+                  <td className="px-2 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
                         onClick={() => setViewingRow(row)}
                         title="Xem"
-                        className="flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                       >
-                        <Eye className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                        <Eye className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
                         onClick={() => openEditRow(row)}
                         title="Sửa"
-                        className="flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
                       >
-                        <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteRow(row)}
                         disabled={deletingRowId === row.id}
                         title="Xóa"
-                        className="flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {deletingRowId === row.id ? (
-                          <Loader2 className="h-4 md:h-3.5 w-4 md:w-3.5 animate-spin" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                          <Trash2 className="h-4 md:h-3.5 w-4 md:w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         )}
                       </button>
                     </div>
@@ -1492,53 +1690,59 @@ export default function WeighingReportForm({
               ))}
             </tbody>
           </table>
-        </div>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
-        <div className="flex flex-wrap items-center justify-end gap-1.5 border-b border-ink-200 px-3 py-2.5">
-          <button
-            type="button"
-            onClick={resetForm}
-            className="flex h-8 items-center gap-1 rounded-md border border-ink-200 bg-white px-2.5 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Reset
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex h-9 items-center gap-1.5 rounded-lg bg-zinc-900 px-3 text-xs font-bold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isSaving ? 'Đang lưu' : 'Lưu phiếu'}
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-ink-200 bg-ink-50 px-3 py-2.5">
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-zinc-500">Thao tác phiếu cân</span>
-            {productsError && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+          <div className="min-w-0 flex-1 space-y-0.5">
+            {productsError ? (
               <p className="text-xs font-bold text-rose-600">{productsError}</p>
-            )}
-            {staffError && (
+            ) : null}
+            {staffError ? (
               <p className="text-xs font-bold text-rose-600">{staffError}</p>
-            )}
-            {saveMessage && (
-              <p className={`text-xs font-bold ${saveMessage.type === 'success' ? 'text-[#ef1b2d]' : 'text-rose-600'}`}>
-                {saveMessage.text}
-              </p>
-            )}
+            ) : null}
+            {saveMessage?.type === 'error' ? (
+              <p className="text-xs font-bold text-rose-600">{saveMessage.text}</p>
+            ) : null}
           </div>
-          <button
-            type="button"
-            onClick={openAddForm}
-            className="flex h-10 items-center gap-1.5 rounded-lg bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] shadow-sm transition hover:bg-red-100"
-          >
-            <Plus className="h-4 w-4" />
-            Nhập liệu
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={resetForm}
+              className="flex h-8 items-center gap-1 rounded-md border border-ink-200 bg-white px-2.5 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={() => openAddForm({ newWeighRound: true })}
+              disabled={weighingRows.length === 0}
+              className="flex h-9 items-center gap-1 rounded-lg border border-[#ef1b2d]/30 bg-white px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Lần mới
+            </button>
+            <button
+              type="button"
+              onClick={() => openAddForm()}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-extrabold text-[#ef1b2d] shadow-sm transition hover:bg-red-100"
+            >
+              <Plus className="h-4 w-4" />
+              Nhập liệu
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-zinc-900 px-3 text-xs font-bold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSaving ? 'Đang lưu' : 'Lưu phiếu'}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1553,9 +1757,9 @@ export default function WeighingReportForm({
                 <p className="mt-0.5 truncate text-[11px] font-semibold text-zinc-500">
                   {editingRow
                     ? `${editingRow.weighNo ? formatWeighRound(editingRow.weighNo) : 'Dòng cân'} · ${editingRow.weighTime || '—'}`
-                    : `${formatWeighRound(getNextWeighRound(weighingRows.length))}${
+                    : `${formatWeighRound(activeWeighRound)}${
                         showSlipFields ? ' · Phiếu mới' : ''
-                      }`}
+                      } · thêm sản phẩm`}
                 </p>
               </div>
               <button

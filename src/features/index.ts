@@ -1,0 +1,13 @@
+export { ProductsPanel } from './san-pham';
+export { MachinesPanel } from './danh-sach-may';
+export { MaterialsInventoryPanel } from './kho-nvl';
+export { WarehouseSlipPanel, WarehouseHistoryPanel } from './phieu-xuat-nhap-kho';
+export { CustomersPanel } from './khach-hang';
+export { OrdersPanel } from './don-hang';
+export { ProductionOrdersPanel } from './lenh-sx';
+export { ProductionPlanHistoryPanel } from './ke-hoach-san-xuat';
+export { SettingsPanel } from './cai-dat-thoi-gian';
+export { DashboardWindow } from './dashboard';
+export { ControlBoardPanel } from './control-board';
+export { HumanResourcesPanel } from './nhan-su';
+export { MachineNvlReportPanel } from './bao-cao-may-nvl-ton';

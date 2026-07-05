@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Loader2, Printer } from 'lucide-react';
+import { Loader2, Printer } from 'lucide-react';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import type { MixingReport } from './MixingReportForm';
 import type { WeighingRecord } from './WeighingShiftSummary';
@@ -208,42 +208,41 @@ export default function ControlBoardShiftSummaryTable({
 
   return (
     <>
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="border-b border-slate-200 bg-white px-4 py-3 text-slate-700">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-brand-600">Tổng hợp sản xuất</p>
-              <h3 className="text-lg font-black text-slate-900">Bảng tổng hợp theo ca</h3>
-              <p className="mt-1 text-xs font-medium text-slate-500">
+      <section className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm sm:rounded-2xl sm:border-2 sm:border-zinc-900/10">
+        <div className="border-b border-zinc-100 bg-gradient-to-r from-indigo-950 to-indigo-800 px-3 py-2.5 text-white sm:px-4 sm:py-3">
+          <div className="flex flex-col gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-wider text-indigo-200 sm:text-xs">Tổng hợp sản xuất</p>
+              <h3 className="text-base font-black sm:text-lg">Bảng tổng hợp theo ca</h3>
+              <p className="mt-1 hidden text-xs font-medium text-indigo-100/90 sm:block">
                 SL/KL hàng kế hoạch từ lệnh SX · Khối lượng hàng TT từ báo cáo cân ca · Khối lượng NPL từ lịch sử xuất nhập kho · Tồn đầu/cuối ca từ bảng tồn NVL · Tổng vật liệu = KL NPL + Tồn đầu ca − Tồn cuối ca
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <CalendarDays className="hidden h-4 w-4 text-slate-400 sm:block" />
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
-                Từ
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
+                <span className="shrink-0">Từ</span>
                 <input
                   type="date"
                   value={dateFrom}
                   onChange={event => onDateFromChange(event.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} w-full min-w-0`}
                 />
               </label>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
-                Đến
+              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
+                <span className="shrink-0">Đến</span>
                 <input
                   type="date"
                   value={dateTo}
                   onChange={event => onDateToChange(event.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} w-full min-w-0`}
                 />
               </label>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
-                Ca
+              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
+                <span className="shrink-0">Ca</span>
                 <select
                   value={shiftFilter}
                   onChange={event => setShiftFilter(event.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} w-full min-w-0`}
                 >
                   <option value="all">Tất cả ca</option>
                   {shiftOptions.map(shift => (
@@ -253,12 +252,12 @@ export default function ControlBoardShiftSummaryTable({
                   ))}
                 </select>
               </label>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
-                Nhân viên
+              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
+                <span className="shrink-0">NV</span>
                 <select
                   value={staffFilter}
                   onChange={event => setStaffFilter(event.target.value)}
-                  className={`${inputClass} max-w-[180px]`}
+                  className={`${inputClass} w-full min-w-0 sm:max-w-[180px]`}
                 >
                   <option value="all">Tất cả</option>
                   {staffOptions.map(staff => (
@@ -272,7 +271,7 @@ export default function ControlBoardShiftSummaryTable({
                 type="button"
                 onClick={handlePrint}
                 disabled={isLoading}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="col-span-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-xs font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1 sm:w-auto"
               >
                 <Printer className="h-4 w-4" />
                 In
@@ -281,7 +280,71 @@ export default function ControlBoardShiftSummaryTable({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile: thẻ gọn theo từng ca */}
+        <div className="space-y-2 p-2 md:hidden">
+          {isLoading ? (
+            <div className="py-8 text-center text-xs font-bold text-zinc-400">
+              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+              Đang tải dữ liệu tổng hợp...
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="py-8 text-center text-xs font-bold text-zinc-400">Chưa có dữ liệu theo bộ lọc đã chọn.</div>
+          ) : (
+            <>
+              {filteredRows.map(row => (
+                <article key={row.key} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2 border-b border-zinc-200/80 pb-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[11px] font-bold text-zinc-700">{row.ngay}</p>
+                      <p className="truncate text-xs font-black text-zinc-900">{row.ca}</p>
+                    </div>
+                    <p className="shrink-0 text-right text-[10px] font-black uppercase tracking-wider text-teal-800">
+                      TVL
+                      <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryNumber(row.tongVatLieu, 3)}</span>
+                    </p>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px]">
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">SL hàng</dt>
+                      <dd className="font-mono font-bold text-zinc-800">{formatShiftSummaryNumber(row.slHang, 0)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL hàng</dt>
+                      <dd className="font-mono font-bold text-emerald-700">{formatShiftSummaryNumber(row.khoiLuongHang, 3)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL TT</dt>
+                      <dd className="font-mono font-bold text-[#ef1b2d]">{formatShiftSummaryNumber(row.khoiLuongHangThucTe, 3)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL NPL</dt>
+                      <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryNumber(row.khoiLuongNpl, 3)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn đầu</dt>
+                      <dd className="font-mono font-bold text-indigo-700">{formatShiftSummaryNumber(row.tonDauCa, 3)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn cuối</dt>
+                      <dd className="font-mono font-bold text-violet-700">{formatShiftSummaryNumber(row.tonCuoiCa, 3)}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+              <div className="rounded-lg border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-[10px] font-black text-zinc-800">
+                <p className="mb-1 uppercase tracking-wider text-zinc-500">Tổng cộng</p>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                  <span>SL: {formatShiftSummaryNumber(totals.slHang, 0)}</span>
+                  <span className="text-emerald-700">KL: {formatShiftSummaryNumber(totals.khoiLuongHang, 3)}</span>
+                  <span className="text-[#ef1b2d]">TT: {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}</span>
+                  <span className="text-teal-800">TVL: {formatShiftSummaryNumber(totals.tongVatLieu, 3)}</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-[1180px] w-full text-left text-xs">
             <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
@@ -312,7 +375,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-brand-50/40">
+                  <tr key={row.key} className="hover:bg-indigo-50/40">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell
@@ -326,7 +389,7 @@ export default function ControlBoardShiftSummaryTable({
                       row={row}
                       metric="khoiLuongHang"
                       formatted={formatShiftSummaryNumber(row.khoiLuongHang, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-success-700"
+                      className="px-3 py-2 text-right font-mono font-bold text-emerald-700"
                       onOpen={openDetail}
                     />
                     <SummaryValueCell
@@ -340,14 +403,14 @@ export default function ControlBoardShiftSummaryTable({
                       row={row}
                       metric="khoiLuongNpl"
                       formatted={formatShiftSummaryNumber(row.khoiLuongNpl, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-warning-700"
+                      className="px-3 py-2 text-right font-mono font-bold text-amber-700"
                       onOpen={openDetail}
                     />
                     <SummaryValueCell
                       row={row}
                       metric="tonDauCa"
                       formatted={formatShiftSummaryNumber(row.tonDauCa, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-brand-700"
+                      className="px-3 py-2 text-right font-mono font-bold text-indigo-700"
                       onOpen={openDetail}
                     />
                     <SummaryValueCell
@@ -371,16 +434,16 @@ export default function ControlBoardShiftSummaryTable({
                     Tổng cộng
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono">{formatShiftSummaryNumber(totals.slHang, 0)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-success-700">
+                  <td className="px-3 py-2.5 text-right font-mono text-emerald-700">
                     {formatShiftSummaryNumber(totals.khoiLuongHang, 3)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-[#ef1b2d]">
                     {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-warning-700">
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">
                     {formatShiftSummaryNumber(totals.khoiLuongNpl, 3)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-brand-700">
+                  <td className="px-3 py-2.5 text-right font-mono text-indigo-700">
                     {formatShiftSummaryNumber(totals.tonDauCa, 3)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-violet-700">

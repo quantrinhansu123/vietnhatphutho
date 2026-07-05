@@ -2,11 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   Loader2,
-  Plus,
   Printer,
   Save,
-  Trash2,
-  Pencil
+  Trash2
 } from 'lucide-react';
 import MachineDowntimeIcon from './icons/MachineDowntimeIcon';
 import {
@@ -16,20 +14,10 @@ import {
 } from './MachineDowntimePrintSheet';
 import { STANDARD_SHIFTS } from '../types';
 import { formatNumber } from '../utils';
-import {
-  RepeatableLineCard,
-  RepeatableLineRow,
-  RepeatableLinesBlock
-} from './RepeatableLinesBlock';
-import { LineEditorSheet } from './LineEditorSheet';
+import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 
 const fieldClass =
-  'h-10 w-full min-w-0 rounded-lg border border-ink-200 bg-white px-3 text-sm font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15';
-
-const sheetFieldClass =
-  'h-12 w-full min-w-0 rounded-lg border border-ink-200 bg-white px-3 text-base font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15';
-
-const sheetLabelClass = 'block text-xs font-black uppercase tracking-wider text-ink-500';
+  'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 type MachineOption = { id: string; code: string; name: string };
 type StaffOption = { id: string; name: string; shift: string };
@@ -112,15 +100,9 @@ function parseOrderDate(value: string) {
   return parsed.toISOString().slice(0, 10);
 }
 
-let lineCounter = 0;
-function nextLineKey() {
-  lineCounter += 1;
-  return `line-${Date.now()}-${lineCounter}`;
-}
-
 function emptyLine(): DowntimeLine {
   return {
-    key: nextLineKey(),
+    key: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     startTime: '',
     restartTime: '',
     reason: '',
@@ -293,32 +275,6 @@ function slipToPrintSlip(slip: MachineDowntimeSlip): MachineDowntimePrintSlip {
   });
 }
 
-function describeLine(line: DowntimeLine, minutes: number, rolls: number): React.ReactNode {
-  const reasonLabel = line.reason.trim() || 'Chưa nhập lý do';
-  const timeLabel = line.startTime && line.restartTime
-    ? `${line.startTime} → ${line.restartTime} (${minutes || 0} phút)`
-    : line.startTime || '—';
-  return (
-    <div className="space-y-0.5">
-      <div className="flex items-center gap-1.5">
-        <Pencil className="h-3 w-3 shrink-0 text-ink-400" />
-        <span className="truncate text-xs font-black text-ink-800">{reasonLabel}</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] font-semibold text-ink-500">
-        <span className="font-mono">{timeLabel}</span>
-        <span>·</span>
-        <span>{rolls} cuộn</span>
-        {line.confirmedBy && (
-          <>
-            <span>·</span>
-            <span className="truncate">{line.confirmedBy}</span>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => void }) {
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [settings, setSettings] = useState<SettingOption[]>([]);
@@ -338,11 +294,6 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
   const [error, setError] = useState('');
   const [printSlip, setPrintSlip] = useState<MachineDowntimePrintSlip | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
-
-  // Sheet state
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [draftLine, setDraftLine] = useState<DowntimeLine | null>(null);
 
   const selectedMachine = useMemo(() => {
     const ref = machineRef.trim();
@@ -393,11 +344,6 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
       };
     });
   }, [lines]);
-
-  const draftMinutes = useMemo(() => {
-    if (!draftLine) return 0;
-    return calcDowntimeMinutes(draftLine.startTime, draftLine.restartTime) ?? 0;
-  }, [draftLine]);
 
   const totalDowntimeMinutes = lineStats.reduce((sum, item) => sum + item.minutes, 0);
   const totalRollsAffected = lineStats.reduce((sum, item) => sum + item.rolls, 0);
@@ -472,56 +418,6 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
 
   const updateLine = (key: string, patch: Partial<DowntimeLine>) => {
     setLines(prev => prev.map(line => (line.key === key ? { ...line, ...patch } : line)));
-  };
-
-  const removeLineByIndex = (index: number) => {
-    setLines(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const openNewLineEditor = () => {
-    setEditingIndex(null);
-    setDraftLine(emptyLine());
-    setEditorOpen(true);
-  };
-
-  const openEditLineEditor = (index: number) => {
-    const line = lines[index];
-    setEditingIndex(index);
-    setDraftLine({ ...line });
-    setEditorOpen(true);
-  };
-
-  const closeEditor = () => {
-    setEditorOpen(false);
-    setDraftLine(null);
-    setEditingIndex(null);
-  };
-
-  const updateDraft = (patch: Partial<DowntimeLine>) => {
-    setDraftLine(prev => (prev ? { ...prev, ...patch } : prev));
-  };
-
-  const saveDraftLine = () => {
-    if (!draftLine) {
-      closeEditor();
-      return;
-    }
-    if (editingIndex === null) {
-      setLines(prev => [...prev, { ...draftLine, key: nextLineKey() }]);
-    } else {
-      setLines(prev => prev.map((line, i) => (i === editingIndex ? { ...draftLine, key: line.key } : line)));
-    }
-    closeEditor();
-  };
-
-  const removeDraftLine = () => {
-    if (editingIndex === null || !draftLine) {
-      closeEditor();
-      return;
-    }
-    const idx = editingIndex;
-    closeEditor();
-    removeLineByIndex(idx);
   };
 
   const buildCurrentPrintSlip = (slipCode = '') =>
@@ -615,65 +511,63 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
     setMessage('Đã xóa phiếu.');
   };
 
-  const isDraftValid = Boolean(draftLine && draftLine.startTime && draftLine.restartTime && draftLine.reason.trim());
-
   return (
-    <div className="flex h-full flex-col bg-ink-50">
+    <div className="flex h-full flex-col bg-zinc-50">
       {printSlip && <MachineDowntimePrintBatch slips={[printSlip]} />}
 
-      <div className="border-b border-ink-200 bg-white px-4 py-3">
+      <div className="border-b border-zinc-200 bg-white px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onBack}
-              className="flex h-10 items-center gap-1 rounded-xl border border-ink-200 px-3 text-xs font-bold text-ink-600 transition hover:bg-ink-50"
+              className="flex h-10 items-center gap-1 rounded-xl border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
             >
               <ChevronLeft className="h-4 w-4" />
               Quay lại
             </button>
             <div>
-              <h1 className="text-xl font-black text-ink-900">Phiếu báo dừng máy</h1>
-              <p className="text-sm font-semibold text-ink-500">
+              <h1 className="text-xl font-black text-zinc-900">Phiếu báo dừng máy</h1>
+              <p className="text-sm font-semibold text-zinc-500">
                 Ghi nhận ngay khi phát sinh — hệ thống tự tính tổng thời gian dừng và số cuộn ảnh hưởng.
               </p>
             </div>
           </div>
-          <div className="rounded-xl border border-warning-200 bg-warning-50 px-4 py-2 text-right">
-            <p className="text-[10px] font-black uppercase tracking-wider text-warning-700">Tổng dừng</p>
-            <p className="text-lg font-black text-warning-900">{formatNumber(totalDowntimeMinutes, 0)} phút</p>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-right">
+            <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Tổng dừng</p>
+            <p className="text-lg font-black text-amber-900">{formatNumber(totalDowntimeMinutes, 0)} phút</p>
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-          <section className="rounded-2xl border border-ink-200 bg-white p-4 shadow-[var(--shadow-card)]">
-            <div className="mb-4 flex items-center gap-2 border-b border-ink-100 pb-3">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 border-b border-zinc-100 pb-3">
               <MachineDowntimeIcon className="h-5 w-5" />
               <div>
-                <h2 className="text-sm font-black uppercase tracking-wider text-ink-950">PHIẾU BÁO DỪNG MÁY</h2>
-                <p className="text-xs font-semibold text-ink-500">Điền thông tin chung và các lần dừng máy trong ca</p>
+                <h2 className="text-sm font-black uppercase tracking-wider text-zinc-950">PHIẾU BÁO DỪNG MÁY</h2>
+                <p className="text-xs font-semibold text-zinc-500">Điền thông tin chung và các lần dừng máy trong ca</p>
               </div>
             </div>
 
             {error && (
-              <div className="mb-3 rounded-xl border border-danger-200 bg-danger-50 px-3 py-2 text-xs font-semibold text-danger-700">
+              <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
                 {error}
               </div>
             )}
             {message && (
-              <div className="mb-3 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-semibold text-success-700">
+              <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
                 {message}
               </div>
             )}
 
             <div className="grid gap-3 md:grid-cols-3">
-              <label className="text-xs font-black uppercase tracking-wider text-ink-500">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Ngày *
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${fieldClass} mt-1`} />
               </label>
-              <label className="text-xs font-black uppercase tracking-wider text-ink-500">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Ca *
                 <select value={shift} onChange={e => setShift(e.target.value)} className={`${fieldClass} mt-1`} disabled={isLoading}>
                   <option value="">Chọn ca</option>
@@ -684,7 +578,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
                   ))}
                 </select>
               </label>
-              <label className="text-xs font-black uppercase tracking-wider text-ink-500">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Máy *
                 <select value={machineRef} onChange={e => setMachineRef(e.target.value)} className={`${fieldClass} mt-1`} disabled={isLoading}>
                   <option value="">Chọn máy</option>
@@ -695,7 +589,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
                   ))}
                 </select>
               </label>
-              <label className="text-xs font-black uppercase tracking-wider text-ink-500">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Người lập
                 <select value={preparedBy} onChange={e => setPreparedBy(e.target.value)} className={`${fieldClass} mt-1`} disabled={isLoading}>
                   <option value="">Chọn nhân sự sản xuất</option>
@@ -706,7 +600,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
                   ))}
                 </select>
               </label>
-              <label className="text-xs font-black uppercase tracking-wider text-ink-500 md:col-span-2">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500 md:col-span-2">
                 Lệnh SX liên quan
                 <select
                   value={productionOrder}
@@ -728,8 +622,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
               <RepeatableLinesBlock
                 title="Chi tiết dừng máy"
                 required
-                onAdd={openNewLineEditor}
-                addLabel="Thêm dòng dừng máy"
+                onAdd={() => setLines(prev => [...prev, emptyLine()])}
                 columns={[
                   { key: 'stt', label: 'STT', className: 'w-10 shrink-0 text-center' },
                   { key: 'start', label: 'Bắt đầu dừng', className: 'w-28 shrink-0', required: true },
@@ -741,72 +634,65 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
                   { key: 'note', label: 'Ghi chú', className: 'min-w-0 flex-[0.9]' },
                   { key: 'actions', label: '', className: 'w-9 shrink-0' }
                 ]}
-                editingIndex={editingIndex}
               >
                 {lines.map((line, index) => (
-                  <React.Fragment key={line.key}>
-                    <RepeatableLineRow>
-                      <div className="flex w-10 shrink-0 items-center justify-center text-sm font-black text-brand-500">
-                        {index + 1}
-                      </div>
-                      <div className="w-28 shrink-0">
-                        <input type="time" value={line.startTime} onChange={e => updateLine(line.key, { startTime: e.target.value })} className={fieldClass} />
-                      </div>
-                      <div className="w-28 shrink-0">
-                        <input type="time" value={line.restartTime} onChange={e => updateLine(line.key, { restartTime: e.target.value })} className={fieldClass} />
-                      </div>
-                      <div className="w-24 shrink-0">
-                        <input value={lineStats[index]?.minutes ? String(lineStats[index].minutes) : ''} readOnly className={`${fieldClass} bg-ink-50 font-mono font-bold`} placeholder="0" />
-                      </div>
-                      <div className="min-w-0 flex-[1.2]">
-                        <input value={line.reason} onChange={e => updateLine(line.key, { reason: e.target.value })} className={fieldClass} placeholder="Lý do dừng máy" />
-                      </div>
-                      <div className="w-20 shrink-0">
-                        <input type="number" min="0" step="any" value={line.rollsAffected} onChange={e => updateLine(line.key, { rollsAffected: e.target.value })} className={fieldClass} placeholder="0" />
-                      </div>
-                      <div className="min-w-0 flex-[0.9]">
-                        <input value={line.confirmedBy} onChange={e => updateLine(line.key, { confirmedBy: e.target.value })} className={fieldClass} placeholder="Người xác nhận" />
-                      </div>
-                      <div className="min-w-0 flex-[0.9]">
-                        <input value={line.note} onChange={e => updateLine(line.key, { note: e.target.value })} className={fieldClass} placeholder="Ghi chú" />
-                      </div>
-                      <button type="button" onClick={() => removeLineByIndex(index)} className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-ink-200 text-ink-500 transition hover:border-danger-300 hover:bg-danger-50 hover:text-danger-700" title="Xóa dòng">
+                  <RepeatableLineRow key={line.key}>
+                    <div className="flex w-10 shrink-0 items-center justify-center text-sm font-black text-[#ef1b2d]">
+                      {index + 1}
+                    </div>
+                    <div className="w-28 shrink-0">
+                      <input type="time" value={line.startTime} onChange={e => updateLine(line.key, { startTime: e.target.value })} className={fieldClass} />
+                    </div>
+                    <div className="w-28 shrink-0">
+                      <input type="time" value={line.restartTime} onChange={e => updateLine(line.key, { restartTime: e.target.value })} className={fieldClass} />
+                    </div>
+                    <div className="w-24 shrink-0">
+                      <input value={lineStats[index]?.minutes ? String(lineStats[index].minutes) : ''} readOnly className={`${fieldClass} bg-zinc-50 font-mono font-bold`} placeholder="0" />
+                    </div>
+                    <div className="min-w-0 flex-[1.2]">
+                      <input value={line.reason} onChange={e => updateLine(line.key, { reason: e.target.value })} className={fieldClass} placeholder="Lý do dừng máy" />
+                    </div>
+                    <div className="w-20 shrink-0">
+                      <input type="number" min="0" step="any" value={line.rollsAffected} onChange={e => updateLine(line.key, { rollsAffected: e.target.value })} className={fieldClass} placeholder="0" />
+                    </div>
+                    <div className="min-w-0 flex-[0.9]">
+                      <input value={line.confirmedBy} onChange={e => updateLine(line.key, { confirmedBy: e.target.value })} className={fieldClass} placeholder="Người xác nhận" />
+                    </div>
+                    <div className="min-w-0 flex-[0.9]">
+                      <input value={line.note} onChange={e => updateLine(line.key, { note: e.target.value })} className={fieldClass} placeholder="Ghi chú" />
+                    </div>
+                    {lines.length > 1 && (
+                      <button type="button" onClick={() => setLines(prev => prev.filter(item => item.key !== line.key))} className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600" title="Xóa dòng">
                         <Trash2 className="h-4 w-4" />
                       </button>
-                    </RepeatableLineRow>
-                    <RepeatableLineCard
-                      index={index + 1}
-                      summary={describeLine(line, lineStats[index]?.minutes || 0, lineStats[index]?.rolls || 0)}
-                      onEdit={() => openEditLineEditor(index)}
-                      onRemove={() => removeLineByIndex(index)}
-                    />
-                  </React.Fragment>
+                    )}
+                  </RepeatableLineRow>
                 ))}
               </RepeatableLinesBlock>
             </div>
 
-            <div className="mt-4 rounded-xl border border-ink-200 bg-ink-50 p-3">
-              <p className="mb-2 text-xs font-semibold leading-5 text-ink-600">
+            <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+              <p className="mb-2 text-xs font-semibold leading-5 text-zinc-600">
                 Ghi chú: Ghi nhận ngay khi phát sinh. Hệ thống tự trừ định mức thời gian và số cuộn sản phẩm để đo lường hiệu suất máy.
               </p>
-              <label className="text-xs font-black uppercase tracking-wider text-ink-500">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Ghi chú chung
                 <input value={note} onChange={e => setNote(e.target.value)} className={`${fieldClass} mt-1`} placeholder="Ghi chú thêm (tuỳ chọn)" />
               </label>
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm font-bold text-ink-600">
-                Tổng dừng: <span className="font-black text-ink-900">{formatNumber(totalDowntimeMinutes, 0)} phút</span>
+              <div className="text-sm font-bold text-zinc-600">
+                Tổng dừng: <span className="font-black text-zinc-900">{formatNumber(totalDowntimeMinutes, 0)} phút</span>
                 {' · '}
-                Tổng cuộn ảnh hưởng: <span className="font-black text-ink-900">{formatNumber(totalRollsAffected, 0)}</span>
+                Tổng cuộn ảnh hưởng: <span className="font-black text-zinc-900">{formatNumber(totalRollsAffected, 0)}</span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handlePrint(buildCurrentPrintSlip())}
                   disabled={isLoading || lines.every(line => !line.startTime && !line.reason)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm font-black text-ink-700 transition hover:border-ink-400 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-black text-zinc-700 transition hover:border-zinc-400 disabled:opacity-60"
                 >
                   <Printer className="h-4 w-4" />
                   In phiếu
@@ -815,7 +701,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
                   type="button"
                   onClick={saveSlip}
                   disabled={isSaving || isLoading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-brand-700 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#ef1b2d] px-5 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-60"
                 >
                   {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   Lưu phiếu
@@ -824,35 +710,35 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
             </div>
           </section>
 
-          <section className="rounded-2xl border border-ink-200 bg-white p-4 shadow-[var(--shadow-card)]">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-black text-ink-900">Lịch sử phiếu</h2>
-                <p className="text-xs font-semibold text-ink-500">Các phiếu báo dừng máy gần nhất.</p>
+                <h2 className="text-lg font-black text-zinc-900">Lịch sử phiếu</h2>
+                <p className="text-xs font-semibold text-zinc-500">Các phiếu báo dừng máy gần nhất.</p>
               </div>
               <MachineDowntimeIcon className="h-5 w-5" />
             </div>
             <div className="space-y-2">
               {isLoading && (
-                <div className="flex items-center gap-2 rounded-xl border border-ink-200 bg-ink-50 px-3 py-2 text-xs font-semibold text-ink-500">
+                <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-500">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Đang tải...
                 </div>
               )}
               {!isLoading && slips.length === 0 && (
-                <p className="rounded-xl border border-dashed border-ink-200 px-3 py-6 text-center text-xs font-semibold text-ink-400">
+                <p className="rounded-xl border border-dashed border-zinc-200 px-3 py-6 text-center text-xs font-semibold text-zinc-400">
                   Chưa có phiếu nào.
                 </p>
               )}
               {slips.map(slip => (
-                <div key={slip.id} className="rounded-xl border border-ink-200 p-3">
+                <div key={slip.id} className="rounded-xl border border-zinc-200 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-black text-ink-900">{slip.slipCode || slip.machineName || slip.machineCode}</p>
-                      <p className="text-xs font-semibold text-ink-500">
+                      <p className="font-black text-zinc-900">{slip.slipCode || slip.machineName || slip.machineCode}</p>
+                      <p className="text-xs font-semibold text-zinc-500">
                         {slip.date} · {slip.shift} · {slip.machineName || slip.machineCode || '-'}
                       </p>
-                      <p className="mt-1 text-xs font-bold text-warning-700">
+                      <p className="mt-1 text-xs font-bold text-amber-800">
                         {formatNumber(slip.totalDowntimeMinutes, 0)} phút · {slip.lines.length} lần dừng · {formatNumber(slip.totalRollsAffected, 0)} cuộn
                       </p>
                     </div>
@@ -860,7 +746,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
                       <button
                         type="button"
                         onClick={() => handlePrint(slipToPrintSlip(slip))}
-                        className="rounded-lg border border-ink-200 p-2 text-ink-600 hover:bg-ink-50"
+                        className="rounded-lg border border-zinc-200 p-2 text-zinc-600 hover:bg-zinc-50"
                         title="In phiếu"
                       >
                         <Printer className="h-4 w-4" />
@@ -868,7 +754,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
                       <button
                         type="button"
                         onClick={() => deleteSlip(slip.id)}
-                        className="rounded-lg border border-ink-200 p-2 text-brand-500 hover:bg-danger-50 hover:text-danger-700 hover:border-danger-300"
+                        className="rounded-lg border border-zinc-200 p-2 text-[#ef1b2d] hover:bg-red-50"
                         title="Xóa phiếu"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -881,102 +767,6 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
           </section>
         </div>
       </div>
-
-      <LineEditorSheet
-        open={editorOpen}
-        onClose={closeEditor}
-        title={editingIndex === null ? 'Thêm dòng dừng máy' : `Sửa dòng ${editingIndex + 1}`}
-        subtitle="Tự động tính tổng phút dừng và cho phép nhập cuộn ảnh hưởng."
-        primaryLabel={editingIndex === null ? 'Thêm dòng' : 'Cập nhật'}
-        onPrimary={saveDraftLine}
-        primaryDisabled={!isDraftValid}
-        primaryIcon={<Plus className="h-4 w-4" />}
-      >
-        {draftLine && (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={sheetLabelClass}>Bắt đầu dừng *</label>
-                <input
-                  type="time"
-                  value={draftLine.startTime}
-                  onChange={e => updateDraft({ startTime: e.target.value })}
-                  className={`${sheetFieldClass} mt-1`}
-                />
-              </div>
-              <div>
-                <label className={sheetLabelClass}>Chạy lại *</label>
-                <input
-                  type="time"
-                  value={draftLine.restartTime}
-                  onChange={e => updateDraft({ restartTime: e.target.value })}
-                  className={`${sheetFieldClass} mt-1`}
-                />
-              </div>
-            </div>
-            <div className="rounded-lg bg-ink-50 px-3 py-2 text-xs font-bold text-ink-700">
-              Tổng: {formatNumber(draftMinutes, 0)} phút
-            </div>
-            <div>
-              <label className={sheetLabelClass}>Lý do dừng *</label>
-              <input
-                value={draftLine.reason}
-                onChange={e => updateDraft({ reason: e.target.value })}
-                className={`${sheetFieldClass} mt-1`}
-                placeholder="Mô tả ngắn gọn lý do"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={sheetLabelClass}>Số cuộn ảnh hưởng</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={draftLine.rollsAffected}
-                  onChange={e => updateDraft({ rollsAffected: e.target.value })}
-                  className={`${sheetFieldClass} mt-1`}
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className={sheetLabelClass}>Người xác nhận</label>
-                <select
-                  value={draftLine.confirmedBy}
-                  onChange={e => updateDraft({ confirmedBy: e.target.value })}
-                  className={`${sheetFieldClass} mt-1`}
-                  disabled={isLoading}
-                >
-                  <option value="">Chọn</option>
-                  {filteredStaffOptions.map(staff => (
-                    <option key={staff.id} value={staff.name}>{staff.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className={sheetLabelClass}>Ghi chú</label>
-              <textarea
-                value={draftLine.note}
-                onChange={e => updateDraft({ note: e.target.value })}
-                className="mt-1 w-full min-h-[88px] rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                placeholder="Ghi chú thêm (tuỳ chọn)"
-                rows={3}
-              />
-            </div>
-            {editingIndex !== null && (
-              <button
-                type="button"
-                onClick={removeDraftLine}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-danger-300 bg-danger-50 px-4 py-2.5 text-xs font-black text-danger-700 transition hover:bg-danger-100"
-              >
-                <Trash2 className="h-4 w-4" />
-                Xoá dòng này
-              </button>
-            )}
-          </>
-        )}
-      </LineEditorSheet>
     </div>
   );
 }

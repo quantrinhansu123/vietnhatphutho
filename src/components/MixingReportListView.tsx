@@ -467,7 +467,7 @@ export default function MixingReportListView({
         <div className="space-y-3 border-b border-zinc-100 bg-zinc-50 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-success-700" />
+              <ClipboardList className="h-4 w-4 text-emerald-700" />
               <p className="text-sm font-black text-zinc-950">
                 {shiftGroups.length} ca · {reports.length} phiếu
               </p>
@@ -552,7 +552,7 @@ export default function MixingReportListView({
         </div>
       )}
       {message && (
-        <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-semibold text-success-700">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
           {message}
         </div>
       )}
@@ -595,12 +595,12 @@ export default function MixingReportListView({
                   ).size;
 
                   return (
-                    <tr key={group.key} className="transition hover:bg-success-50/40">
+                    <tr key={group.key} className="transition hover:bg-emerald-50/40">
                       <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '-'}</td>
                       <td className="px-3 py-2 font-semibold text-zinc-800">{group.ca}</td>
                       <td className="px-3 py-2 font-bold text-zinc-700">{group.reports.length}</td>
                       <td className="px-3 py-2 text-zinc-700">{machineCount}</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-success-700">
+                      <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
                         {formatNormWeight(sumGroupKlDinhMuc(group.reports)) || '-'}
                       </td>
                       <td className="px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]">
@@ -682,7 +682,7 @@ export default function MixingReportListView({
                         <td className="px-3 py-2 text-zinc-700">{report.ten_may || report.ma_may || '-'}</td>
                         <td className="px-3 py-2 text-zinc-600">{report.nhan_su || '-'}</td>
                         <td className="px-3 py-2 font-bold text-zinc-700">{report.chi_tiet.length}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-success-700">
+                        <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
                           {formatNormWeight(sumReportKlDinhMuc(report)) || '-'}
                         </td>
                         <td className="px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]">
@@ -732,7 +732,7 @@ export default function MixingReportListView({
                       <td colSpan={5} className="px-3 py-2 text-right">
                         Tổng ca
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-success-700">
+                      <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
                         {formatNormWeight(sumGroupKlDinhMuc(viewingGroupReports)) || '-'}
                       </td>
                       <td className="px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]">
@@ -926,7 +926,7 @@ export default function MixingReportListView({
                                     </td>
                                   ))
                                 : null}
-                              <td className="whitespace-nowrap px-2 py-2 text-right font-mono font-bold text-success-800">
+                              <td className="whitespace-nowrap px-2 py-2 text-right font-mono font-bold text-emerald-800">
                                 {formatNormWeight(klDinhMuc) || '-'}
                               </td>
                               <td className="whitespace-nowrap px-2 py-2 text-right font-mono font-black text-[#ef1b2d]">
@@ -959,7 +959,7 @@ export default function MixingReportListView({
                           <td colSpan={4 + (showDetailQuantityColumns ? viewingRoundCount : 0)} className="px-2 py-2 text-right">
                             Thực tế sử dụng
                           </td>
-                          <td className="whitespace-nowrap px-2 py-2 text-right font-mono font-bold text-success-800">
+                          <td className="whitespace-nowrap px-2 py-2 text-right font-mono font-bold text-emerald-800">
                             {formatNormWeight(sumReportNormTotal(viewingReport.chi_tiet)) || '-'}
                           </td>
                           <td className="whitespace-nowrap px-2 py-2 text-right font-black text-[#ef1b2d]">

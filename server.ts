@@ -3364,15 +3364,14 @@ async function getReportsFromLocalFile(): Promise<ProductionReport[]> {
 async function startServer() {
   const app = createApp();
   const server = http.createServer(app);
-  const PORT = 3001;
+  const PORT = 3002;
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      cacheDir: '.vite',
       server: {
         middlewareMode: true,
-        hmr: { server },
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server },
       },
       appType: 'spa',
     });

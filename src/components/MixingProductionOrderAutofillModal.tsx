@@ -108,9 +108,9 @@ export default function MixingProductionOrderAutofillModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-ink-900/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-lg border border-ink-200 bg-white shadow-2xl sm:rounded-lg">
-        <div className="flex items-center justify-between border-b border-dashed border-ink-200 px-3 py-2.5">
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">
               Nguyên liệu theo Lệnh sản xuất · {roundLabel}
@@ -125,7 +125,7 @@ export default function MixingProductionOrderAutofillModal({
           <button
             type="button"
             onClick={onClose}
-            className="h-8 rounded-md border border-ink-200 px-2.5 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
           >
             Đóng
           </button>
@@ -141,9 +141,9 @@ export default function MixingProductionOrderAutofillModal({
           </div>
         ) : (
           <>
-            <div className="border-b border-ink-100 p-2.5">
-              <label className="flex h-9 items-center gap-2 rounded-md border border-ink-200 bg-ink-50 px-2.5 focus-within:border-accent-700 focus-within:ring-2 focus-within:ring-accent-700/20">
-                <Search className="h-3.5 w-3.5 text-ink-400" />
+            <div className="border-b border-zinc-100 p-4">
+              <label className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+                <Search className="h-4 w-4 text-zinc-400" />
                 <input
                   value={orderSearch}
                   onChange={event => setOrderSearch(event.target.value)}
@@ -155,7 +155,7 @@ export default function MixingProductionOrderAutofillModal({
 
             <div className="max-h-[28vh] overflow-y-auto p-4">
               {orderOptions.length === 0 ? (
-                <div className="rounded-md border border-dashed border-ink-200 px-3 py-6 text-center text-[12px] font-medium italic text-ink-400">
+                <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
                   Không có lệnh SX phù hợp.
                 </div>
               ) : (
@@ -165,8 +165,8 @@ export default function MixingProductionOrderAutofillModal({
                     return (
                       <label
                         key={order.id}
-                        className={`block cursor-pointer rounded-md border p-2.5 transition ${
-                          checked ? 'border-brand-500/35 bg-brand-50' : 'border-ink-200 bg-white hover:bg-ink-50'
+                        className={`block cursor-pointer rounded-xl border p-3 transition ${
+                          checked ? 'border-[#ef1b2d]/35 bg-red-50' : 'border-zinc-200 bg-white hover:bg-zinc-50'
                         }`}
                       >
                         <div className="flex items-start gap-3">
@@ -244,7 +244,7 @@ export default function MixingProductionOrderAutofillModal({
                                 </span>
                                 <span
                                   className={`text-[10px] font-bold ${
-                                    product.bomItems.length > 0 ? 'text-success-700' : 'text-warning-700'
+                                    product.bomItems.length > 0 ? 'text-emerald-700' : 'text-amber-700'
                                   }`}
                                 >
                                   {product.bomItems.length > 0
@@ -276,7 +276,7 @@ export default function MixingProductionOrderAutofillModal({
             <button
               type="button"
               onClick={onClose}
-              className="h-9 rounded-md border border-ink-200 bg-white px-3 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
+              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
             >
               Hủy
             </button>

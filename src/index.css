@@ -106,6 +106,14 @@
   .badge-brand {
     @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 text-[10px] font-bold border border-brand-100;
   }
+
+  .menu-icon-box {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 transition;
+  }
+
+  .menu-icon {
+    @apply h-[18px] w-[18px];
+  }
 }
 
 /* Responsive table: desktop giữ table; mobile (<768px) chuyển từng dòng <tr> thành card stack.
@@ -275,6 +283,53 @@ button:not(:disabled):active {
 
 #main-root-container {
   color: var(--brand-ink);
+  font-family: var(--font-sans);
+}
+
+/* Legacy zinc palette → homepage slate palette inside app */
+#root .text-zinc-950,
+#main-root-container .text-zinc-950 { color: #020617; }
+#root .text-zinc-900,
+#main-root-container .text-zinc-900 { color: #0f172a; }
+#root .text-zinc-800,
+#main-root-container .text-zinc-800 { color: #1e293b; }
+#root .text-zinc-700,
+#main-root-container .text-zinc-700 { color: #334155; }
+#root .text-zinc-600,
+#main-root-container .text-zinc-600 { color: #475569; }
+#root .text-zinc-500,
+#main-root-container .text-zinc-500 { color: #64748b; }
+#root .text-zinc-400,
+#main-root-container .text-zinc-400 { color: #94a3b8; }
+#root .text-zinc-300,
+#main-root-container .text-zinc-300 { color: #cbd5e1; }
+#root .border-zinc-200,
+#main-root-container .border-zinc-200 { border-color: #e2e8f0; }
+#root .border-zinc-100,
+#main-root-container .border-zinc-100 { border-color: #f1f5f9; }
+#root .border-zinc-300,
+#main-root-container .border-zinc-300 { border-color: #cbd5e1; }
+#root .bg-zinc-50,
+#main-root-container .bg-zinc-50 { background-color: #f8fafc; }
+#root .bg-zinc-100,
+#main-root-container .bg-zinc-100 { background-color: #f1f5f9; }
+#root .bg-zinc-900,
+#main-root-container .bg-zinc-900 { background-color: #0f172a; }
+#root .hover\:bg-zinc-50:hover,
+#main-root-container .hover\:bg-zinc-50:hover { background-color: #f8fafc; }
+#root .hover\:text-zinc-900:hover,
+#main-root-container .hover\:text-zinc-900:hover { color: #0f172a; }
+
+#root h1,
+#root h2,
+#root h3,
+#main-root-container h1,
+#main-root-container h2,
+#main-root-container h3,
+#main-root-container .form-header,
+#main-root-container .page-title {
+  font-family: var(--font-display);
+  letter-spacing: -0.012em;
 }
 
 #main-root-container .brand-logo {

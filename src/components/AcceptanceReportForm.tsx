@@ -7,20 +7,13 @@ import {
   ImagePlus,
   List,
   Loader2,
-  Plus,
   Save,
   ScanBarcode,
-  Trash2,
   X
 } from 'lucide-react';
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
-import {
-  RepeatableLineCard,
-  RepeatableLineRow,
-  RepeatableLinesBlock
-} from './RepeatableLinesBlock';
-import { LineEditorSheet } from './LineEditorSheet';
+import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 
 export type AcceptanceReport = {
   id: string;
@@ -60,7 +53,7 @@ interface ProductSelectOption {
 }
 
 const inputClass =
-  'h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
+  'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -303,9 +296,6 @@ export default function AcceptanceReportForm({
   const [message, setMessage] = useState('');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [highlightLineId, setHighlightLineId] = useState('');
-  const [lineSheetOpen, setLineSheetOpen] = useState(false);
-  const [lineSheetEditingId, setLineSheetEditingId] = useState<string | null>(null);
-  const [draftLine, setDraftLine] = useState<ProductLine | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -497,107 +487,6 @@ export default function AcceptanceReportForm({
       if (prev.lines.length <= 1) return prev;
       return { ...prev, lines: prev.lines.filter(line => line.id !== lineId) };
     });
-  };
-
-  const openNewLineSheet = () => {
-    setLineSheetEditingId(null);
-    setDraftLine(newProductLine());
-    setLineSheetOpen(true);
-  };
-
-  const openEditLineSheet = (lineId: string) => {
-    const source = form.lines.find(line => line.id === lineId);
-    if (!source) return;
-    setLineSheetEditingId(lineId);
-    setDraftLine({ ...source });
-    setLineSheetOpen(true);
-  };
-
-  const closeLineSheet = () => {
-    setLineSheetOpen(false);
-    setDraftLine(null);
-    setLineSheetEditingId(null);
-  };
-
-  const updateDraftLine = (patch: Partial<ProductLine>) => {
-    setDraftLine(prev => (prev ? { ...prev, ...patch } : prev));
-  };
-
-  const handleDraftProductChange = (code: string) => {
-    if (
-      code &&
-      draftLine &&
-      form.lines.some(
-        line => line.id !== draftLine.id && lineHasProductCode(line, code)
-      )
-    ) {
-      setError(`Mã SP "${parseQrProductCode(code)}" đã có trong danh sách.`);
-      return;
-    }
-    const match = findProductOption(code, productSelectOptions);
-    setError('');
-    setDraftLine(prev =>
-      prev
-        ? { ...prev, mat_hang: code, don_vi: match?.unit || prev.don_vi }
-        : prev
-    );
-  };
-
-  const persistDraftLine = () => {
-    if (!draftLine) {
-      closeLineSheet();
-      return;
-    }
-    if (lineSheetEditingId === null) {
-      const created: ProductLine = { ...draftLine };
-      setForm(prev => ({ ...prev, lines: [...prev.lines, created] }));
-    } else {
-      const target = lineSheetEditingId;
-      setForm(prev => ({
-        ...prev,
-        lines: prev.lines.map(line => (line.id === target ? { ...draftLine } : line))
-      }));
-    }
-    closeLineSheet();
-  };
-
-  const removeDraftLineFromSheet = () => {
-    if (lineSheetEditingId === null) {
-      closeLineSheet();
-      return;
-    }
-    const id = lineSheetEditingId;
-    closeLineSheet();
-    removeProductLine(id);
-  };
-
-  const draftMatchedProduct = draftLine ? findProductOption(draftLine.mat_hang, productSelectOptions) : null;
-  const isDraftValid = Boolean(
-    draftLine && draftLine.mat_hang.trim() && draftLine.so_luong.trim()
-  );
-
-  const describeAcceptanceLine = (line: ProductLine, index: number): React.ReactNode => {
-    const matched = findProductOption(line.mat_hang, productSelectOptions);
-    const code = line.mat_hang.trim() || 'Chưa chọn mã';
-    const name = matched?.name || line.mat_hang.trim();
-    const unit = (matched?.unit || line.don_vi).trim() || '-';
-    const qty = line.so_luong.trim() || '—';
-    return (
-      <div className="space-y-0.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-xs font-black text-ink-800">{code}</span>
-          {name && (
-            <>
-              <span className="text-[11px] font-bold text-ink-500">·</span>
-              <span className="truncate text-[11px] font-semibold text-ink-600">{name}</span>
-            </>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] font-semibold text-ink-500">
-          <span>SL: <span className="font-mono font-black text-ink-800">{qty}</span> {unit}</span>
-        </div>
-      </div>
-    );
   };
 
   const handleQrScan = useCallback(
@@ -873,41 +762,41 @@ export default function AcceptanceReportForm({
     '';
 
   return (
-    <div className="space-y-3 pb-24">
-      <section className="overflow-hidden rounded-lg border border-ink-200 bg-white" style={{ boxShadow: 'var(--shadow-card)' }}>
-        <div className="flex items-center justify-between gap-2 border-b border-ink-200 px-3 py-2.5">
-          <h2 className="text-[14px] font-semibold text-ink-900 tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>Phiếu báo cáo sản lượng</h2>
-          <div className="flex items-center gap-1.5">
+    <div className="space-y-4 pb-24">
+      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
+          <h2 className="text-base font-black text-zinc-950">Phiếu báo cáo sản lượng</h2>
+          <div className="flex items-center gap-2">
             {onOpenList && (
               <button
                 type="button"
                 onClick={onOpenList}
-                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2 text-[11px] font-semibold text-ink-700 transition hover:bg-ink-50"
+                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
               >
-                <List className="h-3.5 w-3.5" />
+                <List className="h-4 w-4" />
                 Danh sách
               </button>
             )}
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2 text-[11px] font-semibold text-ink-700 transition hover:bg-ink-50"
+              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ChevronLeft className="h-4 w-4" />
               Quay lại
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 bg-ink-50/60 p-2.5 md:grid-cols-3 lg:grid-cols-6">
-          <label className="space-y-0.5">
-            <span className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider text-ink-500">
-              <CalendarDays className="h-3 w-3 text-brand-500" /> Ngày
+        <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-4 md:grid-cols-3 lg:grid-cols-6">
+          <label className="space-y-1">
+            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+              <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" /> Ngày
             </span>
             <input type="date" value={form.ngay} onChange={e => handleDateChange(e.target.value)} className={inputClass} />
           </label>
-          <label className="space-y-0.5">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-ink-500">Ca</span>
+          <label className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
             <select value={form.ca} onChange={e => handleShiftChange(e.target.value)} className={inputClass}>
               <option value="">Chọn ca từ lệnh SX...</option>
               {shiftOptions.map(shift => (
@@ -917,9 +806,9 @@ export default function AcceptanceReportForm({
               ))}
             </select>
           </label>
-          <label className="space-y-0.5 lg:col-span-2">
-            <span className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider text-ink-500">
-              <Cpu className="h-3 w-3 text-brand-500" /> Tổ
+          <label className="space-y-1 lg:col-span-2">
+            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+              <Cpu className="h-3.5 w-3.5 text-[#ef1b2d]" /> Tổ
             </span>
             <select
               value={teamSelectValue}
@@ -937,8 +826,8 @@ export default function AcceptanceReportForm({
               ))}
             </select>
           </label>
-          <label className="space-y-0.5">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-ink-500">Lần</span>
+          <label className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lần</span>
             <input
               value={form.lan}
               onChange={e => setForm(prev => ({ ...prev, lan: e.target.value }))}
@@ -946,9 +835,9 @@ export default function AcceptanceReportForm({
               placeholder="VD: 1"
             />
           </label>
-          <label className="space-y-0.5">
-            <span className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider text-ink-500">
-              <Clock3 className="h-3 w-3 text-brand-500" /> Giờ
+          <label className="space-y-1">
+            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+              <Clock3 className="h-3.5 w-3.5 text-[#ef1b2d]" /> Giờ
             </span>
             <input
               type="time"
@@ -959,12 +848,12 @@ export default function AcceptanceReportForm({
           </label>
         </div>
 
-        <div className="border-t border-ink-100 bg-white p-2.5">
+        <div className="border-t border-zinc-100 bg-white p-4">
           <RepeatableLinesBlock
             title="Mã SP & số lượng"
             required
             showColumnHeaders
-            onAdd={editingId ? addProductLine : openNewLineSheet}
+            onAdd={addProductLine}
             addLabel="Thêm dòng"
             hideAddButton={Boolean(editingId)}
             extraHeaderButtons={
@@ -972,9 +861,9 @@ export default function AcceptanceReportForm({
                 <button
                   type="button"
                   onClick={() => setIsQrScannerOpen(true)}
-                  className="flex h-7 items-center gap-1 rounded-md border border-brand-500 bg-brand-50 px-2 text-[10px] font-bold text-brand-700 transition hover:bg-brand-100"
+                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
                 >
-                  <ScanBarcode className="h-3 w-3" />
+                  <ScanBarcode className="h-3.5 w-3.5" />
                   Quét QR
                 </button>
               ) : null
@@ -990,8 +879,8 @@ export default function AcceptanceReportForm({
             {form.lines.map((line, index) => {
               const matchedProduct = findProductOption(line.mat_hang, productSelectOptions);
               return (
-              <React.Fragment key={line.id}>
               <RepeatableLineRow
+                key={line.id}
                 className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
               >
                 <div className="min-w-[180px] flex-[1.2]">
@@ -1048,21 +937,12 @@ export default function AcceptanceReportForm({
                   </button>
                 )}
               </RepeatableLineRow>
-              {!editingId ? (
-                <RepeatableLineCard
-                  index={index + 1}
-                  summary={describeAcceptanceLine(line, index)}
-                  onEdit={() => openEditLineSheet(line.id)}
-                  onRemove={form.lines.length > 1 ? () => removeProductLine(line.id) : undefined}
-                />
-              ) : null}
-              </React.Fragment>
             );
             })}
           </RepeatableLinesBlock>
 
-          <div className="mt-2.5 space-y-1.5 rounded-md border border-ink-200 bg-ink-50/60 p-2.5">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-ink-500">Ảnh chung <span className="text-rose-500">*</span></span>
+          <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>
             <div className="flex items-center gap-2">
               <input
                 ref={fileInputRef}
@@ -1076,9 +956,9 @@ export default function AcceptanceReportForm({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-ink-200 bg-white px-2.5 text-[11px] font-semibold text-ink-700 transition hover:bg-ink-50 disabled:opacity-60"
+                className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
               >
-                {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+                {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                 {isUploading ? 'Đang tải ảnh...' : 'Chụp / chọn ảnh chung'}
               </button>
               {form.imagePreview && (
@@ -1086,7 +966,7 @@ export default function AcceptanceReportForm({
                   href={form.imagePreview}
                   target="_blank"
                   rel="noreferrer"
-                  className="block h-12 w-12 shrink-0 overflow-hidden rounded-md border border-ink-200"
+                  className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200"
                 >
                   <img src={form.imagePreview} alt="Ảnh chung" className="h-full w-full object-cover" />
                 </a>
@@ -1095,29 +975,29 @@ export default function AcceptanceReportForm({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-ink-100 bg-white px-3 py-2.5">
-          <button type="button" onClick={resetForm} className="h-9 rounded-md border border-ink-200 bg-white px-3 text-[11px] font-semibold text-ink-700">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 bg-white px-4 py-3">
+          <button type="button" onClick={resetForm} className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700">
             Làm mới
           </button>
           <button
             type="button"
             onClick={handleSave}
             disabled={isSaving || isUploading}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand-500 px-3 text-[11px] font-bold text-white transition hover:bg-brand-700 disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
           >
-            {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {editingId ? 'Cập nhật' : 'Lưu báo cáo'}
           </button>
         </div>
       </section>
 
       {error && (
-        <div className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-[12px] font-semibold text-danger-700">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
           {error}
         </div>
       )}
       {message && (
-        <div className="rounded-md border border-success-200 bg-success-50 px-3 py-2 text-[12px] font-semibold text-success-700">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
           {message}
         </div>
       )}
@@ -1128,81 +1008,6 @@ export default function AcceptanceReportForm({
         onScan={handleQrScan}
         getConfirmMessage={getQrConfirmMessage}
       />
-
-      <LineEditorSheet
-        open={lineSheetOpen}
-        onClose={closeLineSheet}
-        title={lineSheetEditingId === null ? 'Thêm dòng sản phẩm' : 'Sửa dòng sản phẩm'}
-        subtitle="Chọn mã SP, số lượng sẽ tự cộng dồn nếu quét QR."
-        primaryLabel={lineSheetEditingId === null ? 'Thêm dòng' : 'Cập nhật'}
-        primaryDisabled={!isDraftValid}
-        onPrimary={persistDraftLine}
-        primaryIcon={<Plus className="h-4 w-4" />}
-      >
-        {draftLine && (
-          <>
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-ink-500">
-                Mã SP *
-              </label>
-              <div className="mt-1.5">
-                <SearchableSelect
-                  value={draftLine.mat_hang}
-                  onChange={handleDraftProductChange}
-                  options={productSelectOptions}
-                  placeholder="Gõ để tìm mã SP"
-                  isLoading={isLoadingProducts}
-                  inputClassName="h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-base font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                  getValue={item => (item as ProductSelectOption).code}
-                  getLabel={item => {
-                    const product = item as ProductSelectOption;
-                    return product.name ? `${product.code} · ${product.name}` : product.code;
-                  }}
-                />
-              </div>
-              {draftMatchedProduct?.name ? (
-                <p className="mt-1 text-[11px] font-semibold text-ink-500">
-                  Tên: {draftMatchedProduct.name}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[0.6fr_1fr]">
-              <div>
-                <label className="block text-xs font-black uppercase tracking-wider text-ink-500">Đơn vị</label>
-                <input
-                  value={draftMatchedProduct?.unit || draftLine.don_vi}
-                  readOnly
-                  className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-base font-semibold text-ink-700 outline-none"
-                  placeholder="-"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-black uppercase tracking-wider text-ink-500">Số lượng *</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={draftLine.so_luong}
-                  onChange={e => updateDraftLine({ so_luong: e.target.value })}
-                  className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-right text-base font-black text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                  placeholder="0"
-                />
-              </div>
-            </div>
-
-            {lineSheetEditingId !== null && (
-              <button
-                type="button"
-                onClick={removeDraftLineFromSheet}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-danger-300 bg-danger-50 px-4 py-2.5 text-xs font-black text-danger-700 transition hover:bg-danger-100"
-              >
-                <Trash2 className="h-4 w-4" />
-                Xoá dòng này
-              </button>
-            )}
-          </>
-        )}
-      </LineEditorSheet>
     </div>
   );
 }

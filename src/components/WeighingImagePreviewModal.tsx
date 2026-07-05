@@ -10,7 +10,7 @@ export function WeighingImageThumbnail({
   alt,
   title,
   onView,
-  className = 'block h-10 w-14 overflow-hidden rounded-md border border-ink-200 bg-ink-50 transition hover:border-accent-700'
+  className = 'block h-12 w-16 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition hover:border-[#ef1b2d]'
 }: {
   url: string;
   alt: string;
@@ -40,12 +40,12 @@ export default function WeighingImagePreviewModal({
   if (!image) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/70 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-lg border border-ink-800 bg-ink-900 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-3 py-2.5">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <div>
-            <h3 className="text-[12px] font-mono uppercase tracking-wider text-white font-semibold">{image.title}</h3>
-            <p className="mt-0.5 text-[11px] font-medium italic text-ink-400">Xem ảnh trong ứng dụng — không mở tab mới</p>
+            <h3 className="text-sm font-black uppercase tracking-wider text-white">{image.title}</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-400">Xem ảnh trong ứng dụng — không mở tab mới</p>
           </div>
           <button
             type="button"

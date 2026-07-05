@@ -26,7 +26,7 @@ const payloads = [
 ];
 
 for (const payload of payloads) {
-  const res = await fetch(`http://localhost:3001/api/san-pham/${productId}`, {
+  const res = await fetch(`http://localhost:3002/api/san-pham/${productId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload.body)
