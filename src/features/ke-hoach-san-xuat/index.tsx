@@ -12,14 +12,15 @@ import { getProductionShiftOptions } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
-import { normalizeProducts, type ProductRow } from '../san-pham';
+import { normalizeProducts } from '../san-pham';
+import type { ProductRow } from '../san-pham/types';
 import {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
   getOrderProductLines,
   formatOrderProductsSummary,
   type OrderRow
-} from '../don-hang';
+} from '../_shared/orderRecordHelpers';
 import {
   expandMergedProductionProducts,
   expandProductionOrderProductLines,

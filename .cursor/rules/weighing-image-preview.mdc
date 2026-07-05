@@ -1,0 +1,35 @@
+---
+description: Xem ảnh phiếu cân / tổng hợp ca phải mở modal trong app, không mở tab mới
+globs: src/components/Weighing*.tsx
+alwaysApply: false
+---
+
+# Xem ảnh trong phiếu cân (tong-hop-ca)
+
+Trước khi sửa UI liên quan `WeighingReportForm`, `WeighingShiftSummary` hoặc trang `/tong-hop-ca`, **đọc rule này trước**.
+
+## Bắt buộc
+
+- Khi người dùng bấm xem ảnh (ảnh cân, ảnh trọng lượng lõi, v.v.) → **luôn mở modal preview trong app**.
+- **Không** dùng `<a href="..." target="_blank">` hoặc `window.open()` để xem ảnh.
+- Dùng component chung `WeighingImagePreviewModal` và `WeighingImageThumbnail` từ `src/components/WeighingImagePreviewModal.tsx`.
+
+## Pattern
+
+```tsx
+const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
+
+<WeighingImageThumbnail
+  url={row.imageUrl}
+  alt="Ảnh cân"
+  title="Ảnh cân"
+  onView={() => setViewingImage({ url: row.imageUrl, title: 'Ảnh cân' })}
+/>
+
+<WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
+```
+
+## Kiểm tra trước khi merge
+
+- Grep `target="_blank"` trong `Weighing*.tsx` — không được còn link mở ảnh preview.
+- Ảnh thumbnail phải là `button`, không phải thẻ `<a>`.
