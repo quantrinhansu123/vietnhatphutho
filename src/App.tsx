@@ -11845,7 +11845,7 @@ function AddProductionOrderModal({
 
               return (
                 <RepeatableLineRow key={line.key}>
-                  <div className="min-w-0 flex-[1.1]">
+                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
                     <SearchableSelect
                       value={line.orderRef}
                       onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -11857,7 +11857,7 @@ function AddProductionOrderModal({
                       getValue={item => String(item)}
                     />
                   </div>
-                  <div className="min-w-0 flex-[1.35]">
+                  <div className="col-span-2 md:min-w-0 md:flex-[1.35]">
                     <SearchableSelect
                       value={line.productCode}
                       onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
@@ -11879,7 +11879,7 @@ function AddProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="min-w-0 flex-[1.1]">
+                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
                     <input
                       value={selectedProduct?.name || line.productName}
                       readOnly
@@ -11887,7 +11887,7 @@ function AddProductionOrderModal({
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
-                  <div className="w-16 shrink-0 sm:w-20">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
                     <input
                       value={line.unit}
                       readOnly
@@ -11895,7 +11895,7 @@ function AddProductionOrderModal({
                       placeholder="ĐV"
                     />
                   </div>
-                  <div className="w-20 shrink-0 sm:w-24">
+                  <div className="col-span-1 md:w-20 md:shrink-0 sm:md:w-24">
                     <input
                       type="number"
                       min="0"
@@ -11907,7 +11907,7 @@ function AddProductionOrderModal({
                     />
                   </div>
                   {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
-                    <span className="mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
+                    <span className="col-span-2 mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
                       Còn {formatNumber(selectedProduct.remainingQty, 0)}
                     </span>
                   )}
@@ -11920,10 +11920,11 @@ function AddProductionOrderModal({
                           entryLines: prev.entryLines.filter(item => item.key !== line.key)
                         }))
                       }
-                      className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      className="col-span-2 md:col-span-1 md:mb-0.5 flex h-10 w-full md:h-9 md:w-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 font-bold text-xs"
                       title="Xóa dòng"
                     >
                       <Trash2 className="h-4 w-4" />
+                      <span className="md:hidden">Xóa dòng này</span>
                     </button>
                   )}
                 </RepeatableLineRow>
@@ -12632,7 +12633,7 @@ function EditProductionOrderModal({
 
               return (
                 <RepeatableLineRow key={line.key}>
-                  <div className="min-w-0 flex-[1.1]">
+                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
                     <SearchableSelect
                       value={line.orderRef}
                       onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -12643,7 +12644,7 @@ function EditProductionOrderModal({
                       getValue={item => String(item)}
                     />
                   </div>
-                  <div className="min-w-0 flex-[1.35]">
+                  <div className="col-span-2 md:min-w-0 md:flex-[1.35]">
                     <SearchableSelect
                       value={line.productCode}
                       onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
@@ -12658,7 +12659,7 @@ function EditProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="min-w-0 flex-[1.1]">
+                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
                     <input
                       value={selectedProduct?.name || line.productName}
                       readOnly
@@ -12666,7 +12667,7 @@ function EditProductionOrderModal({
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
-                  <div className="w-16 shrink-0 sm:w-20">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
                     <input
                       value={line.unit}
                       readOnly
@@ -12674,7 +12675,7 @@ function EditProductionOrderModal({
                       placeholder="ĐV"
                     />
                   </div>
-                  <div className="w-20 shrink-0 sm:w-24">
+                  <div className="col-span-1 md:w-20 md:shrink-0 sm:md:w-24">
                     <input
                       type="number"
                       min="0"
@@ -12694,10 +12695,11 @@ function EditProductionOrderModal({
                           entryLines: prev.entryLines.filter(item => item.key !== line.key)
                         }))
                       }
-                      className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      className="col-span-2 md:col-span-1 md:mb-0.5 flex h-10 w-full md:h-9 md:w-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 font-bold text-xs"
                       title="Xóa dòng"
                     >
                       <Trash2 className="h-4 w-4" />
+                      <span className="md:hidden">Xóa dòng này</span>
                     </button>
                   )}
                 </RepeatableLineRow>
@@ -13745,7 +13747,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const matchedLineProduct = findOrderProductByCode(productOptions, line.productCode);
                   return (
                     <RepeatableLineRow key={line.key}>
-                      <div className="min-w-0 flex-[1.35]">
+                      <div className="col-span-2 md:min-w-0 md:flex-[1.35]">
                         <SearchableSelect
                           value={line.productCode}
                           onChange={productCode => pickOrderProduct(line.key, productCode)}
@@ -13760,7 +13762,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                           }}
                         />
                       </div>
-                      <div className="min-w-0 flex-[1.5]">
+                      <div className="col-span-2 md:min-w-0 md:flex-[1.5]">
                         <input
                           value={matchedLineProduct ? matchedLineProduct.name : line.productName}
                           readOnly={Boolean(matchedLineProduct)}
@@ -13769,7 +13771,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
                         />
                       </div>
-                      <div className="w-24 shrink-0">
+                      <div className="col-span-1 md:w-24 md:shrink-0">
                         <input
                           list="order-unit-suggestions"
                           value={line.unit}
@@ -13782,7 +13784,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="ĐVT"
                         />
                       </div>
-                      <div className="w-24 shrink-0">
+                      <div className="col-span-1 md:w-24 md:shrink-0">
                         <input
                           type="number"
                           value={line.quantity}
@@ -13801,9 +13803,10 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                             }))
                           }
                           title="Xóa dòng"
-                          className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                          className="col-span-2 md:col-span-1 md:mb-0.5 flex h-10 w-full md:h-10 md:w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 font-bold text-xs"
                         >
                           <Trash2 className="h-4 w-4" />
+                          <span className="md:hidden">Xóa dòng này</span>
                         </button>
                       )}
                     </RepeatableLineRow>

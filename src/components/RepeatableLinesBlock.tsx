@@ -106,7 +106,7 @@ export function RepeatableLineRow({
 }) {
   return (
     <div
-      className={`hidden flex-wrap items-end gap-2 py-2 first:pt-0 last:pb-0 md:flex ${className}`}
+      className={`grid grid-cols-2 gap-2.5 py-4 border-b border-ink-150 last:border-b-0 md:flex md:flex-wrap md:items-end md:gap-2 md:py-2 md:border-b-0 ${className}`}
     >
       {children}
     </div>
