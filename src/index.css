@@ -2,6 +2,62 @@
 @import "tailwindcss";
 
 @theme {
+  /* Brand */
+  --color-brand-50:  #fff1f2;
+  --color-brand-100: #ffe1e3;
+  --color-brand-200: #ffc6cb;
+  --color-brand-300: #ff97a0;
+  --color-brand-400: #ff5b6c;
+  --color-brand-500: #ef1b2d;
+  --color-brand-600: #d1122a;
+  --color-brand-700: #b30d1c;
+  --color-brand-800: #8e0c18;
+  --color-brand-900: #5a0710;
+
+  /* Neutrals (slate cool) */
+  --color-ink-0:   #ffffff;
+  --color-ink-50:  #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+
+  /* Semantic */
+  --color-success-50:  #f0fdf4;
+  --color-success-100: #dcfce7;
+  --color-success-300: #86efac;
+  --color-success-500: #16a34a;
+  --color-success-600: #15803d;
+  --color-success-700: #166534;
+  --color-warning-50:  #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-300: #fcd34d;
+  --color-warning-500: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-900: #78350f;
+  --color-danger-50:  #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-300: #fca5a5;
+  --color-danger-500: #dc2626;
+  --color-danger-600: #b91c1c;
+  --color-danger-700: #991b1b;
+  --color-danger-900: #450a0a;
+
+  /* Radii */
+  --radius-card:   14px;
+  --radius-button: 10px;
+  --radius-input:  10px;
+
+  /* Shadows */
+  --shadow-card:    0 1px 2px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.06);
+  --shadow-elevated:0 8px 24px rgba(15,23,42,.08);
+
+  /* Fonts (giữ nguyên) */
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
@@ -10,6 +66,36 @@
 * {
   -webkit-tap-highlight-color: transparent;
   outline-color: transparent;
+}
+
+/* Responsive table: desktop giữ table; mobile (<768px) chuyển từng dòng <tr> thành card stack.
+   Dùng cho các bảng có cấu trúc <table><thead><tbody><tr><td>. */
+@layer utilities {
+  .responsive-table thead {
+    @apply hidden md:table-header-group;
+  }
+
+  .responsive-table tbody {
+    @apply block md:table-row-group;
+  }
+
+  .responsive-table tr {
+    @apply block border-b border-ink-200 py-2 first:pt-0 last:border-b-0 md:table-row md:border-b md:border-ink-100 md:py-0;
+  }
+
+  .responsive-table td {
+    @apply block px-1 py-1 text-left text-ink-700 before:mr-2 before:font-bold before:text-ink-500 before:content-[attr(data-label)] md:table-cell md:border md:border-ink-100 md:px-2 md:py-2 md:before:hidden md:text-xs;
+  }
+
+  .responsive-table tr > td:empty,
+  .responsive-table tr > td:last-child {
+    @apply md:text-center;
+  }
+
+  /* Ẩn cột thao tác dạng text dài trên mobile; giữ nguyên nút icon */
+  .responsive-table td[data-mobile='icon-only'] {
+    @apply flex items-center justify-end gap-1 pt-1 before:hidden;
+  }
 }
 
 html,
@@ -21,152 +107,25 @@ body,
 
 body {
   overscroll-behavior-y: contain; /* Prevents pull-to-refresh pull actions on mobile browsers */
-  background-color: #151515;
+  background-color: #f1f5f9;
 }
 
-/* Viet Nhat IPT brand palette overrides */
+/* Brand tokens (legacy aliases kept for any inline style() references) */
 :root {
   --brand-red: #ef1b2d;
   --brand-red-dark: #b30d1c;
   --brand-red-soft: #fff1f2;
-  --brand-black: #111111;
-  --brand-ink: #202020;
-  --brand-line: #e7e5e4;
+  --brand-black: #0f172a;
+  --brand-ink: #1e293b;
+  --brand-line: #e2e8f0;
 }
 
 #main-root-container {
   color: var(--brand-ink);
 }
 
-#main-root-container .bg-slate-900,
-#main-root-container .bg-slate-950 {
-  background-color: var(--brand-black) !important;
-}
-
-#main-root-container .border-slate-800,
-#main-root-container .border-slate-800\/80 {
-  border-color: #2f2f2f !important;
-}
-
-#main-root-container .bg-slate-50,
-#main-root-container .bg-zinc-50 {
-  background-color: #fafafa !important;
-}
-
 #main-root-container .brand-logo {
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.08));
-}
-
-#main-root-container .text-emerald-200,
-#main-root-container .text-emerald-300,
-#main-root-container .text-amber-200,
-#main-root-container .text-amber-300 {
-  color: #fecdd3 !important;
-}
-
-#main-root-container .text-emerald-400,
-#main-root-container .text-emerald-500,
-#main-root-container .text-emerald-600,
-#main-root-container .text-emerald-700,
-#main-root-container .text-emerald-800,
-#main-root-container .text-indigo-400,
-#main-root-container .text-indigo-500,
-#main-root-container .text-indigo-700,
-#main-root-container .text-amber-400,
-#main-root-container .text-amber-500,
-#main-root-container .text-amber-700,
-#main-root-container .text-amber-800 {
-  color: var(--brand-red) !important;
-}
-
-#main-root-container .bg-emerald-50,
-#main-root-container .bg-emerald-50\/20,
-#main-root-container .bg-emerald-50\/50,
-#main-root-container .bg-amber-50,
-#main-root-container .bg-amber-50\/50 {
-  background-color: var(--brand-red-soft) !important;
-}
-
-#main-root-container .bg-emerald-500,
-#main-root-container .bg-emerald-600,
-#main-root-container .bg-emerald-700,
-#main-root-container .bg-indigo-100,
-#main-root-container .bg-amber-400,
-#main-root-container .bg-amber-500 {
-  background-color: var(--brand-red) !important;
-}
-
-#main-root-container .bg-emerald-500\/10,
-#main-root-container .bg-emerald-500\/20,
-#main-root-container .bg-amber-500\/10,
-#main-root-container .bg-amber-500\/20 {
-  background-color: rgba(239, 27, 45, 0.12) !important;
-}
-
-#main-root-container .bg-emerald-950\/90,
-#main-root-container .bg-amber-950\/90 {
-  background-color: rgba(69, 10, 10, 0.94) !important;
-}
-
-#main-root-container .border-emerald-100,
-#main-root-container .border-emerald-200,
-#main-root-container .border-emerald-400,
-#main-root-container .border-emerald-500,
-#main-root-container .border-emerald-500\/30,
-#main-root-container .border-indigo-100,
-#main-root-container .border-amber-200,
-#main-root-container .border-amber-500\/30 {
-  border-color: var(--brand-red) !important;
-}
-
-#main-root-container .focus\:border-emerald-500:focus {
-  border-color: #ef1b2d !important;
-}
-
-#main-root-container .focus\:ring-emerald-500\/10:focus,
-#main-root-container .focus\:ring-emerald-500\/20:focus {
-  --tw-ring-color: rgba(239, 27, 45, 0.16) !important;
-}
-
-#main-root-container .hover\:border-emerald-500:hover {
-  border-color: #ef1b2d !important;
-}
-
-#main-root-container .hover\:text-emerald-700:hover {
-  color: var(--brand-red) !important;
-}
-
-#main-root-container .hover\:bg-emerald-50:hover,
-#main-root-container .hover\:bg-emerald-50\/20:hover {
-  background-color: var(--brand-red-soft) !important;
-}
-
-#main-root-container .shadow-emerald-600\/10 {
-  --tw-shadow-color: rgba(239, 27, 45, 0.18) !important;
-}
-
-#main-root-container .from-emerald-800 {
-  --tw-gradient-from: var(--brand-black) var(--tw-gradient-from-position) !important;
-  --tw-gradient-to: rgba(17, 17, 17, 0) var(--tw-gradient-to-position) !important;
-}
-
-#main-root-container .to-slate-900 {
-  --tw-gradient-to: var(--brand-red) var(--tw-gradient-to-position) !important;
-}
-
-#main-root-container button.bg-slate-900,
-#main-root-container button.bg-slate-800 {
-  background-color: var(--brand-black) !important;
-}
-
-#main-root-container button.bg-slate-900:hover,
-#main-root-container button.bg-slate-800:hover {
-  background-color: #2b2b2b !important;
-}
-
-#main-root-container button.bg-emerald-600:hover,
-#main-root-container button.bg-emerald-700:hover {
-  background-color: var(--brand-red-dark) !important;
+  filter: drop-shadow(0 4px 12px rgba(15, 23, 42, 0.12));
 }
 
 /* Safe area utilities */

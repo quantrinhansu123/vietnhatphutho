@@ -547,7 +547,7 @@ function MixingRoundItemFormModal({
               <input
                 value={soLuongText}
                 readOnly
-                className={`${modalInputClass} bg-emerald-50/80 font-black text-emerald-800`}
+                className={`${modalInputClass} bg-success-50/80 font-black text-success-800`}
                 inputMode="decimal"
                 placeholder={batchWeight ? 'Tự tính theo %' : '-'}
               />
@@ -741,8 +741,8 @@ function MixingLineFormModal({
                       />
                     </label>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-left text-xs">
+                  <div className="md:overflow-x-auto overflow-x-visible">
+                    <table className="responsive-table min-w-full text-left text-xs">
                       <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                         <tr>
                           <th className="px-2 py-2 font-black">Mã NVL</th>
@@ -752,56 +752,56 @@ function MixingLineFormModal({
                           <th className="px-2 py-2 text-center font-black">Thao tác</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-zinc-100">
+                      <tbody className="md:divide-y md:divide-zinc-100">
                         {items.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-3 py-6 text-center font-semibold text-zinc-400">
+                            <td colSpan={5} className="md:px-3 md:py-6 md:text-center px-1 py-2 font-semibold text-zinc-400">
                               Chưa có định mức. Bấm &quot;Thêm dòng&quot; để nhập mã NVL và %.
                             </td>
                           </tr>
                         ) : (
                           items.map((item, rowIndex) => (
                           <tr key={`${roundKey}-${rowIndex}`}>
-                            <td className="px-2 py-2 font-mono font-semibold text-zinc-700">{item.ma_nvl || '-'}</td>
-                            <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
+                            <td data-label="Mã NVL" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">{item.ma_nvl || '-'}</td>
+                            <td data-label="%" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">
                               {formatOptionalNumber(item.ti_le_phan_tram) || '-'}
                             </td>
-                            <td className="px-2 py-2 font-mono font-bold text-emerald-800">
+                            <td data-label="KL định mức" className="md:px-2 md:py-2 px-1 py-1 font-mono font-bold text-success-800 before:content-[attr(data-label)]">
                               {formatNormWeight(item.so_luong) || '-'}
                             </td>
-                            <td className="px-2 py-2 font-mono font-bold text-[#ef1b2d]">
+                            <td data-label="KL thực tế" className="md:px-2 md:py-2 px-1 py-1 font-mono font-bold text-[#ef1b2d] before:content-[attr(data-label)]">
                               {formatOptionalNumber(item.kl_thuc_te) || '-'}
                             </td>
-                            <td className="px-2 py-2 text-center">
-                              <div className="flex items-center justify-center gap-1">
+                            <td data-label="Thao tác" data-mobile="icon-only" className="md:px-2 md:py-2 px-1 py-1 md:text-center">
+                              <div className="flex items-center justify-end md:justify-center gap-1">
                                 <button
                                   type="button"
                                   onClick={() => openEditRoundItem(roundKey, rowIndex)}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                  className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                                   title="Sửa dòng"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
+                                  <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => removeRoundItem(roundKey, rowIndex)}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                                  className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
                                   title="Xóa dòng"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Trash2 className="h-4 md:h-3.5 w-4 md:w-3.5" />
                                 </button>
                               </div>
                             </td>
                           </tr>
                         )))}
-                        <tr>
-                          <td colSpan={5} className="px-2 py-2">
+                        <tr className="border-b-0">
+                          <td colSpan={5} className="md:px-2 md:py-2 px-0 py-1">
                             <button
                               type="button"
                               onClick={() => openAddRoundItem(roundKey)}
-                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
+                              className="inline-flex h-9 md:h-8 items-center gap-1.5 rounded-lg border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-3 text-xs md:text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
                             >
-                              <Plus className="h-3.5 w-3.5" />
+                              <Plus className="h-4 md:h-3.5 w-4 md:w-3.5" />
                               Thêm dòng
                             </button>
                           </td>
@@ -830,7 +830,7 @@ function MixingLineFormModal({
               <input
                 value={formatOptionalNumber(tongTron)}
                 readOnly
-                className={`${modalInputClass} bg-emerald-50 font-black text-emerald-700`}
+                className={`${modalInputClass} bg-success-50 font-black text-success-700`}
               />
             </label>
           </div>
@@ -1778,7 +1778,7 @@ export default function MixingReportForm({
                   <button
                     type="button"
                     onClick={onOpenList}
-                    className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                    className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-success-200 bg-success-50 px-3 text-xs font-extrabold text-success-800 transition hover:bg-success-100"
                   >
                     <ClipboardList className="h-4 w-4" />
                     Danh sách
@@ -1813,7 +1813,7 @@ export default function MixingReportForm({
         </div>
       )}
       {message && !modalMode && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+        <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-semibold text-success-700">
           {message}
         </div>
       )}
@@ -1882,7 +1882,7 @@ export default function MixingReportForm({
                       <button
                         type="button"
                         onClick={() => openProductionOrderAutofill(roundKey)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-[11px] font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-success-200 bg-success-50 px-3 text-[11px] font-extrabold text-success-800 transition hover:bg-success-100"
                       >
                         <ClipboardCheck className="h-3.5 w-3.5" />
                         NVL theo Lệnh sản xuất
@@ -1902,8 +1902,8 @@ export default function MixingReportForm({
                       Chưa có NVL trong {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}.
                     </p>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-left text-xs">
+                    <div className="md:overflow-x-auto overflow-x-visible">
+                      <table className="responsive-table min-w-full text-left text-xs">
                         <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                           <tr>
                             <th className="px-2 py-2 font-black">Mã NVL</th>
@@ -1914,20 +1914,22 @@ export default function MixingReportForm({
                             <th className="px-2 py-2 text-center font-black">Thao tác</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-zinc-100">
+                        <tbody className="md:divide-y md:divide-zinc-100">
                           {entries.map(entry => (
                             <tr key={`${roundKey}-${entry.lineIndex}-${entry.itemIndex}`}>
-                              <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
+                              <td data-label="Mã NVL" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">
                                 {entry.item.ma_nvl || '-'}
                               </td>
-                              <td className="px-2 py-2 text-zinc-800">{entry.item.ten_vat_tu || '-'}</td>
-                              <td className="px-2 py-2 font-mono font-semibold text-zinc-700">
+                              <td data-label="Tên vật tư" className="md:px-2 md:py-2 px-1 py-1 text-zinc-800 before:content-[attr(data-label)]">
+                                {entry.item.ten_vat_tu || '-'}
+                              </td>
+                              <td data-label="%" className="md:px-2 md:py-2 px-1 py-1 font-mono font-semibold text-zinc-700 before:content-[attr(data-label)]">
                                 {formatOptionalNumber(entry.item.ti_le_phan_tram) || '-'}
                               </td>
-                              <td className="px-2 py-2 font-mono font-bold text-emerald-800">
+                              <td data-label="KL định mức" className="md:px-2 md:py-2 px-1 py-1 font-mono font-bold text-success-800 before:content-[attr(data-label)]">
                                 {formatNormWeight(entry.item.so_luong) || '-'}
                               </td>
-                              <td className="px-2 py-2">
+                              <td data-label="KL thực tế" className="md:px-2 md:py-2 px-1 py-1 before:content-[attr(data-label)]">
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1981,12 +1983,12 @@ export default function MixingReportForm({
                                       return next;
                                     });
                                   }}
-                                  className="h-8 w-24 rounded-lg border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                                  className="h-10 w-28 md:h-8 md:w-24 rounded-lg border border-zinc-200 bg-white px-2 text-right font-mono text-base md:text-xs font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
                                   placeholder="0"
                                 />
                               </td>
-                              <td className="px-2 py-2 text-center">
-                                <div className="flex items-center justify-center gap-1">
+                              <td data-label="Thao tác" data-mobile="icon-only" className="md:px-2 md:py-2 px-1 py-1 md:text-center">
+                                <div className="flex items-center justify-end md:justify-center gap-1">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1995,10 +1997,10 @@ export default function MixingReportForm({
                                         itemIndex: entry.itemIndex
                                       })
                                     }
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                    className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                                     title="Sửa NVL"
                                   >
-                                    <Pencil className="h-3.5 w-3.5" />
+                                    <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
                                   </button>
                                   <button
                                     type="button"
@@ -2013,10 +2015,10 @@ export default function MixingReportForm({
                                         )
                                       }))
                                     }
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
+                                    className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50"
                                     title="Xóa NVL"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="h-4 md:h-3.5 w-4 md:w-3.5" />
                                   </button>
                                 </div>
                               </td>
@@ -2024,12 +2026,12 @@ export default function MixingReportForm({
                           ))}
                         </tbody>
                         {entries.length > 0 ? (
-                          <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-700">
+                          <tfoot className="hidden md:table-footer-group border-t border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-700">
                             <tr>
                               <td colSpan={3} className="px-2 py-2 text-right">
                                 Tổng
                               </td>
-                              <td className="px-2 py-2 text-right font-mono font-bold text-emerald-800">
+                              <td className="px-2 py-2 text-right font-mono font-bold text-success-800">
                                 {formatNormWeight(
                                   sumRoundQuantity(
                                     form.chi_tiet[0]?.lan_su_dung ?? { lan_1: [] },

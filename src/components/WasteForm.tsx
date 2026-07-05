@@ -12,7 +12,7 @@ export default function WasteForm({ wasteWeight, notes, onChange }: WasteFormPro
     <div className="space-y-6" id="waste-entry-section">
       <div className="border-b border-slate-100 pb-3">
         <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-          <Trash2 className="w-5 h-5 text-emerald-600" />
+          <Trash2 className="w-5 h-5 text-success-600" />
           Phế Phẩm & Nhật Ký Ca Trực
         </h3>
         <p className="text-xs text-slate-500 mt-0.5">Khai báo khối lượng phế phẩm phát sinh trong ca và ghi chú bất thường</p>
@@ -51,8 +51,8 @@ export default function WasteForm({ wasteWeight, notes, onChange }: WasteFormPro
         </div>
 
         {wasteWeight > 10 && (
-          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/50 flex gap-2 text-xs text-amber-800 font-medium leading-relaxed">
-            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <div className="p-3 bg-warning-50 rounded-xl border border-warning-200/50 flex gap-2 text-xs text-warning-800 font-medium leading-relaxed">
+            <AlertTriangle className="w-4 h-4 text-warning-500 shrink-0 mt-0.5" />
             <span>
               <strong>Cảnh báo phế phẩm cao:</strong> Khối lượng phế phẩm vượt quá 10kg có thể ảnh hưởng lớn đến hiệu suất định mức của phân xưởng Đà Nẵng. Hãy ghi rõ nguyên nhân lỗi ở khung ghi chú bên dưới!
             </span>
@@ -70,7 +70,7 @@ export default function WasteForm({ wasteWeight, notes, onChange }: WasteFormPro
           id="notes"
           rows={3}
           maxLength={400}
-          className="w-full p-3.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 text-sm font-medium transition placeholder:text-slate-400 leading-relaxed resize-none"
+          className="w-full p-3.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-success-500/20 focus:border-success-500 text-slate-800 text-sm font-medium transition placeholder:text-slate-400 leading-relaxed resize-none"
           placeholder="Ví dụ: Thay lưới lọc ở đầu ca trực lúc 10h. Máy chạy êm. Khổ PE mỏng kéo phồng bọc tốt..."
           value={notes}
           onChange={(e) => onChange({ notes: e.target.value })}

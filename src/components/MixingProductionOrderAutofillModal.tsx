@@ -244,7 +244,7 @@ export default function MixingProductionOrderAutofillModal({
                                 </span>
                                 <span
                                   className={`text-[10px] font-bold ${
-                                    product.bomItems.length > 0 ? 'text-emerald-700' : 'text-amber-700'
+                                    product.bomItems.length > 0 ? 'text-success-700' : 'text-warning-700'
                                   }`}
                                 >
                                   {product.bomItems.length > 0

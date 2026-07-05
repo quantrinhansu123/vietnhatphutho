@@ -7,13 +7,20 @@ import {
   ImagePlus,
   List,
   Loader2,
+  Plus,
   Save,
   ScanBarcode,
+  Trash2,
   X
 } from 'lucide-react';
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
-import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
+import {
+  RepeatableLineCard,
+  RepeatableLineRow,
+  RepeatableLinesBlock
+} from './RepeatableLinesBlock';
+import { LineEditorSheet } from './LineEditorSheet';
 
 export type AcceptanceReport = {
   id: string;
@@ -296,6 +303,9 @@ export default function AcceptanceReportForm({
   const [message, setMessage] = useState('');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [highlightLineId, setHighlightLineId] = useState('');
+  const [lineSheetOpen, setLineSheetOpen] = useState(false);
+  const [lineSheetEditingId, setLineSheetEditingId] = useState<string | null>(null);
+  const [draftLine, setDraftLine] = useState<ProductLine | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -487,6 +497,107 @@ export default function AcceptanceReportForm({
       if (prev.lines.length <= 1) return prev;
       return { ...prev, lines: prev.lines.filter(line => line.id !== lineId) };
     });
+  };
+
+  const openNewLineSheet = () => {
+    setLineSheetEditingId(null);
+    setDraftLine(newProductLine());
+    setLineSheetOpen(true);
+  };
+
+  const openEditLineSheet = (lineId: string) => {
+    const source = form.lines.find(line => line.id === lineId);
+    if (!source) return;
+    setLineSheetEditingId(lineId);
+    setDraftLine({ ...source });
+    setLineSheetOpen(true);
+  };
+
+  const closeLineSheet = () => {
+    setLineSheetOpen(false);
+    setDraftLine(null);
+    setLineSheetEditingId(null);
+  };
+
+  const updateDraftLine = (patch: Partial<ProductLine>) => {
+    setDraftLine(prev => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  const handleDraftProductChange = (code: string) => {
+    if (
+      code &&
+      draftLine &&
+      form.lines.some(
+        line => line.id !== draftLine.id && lineHasProductCode(line, code)
+      )
+    ) {
+      setError(`Mã SP "${parseQrProductCode(code)}" đã có trong danh sách.`);
+      return;
+    }
+    const match = findProductOption(code, productSelectOptions);
+    setError('');
+    setDraftLine(prev =>
+      prev
+        ? { ...prev, mat_hang: code, don_vi: match?.unit || prev.don_vi }
+        : prev
+    );
+  };
+
+  const persistDraftLine = () => {
+    if (!draftLine) {
+      closeLineSheet();
+      return;
+    }
+    if (lineSheetEditingId === null) {
+      const created: ProductLine = { ...draftLine };
+      setForm(prev => ({ ...prev, lines: [...prev.lines, created] }));
+    } else {
+      const target = lineSheetEditingId;
+      setForm(prev => ({
+        ...prev,
+        lines: prev.lines.map(line => (line.id === target ? { ...draftLine } : line))
+      }));
+    }
+    closeLineSheet();
+  };
+
+  const removeDraftLineFromSheet = () => {
+    if (lineSheetEditingId === null) {
+      closeLineSheet();
+      return;
+    }
+    const id = lineSheetEditingId;
+    closeLineSheet();
+    removeProductLine(id);
+  };
+
+  const draftMatchedProduct = draftLine ? findProductOption(draftLine.mat_hang, productSelectOptions) : null;
+  const isDraftValid = Boolean(
+    draftLine && draftLine.mat_hang.trim() && draftLine.so_luong.trim()
+  );
+
+  const describeAcceptanceLine = (line: ProductLine, index: number): React.ReactNode => {
+    const matched = findProductOption(line.mat_hang, productSelectOptions);
+    const code = line.mat_hang.trim() || 'Chưa chọn mã';
+    const name = matched?.name || line.mat_hang.trim();
+    const unit = (matched?.unit || line.don_vi).trim() || '-';
+    const qty = line.so_luong.trim() || '—';
+    return (
+      <div className="space-y-0.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-xs font-black text-ink-800">{code}</span>
+          {name && (
+            <>
+              <span className="text-[11px] font-bold text-ink-500">·</span>
+              <span className="truncate text-[11px] font-semibold text-ink-600">{name}</span>
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] font-semibold text-ink-500">
+          <span>SL: <span className="font-mono font-black text-ink-800">{qty}</span> {unit}</span>
+        </div>
+      </div>
+    );
   };
 
   const handleQrScan = useCallback(
@@ -853,7 +964,7 @@ export default function AcceptanceReportForm({
             title="Mã SP & số lượng"
             required
             showColumnHeaders
-            onAdd={addProductLine}
+            onAdd={editingId ? addProductLine : openNewLineSheet}
             addLabel="Thêm dòng"
             hideAddButton={Boolean(editingId)}
             extraHeaderButtons={
@@ -879,8 +990,8 @@ export default function AcceptanceReportForm({
             {form.lines.map((line, index) => {
               const matchedProduct = findProductOption(line.mat_hang, productSelectOptions);
               return (
+              <React.Fragment key={line.id}>
               <RepeatableLineRow
-                key={line.id}
                 className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
               >
                 <div className="min-w-[180px] flex-[1.2]">
@@ -937,6 +1048,15 @@ export default function AcceptanceReportForm({
                   </button>
                 )}
               </RepeatableLineRow>
+              {!editingId ? (
+                <RepeatableLineCard
+                  index={index + 1}
+                  summary={describeAcceptanceLine(line, index)}
+                  onEdit={() => openEditLineSheet(line.id)}
+                  onRemove={form.lines.length > 1 ? () => removeProductLine(line.id) : undefined}
+                />
+              ) : null}
+              </React.Fragment>
             );
             })}
           </RepeatableLinesBlock>
@@ -997,7 +1117,7 @@ export default function AcceptanceReportForm({
         </div>
       )}
       {message && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+        <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-semibold text-success-700">
           {message}
         </div>
       )}
@@ -1008,6 +1128,81 @@ export default function AcceptanceReportForm({
         onScan={handleQrScan}
         getConfirmMessage={getQrConfirmMessage}
       />
+
+      <LineEditorSheet
+        open={lineSheetOpen}
+        onClose={closeLineSheet}
+        title={lineSheetEditingId === null ? 'Thêm dòng sản phẩm' : 'Sửa dòng sản phẩm'}
+        subtitle="Chọn mã SP, số lượng sẽ tự cộng dồn nếu quét QR."
+        primaryLabel={lineSheetEditingId === null ? 'Thêm dòng' : 'Cập nhật'}
+        primaryDisabled={!isDraftValid}
+        onPrimary={persistDraftLine}
+        primaryIcon={<Plus className="h-4 w-4" />}
+      >
+        {draftLine && (
+          <>
+            <div>
+              <label className="block text-xs font-black uppercase tracking-wider text-ink-500">
+                Mã SP *
+              </label>
+              <div className="mt-1.5">
+                <SearchableSelect
+                  value={draftLine.mat_hang}
+                  onChange={handleDraftProductChange}
+                  options={productSelectOptions}
+                  placeholder="Gõ để tìm mã SP"
+                  isLoading={isLoadingProducts}
+                  inputClassName="h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-base font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+                  getValue={item => (item as ProductSelectOption).code}
+                  getLabel={item => {
+                    const product = item as ProductSelectOption;
+                    return product.name ? `${product.code} · ${product.name}` : product.code;
+                  }}
+                />
+              </div>
+              {draftMatchedProduct?.name ? (
+                <p className="mt-1 text-[11px] font-semibold text-ink-500">
+                  Tên: {draftMatchedProduct.name}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[0.6fr_1fr]">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-ink-500">Đơn vị</label>
+                <input
+                  value={draftMatchedProduct?.unit || draftLine.don_vi}
+                  readOnly
+                  className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-ink-50 px-3 text-base font-semibold text-ink-700 outline-none"
+                  placeholder="-"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-ink-500">Số lượng *</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={draftLine.so_luong}
+                  onChange={e => updateDraftLine({ so_luong: e.target.value })}
+                  className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-right text-base font-black text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            {lineSheetEditingId !== null && (
+              <button
+                type="button"
+                onClick={removeDraftLineFromSheet}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-danger-300 bg-danger-50 px-4 py-2.5 text-xs font-black text-danger-700 transition hover:bg-danger-100"
+              >
+                <Trash2 className="h-4 w-4" />
+                Xoá dòng này
+              </button>
+            )}
+          </>
+        )}
+      </LineEditorSheet>
     </div>
   );
 }

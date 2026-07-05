@@ -297,11 +297,11 @@ export default function ProductQrScanner({
               key={feedbackPulse}
               className={`mt-3 rounded-xl border-2 px-3 py-3 text-center text-sm font-black ${feedbackClass} ${
                 feedback.type === 'success'
-                  ? 'border-emerald-500 text-emerald-800'
+                  ? 'border-success-500 text-success-800'
                   : feedback.type === 'pending'
                     ? 'border-[#ef1b2d] text-zinc-900'
                   : feedback.type === 'duplicate'
-                    ? 'border-amber-500 text-amber-800'
+                    ? 'border-warning-500 text-warning-800'
                     : 'border-rose-500 text-rose-700'
               }`}
             >

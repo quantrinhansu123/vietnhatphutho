@@ -1374,9 +1374,9 @@ export default function WeighingReportForm({
           </p>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-left">
-            <thead>
+        <div className="md:overflow-x-auto overflow-x-visible">
+          <table className="responsive-table w-full md:min-w-[760px] border-collapse text-left">
+            <thead className="hidden md:table-header-group">
               <tr className="bg-zinc-950 text-xs font-black uppercase tracking-wider text-white">
                 <th className="w-20 px-3 py-3 text-center">Lần cân</th>
                 <th className="w-28 px-3 py-3">Mã SP</th>
@@ -1393,31 +1393,31 @@ export default function WeighingReportForm({
                 <th className="w-28 px-3 py-3 text-center">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="block md:table-row-group md:divide-y md:divide-zinc-100">
               {weighingRows.length === 0 ? (
-                <tr>
-                  <td colSpan={13} className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
+                <tr className="block md:table-row">
+                  <td colSpan={13} className="block md:table-cell px-4 py-10 text-center text-sm font-semibold text-zinc-400">
                     Chưa có dòng cân. Bấm Nhập liệu để thêm lần cân.
                   </td>
                 </tr>
               ) : weighingRows.map(row => (
-                <tr key={row.id} className="transition hover:bg-red-50/40">
-                  <td className="border-r border-zinc-100 px-3 py-2 text-center text-sm font-black text-zinc-800">
+                <tr key={row.id} className="block border border-ink-200 rounded-xl mb-2 p-2 transition hover:bg-red-50/40 md:table-row md:border md:border-zinc-100 md:rounded-none md:mb-0 md:p-0">
+                  <td data-label="Lần cân" className="block md:table-cell md:border-r md:border-zinc-100 px-3 py-2 text-center text-sm font-black text-zinc-800 before:content-[attr(data-label)]">
                     {row.weighNo ? formatWeighRound(row.weighNo) : '—'}
                   </td>
-                  <td className="px-2 py-2 text-sm font-bold text-zinc-800">{row.productCode || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.productName || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weigherName || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.coreWeight || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.shellWeight || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">{row.weight || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weighTime || '—'}</td>
-                  <td className="px-2 py-2">
+                  <td data-label="Mã SP" className="block md:table-cell px-2 py-2 text-sm font-bold text-zinc-800 before:content-[attr(data-label)]">{row.productCode || '—'}</td>
+                  <td data-label="Tên sản phẩm" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.productName || '—'}</td>
+                  <td data-label="Người cân" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-600 before:content-[attr(data-label)]">{row.weigherName || '—'}</td>
+                  <td data-label="Trọng lượng lõi" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.coreWeight || '—'}</td>
+                  <td data-label="Trọng lượng bì" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-700 before:content-[attr(data-label)]">{row.shellWeight || '—'}</td>
+                  <td data-label="Trọng lượng" className="block md:table-cell px-2 py-2 text-sm font-bold text-zinc-900 before:content-[attr(data-label)]">{row.weight || '—'}</td>
+                  <td data-label="Giờ cân" className="block md:table-cell px-2 py-2 text-sm font-semibold text-zinc-600 before:content-[attr(data-label)]">{row.weighTime || '—'}</td>
+                  <td data-label="Nghiệm thu" className="block md:table-cell px-2 py-2 before:content-[attr(data-label)]">
                     {row.acceptanceStatus ? (
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
                           row.acceptanceStatus === 'Đạt'
-                            ? 'bg-emerald-50 text-emerald-700'
+                            ? 'bg-success-50 text-success-700'
                             : 'bg-rose-50 text-rose-700'
                         }`}
                       >
@@ -1427,10 +1427,10 @@ export default function WeighingReportForm({
                       <span className="text-xs font-semibold text-zinc-300">—</span>
                     )}
                   </td>
-                  <td className="max-w-[120px] truncate px-2 py-2 text-sm font-semibold text-zinc-600" title={row.note || undefined}>
+                  <td data-label="Ghi chú" className="block md:table-cell max-w-[120px] truncate px-2 py-2 text-sm font-semibold text-zinc-600 before:content-[attr(data-label)]" title={row.note || undefined}>
                     {row.note || '—'}
                   </td>
-                  <td className="px-2 py-2">
+                  <td data-label="Ảnh TL lõi" className="block md:table-cell px-2 py-2 before:content-[attr(data-label)]">
                     {row.coreWeightImageUrl ? (
                       <WeighingImageThumbnail
                         url={row.coreWeightImageUrl}
@@ -1444,7 +1444,7 @@ export default function WeighingReportForm({
                       <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                     )}
                   </td>
-                  <td className="px-2 py-2">
+                  <td data-label="Ảnh" className="block md:table-cell px-2 py-2 before:content-[attr(data-label)]">
                     {row.imageUrl ? (
                       <WeighingImageThumbnail
                         url={row.imageUrl}
@@ -1456,35 +1456,35 @@ export default function WeighingReportForm({
                       <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                     )}
                   </td>
-                  <td className="px-2 py-2">
-                    <div className="flex items-center justify-center gap-1">
+                  <td data-label="Thao tác" data-mobile="icon-only" className="block md:table-cell px-2 py-2 md:text-center before:content-[attr(data-label)]">
+                    <div className="flex items-center justify-end md:justify-center gap-1">
                       <button
                         type="button"
                         onClick={() => setViewingRow(row)}
                         title="Xem"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                        className="flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                       >
-                        <Eye className="h-3.5 w-3.5" />
+                        <Eye className="h-4 md:h-3.5 w-4 md:w-3.5" />
                       </button>
                       <button
                         type="button"
                         onClick={() => openEditRow(row)}
                         title="Sửa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                        className="flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteRow(row)}
                         disabled={deletingRowId === row.id}
                         title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {deletingRowId === row.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <Loader2 className="h-4 md:h-3.5 w-4 md:w-3.5 animate-spin" />
                         ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-4 md:h-3.5 w-4 md:w-3.5" />
                         )}
                       </button>
                     </div>

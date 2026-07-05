@@ -3340,7 +3340,7 @@ async function getReportsFromLocalFile(): Promise<ProductionReport[]> {
 async function startServer() {
   const app = createApp();
   const server = http.createServer(app);
-  const PORT = 3001;
+  const PORT = Number.parseInt(process.env.PORT || '3001', 10);
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');

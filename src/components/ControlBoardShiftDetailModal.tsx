@@ -301,7 +301,7 @@ export default function ControlBoardShiftDetailModal({
       <div className="relative flex max-h-[96vh] w-full max-w-[min(96vw,1100px)] flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600">{meta.source}</p>
+            <p className="text-[10px] font-black uppercase tracking-wider text-brand-600">{meta.source}</p>
             <h3 className="text-lg font-black text-zinc-950">Chi tiết {meta.label}</h3>
             <p className="mt-1 text-sm font-medium text-zinc-500">
               {ngay} · Ca {ca} · {detail.rows.length} dòng
@@ -376,7 +376,7 @@ export default function ControlBoardShiftDetailModal({
                       const isSelected = Boolean(selectionKey) && selectedKeys.has(selectionKey);
 
                       return (
-                        <tr key={selectionKey || index} className="hover:bg-indigo-50/40">
+                        <tr key={selectionKey || index} className="hover:bg-brand-50/40">
                           {showBulkSelect ? (
                             <td className="px-3 py-2 text-center">
                               <input

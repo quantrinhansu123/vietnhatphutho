@@ -54,7 +54,7 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
     <div className="space-y-6" id="materials-entry-section">
       <div className="border-b border-slate-100 pb-3">
         <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-          <Layers className="w-5 h-5 text-emerald-600" />
+          <Layers className="w-5 h-5 text-success-600" />
           Vật Tư & Phối Trộn
         </h3>
         <p className="text-xs text-slate-500 mt-0.5">Nhập lượng nguyên liệu nạp vào máy trực tiếp qua từng lần xúc (Mẻ / Batch)</p>
@@ -64,7 +64,7 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
       <div className="p-4 rounded-xl bg-slate-900 text-slate-100 space-y-3.5 shadow-md">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Tỷ Lệ Nhựa Phối Phân Trực Quan</span>
-          <span className="text-xs font-mono bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full">
+          <span className="text-xs font-mono bg-success-500/20 text-success-300 font-bold px-2 py-0.5 rounded-full">
             Tổng Plastic: {formatNumber(totalPlastic)} kg
           </span>
         </div>
@@ -75,7 +75,7 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
             <>
               <div 
                 id="bar-virgin-plastic"
-                className="bg-emerald-500 transition-all duration-300 flex items-center justify-center text-[10px] font-extrabold text-slate-950"
+                className="bg-success-500 transition-all duration-300 flex items-center justify-center text-[10px] font-extrabold text-slate-950"
                 style={{ width: `${virginPercent}%` }}
                 title={`Virgin: ${virginPercent.toFixed(1)}%`}
               >
@@ -83,7 +83,7 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
               </div>
               <div 
                 id="bar-recycled-plastic"
-                className="bg-amber-400 transition-all duration-300 flex items-center justify-center text-[10px] font-extrabold text-slate-950"
+                className="bg-warning-400 transition-all duration-300 flex items-center justify-center text-[10px] font-extrabold text-slate-950"
                 style={{ width: `${recycledPercent}%` }}
                 title={`Recycled: ${recycledPercent.toFixed(1)}%`}
               >
@@ -100,14 +100,14 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
         {/* Labels for proportion bar */}
         <div className="grid grid-cols-2 gap-2 text-xs font-semibold pt-1 border-t border-slate-800">
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-success-500 block" />
             <span className="text-slate-300">Nguyên sinh:</span>
-            <span className="font-mono text-[13px] text-emerald-400 ml-auto">{formatNumber(virginPercent)}%</span>
+            <span className="font-mono text-[13px] text-success-400 ml-auto">{formatNumber(virginPercent)}%</span>
           </div>
           <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-warning-400 block" />
             <span className="text-slate-300">Tái sinh/trộn:</span>
-            <span className="font-mono text-[13px] text-amber-300 ml-auto">{formatNumber(recycledPercent)}%</span>
+            <span className="font-mono text-[13px] text-warning-300 ml-auto">{formatNumber(recycledPercent)}%</span>
           </div>
         </div>
       </div>
@@ -155,7 +155,7 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
                       <input
                         type="number"
                         inputMode="decimal"
-                        className="w-full h-11 px-3 pr-10 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 text-slate-800 font-bold text-sm transition"
+                        className="w-full h-11 px-3 pr-10 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-success-500/10 focus:border-success-500 text-slate-800 font-bold text-sm transition"
                         placeholder="0.0"
                         value={batchVal || ''}
                         onChange={(e) => {
@@ -186,7 +186,7 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
               {/* Plus add run layout button */}
               <button
                 type="button"
-                className="w-full h-10 border border-dashed border-slate-200 hover:border-emerald-500 text-slate-500 hover:text-emerald-700 rounded-xl flex items-center justify-center gap-1.5 text-xs font-semibold hover:bg-emerald-50/20 transition-all"
+                className="w-full h-10 border border-dashed border-slate-200 hover:border-success-500 text-slate-500 hover:text-success-700 rounded-xl flex items-center justify-center gap-1.5 text-xs font-semibold hover:bg-success-50/20 transition-all"
                 onClick={() => handleAddBatch(key)}
                 style={{ minHeight: '44px' }}
               >

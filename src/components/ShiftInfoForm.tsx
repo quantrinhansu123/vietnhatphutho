@@ -12,7 +12,7 @@ export default function ShiftInfoForm({ data, onChange }: ShiftInfoFormProps) {
     <div className="space-y-6" id="shift-info-section">
       <div className="border-b border-slate-100 pb-3">
         <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-          <CalendarDays className="w-5 h-5 text-emerald-600" />
+          <CalendarDays className="w-5 h-5 text-success-600" />
           Thông tin Ca & Kíp Sản Xuất
         </h3>
         <p className="text-xs text-slate-500 mt-0.5">Vui lòng cung cấp chi tiết ca máy và nhân lực vận hành chính</p>
@@ -27,7 +27,7 @@ export default function ShiftInfoForm({ data, onChange }: ShiftInfoFormProps) {
         <div className="relative">
           <select
             id="machineId"
-            className="w-full h-12 px-3.5 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 text-sm font-medium transition cursor-pointer appearance-none"
+            className="w-full h-12 px-3.5 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-success-500/20 focus:border-success-500 text-slate-800 text-sm font-medium transition cursor-pointer appearance-none"
             value={data.machineId}
             onChange={(e) => onChange({ machineId: e.target.value })}
             style={{ minHeight: '44px' }}
@@ -63,14 +63,14 @@ export default function ShiftInfoForm({ data, onChange }: ShiftInfoFormProps) {
                 id={`shift-opt-${shift.replace(/\s+/g, '-')}`}
                 className={`flex text-left items-center p-3.5 rounded-xl border transition-all text-sm font-medium ${
                   isSelected
-                    ? 'border-emerald-500 bg-emerald-50/50 text-emerald-800 ring-1 ring-emerald-500'
+                    ? 'border-success-500 bg-success-50/50 text-success-800 ring-1 ring-success-500'
                     : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
                 }`}
                 style={{ minHeight: '44px' }}
                 onClick={() => onChange({ shiftName: shift })}
               >
                 <span className={`w-4 h-4 rounded-full border mr-3 flex items-center justify-center transition-all ${
-                  isSelected ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white'
+                  isSelected ? 'border-success-500 bg-success-500 text-white' : 'border-slate-300 bg-white'
                 }`}>
                   {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                 </span>
@@ -91,7 +91,7 @@ export default function ShiftInfoForm({ data, onChange }: ShiftInfoFormProps) {
           <input
             type="text"
             id="operatorName"
-            className="w-full h-12 px-3.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 text-sm font-medium transition placeholder:text-slate-400"
+            className="w-full h-12 px-3.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-success-500/20 focus:border-success-500 text-slate-800 text-sm font-medium transition placeholder:text-slate-400"
             placeholder="Nhập họ tên thợ chính"
             style={{ minHeight: '44px' }}
             value={data.operatorName}
@@ -107,7 +107,7 @@ export default function ShiftInfoForm({ data, onChange }: ShiftInfoFormProps) {
           <input
             type="text"
             id="assistantName"
-            className="w-full h-12 px-3.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 text-sm font-medium transition placeholder:text-slate-400"
+            className="w-full h-12 px-3.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-success-500/20 focus:border-success-500 text-slate-800 text-sm font-medium transition placeholder:text-slate-400"
             placeholder="Nhập họ tên thợ phụ"
             style={{ minHeight: '44px' }}
             value={data.assistantName}
