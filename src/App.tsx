@@ -7713,7 +7713,7 @@ function MachineNvlReportPanel({
 
             <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-200">
               <div
-                className={`grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white ${isDauCaTab ? 'min-w-[1120px]' : 'min-w-[980px]'}`}
+                className={`hidden md:grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white ${isDauCaTab ? 'md:min-w-[1120px]' : 'md:min-w-[980px]'}`}
               >
                 <span>STT</span>
                 <span>Mã NVL</span>
