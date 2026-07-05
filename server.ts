@@ -2921,6 +2921,30 @@ function makeProductionOrderCode(orderCode: string, suffix = '') {
   return `LSX-${base}${suffix}`.slice(0, 80);
 }
 
+function generateNextOrderCode(existingCodes: Iterable<string>) {
+  let max = 0;
+  for (const raw of existingCodes) {
+    const code = String(raw || '').trim().toUpperCase();
+    const match = code.match(/^DH(\d+)$/);
+    if (!match) continue;
+    const num = Number(match[1]);
+    if (Number.isFinite(num) && num > max) max = num;
+  }
+  const next = max + 1;
+  const width = Math.max(3, String(next).length);
+  return `DH${String(next).padStart(width, '0')}`;
+}
+
+async function generateNextOrderCodeFromDb() {
+  if (!supabase) return 'DH001';
+  const { data, error } = await supabase.from(SUPABASE_ORDERS_TABLE).select('ma_don_hang');
+  if (error) {
+    console.error('Supabase don_hang next code query error:', error);
+    return 'DH001';
+  }
+  return generateNextOrderCode((data || []).map(row => String((row as { ma_don_hang?: string }).ma_don_hang || '')));
+}
+
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -3340,7 +3364,7 @@ async function getReportsFromLocalFile(): Promise<ProductionReport[]> {
 async function startServer() {
   const app = createApp();
   const server = http.createServer(app);
-  const PORT = Number.parseInt(process.env.PORT || '3001', 10);
+  const PORT = 3001;
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -3876,7 +3900,12 @@ export function createApp() {
     }
 
     try {
-      const parsed = parseOrderBody(req.body, { isCreate: true });
+      const source = req.body && typeof req.body === 'object' ? { ...(req.body as Record<string, unknown>) } : {};
+      if (!String(source.orderCode ?? '').trim()) {
+        source.orderCode = await generateNextOrderCodeFromDb();
+      }
+
+      const parsed = parseOrderBody(source, { isCreate: true });
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
       }

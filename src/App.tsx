@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -61,12 +61,7 @@ import {
   type MachineNvlPrintReport
 } from './components/MachineNvlPrintSheet';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from './components/WarehouseSlipPrintModal';
-import {
-  RepeatableLineCard,
-  RepeatableLineRow,
-  RepeatableLinesBlock
-} from './components/RepeatableLinesBlock';
-import { LineEditorSheet } from './components/LineEditorSheet';
+import { RepeatableLineRow, RepeatableLinesBlock } from './components/RepeatableLinesBlock';
 import { AppTab, pathFromTab, tabFromPath } from './routes';
 import vietNhatLogoUrl from '../logovietnhat_1.png';
 import vietNhatLogoNewUrl from '../logo-new.png';
@@ -416,7 +411,7 @@ function bulkExcelRowsToProductMap(
 }
 
 const productFieldClass =
-  'h-11 w-full rounded-[var(--radius-input)] border border-ink-200 px-3 text-sm font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10';
+  'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 function BackButton({
   onClick,
@@ -429,8 +424,8 @@ function BackButton({
 }) {
   const styles =
     variant === 'dark'
-      ? 'border-white/15 text-white hover:border-brand-500 hover:bg-brand-500'
-      : 'border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300';
+      ? 'border-white/15 text-white hover:border-[#ef1b2d] hover:bg-[#ef1b2d]'
+      : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50';
 
   return (
     <button
@@ -985,7 +980,7 @@ function ProductViewModal({
             type="button"
             onClick={() => setTab('info')}
             className={`border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'info' ? 'border-brand-500 text-brand-500' : 'border-transparent text-ink-500 hover:text-ink-900'
+              tab === 'info' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
             }`}
           >
             Thông tin
@@ -994,12 +989,12 @@ function ProductViewModal({
             type="button"
             onClick={() => setTab('components')}
             className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'components' ? 'border-brand-500 text-brand-500' : 'border-transparent text-ink-500 hover:text-ink-900'
+              tab === 'components' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
             }`}
           >
             <FlaskConical className="h-4 w-4" />
             Thành phần
-            <span className="rounded-full bg-warning-50 px-2 py-0.5 text-[10px] text-warning-800">{items.length}</span>
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800">{items.length}</span>
           </button>
         </div>
 
@@ -1034,10 +1029,10 @@ function ProductViewModal({
                 </div>
               </section>
 
-              <section className="overflow-hidden rounded-xl border-2 border-success-200 bg-success-50/30">
-                <div className="border-b border-success-200 bg-success-50 px-3 py-2">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-success-800">Định mức sản phẩm</p>
-                  <p className="text-[10px] font-semibold text-success-700/80">
+              <section className="overflow-hidden rounded-xl border-2 border-emerald-200 bg-emerald-50/30">
+                <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Định mức sản phẩm</p>
+                  <p className="text-[10px] font-semibold text-emerald-700/80">
                     Mã AMIS · {productAmisDisplayCode(product)}
                     {product.unit && product.unit !== '-' ? ` · ${product.unit}` : ''}
                   </p>
@@ -1063,8 +1058,8 @@ function ProductViewModal({
                           {normSpecCells.map(cell => (
                             <td
                               key={cell.label}
-                              className={`border border-ink-200 px-2 py-2 font-bold whitespace-nowrap ${
-                                cell.highlight ? 'bg-brand-50 text-brand-700' : 'text-ink-900'
+                              className={`border border-zinc-200 px-2 py-2 font-bold whitespace-nowrap ${
+                                cell.highlight ? 'bg-emerald-50 text-emerald-800' : 'text-zinc-900'
                               }`}
                             >
                               {cell.value}
@@ -1086,7 +1081,7 @@ function ProductViewModal({
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {percentItemCount > 0 && (
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-black ${Math.abs(totalPercent - 100) < 0.01 ? 'bg-success-50 text-success-700' : 'bg-warning-50 text-warning-800'}`}>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-black ${Math.abs(totalPercent - 100) < 0.01 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
                       Tổng %: {formatPercent(totalPercent)}%
                     </span>
                   )}
@@ -1134,7 +1129,7 @@ function ProductViewModal({
                   className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
                     componentsExcelError
                       ? 'border-rose-200 bg-rose-50 text-rose-700'
-                      : 'border-success-200 bg-success-50 text-success-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   }`}
                 >
                   {componentsExcelError || componentsExcelMessage}
@@ -1170,7 +1165,7 @@ function ProductViewModal({
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="rounded-full bg-warning-50 px-2.5 py-1 text-xs font-black text-warning-800">
+                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
                             {item.amountType === 'percent'
                               ? formatPercent(item.percent ?? 0)
                               : formatNumber(item.quantity ?? 0, 2)}
@@ -2113,7 +2108,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
         )}
 
         {productActionMessage && (
-          <p className="mt-3 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-bold text-success-700 lg:mt-0">
+          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
             {productActionMessage}
           </p>
         )}
@@ -2194,7 +2189,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
             type="button"
             onClick={() => bulkComponentsFileInputRef.current?.click()}
             disabled={isLoadingProducts || isImportingBulkProductComponents}
-            className="flex h-11 items-center gap-1.5 rounded-xl border border-warning-200 bg-warning-50 px-4 text-xs font-black text-warning-800 transition hover:bg-warning-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-11 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-4 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isImportingBulkProductComponents ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             {isImportingBulkProductComponents ? 'Đang nhập...' : 'Tải Excel TP lên'}
@@ -2236,15 +2231,16 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1320px] table-fixed text-left text-sm">
+          <table className="w-full min-w-[1400px] table-fixed text-left text-sm">
             <colgroup>
               <col className="w-[56px]" />
               <col className="w-[155px]" />
               <col className="w-[110px]" />
-              <col className="w-[34%]" />
+              <col className="w-[30%]" />
               <col className="w-[155px]" />
               <col className="w-[100px]" />
-              <col className="w-[92px]" />
+              <col className="w-[72px]" />
+              <col className="w-[96px]" />
               <col className="w-[76px]" />
               <col className="w-[76px]" />
               <col className="w-[76px]" />
@@ -2269,6 +2265,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-4 py-4 font-black">Tính chất</th>
                 <th className="px-4 py-4 text-center font-black">Nhóm</th>
                 <th className="px-4 py-4 text-center font-black">Đơn vị</th>
+                <th className="px-3 py-4 text-center font-black">Tổng TL (kg)</th>
                 <th className="px-3 py-4 text-center font-black">Tồn đầu</th>
                 <th className="px-3 py-4 text-center font-black">Nhập</th>
                 <th className="px-3 py-4 text-center font-black">Xuất</th>
@@ -2315,6 +2312,9 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
                   </td>
                   <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.group}</td>
                   <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.unit}</td>
+                  <td className="px-3 py-3.5 text-center font-mono font-bold text-emerald-800">
+                    {formatProductSpecDisplay(product.totalWeight)}
+                  </td>
                   <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.openingStock}</td>
                   <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.inbound}</td>
                   <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.outbound}</td>
@@ -2354,7 +2354,7 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
 
               {!isLoadingProducts && filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={14} className="px-4 py-8 text-center font-bold text-zinc-500">
                     Không có sản phẩm phù hợp bộ lọc.
                   </td>
                 </tr>
@@ -3080,7 +3080,7 @@ function MachinesPanel({ onBack }: { onBack: () => void }) {
         )}
 
         {actionMessage && (
-          <p className="mt-3 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-bold text-success-700 lg:mt-0">
+          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
             {actionMessage}
           </p>
         )}
@@ -3591,7 +3591,7 @@ function BulkOpeningStockModal({
             <button
               type="button"
               onClick={handleDownloadTemplate}
-              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-success-200 bg-success-50 px-4 text-xs font-extrabold text-success-800 transition hover:bg-success-100"
+              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
             >
               <Download className="h-4 w-4" />
               Tải mẫu Excel
@@ -3630,7 +3630,7 @@ function BulkOpeningStockModal({
           {previewRows.length > 0 && (
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2 text-xs font-bold">
-                <span className="rounded-lg bg-success-50 px-2.5 py-1 text-success-800">
+                <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-800">
                   Ghi đè: {updateRows.length}
                 </span>
                 <span className="rounded-lg bg-sky-50 px-2.5 py-1 text-sky-800">
@@ -3682,7 +3682,7 @@ function BulkOpeningStockModal({
                           {row.material?.openingStock ?? '-'}
                         </td>
                         <td className="px-3 py-2 font-bold">
-                          {row.status === 'update' && <span className="text-success-700">Ghi đè</span>}
+                          {row.status === 'update' && <span className="text-emerald-700">Ghi đè</span>}
                           {row.status === 'create' && <span className="text-sky-700">Thêm mới</span>}
                           {row.status === 'skipped' && <span className="text-zinc-500">Bỏ qua</span>}
                           {row.status === 'invalid' && <span className="text-rose-700">Số không hợp lệ</span>}
@@ -3907,7 +3907,7 @@ function BulkMaterialTotalWeightModal({
             <button
               type="button"
               onClick={handleDownloadTemplate}
-              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-success-200 bg-success-50 px-4 text-xs font-extrabold text-success-800 transition hover:bg-success-100"
+              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
             >
               <Download className="h-4 w-4" />
               Tải mẫu Excel
@@ -3951,11 +3951,11 @@ function BulkMaterialTotalWeightModal({
           {previewRows.length > 0 && (
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2 text-xs font-bold">
-                <span className="rounded-lg bg-success-50 px-2.5 py-1 text-success-800">
+                <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-800">
                   Cập nhật: {updateRows.length}
                 </span>
                 {notFoundCount > 0 && (
-                  <span className="rounded-lg bg-warning-50 px-2.5 py-1 text-warning-800">
+                  <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-amber-800">
                     Không tìm thấy mã: {notFoundCount}
                   </span>
                 )}
@@ -3989,7 +3989,7 @@ function BulkMaterialTotalWeightModal({
                           row.status === 'update'
                             ? 'bg-white'
                             : row.status === 'not_found'
-                              ? 'bg-warning-50/60'
+                              ? 'bg-amber-50/60'
                               : row.status === 'skipped'
                                 ? 'bg-zinc-50'
                                 : 'bg-rose-50/60'
@@ -4001,8 +4001,8 @@ function BulkMaterialTotalWeightModal({
                           {row.material?.totalWeight ?? '-'}
                         </td>
                         <td className="px-3 py-2 font-bold">
-                          {row.status === 'update' && <span className="text-success-700">Cập nhật</span>}
-                          {row.status === 'not_found' && <span className="text-warning-700">Không tìm thấy</span>}
+                          {row.status === 'update' && <span className="text-emerald-700">Cập nhật</span>}
+                          {row.status === 'not_found' && <span className="text-amber-700">Không tìm thấy</span>}
                           {row.status === 'skipped' && <span className="text-zinc-500">Bỏ qua</span>}
                           {row.status === 'invalid' && <span className="text-rose-700">Số không hợp lệ</span>}
                         </td>
@@ -4167,7 +4167,7 @@ function MaterialViewModal({
             type="button"
             onClick={() => setTab('info')}
             className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'info' ? 'border-brand-500 text-brand-500' : 'border-transparent text-ink-500 hover:text-ink-900'
+              tab === 'info' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
             }`}
           >
             <Package className="h-4 w-4" />
@@ -4177,7 +4177,7 @@ function MaterialViewModal({
             type="button"
             onClick={() => setTab('nvl-info')}
             className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'nvl-info' ? 'border-brand-500 text-brand-500' : 'border-transparent text-ink-500 hover:text-ink-900'
+              tab === 'nvl-info' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
             }`}
           >
             <FlaskConical className="h-4 w-4" />
@@ -4187,7 +4187,7 @@ function MaterialViewModal({
             type="button"
             onClick={() => setTab('history')}
             className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'history' ? 'border-brand-500 text-brand-500' : 'border-transparent text-ink-500 hover:text-ink-900'
+              tab === 'history' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
             }`}
           >
             <History className="h-4 w-4" />
@@ -4222,8 +4222,8 @@ function MaterialViewModal({
                 <p className="py-8 text-center text-sm font-bold text-zinc-500">Đang tải lịch sử...</p>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="overflow-hidden rounded-xl border border-success-200">
-                    <div className="bg-success-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-success-800">
+                  <div className="overflow-hidden rounded-xl border border-emerald-200">
+                    <div className="bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-emerald-800">
                       Nhập kho ({inboundRows.length})
                     </div>
                     <div className="max-h-64 overflow-y-auto">
@@ -4240,7 +4240,7 @@ function MaterialViewModal({
                             <tr key={`${row.slipCode}-${row.slipDate}-${row.quantity}`}>
                               <td className="px-3 py-2 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
                               <td className="px-3 py-2 font-bold text-zinc-900">{row.slipCode || '-'}</td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-success-700">
+                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
                                 {formatNumber(row.quantity, 2)}
                               </td>
                             </tr>
@@ -4257,8 +4257,8 @@ function MaterialViewModal({
                     </div>
                   </div>
 
-                  <div className="overflow-hidden rounded-xl border border-warning-200">
-                    <div className="bg-warning-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-warning-800">
+                  <div className="overflow-hidden rounded-xl border border-amber-200">
+                    <div className="bg-amber-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-amber-800">
                       Xuất kho ({outboundRows.length})
                     </div>
                     <div className="max-h-64 overflow-y-auto">
@@ -4275,7 +4275,7 @@ function MaterialViewModal({
                             <tr key={`${row.slipCode}-${row.slipDate}-${row.quantity}`}>
                               <td className="px-3 py-2 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
                               <td className="px-3 py-2 font-bold text-zinc-900">{row.slipCode || '-'}</td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-warning-800">
+                              <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">
                                 {formatNumber(row.quantity, 2)}
                               </td>
                             </tr>
@@ -4594,7 +4594,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={handleDownloadOpeningStockTemplate}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-success-300/40 bg-success-500/15 px-3 text-xs font-extrabold text-success-100 transition hover:bg-success-500/25"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 text-xs font-extrabold text-emerald-100 transition hover:bg-emerald-500/25"
               >
                 <Download className="h-4 w-4" />
                 Tải mẫu Tồn đầu
@@ -4610,7 +4610,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={handleDownloadTotalWeightTemplate}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-success-300/40 bg-success-500/15 px-3 text-xs font-extrabold text-success-100 transition hover:bg-success-500/25"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 text-xs font-extrabold text-emerald-100 transition hover:bg-emerald-500/25"
               >
                 <Download className="h-4 w-4" />
                 Tải mẫu Excel
@@ -4627,7 +4627,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 type="button"
                 onClick={handleFillKgTotalWeight25}
                 disabled={isFillingKgTotalWeight || isLoadingMaterials || materials.length === 0}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-warning-300/40 bg-warning-500/15 px-3 text-xs font-extrabold text-warning-100 transition hover:bg-warning-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-300/40 bg-amber-500/15 px-3 text-xs font-extrabold text-amber-100 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isFillingKgTotalWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
                 Điền 25 kg (Kg)
@@ -4700,7 +4700,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         )}
 
         {actionMessage && (
-          <p className="mt-3 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-bold text-success-700 lg:mt-0">
+          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
             {actionMessage}
           </p>
         )}
@@ -5413,36 +5413,7 @@ function WarehouseSlipPanel({
   const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
 
   const handlePrintPreview = () => {
-    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind, {
-      allowMissingUnitPrice: warehouseKind === 'nvl' && slipType === 'xuat'
-    });
-    if ('error' in parsed) {
-      setFormError(parsed.error);
-      setActionMessage('');
-      return;
-    }
-
-    setFormError('');
-    setActionMessage('');
-    setPrintSlip(
-      buildWarehouseSlipPrintData(parsed.items, {
-        slipCode: generateWarehouseSlipPreviewCode(slipType),
-        slipType,
-        warehouseKind,
-        slipDate,
-        reason: reason.trim(),
-        note: note.trim(),
-        createdBy: createdBy.trim(),
-        productionOrderRef: productionOrderRef.trim(),
-        machine: machine.trim(),
-        shift: shiftLabel,
-        recipient: recipient.trim(),
-        deliverer: deliverer.trim(),
-        warehouseLocation: warehouseLocation.trim()
-      })
-    );
-    setPrintAutoTrigger(false);
-    setPrintModalOpen(true);
+    void handleSave();
   };
 
   const handleSave = async () => {
@@ -5509,8 +5480,8 @@ function WarehouseSlipPanel({
       setPrintModalOpen(true);
       setActionMessage(
         isEditing
-          ? `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}).`.trim()
-          : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}).`.trim()
+          ? `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}). Xem tại Lịch sử xuất nhập kho.`
+          : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}) vào lịch sử.`
       );
       setEditSlipCode(null);
       setReason('');
@@ -5552,9 +5523,9 @@ function WarehouseSlipPanel({
       </section>
 
       {editSlipCode ? (
-        <section className="rounded-2xl border-2 border-warning-300 bg-warning-50 p-4 shadow-sm">
-          <p className="text-xs font-black uppercase tracking-wider text-warning-800">Chế độ sửa phiếu</p>
-          <p className="mt-1 text-sm font-bold text-warning-950">
+        <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-wider text-amber-800">Chế độ sửa phiếu</p>
+          <p className="mt-1 text-sm font-bold text-amber-950">
             Mã phiếu: <span className="font-black">{editSlipCode}</span> — thay đổi sẽ ghi đè toàn bộ dòng của phiếu này.
           </p>
         </section>
@@ -5566,7 +5537,17 @@ function WarehouseSlipPanel({
             <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{formError}</p>
           )}
           {actionMessage && (
-            <p className="mt-2 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-bold text-success-700">{actionMessage}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <p className="text-xs font-bold text-emerald-700">{actionMessage}</p>
+              <button
+                type="button"
+                onClick={onOpenHistory}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-300 bg-white px-3 text-[11px] font-black text-emerald-800 transition hover:bg-emerald-100"
+              >
+                <History className="h-3.5 w-3.5" />
+                Xem lịch sử
+              </button>
+            </div>
           )}
         </section>
       )}
@@ -5888,13 +5869,17 @@ function WarehouseSlipPanel({
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <p className="mr-auto text-[11px] font-semibold text-zinc-500">
+            Phiếu chỉ xuất hiện trong lịch sử sau khi bấm <strong>Lưu &amp; in</strong> hoặc <strong>In phiếu</strong>.
+          </p>
           <button
             type="button"
             onClick={handlePrintPreview}
-            className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400"
+            disabled={isSaving}
+            className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Printer className="h-4 w-4" />
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
             In phiếu
           </button>
           <button
@@ -6200,7 +6185,7 @@ function WarehouseHistoryPanel({
               type="button"
               onClick={() => setWarehouseTab(tab)}
               className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-                warehouseTab === tab ? 'border-brand-500 text-brand-500' : 'border-transparent text-ink-500 hover:text-ink-900'
+                warehouseTab === tab ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -6338,8 +6323,8 @@ function WarehouseHistoryPanel({
                         <span
                           className={`rounded-full px-2.5 py-1 text-xs font-black ${
                             header.slipType === 'nhap'
-                              ? 'bg-success-50 text-success-700'
-                              : 'bg-warning-50 text-warning-800'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-50 text-amber-800'
                           }`}
                         >
                           {warehouseSlipTypeLabel(header.slipType)}
@@ -6362,7 +6347,7 @@ function WarehouseHistoryPanel({
                             type="button"
                             onClick={() => handleEditSlip(group.slipCode)}
                             title="Sửa phiếu"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-warning-700 transition hover:bg-warning-50"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-amber-700 transition hover:bg-amber-50"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
@@ -6460,7 +6445,7 @@ function WarehouseHistoryPanel({
                   <button
                     type="button"
                     onClick={() => handleEditSlip(viewingSlipCode!)}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-warning-200 bg-warning-50 px-3 text-xs font-extrabold text-warning-800 transition hover:bg-warning-100"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
                   >
                     <Pencil className="h-4 w-4" />
                     Sửa phiếu
@@ -6792,7 +6777,10 @@ function SearchableSelect({
   maxResults = 50,
   allowEmpty = true,
   onSelectOption,
-  resolveSelectedItem
+  resolveSelectedItem,
+  getOptionLabel,
+  getSearchText,
+  displaySelectedAsValue = false
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -6807,6 +6795,9 @@ function SearchableSelect({
   allowEmpty?: boolean;
   onSelectOption?: (item: unknown | null) => void;
   resolveSelectedItem?: (options: unknown[], value: string) => unknown | null;
+  getOptionLabel?: (item: unknown) => string;
+  getSearchText?: (item: unknown) => string;
+  displaySelectedAsValue?: boolean;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -6817,7 +6808,11 @@ function SearchableSelect({
     }
     return options.find(item => getValue(item) === value) ?? null;
   }, [options, value, getValue, resolveSelectedItem]);
-  const selectedLabel = selectedItem ? getLabel(selectedItem) : value;
+  const selectedLabel = selectedItem
+    ? displaySelectedAsValue
+      ? getValue(selectedItem)
+      : getLabel(selectedItem)
+    : value;
 
   const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
@@ -6832,13 +6827,13 @@ function SearchableSelect({
     const normalized = query.trim().toLowerCase();
     const list = normalized
       ? options.filter(item => {
-          const label = getLabel(item).toLowerCase();
+          const label = (getSearchText ?? getLabel)(item).toLowerCase();
           const optionValue = getValue(item).toLowerCase();
           return label.includes(normalized) || optionValue.includes(normalized);
         })
       : options;
     return list.slice(0, maxResults);
-  }, [options, query, getLabel, getValue, maxResults]);
+  }, [options, query, getLabel, getSearchText, getValue, maxResults]);
 
   const commitValue = (nextValue: string, item: unknown | null = null) => {
     const trimmed = nextValue.trim();
@@ -6940,7 +6935,7 @@ function SearchableSelect({
           )}
           {filteredOptions.map((item, index) => {
             const optionValue = getValue(item);
-            const optionLabel = getLabel(item);
+            const optionLabel = (getOptionLabel ?? getLabel)(item);
             return (
               <button
                 key={`${optionValue}-${index}`}
@@ -6973,7 +6968,7 @@ function SearchableSelect({
   };
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0 w-full">
       <input
         ref={inputRef}
         value={query}
@@ -7157,6 +7152,17 @@ function formatMachineNvlQuantityValue(value: number | null | undefined) {
   return String(value);
 }
 
+const MACHINE_NVL_DAU_CA_GRID =
+  'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_96px_96px_96px_104px_96px_minmax(96px,1fr)_40px]';
+const MACHINE_NVL_CUOI_CA_GRID =
+  'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_112px_112px_minmax(96px,1fr)_40px]';
+
+function findMaterialByCode(materials: MaterialRow[], code: string) {
+  const normalized = code.trim();
+  if (!normalized) return null;
+  return materials.find(material => material.code === normalized) ?? null;
+}
+
 function savedMachineNvlLineToFormLine(line: MachineNvlSavedLine): MachineNvlReportLine {
   return {
     key: `${Date.now()}-${line.stt}-${Math.random().toString(36).slice(2)}`,
@@ -7201,9 +7207,6 @@ function MachineNvlReportPanel({
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [printReport, setPrintReport] = useState<MachineNvlPrintReport | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
-  const [lineSheetOpen, setLineSheetOpen] = useState(false);
-  const [lineSheetEditingIndex, setLineSheetEditingIndex] = useState<number | null>(null);
-  const [draftLine, setDraftLine] = useState<MachineNvlReportLine | null>(null);
 
   const loadReports = async (kind: MachineNvlReportKind = activeKind) => {
     const res = await fetch(`/api/bao-cao-may-nvl-ton?limit=50&loai_bao_cao=${encodeURIComponent(kind)}`);
@@ -7364,6 +7367,26 @@ function MachineNvlReportPanel({
     );
   }, [isDauCaTab, previousShiftQtyMap]);
 
+  useEffect(() => {
+    if (materials.length === 0) return;
+    setLines(prev => {
+      let changed = false;
+      const next = prev.map(line => {
+        const code = line.code.trim();
+        if (!code || line.name.trim()) return line;
+        const material = findMaterialByCode(materials, code);
+        if (!material) return line;
+        changed = true;
+        return {
+          ...line,
+          name: material.name,
+          unit: material.unit === '-' ? 'kg' : material.unit
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [materials]);
+
   const totalQuantity = lines.reduce((sum, line) => {
     const value = isDauCaTab
       ? (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
@@ -7377,142 +7400,11 @@ function MachineNvlReportPanel({
     setLines(prev => prev.map(line => (line.key === key ? { ...line, ...updates } : line)));
   };
 
-  const removeLineAtIndex = (index: number) => {
-    setLines(prev => {
-      if (prev.length <= 1) return prev;
-      return prev.filter((_, i) => i !== index);
-    });
-  };
-
-  const openNewLineSheet = () => {
-    setLineSheetEditingIndex(null);
-    setDraftLine(emptyMachineNvlLine());
-    setLineSheetOpen(true);
-  };
-
-  const openEditLineSheet = (index: number) => {
-    const source = lines[index];
-    if (!source) return;
-    setLineSheetEditingIndex(index);
-    setDraftLine({ ...source });
-    setLineSheetOpen(true);
-  };
-
-  const closeLineSheet = () => {
-    setLineSheetOpen(false);
-    setDraftLine(null);
-    setLineSheetEditingIndex(null);
-  };
-
-  const updateDraftLine = (patch: Partial<MachineNvlReportLine>) => {
-    setDraftLine(prev => (prev ? { ...prev, ...patch } : prev));
-  };
-
-  const persistDraftLine = () => {
-    if (!draftLine) {
-      closeLineSheet();
-      return;
-    }
-    const clean: MachineNvlReportLine = { ...draftLine };
-    if (lineSheetEditingIndex === null) {
-      setLines(prev => [...prev, clean]);
-    } else {
-      setLines(prev =>
-        prev.map((line, i) => (i === lineSheetEditingIndex ? { ...clean, key: line.key } : line))
-      );
-    }
-    closeLineSheet();
-  };
-
-  const removeDraftLineFromSheet = () => {
-    if (lineSheetEditingIndex === null) {
-      closeLineSheet();
-      return;
-    }
-    const idx = lineSheetEditingIndex;
-    closeLineSheet();
-    removeLineAtIndex(idx);
-  };
-
-  const draftDauCaTotal = (() => {
-    if (!draftLine) return 0;
-    return (
-      (Number(draftLine.inMachineQuantity.replace(',', '.')) || 0) +
-      (Number(draftLine.inMixerQuantity.replace(',', '.')) || 0) +
-      (Number(draftLine.unblendedQuantity.replace(',', '.')) || 0)
-    );
-  })();
-
-  const draftPrevious = useMemo(() => {
-    if (!draftLine) return null;
-    const codeKey = normalizeProductCodeKey(draftLine.code);
-    if (!codeKey) return null;
-    return previousShiftQtyMap.get(codeKey) ?? null;
-  }, [draftLine, previousShiftQtyMap]);
-
-  const handleDraftMaterialSelect = (material: MaterialRow | null) => {
-    if (!material) return;
-    const codeKey = normalizeProductCodeKey(material.code);
-    const prevQty = isDauCaTab && codeKey ? previousShiftQtyMap.get(codeKey) : undefined;
-    updateDraftLine({
-      code: material.code,
-      name: material.name,
-      unit: material.unit === '-' ? 'kg' : material.unit,
-      previousQuantity:
-        isDauCaTab && prevQty !== undefined ? formatMachineNvlQuantityValue(prevQty) : ''
-    });
-  };
-
-  const describeNvlLine = (line: MachineNvlReportLine, index: number): React.ReactNode => {
-    const code = line.code.trim() || 'NVL chưa chọn';
-    const name = line.name.trim();
-    const unit = line.unit.trim() || 'kg';
-    const qty = isDauCaTab
-      ? (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-        (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-        (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-      : Number((line.quantity || '').replace(',', '.')) || 0;
-    const stockLabel =
-      Number.isFinite(qty) && qty > 0
-        ? `${formatNumber(qty)} ${unit}`
-        : '—';
-    return (
-      <div className="space-y-0.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-xs font-black text-ink-800">{code}</span>
-          {name && (
-            <>
-              <span className="text-[11px] font-bold text-ink-500">·</span>
-              <span className="truncate text-[11px] font-semibold text-ink-600">{name}</span>
-            </>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0 text-[11px] font-semibold text-ink-500">
-          <span>
-            Tồn đầu:{' '}
-            {line.previousQuantity.trim()
-              ? `${line.previousQuantity.trim()} ${unit}`
-              : '—'}
-          </span>
-          <span>·</span>
-          <span>Thực tế: {stockLabel}</span>
-          {line.note.trim() && (
-            <>
-              <span>·</span>
-              <span className="truncate">{line.note.trim()}</span>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const isDraftValid = Boolean(
-    draftLine && draftLine.code.trim() && (draftLine.name.trim() || draftLine.unit.trim())
-  );
-
   const selectMaterial = (key: string, material: MaterialRow | null) => {
-    if (!material) return;
+    if (!material) {
+      updateLine(key, { code: '', name: '', unit: '' });
+      return;
+    }
     const codeKey = normalizeProductCodeKey(material.code);
     const prevQty = isDauCaTab && codeKey ? previousShiftQtyMap.get(codeKey) : undefined;
     updateLine(key, {
@@ -7717,9 +7609,9 @@ function MachineNvlReportPanel({
               <p className="text-sm font-semibold text-zinc-500">{activeTabMeta.hint}</p>
             </div>
           </div>
-          <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-2 text-right">
-            <p className="text-[10px] font-black uppercase tracking-wider text-success-700">Tổng tồn</p>
-            <p className="text-lg font-black text-success-900">{formatNumber(totalQuantity)} kg</p>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-right">
+            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Tổng tồn</p>
+            <p className="text-lg font-black text-emerald-900">{formatNumber(totalQuantity)} kg</p>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -7818,13 +7710,9 @@ function MachineNvlReportPanel({
               </label>
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200">
+            <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-200">
               <div
-                className={`grid ${
-                  isDauCaTab
-                    ? 'grid-cols-[52px_1fr_1.2fr_70px_110px_110px_110px_120px_1fr_48px]'
-                    : 'grid-cols-[52px_1.1fr_1.3fr_70px_130px_130px_1fr_48px]'
-                } bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white`}
+                className={`grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white ${isDauCaTab ? 'min-w-[1120px]' : 'min-w-[980px]'}`}
               >
                 <span>STT</span>
                 <span>Mã NVL</span>
@@ -7854,125 +7742,116 @@ function MachineNvlReportPanel({
               ) : null}
               <div className="divide-y divide-zinc-100">
                 {lines.map((line, index) => (
-                  <div key={line.key} className="contents">
-                    <div
-                      className={`hidden md:grid ${
-                        isDauCaTab
-                          ? 'grid-cols-[52px_1fr_1.2fr_70px_110px_110px_110px_120px_1fr_48px]'
-                          : 'grid-cols-[52px_1.1fr_1.3fr_70px_130px_130px_1fr_48px]'
-                      } items-center gap-2 px-3 py-2`}
-                    >
-                      <span className="font-mono text-sm font-black text-[#ef1b2d]">{index + 1}</span>
-                      <SearchableSelect
-                        value={line.code}
-                        onChange={value => updateLine(line.key, { code: value })}
-                        options={materials}
-                        placeholder="Mã NVL"
-                        isLoading={isLoading}
-                        inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-bold outline-none focus:border-[#ef1b2d]"
-                        getLabel={item => `${(item as MaterialRow).code} - ${(item as MaterialRow).name}`}
-                        getValue={item => (item as MaterialRow).code}
-                        onSelectOption={item => selectMaterial(line.key, item as MaterialRow | null)}
-                      />
-                      <input value={line.name} onChange={event => updateLine(line.key, { name: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
-                      <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
-                      {isDauCaTab ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.inMachineQuantity}
-                          onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })}
-                          className="h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
-                        />
-                      ) : null}
-                      {isDauCaTab ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.inMixerQuantity}
-                          onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })}
-                          className="h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
-                        />
-                      ) : null}
-                      {isDauCaTab ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.unblendedQuantity}
-                          onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })}
-                          className="h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
-                        />
-                      ) : null}
-                      {isDauCaTab ? (
-                        <input
-                          value={formatMachineNvlQuantityValue(
-                            (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                              (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                              (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                          )}
-                          readOnly
-                          className="h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-sm font-black text-zinc-600 outline-none"
-                        />
-                      ) : null}
-                      {!isDauCaTab ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.standardQuantity}
-                          onChange={event => updateLine(line.key, { standardQuantity: event.target.value })}
-                          className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]"
-                        />
-                      ) : null}
+                  <div
+                    key={line.key}
+                    className={`grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} items-center px-3 py-2 ${isDauCaTab ? 'min-w-[1120px]' : 'min-w-[980px]'}`}
+                  >
+                    <span className="min-w-0 font-mono text-sm font-black text-[#ef1b2d]">{index + 1}</span>
+                    <div className="min-w-0">
+                    <SearchableSelect
+                      value={line.code}
+                      onChange={value => {
+                        const material = findMaterialByCode(materials, value);
+                        if (material) {
+                          selectMaterial(line.key, material);
+                          return;
+                        }
+                        updateLine(line.key, { code: value, name: '', unit: '' });
+                      }}
+                      options={materials}
+                      placeholder="Mã NVL"
+                      isLoading={isLoading}
+                      displaySelectedAsValue
+                      inputClassName="h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-bold outline-none focus:border-[#ef1b2d]"
+                      getLabel={item => (item as MaterialRow).code}
+                      getSearchText={item => {
+                        const material = item as MaterialRow;
+                        return `${material.code} ${material.name}`;
+                      }}
+                      getOptionLabel={item => {
+                        const material = item as MaterialRow;
+                        return `${material.code} — ${material.name}`;
+                      }}
+                      getValue={item => (item as MaterialRow).code}
+                      onSelectOption={item => selectMaterial(line.key, item as MaterialRow | null)}
+                    />
+                    </div>
+                    <input value={line.name} readOnly className="min-w-0 h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-semibold text-zinc-700 outline-none" />
+                    <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className="min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                    {isDauCaTab ? (
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        value={
-                          isDauCaTab
-                            ? formatMachineNvlQuantityValue(
-                                (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                                  (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                                  (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                              )
-                            : line.quantity
-                        }
-                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                        readOnly={isDauCaTab}
-                        className={`h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none ${
-                          isDauCaTab ? 'bg-zinc-50 text-zinc-600' : 'focus:border-[#ef1b2d]'
-                        }`}
+                        value={line.inMachineQuantity}
+                        onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })}
+                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
                       />
-                      <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
-                      <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="md:hidden">
-                      <div className="flex items-stretch gap-2 py-2">
-                        <button
-                          type="button"
-                          onClick={() => openEditLineSheet(index)}
-                          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-left transition active:scale-[0.98] hover:border-brand-300 hover:bg-brand-50"
-                        >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-xs font-black text-white">
-                            {index + 1}
-                          </span>
-                          <span className="min-w-0 flex-1">{describeNvlLine(line, index)}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeLineAtIndex(index)}
-                          className="flex h-auto w-11 shrink-0 items-center justify-center rounded-xl border border-ink-200 text-ink-500 transition hover:border-danger-300 hover:bg-danger-50 hover:text-danger-700"
-                          aria-label="Xoá dòng"
-                        >
-                          <span className="text-sm font-black">×</span>
-                        </button>
-                      </div>
-                    </div>
+                    ) : null}
+                    {isDauCaTab ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.inMixerQuantity}
+                        onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })}
+                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                      />
+                    ) : null}
+                    {isDauCaTab ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unblendedQuantity}
+                        onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })}
+                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                      />
+                    ) : null}
+                    {isDauCaTab ? (
+                      <input
+                        value={formatMachineNvlQuantityValue(
+                          (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                            (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                            (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                        )}
+                        readOnly
+                        className="min-w-0 h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-sm font-black text-zinc-600 outline-none"
+                      />
+                    ) : null}
+                    {!isDauCaTab ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.standardQuantity}
+                        onChange={event => updateLine(line.key, { standardQuantity: event.target.value })}
+                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                      />
+                    ) : null}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={
+                        isDauCaTab
+                          ? formatMachineNvlQuantityValue(
+                              (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                                (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                                (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                            )
+                          : line.quantity
+                      }
+                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                      readOnly={isDauCaTab}
+                      className={`min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none ${
+                        isDauCaTab ? 'bg-zinc-50 text-zinc-600' : 'focus:border-[#ef1b2d]'
+                      }`}
+                    />
+                    <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                    <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -7985,7 +7864,7 @@ function MachineNvlReportPanel({
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <button type="button" onClick={openNewLineSheet} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-black text-zinc-800 hover:border-[#ef1b2d] hover:text-[#ef1b2d]">
+              <button type="button" onClick={() => setLines(prev => [...prev, emptyMachineNvlLine()])} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-black text-zinc-800 hover:border-[#ef1b2d] hover:text-[#ef1b2d]">
                 <Plus className="h-4 w-4" />
                 Thêm dòng NVL
               </button>
@@ -8023,7 +7902,7 @@ function MachineNvlReportPanel({
                 <h2 className="text-lg font-black text-zinc-900">Lịch sử {activeTabMeta.label.toLowerCase()}</h2>
                 <p className="text-xs font-semibold text-zinc-500">Các phiếu đã lưu gần nhất.</p>
               </div>
-              <Boxes className="h-5 w-5 text-success-700" />
+              <Boxes className="h-5 w-5 text-emerald-700" />
             </div>
             <div className="space-y-2">
               {reports.map(report => (
@@ -8060,7 +7939,7 @@ function MachineNvlReportPanel({
                       </button>
                     </div>
                   </div>
-                  <p className="mt-2 text-sm font-black text-success-800">{formatNumber(report.total)} kg</p>
+                  <p className="mt-2 text-sm font-black text-emerald-800">{formatNumber(report.total)} kg</p>
                   <div className="mt-2 max-h-28 overflow-y-auto rounded-lg bg-zinc-50 p-2 text-xs font-semibold text-zinc-600">
                     {report.lines.slice(0, 6).map(line => (
                       <div key={`${report.id}-${line.stt}`} className="flex justify-between gap-2">
@@ -8097,173 +7976,6 @@ function MachineNvlReportPanel({
         </div>
         {printReport && <MachineNvlPrintBatch reports={[printReport]} />}
       </div>
-
-      <LineEditorSheet
-        open={lineSheetOpen}
-        onClose={closeLineSheet}
-        title={lineSheetEditingIndex === null ? 'Thêm dòng NVL' : `Sửa NVL dòng ${lineSheetEditingIndex + 1}`}
-        subtitle={isDauCaTab ? 'Tồn cuối ca gần nhất sẽ tự điền khi chọn mã NVL.' : 'Nhập định mức và thực tế tồn đến thời điểm báo cáo.'}
-        primaryLabel={lineSheetEditingIndex === null ? 'Thêm dòng' : 'Cập nhật'}
-        primaryDisabled={!isDraftValid}
-        onPrimary={persistDraftLine}
-        primaryIcon={<Plus className="h-4 w-4" />}
-      >
-        {draftLine && (
-          <>
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-ink-500">
-                Mã NVL *
-              </label>
-              <div className="mt-1.5">
-                <SearchableSelect
-                  value={draftLine.code}
-                  onChange={value => updateDraftLine({ code: value })}
-                  options={materials}
-                  placeholder="Mã NVL"
-                  isLoading={isLoading}
-                  inputClassName="h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-base font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                  getLabel={item => `${(item as MaterialRow).code} - ${(item as MaterialRow).name}`}
-                  getValue={item => (item as MaterialRow).code}
-                  onSelectOption={item => handleDraftMaterialSelect(item as MaterialRow | null)}
-                />
-              </div>
-              {isDauCaTab && draftPrevious !== null && draftPrevious !== undefined ? (
-                <p className="mt-1 text-[11px] font-semibold text-ink-500">
-                  Tồn cuối ca trước: {formatMachineNvlQuantityValue(draftPrevious)} {draftLine.unit.trim() || 'kg'}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.5fr_0.6fr]">
-              <div>
-                <label className="block text-xs font-black uppercase tracking-wider text-ink-500">Tên NVL</label>
-                <input
-                  value={draftLine.name}
-                  onChange={event => updateDraftLine({ name: event.target.value })}
-                  className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-base font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                  placeholder="Tên NVL"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-black uppercase tracking-wider text-ink-500">Đơn vị</label>
-                <input
-                  value={draftLine.unit}
-                  onChange={event => updateDraftLine({ unit: event.target.value })}
-                  className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-base font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                  placeholder="kg"
-                />
-              </div>
-            </div>
-
-            {isDauCaTab ? (
-              <div className="rounded-xl border border-ink-200 bg-ink-50 p-3">
-                <p className="mb-2 text-xs font-black uppercase tracking-wider text-ink-500">
-                  Số lượng tồn đầu ca
-                </p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wide text-ink-500">Tồn trong máy</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={draftLine.inMachineQuantity}
-                      onChange={event => updateDraftLine({ inMachineQuantity: event.target.value })}
-                      className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-right text-base font-black text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wide text-ink-500">Tồn trong bồn trộn</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={draftLine.inMixerQuantity}
-                      onChange={event => updateDraftLine({ inMixerQuantity: event.target.value })}
-                      className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-right text-base font-black text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wide text-ink-500">NL chưa trộn</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={draftLine.unblendedQuantity}
-                      onChange={event => updateDraftLine({ unblendedQuantity: event.target.value })}
-                      className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-right text-base font-black text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs font-bold text-ink-700">
-                  <span>Tổng tồn đầu ca (tự tính)</span>
-                  <span className="font-mono text-base font-black text-ink-900">
-                    {formatNumber(draftDauCaTotal, 2)} {draftLine.unit.trim() || 'kg'}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-ink-500">SL tồn định mức</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={draftLine.standardQuantity}
-                    onChange={event => updateDraftLine({ standardQuantity: event.target.value })}
-                    className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-right text-base font-black text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-ink-500">SL tồn thực tế</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={draftLine.quantity}
-                    onChange={event => updateDraftLine({ quantity: event.target.value })}
-                    className="mt-1 h-12 w-full rounded-lg border border-ink-200 bg-white px-3 text-right text-base font-black text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-            )}
-
-            {!isDauCaTab ? (
-              <p className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] font-bold text-brand-700">
-                Ở tab "Cuối ca", cột "Tổng tồn đầu ca" sẽ tự động lấy từ cuối ca trước đó khi lưu.
-              </p>
-            ) : null}
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-ink-500">Ghi chú</label>
-              <textarea
-                rows={3}
-                value={draftLine.note}
-                onChange={event => updateDraftLine({ note: event.target.value })}
-                className="mt-1 w-full min-h-[88px] rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15"
-                placeholder="Ghi chú cho dòng NVL (tuỳ chọn)"
-              />
-            </div>
-
-            {lineSheetEditingIndex !== null && (
-              <button
-                type="button"
-                onClick={removeDraftLineFromSheet}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-danger-300 bg-danger-50 px-4 py-2.5 text-xs font-black text-danger-700 transition hover:bg-danger-100"
-              >
-                <Trash2 className="h-4 w-4" />
-                Xoá dòng này
-              </button>
-            )}
-          </>
-        )}
-      </LineEditorSheet>
     </div>
   );
 }
@@ -8307,7 +8019,7 @@ function SearchableProductCodeField({
   };
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0 w-full">
       <input
         value={query}
         onChange={event => {
@@ -9230,9 +8942,9 @@ function ProductionPlanMaterialAccountingModal({
               <p className="text-[10px] font-black uppercase tracking-wider text-sky-700">Số ca</p>
               <p className="mt-1 text-xl font-black text-sky-800">{accountingShiftGroups.length}</p>
             </div>
-            <div className="rounded-xl border border-success-200 bg-success-50 px-3 py-2">
-              <p className="text-[10px] font-black uppercase tracking-wider text-success-700">Mã NVL</p>
-              <p className="mt-1 text-xl font-black text-success-800">{totalMaterialCount}</p>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Mã NVL</p>
+              <p className="mt-1 text-xl font-black text-emerald-800">{totalMaterialCount}</p>
             </div>
           </div>
 
@@ -9310,7 +9022,7 @@ function ProductionPlanMaterialAccountingModal({
 
                               return (
                               <tr key={`${group.shift}-${material.code}-${material.unit}`} className="leading-tight">
-                                <td className="px-2 py-1.5 text-center font-black text-success-700">{index + 1}</td>
+                                <td className="px-2 py-1.5 text-center font-black text-emerald-700">{index + 1}</td>
                                 <td className="truncate px-2 py-1.5 font-mono text-[11px] font-bold text-zinc-900" title={material.code}>
                                   {material.code}
                                 </td>
@@ -9334,7 +9046,7 @@ function ProductionPlanMaterialAccountingModal({
                                         ? `Tổng định mức ÷ ${formatNumber(totalKg, 2)} kg`
                                         : 'Chưa tìm thấy Tổng kg trong Kho NVL'
                                     }
-                                    className="h-7 w-full min-w-0 rounded-md border border-success-200 bg-success-50 px-2 text-center text-[11px] font-black text-success-900 outline-none transition focus:border-success-400 focus:ring-2 focus:ring-success-100"
+                                    className="h-7 w-full min-w-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-center text-[11px] font-black text-emerald-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                                     placeholder={totalKg ? 'Kiện' : '-'}
                                   />
                                 </td>
@@ -9661,7 +9373,7 @@ function ProductionPlanQrPrintModal({
               <select
                 value={selectedShift}
                 onChange={event => setSelectedShift(event.target.value)}
-                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
               >
                 <option value="">-- Chọn ca --</option>
                 {shiftOptions.map(shift => (
@@ -9683,7 +9395,7 @@ function ProductionPlanQrPrintModal({
               </p>
             ) : selectedShift ? (
               <div className="space-y-3">
-                <p className="text-sm font-black text-success-800">
+                <p className="text-sm font-black text-emerald-800">
                   Sẽ in <span className="text-[#ef1b2d]">{totalQrCount}</span> tem QR
                 </p>
                 <div className="overflow-x-auto rounded-xl border border-zinc-200">
@@ -9704,7 +9416,7 @@ function ProductionPlanQrPrintModal({
                           <td className="px-3 py-2 text-zinc-700">{group.displayName}</td>
                           <td className="px-3 py-2 font-semibold text-zinc-800">{group.orderCode}</td>
                           <td className="px-3 py-2 font-mono text-xs text-zinc-600">{group.qrPayload}</td>
-                          <td className="px-3 py-2 text-right font-black text-success-700">{group.quantity}</td>
+                          <td className="px-3 py-2 text-right font-black text-emerald-700">{group.quantity}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -10082,7 +9794,7 @@ function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                         type="button"
                         onClick={() => void loadPlanDetail(plan.id)}
                         className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition hover:bg-red-50/50 ${
-                          selectedPlanId === plan.id ? 'bg-success-50' : ''
+                          selectedPlanId === plan.id ? 'bg-emerald-50' : ''
                         }`}
                       >
                         <div className="min-w-0">
@@ -10140,7 +9852,7 @@ function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                 <tbody className="divide-y divide-zinc-100">
                   {selectedLines.map(line => (
                     <tr key={line.id}>
-                      <td className="px-3 py-2 font-black text-success-700">{line.priority}</td>
+                      <td className="px-3 py-2 font-black text-emerald-700">{line.priority}</td>
                       <td className="px-3 py-2">
                         <p className="font-mono font-bold text-zinc-900">{line.orderCode}</p>
                         {line.orderRef !== '-' ? (
@@ -10471,7 +10183,7 @@ function ProductionPlanModal({
                   type="date"
                   value={planDate}
                   onChange={event => setPlanDate(event.target.value)}
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
               <label className="space-y-1.5">
@@ -10481,7 +10193,7 @@ function ProductionPlanModal({
                   value={planHeaderNote}
                   onChange={event => setPlanHeaderNote(event.target.value)}
                   placeholder="Ghi chú chung khi lưu snapshot"
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
             </div>
@@ -10516,9 +10228,9 @@ function ProductionPlanModal({
                           reorderLine(dragIndex, index);
                           setDragIndex(null);
                         }}
-                        className={dragIndex === index ? 'bg-success-50' : 'hover:bg-zinc-50'}
+                        className={dragIndex === index ? 'bg-emerald-50' : 'hover:bg-zinc-50'}
                       >
-                        <td className="px-2 py-2 font-black text-success-700">{index + 1}</td>
+                        <td className="px-2 py-2 font-black text-emerald-700">{index + 1}</td>
                         <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
                         <td className="px-2 py-2 text-zinc-600">{line.staff && line.staff !== '-' ? line.staff : '-'}</td>
@@ -10530,7 +10242,7 @@ function ProductionPlanModal({
                             value={line.note}
                             onChange={event => updateLineNote(line.id, event.target.value)}
                             rows={3}
-                            className="w-full min-w-[220px] rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 outline-none transition focus:border-success-400 focus:ring-2 focus:ring-success-100"
+                            className="w-full min-w-[220px] rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                             placeholder="Nhập ghi chú cho lệnh này"
                           />
                         </td>
@@ -10572,7 +10284,7 @@ function ProductionPlanModal({
               type="button"
               onClick={handleOpenMaterialAccounting}
               disabled={displayLines.length === 0 || isLoadingMaterialAccounting}
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-warning-200 bg-warning-50 px-4 text-sm font-extrabold text-warning-800 transition hover:bg-warning-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-4 text-sm font-extrabold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoadingMaterialAccounting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
               Định mức NVL
@@ -10599,7 +10311,7 @@ function ProductionPlanModal({
               type="button"
               onClick={handlePrint}
               disabled={displayLines.length === 0 || isLoadingPlanPrint}
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-success-200 bg-success-50 px-4 text-sm font-extrabold text-success-800 transition hover:bg-success-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoadingPlanPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               In kế hoạch
@@ -12140,7 +11852,7 @@ function AddProductionOrderModal({
               }
             )}
             {form.shift && availableMachines.length === 0 && (
-              <p className="text-[11px] font-semibold text-warning-700">
+              <p className="text-[11px] font-semibold text-amber-700">
                 Không còn máy trống cho ca này (các máy đã khai báo trong Ca máy).
               </p>
             )}
@@ -12381,7 +12093,7 @@ function AddProductionOrderModal({
                                   <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-black text-zinc-600">
                                     {product.orderRef}
                                   </span>
-                                  <span className="text-[11px] font-bold text-success-700">
+                                  <span className="text-[11px] font-bold text-emerald-700">
                                     Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''}
                                   </span>
                                 </div>
@@ -13158,7 +12870,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                       .join(' | ') || '-'}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full border border-warning-200 bg-warning-50 px-2.5 py-1 text-xs font-black text-warning-800">
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
                       {row.status}
                     </span>
                   </td>
@@ -13182,7 +12894,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                         onClick={() => printProductionOrder(row)}
                         disabled={isLoadingPrint}
                         title="In lệnh SX"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-success-700 transition hover:bg-success-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Printer className="h-4 w-4" />
                       </button>
@@ -13339,6 +13051,20 @@ interface OrderRow {
   unit: string;
   quantity: string;
   note: string;
+}
+
+function generateNextOrderCode(existingCodes: Iterable<string>) {
+  let max = 0;
+  for (const raw of existingCodes) {
+    const code = String(raw || '').trim().toUpperCase();
+    const match = code.match(/^DH(\d+)$/);
+    if (!match) continue;
+    const num = Number(match[1]);
+    if (Number.isFinite(num) && num > max) max = num;
+  }
+  const next = max + 1;
+  const width = Math.max(3, String(next).length);
+  return `DH${String(next).padStart(width, '0')}`;
 }
 
 function normalizeOrders(data: unknown): OrderRow[] {
@@ -13575,7 +13301,10 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
     setFormError('');
     setActionMessage('');
     setEditingId(null);
-    setOrderForm(emptyOrderForm());
+    setOrderForm({
+      ...emptyOrderForm(),
+      orderCode: generateNextOrderCode(orders.map(order => order.orderCode))
+    });
     setFormMode('add');
   };
 
@@ -13808,9 +13537,13 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <input
                   value={orderForm.orderCode}
                   onChange={e => setOrderForm(prev => ({ ...prev, orderCode: e.target.value }))}
-                  className={orderFieldClass}
-                  placeholder="VD: DH-2026-001"
+                  readOnly={formMode === 'add'}
+                  className={`${orderFieldClass} ${formMode === 'add' ? 'bg-zinc-50 font-black text-zinc-900' : ''}`}
+                  placeholder="DH001"
                 />
+                {formMode === 'add' ? (
+                  <p className="text-[11px] font-semibold text-zinc-400">Mã tự tăng theo thứ tự DH001, DH002, DH003...</p>
+                ) : null}
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại đơn</span>
@@ -13830,7 +13563,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   <input
                     value={ORDER_STATUS_DEFAULT}
                     readOnly
-                    className={`${orderFieldClass} bg-warning-50 font-black text-warning-800`}
+                    className={`${orderFieldClass} bg-amber-50 font-black text-amber-800`}
                   />
                 ) : (
                   <SearchableSelect
@@ -13882,7 +13615,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                     productLines: [...prev.productLines, newOrderProductFormLine()]
                   }))
                 }
-                addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-success-200 bg-success-50 px-2.5 text-xs font-extrabold text-success-800 transition hover:bg-success-100"
+                addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
                 columns={[
                   { key: 'code', label: 'Mã SP', className: 'min-w-0 flex-[1.35]', required: true },
                   { key: 'name', label: 'Tên SP', className: 'min-w-0 flex-[1.5]' },
@@ -14091,7 +13824,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
         )}
 
         {actionMessage && (
-          <p className="mt-3 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-bold text-success-700 lg:mt-0">
+          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
             {actionMessage}
           </p>
         )}
@@ -14122,7 +13855,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full border border-warning-200 bg-warning-50 px-2.5 py-1 text-xs font-black text-warning-800">
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
                       {order.status}
                     </span>
                   </td>
@@ -14742,7 +14475,7 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
         )}
 
         {actionMessage && (
-          <p className="mt-3 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-bold text-success-700 lg:mt-0">
+          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
             {actionMessage}
           </p>
         )}
@@ -15711,7 +15444,7 @@ function ControlBoardPanel({
           title="Lệnh sản xuất"
           subtitle="Các dòng lệnh mới nhất từ bảng lenh_sx"
           icon={Factory}
-          accentClass="bg-gradient-to-r from-success-900 to-success-700"
+          accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
           count={productionOrders.length}
           countLabel="Lệnh"
           search={productionOrderSearch}
@@ -15846,7 +15579,7 @@ function ControlBoardPanel({
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {visibleProductionOrders.map(row => (
-                  <tr key={row.id} className="hover:bg-success-50/50">
+                  <tr key={row.id} className="hover:bg-emerald-50/50">
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -15856,13 +15589,13 @@ function ControlBoardPanel({
                       className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
                     />
                   </td>
-                  <td className="px-3 py-2 font-black text-success-700">{row.priority > 0 ? row.priority : '-'}</td>
+                  <td className="px-3 py-2 font-black text-emerald-700">{row.priority > 0 ? row.priority : '-'}</td>
                   <td className="px-3 py-2 font-black text-zinc-950">{row.code || '-'}</td>
                   <td className="px-3 py-2 font-semibold text-zinc-700">{row.productCode || '-'}</td>
                   <td className="px-3 py-2 font-semibold text-zinc-800">{row.productName || '-'}</td>
                   <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.quantity}</td>
                   <td className="px-3 py-2">
-                    <span className="rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-[10px] font-black text-warning-800">
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
                       {row.status}
                     </span>
                   </td>
@@ -15905,7 +15638,7 @@ function ControlBoardPanel({
                           onClick={() => printProductionOrder(row)}
                           disabled={isLoadingPrint}
                         title="In lệnh SX"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-success-700 transition hover:bg-success-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Printer className="h-4 w-4" />
                       </button>
@@ -15985,7 +15718,7 @@ function ControlBoardPanel({
                       {report.ten_may || report.ma_may || '-'} · {report.gio || '-'}
                     </p>
                   </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-success-700">
+                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
                     {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
                   </td>
                   <td className="px-1 py-1.5 text-center">
@@ -16086,7 +15819,7 @@ function ControlBoardPanel({
                   <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.quantity}</td>
                   <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.stockQuantity}</td>
                   <td className="px-3 py-2">
-                    <span className="rounded-full bg-warning-50 px-2 py-0.5 text-[10px] font-black text-warning-800">
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
                       {order.status}
                     </span>
                   </td>
@@ -16105,7 +15838,7 @@ function ControlBoardPanel({
           title="Danh sách máy"
           subtitle="Ảnh máy, mã, tên và trạng thái vận hành"
           icon={Cpu}
-          accentClass="bg-gradient-to-r from-success-900 to-success-700"
+          accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
           count={machines.length}
           countLabel="Máy"
           search={machineSearch}
@@ -16153,14 +15886,14 @@ function ControlBoardPanel({
                   <button
                     type="button"
                     onClick={() => onMachineReport(machine, 'nvl')}
-                    className="rounded-md border border-success-500/50 bg-success-700 px-2 py-1 text-[9px] font-extrabold leading-tight text-white transition hover:bg-success-800"
+                    className="rounded-md border border-emerald-500/50 bg-emerald-700 px-2 py-1 text-[9px] font-extrabold leading-tight text-white transition hover:bg-emerald-800"
                   >
                     Báo cáo NVL tồn
                   </button>
                   <button
                     type="button"
                     onClick={() => onMachineReport(machine, 'mixing')}
-                    className="rounded-md border border-success-500/50 bg-success-700 px-2 py-1 text-[9px] font-extrabold leading-tight text-white transition hover:bg-success-800"
+                    className="rounded-md border border-emerald-500/50 bg-emerald-700 px-2 py-1 text-[9px] font-extrabold leading-tight text-white transition hover:bg-emerald-800"
                   >
                     Báo cáo phối trộn
                   </button>
@@ -16598,7 +16331,7 @@ function AddStaffModal({
             <input
               value={form.name}
               onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
               placeholder="Nhập tên nhân sự"
             />
           </label>
@@ -16607,7 +16340,7 @@ function AddStaffModal({
             <input
               value={form.code}
               onChange={event => setForm(prev => ({ ...prev, code: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
               placeholder="Tuỳ chọn"
             />
           </label>
@@ -16616,7 +16349,7 @@ function AddStaffModal({
             <select
               value={form.branch}
               onChange={event => setForm(prev => ({ ...prev, branch: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             >
               {branchOptions.map(branch => (
                 <option key={branch} value={branch}>
@@ -16630,7 +16363,7 @@ function AddStaffModal({
             <select
               value={form.department}
               onChange={event => setForm(prev => ({ ...prev, department: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             >
               {departmentOptions.map(department => (
                 <option key={department} value={department}>
@@ -16644,7 +16377,7 @@ function AddStaffModal({
             <input
               value={form.role}
               onChange={event => setForm(prev => ({ ...prev, role: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             />
           </label>
           <label className="space-y-1.5">
@@ -16652,7 +16385,7 @@ function AddStaffModal({
             <select
               value={form.shift}
               onChange={event => setForm(prev => ({ ...prev, shift: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             >
               {STANDARD_SHIFTS.map(shift => (
                 <option key={shift} value={shift}>
@@ -16666,7 +16399,7 @@ function AddStaffModal({
             <select
               value={form.status}
               onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-success-400 focus:ring-2 focus:ring-success-100"
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             >
               {['Đang làm', 'Nghỉ phép', 'Nghỉ việc'].map(status => (
                 <option key={status} value={status}>
@@ -17906,7 +17639,7 @@ export default function App() {
                 {isSubmitLoading && (
                   <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="p-5 bg-white rounded-2xl shadow-xl flex items-center gap-3.5 text-slate-800 font-bold max-w-sm">
-                      <Loader2 className="w-6 h-6 text-success-600 animate-spin shrink-0" />
+                      <Loader2 className="w-6 h-6 text-emerald-600 animate-spin shrink-0" />
                       <span>Đang mã hóa & đồng bộ dữ liệu Đà Nẵng...</span>
                     </div>
                   </div>
@@ -18138,7 +17871,7 @@ export default function App() {
                 <AnalyticsDashboard 
                   reports={reports} 
                   onResetDb={handleResetDb} 
-                  isLoading={isFetchLoading}
+                  isLoading={isFetchLoading} 
                 />
               </motion.div>
             )}
@@ -18186,7 +17919,7 @@ export default function App() {
                     }
                     setCurrentStep(prev => prev + 1);
                   }}
-                  className="flex-1 h-12 rounded-xl bg-ink-900 hover:bg-ink-800 text-white font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow"
+                  className="flex-1 h-12 rounded-xl bg-slate-900 hover:bg-slate-850 text-white font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow"
                   style={{ minHeight: '44px' }}
                 >
                   <span>Tiếp tục</span>
@@ -18234,8 +17967,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'menu')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'menu'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >
@@ -18249,8 +17982,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'form')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'form'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >
@@ -18264,8 +17997,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'weighing-summary')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'weighing-summary'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >
@@ -18279,8 +18012,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'dashboard')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'dashboard'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >
@@ -18294,8 +18027,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'products')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'products'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >
@@ -18309,8 +18042,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'machines')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'machines'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >
@@ -18324,8 +18057,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'materials')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'materials'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >
@@ -18339,8 +18072,8 @@ export default function App() {
             onClick={event => handleNavClick(event, 'orders')}
             className={`flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'orders'
-                ? 'border-t-2 border-brand-500 bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:text-ink-900'
+                ? 'border-t-2 border-[#ef1b2d] bg-red-50/70 text-[#ef1b2d]'
+                : 'text-zinc-500 hover:text-zinc-900'
             }`}
             style={{ minHeight: '52px' }}
           >

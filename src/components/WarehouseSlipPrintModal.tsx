@@ -138,18 +138,14 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
   const deliverer = data.deliverer || data.recipient || '';
   const location = data.warehouseLocation || '';
   const referenceText = data.productionOrderRef || data.reason || '';
-  const paddedRows = [...data.lines];
-  const minRows = 8;
-  while (paddedRows.length < minRows) {
-    paddedRows.push({
-      code: '',
-      name: '',
-      unit: '',
-      quantity: 0,
-      unitPrice: 0,
-      lineAmount: 0
-    });
-  }
+  const printRows = data.lines.filter(
+    line =>
+      Boolean(line.code || line.name) ||
+      line.quantity > 0 ||
+      (line.documentQuantity ?? 0) > 0 ||
+      line.unitPrice > 0 ||
+      line.lineAmount > 0
+  );
 
   return (
     <>
@@ -229,28 +225,25 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
           </tr>
         </thead>
         <tbody>
-          {paddedRows.map((line, index) => {
-            const hasData = Boolean(line.code || line.name || line.quantity > 0 || (line.documentQuantity ?? 0) > 0);
+          {printRows.map((line, index) => {
             const docQty = line.documentQuantity;
             return (
               <tr key={`${line.code}-${index}`}>
-                <td className="warehouse-slip-print-center">{hasData ? index + 1 : ''}</td>
+                <td className="warehouse-slip-print-center">{index + 1}</td>
                 <td>{line.name || ''}</td>
                 <td className="warehouse-slip-print-center">{line.code || ''}</td>
                 <td className="warehouse-slip-print-center">{line.unit || ''}</td>
                 <td className="warehouse-slip-print-right">
-                  {hasData && docQty !== null && docQty !== undefined && docQty > 0
+                  {docQty !== null && docQty !== undefined && docQty > 0
                     ? formatPrintQty(docQty, 2)
                     : ''}
                 </td>
+                <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity, 2)}</td>
                 <td className="warehouse-slip-print-right">
-                  {hasData ? formatPrintQty(line.quantity, 2) : ''}
+                  {line.unitPrice > 0 ? formatMoney(line.unitPrice, 0) : ''}
                 </td>
                 <td className="warehouse-slip-print-right">
-                  {hasData && line.unitPrice > 0 ? formatMoney(line.unitPrice, 0) : ''}
-                </td>
-                <td className="warehouse-slip-print-right">
-                  {hasData && line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}
+                  {line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}
                 </td>
               </tr>
             );
