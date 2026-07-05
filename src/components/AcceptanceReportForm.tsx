@@ -60,7 +60,7 @@ interface ProductSelectOption {
 }
 
 const inputClass =
-  'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -873,41 +873,41 @@ export default function AcceptanceReportForm({
     '';
 
   return (
-    <div className="space-y-4 pb-24">
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
-          <h2 className="text-base font-black text-zinc-950">Phiếu báo cáo sản lượng</h2>
-          <div className="flex items-center gap-2">
+    <div className="space-y-3 pb-24">
+      <section className="overflow-hidden rounded-lg border border-ink-200 bg-white" style={{ boxShadow: 'var(--shadow-card)' }}>
+        <div className="flex items-center justify-between gap-2 border-b border-ink-200 px-3 py-2.5">
+          <h2 className="text-[14px] font-semibold text-ink-900 tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>Phiếu báo cáo sản lượng</h2>
+          <div className="flex items-center gap-1.5">
             {onOpenList && (
               <button
                 type="button"
                 onClick={onOpenList}
-                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2 text-[11px] font-semibold text-ink-700 transition hover:bg-ink-50"
               >
-                <List className="h-4 w-4" />
+                <List className="h-3.5 w-3.5" />
                 Danh sách
               </button>
             )}
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2 text-[11px] font-semibold text-ink-700 transition hover:bg-ink-50"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-3.5 w-3.5" />
               Quay lại
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-4 md:grid-cols-3 lg:grid-cols-6">
-          <label className="space-y-1">
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" /> Ngày
+        <div className="grid grid-cols-2 gap-2 bg-ink-50/60 p-2.5 md:grid-cols-3 lg:grid-cols-6">
+          <label className="space-y-0.5">
+            <span className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider text-ink-500">
+              <CalendarDays className="h-3 w-3 text-brand-500" /> Ngày
             </span>
             <input type="date" value={form.ngay} onChange={e => handleDateChange(e.target.value)} className={inputClass} />
           </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
+          <label className="space-y-0.5">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-ink-500">Ca</span>
             <select value={form.ca} onChange={e => handleShiftChange(e.target.value)} className={inputClass}>
               <option value="">Chọn ca từ lệnh SX...</option>
               {shiftOptions.map(shift => (
@@ -917,9 +917,9 @@ export default function AcceptanceReportForm({
               ))}
             </select>
           </label>
-          <label className="space-y-1 lg:col-span-2">
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <Cpu className="h-3.5 w-3.5 text-[#ef1b2d]" /> Tổ
+          <label className="space-y-0.5 lg:col-span-2">
+            <span className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider text-ink-500">
+              <Cpu className="h-3 w-3 text-brand-500" /> Tổ
             </span>
             <select
               value={teamSelectValue}
@@ -937,8 +937,8 @@ export default function AcceptanceReportForm({
               ))}
             </select>
           </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lần</span>
+          <label className="space-y-0.5">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-ink-500">Lần</span>
             <input
               value={form.lan}
               onChange={e => setForm(prev => ({ ...prev, lan: e.target.value }))}
@@ -946,9 +946,9 @@ export default function AcceptanceReportForm({
               placeholder="VD: 1"
             />
           </label>
-          <label className="space-y-1">
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <Clock3 className="h-3.5 w-3.5 text-[#ef1b2d]" /> Giờ
+          <label className="space-y-0.5">
+            <span className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider text-ink-500">
+              <Clock3 className="h-3 w-3 text-brand-500" /> Giờ
             </span>
             <input
               type="time"
@@ -959,7 +959,7 @@ export default function AcceptanceReportForm({
           </label>
         </div>
 
-        <div className="border-t border-zinc-100 bg-white p-4">
+        <div className="border-t border-ink-100 bg-white p-2.5">
           <RepeatableLinesBlock
             title="Mã SP & số lượng"
             required
@@ -972,9 +972,9 @@ export default function AcceptanceReportForm({
                 <button
                   type="button"
                   onClick={() => setIsQrScannerOpen(true)}
-                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
+                  className="flex h-7 items-center gap-1 rounded-md border border-brand-500 bg-brand-50 px-2 text-[10px] font-bold text-brand-700 transition hover:bg-brand-100"
                 >
-                  <ScanBarcode className="h-3.5 w-3.5" />
+                  <ScanBarcode className="h-3 w-3" />
                   Quét QR
                 </button>
               ) : null
@@ -1061,8 +1061,8 @@ export default function AcceptanceReportForm({
             })}
           </RepeatableLinesBlock>
 
-          <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>
+          <div className="mt-2.5 space-y-1.5 rounded-md border border-ink-200 bg-ink-50/60 p-2.5">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-ink-500">Ảnh chung <span className="text-rose-500">*</span></span>
             <div className="flex items-center gap-2">
               <input
                 ref={fileInputRef}
@@ -1076,9 +1076,9 @@ export default function AcceptanceReportForm({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+                className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-ink-200 bg-white px-2.5 text-[11px] font-semibold text-ink-700 transition hover:bg-ink-50 disabled:opacity-60"
               >
-                {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
                 {isUploading ? 'Đang tải ảnh...' : 'Chụp / chọn ảnh chung'}
               </button>
               {form.imagePreview && (
@@ -1086,7 +1086,7 @@ export default function AcceptanceReportForm({
                   href={form.imagePreview}
                   target="_blank"
                   rel="noreferrer"
-                  className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200"
+                  className="block h-12 w-12 shrink-0 overflow-hidden rounded-md border border-ink-200"
                 >
                   <img src={form.imagePreview} alt="Ảnh chung" className="h-full w-full object-cover" />
                 </a>
@@ -1095,29 +1095,29 @@ export default function AcceptanceReportForm({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 bg-white px-4 py-3">
-          <button type="button" onClick={resetForm} className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-ink-100 bg-white px-3 py-2.5">
+          <button type="button" onClick={resetForm} className="h-9 rounded-md border border-ink-200 bg-white px-3 text-[11px] font-semibold text-ink-700">
             Làm mới
           </button>
           <button
             type="button"
             onClick={handleSave}
             disabled={isSaving || isUploading}
-            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand-500 px-3 text-[11px] font-bold text-white transition hover:bg-brand-700 disabled:opacity-60"
           >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             {editingId ? 'Cập nhật' : 'Lưu báo cáo'}
           </button>
         </div>
       </section>
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+        <div className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-[12px] font-semibold text-danger-700">
           {error}
         </div>
       )}
       {message && (
-        <div className="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-semibold text-success-700">
+        <div className="rounded-md border border-success-200 bg-success-50 px-3 py-2 text-[12px] font-semibold text-success-700">
           {message}
         </div>
       )}

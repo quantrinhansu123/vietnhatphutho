@@ -69,6 +69,7 @@ import {
 import { LineEditorSheet } from './components/LineEditorSheet';
 import { AppTab, pathFromTab, tabFromPath } from './routes';
 import vietNhatLogoUrl from '../logovietnhat_1.png';
+import vietNhatLogoNewUrl from '../logo-new.png';
 import { 
   FilePlus2, BarChart3, Layers, Wifi, WifiOff, 
   HelpCircle, CheckCircle, Smartphone, MapPin, 
@@ -76,7 +77,8 @@ import {
   Building2, UserPlus, Search, MoreVertical, ShieldCheck, BriefcaseBusiness, Package, Cpu, Plus, Boxes, ClipboardList, Settings,
   ImagePlus,
   Eye, Pencil, Trash2, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowUpFromLine, Printer,
-  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, ClipboardPaste, Download, Upload, QrCode, Scale, CalendarDays, Home, PackageX
+  GripVertical, ArrowUp, ArrowDown, ClipboardCheck, ClipboardPaste, Download, Upload, QrCode, Scale, CalendarDays, Home, PackageX,
+  X
 } from 'lucide-react';
 
 const STORAGE_DRAFT_KEY = 'factory_report_draft_v1';
@@ -93,17 +95,17 @@ function readCachedReports(): ProductionReport[] {
   }
 }
 
-function VietNhatLogo() {
+function VietNhatLogo({ className = '' }: { className?: string }) {
   return (
     <img
-      src={vietNhatLogoUrl}
-      alt="Viet Nhat IPT"
-      className="brand-logo h-12 w-auto max-w-[190px] object-contain"
+      src={vietNhatLogoNewUrl}
+      alt="Công ty Việt Nhật - Đà Nẵng"
+      className={`brand-logo h-9 md:h-10 w-auto max-h-full object-contain ${className}`}
     />
   );
 }
 
-const PRINT_COMPANY_NAME = 'CÔNG TY TNHH VIỆT NHẬT IPT';
+const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
 
 interface HrMember {
   id: string;
@@ -455,10 +457,10 @@ function HomeNavButton({
   const activeClass = active
     ? isSidebar
       ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
-      : 'text-brand-500'
+      : 'bg-brand-50 text-brand-700'
     : isSidebar
-      ? 'text-ink-400 hover:bg-ink-800 hover:text-white'
-      : 'text-ink-500 hover:text-brand-500';
+      ? 'text-slate-400 hover:bg-slate-800 hover:text-white'
+      : 'text-slate-500 hover:bg-slate-50 hover:text-brand-500';
 
   return (
     <a
@@ -469,14 +471,70 @@ function HomeNavButton({
       className={`flex flex-col items-center justify-center gap-0.5 transition active:scale-95 ${
         isSidebar
           ? `w-14 rounded-xl px-1 py-2 ${activeClass}`
-          : `min-h-[44px] flex-1 py-1.5 ${activeClass}`
+          : `min-h-[40px] flex-1 py-1 px-2 rounded-lg ${activeClass}`
       }`}
     >
       <Home className="h-4 w-4" />
-      <span className={`font-bold uppercase leading-none ${isSidebar ? 'text-[8px] tracking-wide' : 'text-[9px] tracking-wide'}`}>
+      <span className={`font-bold uppercase leading-none ${isSidebar ? 'text-[8px] tracking-wide' : 'text-[9px] tracking-wider'}`}>
         Trang chủ
       </span>
     </a>
+  );
+}
+
+// Bảng ánh xạ tab hiện tại → tab cha (dùng cho nút Quay lại ở bottom nav)
+const BACK_TAB_MAP: Record<string, string> = {
+  'acceptance-report-list': 'report-lists',
+  'report-lists': 'production-reports',
+  'report-forms': 'production-reports',
+  'production-reports': 'menu',
+  'facility-management': 'menu',
+  'hcns': 'menu',
+  'business': 'menu',
+  'factory': 'menu',
+  'products': 'facility-management',
+  'machines': 'facility-management',
+  'materials': 'facility-management',
+  'warehouse-slip': 'facility-management',
+  'warehouse-history': 'facility-management',
+  'hr': 'hcns',
+  'settings': 'hcns',
+  'orders': 'business',
+  'customers': 'business',
+  'production-orders': 'factory',
+  'production-plan-history': 'production-reports',
+  'weighing-summary': 'report-forms',
+  'damaged-goods-report': 'report-forms',
+  'machine-nvl-report': 'report-forms',
+  'machine-downtime-list': 'report-lists',
+  'machine-downtime-report': 'report-forms',
+  'acceptance-report': 'report-forms'
+};
+
+function MobileBackNavButton({
+  onClick,
+  variant = 'bottom'
+}: {
+  onClick: () => void;
+  variant?: 'bottom' | 'sidebar';
+}) {
+  const isSidebar = variant === 'sidebar';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Quay lại"
+      className={`flex flex-col items-center justify-center gap-0.5 transition active:scale-95 ${
+        isSidebar
+          ? 'w-14 rounded-xl px-1 py-2 text-slate-400 hover:bg-slate-800 hover:text-white'
+          : 'min-h-[40px] flex-1 py-1 px-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-brand-500'
+      }`}
+    >
+      <ChevronLeft className="h-4 w-4" />
+      <span className={`font-bold uppercase leading-none ${isSidebar ? 'text-[8px] tracking-wide' : 'text-[9px] tracking-wide'}`}>
+        Quay lại
+      </span>
+    </button>
   );
 }
 
@@ -1977,10 +2035,10 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Danh mục sản phẩm</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Sản phẩm</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -1996,7 +2054,6 @@ function ProductsPanel({ onBack }: { onBack: () => void }) {
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-              <BackButton onClick={onBack} variant="dark" className="h-10 rounded-xl" />
             </div>
           </div>
 
@@ -2782,10 +2839,10 @@ function MachinesPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Thiết bị sản xuất</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Danh sách máy</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -2801,13 +2858,7 @@ function MachinesPanel({ onBack }: { onBack: () => void }) {
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-              <button
-                type="button"
-                onClick={onBack}
-                className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-              >
-                Menu
-              </button>
+
             </div>
           </div>
 
@@ -4529,10 +4580,10 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý kho</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Kho NVL</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -4589,13 +4640,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-              <button
-                type="button"
-                onClick={onBack}
-                className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-              >
-                Menu
-              </button>
+
             </div>
           </div>
 
@@ -4774,42 +4819,42 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         }}
       />
 
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[960px] w-full text-left text-sm">
-            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="overflow-x-auto md:overflow-visible">
+          <table className="responsive-table w-full min-w-[640px] md:min-w-0 text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-600 font-bold">
               <tr>
-                <th className="px-4 py-3 font-black">Mã NPL</th>
-                <th className="px-4 py-3 font-black">Tên nguyên phụ liệu</th>
-                <th className="px-4 py-3 font-black">Đơn vị</th>
-                <th className="px-4 py-3 text-right font-black">Tổng kg</th>
-                <th className="px-4 py-3 font-black">Tồn đầu</th>
-                <th className="px-4 py-3 font-black">Nhập</th>
-                <th className="px-4 py-3 font-black">Xuất</th>
-                <th className="px-4 py-3 font-black">Tồn cuối</th>
-                <th className="px-4 py-3 text-center font-black">Thao tác</th>
+                <th className="px-2.5 py-2 font-bold">Mã NPL</th>
+                <th className="px-2.5 py-2 font-bold">Tên nguyên phụ liệu</th>
+                <th className="px-2.5 py-2 font-bold">ĐV</th>
+                <th className="px-2.5 py-2 text-right font-bold">Tổng kg</th>
+                <th className="px-2.5 py-2 font-bold">Tồn đầu</th>
+                <th className="px-2.5 py-2 font-bold">Nhập</th>
+                <th className="px-2.5 py-2 font-bold">Xuất</th>
+                <th className="px-2.5 py-2 font-bold">Tồn cuối</th>
+                <th className="px-2.5 py-2 text-center font-bold">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-slate-100">
               {filteredMaterials.map(material => (
-                <tr key={material.id} className="transition hover:bg-red-50/40">
-                  <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
-                  <td className="px-4 py-3 font-black text-zinc-950">{material.name || '-'}</td>
-                  <td className="px-4 py-3 font-bold text-zinc-700">{material.unit}</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.openingStock}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.inbound}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.outbound}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-zinc-700">
+                <tr key={material.id} className="transition hover:bg-brand-50/40">
+                  <td data-label="Mã NPL" className="px-1 md:px-2.5 py-2 font-black text-slate-900">{material.code || '-'}</td>
+                  <td data-label="Tên NVL" className="px-1 md:px-2.5 py-2 font-semibold text-slate-900">{material.name || '-'}</td>
+                  <td data-label="Đơn vị" className="px-1 md:px-2.5 py-2 font-semibold text-slate-700">{material.unit}</td>
+                  <td data-label="Tổng kg" className="px-1 md:px-2.5 py-2 text-right font-mono font-bold text-slate-800">{material.totalWeight}</td>
+                  <td data-label="Tồn đầu" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-700">{material.openingStock}</td>
+                  <td data-label="Nhập" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-700">{material.inbound}</td>
+                  <td data-label="Xuất" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-700">{material.outbound}</td>
+                  <td data-label="Tồn cuối" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-900">
                     {computeClosingStock(material.openingStock, material.inbound, material.outbound)}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
+                  <td data-label="Thao tác" className="px-1 md:px-2.5 py-2">
+                    <div className="flex items-center justify-end md:justify-center gap-1">
                       <button
                         type="button"
                         onClick={() => setViewingMaterial(material)}
                         title="Xem"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 active:scale-95"
                       >
                         <Eye className="h-4 w-4" />
                       </button>
@@ -4817,7 +4862,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                         type="button"
                         onClick={() => openEditForm(material)}
                         title="Sửa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 text-brand-600 transition hover:bg-brand-50 active:scale-95"
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
@@ -4826,7 +4871,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                         onClick={() => handleDeleteMaterial(material)}
                         disabled={deletingMaterialId === material.id}
                         title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                       >
                         {deletingMaterialId === material.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -4841,7 +4886,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
 
               {!isLoadingMaterials && filteredMaterials.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={9} className="px-4 py-8 text-center font-semibold text-slate-500">
                     Không có nguyên phụ liệu phù hợp bộ lọc.
                   </td>
                 </tr>
@@ -5482,10 +5527,10 @@ function WarehouseSlipPanel({
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý kho</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Phiếu xuất nhập kho</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -5501,7 +5546,6 @@ function WarehouseSlipPanel({
                 <History className="h-4 w-4" />
                 Lịch sử
               </button>
-              <BackButton onClick={onBack} variant="dark" className="h-10 rounded-xl" />
             </div>
           </div>
         </div>
@@ -6108,10 +6152,10 @@ function WarehouseHistoryPanel({
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý kho</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Lịch sử xuất nhập kho</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -6127,7 +6171,6 @@ function WarehouseHistoryPanel({
                 <Plus className="h-4 w-4" />
                 Lập phiếu
               </button>
-              <BackButton onClick={onBack} variant="dark" className="h-10 rounded-xl" />
             </div>
           </div>
 
@@ -6584,17 +6627,16 @@ function CustomersPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Kinh doanh</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Khách hàng</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
                 Danh sách khách hàng dùng cho đơn hàng và tra cứu kinh doanh.
               </p>
             </div>
-            <BackButton onClick={onBack} variant="dark" className="h-10 rounded-xl" />
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-2 text-xs">
@@ -7152,7 +7194,7 @@ function MachineNvlReportPanel({
   const [machineRef, setMachineRef] = useState('');
   const [selectedStaffNames, setSelectedStaffNames] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const [lines, setLines] = useState<MachineNvlReportLine[]>([emptyMachineNvlLine()]);
+  const [lines, setLines] = useState<MachineNvlReportLine[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -7222,7 +7264,7 @@ function MachineNvlReportPanel({
     if (kind === activeKind) return;
     setActiveKind(kind);
     setEditingReportId(null);
-    setLines([emptyMachineNvlLine()]);
+    setLines([]);
     setSelectedStaffNames([]);
     setNote('');
     setMessage('');
@@ -7567,7 +7609,9 @@ function MachineNvlReportPanel({
 
       setMessage(isEdit ? `Đã cập nhật ${activeTabMeta.label.toLowerCase()}.` : `Đã lưu ${activeTabMeta.label.toLowerCase()}.`);
       setEditingReportId(null);
-      setLines([emptyMachineNvlLine()]);
+      if (isEdit) {
+        setLines([]);
+      }
       setNote('');
       await loadReports(activeKind);
     } catch (error: any) {
@@ -7587,7 +7631,7 @@ function MachineNvlReportPanel({
     }
     if (editingReportId === id) {
       setEditingReportId(null);
-      setLines([emptyMachineNvlLine()]);
+      setLines([]);
       setNote('');
     }
     setReports(prev => prev.filter(report => report.id !== id));
@@ -7603,14 +7647,14 @@ function MachineNvlReportPanel({
     setSelectedStaffNames(splitProductionOrderStaffNames(report.nhanSu));
     setNote(report.note);
     setLines(
-      report.lines.length > 0 ? report.lines.map(savedMachineNvlLineToFormLine) : [emptyMachineNvlLine()]
+      report.lines.length > 0 ? report.lines.map(savedMachineNvlLineToFormLine) : []
     );
     setMessage('');
   };
 
   const cancelEditReport = () => {
     setEditingReportId(null);
-    setLines([emptyMachineNvlLine()]);
+    setLines([]);
     setSelectedStaffNames([]);
     setNote('');
     setMessage('');
@@ -7668,7 +7712,6 @@ function MachineNvlReportPanel({
       <div className="border-b border-zinc-200 bg-white px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <BackButton onClick={onBack} className="h-10 rounded-xl" />
             <div>
               <h1 className="text-xl font-black text-zinc-900">Báo cáo NVL tồn theo máy</h1>
               <p className="text-sm font-semibold text-zinc-500">{activeTabMeta.hint}</p>
@@ -7796,6 +7839,19 @@ function MachineNvlReportPanel({
                 <span>Ghi chú</span>
                 <span></span>
               </div>
+              {lines.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 px-3 py-10 text-center">
+                  <p className="text-sm font-bold text-zinc-500">Chưa có dòng NVL nào.</p>
+                  <button
+                    type="button"
+                    onClick={openNewLineSheet}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-extrabold text-zinc-700 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Thêm dòng NVL
+                  </button>
+                </div>
+              ) : null}
               <div className="divide-y divide-zinc-100">
                 {lines.map((line, index) => (
                   <div key={line.key} className="contents">
@@ -9906,23 +9962,16 @@ function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Báo cáo sản xuất</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Kế hoạch sản xuất theo ngày</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
                 Tra cứu snapshot kế hoạch đã lưu từ bảng ke_hoach_san_xuat.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onBack}
-              className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-            >
-              Menu
-            </button>
           </div>
 
           <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
@@ -11415,6 +11464,11 @@ function AddProductionOrderModal({
   const [selectedAutofillProductKeys, setSelectedAutofillProductKeys] = useState<string[]>([]);
   const [autofillProductOrderFilter, setAutofillProductOrderFilter] = useState('all');
   const [autofillProductSearch, setAutofillProductSearch] = useState('');
+  const [showAddLine, setShowAddLine] = useState(false);
+  const [lineDraftOrderRef, setLineDraftOrderRef] = useState('');
+  const [lineDraftProductCode, setLineDraftProductCode] = useState('');
+  const [lineDraftQuantity, setLineDraftQuantity] = useState('');
+  const [lineDraftError, setLineDraftError] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -11427,6 +11481,11 @@ function AddProductionOrderModal({
     setSelectedAutofillProductKeys([]);
     setAutofillProductOrderFilter('all');
     setAutofillProductSearch('');
+    setShowAddLine(false);
+    setLineDraftOrderRef('');
+    setLineDraftProductCode('');
+    setLineDraftQuantity('');
+    setLineDraftError('');
     setIsLoadingLookups(true);
 
     const loadLookups = async () => {
@@ -11653,6 +11712,64 @@ function AddProductionOrderModal({
     setShowAutofillOrders(false);
   };
 
+  const openAddLine = () => {
+    setLineDraftOrderRef('');
+    setLineDraftProductCode('');
+    setLineDraftQuantity('');
+    setLineDraftError('');
+    setShowAddLine(true);
+  };
+
+  const closeAddLine = () => {
+    setShowAddLine(false);
+    setLineDraftError('');
+  };
+
+  const confirmAddLine = () => {
+    const orderRef = lineDraftOrderRef.trim();
+    const productCode = lineDraftProductCode.trim();
+    const quantityRaw = lineDraftQuantity.trim();
+    const quantity = Number(quantityRaw);
+
+    if (!orderRef) {
+      setLineDraftError('Vui lòng chọn mã đơn hàng.');
+      return;
+    }
+    if (!productCode) {
+      setLineDraftError('Vui lòng chọn mã hàng.');
+      return;
+    }
+    if (!quantityRaw || !Number.isFinite(quantity) || quantity <= 0) {
+      setLineDraftError('Số lượng phải lớn hơn 0.');
+      return;
+    }
+
+    const built = buildProductionEntryLine(
+      orders,
+      productionOrders,
+      orderRef,
+      productCode,
+      '',
+      ''
+    );
+
+    const newLine: ProductionOrderEntryLine = {
+      key: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      orderRef,
+      productCode,
+      productName: built.productName || built.productCode,
+      quantity: String(quantity),
+      unit: built.unit || built.productCode
+    };
+
+    setForm(prev => ({
+      ...prev,
+      entryLines: [...prev.entryLines, newLine]
+    }));
+    setShowAddLine(false);
+    setLineDraftError('');
+  };
+
   const updateEntryLine = (key: string, patch: Partial<ProductionOrderEntryLine>) => {
     setForm(prev => ({
       ...prev,
@@ -11866,15 +11983,26 @@ function AddProductionOrderModal({
               <span className="text-[11px] font-bold text-zinc-500">
                 Chọn từng dòng thủ công hoặc tự điền từ nhiều đơn hàng.
               </span>
-              <button
-                type="button"
-                onClick={() => setShowAutofillOrders(true)}
-                disabled={isLoadingLookups || orders.length === 0}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ClipboardCheck className="h-3.5 w-3.5" />
-                Tự điền từ đơn hàng
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowAddLine(true)}
+                  disabled={isLoadingLookups || orders.length === 0}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Thêm dòng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAutofillOrders(true)}
+                  disabled={isLoadingLookups || orders.length === 0}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ClipboardCheck className="h-3.5 w-3.5" />
+                  Tự điền từ đơn hàng
+                </button>
+              </div>
             </div>
 
             {form.entryLines.map(line => {
@@ -12295,6 +12423,105 @@ function AddProductionOrderModal({
                   Tự điền
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddLine && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[96vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm dòng</h4>
+                <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                  Nhập nhanh một dòng đơn hàng + mã hàng.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAddLine}
+                aria-label="Đóng"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-900"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 p-4">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn *</span>
+                <SearchableSelect
+                  value={lineDraftOrderRef}
+                  onChange={orderRef => {
+                    setLineDraftOrderRef(orderRef);
+                    setLineDraftProductCode('');
+                  }}
+                  options={orderCodeOptions}
+                  placeholder="Gõ để tìm mã đơn"
+                  isLoading={isLoadingLookups}
+                  inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+                  getLabel={item => String(item)}
+                  getValue={item => String(item)}
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã hàng *</span>
+                <SearchableSelect
+                  value={lineDraftProductCode}
+                  onChange={setLineDraftProductCode}
+                  options={listProductOptionsForOrder(orders, productionOrders, catalogProducts, lineDraftOrderRef)}
+                  placeholder={lineDraftOrderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
+                  disabled={!lineDraftOrderRef}
+                  isLoading={isLoadingLookups}
+                  inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+                  getLabel={item => {
+                    const product = item as { code: string; name: string; orderQty: number; remainingQty: number };
+                    return product.code
+                      ? `${product.code} · ${product.name}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)}` : ''}`
+                      : product.name;
+                  }}
+                  getValue={item => (item as { code: string }).code}
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={lineDraftQuantity}
+                  onChange={event => setLineDraftQuantity(event.target.value)}
+                  placeholder="Nhập số lượng"
+                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+                />
+              </label>
+
+              {lineDraftError && (
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                  {lineDraftError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={closeAddLine}
+                className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={confirmAddLine}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm dòng
+              </button>
             </div>
           </div>
         </div>
@@ -12798,10 +13025,10 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Kế hoạch & điều phối</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Lệnh sản xuất</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -12817,13 +13044,7 @@ function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-              <button
-                type="button"
-                onClick={onBack}
-                className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-              >
-                Menu
-              </button>
+
             </div>
           </div>
 
@@ -13519,10 +13740,10 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Kế hoạch sản xuất</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Đơn hàng</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -13538,13 +13759,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-              <button
-                type="button"
-                onClick={onBack}
-                className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-              >
-                Menu
-              </button>
+
             </div>
           </div>
 
@@ -14276,10 +14491,10 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Tham số hệ thống</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Cài đặt</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -14295,13 +14510,7 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-              <button
-                type="button"
-                onClick={onBack}
-                className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-              >
-                Menu
-              </button>
+
             </div>
           </div>
 
@@ -16095,10 +16304,10 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-950 bg-white shadow-sm">
-        <div className="bg-zinc-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-end gap-3">
+            <div className="hidden">
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý nhân sự</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Chi nhánh & Phòng ban</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
@@ -16114,13 +16323,7 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-              <button
-                type="button"
-                onClick={onBack}
-                className="h-10 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-              >
-                Menu
-              </button>
+
             </div>
           </div>
 
@@ -16507,28 +16710,34 @@ type MenuCardConfig = {
 
 const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Phiếu cân ca',
-    desc: 'Lập phiếu cân, ghi nhận khối lượng và xem tổng hợp theo ca.',
-    icon: Scale,
-    tab: 'weighing-summary'
+    title: 'Báo cáo tồn',
+    desc: 'Theo dõi NVL tồn theo từng máy và ca sản xuất.',
+    icon: Boxes,
+    tab: 'machine-nvl-report'
   },
   {
-    title: 'Báo cáo hàng hỏng',
-    desc: 'Lập phiếu hàng hỏng với các cột và chức năng giống phiếu cân ca.',
-    icon: PackageX,
-    tab: 'damaged-goods-report'
-  },
-  {
-    title: 'Báo cáo phối trộn',
+    title: 'Trộn nguyên vật liệu',
     desc: 'Nhập bảng trộn vật tư theo ca, máy và lần phối trộn.',
     icon: FlaskConical,
     tab: 'mixing-report'
   },
   {
-    title: 'Phiếu báo cáo sản lượng',
+    title: 'Phiếu cân',
+    desc: 'Lập phiếu cân, ghi nhận khối lượng và xem tổng hợp theo ca.',
+    icon: Scale,
+    tab: 'weighing-summary'
+  },
+  {
+    title: 'Báo cáo sản lượng',
     desc: 'Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca.',
     icon: ClipboardCheck,
     tab: 'acceptance-report'
+  },
+  {
+    title: 'Phiếu nhập kho thành phẩm',
+    desc: 'Lập phiếu nhập kho thành phẩm theo từng lô và mã hàng.',
+    icon: ArrowDownToLine,
+    tab: 'warehouse-slip'
   },
   {
     title: 'Phiếu báo dừng máy',
@@ -16537,10 +16746,10 @@ const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'machine-downtime-report'
   },
   {
-    title: 'Báo cáo máy NVL tồn',
-    desc: 'Theo dõi NVL tồn theo từng máy và ca sản xuất.',
-    icon: Boxes,
-    tab: 'machine-nvl-report'
+    title: 'Báo cáo hàng hỏng',
+    desc: 'Lập phiếu hàng hỏng với các cột và chức năng giống phiếu cân ca.',
+    icon: PackageX,
+    tab: 'damaged-goods-report'
   }
 ];
 
@@ -16594,10 +16803,16 @@ const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
 
 const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Danh sách báo cáo sản lượng',
-    desc: 'Xem, sửa và in các phiếu báo cáo sản lượng đã lưu.',
-    icon: ClipboardList,
-    tab: 'acceptance-report-list'
+    title: 'Danh sách báo cáo tồn',
+    desc: 'Xem báo cáo NVL tồn theo từng máy và ca sản xuất.',
+    icon: Boxes,
+    tab: 'machine-nvl-report'
+  },
+  {
+    title: 'Danh sách trộn nguyên vật liệu',
+    desc: 'Lấy danh sách báo cáo phối trộn đã lưu theo ngày, ca và máy.',
+    icon: Layers,
+    tab: 'mixing-report-list'
   },
   {
     title: 'Phiếu cân ca',
@@ -16606,16 +16821,16 @@ const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'weighing-summary'
   },
   {
-    title: 'Danh sách phối trộn',
-    desc: 'Lấy danh sách báo cáo phối trộn đã lưu theo ngày, ca và máy.',
-    icon: Layers,
-    tab: 'mixing-report-list'
+    title: 'Danh sách báo cáo sản lượng',
+    desc: 'Xem, sửa và in các phiếu báo cáo sản lượng đã lưu.',
+    icon: ClipboardList,
+    tab: 'acceptance-report-list'
   },
   {
-    title: 'Danh sách NVL tồn',
-    desc: 'Xem báo cáo NVL tồn theo từng máy và ca sản xuất.',
-    icon: Boxes,
-    tab: 'machine-nvl-report'
+    title: 'Danh sách phiếu nhập kho thành phẩm',
+    desc: 'Tra cứu các phiếu nhập kho thành phẩm đã lưu.',
+    icon: ArrowDownToLine,
+    tab: 'warehouse-history'
   },
   {
     title: 'Danh sách báo cáo dừng máy',
@@ -16678,7 +16893,7 @@ function MenuCardGrid({
   onNavigate: (tab: AppTab) => void;
 }) {
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <section className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
       {items.map(item => {
         const Icon = item.icon;
         return (
@@ -16686,18 +16901,18 @@ function MenuCardGrid({
             key={item.title}
             type="button"
             onClick={() => onNavigate(item.tab)}
-            className="group relative min-h-[168px] overflow-hidden rounded-[var(--radius-card)] border border-ink-200 bg-ink-0 p-4 text-left shadow-[var(--shadow-card)] transition hover:border-brand-500 hover:shadow-[var(--shadow-elevated)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-brand-500/25"
+            className="group relative min-h-[88px] overflow-hidden rounded-[10px] border border-ink-200 bg-ink-0 p-3 text-left shadow-[var(--shadow-card)] transition hover:border-brand-500 hover:shadow-[var(--shadow-elevated)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-brand-500/25"
           >
-            <span className="absolute inset-x-0 top-0 h-1 bg-ink-900 transition group-hover:bg-brand-500" />
-            <div className="flex items-start gap-3">
-              <span className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-2xl border border-ink-800 bg-ink-900 text-brand-500 shadow-sm transition group-hover:border-brand-500 group-hover:bg-brand-500/10">
-                <Icon className="h-10 w-10" />
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-ink-900 transition group-hover:bg-brand-500" />
+            <div className="flex items-start gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-ink-800 bg-ink-900 text-brand-500 shadow-sm transition group-hover:border-brand-500 group-hover:bg-brand-500/10">
+                <Icon className="h-[18px] w-[18px]" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-base font-black leading-snug text-ink-900">{item.title}</span>
-                <span className="mt-1.5 block text-sm font-medium leading-5 text-ink-500">{item.desc}</span>
+                <span className="block text-[13px] font-semibold leading-snug text-ink-900">{item.title}</span>
+                <span className="mt-0.5 block text-[12px] font-normal leading-snug text-ink-500 line-clamp-2">{item.desc}</span>
               </span>
-              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-ink-400 group-hover:text-brand-500" />
+              <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400 group-hover:text-brand-500" />
             </div>
           </button>
         );
@@ -16771,6 +16986,46 @@ const PRIMARY_NAV_GROUPS: {
   }
 ];
 
+const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
+  'menu': { group: 'Trang chủ', sub: 'Chọn chức năng' },
+  'control-board': { group: 'Sản xuất', sub: 'Bảng điều khiển' },
+  'report-forms': { group: 'Sản xuất', sub: 'Phiếu báo cáo' },
+  'form': { group: 'Sản xuất', sub: 'Phiếu báo cáo' },
+  'report-lists': { group: 'Sản xuất', sub: 'Danh sách báo cáo' },
+  'acceptance-report-list': { group: 'Sản xuất', sub: 'DS phiếu nghiệm thu' },
+  'weighing-summary': { group: 'Sản xuất', sub: 'Tổng hợp cân ca' },
+  'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
+  'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },
+  'mixing-report-list': { group: 'Sản xuất', sub: 'DS phiếu trộn' },
+  'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
+  'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
+  'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },
+  'machine-downtime-list': { group: 'Sản xuất', sub: 'DS máy dừng' },
+  'production-plan-history': { group: 'Sản xuất', sub: 'Kế hoạch SX' },
+  'materials': { group: 'CSVC & Kho', sub: 'Kho NVL' },
+  'materials-inventory': { group: 'CSVC & Kho', sub: 'Kho NVL' },
+  'products': { group: 'CSVC & Kho', sub: 'Sản phẩm' },
+  'machines': { group: 'CSVC & Kho', sub: 'Danh sách máy' },
+  'warehouse-slip': { group: 'CSVC & Kho', sub: 'Phiếu xuất nhập kho' },
+  'warehouse-history': { group: 'CSVC & Kho', sub: 'Lịch sử XNK' },
+  'hr': { group: 'Nhân sự', sub: 'Nhân sự' },
+  'settings': { group: 'Nhân sự', sub: 'Cài đặt' },
+  'orders': { group: 'Kinh doanh', sub: 'Đơn hàng' },
+  'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
+  'production-orders': { group: 'Nhà máy', sub: 'Lệnh sản xuất' },
+  'dashboard': { group: 'Phân tích', sub: 'Dashboard' }
+};
+
+function getActivePageMeta(tab: AppTab): { group: string; sub: string } {
+  if (TAB_TITLE_MAP[tab]) return TAB_TITLE_MAP[tab];
+  for (const group of PRIMARY_NAV_GROUPS) {
+    if (group.tab === tab) return { group: group.title, sub: '' };
+    const child = group.children.find(c => c.tab === tab);
+    if (child) return { group: group.title, sub: child.label };
+  }
+  return { group: 'Trang chủ', sub: '' };
+}
+
 function SubNav({
   activeTab,
   onNavigate
@@ -16779,30 +17034,33 @@ function SubNav({
   onNavigate: (tab: AppTab) => void;
 }) {
   return (
-    <nav className="rounded-[var(--radius-card)] border border-ink-200 bg-ink-0 p-3 shadow-[var(--shadow-card)]">
-      <p className="px-2 pb-2 text-[10px] font-black uppercase tracking-wider text-ink-400">Điều hướng nhanh</p>
-      <ul className="flex flex-col gap-1">
+    <nav className="rounded-xl bg-white border border-slate-100 p-2">
+      <ul className="flex flex-col gap-0.5">
         {PRIMARY_NAV_GROUPS.map(group => {
           const Icon = group.icon;
           const isActiveGroup = activeTab === group.tab || group.children.some(c => c.tab === activeTab);
+          const isExact = activeTab === group.tab;
           return (
             <li key={group.title}>
               <button
                 type="button"
                 onClick={() => onNavigate(group.tab)}
-                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-bold transition ${
-                  activeTab === group.tab
-                    ? 'bg-brand-50 text-brand-700'
+                className={`relative flex w-full items-center gap-2 rounded-lg pl-3 pr-2.5 py-2 text-left text-sm font-semibold transition ${
+                  isExact
+                    ? 'bg-slate-100 text-slate-900 font-bold'
                     : isActiveGroup
-                    ? 'bg-ink-100 text-ink-800'
-                    : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
+                    ? 'bg-slate-50 text-slate-800'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
+                {isExact && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-brand-500" aria-hidden />
+                )}
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="flex-1 truncate">{group.title}</span>
               </button>
               {isActiveGroup && group.children.length > 0 && (
-                <ul className="mt-1 ml-3 flex flex-col gap-0.5 border-l-2 border-ink-200 pl-3">
+                <ul className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l-2 border-slate-200 pl-2">
                   {group.children.map(child => (
                     <li key={child.tab}>
                       <button
@@ -16810,8 +17068,8 @@ function SubNav({
                         onClick={() => onNavigate(child.tab)}
                         className={`w-full rounded-md px-2 py-1.5 text-left text-xs font-semibold transition ${
                           activeTab === child.tab
-                            ? 'bg-brand-500 text-white'
-                            : 'text-ink-500 hover:bg-ink-50 hover:text-brand-500'
+                            ? 'bg-brand-50 text-brand-700 font-bold'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-brand-600'
                         }`}
                       >
                         {child.label}
@@ -16864,6 +17122,33 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [notifications, setNotifications] = useState<{ id: string; text: string; type: 'success' | 'error' | 'warning' }[]>([]);
   const [offlineReports, setOfflineReports] = useState<ProductionReport[]>([]);
+  const [quickNavOpen, setQuickNavOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isTyping = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      );
+      if (isTyping) return;
+
+      const isCmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
+      if (isCmdK) {
+        e.preventDefault();
+        setQuickNavOpen(open => !open);
+        return;
+      }
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setQuickNavOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const [acceptanceEditReport, setAcceptanceEditReport] = useState<AcceptanceReport | null>(null);
   const [mixingReportMachinePrefill, setMixingReportMachinePrefill] = useState<{
     id: string;
@@ -17158,10 +17443,16 @@ export default function App() {
 
   return (
     <div
-      className="flex h-[100dvh] overflow-hidden bg-ink-100 font-sans text-ink-800 selection:bg-brand-500 selection:text-white"
+      className="flex h-[100dvh] overflow-hidden bg-slate-50 font-sans text-slate-800 selection:bg-brand-500 selection:text-white"
       id="main-root-container"
     >
-      <aside className="hidden shrink-0 flex-col items-center border-r border-ink-800 bg-ink-900 py-3 pt-safe sm:flex sm:w-16">
+      <aside className="hidden shrink-0 flex-col items-center gap-1 border-r border-slate-800/60 bg-gradient-to-b from-slate-900 to-slate-950 py-3 pt-safe sm:flex sm:w-16">
+        {BACK_TAB_MAP[activeTab] && (
+          <MobileBackNavButton
+            onClick={() => navigateToTab(BACK_TAB_MAP[activeTab])}
+            variant="sidebar"
+          />
+        )}
         <HomeNavButton
           active={activeTab === 'menu'}
           onClick={event => handleNavClick(event, 'menu')}
@@ -17170,63 +17461,50 @@ export default function App() {
       </aside>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-        <div className="mx-auto flex min-h-0 w-full max-w-none flex-1 flex-col overflow-hidden bg-ink-0 shadow-[var(--shadow-card)]">
+        <div className="mx-auto flex min-h-0 w-full max-w-none flex-1 flex-col overflow-hidden bg-white shadow-[var(--shadow-card)]">
 
-        {/* Device Status Header / Bar */}
-        <header className="sticky top-0 z-40 border-b border-ink-200 bg-ink-0 px-4 py-3 pt-safe shrink-0 flex items-center justify-between" style={{ boxShadow: '0 1px 0 rgba(15,23,42,0.04)' }}>
-          <div className="flex items-center gap-2">
-            {activeTab === 'acceptance-report-list' ? (
-              <BackButton onClick={() => navigateToTab('report-lists')} className="h-10 rounded-xl" />
-            ) : activeTab === 'report-lists' ? (
-              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
-            ) : activeTab === 'report-forms' ? (
-              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
-            ) : activeTab === 'production-reports' || activeTab === 'facility-management' || activeTab === 'hcns' || activeTab === 'business' || activeTab === 'factory' ? (
-              <BackButton onClick={() => navigateToTab('menu')} className="h-10 rounded-xl" />
-            ) : activeTab === 'products' || activeTab === 'machines' || activeTab === 'materials' || activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' ? (
-              <BackButton onClick={() => navigateToTab('facility-management')} className="h-10 rounded-xl" />
-            ) : activeTab === 'hr' || activeTab === 'settings' ? (
-              <BackButton onClick={() => navigateToTab('hcns')} className="h-10 rounded-xl" />
-            ) : activeTab === 'orders' || activeTab === 'customers' ? (
-              <BackButton onClick={() => navigateToTab('business')} className="h-10 rounded-xl" />
-            ) : activeTab === 'production-orders' ? (
-              <BackButton onClick={() => navigateToTab('factory')} className="h-10 rounded-xl" />
-            ) : activeTab === 'production-plan-history' ? (
-              <BackButton onClick={() => navigateToTab('production-reports')} className="h-10 rounded-xl" />
-            ) : activeTab === 'weighing-summary' ? (
-              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
-            ) : activeTab === 'damaged-goods-report' ? (
-              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
-            ) : activeTab === 'machine-nvl-report' ? (
-              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
-            ) : activeTab === 'machine-downtime-list' ? (
-              <BackButton onClick={() => navigateToTab('report-lists')} className="h-10 rounded-xl" />
-            ) : activeTab === 'machine-downtime-report' || activeTab === 'acceptance-report' ? (
-              <BackButton onClick={() => navigateToTab('report-forms')} className="h-10 rounded-xl" />
-            ) : null}
-            <VietNhatLogo />
+        {/* Brand Header — logo + trigger Drawer + offline pill */}
+        <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl px-3 md:px-5 h-14 md:h-16 pt-safe shrink-0 flex items-center gap-2" style={{ boxShadow: 'var(--shadow-soft)' }}>
+          <button
+            type="button"
+            onClick={() => setQuickNavOpen(true)}
+            aria-label="Mở điều hướng nhanh"
+            title="Mở điều hướng nhanh (Ctrl + K)"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition active:scale-95 shrink-0"
+          >
+            <Menu className="h-[18px] w-[18px]" />
+          </button>
+
+          <div className="min-w-0 flex-1 flex items-center gap-2">
+            {(() => {
+              const pageMeta = getActivePageMeta(activeTab);
+              return (
+                <div className="min-w-0 flex flex-col justify-center">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none truncate">{pageMeta.group}</span>
+                  <span className="mt-0.5 block text-[13px] md:text-[14px] font-semibold tracking-tight text-slate-900 truncate">{pageMeta.sub || 'Trang chủ'}</span>
+                </div>
+              );
+            })()}
           </div>
 
-          {/* Network status and offline indicator pills */}
-          <div className="flex items-center gap-1.5">
-            {offlineReports.length > 0 && (
-              <span className="text-[10px] bg-warning-500/15 text-warning-700 font-bold px-2 py-0.5 rounded-full animate-pulse border border-warning-500/30">
-                Tạm {offlineReports.length}
-              </span>
-            )}
-
-            {isOnline ? (
-              <span className="flex items-center gap-1 text-[11px] font-bold text-success-700 bg-success-500/10 px-2 py-0.5 rounded-full border border-success-500/20">
-                <Wifi className="w-3.5 h-3.5" />
-                Đồng bộ
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-[11px] font-bold text-danger-700 bg-danger-500/10 px-2 py-0.5 rounded-full border border-danger-500/20">
-                <WifiOff className="w-3.5 h-3.5" />
-                Ngoại tuyến
-              </span>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setQuickNavOpen(true)}
+            aria-label="Tìm kiếm nhanh"
+            title="Tìm kiếm nhanh (Ctrl + K)"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition active:scale-95 shrink-0"
+          >
+            <Search className="h-[16px] w-[16px]" />
+          </button>
+          {offlineReports.length > 0 && (
+            <span className="text-[10px] bg-rose-50 text-rose-700 font-bold px-2 py-0.5 rounded-full border border-rose-100">
+              Tạm {offlineReports.length}
+            </span>
+          )}
+          <span className="hidden md:inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white text-[11px] font-bold shadow-sm">
+            VN
+          </span>
+          <VietNhatLogo className="h-9 md:h-10 w-auto max-h-full object-contain shrink-0 ml-0.5" />
         </header>
 
         {/* Floating notifications / Toasts layout */}
@@ -17238,33 +17516,89 @@ export default function App() {
                 initial={{ opacity: 0, y: -20, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className={`p-3 rounded-xl border shadow-lg text-xs font-semibold flex items-start gap-2 backdrop-blur-md ${
+                className={`p-3 rounded-2xl border border-white/30 shadow-elevated text-[12.5px] font-semibold flex items-start gap-2 backdrop-blur-xl leading-relaxed ${
                   n.type === 'success'
-                    ? 'bg-success-500/10 border-success-500/40 text-success-700'
+                    ? 'bg-gradient-to-br from-emerald-50/85 to-white/80 border-emerald-200/60 text-emerald-700'
                     : n.type === 'error'
-                    ? 'bg-danger-500/10 border-danger-500/40 text-danger-700'
-                    : 'bg-warning-500/10 border-warning-500/40 text-warning-700'
+                    ? 'bg-gradient-to-br from-rose-50/85 to-white/80 border-rose-200/60 text-rose-700'
+                    : 'bg-gradient-to-br from-amber-50/85 to-white/80 border-amber-200/60 text-amber-700'
                 }`}
               >
-                {n.type === 'success' && <CheckCircle className="w-4 h-4 text-success-500 shrink-0 mt-0.5" />}
-                {n.type === 'error' && <Sparkles className="w-4 h-4 text-danger-500 shrink-0 mt-0.5" />}
-                {n.type === 'warning' && <Sparkles className="w-4 h-4 text-warning-500 shrink-0 mt-0.5" />}
+                {n.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />}
+                {n.type === 'error' && <Sparkles className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />}
+                {n.type === 'warning' && <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />}
                 <p className="flex-1 leading-relaxed">{n.text}</p>
               </motion.div>
             ))}
           </AnimatePresence>
         </div>
 
+        {/* Drawer 'Điều hướng nhanh' — mặc định ẩn */}
+        <AnimatePresence>
+          {quickNavOpen && (
+            <motion.div
+              key="quicknav-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm"
+              onClick={() => setQuickNavOpen(false)}
+            />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {quickNavOpen && (
+            <motion.aside
+              key="quicknav-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Điều hướng nhanh"
+              initial={{ x: -320 }}
+              animate={{ x: 0 }}
+              exit={{ x: -320 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              className="fixed inset-y-0 left-0 z-[70] w-[280px] max-w-[85vw] bg-white border-r border-slate-200 shadow-elevated flex flex-col"
+            >
+              <div className="h-12 md:h-14 flex items-center justify-between px-4 border-b border-slate-200 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-brand-50 text-brand-500">
+                    <Menu className="h-4 w-4" />
+                  </span>
+                  <span className="font-display text-[14px] font-semibold tracking-tight text-slate-900">Điều hướng nhanh</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickNavOpen(false)}
+                  aria-label="Đóng"
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition active:scale-95"
+                >
+                  <X className="h-[18px] w-[18px]" />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-2">
+                <SubNav
+                  activeTab={activeTab}
+                  onNavigate={(tab) => {
+                    navigateToTab(tab);
+                    setQuickNavOpen(false);
+                  }}
+                />
+              </div>
+              <div className="px-3 py-2 border-t border-slate-100 text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center justify-between">
+                <span>Phím tắt</span>
+                <span className="font-mono">Ctrl + K</span>
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+
         {/* Main Content scrollable container viewport */}
-        <main className={`flex-1 min-h-0 overflow-y-auto bg-ink-50 focus:outline-none ${
+        <main className={`flex-1 min-h-0 overflow-y-auto bg-slate-50 focus:outline-none ${
           activeTab === 'control-board' ? 'p-2 md:p-4' : 'p-4 md:p-6 pb-4'
         }`} id="applet-viewport">
           <div className="mx-auto w-full max-w-[1280px]">
-            <div className="md:grid md:grid-cols-[260px_minmax(0,1fr)] md:gap-6">
-              <aside className="hidden md:block md:sticky md:top-4 md:self-start">
-                <SubNav activeTab={activeTab} onNavigate={navigateToTab} />
-              </aside>
-              <div className="min-w-0">
+            <div className="min-w-0">
           <AnimatePresence mode="wait">
             {activeTab === 'control-board' ? (
               <motion.div
@@ -17303,7 +17637,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-5"
               >
-                <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <section className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     {
                       title: 'Bảng điều khiển',
@@ -17348,18 +17682,17 @@ export default function App() {
                         key={item.title}
                         type="button"
                         onClick={item.action}
-                        className="group relative min-h-[168px] overflow-hidden rounded-[var(--radius-card)] border border-ink-200 bg-ink-0 p-4 text-left shadow-[var(--shadow-card)] transition hover:border-brand-500 hover:shadow-[var(--shadow-elevated)] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-brand-500/25"
+                        className="group relative min-h-[80px] overflow-hidden rounded-xl bg-white border border-slate-200 p-3.5 md:p-4 text-left transition hover:border-brand-200 hover:shadow-elevated active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-brand-500/25"
                       >
-                        <span className="absolute inset-x-0 top-0 h-1 bg-ink-900 transition group-hover:bg-brand-500" />
                         <div className="flex items-start gap-3">
-                          <span className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-2xl border border-ink-800 bg-ink-900 text-brand-500 shadow-sm transition group-hover:border-brand-500 group-hover:bg-brand-500/10">
-                            <Icon className="h-10 w-10" />
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 transition group-hover:bg-brand-500 group-hover:text-white">
+                            <Icon className="h-[18px] w-[18px]" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-base font-black leading-snug text-ink-900">{item.title}</span>
-                            <span className="mt-1.5 block text-sm font-medium leading-5 text-ink-500">{item.desc}</span>
+                            <span className="block font-display font-semibold tracking-tight text-[13.5px] text-slate-900">{item.title}</span>
+                            <span className="mt-0.5 block text-[11.5px] leading-snug text-slate-500 line-clamp-2">{item.desc}</span>
                           </span>
-                          <ChevronRight className="mt-1 w-4 h-4 text-ink-400 group-hover:text-brand-500 shrink-0" />
+                          <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-400 transition group-hover:text-brand-500 group-hover:translate-x-0.5" />
                         </div>
                       </button>
                     );
@@ -17373,11 +17706,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-5"
+                className="space-y-3"
               >
-                <div>
-                  <h2 className="text-xl font-black text-ink-900">Báo cáo sản xuất</h2>
-                  <p className="mt-1 text-sm font-medium text-ink-500">Chọn loại báo cáo cần mở.</p>
+                <div className="rounded-2xl border border-ink-200 bg-gradient-to-r from-ink-50 to-ink-0 px-4 py-3 shadow-[var(--shadow-card)]">
+                  <h2 className="text-base font-bold text-ink-900">Báo cáo sản xuất</h2>
+                  <p className="mt-0.5 text-[12px] font-medium text-ink-500">Chọn loại báo cáo cần mở.</p>
                 </div>
                 <MenuCardGrid items={PRODUCTION_REPORT_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
@@ -17388,11 +17721,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-5"
+                className="space-y-3"
               >
-                <div>
-                  <h2 className="text-xl font-black text-ink-900">Phiếu báo cáo</h2>
-                  <p className="mt-1 text-sm font-medium text-ink-500">Chọn phiếu báo cáo cần lập hoặc mở.</p>
+                <div className="rounded-2xl border border-ink-200 bg-gradient-to-r from-ink-50 to-ink-0 px-4 py-3 shadow-[var(--shadow-card)]">
+                  <h2 className="text-base font-bold text-ink-900">Phiếu báo cáo</h2>
+                  <p className="mt-0.5 text-[12px] font-medium text-ink-500">Chọn phiếu báo cáo cần lập hoặc mở.</p>
                 </div>
                 <MenuCardGrid items={REPORT_FORM_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
@@ -17403,11 +17736,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-5"
+                className="space-y-3"
               >
-                <div>
-                  <h2 className="text-xl font-black text-ink-900">Danh sách báo cáo</h2>
-                  <p className="mt-1 text-sm font-medium text-ink-500">Chọn danh sách báo cáo cần mở.</p>
+                <div className="rounded-2xl border border-ink-200 bg-gradient-to-r from-ink-50 to-ink-0 px-4 py-3 shadow-[var(--shadow-card)]">
+                  <h2 className="text-base font-bold text-ink-900">Danh sách báo cáo</h2>
+                  <p className="mt-0.5 text-[12px] font-medium text-ink-500">Chọn danh sách báo cáo cần mở.</p>
                 </div>
                 <MenuCardGrid items={REPORT_LIST_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
@@ -17438,11 +17771,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-5"
+                className="space-y-3"
               >
-                <div>
-                  <h2 className="text-xl font-black text-ink-900">Quản lý CSVC</h2>
-                  <p className="mt-1 text-sm font-medium text-ink-500">Cơ sở vật chất, kho hàng và thiết bị sản xuất.</p>
+                <div className="rounded-2xl border border-ink-200 bg-gradient-to-r from-ink-50 to-ink-0 px-4 py-3 shadow-[var(--shadow-card)]">
+                  <h2 className="text-base font-bold text-ink-900">Quản lý CSVC</h2>
+                  <p className="mt-0.5 text-[12px] font-medium text-ink-500">Cơ sở vật chất, kho hàng và thiết bị sản xuất.</p>
                 </div>
                 <MenuCardGrid items={FACILITY_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
@@ -17453,11 +17786,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-5"
+                className="space-y-3"
               >
                 <div>
-                  <h2 className="text-xl font-black text-ink-900">HCNS</h2>
-                  <p className="mt-1 text-sm font-medium text-ink-500">Nhân sự và cấu hình hệ thống.</p>
+                  <h2 className="text-base font-bold text-ink-900">HCNS</h2>
+                  <p className="mt-0.5 text-[12px] font-medium text-ink-500">Nhân sự và cấu hình hệ thống.</p>
                 </div>
                 <MenuCardGrid items={HCNS_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
@@ -17468,11 +17801,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-5"
+                className="space-y-3"
               >
                 <div>
-                  <h2 className="text-xl font-black text-ink-900">Kinh doanh</h2>
-                  <p className="mt-1 text-sm font-medium text-ink-500">Đơn hàng và khách hàng.</p>
+                  <h2 className="text-base font-bold text-ink-900">Kinh doanh</h2>
+                  <p className="mt-0.5 text-[12px] font-medium text-ink-500">Đơn hàng và khách hàng.</p>
                 </div>
                 <MenuCardGrid items={BUSINESS_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
@@ -17483,11 +17816,11 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-5"
+                className="space-y-3"
               >
                 <div>
-                  <h2 className="text-xl font-black text-ink-900">Nhà máy</h2>
-                  <p className="mt-1 text-sm font-medium text-ink-500">Lệnh sản xuất và điều phối nhà máy.</p>
+                  <h2 className="text-base font-bold text-ink-900">Nhà máy</h2>
+                  <p className="mt-0.5 text-[12px] font-medium text-ink-500">Lệnh sản xuất và điều phối nhà máy.</p>
                 </div>
                 <MenuCardGrid items={FACTORY_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
@@ -17498,35 +17831,33 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}
                 transition={{ duration: 0.15 }}
-                className="space-y-6"
+                className="space-y-3"
               >
-                {/* Visual Wizard Stepper Indicator */}
-                <div className="p-3.5 bg-white border border-slate-200 rounded-2xl flex items-center justify-between shadow-sm">
+                {/* Visual Wizard Stepper Indicator — industrial compact */}
+                <div className="px-3 py-2 bg-white border border-ink-200 rounded-md flex items-center justify-between" style={{ boxShadow: 'var(--shadow-card)' }}>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black uppercase text-slate-400 block tracking-wider leading-none">BƯỚC</span>
-                    <span className="text-lg font-black text-slate-800 leading-none">{currentStep}/3</span>
-                  </div>
-                  
-                  {/* Visual segment progress lines */}
-                  <div className="flex-1 mx-4 flex gap-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full transition-all duration-300 ${currentStep >= 1 ? 'bg-success-500 w-1/3' : 'w-0'}`} />
-                    <div className={`h-full rounded-full transition-all duration-300 ${currentStep >= 2 ? 'bg-success-500 w-1/3' : 'w-0'}`} />
-                    <div className={`h-full rounded-full transition-all duration-300 ${currentStep >= 3 ? 'bg-success-500 w-1/3' : 'w-0'}`} />
+                    <span className="text-[9px] font-mono uppercase text-ink-400 block tracking-wider leading-none">Bước</span>
+                    <span className="text-[15px] font-semibold text-ink-900 num leading-none">{currentStep}/3</span>
                   </div>
 
-                  <span className="text-[11px] font-bold text-slate-500 shrink-0">
-                    {currentStep === 1 ? 'Thông tin & Mã hàng' : currentStep === 2 ? 'Phối trộn polymer' : 'Phế phẩm & Lưu'}
+                  {/* Visual segment progress lines */}
+                  <div className="flex-1 mx-3 flex gap-0.5 h-0.5 bg-ink-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${currentStep >= 1 ? 'bg-accent-600 w-1/3' : 'w-0'}`} />
+                    <div className={`h-full rounded-full transition-all duration-300 ${currentStep >= 2 ? 'bg-accent-600 w-1/3' : 'w-0'}`} />
+                    <div className={`h-full rounded-full transition-all duration-300 ${currentStep >= 3 ? 'bg-accent-600 w-1/3' : 'w-0'}`} />
+                  </div>
+
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-500 shrink-0">
+                    {currentStep === 1 ? 'Ca & Mã hàng' : currentStep === 2 ? 'Phối trộn' : 'Phế phẩm & Lưu'}
                   </span>
                 </div>
 
                 {/* Stepper Card Frame */}
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm min-h-[300px]">
+                <div className="form-card min-h-[260px]">
                   {currentStep === 1 && (
-                    <div className="space-y-6">
+                    <div className="form-section stagger-field">
                       <ShiftInfoForm data={reportForm.shiftInfo} onChange={updateShiftInfo} />
-                      <div className="pt-2 border-t border-slate-100">
-                        <ProductEntryForm data={reportForm.productEntry} onChange={updateProductEntry} />
-                      </div>
+                      <ProductEntryForm data={reportForm.productEntry} onChange={updateProductEntry} />
                     </div>
                   )}
 
@@ -17535,35 +17866,35 @@ export default function App() {
                   )}
 
                   {currentStep === 3 && (
-                    <div className="space-y-6">
-                      <WasteForm 
-                        wasteWeight={reportForm.wasteWeight} 
-                        notes={reportForm.notes || ''} 
-                        onChange={updateWasteAndNotes} 
+                    <div className="form-section stagger-field">
+                      <WasteForm
+                        wasteWeight={reportForm.wasteWeight}
+                        notes={reportForm.notes || ''}
+                        onChange={updateWasteAndNotes}
                       />
 
                       {/* Final layout summary review before submission */}
-                      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3 text-slate-100">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                          <Sparkles className="w-4 h-4 text-warning-500 animate-pulse" />
-                          Tổng Hợp Kết Quả Báo Cáo
+                      <div className="rounded-md bg-ink-900 border border-ink-800 p-3 space-y-2.5 text-ink-100">
+                        <h4 className="text-[10px] font-mono uppercase tracking-wider text-ink-400 flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 text-warning-500 animate-pulse" />
+                          Tổng hợp kết quả
                         </h4>
 
-                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-semibold py-1 border-b border-slate-800">
-                          <div>Ca máy: <span className="text-slate-300 block">{reportForm.shiftInfo.machineId.split(' ')[0] || '--'}</span></div>
-                          <div>Mã hàng: <span className="text-slate-300 block">{reportForm.productEntry.productCode || '--'}</span></div>
+                        <div className="grid grid-cols-2 gap-y-1.5 gap-x-3 text-[11px] font-semibold pb-1.5 border-b border-ink-800">
+                          <div>Ca máy: <span className="text-ink-300 block">{reportForm.shiftInfo.machineId.split(' ')[0] || '--'}</span></div>
+                          <div>Mã hàng: <span className="text-ink-300 block">{reportForm.productEntry.productCode || '--'}</span></div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs py-1 border-b border-slate-800 font-mono">
-                          <div>Polymer phối: <strong className="text-brand-400 text-sm block">{formatNumber(activeMetrics.totalPlastic)} kg</strong></div>
-                          <div>Thành phẩm: <strong className="text-success-400 text-sm block">{formatNumber(activeMetrics.actualProductWeight)} kg</strong></div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] pb-1.5 border-b border-ink-800">
+                          <div>Polymer phối: <strong className="text-brand-400 num block text-[13px]">{formatNumber(activeMetrics.totalPlastic)} kg</strong></div>
+                          <div>Thành phẩm: <strong className="text-accent-300 num block text-[13px]">{formatNumber(activeMetrics.actualProductWeight)} kg</strong></div>
                         </div>
 
                         {/* Variance result */}
-                        <div className="flex items-center justify-between text-xs font-semibold">
-                          <span>Phế phẩm: <strong className="text-rose-400">{formatNumber(reportForm.wasteWeight)} kg</strong></span>
-                          <span>Tỉ lệ hao hụt: <strong className={`${
-                            activeMetrics.status === 'optimal' ? 'text-success-400' : activeMetrics.status === 'warning' ? 'text-warning-400' : 'text-rose-400'
+                        <div className="flex items-center justify-between text-[11px] font-semibold">
+                          <span>Phế phẩm: <strong className="text-rose-400 num">{formatNumber(reportForm.wasteWeight)} kg</strong></span>
+                          <span>Tỉ lệ hao hụt: <strong className={`num ${
+                            activeMetrics.status === 'optimal' ? 'text-accent-300' : activeMetrics.status === 'warning' ? 'text-warning-400' : 'text-rose-400'
                           }`}>{formatNumber(activeMetrics.variancePercent)}%</strong></span>
                         </div>
                       </div>
@@ -17812,28 +18143,15 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
-              </div>
             </div>
           </div>
         </main>
 
         {/* Dynamic STICKY Wizard Footer Bar for Form Inputs - locked at bottom, min height 44px layout */}
         {activeTab === 'form' && (
-          <footer className="z-30 shrink-0 border-t border-slate-200 bg-white px-4 py-3.5 shadow-lg flex items-center justify-between" id="sticky-wizard-footer">
-            <div className="flex-1 flex gap-3">
-              {currentStep > 1 ? (
-                <button
-                  type="button"
-                  id="wizard-prev-btn"
-                  onClick={() => setCurrentStep(prev => prev - 1)}
-                  className="h-12 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 transition font-bold text-sm text-slate-600 flex items-center justify-center gap-1 active:scale-95"
-                  style={{ minHeight: '44px' }}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Quay lại</span>
-                </button>
-              ) : (
-                <button
+          <footer className="z-30 shrink-0 border-t border-slate-200/80 bg-white/85 backdrop-blur-xl px-4 py-3 shadow-elevated flex items-center justify-end" id="sticky-wizard-footer">
+            <div className="flex gap-3 justify-end">
+              <button
                   type="button"
                   onClick={() => {
                     if (window.confirm('Khôi phục bản ghi nháp hiện tại?')) {
@@ -17847,7 +18165,6 @@ export default function App() {
                 >
                   Reset Nháp
                 </button>
-              )}
 
               {currentStep < 3 ? (
                 <button
@@ -17880,7 +18197,7 @@ export default function App() {
                   type="button"
                   id="save-report-submit-btn"
                   onClick={() => handleSubmitReport()}
-                  className="flex-1 h-12 rounded-xl bg-brand-500 hover:bg-brand-700 text-white font-extrabold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-md shadow-brand-500/20"
+                  className="flex-1 h-12 rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white font-extrabold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-lg shadow-brand-500/25"
                   style={{ minHeight: '44px' }}
                 >
                   <Save className="w-4.5 h-4.5" />
@@ -17891,12 +18208,20 @@ export default function App() {
           </footer>
         )}
 
-        <nav className="z-40 shrink-0 border-t border-ink-200 bg-ink-0 px-3 pb-safe sm:hidden">
-          <HomeNavButton
-            active={activeTab === 'menu'}
-            onClick={event => handleNavClick(event, 'menu')}
-            variant="bottom"
-          />
+        <nav className="z-40 shrink-0 px-2 pb-2 pb-safe sm:hidden">
+          <div className="mx-auto flex max-w-sm items-stretch rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-xl shadow-elevated px-1.5 py-1">
+            {BACK_TAB_MAP[activeTab] && (
+              <MobileBackNavButton
+                onClick={() => navigateToTab(BACK_TAB_MAP[activeTab])}
+                variant="bottom"
+              />
+            )}
+            <HomeNavButton
+              active={activeTab === 'menu'}
+              onClick={event => handleNavClick(event, 'menu')}
+              variant="bottom"
+            />
+          </div>
         </nav>
 
         <nav

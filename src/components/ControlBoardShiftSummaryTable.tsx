@@ -208,19 +208,19 @@ export default function ControlBoardShiftSummaryTable({
 
   return (
     <>
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 bg-gradient-to-r from-brand-950 to-brand-800 px-4 py-3 text-white">
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="border-b border-slate-200 bg-white px-4 py-3 text-slate-700">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-wider text-brand-200">Tổng hợp sản xuất</p>
-              <h3 className="text-lg font-black">Bảng tổng hợp theo ca</h3>
-              <p className="mt-1 text-xs font-medium text-brand-100/90">
+              <p className="text-xs font-black uppercase tracking-wider text-brand-600">Tổng hợp sản xuất</p>
+              <h3 className="text-lg font-black text-slate-900">Bảng tổng hợp theo ca</h3>
+              <p className="mt-1 text-xs font-medium text-slate-500">
                 SL/KL hàng kế hoạch từ lệnh SX · Khối lượng hàng TT từ báo cáo cân ca · Khối lượng NPL từ lịch sử xuất nhập kho · Tồn đầu/cuối ca từ bảng tồn NVL · Tổng vật liệu = KL NPL + Tồn đầu ca − Tồn cuối ca
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <CalendarDays className="hidden h-4 w-4 text-brand-200 sm:block" />
-              <label className="flex items-center gap-1.5 text-xs font-bold text-brand-100">
+              <CalendarDays className="hidden h-4 w-4 text-slate-400 sm:block" />
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
                 Từ
                 <input
                   type="date"
@@ -229,7 +229,7 @@ export default function ControlBoardShiftSummaryTable({
                   className={inputClass}
                 />
               </label>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-brand-100">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
                 Đến
                 <input
                   type="date"
@@ -238,7 +238,7 @@ export default function ControlBoardShiftSummaryTable({
                   className={inputClass}
                 />
               </label>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-brand-100">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
                 Ca
                 <select
                   value={shiftFilter}
@@ -253,7 +253,7 @@ export default function ControlBoardShiftSummaryTable({
                   ))}
                 </select>
               </label>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-brand-100">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
                 Nhân viên
                 <select
                   value={staffFilter}
@@ -272,7 +272,7 @@ export default function ControlBoardShiftSummaryTable({
                 type="button"
                 onClick={handlePrint}
                 disabled={isLoading}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-xs font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Printer className="h-4 w-4" />
                 In

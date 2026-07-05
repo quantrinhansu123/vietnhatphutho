@@ -199,7 +199,7 @@ function resolveStaffFromProductionOrders(
 }
 
 const inputClass =
-  'h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -371,7 +371,7 @@ async function uploadMixingLineImage(imageDataUrl: string) {
 }
 
 const modalInputClass =
-  'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-9 w-full min-w-0 rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 
 function newReportForm(): Omit<MixingReport, 'id' | 'created_at'> {
   return {
@@ -736,7 +736,7 @@ function MixingLineFormModal({
                           const lan_su_dung = setRoundBatchWeight(draft.lan_su_dung, roundKey, e.target.value);
                           onChange({ lan_su_dung, tong_nhua_tron: sumMixingRounds(lan_su_dung) });
                         }}
-                        className="h-8 w-28 rounded-lg border border-zinc-200 bg-white px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                        className="h-8 w-24 rounded-md border border-ink-200 bg-white px-2 text-[13px] font-bold num outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20"
                         placeholder="0"
                       />
                     </label>
@@ -777,7 +777,7 @@ function MixingLineFormModal({
                                 <button
                                   type="button"
                                   onClick={() => openEditRoundItem(roundKey, rowIndex)}
-                                  className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-ink-200 text-ink-600 transition hover:bg-ink-50"
                                   title="Sửa dòng"
                                 >
                                   <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
@@ -1758,7 +1758,7 @@ export default function MixingReportForm({
   const formBody = (
     <>
       {!modalMode && (
-        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-lg border border-ink-200 bg-white" style={{ boxShadow: 'var(--shadow-card)' }}>
           <div className="border-b-4 border-[#ef1b2d] bg-white p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex items-start gap-3">
@@ -1818,7 +1818,7 @@ export default function MixingReportForm({
         </div>
       )}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <section className="rounded-lg border border-ink-200 bg-white" style={{ boxShadow: 'var(--shadow-card)' }}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3">
           <div>
             <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
@@ -1875,7 +1875,7 @@ export default function MixingReportForm({
                           inputMode="decimal"
                           value={getRoundBatchWeightInputValue(roundKey)}
                           onChange={event => handleRoundBatchWeightChange(roundKey, event.target.value)}
-                          className="h-8 w-28 rounded-lg border border-zinc-200 bg-white px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                          className="h-8 w-24 rounded-md border border-ink-200 bg-white px-2 text-[13px] font-bold num outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20"
                           placeholder="0"
                         />
                       </label>
@@ -1983,7 +1983,7 @@ export default function MixingReportForm({
                                       return next;
                                     });
                                   }}
-                                  className="h-10 w-28 md:h-8 md:w-24 rounded-lg border border-zinc-200 bg-white px-2 text-right font-mono text-base md:text-xs font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                                  className="h-8 w-20 md:h-7 md:w-16 rounded-md border border-ink-200 bg-white px-1.5 text-right num text-[12px] font-bold text-brand-600 outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20"
                                   placeholder="0"
                                 />
                               </td>
@@ -1997,7 +1997,7 @@ export default function MixingReportForm({
                                         itemIndex: entry.itemIndex
                                       })
                                     }
-                                    className="inline-flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-ink-200 text-ink-600 transition hover:bg-ink-50"
                                     title="Sửa NVL"
                                   >
                                     <Pencil className="h-4 md:h-3.5 w-4 md:w-3.5" />
@@ -2257,5 +2257,5 @@ export default function MixingReportForm({
     );
   }
 
-  return <div className="space-y-4 pb-24">{formBody}</div>;
+  return <div className="space-y-3 pb-24">{formBody}</div>;
 }

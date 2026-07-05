@@ -39,7 +39,7 @@ export function RepeatableLinesBlock({
   editingIndex
 }: RepeatableLinesBlockProps) {
   const defaultAddClass =
-    'flex h-9 items-center gap-1.5 rounded-xl border border-brand-300 bg-brand-50 px-3 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 hover:border-brand-500';
+    'flex h-8 items-center gap-1 rounded-md border border-brand-500 bg-brand-50 px-2.5 text-[11px] font-bold text-brand-700 transition hover:bg-brand-100';
 
   return (
     <div className={`space-y-2 ${className}`}>

@@ -271,9 +271,98 @@ export default function ProductQrScanner({
 
   if (!open) return null;
 
+  // Mobile: khung QR phía trên, nút sticky bottom. flex-col-reverse đảo thứ tự.
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-4 sm:items-center">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-[80] flex flex-col-reverse items-stretch justify-end bg-black/60 p-0 sm:flex-row sm:items-center sm:justify-center sm:p-4">
+      {/* Mobile: sticky bottom bar */}
+      <div className="shrink-0 border-t border-zinc-200 bg-white px-3 py-3 pb-[max(env(safe-area-inset-bottom),12px)] shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:hidden">
+        <div className="flex gap-2">
+          <input
+            value={manualCode}
+            onChange={e => setManualCode(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitManualCode();
+              }
+            }}
+            placeholder="Nhập mã SP"
+            className="h-11 min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+          />
+          <button
+            type="button"
+            onClick={submitManualCode}
+            className="h-11 shrink-0 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+          >
+            {requireConfirm ? 'Kiểm tra' : 'Thêm'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 shrink-0 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+            aria-label="Đóng"
+          >
+            <X className="mx-auto h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile: khung QR + header + feedback phía trên */}
+      <div className="flex min-h-0 flex-1 flex-col bg-white sm:hidden">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <ScanBarcode className="h-4 w-4 text-[#ef1b2d]" />
+            <h3 className="text-[13px] font-bold uppercase tracking-wider text-zinc-900">Quét mã QR sản phẩm</h3>
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col p-3">
+          <div id={regionId} className="min-h-[200px] flex-1 overflow-hidden rounded-xl bg-zinc-950" />
+          {isStarting && (
+            <p className="mt-2 text-center text-[11px] font-semibold text-zinc-500">Đang mở camera...</p>
+          )}
+          {feedback && (
+            <p
+              key={feedbackPulse}
+              className={`mt-2 rounded-lg border-2 px-2.5 py-2 text-center text-[12px] font-bold ${feedbackClass} ${
+                feedback.type === 'success'
+                  ? 'border-success-500 text-success-800'
+                  : feedback.type === 'pending'
+                    ? 'border-[#ef1b2d] text-zinc-900'
+                  : feedback.type === 'duplicate'
+                    ? 'border-warning-500 text-warning-800'
+                    : 'border-rose-500 text-rose-700'
+              }`}
+            >
+              {feedback.text}
+            </p>
+          )}
+          {pendingScan && (
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={cancelPendingScan}
+                className="h-10 flex-1 rounded-lg border border-zinc-200 bg-white text-sm font-bold text-zinc-700 transition hover:bg-zinc-50"
+              >
+                Quét lại
+              </button>
+              <button
+                type="button"
+                onClick={confirmPendingScan}
+                className="h-10 flex-1 rounded-lg bg-[#ef1b2d] text-sm font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                Xác nhận
+              </button>
+            </div>
+          )}
+          {error && <p className="mt-2 text-[11px] font-bold text-rose-600">{error}</p>}
+          <p className="mt-2 text-center text-[11px] font-semibold text-zinc-500">
+            Đưa mã QR vào khung hình hoặc nhập mã SP ở thanh dưới.
+          </p>
+        </div>
+      </div>
+
+      {/* Desktop: card ngang */}
+      <div className="hidden w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl sm:flex sm:flex-col">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div className="flex items-center gap-2">
             <ScanBarcode className="h-5 w-5 text-[#ef1b2d]" />

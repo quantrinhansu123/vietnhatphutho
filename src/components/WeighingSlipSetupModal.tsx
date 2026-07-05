@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronDown, Factory, FileText, Loader2, Users } from 'lucide-react';
 import { getProductionShiftOptions, normalizeShiftSettings, type ShiftSetting } from '../utils/shiftSettings';
 const inputClass =
-  'h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none transition focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-9 w-full rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 
 interface StaffOption {
   name: string;
@@ -183,12 +183,12 @@ export default function WeighingSlipSetupModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="w-full max-w-lg rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="w-full max-w-lg rounded-t-lg border border-ink-200 bg-white shadow-2xl sm:rounded-lg">
+        <div className="flex items-center justify-between border-b border-dashed border-ink-200 px-3 py-2.5">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm phiếu mới</h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+            <h3 className="text-[13px] font-mono uppercase tracking-wider text-ink-900 font-semibold">Thêm phiếu mới</h3>
+            <p className="mt-0.5 text-[11px] italic text-ink-500">
               Chỉ nhập tiêu đề phiếu — vào trong phiếu để thêm lần cân
             </p>
           </div>
@@ -196,22 +196,22 @@ export default function WeighingSlipSetupModal({
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+            className="h-8 rounded-md border border-ink-200 px-2.5 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50 disabled:opacity-50"
           >
             Đóng
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 p-4">
+        <div className="grid grid-cols-2 gap-2.5 p-3">
           {error && (
-            <p className="col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+            <p className="col-span-2 rounded-md border border-danger-200 bg-danger-50 px-2.5 py-1.5 text-[11px] font-semibold text-danger-700">
               {error}
             </p>
           )}
 
-          <label className="space-y-1.5">
-            <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-500">
-              <CalendarDays className="h-4 w-4 text-[#ef1b2d]" />
+          <label className="space-y-1">
+            <span className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-ink-500">
+              <CalendarDays className="h-3 w-3 text-brand-500" />
               Ngày sản xuất
             </span>
             <input
@@ -222,9 +222,9 @@ export default function WeighingSlipSetupModal({
             />
           </label>
 
-          <label className="space-y-1.5">
-            <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-500">
-              <FileText className="h-4 w-4 text-[#ef1b2d]" />
+          <label className="space-y-1">
+            <span className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-ink-500">
+              <FileText className="h-3 w-3 text-brand-500" />
               Ca sản xuất
             </span>
             <select value={shiftName} onChange={e => setShiftName(e.target.value)} className={inputClass}>

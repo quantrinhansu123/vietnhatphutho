@@ -86,9 +86,9 @@ function storeWeigherName(storageKey: string, name: string) {
   }
 }
 
-const inputClass = 'h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none transition focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+const inputClass = 'h-9 w-full rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 const modalInputClass =
-  'h-9 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-semibold text-zinc-800 outline-none transition focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-9 w-full rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 const modalFileClass =
   'w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-2 py-1.5 text-[11px] font-bold text-zinc-600 file:mr-2 file:rounded file:border-0 file:bg-red-50 file:px-2 file:py-1 file:text-[10px] file:font-bold file:text-[#ef1b2d] hover:bg-white';
 const modalLabelClass = 'text-[10px] font-black uppercase tracking-wider text-zinc-500';
@@ -1289,10 +1289,9 @@ export default function WeighingReportForm({
   }, [productSelectOptions, isLoadingProductionOrders, newRow.productCode]);
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-4">
-      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b-4 border-[#ef1b2d] bg-white p-4">
+    <div className="space-y-3">
+      <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
+        <div className="border-b border-brand-500 bg-white px-3 py-2.5" style={{ borderBottomWidth: '3px' }}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-center gap-3">
               <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" crossOrigin="anonymous" className="h-14 w-auto max-w-[190px] object-contain" />
@@ -1364,9 +1363,9 @@ export default function WeighingReportForm({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-zinc-200 px-4 py-3">
-          <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">Bảng chi tiết cân</h3>
+      <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
+        <div className="border-b border-ink-100 px-3 py-2.5">
+          <h3 className="text-[12px] font-mono uppercase tracking-wider text-ink-900 font-semibold">Bảng chi tiết cân</h3>
           <p className="mt-0.5 text-xs font-semibold text-zinc-500">
             Tổng số dòng: {weighingRows.length}
             {form.documentNo ? ` · Bản số: ${form.documentNo}` : ''}
@@ -1495,14 +1494,13 @@ export default function WeighingReportForm({
           </table>
         </div>
       </section>
-      </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-zinc-200 px-4 py-3">
+      <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
+        <div className="flex flex-wrap items-center justify-end gap-1.5 border-b border-ink-200 px-3 py-2.5">
           <button
             type="button"
             onClick={resetForm}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+            className="flex h-8 items-center gap-1 rounded-md border border-ink-200 bg-white px-2.5 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
           >
             <RotateCcw className="h-4 w-4" />
             Reset
@@ -1518,7 +1516,7 @@ export default function WeighingReportForm({
           </button>
         </div>
 
-        <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+        <div className="flex items-center justify-between border-t border-ink-200 bg-ink-50 px-3 py-2.5">
           <div className="space-y-1">
             <span className="text-xs font-semibold text-zinc-500">Thao tác phiếu cân</span>
             {productsError && (

@@ -7,7 +7,7 @@ import {
 } from '../utils/controlBoardShiftSummary';
 import { formatNumber } from '../utils';
 
-const PRINT_COMPANY_NAME = 'CÔNG TY TNHH VIỆT NHẬT IPT';
+const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
 
 export type ShiftSummaryPrintFilters = {
   dateFrom: string;
