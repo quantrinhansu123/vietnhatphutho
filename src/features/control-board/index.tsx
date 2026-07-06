@@ -65,6 +65,20 @@ import {
   Loader2
 } from 'lucide-react';
 
+function formatProductionOrderPanelDate(value: string): string {
+  const iso = parseProductionOrderFilterDate(value);
+  if (!iso) return value && value !== '-' ? value : '-';
+  const [year, month, day] = iso.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function compareProductionOrderByRecentDate(a: ProductionOrderRow, b: ProductionOrderRow): number {
+  const dateA = parseProductionOrderFilterDate(a.startDate);
+  const dateB = parseProductionOrderFilterDate(b.startDate);
+  if (dateA !== dateB) return dateB.localeCompare(dateA);
+  return compareProductionOrderPriority(a, b);
+}
+
 export function ControlBoardPanel({
   onNavigate,
   onMachineReport,
@@ -574,13 +588,13 @@ export function ControlBoardPanel({
     ].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [productionOrders]);
   const recentProductionOrders = useMemo(() => {
-    const sorted = [...productionOrders].sort(compareProductionOrderPriority);
+    const sorted = [...productionOrders].sort(compareProductionOrderByRecentDate);
 
     return sorted.filter(row =>
       {
         const matchesSearch =
           !productionOrderQuery ||
-          `${row.code} ${row.name} ${row.productCode} ${row.productName} ${row.customer} ${row.orderRef} ${row.status} ${row.machine} ${row.position} ${resolveProductionOrderMachine(row, machines)} ${row.shift} ${row.staff}`
+          `${row.code} ${row.name} ${row.productCode} ${row.productName} ${row.customer} ${row.orderRef} ${row.status} ${row.machine} ${row.position} ${resolveProductionOrderMachine(row, machines)} ${row.shift} ${row.staff} ${row.note}`
             .toLowerCase()
             .includes(productionOrderQuery);
         const rowDate = parseProductionOrderFilterDate(row.startDate);
@@ -650,7 +664,12 @@ export function ControlBoardPanel({
 
   const handleDeleteProductionOrder = async (row: ProductionOrderRow) => {
     const label = row.code || row.name || 'lệnh SX';
-    if (!window.confirm(`Xóa ${label}?`)) return;
+    if (
+      !window.confirm(
+        `Xóa ${label}?\n\nToàn bộ dữ liệu liên quan sẽ bị xóa theo: đơn hàng liên kết, dòng kế hoạch SX và phiếu báo dừng máy của lệnh này.`
+      )
+    )
+      return;
 
     setDeletingProductionOrderId(row.id);
     try {
@@ -658,6 +677,9 @@ export function ControlBoardPanel({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.error || 'Không thể xóa lệnh sản xuất.');
+      }
+      if (data.warning) {
+        window.alert(String(data.warning));
       }
       if (viewingProductionOrder?.id === row.id) setViewingProductionOrder(null);
       if (editingProductionOrder?.id === row.id) setEditingProductionOrder(null);
@@ -883,7 +905,7 @@ export function ControlBoardPanel({
             </div>
           </div>
           <div className="min-w-0 overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-xs">
+          <table className="w-full min-w-[880px] text-left text-xs">
             <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="px-3 py-2 text-center font-black">
@@ -895,18 +917,18 @@ export function ControlBoardPanel({
                     className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
                   />
                 </th>
+                <th className="px-3 py-2 font-black">Ngày</th>
                 <th className="px-3 py-2 font-black">Ưu tiên</th>
                 <th className="px-3 py-2 font-black">Mã lệnh</th>
                 <th className="px-3 py-2 font-black">Mã hàng</th>
-                <th className="px-3 py-2 font-black">Tên hàng</th>
                 <th className="px-3 py-2 font-black">SL</th>
                 <th className="px-3 py-2 font-black">Trạng thái</th>
                 <th className="px-3 py-2 font-black">Máy</th>
                 <th className="px-3 py-2 font-black">Đơn hàng</th>
-                <th className="px-3 py-2 font-black">Bắt đầu</th>
-                  <th className="px-3 py-2 text-center font-black">Thao tác</th>
-                </tr>
-              </thead>
+                <th className="min-w-[120px] px-3 py-2 font-black">Ghi chú</th>
+                <th className="px-3 py-2 text-center font-black">Thao tác</th>
+              </tr>
+            </thead>
               <tbody className="divide-y divide-zinc-100">
                 {visibleProductionOrders.map(row => (
                   <tr key={row.id} className="hover:bg-emerald-50/50">
@@ -919,10 +941,12 @@ export function ControlBoardPanel({
                       className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
                     />
                   </td>
+                  <td className="px-3 py-2 font-mono text-[11px] font-bold text-zinc-700">
+                    {formatProductionOrderPanelDate(row.startDate)}
+                  </td>
                   <td className="px-3 py-2 font-black text-emerald-700">{row.priority > 0 ? row.priority : '-'}</td>
                   <td className="px-3 py-2 font-black text-zinc-950">{row.code || '-'}</td>
                   <td className="px-3 py-2 font-semibold text-zinc-700">{row.productCode || '-'}</td>
-                  <td className="px-3 py-2 font-semibold text-zinc-800">{row.productName || '-'}</td>
                   <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.quantity}</td>
                   <td className="px-3 py-2">
                     <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
@@ -930,9 +954,14 @@ export function ControlBoardPanel({
                     </span>
                   </td>
                   <td className="px-3 py-2 font-semibold text-zinc-700">{resolveProductionOrderMachine(row, machines)}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-600">{row.orderRef}</td>
-                    <td className="px-3 py-2 font-mono text-[11px] font-bold text-zinc-600">{row.startDate}</td>
-                    <td className="px-3 py-2">
+                  <td className="px-3 py-2 font-semibold text-zinc-600">{row.orderRef}</td>
+                  <td
+                    className="max-w-[180px] truncate px-3 py-2 text-zinc-600"
+                    title={row.note && row.note !== '-' ? row.note : undefined}
+                  >
+                    {row.note && row.note !== '-' ? row.note : '-'}
+                  </td>
+                  <td className="px-3 py-2">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"

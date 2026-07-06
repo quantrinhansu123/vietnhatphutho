@@ -4443,6 +4443,72 @@ export function createApp() {
         return res.status(400).json({ error: 'Missing production order ID.' });
       }
 
+      const { data: orderRow, error: fetchError } = await supabase
+        .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+        .select('id, ma_lenh_sx')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Supabase lenh_sx fetch error:', fetchError);
+        return res.status(500).json({ error: `Cannot delete production order. ${fetchError.message}` });
+      }
+
+      if (!orderRow) {
+        return res.status(404).json({ error: 'Production order not found.' });
+      }
+
+      const code = String(orderRow.ma_lenh_sx ?? '').trim();
+      const cascade = { planLines: 0, downtimeSlips: 0, orders: 0 };
+      const warnings: string[] = [];
+
+      // Xóa dữ liệu liên quan trước; lệnh SX xóa sau cùng để lỗi giữa chừng vẫn thử lại được.
+      const { data: planLinesById, error: planLinesByIdError } = await supabase
+        .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+        .delete()
+        .eq('lenh_sx_id', id)
+        .select('id');
+      if (planLinesByIdError && !isMissingTableError(planLinesByIdError) && !isMissingColumnError(planLinesByIdError)) {
+        console.error('Supabase ke_hoach_san_xuat_dong delete error:', planLinesByIdError);
+        warnings.push(`Chưa xóa được dòng kế hoạch SX: ${planLinesByIdError.message}`);
+      }
+      cascade.planLines += planLinesById?.length || 0;
+
+      if (code) {
+        const { data: planLinesByCode, error: planLinesByCodeError } = await supabase
+          .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+          .delete()
+          .eq('ma_lenh_sx', code)
+          .select('id');
+        if (planLinesByCodeError && !isMissingTableError(planLinesByCodeError) && !isMissingColumnError(planLinesByCodeError)) {
+          console.error('Supabase ke_hoach_san_xuat_dong delete error:', planLinesByCodeError);
+          warnings.push(`Chưa xóa được dòng kế hoạch SX theo mã: ${planLinesByCodeError.message}`);
+        }
+        cascade.planLines += planLinesByCode?.length || 0;
+
+        const { data: downtimeSlips, error: downtimeError } = await supabase
+          .from(SUPABASE_MACHINE_DOWNTIME_TABLE)
+          .delete()
+          .eq('lenh_sx_lien_quan', code)
+          .select('id');
+        if (downtimeError && !isMissingTableError(downtimeError) && !isMissingColumnError(downtimeError)) {
+          console.error('Supabase phieu_bao_dung_may delete error:', downtimeError);
+          warnings.push(`Chưa xóa được phiếu báo dừng máy: ${downtimeError.message}`);
+        }
+        cascade.downtimeSlips += downtimeSlips?.length || 0;
+
+        const { data: linkedOrders, error: ordersError } = await supabase
+          .from(SUPABASE_ORDERS_TABLE)
+          .delete()
+          .eq('lenh_sx', code)
+          .select('id');
+        if (ordersError && !isMissingTableError(ordersError) && !isMissingColumnError(ordersError)) {
+          console.error('Supabase don_hang delete error:', ordersError);
+          warnings.push(`Chưa xóa được đơn hàng liên quan: ${ordersError.message}`);
+        }
+        cascade.orders += linkedOrders?.length || 0;
+      }
+
       const { data, error } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
         .delete()
@@ -4459,7 +4525,11 @@ export function createApp() {
         return res.status(404).json({ error: 'Production order not found.' });
       }
 
-      return res.json({ success: true });
+      return res.json({
+        success: true,
+        cascade,
+        warning: warnings.length > 0 ? warnings.join(' ') : undefined
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Error deleting production order.' });
     }

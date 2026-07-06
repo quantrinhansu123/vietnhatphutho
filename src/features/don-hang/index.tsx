@@ -6,7 +6,7 @@ import { Eye, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
-import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
+import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
 import {
   ORDER_TYPE_OPTIONS,
@@ -15,6 +15,7 @@ import {
   orderFieldClass,
   normalizeOrderProducts,
   findOrderProductByCode,
+  resolveOrderProductFields,
   readUnitSuggestions,
   saveUnitSuggestion
 } from '../_shared/orderHelpers';
@@ -29,6 +30,9 @@ import {
 import { normalizeDaNangBusinessStaffOptions, normalizeCustomerOptions } from '../khach-hang';
 
 export type { OrderProductLine, OrderRow };
+
+const orderProductGridClass =
+  'grid-cols-2 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1.5fr)_6rem_6rem_2.5rem]';
 export {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -76,7 +80,17 @@ export function normalizeOrders(data: unknown): OrderRow[] {
         productName: summary.productName,
         unit: summary.unit,
         quantity: summary.quantity,
-        note: pickText(record, ['ghi_chu', 'note'], '')
+        note: pickText(record, ['ghi_chu', 'note'], ''),
+        orderDate: (() => {
+          const raw =
+            pickText(record, ['ngay_don_hang', 'ngay_dat_hang', 'order_date', 'ngay'], '') ||
+            formatCell(record.created_at);
+          const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+          if (direct) return direct[1];
+          const parsed = new Date(raw);
+          if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+          return '';
+        })()
       };
     })
     .filter((order): order is OrderRow => Boolean(order));
@@ -554,6 +568,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 className="col-span-2"
                 title="Sản phẩm"
                 required
+                showColumnHeaders
+                gridTemplateClass={orderProductGridClass}
                 onAdd={() =>
                   setOrderForm(prev => ({
                     ...prev,
@@ -562,18 +578,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 }
                 addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
                 columns={[
-                  { key: 'code', label: 'Mã SP', className: 'min-w-0 flex-[1.35]', required: true },
-                  { key: 'name', label: 'Tên SP', className: 'min-w-0 flex-[1.5]' },
-                  { key: 'unit', label: 'ĐVT', className: 'w-24 shrink-0' },
-                  { key: 'qty', label: 'SL', className: 'w-24 shrink-0', required: true },
-                  { key: 'actions', label: '', className: 'w-10 shrink-0' }
+                  { key: 'code', label: 'Mã SP', required: true },
+                  { key: 'name', label: 'Tên SP' },
+                  { key: 'unit', label: 'ĐVT' },
+                  { key: 'qty', label: 'SL', required: true },
+                  { key: 'actions', label: '' }
                 ]}
               >
                 {orderForm.productLines.map(line => {
                   const matchedLineProduct = findOrderProductByCode(productOptions, line.productCode);
                   return (
-                    <RepeatableLineRow key={line.key}>
-                      <div className="col-span-2 md:min-w-0 md:flex-[1.35]">
+                    <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
+                      <div className="col-span-2 min-w-0 md:col-span-1">
                         <SearchableSelect
                           value={line.productCode}
                           onChange={productCode => pickOrderProduct(line.key, productCode)}
@@ -582,22 +598,29 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           isLoading={isLoadingLookups}
                           inputClassName={orderFieldClass}
                           getValue={item => (item as OrderProductOption).code}
+                          getSearchText={item => {
+                            const product = item as OrderProductOption;
+                            return `${product.code} ${product.newCode} ${product.name}`;
+                          }}
                           getLabel={item => {
                             const product = item as OrderProductOption;
-                            return product.newCode ? `${product.code} · ${product.name}` : `${product.code} · ${product.name}`;
+                            return `${product.code} · ${product.name}`;
                           }}
+                          resolveSelectedItem={(options, value) =>
+                            findOrderProductByCode(options as OrderProductOption[], value)
+                          }
                         />
                       </div>
-                      <div className="col-span-2 md:min-w-0 md:flex-[1.5]">
+                      <div className="col-span-2 min-w-0 md:col-span-1">
                         <input
                           value={matchedLineProduct ? matchedLineProduct.name : line.productName}
                           readOnly={Boolean(matchedLineProduct)}
                           onChange={e => updateProductLine(line.key, { productName: e.target.value })}
-                          className={`${orderFieldClass} ${matchedLineProduct ? 'bg-white text-zinc-800' : 'bg-white'}`}
+                          className={`${orderFieldClass} ${matchedLineProduct ? 'bg-zinc-50 text-zinc-800' : 'bg-white'}`}
                           placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
                         />
                       </div>
-                      <div className="col-span-1 md:w-24 md:shrink-0">
+                      <div className="col-span-1 min-w-0">
                         <input
                           list="order-unit-suggestions"
                           value={line.unit}
@@ -610,7 +633,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="ĐVT"
                         />
                       </div>
-                      <div className="col-span-1 md:w-24 md:shrink-0">
+                      <div className="col-span-1 min-w-0">
                         <input
                           type="number"
                           value={line.quantity}
@@ -619,7 +642,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="0"
                         />
                       </div>
-                      {orderForm.productLines.length > 1 && (
+                      {orderForm.productLines.length > 1 ? (
                         <button
                           type="button"
                           onClick={() =>
@@ -629,12 +652,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             }))
                           }
                           title="Xóa dòng"
-                          className="col-span-2 md:col-span-1 md:mb-0.5 flex h-10 w-full md:h-10 md:w-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 font-bold text-xs"
+                          className="col-span-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 md:col-span-1 md:h-10 md:w-10"
                         >
                           <Trash2 className="h-4 w-4" />
-                          <span className="md:hidden">Xóa dòng này</span>
+                          <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
                         </button>
-                      )}
+                      ) : null}
                     </RepeatableLineRow>
                   );
                 })}

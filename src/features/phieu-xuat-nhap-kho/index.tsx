@@ -23,7 +23,9 @@ import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
-import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
+import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch } from '../../utils/shiftSettings';
+import { normalizeProducts } from '../san-pham';
+import { normalizeMaterialsInventory } from '../kho-nvl';
 import type { ShiftSummaryWarehouseMovement } from '../../utils/controlBoardShiftSummary';
 import type { MaterialOption } from '../san-pham/types';
 
@@ -390,6 +392,86 @@ export function mapWarehouseMovementsForShiftSummary(rows: WarehouseMovementRow[
   }));
 }
 
+export type WarehouseProductionOrderOption = {
+  id: string;
+  orderCode: string;
+  shift: string;
+  machine: string;
+  startDate: string;
+  lines: Array<{ code: string; name: string; unit: string; quantity: number | null }>;
+};
+
+function parseWarehouseProductionOrderLines(record: Record<string, unknown>) {
+  let raw: unknown = record.san_pham ?? record.products;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      raw = null;
+    }
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const nested = (raw as { items?: unknown }).items ?? (raw as { products?: unknown }).products;
+    if (Array.isArray(nested)) raw = nested;
+  }
+
+  const list = Array.isArray(raw) ? raw : [];
+  const lines = list
+    .map((item): { code: string; name: string; unit: string; quantity: number | null } | null => {
+      if (!item || typeof item !== 'object') return null;
+      const row = item as Record<string, unknown>;
+      const code = pickText(row, ['ma_sp', 'ma_hang', 'product_code', 'code'], '');
+      const name = pickText(row, ['ten_sp', 'ten_hang', 'product_name', 'name'], '');
+      if (!code && !name) return null;
+      const quantity = Number(row.so_luong ?? row.quantity);
+      return {
+        code,
+        name,
+        unit: pickText(row, ['don_vi', 'unit'], ''),
+        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null
+      };
+    })
+    .filter((line): line is { code: string; name: string; unit: string; quantity: number | null } => Boolean(line));
+
+  if (lines.length > 0) return lines;
+
+  const code = pickText(record, ['ma_hang', 'ma_sp'], '');
+  const name = pickText(record, ['ten_hang', 'ten_sp'], '');
+  if (!code && !name) return [];
+  const quantity = Number(record.so_luong);
+  return [
+    {
+      code,
+      name,
+      unit: pickText(record, ['don_vi'], ''),
+      quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null
+    }
+  ];
+}
+
+export function normalizeWarehouseProductionOrders(data: unknown): WarehouseProductionOrderOption[] {
+  if (!data || typeof data !== 'object') return [];
+  const orders = (data as { productionOrders?: unknown }).productionOrders;
+  if (!Array.isArray(orders)) return [];
+
+  return orders
+    .map((item): WarehouseProductionOrderOption | null => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const orderCode = pickText(record, ['ma_lenh_sx', 'code', 'so_lenh'], '');
+      if (!orderCode) return null;
+      return {
+        id: String(record.id ?? '').trim() || orderCode,
+        orderCode,
+        shift: pickText(record, ['ca', 'shift'], ''),
+        machine: pickText(record, ['may', 'ma_may', 'ten_may', 'machine'], ''),
+        startDate: pickText(record, ['ngay_gio_bat_dau', 'ngay_bat_dau', 'ngay_san_xuat', 'start_date'], '').slice(0, 10),
+        lines: parseWarehouseProductionOrderLines(record)
+      };
+    })
+    .filter((order): order is WarehouseProductionOrderOption => Boolean(order));
+}
+
 export function WarehouseSlipPanel({
   onBack,
   onOpenHistory
@@ -420,8 +502,27 @@ export function WarehouseSlipPanel({
   const [printAutoTrigger, setPrintAutoTrigger] = useState(false);
   const [editSlipCode, setEditSlipCode] = useState<string | null>(null);
   const [shiftSettings, setShiftSettings] = useState<ReturnType<typeof normalizeShiftSettings>>([]);
+  const [productionOrders, setProductionOrders] = useState<WarehouseProductionOrderOption[]>([]);
+  const [isLoadingProductionOrders, setIsLoadingProductionOrders] = useState(true);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
+
+  useEffect(() => {
+    const loadProductionOrders = async () => {
+      setIsLoadingProductionOrders(true);
+      try {
+        const res = await fetch('/api/lenh-sx');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error();
+        setProductionOrders(normalizeWarehouseProductionOrders(data));
+      } catch {
+        setProductionOrders([]);
+      } finally {
+        setIsLoadingProductionOrders(false);
+      }
+    };
+    void loadProductionOrders();
+  }, []);
 
   useEffect(() => {
     const loadShiftSettings = async () => {
@@ -531,6 +632,34 @@ export function WarehouseSlipPanel({
       name: item?.name || '',
       unit: item?.unit || ''
     });
+  };
+
+  const applyProductionOrder = (orderCode: string) => {
+    setProductionOrderRef(orderCode);
+    const order = productionOrders.find(item => item.orderCode === orderCode);
+    if (!order) return;
+
+    if (order.machine) setMachine(order.machine);
+    if (order.shift) {
+      const matchedShifts = shiftOptions
+        .filter(option => shiftNamesMatch(option.value, order.shift) || shiftNamesMatch(option.label, order.shift))
+        .map(option => option.value);
+      setSelectedShifts(matchedShifts.length > 0 ? matchedShifts : [order.shift]);
+    }
+    if (warehouseKind === 'san_pham' && order.lines.length > 0) {
+      setLines(
+        order.lines.map(line =>
+          createWarehouseLineDraftFromPrefill({
+            code: line.code,
+            name: line.name,
+            unit: line.unit,
+            quantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
+            documentQuantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
+            unitPrice: ''
+          })
+        )
+      );
+    }
   };
 
   const slipTotal = useMemo(
@@ -803,17 +932,29 @@ export function WarehouseSlipPanel({
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
             <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder={slipType === 'nhap' ? 'Số chứng từ gốc kèm theo...' : 'Ghi chú thêm (tuỳ chọn)'} />
           </label>
+          <div className="block space-y-1.5 sm:col-span-2">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn hàng / Lệnh SX</span>
+            <SearchableSelect
+              value={productionOrderRef}
+              onChange={applyProductionOrder}
+              options={productionOrders}
+              placeholder="Gõ để tìm mã lệnh SX..."
+              isLoading={isLoadingProductionOrders}
+              inputClassName={warehouseFieldClass}
+              getLabel={item => {
+                const order = item as WarehouseProductionOrderOption;
+                const extras = [order.startDate, order.shift, order.machine].filter(Boolean).join(' · ');
+                return extras ? `${order.orderCode} · ${extras}` : order.orderCode;
+              }}
+              getValue={item => (item as WarehouseProductionOrderOption).orderCode}
+              displaySelectedAsValue
+            />
+            <p className="text-[11px] font-semibold text-zinc-400">
+              Chọn lệnh SX để tự điền ca, máy{warehouseKind === 'san_pham' ? ' và dòng sản phẩm' : ''}.
+            </p>
+          </div>
           {slipType === 'nhap' && (
             <>
-              <label className="block space-y-1.5 sm:col-span-2">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Theo số chứng từ / lệnh SX</span>
-                <input
-                  value={productionOrderRef}
-                  onChange={event => setProductionOrderRef(event.target.value)}
-                  className={warehouseFieldClass}
-                  placeholder="Số hóa đơn, lệnh SX, biên bản giao nhận..."
-                />
-              </label>
               <label className="block space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người giao hàng</span>
                 <input

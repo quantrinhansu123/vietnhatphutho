@@ -21,6 +21,7 @@ export interface OrderRow {
   unit: string;
   quantity: string;
   note: string;
+  orderDate: string;
 }
 
 export function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderProductLine[] {

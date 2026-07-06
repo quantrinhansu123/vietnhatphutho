@@ -89,8 +89,15 @@ export function SearchableSelect({
     setOpen(false);
   };
 
+  const suppressBlurRef = useRef(false);
+
   const handleBlur = () => {
     window.setTimeout(() => {
+      if (suppressBlurRef.current) {
+        suppressBlurRef.current = false;
+        return;
+      }
+
       const normalized = query.trim().toLowerCase();
       if (!normalized) {
         if (allowEmpty) {
@@ -114,6 +121,14 @@ export function SearchableSelect({
         return;
       }
 
+      if (resolveSelectedItem) {
+        const resolved = resolveSelectedItem(options, normalized);
+        if (resolved) {
+          commitValue(getValue(resolved), resolved);
+          return;
+        }
+      }
+
       if (filteredOptions.length === 1) {
         commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
         return;
@@ -121,7 +136,7 @@ export function SearchableSelect({
 
       setQuery(selectedLabel);
       setOpen(false);
-    }, 120);
+    }, 150);
   };
 
   const isDisabled = Boolean(disabled || isLoading);
@@ -154,14 +169,18 @@ export function SearchableSelect({
   }, [open, query, filteredOptions.length]);
 
   const dropdownPanelClass =
-    'fixed z-[120] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
+    'fixed z-[200] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
+
+  const keepFocusForSelection = () => {
+    suppressBlurRef.current = true;
+  };
 
   const renderDropdown = () => {
     if (!open || isDisabled || !menuStyle) return null;
 
     if (filteredOptions.length > 0) {
       return createPortal(
-        <div className={dropdownPanelClass} style={menuStyle}>
+        <div className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
           {allowEmpty && !query.trim() && (
             <button
               type="button"
@@ -196,7 +215,7 @@ export function SearchableSelect({
 
     if (query.trim()) {
       return createPortal(
-        <div className={dropdownPanelClass} style={menuStyle}>
+        <div className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
           <div className="px-3 py-2 text-xs font-semibold text-zinc-500">Không tìm thấy kết quả</div>
         </div>,
         document.body

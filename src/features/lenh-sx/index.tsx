@@ -7,6 +7,17 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { getProductionShiftOptions } from '../../utils/shiftSettings';
+import {
+  AddProductionOrderModal,
+  formatProductionOrderProductsSummary,
+  getProductionOrderProductLines,
+  normalizeProductionOrders,
+  ProductionOrderPrintSheet,
+  ProductionOrderViewModal,
+  useProductionOrderPrint,
+  type ProductionOrderRow
+} from '../ke-hoach-san-xuat';
+import { Eye, Plus, Printer, Search } from 'lucide-react';
 
 export function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<ProductionOrderRow[]>([]);

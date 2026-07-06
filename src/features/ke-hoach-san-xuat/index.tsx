@@ -9,6 +9,7 @@ import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/rec
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
 import ProductionPlanNvlPrintSheet from '../../components/ProductionPlanNvlPrintSheet';
+import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import { getProductionShiftOptions } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
 import { STANDARD_SHIFTS } from '../../types';
@@ -33,9 +34,30 @@ import {
 import {
   findMachineByRef,
   machineSelectValue,
+  normalizeMachines,
+  renderMachineSelect,
   resolveMachineDisplayValue,
   type MachineRow
 } from '../danh-sach-may';
+import { normalizeOrders } from '../don-hang';
+import { parseProductionOrderFilterDate } from '../cai-dat-thoi-gian';
+import { orderFieldClass } from '../_shared/orderHelpers';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpFromLine,
+  ChevronRight,
+  ClipboardCheck,
+  ClipboardList,
+  GripVertical,
+  Loader2,
+  Plus,
+  Printer,
+  QrCode,
+  Save,
+  Search,
+  Trash2
+} from 'lucide-react';
 
 export {
   expandMergedProductionProducts,
@@ -2715,6 +2737,11 @@ export function useProductionOrderPrint() {
 }
 
 export const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'];
+export const PRODUCTION_ORDER_EDIT_STATUS_OPTIONS = [
+  ...PRODUCTION_ORDER_STATUS_OPTIONS,
+  'Đang chạy',
+  'Huỷ lệnh'
+];
 
 export type ProductionOrderLookupSetting = {
   id: string;
@@ -2885,6 +2912,47 @@ export function buildProductionEntryLine(
 
 export function autofillProductKey(orderRef: string, productCode: string) {
   return `${orderRef}::${productCode}`;
+}
+
+export function splitProductionOrderRefs(orderRef: string): string[] {
+  return String(orderRef || '')
+    .split(/[,;+]/)
+    .map(part => part.trim())
+    .filter(part => part && part !== '-');
+}
+
+export function filterOrdersForProductionDate(
+  orders: OrderRow[],
+  productionOrders: ProductionOrderRow[],
+  selectedDate: string
+): OrderRow[] {
+  const date = selectedDate.trim();
+  if (!date || orders.length === 0) return orders;
+
+  const orderCodesOnDate = new Set<string>();
+  for (const row of productionOrders) {
+    if (parseProductionOrderFilterDate(row.startDate) !== date) continue;
+    splitProductionOrderRefs(row.orderRef).forEach(code => orderCodesOnDate.add(code));
+  }
+
+  const filtered = orders.filter(order => {
+    if (!order.orderCode || order.orderCode === '-') return false;
+
+    const orderDate = parseProductionOrderFilterDate(order.orderDate || '');
+    const matchesOrderDate = Boolean(orderDate && orderDate === date);
+    const linkedOnDate = orderCodesOnDate.has(order.orderCode);
+    const hasRemaining = getOrderProductLines(order).some(line => {
+      const code = line.productCode?.trim();
+      if (!code || code === '-') return false;
+      return getRemainingProductionQuantity(orders, productionOrders, order.orderCode, code) > 0;
+    });
+
+    return matchesOrderDate || linkedOnDate || (!orderDate && hasRemaining);
+  });
+
+  return filtered.length > 0
+    ? filtered.sort((a, b) => a.orderCode.localeCompare(b.orderCode, 'vi'))
+    : orders;
 }
 
 export function listProductOptionsForOrder(
@@ -3113,6 +3181,8 @@ export function AddProductionOrderModal({
         if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
         if (staffRes.ok) setStaffBranches(normalizeHrBranches(staffData));
         if (productRes.ok) setCatalogProducts(normalizeProducts(productData));
+      } catch (error: any) {
+        setFormError(error?.message || 'Không thể tải dữ liệu đơn hàng, máy, ca và nhân sự.');
       } finally {
         setIsLoadingLookups(false);
       }
@@ -3121,11 +3191,24 @@ export function AddProductionOrderModal({
     loadLookups();
   }, [open]);
 
+  useEffect(() => {
+    setSelectedAutofillOrderCodes([]);
+    setSelectedAutofillProductKeys([]);
+    setAutofillProductOrderFilter('all');
+    setAutofillSearch('');
+    setAutofillProductSearch('');
+  }, [form.startDate]);
+
+  const ordersForSelectedDate = useMemo(
+    () => filterOrdersForProductionDate(orders, productionOrders, form.startDate),
+    [orders, productionOrders, form.startDate]
+  );
+
   const orderCodeOptions = useMemo(() => {
-    return [...new Set(orders.map(order => order.orderCode).filter(code => code && code !== '-'))].sort((a, b) =>
-      a.localeCompare(b, 'vi')
+    return [...new Set(ordersForSelectedDate.map(order => order.orderCode).filter(code => code && code !== '-'))].sort(
+      (a, b) => a.localeCompare(b, 'vi')
     );
-  }, [orders]);
+  }, [ordersForSelectedDate]);
 
   const shiftOptions = useMemo(() => {
     const fromSettings = settings
@@ -3193,7 +3276,7 @@ export function AddProductionOrderModal({
 
   const autofillOrderOptions = useMemo(() => {
     const normalized = autofillSearch.trim().toLowerCase();
-    return orders
+    return ordersForSelectedDate
       .filter(order => getOrderProductLines(order).length > 0)
       .filter(order => {
         if (!normalized) return true;
@@ -3202,11 +3285,11 @@ export function AddProductionOrderModal({
           .includes(normalized);
       })
       .sort((a, b) => a.orderCode.localeCompare(b.orderCode, 'vi'));
-  }, [autofillSearch, orders]);
+  }, [autofillSearch, ordersForSelectedDate]);
 
   const autofillProductCandidates = useMemo(() => {
     return selectedAutofillOrderCodes.flatMap(orderRef =>
-      listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef)
+      listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
         .filter(product => product.orderQty > 0 && product.remainingQty > 0)
         .map(product => ({
           key: autofillProductKey(orderRef, product.code),
@@ -3217,7 +3300,7 @@ export function AddProductionOrderModal({
           remainingQty: product.remainingQty
         }))
     );
-  }, [selectedAutofillOrderCodes, orders, productionOrders, catalogProducts]);
+  }, [selectedAutofillOrderCodes, ordersForSelectedDate, productionOrders, catalogProducts]);
 
   const autofillOrderFilterOptions = useMemo(
     () => [
@@ -3379,7 +3462,7 @@ export function AddProductionOrderModal({
   };
 
   const handleEntryOrderChange = (key: string, orderRef: string) => {
-    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
+    const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
     let patch: Partial<ProductionOrderEntryLine> = {
       orderRef,
       productCode: '',
@@ -3405,7 +3488,7 @@ export function AddProductionOrderModal({
   };
 
   const handleEntryProductChange = (key: string, orderRef: string, productCode: string) => {
-    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
+    const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
     const product = options.find(item => item.code === productCode);
     const built = buildProductionEntryLine(
       orders,
@@ -3565,11 +3648,17 @@ export function AddProductionOrderModal({
             className="col-span-2"
             title="Đơn hàng & mã hàng"
             required
-            onAdd={() =>
-              setForm(prev => ({
-                ...prev,
-                entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
-              }))
+            onAdd={openAddLine}
+            extraHeaderButtons={
+              <button
+                type="button"
+                onClick={() => setShowAutofillOrders(true)}
+                disabled={isLoadingLookups || ordersForSelectedDate.length === 0}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                Tự điền từ đơn hàng
+              </button>
             }
             columns={[
               { key: 'order', label: 'Mã đơn', className: 'min-w-0 flex-[1.1]', required: true },
@@ -3580,35 +3669,15 @@ export function AddProductionOrderModal({
               { key: 'actions', label: '', className: 'w-9 shrink-0' }
             ]}
           >
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-              <span className="text-[11px] font-bold text-zinc-500">
-                Chọn từng dòng thủ công hoặc tự điền từ nhiều đơn hàng.
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setShowAddLine(true)}
-                  disabled={isLoadingLookups || orders.length === 0}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Thêm dòng
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAutofillOrders(true)}
-                  disabled={isLoadingLookups || orders.length === 0}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <ClipboardCheck className="h-3.5 w-3.5" />
-                  Tự điền từ đơn hàng
-                </button>
-              </div>
-            </div>
+            <p className="pb-2 text-[11px] font-bold text-zinc-500">
+              {form.startDate
+                ? `Gợi ý đơn hàng cùng ngày ${form.startDate} hoặc còn SL chưa lập lệnh.`
+                : 'Chọn ngày lệnh SX để lọc đơn hàng cùng ngày.'}
+            </p>
 
             {form.entryLines.map(line => {
               const productOptions = listProductOptionsForOrder(
-                orders,
+                ordersForSelectedDate,
                 productionOrders,
                 catalogProducts,
                 line.orderRef
@@ -3841,7 +3910,9 @@ export function AddProductionOrderModal({
               <div>
                 <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                  Chọn đơn hàng, sau đó tick sản phẩm cần lập lệnh SX.
+                  {form.startDate
+                    ? `Chọn đơn hàng cùng ngày ${form.startDate}, sau đó tick sản phẩm cần lập lệnh SX.`
+                    : 'Chọn ngày lệnh SX trước để lọc đơn hàng cùng ngày.'}
                 </p>
               </div>
               <button
@@ -3869,7 +3940,9 @@ export function AddProductionOrderModal({
               <div className="p-4">
                 {autofillOrderOptions.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
-                    Không có đơn hàng phù hợp.
+                    {form.startDate
+                      ? `Không có đơn hàng phù hợp cho ngày ${form.startDate}.`
+                      : 'Chọn ngày lệnh SX để xem đơn hàng cùng ngày.'}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -4073,7 +4146,12 @@ export function AddProductionOrderModal({
                 <SearchableSelect
                   value={lineDraftProductCode}
                   onChange={setLineDraftProductCode}
-                  options={listProductOptionsForOrder(orders, productionOrders, catalogProducts, lineDraftOrderRef)}
+                  options={listProductOptionsForOrder(
+                    ordersForSelectedDate,
+                    productionOrders,
+                    catalogProducts,
+                    lineDraftOrderRef
+                  )}
                   placeholder={lineDraftOrderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
                   disabled={!lineDraftOrderRef}
                   isLoading={isLoadingLookups}
@@ -4228,7 +4306,7 @@ export function EditProductionOrderModal({
       startDateTime,
       endDateTime: toDatetimeLocalInputValue(row.endDate),
       machine: row.machine === '-' ? '' : row.machine,
-      note: row.note
+      note: row.note === '-' ? '' : row.note || ''
     });
     setStaffText(row.staff === '-' ? '' : row.staff);
     setFormError('');
@@ -4239,6 +4317,14 @@ export function EditProductionOrderModal({
       a.localeCompare(b, 'vi')
     );
   }, [orders]);
+
+  const statusOptions = useMemo(() => {
+    const options = [...PRODUCTION_ORDER_EDIT_STATUS_OPTIONS];
+    if (form.status && !options.includes(form.status)) {
+      options.push(form.status);
+    }
+    return options;
+  }, [form.status]);
 
   const updateEntryLine = (key: string, patch: Partial<ProductionOrderEntryLine>) => {
     setForm(prev => ({
@@ -4478,67 +4564,79 @@ export function EditProductionOrderModal({
               );
             })}
           </RepeatableLinesBlock>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
-            <SearchableSelect
-              value={form.status}
-              onChange={status => setForm(prev => ({ ...prev, status }))}
-              options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
-              placeholder="Gõ để tìm trạng thái"
-              getLabel={item => String(item)}
-              getValue={item => String(item)}
-              allowEmpty={false}
-            />
-          </label>
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
-            <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân sự</span>
-            <input value={staffText} onChange={e => setStaffText(e.target.value)} className={orderFieldClass} />
-          </label>
+          <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+              <SearchableSelect
+                value={form.status}
+                onChange={status => setForm(prev => ({ ...prev, status }))}
+                options={statusOptions}
+                placeholder="Gõ để tìm trạng thái"
+                inputClassName={orderFieldClass}
+                getLabel={item => String(item)}
+                getValue={item => String(item)}
+                allowEmpty={false}
+              />
+            </label>
 
-          <label className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>
-            {renderMachineSelect(
-              form.machine,
-              machine => setForm(prev => ({ ...prev, machine })),
-              machines,
-              { placeholder: 'Gõ để tìm máy' }
-            )}
-          </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
+              <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
+            </label>
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
-            <input
-              type="time"
-              value={form.startDateTime.includes('T') ? form.startDateTime.split('T')[1]?.slice(0, 5) || '' : ''}
-              onChange={e => {
-                const time = e.target.value;
-                setForm(prev => ({
-                  ...prev,
-                  startDateTime: mergeProductionOrderDateTime(prev.startDate, `${prev.startDate}T${time}`)
-                }));
-              }}
-              className={orderFieldClass}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>
-            <input type="datetime-local" value={form.endDateTime} onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))} className={orderFieldClass} />
-          </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân sự</span>
+              <input value={staffText} onChange={e => setStaffText(e.target.value)} className={orderFieldClass} />
+            </label>
 
-          <label className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-            <textarea
-              value={form.note}
-              onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
-              rows={2}
-              className={`${orderFieldClass} min-h-[72px] resize-y`}
-            />
-          </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>
+              {renderMachineSelect(
+                form.machine,
+                machine => setForm(prev => ({ ...prev, machine })),
+                machines,
+                { placeholder: 'Gõ để tìm máy' }
+              )}
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
+              <input
+                type="time"
+                value={form.startDateTime.includes('T') ? form.startDateTime.split('T')[1]?.slice(0, 5) || '' : ''}
+                onChange={e => {
+                  const time = e.target.value;
+                  setForm(prev => ({
+                    ...prev,
+                    startDateTime: mergeProductionOrderDateTime(prev.startDate, `${prev.startDate}T${time}`)
+                  }));
+                }}
+                className={orderFieldClass}
+              />
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>
+              <input
+                type="datetime-local"
+                value={form.endDateTime}
+                onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
+                className={orderFieldClass}
+              />
+            </label>
+
+            <label className="space-y-1.5 sm:col-span-2">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+              <textarea
+                value={form.note}
+                onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
+                rows={3}
+                placeholder="Nhập ghi chú cho lệnh sản xuất..."
+                className={`${orderFieldClass} min-h-[80px] resize-y`}
+              />
+            </label>
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-zinc-100 px-4 py-3">
