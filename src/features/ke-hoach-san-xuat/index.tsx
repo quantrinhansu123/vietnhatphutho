@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
+import { PRINT_COMPANY_NAME } from '../../components/layout/constants';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
@@ -2499,7 +2500,7 @@ export function ProductionOrderPrintSheet({
         <header className="production-order-print-letterhead">
           <img
             src={vietNhatLogoUrl}
-            alt="Logo Viet Nhat IPT"
+            alt={PRINT_COMPANY_NAME}
             className="production-order-print-logo"
           />
           <div className="production-order-print-company">

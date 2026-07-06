@@ -1,8 +1,7 @@
 import React from 'react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
-
-const PRINT_COMPANY_NAME = 'CÔNG TY TNHH VIỆT NHẬT IPT';
+import { PRINT_COMPANY_NAME } from './layout/constants';
 
 export type MachineNvlPrintKind = 'dau_ca' | 'cuoi_ca';
 
@@ -139,7 +138,7 @@ function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
     <div className="production-order-print-sheet">
       <div className="production-order-print-doc">
         <header className="production-order-print-letterhead">
-          <img src={vietNhatLogoUrl} alt="Logo Viet Nhat IPT" className="production-order-print-logo" />
+          <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="production-order-print-logo" />
           <div className="production-order-print-company">
             <p className="production-order-print-company-name">{PRINT_COMPANY_NAME}</p>
           </div>
@@ -166,7 +165,7 @@ function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
             <tr>
               <td>{machineLabel}</td>
               <td>{report.nhanSu || '-'}</td>
-              <td>{report.note || '-'}</td>
+              <td className="whitespace-pre-wrap">{report.note || '-'}</td>
             </tr>
           </tbody>
         </table>
@@ -179,9 +178,9 @@ function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
               <th>Mã vật tư</th>
               <th>Tên vật tư</th>
               <th>ĐVT</th>
-              {isDauCaReport ? <th>Tồn trong máy (Phiếu trộn)</th> : null}
-              {isDauCaReport ? <th>Tồn trong bồn trộn</th> : null}
-              {isDauCaReport ? <th>NL chưa trộn</th> : null}
+              {isDauCaReport ? <th>Tồn máy</th> : null}
+              {isDauCaReport ? <th>Tồn bồn</th> : null}
+              {isDauCaReport ? <th>Chưa trộn</th> : null}
               {isDauCaReport ? <th>Tổng tồn đầu ca</th> : null}
               {!isDauCaReport ? <th>SL tồn định mức</th> : null}
               {!isDauCaReport ? <th>SL tồn thực tế</th> : null}
@@ -221,7 +220,7 @@ function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
                 {!isDauCaReport ? (
                   <td className="production-order-print-right">{formatNumber(line.soLuongTon)}</td>
                 ) : null}
-                <td>{line.ghiChu || ''}</td>
+                <td className="whitespace-pre-wrap">{line.ghiChu || ''}</td>
               </tr>
             ))}
             <tr>

@@ -277,8 +277,6 @@ export default function AcceptanceReportListView({
               <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Báo cáo sản lượng</p>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">Danh sách báo cáo</h2>
-                <p className="mt-1 text-xs font-semibold text-zinc-500">Xem theo ca, in phiếu và quản lý sản lượng đã lưu</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -393,7 +391,6 @@ export default function AcceptanceReportListView({
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-100 px-4 py-3">
           <p className="text-sm font-black text-zinc-950">Chi tiết từng dòng</p>
-          <p className="mt-0.5 text-xs font-semibold text-zinc-500">Sửa hoặc xóa trực tiếp từng báo cáo sản lượng</p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-xs">

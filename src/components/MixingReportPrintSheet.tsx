@@ -14,8 +14,7 @@ import {
   type MixingReportPrintContext
 } from '../lib/mixingReportModel';
 import type { MixingReport } from './MixingReportForm';
-
-const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
+import { PRINT_COMPANY_NAME } from './layout/constants';
 const PRINT_PROJECT_NAME = 'Dự án Chuyển đổi số sản xuất';
 const PRINT_DOC_CODE = 'BM-SX-06';
 const PRINT_DOC_VERSION = 'Phiên bản 1.0';
@@ -148,7 +147,7 @@ function MixingReportPrintSheet({
         <header className="mixing-report-print-header">
           <div className="mixing-report-print-header-top">
             <div className="mixing-report-print-brand">
-              <img src={vietNhatLogoUrl} alt="Logo Viet Nhat" className="mixing-report-print-logo" />
+              <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="mixing-report-print-logo" />
               <div>
                 <p className="mixing-report-print-company-name">{PRINT_COMPANY_NAME}</p>
                 <p className="mixing-report-print-project-name">{PRINT_PROJECT_NAME}</p>

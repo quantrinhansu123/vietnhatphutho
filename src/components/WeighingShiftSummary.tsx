@@ -2,23 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   CalendarDays,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  ClipboardList,
   Eye,
-  Factory,
   Loader2,
   Pencil,
   Plus,
   Printer,
   RefreshCw,
-  Trash2,
-  Users
+  Trash2
 } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import WeighingReportForm from './WeighingReportForm';
-import WeighingSlipSetupModal from './WeighingSlipSetupModal';
+import WeighingSlipSetupModal, { type SlipSetupPayload } from './WeighingSlipSetupModal';
 import WeighingImagePreviewModal, {
   WeighingImageThumbnail,
   type WeighingPreviewImage
@@ -32,6 +25,17 @@ import {
   type ShiftOption,
   type ShiftSetting
 } from '../utils/shiftSettings';
+import {
+  countWeighingRounds,
+  formatWeighingRowTotalWeight,
+  generateWeighingDocumentNo,
+  getWeighingDataRows,
+  normalizeWeighingRecords,
+  parseWeighRoundNumber,
+  slipKey,
+  type WeighingPendingAdd,
+  type WeighingRecord
+} from '../utils/weighingRecords';
 
 const FACTORY_PLACEHOLDER = 'Nhà máy Đà Nẵng';
 
@@ -47,30 +51,6 @@ function resolveMachineName(...candidates: Array<string | undefined>) {
     }
   }
   return '—';
-}
-
-export interface WeighingRecord {
-  id?: string | number;
-  documentNo: string;
-  reportDate: string;
-  productionDate: string;
-  shiftName: string;
-  worker1: string;
-  worker2: string;
-  weigherName: string;
-  productCode: string;
-  productName: string;
-  machineName: string;
-  weighNo: string;
-  weighTime: string;
-  coreWeight: string;
-  shellWeight: string;
-  weight: string;
-  acceptanceStatus: string;
-  note: string;
-  imageUrl?: string;
-  coreWeightImageUrl?: string;
-  createdAt?: string;
 }
 
 interface WeighingSlip {
@@ -90,94 +70,6 @@ function formatDateVi(value: string) {
   const parts = value.split('-');
   if (parts.length !== 3) return value;
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function slipKey(record: WeighingRecord) {
-  return [
-    record.productionDate,
-    record.shiftName,
-    record.documentNo,
-    record.reportDate,
-    record.worker1,
-    record.worker2
-  ].join('|');
-}
-
-export function buildWeighingEditPending(
-  record: WeighingRecord,
-  allRecords: WeighingRecord[]
-): WeighingPendingAdd {
-  const key = slipKey(record);
-  const existingRows = allRecords.filter(item => slipKey(item) === key);
-
-  return {
-    productionDate: record.productionDate,
-    shiftName: record.shiftName,
-    worker1: record.worker1,
-    worker2: record.worker2,
-    documentNo: record.documentNo,
-    reportDate: record.reportDate,
-    productCode: record.productCode,
-    productName: record.productName,
-    machineName: record.machineName,
-    existingRows,
-    editingRow: record
-  };
-}
-
-export function isSlipHeaderRow(row: Pick<WeighingRecord, 'weighNo' | 'productName' | 'productCode' | 'weight' | 'coreWeight' | 'shellWeight' | 'acceptanceStatus' | 'note' | 'imageUrl' | 'coreWeightImageUrl'>) {
-  return (
-    !row.weighNo?.trim() &&
-    !row.productName?.trim() &&
-    !row.productCode?.trim() &&
-    !row.weight?.trim() &&
-    !row.coreWeight?.trim() &&
-    !row.shellWeight?.trim() &&
-    !row.acceptanceStatus?.trim() &&
-    !row.note?.trim() &&
-    !row.imageUrl &&
-    !row.coreWeightImageUrl
-  );
-}
-
-export function getWeighingDataRows<T extends WeighingRecord>(rows: T[]) {
-  return rows.filter(row => !isSlipHeaderRow(row));
-}
-
-function parseWeighRoundNumber(weighNo: string | number | undefined) {
-  const value = Number(String(weighNo ?? '').trim());
-  return Number.isFinite(value) && value > 0 ? value : 0;
-}
-
-export function getMaxWeighRoundNumber(rows: WeighingRecord[]) {
-  return getWeighingDataRows(rows).reduce(
-    (max, row) => Math.max(max, parseWeighRoundNumber(row.weighNo)),
-    0
-  );
-}
-
-/** Lần cân đang nhập — giữ nguyên lần hiện tại để thêm nhiều SP trong cùng lần. */
-export function getCurrentWeighRound(rows: WeighingRecord[]) {
-  const maxRound = getMaxWeighRoundNumber(rows);
-  return maxRound > 0 ? String(maxRound) : '1';
-}
-
-/** Lần cân tiếp theo — khi bắt đầu lần cân mới. */
-export function getNextWeighRoundNumber(rows: WeighingRecord[]) {
-  return String(getMaxWeighRoundNumber(rows) + 1);
-}
-
-export function countWeighingRounds(rows: WeighingRecord[]) {
-  const dataRows = getWeighingDataRows(rows);
-  if (dataRows.length === 0) return 0;
-
-  const rounds = new Set(
-    dataRows
-      .map(row => String(row.weighNo ?? '').trim())
-      .filter(Boolean)
-  );
-
-  return rounds.size > 0 ? rounds.size : 1;
 }
 
 interface DateSlipGroup {
@@ -214,6 +106,45 @@ function groupSlipsByDate(slips: WeighingSlip[]): DateSlipGroup[] {
       totalWeighRounds: dateSlips.reduce((sum, slip) => sum + countWeighingRounds(slip.rows), 0)
     }))
     .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+interface WeighingRoundEntry {
+  slip: WeighingSlip;
+  row: WeighingRecord;
+}
+
+interface WeighingRoundGroup {
+  roundKey: string;
+  weighNo: string;
+  entries: WeighingRoundEntry[];
+}
+
+function groupShiftRowsByRound(slips: WeighingSlip[]): WeighingRoundGroup[] {
+  const roundMap = new Map<string, WeighingRoundEntry[]>();
+
+  slips.forEach(slip => {
+    getWeighingDataRows(slip.rows).forEach(row => {
+      const weighNo = String(row.weighNo ?? '').trim() || '1';
+      const bucket = roundMap.get(weighNo) ?? [];
+      bucket.push({ slip, row });
+      roundMap.set(weighNo, bucket);
+    });
+  });
+
+  return [...roundMap.entries()]
+    .sort(([a], [b]) => parseWeighRoundNumber(a) - parseWeighRoundNumber(b))
+    .map(([weighNo, entries]) => ({
+      roundKey: weighNo,
+      weighNo,
+      entries
+    }));
+}
+
+function formatWeighingProductLabel(row: WeighingRecord) {
+  const code = row.productCode?.trim();
+  const name = row.productName?.trim();
+  if (code && name) return `${code} · ${name}`;
+  return name || code || '—';
 }
 
 function groupByShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): ShiftSummary[] {
@@ -265,113 +196,16 @@ function groupByShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): S
   });
 }
 
-export function parseWeighingWeight(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === '—' || trimmed === '-') return null;
-  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
-  const num = Number(normalized);
-  return Number.isFinite(num) ? num : null;
-}
-
-/** Tổng trọng lượng 1 lần cân = TL lõi + TL bì + TL (báo cáo cân ca) */
-export function sumWeighingRowTotalWeight(
-  row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
-): number {
-  const core = parseWeighingWeight(row.coreWeight) ?? 0;
-  const shell = parseWeighingWeight(row.shellWeight) ?? 0;
-  const weight = parseWeighingWeight(row.weight) ?? 0;
-  const hasValue =
-    parseWeighingWeight(row.coreWeight) !== null ||
-    parseWeighingWeight(row.shellWeight) !== null ||
-    parseWeighingWeight(row.weight) !== null;
-  return hasValue ? core + shell + weight : 0;
-}
-
-function trimTrailingDecimalZeros(formatted: string) {
-  const match = formatted.match(/^(.+),(\d+)$/);
-  if (!match) return formatted;
-  const [, intPart, decPart] = match;
-  const trimmedDec = decPart.replace(/0+$/, '');
-  return trimmedDec ? `${intPart},${trimmedDec}` : intPart;
-}
-
-export function formatWeighingRowTotalWeight(
-  row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
-): string {
-  const hasValue =
-    parseWeighingWeight(row.coreWeight) !== null ||
-    parseWeighingWeight(row.shellWeight) !== null ||
-    parseWeighingWeight(row.weight) !== null;
-  if (!hasValue) return '—';
-  const formatted = new Intl.NumberFormat('vi-VN', {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3
-  }).format(sumWeighingRowTotalWeight(row));
-  return trimTrailingDecimalZeros(formatted);
-}
-
-export function normalizeWeighingRecords(data: unknown): WeighingRecord[] {
-  if (!Array.isArray(data)) return [];
-
-  return data
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const row = item as Record<string, unknown>;
-      return {
-        id: row.id as string | number | undefined,
-        documentNo: String(row.documentNo ?? row.document_no ?? '').trim(),
-        reportDate: String(row.reportDate ?? row.report_date ?? '').trim(),
-        productionDate: String(row.productionDate ?? row.ngay_san_xuat ?? '').trim(),
-        shiftName: String(row.shiftName ?? row.ca_san_xuat ?? '').trim(),
-        worker1: String(row.worker1 ?? row.ten_cn_1 ?? '').trim(),
-        worker2: String(row.worker2 ?? row.ten_cn_2 ?? '').trim(),
-        weigherName: String(row.weigherName ?? row.ten_nguoi_can ?? '').trim(),
-        productCode: String(row.productCode ?? row.ma_san_pham ?? '').trim(),
-        productName: String(row.productName ?? row.ten_san_pham ?? '').trim(),
-        machineName: (() => {
-          const raw = String(row.machineName ?? row.ten_may_san_xuat ?? '').trim();
-          return isRealMachineName(raw) ? raw : '';
-        })(),
-        weighNo: String(row.weighNo ?? row.lan_can ?? '').trim(),
-        weighTime: String(row.weighTime ?? row.gio_can ?? '').trim(),
-        coreWeight: String(row.coreWeight ?? row.trong_luong_loi ?? '').trim(),
-        shellWeight: String(row.shellWeight ?? row.trong_luong_bi ?? '').trim(),
-        acceptanceStatus: String(row.acceptanceStatus ?? row.nghiem_thu ?? '').trim(),
-        note: String(row.note ?? row.ghi_chu ?? '').trim(),
-        weight: String(row.weight ?? row.trong_luong ?? '').trim(),
-        imageUrl: String(row.imageUrl ?? row.anh_url ?? '').trim() || undefined,
-        coreWeightImageUrl: String(row.coreWeightImageUrl ?? row.anh_trong_luong_loi_url ?? '').trim() || undefined,
-        createdAt: String(row.createdAt ?? row.created_at ?? '').trim() || undefined
-      } satisfies WeighingRecord;
-    })
-    .filter((item): item is WeighingRecord => Boolean(item));
-}
-
-export interface WeighingPendingAdd {
-  productionDate: string;
-  shiftName?: string;
-  worker1?: string;
-  worker2?: string;
-  documentNo?: string;
-  reportDate?: string;
-  productName?: string;
-  productCode?: string;
-  machineName?: string;
-  existingRows?: WeighingRecord[];
-  editingRow?: WeighingRecord;
-  createNewSlip?: boolean;
-  /** true = bắt đầu lần cân mới; false/mặc định = thêm SP vào lần cân hiện tại */
-  newWeighRound?: boolean;
-}
-
-export function generateWeighingDocumentNo(productionDate?: string) {
-  const now = new Date();
-  const datePart = (productionDate || now.toISOString().split('T')[0]).replace(/-/g, '');
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-  const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
-  return `P-${datePart}-${hh}${mm}${ss}-${rand}`;
+function findWeighingSlipInSummaries(
+  summaries: ShiftSummary[],
+  record: WeighingRecord
+): WeighingSlip | null {
+  const key = slipKey(record);
+  for (const shift of summaries) {
+    const slip = shift.slips.find(item => item.key === key);
+    if (slip) return slip;
+  }
+  return null;
 }
 
 export default function WeighingShiftSummary({
@@ -390,9 +224,6 @@ export default function WeighingShiftSummary({
   const [records, setRecords] = useState<WeighingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeShift, setActiveShift] = useState<string | null>(null);
-  const [activeDate, setActiveDate] = useState<string | null>(null);
-  const [activeSlipKey, setActiveSlipKey] = useState<string | null>(null);
   const [viewingRow, setViewingRow] = useState<WeighingRecord | null>(null);
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const [deletingRowId, setDeletingRowId] = useState<string | number | null>(null);
@@ -455,31 +286,7 @@ export default function WeighingShiftSummary({
     }
 
     await loadReports();
-
-    const newKey = slipKey({
-      productionDate: payload.productionDate,
-      shiftName: payload.shiftName,
-      documentNo,
-      reportDate: payload.productionDate,
-      worker1: payload.worker1,
-      worker2: payload.worker2,
-      weigherName: '',
-      productCode: '',
-      productName: '',
-      machineName: payload.machineName,
-      weighNo: '',
-      weighTime: '',
-      coreWeight: '',
-      shellWeight: '',
-      acceptanceStatus: '',
-      note: '',
-      weight: ''
-    });
-
-    setActiveShift(payload.shiftName);
-    setActiveDate(payload.productionDate);
-    setActiveSlipKey(newKey);
-    setActionMessage('Đã tạo phiếu mới. Bấm Bổ sung lần cân để thêm dòng.');
+    setActionMessage('Đã tạo phiếu mới.');
   };
 
   const handleOpenReportForm = (options: WeighingPendingAdd) => {
@@ -494,25 +301,10 @@ export default function WeighingShiftSummary({
   };
 
   const shiftSummaries = useMemo(() => groupByShift(records, shiftOptions), [records, shiftOptions]);
-  const activeShiftSummary = useMemo(
-    () => shiftSummaries.find(shift => shift.shiftKey === activeShift) ?? null,
-    [shiftSummaries, activeShift]
+  const viewingRowSlip = useMemo(
+    () => (viewingRow ? findWeighingSlipInSummaries(shiftSummaries, viewingRow) : null),
+    [viewingRow, shiftSummaries]
   );
-  const activeDateGroup = useMemo(
-    () => activeShiftSummary?.dateGroups.find(group => group.date === activeDate) ?? null,
-    [activeShiftSummary, activeDate]
-  );
-  const activeSlip = useMemo(
-    () => activeDateGroup?.slips.find(slip => slip.key === activeSlipKey) ?? null,
-    [activeDateGroup, activeSlipKey]
-  );
-  const activeSlipWeighingRows = useMemo(
-    () => (activeSlip ? getWeighingDataRows(activeSlip.rows) : []),
-    [activeSlip]
-  );
-  const totalSlips = shiftSummaries.reduce((sum, shift) => sum + shift.slipCount, 0);
-  const totalRounds = shiftSummaries.reduce((sum, shift) => sum + shift.totalWeighRounds, 0);
-
   const loadReports = async () => {
     setIsLoading(true);
     setError('');
@@ -537,9 +329,6 @@ export default function WeighingShiftSummary({
 
   useEffect(() => {
     loadReports();
-    setActiveShift(null);
-    setActiveDate(null);
-    setActiveSlipKey(null);
     setViewingRow(null);
     setActionMessage('');
   }, [selectedDate, config.apiBasePath]);
@@ -635,18 +424,16 @@ export default function WeighingShiftSummary({
     }
   };
 
-  const handleEditRow = (row: WeighingRecord) => {
-    if (!activeSlip) return;
-
+  const handleEditRow = (slip: WeighingSlip, row: WeighingRecord) => {
     handleOpenReportForm({
-      productionDate: activeSlip.productionDate,
-      shiftName: activeSlip.shiftName,
-      worker1: activeSlip.worker1,
-      worker2: activeSlip.worker2,
-      documentNo: activeSlip.documentNo,
-      reportDate: activeSlip.reportDate,
+      productionDate: slip.productionDate,
+      shiftName: slip.shiftName,
+      worker1: slip.worker1,
+      worker2: slip.worker2,
+      documentNo: slip.documentNo,
+      reportDate: slip.reportDate,
       productName: row.productName,
-      existingRows: activeSlip.rows,
+      existingRows: slip.rows,
       editingRow: row
     });
   };
@@ -692,29 +479,12 @@ export default function WeighingShiftSummary({
         }
       }
 
-      if (activeSlipKey === slip.key) {
-        setActiveSlipKey(null);
-      }
       setActionMessage('Đã xóa phiếu.');
       await loadReports();
     } catch (err: any) {
       setActionMessage(err.message || 'Không thể xóa phiếu.');
     } finally {
       setDeletingSlipKey(null);
-    }
-  };
-
-  const goBack = () => {
-    if (activeSlipKey) {
-      setActiveSlipKey(null);
-      return;
-    }
-    if (activeDate) {
-      setActiveDate(null);
-      return;
-    }
-    if (activeShift) {
-      setActiveShift(null);
     }
   };
 
@@ -740,67 +510,38 @@ export default function WeighingShiftSummary({
 
   return (
     <div className="relative space-y-4 pb-28">
-      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="grid grid-cols-3 gap-3 border-b border-zinc-100 bg-zinc-50 p-4">
-          <div className="rounded-xl border border-zinc-200 bg-white p-3 text-center">
-            <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Tổng phiếu</p>
-            <p className="mt-1 text-2xl font-black text-zinc-900">{totalSlips}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-200 bg-white p-3 text-center">
-            <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Tổng lần cân</p>
-            <p className="mt-1 text-2xl font-black text-[#ef1b2d]">{totalRounds}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-200 bg-white p-3 text-center">
-            <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Ngày xem</p>
-            <p className="mt-1 text-sm font-black text-zinc-900">{formatDateVi(selectedDate)}</p>
-          </div>
-        </div>
-
-        <div className="border-b-4 border-[#ef1b2d] bg-white p-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-center gap-3">
-              <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
-              <div>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">{config.summaryTitle}</h2>
-                <p className="mt-1 text-xs font-semibold text-zinc-500">{config.summarySubtitle}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="min-w-[160px] flex-1 space-y-1 sm:max-w-[200px]">
-                <span className="flex items-center gap-1 text-xs font-bold text-zinc-600">
-                  <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
-                  Ngày sản xuất
-                </span>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={e => setSelectedDate(e.target.value)}
-                  className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={loadReports}
-                disabled={isLoading}
-                className="flex h-11 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Làm mới
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleOpenSlipSetup({
-                    productionDate: selectedDate,
-                    shiftName: activeShiftSummary?.shiftKey
-                  })
-                }
-                className="hidden h-11 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c] sm:flex"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm báo cáo
-              </button>
-            </div>
+      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-2 border-b border-zinc-100 bg-zinc-50 p-3 sm:p-4">
+          <label className="min-w-[140px] flex-1 space-y-1 sm:max-w-[200px]">
+            <span className="flex items-center gap-1 text-xs font-bold text-zinc-600">
+              <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
+              Ngày sản xuất
+            </span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+            />
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={loadReports}
+              disabled={isLoading}
+              className="flex h-10 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Làm mới
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenSlipSetup({ productionDate: selectedDate })}
+              className="hidden h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c] sm:flex"
+            >
+              <Plus className="h-4 w-4" />
+              Thêm báo cáo
+            </button>
           </div>
         </div>
       </section>
@@ -816,432 +557,246 @@ export default function WeighingShiftSummary({
           <Loader2 className="h-5 w-5 animate-spin text-[#ef1b2d]" />
           Đang tải báo cáo các ca...
         </div>
-      ) : activeSlip && activeShiftSummary && activeDateGroup ? (
-        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-zinc-100 px-4 py-3">
-            <button
-              type="button"
-              onClick={goBack}
-              className="flex h-9 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Quay lại
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-black text-zinc-900">Phiếu {activeSlip.documentNo || '—'}</p>
-              <p className="truncate text-xs font-semibold text-zinc-500">
-                {activeShiftSummary.shiftLabel} · {formatDateVi(activeDateGroup.date)}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => handlePrintSlip(activeSlip)}
-              title="In phiếu cân ca"
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-black text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <Printer className="h-4 w-4" />
-              In phiếu
-            </button>
-          </div>
-
-          <div className="space-y-4 p-4">
-            <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-zinc-600 md:grid-cols-3">
-              <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                  <Users className="h-3.5 w-3.5" /> CN 1
-                </span>
-                <p className="mt-1 font-bold text-zinc-800">{activeSlip.worker1 || '—'}</p>
-              </div>
-              <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                  <Users className="h-3.5 w-3.5" /> CN 2
-                </span>
-                <p className="mt-1 font-bold text-zinc-800">{activeSlip.worker2 || '—'}</p>
-              </div>
-              <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                  <Factory className="h-3.5 w-3.5" /> Tên máy
-                </span>
-                <p className="mt-1 font-bold text-zinc-800">
-                  {resolveMachineName(activeSlip.machineName, ...activeSlip.rows.map(row => row.machineName))}
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-zinc-200">
-              {actionMessage && (
-                <p className="border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-xs font-bold text-[#ef1b2d]">
-                  {actionMessage}
-                </p>
-              )}
-              <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
-                <thead>
-                  <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
-                    <th className="px-3 py-2 text-center">Lần</th>
-                    <th className="px-3 py-2">Người cân</th>
-                    <th className="px-3 py-2">TL lõi</th>
-                    <th className="px-3 py-2">TL bì</th>
-                    <th className="px-3 py-2">Trọng lượng</th>
-                    <th className="px-3 py-2">Tổng trọng lượng</th>
-                    <th className="px-3 py-2">Giờ</th>
-                    <th className="px-3 py-2">Nghiệm thu</th>
-                    <th className="px-3 py-2">Ghi chú</th>
-                    <th className="px-3 py-2">Ảnh TL lõi</th>
-                    <th className="px-3 py-2">Ảnh</th>
-                    <th className="px-3 py-2 text-center">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {activeSlipWeighingRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="px-4 py-10 text-center text-sm font-semibold text-zinc-400">
-                        Chưa có lần cân. Bấm Bổ sung lần cân để thêm dòng.
-                      </td>
-                    </tr>
-                  ) : (
-                  activeSlipWeighingRows.map((row, index) => (
-                    <tr key={row.id ?? `${activeSlip.key}-${index}`}>
-                      <td className="px-3 py-2 text-center font-black text-zinc-800">{row.weighNo || index + 1}</td>
-                      <td className="px-3 py-2 font-semibold text-zinc-600">{row.weigherName || '—'}</td>
-                      <td className="px-3 py-2 font-semibold text-zinc-700">{row.coreWeight || '—'}</td>
-                      <td className="px-3 py-2 font-semibold text-zinc-700">{row.shellWeight || '—'}</td>
-                      <td className="px-3 py-2 font-bold text-zinc-900">{row.weight || '—'}</td>
-                      <td className="px-3 py-2 font-black text-[#ef1b2d]">
-                        {formatWeighingRowTotalWeight(row)}
-                      </td>
-                      <td className="px-3 py-2 font-semibold text-zinc-600">{row.weighTime || '—'}</td>
-                      <td className="px-3 py-2">
-                        {row.acceptanceStatus ? (
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                              row.acceptanceStatus === 'Đạt'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : 'bg-rose-50 text-rose-700'
-                            }`}
-                          >
-                            {row.acceptanceStatus}
-                          </span>
-                        ) : (
-                          <span className="text-zinc-300">—</span>
-                        )}
-                      </td>
-                      <td className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600" title={row.note || undefined}>
-                        {row.note || '—'}
-                      </td>
-                      <td className="px-3 py-2">
-                        {row.coreWeightImageUrl ? (
-                          <WeighingImageThumbnail
-                            url={row.coreWeightImageUrl}
-                            alt="Ảnh trọng lượng lõi"
-                            title="Ảnh trọng lượng lõi"
-                            onView={() =>
-                              setViewingImage({ url: row.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })
-                            }
-                          />
-                        ) : (
-                          <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {row.imageUrl ? (
-                          <WeighingImageThumbnail
-                            url={row.imageUrl}
-                            alt="Ảnh cân"
-                            title="Ảnh cân"
-                            onView={() => setViewingImage({ url: row.imageUrl!, title: 'Ảnh cân' })}
-                          />
-                        ) : (
-                          <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setViewingRow(row)}
-                            title="Xem"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditRow(row)}
-                            title="Sửa"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRow(row)}
-                            disabled={deletingRowId === row.id}
-                            title="Xóa"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {deletingRowId === row.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => handleOpenReportForm({
-                  productionDate: activeSlip.productionDate,
-                  shiftName: activeSlip.shiftName,
-                  worker1: activeSlip.worker1,
-                  worker2: activeSlip.worker2,
-                  documentNo: activeSlip.documentNo,
-                  reportDate: activeSlip.reportDate,
-                  productCode: activeSlip.rows[0]?.productCode,
-                  productName: activeSlip.rows[0]?.productName,
-                  machineName: (() => {
-                    const name = resolveMachineName(
-                      activeSlip.machineName,
-                      ...activeSlip.rows.map(row => row.machineName)
-                    );
-                    return name !== '—' ? name : undefined;
-                  })(),
-                  existingRows: activeSlip.rows,
-                  newWeighRound: true
-                })}
-                className="flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Bổ sung lần cân
-              </button>
-            </div>
-          </div>
-        </section>
-      ) : activeDateGroup && activeShiftSummary ? (
-        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={goBack}
-                className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Quay lại
-              </button>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-black text-zinc-900">{formatDateVi(activeDateGroup.date)}</p>
-                <p className="truncate text-xs font-semibold text-zinc-500">{activeShiftSummary.shiftLabel}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleOpenSlipSetup({
-                productionDate: activeDateGroup.date || selectedDate,
-                shiftName: activeShiftSummary.shiftKey
-              })}
-              className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 text-xs font-bold text-[#ef1b2d] transition hover:bg-red-100"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Thêm
-            </button>
-          </div>
-
-          <div className="grid gap-3 p-4 sm:grid-cols-2">
-            {activeDateGroup.slips.length === 0 ? (
-              <p className="col-span-full py-8 text-center text-sm font-semibold text-zinc-400">
-                Chưa có phiếu cho ngày này.
-              </p>
-            ) : (
-              activeDateGroup.slips.map(slip => {
-                const machineLabel = resolveMachineName(
-                  slip.machineName,
-                  ...slip.rows.map(row => row.machineName)
-                );
-
-                return (
-                  <div
-                    key={slip.key}
-                    className="rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-red-200 hover:bg-red-50/30"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveSlipKey(slip.key)}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <p className="flex items-center gap-1.5 text-sm font-black text-zinc-900">
-                          <ClipboardList className="h-4 w-4 shrink-0 text-[#ef1b2d]" />
-                          Phiếu {slip.documentNo || '—'}
-                        </p>
-                      </button>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleEditSlip(slip)}
-                          title="Sửa phiếu"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSlip(slip)}
-                          disabled={deletingSlipKey === slip.key}
-                          title="Xóa phiếu"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {deletingSlipKey === slip.key ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveSlipKey(slip.key)}
-                          title="Xem phiếu"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-xs font-semibold text-zinc-600">
-                      {slip.worker1 || '—'}
-                      {slip.worker2 ? ` · ${slip.worker2}` : ''}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-zinc-500">
-                      {countWeighingRounds(slip.rows)} lần cân
-                      {machineLabel !== '—' ? ` · ${machineLabel}` : ''}
-                    </p>
-                    {machineLabel !== '—' && (
-                    <span className="mt-3 inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">
-                      {machineLabel}
-                    </span>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-      ) : activeShiftSummary ? (
-        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={goBack}
-                className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Quay lại
-              </button>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-black uppercase tracking-wider text-zinc-900">{activeShiftSummary.shiftLabel}</p>
-                <p className="truncate text-xs font-semibold text-zinc-500">
-                  {activeShiftSummary.slipCount} phiếu · {activeShiftSummary.totalWeighRounds} lần cân
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                handleOpenSlipSetup({
-                  productionDate: selectedDate,
-                  shiftName: activeShiftSummary.shiftKey
-                })
-              }
-              className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 text-xs font-bold text-[#ef1b2d] transition hover:bg-red-100"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Thêm
-            </button>
-          </div>
-
-          <div className="grid gap-3 p-4 sm:grid-cols-2">
-            {activeShiftSummary.dateGroups.length === 0 ? (
-              <div className="col-span-full flex flex-col items-center gap-3 py-8">
-                <p className="text-sm font-semibold text-zinc-400">Chưa có báo cáo cho ca này.</p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleOpenSlipSetup({
-                      productionDate: selectedDate,
-                      shiftName: activeShiftSummary.shiftKey
-                    })
-                  }
-                  className="flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c]"
-                >
-                  <Plus className="h-4 w-4" />
-                  Thêm phiếu cân
-                </button>
-              </div>
-            ) : (
-              activeShiftSummary.dateGroups.map(dateGroup => (
-                <button
-                  key={`${activeShiftSummary.shiftKey}-${dateGroup.date || 'unknown'}`}
-                  type="button"
-                  onClick={() => setActiveDate(dateGroup.date)}
-                  className="rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-red-200 hover:bg-red-50/30"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <CalendarDays className="h-5 w-5 shrink-0 text-[#ef1b2d]" />
-                      <p className="text-sm font-black text-zinc-900">{formatDateVi(dateGroup.date)}</p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />
-                  </div>
-                  <p className="mt-2 text-xs font-semibold text-zinc-500">
-                    {dateGroup.slipCount} phiếu · {dateGroup.totalWeighRounds} lần cân
-                  </p>
-                </button>
-              ))
-            )}
-          </div>
-        </section>
       ) : (
         <div className="space-y-3">
+          {actionMessage && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-2 text-xs font-bold text-[#ef1b2d]">
+              {actionMessage}
+            </div>
+          )}
+
           {shiftSummaries.map(shift => {
-            const machines = [
-              ...new Set(
-                shift.slips.flatMap(slip => {
-                  const name = resolveMachineName(
-                    slip.machineName,
-                    ...slip.rows.map(row => row.machineName)
-                  );
-                  return name !== '—' ? [name] : [];
-                })
-              )
-            ];
+            const roundGroups = groupShiftRowsByRound(shift.slips);
+            const primarySlip = shift.slips.length === 1 ? shift.slips[0] : null;
+            const primaryMachine = primarySlip
+              ? resolveMachineName(primarySlip.machineName, ...primarySlip.rows.map(row => row.machineName))
+              : '—';
+            const tableColSpan = 12;
 
             return (
-              <section key={shift.shiftKey} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-                <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
+            <section key={shift.shiftKey} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                <div className="min-w-0">
+                  <h3 className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{shift.shiftLabel}</h3>
+                  <p className="text-[10px] font-semibold text-zinc-400">
+                    {primarySlip ? (
+                      <>
+                        {primarySlip.worker1 || '—'}
+                        {primarySlip.worker2 ? ` · ${primarySlip.worker2}` : ''}
+                        {primaryMachine !== '—' ? ` · ${primaryMachine}` : ''}
+                      </>
+                    ) : (
+                      <>
+                        {shift.slipCount} phiếu · {shift.totalWeighRounds} lần cân
+                      </>
+                    )}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {primarySlip && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handlePrintSlip(primarySlip)}
+                        title="In phiếu cân ca"
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleEditSlip(primarySlip)}
+                        title="Sửa phiếu"
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSlip(primarySlip)}
+                        disabled={deletingSlipKey === primarySlip.key}
+                        title="Xóa phiếu"
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingSlipKey === primarySlip.key ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setActiveShift(shift.shiftKey)}
-                    className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left transition hover:opacity-80"
+                    onClick={() =>
+                      handleOpenSlipSetup({
+                        productionDate: selectedDate,
+                        shiftName: shift.shiftKey
+                      })
+                    }
+                    className="flex h-7 items-center gap-1 rounded-lg bg-red-50 px-2 text-[10px] font-bold text-[#ef1b2d] transition hover:bg-red-100"
                   >
-                    <div>
-                      <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">{shift.shiftLabel}</h3>
-                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                        {shift.slipCount} phiếu · {shift.totalWeighRounds} lần cân
-                        {machines.length > 0 ? ` · ${machines.length} máy` : ''}
-                      </p>
-                    </div>
-                    <ChevronRight className="h-5 w-5 shrink-0 text-zinc-400" />
+                    <Plus className="h-3.5 w-3.5" />
+                    Thêm
                   </button>
                 </div>
-              </section>
+              </div>
+
+              {shift.slips.length === 0 ? (
+                <p className="px-3 py-6 text-center text-xs font-semibold text-zinc-400">Chưa có phiếu cho ca này.</p>
+              ) : (
+                <div className="p-3">
+                  <div className="overflow-x-auto rounded-xl border border-zinc-200">
+                    <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
+                          <th className="px-3 py-2">Sản phẩm</th>
+                          <th className="px-3 py-2">Người cân</th>
+                          <th className="px-3 py-2">TL lõi</th>
+                          <th className="px-3 py-2">TL bì</th>
+                          <th className="px-3 py-2">Trọng lượng</th>
+                          <th className="px-3 py-2">Tổng trọng lượng</th>
+                          <th className="px-3 py-2">Giờ</th>
+                          <th className="px-3 py-2">Nghiệm thu</th>
+                          <th className="px-3 py-2">Ghi chú</th>
+                          <th className="px-3 py-2">Ảnh TL lõi</th>
+                          <th className="px-3 py-2">Ảnh</th>
+                          <th className="px-3 py-2 text-center">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {roundGroups.length === 0 ? (
+                          <tr>
+                            <td colSpan={tableColSpan} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
+                              Chưa có lần cân.
+                            </td>
+                          </tr>
+                        ) : (
+                          roundGroups.map(group => {
+                            const metaWeigher = group.entries.find(entry => entry.row.weigherName?.trim())?.row.weigherName;
+                            const metaTime = group.entries.find(entry => entry.row.weighTime?.trim())?.row.weighTime;
+
+                            return (
+                              <React.Fragment key={group.roundKey}>
+                                <tr className="bg-red-50/60">
+                                  <td colSpan={tableColSpan} className="px-3 py-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">
+                                      Lần {group.weighNo}
+                                      {metaWeigher ? ` · ${metaWeigher}` : ''}
+                                      {metaTime ? ` · ${metaTime}` : ''}
+                                    </span>
+                                  </td>
+                                </tr>
+                                {group.entries.map((entry, index) => (
+                                  <tr key={entry.row.id ?? `${group.roundKey}-${entry.slip.key}-${index}`}>
+                                    <td className="px-3 py-2 font-semibold text-zinc-800">
+                                      <p>{formatWeighingProductLabel(entry.row)}</p>
+                                      {shift.slips.length > 1 ? (
+                                        <p className="mt-0.5 text-[10px] font-semibold text-zinc-400">
+                                          Phiếu {entry.slip.documentNo || '—'}
+                                        </p>
+                                      ) : null}
+                                    </td>
+                                    <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weigherName || '—'}</td>
+                                    <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.coreWeight || '—'}</td>
+                                    <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.shellWeight || '—'}</td>
+                                    <td className="px-3 py-2 font-bold text-zinc-900">{entry.row.weight || '—'}</td>
+                                    <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                                      {formatWeighingRowTotalWeight(entry.row)}
+                                    </td>
+                                    <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weighTime || '—'}</td>
+                                    <td className="px-3 py-2">
+                                      {entry.row.acceptanceStatus ? (
+                                        <span
+                                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                                            entry.row.acceptanceStatus === 'Đạt'
+                                              ? 'bg-emerald-50 text-emerald-700'
+                                              : 'bg-rose-50 text-rose-700'
+                                          }`}
+                                        >
+                                          {entry.row.acceptanceStatus}
+                                        </span>
+                                      ) : (
+                                        <span className="text-zinc-300">—</span>
+                                      )}
+                                    </td>
+                                    <td
+                                      className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600"
+                                      title={entry.row.note || undefined}
+                                    >
+                                      {entry.row.note || '—'}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {entry.row.coreWeightImageUrl ? (
+                                        <WeighingImageThumbnail
+                                          url={entry.row.coreWeightImageUrl}
+                                          alt="Ảnh trọng lượng lõi"
+                                          title="Ảnh trọng lượng lõi"
+                                          onView={() =>
+                                            setViewingImage({ url: entry.row.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })
+                                          }
+                                        />
+                                      ) : (
+                                        <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {entry.row.imageUrl ? (
+                                        <WeighingImageThumbnail
+                                          url={entry.row.imageUrl}
+                                          alt="Ảnh cân"
+                                          title="Ảnh cân"
+                                          onView={() => setViewingImage({ url: entry.row.imageUrl!, title: 'Ảnh cân' })}
+                                        />
+                                      ) : (
+                                        <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => setViewingRow(entry.row)}
+                                          title="Xem"
+                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                        >
+                                          <Eye className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleEditRow(entry.slip, entry.row)}
+                                          title="Sửa"
+                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteRow(entry.row)}
+                                          disabled={deletingRowId === entry.row.id}
+                                          title="Xóa"
+                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {deletingRowId === entry.row.id ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                          ) : (
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </section>
             );
           })}
         </div>
@@ -1345,12 +900,12 @@ export default function WeighingShiftSummary({
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
-              {activeSlip && (
+              {viewingRowSlip && (
                 <button
                   type="button"
                   onClick={() => {
                     setViewingRow(null);
-                    handleEditRow(viewingRow);
+                    handleEditRow(viewingRowSlip, viewingRow);
                   }}
                   className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-[#ef1b2d] transition hover:bg-red-50"
                 >

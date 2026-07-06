@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Pencil, Trash2, X } from 'lucide-react';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import type { MixingReport } from './MixingReportForm';
-import type { WeighingRecord } from './WeighingShiftSummary';
+import type { WeighingRecord } from '../utils/weighingRecords';
 import type { ShiftSetting } from '../utils/shiftSettings';
 import {
   getShiftSummaryDetail,

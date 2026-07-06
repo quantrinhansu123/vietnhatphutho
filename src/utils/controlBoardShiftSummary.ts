@@ -1,6 +1,6 @@
 import type { AcceptanceReport } from '../components/AcceptanceReportForm';
-import type { WeighingRecord } from '../components/WeighingShiftSummary';
-import { getWeighingDataRows, sumWeighingRowTotalWeight } from '../components/WeighingShiftSummary';
+import type { WeighingRecord } from './weighingRecords';
+import { getWeighingDataRows, sumWeighingRowTotalWeight } from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
 import { sumMachineNvlDauCaReportTotal, sumMachineNvlCuoiCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import {

@@ -5,9 +5,16 @@
 ## Cách dùng
 
 1. Xác định bảng Supabase (hoặc tab/route).
-2. Mở **`docs/ai-tables/<ten-bang>.md`** tương ứng.
-3. Chỉ đọc các file được liệt kê trong manifest đó.
+2. Mở **`docs/ai-tables/<ten-bang>.md`** tương ứng (~20 dòng).
+3. Chỉ đọc các file được liệt kê — **ưu tiên `src/features/<bang>/`**, không mở `App.monolith.backup.tsx`.
 4. Tra cứu nhanh: `src/features/registry.ts`.
+
+### Vì sao ít token hơn nhiều
+
+- Monolith: `App.tsx` backup ~18k dòng → AI dễ đọc quá tay.
+- Manifest + feature: ~20 dòng manifest + 1 file feature ~500–1.100 dòng + vài component + ~100 dòng API.
+
+Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...`) và `registry.ts` ngay.
 
 ## Danh sách bảng
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
+import { Eye, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
@@ -449,45 +450,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   }, 0);
 
   return (
-    <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex items-start justify-end gap-3">
-            <div className="hidden">
-              <p className="text-xs font-black uppercase tracking-wider text-red-300">Kế hoạch sản xuất</p>
-              <h2 className="mt-1 text-2xl font-black leading-tight">Đơn hàng</h2>
-              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Dữ liệu được tải trực tiếp từ bảng Supabase don_hang.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={openAddForm}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm mới
-              </button>
-
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
-            {[
-              ['Đơn hàng', orders.length],
-              ['Khách hàng', customerCount],
-              ['Tổng SL', formatNumber(totalQuantity)]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <span className="block font-bold text-zinc-400">{label}</span>
-                <span className="mt-1 block text-xl font-black text-white">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
+    <div className="flex h-full min-h-0 w-full flex-col bg-white">
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="flex max-h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
@@ -765,31 +728,31 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-1 lg:pb-0">
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
+        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
           {orderTypes.map(type => (
             <button
               key={type}
               type="button"
               onClick={() => setSelectedType(type)}
-              className={`h-11 shrink-0 rounded-xl border px-4 text-sm font-black transition ${
+              className={`h-9 shrink-0 rounded-lg border px-3 text-xs font-black transition ${
                 selectedType === type
-                  ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-sm'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
+                  ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
+                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
               }`}
             >
               {type === 'all' ? 'Tất cả' : type}
             </button>
           ))}
           {isLoadingOrders && (
-            <div className="flex h-11 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold text-zinc-500">
-              Đang tải Supabase...
+            <div className="flex h-9 shrink-0 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-500">
+              Đang tải...
             </div>
           )}
         </div>
 
-        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[420px]">
-          <Search className="h-4 w-4 text-zinc-400" />
+        <label className="flex h-9 w-full min-w-[200px] items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 sm:w-[280px] lg:w-[360px]">
+          <Search className="h-4 w-4 shrink-0 text-zinc-400" />
           <input
             value={searchText}
             onChange={event => setSearchText(event.target.value)}
@@ -799,119 +762,125 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           />
         </label>
 
-        {ordersError && (
-          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">
-            {ordersError}
-          </p>
-        )}
-
-        {actionMessage && (
-          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
-            {actionMessage}
-          </p>
-        )}
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[1320px] w-full text-left text-sm">
-            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-4 py-3 font-black">Mã đơn</th>
-                <th className="px-4 py-3 font-black">Loại đơn</th>
-                <th className="px-4 py-3 font-black">Trạng thái</th>
-                <th className="px-4 py-3 font-black">Nhân viên</th>
-                <th className="px-4 py-3 font-black">Khách hàng</th>
-                <th className="w-[560px] px-4 py-3 font-black">Sản phẩm</th>
-                <th className="px-4 py-3 font-black">Ghi chú</th>
-                <th className="px-4 py-3 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredOrders.map(order => (
-                <tr key={order.id} className="transition hover:bg-red-50/40">
-                  <td className="px-4 py-3 font-black text-zinc-950">{order.orderCode || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2.5 py-1 text-xs font-black text-[#ef1b2d]">
-                      {order.orderType}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
-                      {order.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-zinc-700">{order.staffName}</td>
-                  <td className="px-4 py-3 font-bold text-zinc-800">{order.customer}</td>
-                  <td className="w-[560px] px-4 py-3">
-                    <div className="min-w-[520px] overflow-hidden rounded-lg border border-zinc-300 bg-white">
-                      <div className="grid grid-cols-[1.1fr_1.7fr_0.8fr_0.8fr] divide-x divide-zinc-300 border-b border-zinc-300 bg-zinc-100 text-[10px] font-black uppercase tracking-wider text-zinc-600">
-                        <span className="px-3 py-2">Mã SP</span>
-                        <span className="px-3 py-2">Tên SP</span>
-                        <span className="px-3 py-2 text-right">Số lượng</span>
-                        <span className="px-3 py-2">Đơn vị</span>
-                      </div>
-                      {getOrderProductLines(order).map((line, index) => (
-                        <div
-                          key={`${order.id}-${line.productCode}-${line.productName}-${index}`}
-                          className="grid grid-cols-[1.1fr_1.7fr_0.8fr_0.8fr] divide-x divide-zinc-200 border-b border-zinc-200 text-xs font-semibold text-zinc-700 last:border-b-0"
-                        >
-                          <span className="px-3 py-2 font-black text-zinc-950">{line.productCode || '-'}</span>
-                          <span className="px-3 py-2 text-zinc-800">{line.productName || '-'}</span>
-                          <span className="px-3 py-2 text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
-                          <span className="px-3 py-2 font-bold text-zinc-700">{line.unit || '-'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-zinc-500">{order.note || '-'}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setViewingOrder(order)}
-                        title="Xem"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openEditForm(order)}
-                        title="Sửa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteOrder(order)}
-                        disabled={deletingOrderId === order.id}
-                        title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {deletingOrderId === order.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {!isLoadingOrders && filteredOrders.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center font-bold text-zinc-500">
-                    Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="hidden items-center gap-3 text-[11px] font-bold text-zinc-500 sm:flex">
+          <span>{orders.length} đơn</span>
+          <span>{customerCount} KH</span>
+          <span>SL {formatNumber(totalQuantity)}</span>
         </div>
-      </section>
+
+        <button
+          type="button"
+          onClick={openAddForm}
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+        >
+          <Plus className="h-4 w-4" />
+          Thêm mới
+        </button>
+      </div>
+
+      {(ordersError || actionMessage) && (
+        <div className="space-y-1 border-b border-zinc-100 px-3 py-2">
+          {ordersError && (
+            <p className="text-xs font-bold text-rose-700">{ordersError}</p>
+          )}
+          {actionMessage && (
+            <p className="text-xs font-bold text-emerald-700">{actionMessage}</p>
+          )}
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-zinc-950 text-xs uppercase tracking-wider text-white">
+            <tr>
+              <th className="px-3 py-2.5 font-black">Mã đơn</th>
+              <th className="px-3 py-2.5 font-black">Loại đơn</th>
+              <th className="px-3 py-2.5 font-black">Trạng thái</th>
+              <th className="px-3 py-2.5 font-black">Nhân viên</th>
+              <th className="px-3 py-2.5 font-black">Khách hàng</th>
+              <th className="min-w-[420px] px-3 py-2.5 font-black">Sản phẩm</th>
+              <th className="px-3 py-2.5 font-black">Ghi chú</th>
+              <th className="w-28 px-3 py-2.5 text-center font-black">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100 bg-white">
+            {filteredOrders.map(order => (
+              <tr key={order.id} className="align-top transition hover:bg-red-50/30">
+                <td className="px-3 py-2.5 font-black text-zinc-950">{order.orderCode || '-'}</td>
+                <td className="px-3 py-2.5">
+                  <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2 py-0.5 text-[11px] font-black text-[#ef1b2d]">
+                    {order.orderType}
+                  </span>
+                </td>
+                <td className="px-3 py-2.5">
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-800">
+                    {order.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2.5 font-semibold text-zinc-700">{order.staffName}</td>
+                <td className="px-3 py-2.5 font-bold text-zinc-800">{order.customer}</td>
+                <td className="px-3 py-2.5">
+                  <div className="divide-y divide-zinc-100">
+                    {getOrderProductLines(order).map((line, index) => (
+                      <div
+                        key={`${order.id}-${line.productCode}-${line.productName}-${index}`}
+                        className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 py-1.5 text-xs font-semibold text-zinc-700 first:pt-0 last:pb-0"
+                      >
+                        <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
+                        <span className="text-zinc-800">{line.productName || '-'}</span>
+                        <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
+                        <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-3 py-2.5 font-semibold text-zinc-500">{order.note || '-'}</td>
+                <td className="px-3 py-2.5">
+                  <div className="flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setViewingOrder(order)}
+                      title="Xem"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditForm(order)}
+                      title="Sửa"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteOrder(order)}
+                      disabled={deletingOrderId === order.id}
+                      title="Xóa"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingOrderId === order.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+
+            {!isLoadingOrders && filteredOrders.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-10 text-center font-bold text-zinc-500">
+                  Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

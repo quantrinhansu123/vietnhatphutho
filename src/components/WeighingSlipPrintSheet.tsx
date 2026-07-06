@@ -1,9 +1,8 @@
 import React from 'react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
-import type { WeighingRecord } from './WeighingShiftSummary';
-import { getWeighingDataRows } from './WeighingShiftSummary';
-
-const PRINT_COMPANY_NAME = 'CÔNG TY TNHH VIỆT NHẬT IPT';
+import type { WeighingRecord } from '../utils/weighingRecords';
+import { getWeighingDataRows } from '../utils/weighingRecords';
+import { PRINT_COMPANY_NAME } from './layout/constants';
 
 export type WeighingSlipPrintData = {
   documentNo: string;
@@ -101,7 +100,7 @@ function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrintData; 
         <header className="weighing-slip-print-header">
           <div className="weighing-slip-print-header-top">
             <div className="weighing-slip-print-brand">
-              <img src={vietNhatLogoUrl} alt="Logo Viet Nhat IPT" className="weighing-slip-print-logo" />
+              <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="weighing-slip-print-logo" />
               <p className="weighing-slip-print-company-name">{PRINT_COMPANY_NAME}</p>
             </div>
           </div>

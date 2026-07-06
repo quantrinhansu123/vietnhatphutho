@@ -1,5 +1,5 @@
 ---
-description: Chỉ mục bảng Supabase — AI đọc manifest trước, tránh mở App.tsx/server.ts toàn bộ
+description: Chỉ mục bảng Supabase — manifest + feature tách file, tiết kiệm token mạnh
 alwaysApply: true
 ---
 
@@ -11,15 +11,44 @@ Trước khi sửa tính năng, **xác định bảng Supabase** rồi mở mani
 2. `docs/ai-tables/<ten_bang>.md` — file cần đọc + dòng code
 3. `src/features/registry.ts` — tra cứu nhanh bằng code
 
+## Tách feature + manifest → ít token hơn nhiều
+
+| Cách làm | AI thường phải đọc | Ghi chú |
+|----------|-------------------|---------|
+| Monolith | `App.tsx` ~18k dòng + `server.ts` lớn | Dễ đọc nhầm, tốn token |
+| **Manifest + feature** | manifest ~20 dòng + 1 feature ~500–1.100 dòng + API ~100 dòng | **Thấp hơn nhiều lần** |
+
+**Luồng đọc (bắt buộc):**
+
+1. Manifest bảng (`docs/ai-tables/<bang>.md`) — biết chính xác file + dòng
+2. `src/features/<bang>/` hoặc `src/components/` đã tách — **ưu tiên**, không mở shell
+3. `server.ts` — **chỉ** khoảng `serverLines` trong manifest
+4. `App.tsx` — chỉ routing/shell hoặc dòng còn ghi trong manifest
+
+**Ví dụ** `bao_cao_may_nvl_ton`:
+
+- Đọc `docs/ai-tables/bao_cao_may_nvl_ton.md` + `registry.ts`
+- Sửa UI → `src/features/bao-cao-may-nvl-ton/index.tsx`, `MachineNvlReportListView.tsx`
+- **Không** đọc toàn bộ `App.tsx` / `App.monolith.backup.tsx`
+
 ## Quy tắc tiết kiệm token
 
-- **Không** đọc toàn bộ `src/App.tsx` (~18k dòng) trừ khi sửa layout/menu (dòng ~16950–18173).
-- **Không** đọc toàn bộ `server.ts` — chỉ đoạn API trong manifest (cột `serverLines`).
-- Ưu tiên file trong `src/components/` đã tách sẵn (phiếu cân, phối trộn, nghiệm thu, dừng máy).
-- Panel còn trong App.tsx: chỉ đọc **khoảng dòng** ghi trong manifest.
+- **Không** đọc toàn bộ `src/App.tsx` trừ layout/menu/routing (shell ~1.3k dòng, không phải 18k backup).
+- **Không** đọc toàn bộ `server.ts` — chỉ đoạn API trong manifest.
+- Ưu tiên `src/features/<bang>/` và `src/components/` đã tách.
+- Panel còn trong `App.tsx`: chỉ đọc **khoảng dòng** ghi trong manifest.
 
-## Ví dụ
+## Khi tách feature mới
 
-Sửa kho NVL → đọc `docs/ai-tables/kho_nvl.md` → `App.tsx` 3432–5268 + `server.ts` 4605–4784.
+1. Chuyển panel → `src/features/<ten-bang>/index.tsx`
+2. Cập nhật `src/features/registry.ts` (`appLines`, `components`)
+3. Cập nhật `docs/ai-tables/<ten_bang>.md` (bỏ dòng App.tsx cũ nếu đã tách)
+4. `App.tsx` chỉ giữ import + `<FeaturePanel />` trong routing
 
-Sửa phiếu cân → đọc `phieu_can_dinh_ki.md` → **không cần** App.tsx.
+## Ví dụ nhanh
+
+| Tác vụ | Đọc |
+|--------|-----|
+| Kho NVL | `kho_nvl.md` → `src/features/kho-nvl/` + `server.ts` 4605–4784 |
+| Phiếu cân | `phieu_can_dinh_ki.md` → `WeighingReportForm.tsx` — **không** App.tsx |
+| Tồn máy-NVL | `bao_cao_may_nvl_ton.md` → `src/features/bao-cao-may-nvl-ton/` |

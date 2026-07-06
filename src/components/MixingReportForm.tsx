@@ -1762,12 +1762,6 @@ export default function MixingReportForm({
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">Bảng trộn vật tư</p>
-                <h2 className="text-base font-black uppercase tracking-tight text-zinc-950 sm:text-lg">
-                  Báo cáo phối trộn
-                </h2>
-                <p className="text-[10px] font-semibold text-zinc-500 sm:text-xs">
-                  Nhật ký sản xuất kiêm phiếu giao ca · QT-16-BM02
-                </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {onOpenList && (

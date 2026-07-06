@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Boxes, ChevronLeft, Loader2, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
 import {
   buildMachineNvlReportGroups,
@@ -28,7 +27,7 @@ const REPORT_TABS: { id: MachineNvlReportKind; label: string }[] = [
 ];
 
 const inputClass =
-  'h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-8 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:h-9 sm:text-xs';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -38,6 +37,24 @@ function reportTotal(report: MachineNvlSavedReport) {
   return report.reportKind === 'dau_ca'
     ? sumMachineNvlDauCaReportTotal(report)
     : sumMachineNvlCuoiCaReportTotal(report);
+}
+
+function formatReportLineSummary(
+  report: MachineNvlSavedReport,
+  isDauCaTab: boolean
+) {
+  return report.lines
+    .map(line => {
+      const label = line.maNvl || line.tenNvl || '-';
+      const qty =
+        isDauCaTab && line.soLuongTonCaTruoc !== null
+          ? `${formatNumber(line.soLuongTonCaTruoc)}→${formatNumber(line.soLuongTon)}`
+          : !isDauCaTab && line.soLuongTonDinhMuc !== null
+            ? `${formatNumber(line.soLuongTonDinhMuc)}/${formatNumber(line.soLuongTon)}`
+            : formatNumber(line.soLuongTon);
+      return `${label} ${qty}`;
+    })
+    .join(' · ');
 }
 
 export default function MachineNvlReportListView({
@@ -182,45 +199,42 @@ export default function MachineNvlReportListView({
   return (
     <div className="space-y-4 pb-24">
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b-4 border-[#ef1b2d] bg-white p-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-3">
-              <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
-              <div>
-                <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Báo cáo NVL tồn theo máy</p>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">Danh sách báo cáo</h2>
-                <p className="mt-1 text-xs font-semibold text-zinc-500">Nhóm theo ngày, ca và máy · sửa, in hoặc xóa phiếu đã lưu</p>
-              </div>
+        <div className="border-b-4 border-[#ef1b2d] bg-white px-3 py-2.5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">
+                Báo cáo NVL tồn theo máy
+              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
                 onClick={onCreate}
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
                 Thêm mới
               </button>
               <button
                 type="button"
                 onClick={onBack}
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-[11px] font-bold text-zinc-700 transition hover:bg-zinc-50"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-3.5 w-3.5" />
                 Quay lại
               </button>
             </div>
           </div>
         </div>
 
-        <div className="border-b border-zinc-100 p-4">
-          <div className="flex flex-wrap gap-2">
+        <div className="border-b border-zinc-100 p-2 sm:p-4">
+          <div className="grid grid-cols-2 gap-1.5">
             {REPORT_TABS.map(tab => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveKind(tab.id)}
-                className={`inline-flex h-9 items-center rounded-lg px-3 text-xs font-black transition ${
+                className={`inline-flex h-7 items-center justify-center rounded-lg px-2 text-[10px] font-extrabold transition sm:h-8 sm:text-xs ${
                   activeKind === tab.id
                     ? 'bg-[#ef1b2d] text-white'
                     : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:border-[#ef1b2d]/40'
@@ -230,19 +244,19 @@ export default function MachineNvlReportListView({
               </button>
             ))}
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:gap-2">
+            <label className="col-span-2 text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
               Ngày
               <input
                 type="date"
                 value={filterDate}
                 onChange={event => setFilterDate(event.target.value)}
-                className={`${inputClass} mt-1`}
+                className={`${inputClass} mt-0.5`}
               />
             </label>
-            <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+            <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
               Ca
-              <select value={filterCa} onChange={event => setFilterCa(event.target.value)} className={`${inputClass} mt-1`}>
+              <select value={filterCa} onChange={event => setFilterCa(event.target.value)} className={`${inputClass} mt-0.5`}>
                 <option value="">Tất cả ca</option>
                 {shiftOptions.map(option => (
                   <option key={option.value} value={option.value}>
@@ -251,12 +265,12 @@ export default function MachineNvlReportListView({
                 ))}
               </select>
             </label>
-            <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+            <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
               Máy
               <select
                 value={filterMachine}
                 onChange={event => setFilterMachine(event.target.value)}
-                className={`${inputClass} mt-1`}
+                className={`${inputClass} mt-0.5`}
               >
                 <option value="">Tất cả máy</option>
                 {machineOptions.map(([key, label]) => (
@@ -269,7 +283,7 @@ export default function MachineNvlReportListView({
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="p-2 sm:p-4">
           {error ? (
             <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p>
           ) : null}
@@ -293,97 +307,92 @@ export default function MachineNvlReportListView({
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {historyGroups.map(dateGroup => (
-                <div key={dateGroup.ngay} className="overflow-hidden rounded-xl border border-zinc-200">
-                  <div className="border-b border-zinc-200 bg-zinc-100 px-3 py-2">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ngày</p>
-                    <p className="font-mono text-sm font-black text-zinc-900">{dateGroup.ngay}</p>
+                <div key={dateGroup.ngay} className="overflow-hidden rounded-lg border border-zinc-200 sm:rounded-xl">
+                  <div className="flex items-baseline gap-1.5 border-b border-zinc-200 bg-zinc-100 px-2 py-1 sm:px-3 sm:py-1.5">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
+                    <span className="font-mono text-[11px] font-black text-zinc-900 sm:text-xs">{dateGroup.ngay}</span>
                   </div>
                   <div className="divide-y divide-zinc-100">
                     {dateGroup.shifts.map(shiftGroup => (
-                      <div key={`${dateGroup.ngay}-${shiftGroup.ca}`} className="p-3">
-                        <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-                          Ca <span className="text-sm normal-case text-zinc-800">{shiftGroup.ca || '-'}</span>
+                      <div key={`${dateGroup.ngay}-${shiftGroup.ca}`} className="px-2 py-1.5 sm:p-2">
+                        <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                          Ca{' '}
+                          <span className="text-[11px] normal-case text-zinc-800 sm:text-xs">
+                            {shiftGroup.ca || '-'}
+                          </span>
                         </p>
-                        <div className="mt-2 space-y-2 border-l-2 border-zinc-200 pl-2">
+                        <div className="mt-1 space-y-1 border-l border-zinc-200 pl-1.5 sm:pl-2">
                           {shiftGroup.machines.map(machineGroup => (
-                            <div key={machineGroup.key} className="space-y-2">
-                              <p className="text-xs font-black text-zinc-700">
-                                Máy {machineGroup.tenMay || machineGroup.maMay || '-'}
+                            <div key={machineGroup.key} className="space-y-0.5">
+                              <p className="truncate text-[10px] font-bold text-zinc-700 sm:text-[11px]">
+                                {machineGroup.tenMay || machineGroup.maMay || '-'}
                               </p>
                               {machineGroup.reports.map(report => (
                                 <div
                                   key={report.id || `${report.ngay}-${report.maMay}-${report.ca}`}
-                                  className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-3"
+                                  className="rounded-md border border-zinc-200 bg-zinc-50/60 px-1.5 py-1"
                                 >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div>
-                                      <p className="text-xs font-semibold text-zinc-500">{report.lines.length} NVL</p>
+                                  <div className="flex items-center gap-1">
+                                    <div className="min-w-0 flex-1 truncate text-[9px] font-bold leading-tight text-zinc-600 sm:text-[10px]">
+                                      <span className="text-zinc-800">{report.lines.length} NVL</span>
                                       {report.nhanSu ? (
-                                        <p className="mt-0.5 text-xs font-semibold text-zinc-500">NS: {report.nhanSu}</p>
+                                        <>
+                                          <span className="text-zinc-300"> · </span>
+                                          <span>{report.nhanSu}</span>
+                                        </>
                                       ) : null}
                                       {report.gio ? (
-                                        <p className="mt-0.5 text-[10px] font-semibold text-zinc-400">Ghi lúc {report.gio}</p>
+                                        <>
+                                          <span className="text-zinc-300"> · </span>
+                                          <span className="font-semibold text-zinc-400">{report.gio}</span>
+                                        </>
                                       ) : null}
                                     </div>
-                                    <div className="flex items-center gap-1">
+                                    <span className="shrink-0 font-mono text-[10px] font-black text-emerald-800 sm:text-[11px]">
+                                      {formatNumber(reportTotal(report))} kg
+                                    </span>
+                                    <div className="flex shrink-0 items-center gap-0.5">
                                       <button
                                         type="button"
                                         onClick={() => onEdit(report)}
-                                        className="rounded-lg border border-zinc-200 bg-white p-2 text-zinc-700 hover:bg-zinc-50"
+                                        className="inline-flex h-6 w-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 sm:h-7 sm:w-7 sm:rounded-md"
                                         title="Sửa báo cáo"
                                       >
-                                        <Pencil className="h-4 w-4" />
+                                        <Pencil className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handlePrint(report)}
-                                        className="rounded-lg border border-zinc-200 bg-white p-2 text-zinc-700 hover:bg-zinc-50"
+                                        className="inline-flex h-6 w-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 sm:h-7 sm:w-7 sm:rounded-md"
                                         title="In phiếu"
                                       >
-                                        <Printer className="h-4 w-4" />
+                                        <Printer className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleDelete(report.id)}
                                         disabled={deletingId === report.id}
-                                        className="rounded-lg border border-zinc-200 bg-white p-2 text-[#ef1b2d] hover:bg-red-50 disabled:opacity-50"
+                                        className="inline-flex h-6 w-6 items-center justify-center rounded border border-zinc-200 bg-white text-[#ef1b2d] hover:bg-red-50 disabled:opacity-50 sm:h-7 sm:w-7 sm:rounded-md"
                                         title="Xóa báo cáo"
                                       >
                                         {deletingId === report.id ? (
-                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                          <Loader2 className="h-3 w-3 animate-spin sm:h-3.5 sm:w-3.5" />
                                         ) : (
-                                          <Trash2 className="h-4 w-4" />
+                                          <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                                         )}
                                       </button>
                                     </div>
                                   </div>
-                                  <p className="mt-2 text-sm font-black text-emerald-800">{formatNumber(reportTotal(report))} kg</p>
-                                  <div className="mt-2 max-h-28 overflow-y-auto rounded-lg bg-white p-2 text-xs font-semibold text-zinc-600">
-                                    {report.lines.slice(0, 6).map(line => (
-                                      <div key={`${report.id}-${line.stt}`} className="flex justify-between gap-2">
-                                        <span className="truncate">{line.maNvl || line.tenNvl}</span>
-                                        <span className="shrink-0 font-mono font-black">
-                                          {isDauCaTab && line.soLuongTonCaTruoc !== null ? (
-                                            <>
-                                              <span className="text-zinc-500">{formatNumber(line.soLuongTonCaTruoc)} → </span>
-                                              {formatNumber(line.soLuongTon)} {line.donVi}
-                                            </>
-                                          ) : !isDauCaTab && line.soLuongTonDinhMuc !== null ? (
-                                            <>
-                                              <span className="text-zinc-500">{formatNumber(line.soLuongTonDinhMuc)} / </span>
-                                              {formatNumber(line.soLuongTon)} {line.donVi}
-                                            </>
-                                          ) : (
-                                            <>
-                                              {formatNumber(line.soLuongTon)} {line.donVi}
-                                            </>
-                                          )}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
+                                  {report.lines.length > 0 ? (
+                                    <p
+                                      className="mt-0.5 truncate font-mono text-[9px] font-semibold leading-tight text-zinc-500 sm:text-[10px]"
+                                      title={formatReportLineSummary(report, isDauCaTab)}
+                                    >
+                                      {formatReportLineSummary(report, isDauCaTab)}
+                                    </p>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>

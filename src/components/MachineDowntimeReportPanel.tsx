@@ -528,9 +528,6 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
             </button>
             <div>
               <h1 className="text-xl font-black text-zinc-900">Phiếu báo dừng máy</h1>
-              <p className="text-sm font-semibold text-zinc-500">
-                Ghi nhận ngay khi phát sinh — hệ thống tự tính tổng thời gian dừng và số cuộn ảnh hưởng.
-              </p>
             </div>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-right">
@@ -547,7 +544,6 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
               <MachineDowntimeIcon className="h-5 w-5" />
               <div>
                 <h2 className="text-sm font-black uppercase tracking-wider text-zinc-950">PHIẾU BÁO DỪNG MÁY</h2>
-                <p className="text-xs font-semibold text-zinc-500">Điền thông tin chung và các lần dừng máy trong ca</p>
               </div>
             </div>
 
@@ -714,7 +710,6 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-black text-zinc-900">Lịch sử phiếu</h2>
-                <p className="text-xs font-semibold text-zinc-500">Các phiếu báo dừng máy gần nhất.</p>
               </div>
               <MachineDowntimeIcon className="h-5 w-5" />
             </div>

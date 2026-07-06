@@ -4,8 +4,7 @@ import { Loader2, Printer, X } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatMoney, formatNumber } from '../utils';
 import { formatVietnameseMoneyWords } from '../utils/vietnameseMoneyWords';
-
-const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
+import { PRINT_COMPANY_NAME } from './layout/constants';
 
 export type WarehouseSlipPrintLine = {
   code: string;

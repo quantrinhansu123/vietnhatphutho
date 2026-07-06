@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Loader2, Printer } from 'lucide-react';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import type { MixingReport } from './MixingReportForm';
-import type { WeighingRecord } from './WeighingShiftSummary';
+import type { WeighingRecord } from '../utils/weighingRecords';
 import ControlBoardShiftDetailModal from './ControlBoardShiftDetailModal';
 import {
   ControlBoardShiftSummaryPrintBatch,

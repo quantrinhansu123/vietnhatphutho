@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, ScanBarcode, Trash2, UserCheck, Users } from 'lucide-react';
-import type { WeighingPendingAdd, WeighingRecord } from './WeighingShiftSummary';
-import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, isSlipHeaderRow } from './WeighingShiftSummary';
+import type { WeighingPendingAdd, WeighingRecord } from '../utils/weighingRecords';
+import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, isSlipHeaderRow } from '../utils/weighingRecords';
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import WeighingImagePreviewModal, {
@@ -1340,9 +1340,6 @@ export default function WeighingReportForm({
               <h2 className="truncate text-sm font-black uppercase tracking-tight text-zinc-950 sm:text-base">
                 Báo cáo trọng lượng
               </h2>
-              <p className="hidden text-[10px] font-semibold text-zinc-500 sm:block">
-                Phiếu ghi nhận trọng lượng lõi, trọng lượng và ảnh cân
-              </p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {onOpenList ? (
@@ -1696,50 +1693,52 @@ export default function WeighingReportForm({
       </section>
 
       <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
-          <div className="min-w-0 flex-1 space-y-0.5">
-            {productsError ? (
-              <p className="text-xs font-bold text-rose-600">{productsError}</p>
-            ) : null}
-            {staffError ? (
-              <p className="text-xs font-bold text-rose-600">{staffError}</p>
-            ) : null}
-            {saveMessage?.type === 'error' ? (
-              <p className="text-xs font-bold text-rose-600">{saveMessage.text}</p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <div className="space-y-2 px-2 py-2 sm:px-3 sm:py-2.5">
+          {productsError || staffError || saveMessage?.type === 'error' ? (
+            <div className="min-w-0 space-y-0.5">
+              {productsError ? (
+                <p className="text-xs font-bold text-rose-600">{productsError}</p>
+              ) : null}
+              {staffError ? (
+                <p className="text-xs font-bold text-rose-600">{staffError}</p>
+              ) : null}
+              {saveMessage?.type === 'error' ? (
+                <p className="text-xs font-bold text-rose-600">{saveMessage.text}</p>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="flex items-center justify-end gap-1 overflow-x-auto">
             <button
               type="button"
               onClick={resetForm}
-              className="flex h-8 items-center gap-1 rounded-md border border-ink-200 bg-white px-2.5 text-[11px] font-semibold text-ink-600 transition hover:bg-ink-50"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-ink-200 bg-white px-2 text-[10px] font-semibold text-ink-600 transition hover:bg-ink-50 sm:px-2.5 sm:text-[11px]"
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Reset
             </button>
             <button
               type="button"
               onClick={() => openAddForm({ newWeighRound: true })}
               disabled={weighingRows.length === 0}
-              className="flex h-9 items-center gap-1 rounded-lg border border-[#ef1b2d]/30 bg-white px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#ef1b2d]/30 bg-white px-2 text-[10px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 sm:rounded-lg sm:px-2.5 sm:text-[11px]"
             >
               Lần mới
             </button>
             <button
               type="button"
               onClick={() => openAddForm()}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-extrabold text-[#ef1b2d] shadow-sm transition hover:bg-red-100"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-red-50 px-2 text-[10px] font-extrabold text-[#ef1b2d] shadow-sm transition hover:bg-red-100 sm:gap-1.5 sm:rounded-lg sm:px-2.5 sm:text-[11px]"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Nhập liệu
             </button>
             <button
               type="button"
               onClick={handleSave}
               disabled={isSaving}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-zinc-900 px-3 text-xs font-bold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-zinc-900 px-2 text-[10px] font-bold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 sm:gap-1.5 sm:rounded-lg sm:px-2.5 sm:text-[11px]"
             >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" /> : <Save className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
               {isSaving ? 'Đang lưu' : 'Lưu phiếu'}
             </button>
           </div>

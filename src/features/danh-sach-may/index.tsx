@@ -107,7 +107,7 @@ export function renderMachineSelect(
   value: string,
   onChange: (machine: string) => void,
   machines: MachineRow[],
-  options?: { disabled?: boolean; placeholder?: string; isLoading?: boolean }
+  options?: { disabled?: boolean; placeholder?: string; isLoading?: boolean; inputClassName?: string }
 ) {
   const machineOptions = buildMachineSelectOptions(machines, value);
   const displayValue = resolveMachineDisplayValue(value, machines) || value;
@@ -120,6 +120,7 @@ export function renderMachineSelect(
       placeholder={options?.placeholder ?? 'Gõ để tìm máy'}
       disabled={options?.disabled}
       isLoading={options?.isLoading}
+      inputClassName={options?.inputClassName}
       getLabel={item => machineSelectLabel(item as MachineRow)}
       getValue={item => machineSelectValue(item as MachineRow)}
       resolveSelectedItem={(opts, val) => findMachineByRef(opts as MachineRow[], val)}

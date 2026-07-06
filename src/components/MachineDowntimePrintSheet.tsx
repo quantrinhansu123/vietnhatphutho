@@ -1,8 +1,7 @@
 import React from 'react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
-
-const PRINT_COMPANY_NAME = 'CÔNG TY TNHH VIỆT NHẬT IPT';
+import { PRINT_COMPANY_NAME } from './layout/constants';
 
 export type MachineDowntimePrintLine = {
   stt: number;
@@ -48,7 +47,7 @@ function MachineDowntimePrintSheet({ slip }: { slip: MachineDowntimePrintSlip })
     <div className="production-order-print-sheet">
       <div className="production-order-print-doc">
         <header className="production-order-print-letterhead">
-          <img src={vietNhatLogoUrl} alt="Logo Viet Nhat IPT" className="production-order-print-logo" />
+          <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="production-order-print-logo" />
           <div className="production-order-print-company">
             <p className="production-order-print-company-name">{PRINT_COMPANY_NAME}</p>
           </div>

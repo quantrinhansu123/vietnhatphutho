@@ -19,7 +19,6 @@ import {
   type MachineNvlSavedReport
 } from '../../utils/machineNvlReports';
 import { STANDARD_SHIFTS } from '../../types';
-import { orderFieldClass } from '../_shared/orderHelpers';
 import { normalizeProductCodeKey } from '../san-pham/types';
 import {
   findMachineByRef,
@@ -173,6 +172,20 @@ export const MACHINE_NVL_DAU_CA_GRID =
   'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_96px_96px_96px_104px_96px_minmax(96px,1fr)_40px]';
 export const MACHINE_NVL_CUOI_CA_GRID =
   'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_112px_112px_minmax(96px,1fr)_40px]';
+
+const machineNvlLineMobileQtyClass =
+  'machine-nvl-line-mobile-input h-9 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-center font-mono text-sm font-black tracking-tight outline-none focus:border-[#ef1b2d]';
+const machineNvlLineMobileQtyReadonlyClass =
+  'machine-nvl-line-mobile-input h-9 w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-0.5 text-center font-mono text-sm font-black tracking-tight text-zinc-800 outline-none';
+const machineNvlLineDesktopQtyClass =
+  'min-w-0 h-10 rounded-lg border border-zinc-200 px-2 text-center font-mono text-base font-black tracking-tight outline-none focus:border-[#ef1b2d]';
+const machineNvlLineDesktopQtyReadonlyClass =
+  'min-w-0 h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-center font-mono text-base font-black tracking-tight text-zinc-800 outline-none';
+const machineNvlFormControlClass =
+  'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 lg:h-11 lg:px-3 lg:text-sm';
+const machineNvlFormFieldClass = `mt-1 ${machineNvlFormControlClass}`;
+const machineNvlFormLabelClass =
+  'block min-w-0 text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:text-xs';
 
 export function findMaterialByCode(materials: MaterialRow[], code: string) {
   const normalized = code.trim();
@@ -620,7 +633,6 @@ export function MachineNvlReportPanel({
           <div className="flex items-center gap-3">
             <div>
               <h1 className="text-xl font-black text-zinc-900">Báo cáo NVL tồn theo máy</h1>
-              <p className="text-sm font-semibold text-zinc-500">{activeTabMeta.hint}</p>
             </div>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-right">
@@ -628,31 +640,29 @@ export function MachineNvlReportPanel({
             <p className="text-lg font-black text-emerald-900">{formatNumber(totalQuantity)} kg</p>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            {MACHINE_NVL_REPORT_TABS.map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => switchReportKind(tab.id)}
-                className={`inline-flex h-10 items-center rounded-xl px-4 text-sm font-black transition ${
-                  activeKind === tab.id
-                    ? 'bg-[#ef1b2d] text-white shadow-sm'
-                    : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:border-[#ef1b2d]/40 hover:text-[#ef1b2d]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="mt-2 flex items-center gap-1 sm:mt-3 sm:gap-2">
+          {MACHINE_NVL_REPORT_TABS.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => switchReportKind(tab.id)}
+              className={`inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-lg px-1 text-[9px] font-extrabold leading-tight transition sm:h-8 sm:rounded-xl sm:px-3 sm:text-xs ${
+                activeKind === tab.id
+                  ? 'bg-[#ef1b2d] text-white shadow-sm'
+                  : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:border-[#ef1b2d]/40 hover:text-[#ef1b2d]'
+              }`}
+            >
+              <span className="truncate">{tab.label}</span>
+            </button>
+          ))}
           {onOpenList ? (
             <button
               type="button"
               onClick={onOpenList}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+              className="inline-flex h-7 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-1 text-[9px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 sm:h-8 sm:rounded-lg sm:px-2.5 sm:text-xs"
             >
-              <ClipboardList className="h-4 w-4" />
-              Danh sách
+              <ClipboardList className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
+              <span className="truncate">Danh sách</span>
             </button>
           ) : null}
         </div>
@@ -671,20 +681,19 @@ export function MachineNvlReportPanel({
                 </p>
               ) : null}
             </div>
-            <div className="machine-nvl-form-grid flex w-full flex-wrap gap-2 lg:grid lg:grid-cols-4 lg:gap-3">
-              <label
-                className="machine-nvl-form-field w-[calc(50%-0.25rem)] text-xs font-black uppercase tracking-wider text-zinc-500 lg:w-auto"
-                style={{ width: 'calc(50% - 0.25rem)' }}
-              >
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
+              <label className={machineNvlFormLabelClass}>
                 Ngày
-                <input type="date" value={date} onChange={event => setDate(event.target.value)} className={`${orderFieldClass} mt-1`} />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={event => setDate(event.target.value)}
+                  className={machineNvlFormFieldClass}
+                />
               </label>
-              <label
-                className="machine-nvl-form-field w-[calc(50%-0.25rem)] text-xs font-black uppercase tracking-wider text-zinc-500 lg:w-auto"
-                style={{ width: 'calc(50% - 0.25rem)' }}
-              >
+              <label className={machineNvlFormLabelClass}>
                 Ca
-                <select value={shift} onChange={event => setShift(event.target.value)} className={`${orderFieldClass} mt-1`}>
+                <select value={shift} onChange={event => setShift(event.target.value)} className={machineNvlFormFieldClass}>
                   <option value="">Chọn ca</option>
                   {shiftOptions.map(option => (
                     <option key={option} value={option}>
@@ -693,28 +702,25 @@ export function MachineNvlReportPanel({
                   ))}
                 </select>
               </label>
-              <label
-                className="machine-nvl-form-field machine-nvl-form-span-2-lg w-[calc(50%-0.25rem)] text-xs font-black uppercase tracking-wider text-zinc-500 lg:col-span-2 lg:w-auto"
-                style={{ width: 'calc(50% - 0.25rem)' }}
-              >
+              <label className={`${machineNvlFormLabelClass} lg:col-span-2`}>
                 Máy
                 <div className="mt-1 min-w-0">
                   {renderMachineSelect(machineRef, setMachineRef, machines, {
                     placeholder: 'Chọn máy',
-                    isLoading
+                    isLoading,
+                    inputClassName: machineNvlFormControlClass
                   })}
                 </div>
               </label>
-              <div
-                className="machine-nvl-form-field machine-nvl-form-span-2-lg w-[calc(50%-0.25rem)] text-xs font-black uppercase tracking-wider text-zinc-500 lg:col-span-2 lg:w-auto"
-                style={{ width: 'calc(50% - 0.25rem)' }}
-              >
+              <div className={`${machineNvlFormLabelClass} lg:col-span-2`}>
                 Nhân sự (chọn nhiều)
-                <div className="mt-1 max-h-40 min-w-0 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+                <div className="mt-1 flex min-h-10 max-h-40 min-w-0 flex-col overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 p-1.5 lg:min-h-11">
                   {!date || !shift || !machineRef.trim() ? (
-                    <p className="px-2 py-3 text-xs font-semibold text-zinc-400">Chọn ngày, ca và máy trước.</p>
+                    <p className="flex flex-1 items-center px-1 text-[11px] font-semibold leading-tight text-zinc-400">
+                      Chọn ngày, ca và máy trước.
+                    </p>
                   ) : staffOptions.length === 0 ? (
-                    <p className="px-2 py-3 text-xs font-semibold text-zinc-400">
+                    <p className="flex flex-1 items-center px-1 text-[11px] font-semibold leading-tight text-zinc-400">
                       Không có nhân sự theo máy/ca/ngày.
                     </p>
                   ) : (
@@ -723,7 +729,7 @@ export function MachineNvlReportPanel({
                       return (
                         <label
                           key={option}
-                          className={`mb-1 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition last:mb-0 ${
+                          className={`mb-1 flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-semibold transition last:mb-0 ${
                             checked
                               ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
                               : 'border-zinc-200 bg-white text-zinc-700'
@@ -742,12 +748,15 @@ export function MachineNvlReportPanel({
                   )}
                 </div>
               </div>
-              <label
-                className="machine-nvl-form-field machine-nvl-form-span-2 w-full text-xs font-black uppercase tracking-wider text-zinc-500 lg:col-span-2"
-                style={{ width: '100%' }}
-              >
+              <label className={`${machineNvlFormLabelClass} col-span-2 lg:col-span-2`}>
                 Ghi chú
-                <input value={note} onChange={event => setNote(event.target.value)} placeholder="Ghi chú chung" className={`${orderFieldClass} mt-1`} />
+                <textarea
+                  value={note}
+                  onChange={event => setNote(event.target.value)}
+                  placeholder="Ghi chú chung"
+                  rows={2}
+                  className="mt-1 min-h-10 w-full resize-y rounded-lg border border-zinc-200 px-2 py-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 lg:min-h-11 lg:px-3 lg:text-sm"
+                />
               </label>
             </div>
 
@@ -759,9 +768,9 @@ export function MachineNvlReportPanel({
                 <span>Mã NVL</span>
                 <span>Tên NVL</span>
                 <span>ĐVT</span>
-                {isDauCaTab ? <span>Tồn trong máy</span> : null}
-                {isDauCaTab ? <span>Tồn trong bồn trộn</span> : null}
-                {isDauCaTab ? <span>NL chưa trộn</span> : null}
+                {isDauCaTab ? <span>Tồn máy</span> : null}
+                {isDauCaTab ? <span>Tồn bồn</span> : null}
+                {isDauCaTab ? <span>Chưa trộn</span> : null}
                 {isDauCaTab ? <span>Tổng tồn đầu ca</span> : null}
                 {!isDauCaTab ? <span>SL tồn định mức</span> : null}
                 <span>SL tồn thực tế</span>
@@ -843,16 +852,16 @@ export function MachineNvlReportPanel({
                       {isDauCaTab ? (
                         <>
                           <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">Máy</span>
-                            <input type="number" min="0" step="0.01" value={line.inMachineQuantity} onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })} className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-[10px] font-black outline-none focus:border-[#ef1b2d]" />
+                            <span className="machine-nvl-line-mobile-label">Tồn máy</span>
+                            <input type="number" min="0" step="0.01" value={line.inMachineQuantity} onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                           </label>
                           <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">Bồn</span>
-                            <input type="number" min="0" step="0.01" value={line.inMixerQuantity} onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })} className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-[10px] font-black outline-none focus:border-[#ef1b2d]" />
+                            <span className="machine-nvl-line-mobile-label">Tồn bồn</span>
+                            <input type="number" min="0" step="0.01" value={line.inMixerQuantity} onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                           </label>
                           <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">C.trộn</span>
-                            <input type="number" min="0" step="0.01" value={line.unblendedQuantity} onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })} className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-[10px] font-black outline-none focus:border-[#ef1b2d]" />
+                            <span className="machine-nvl-line-mobile-label">Chưa trộn</span>
+                            <input type="number" min="0" step="0.01" value={line.unblendedQuantity} onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                           </label>
                           <label className="block min-w-0 space-y-0.5">
                             <span className="machine-nvl-line-mobile-label">Tổng</span>
@@ -863,7 +872,7 @@ export function MachineNvlReportPanel({
                                   (Number(line.unblendedQuantity.replace(',', '.')) || 0)
                               )}
                               readOnly
-                              className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-0.5 text-[10px] font-black text-zinc-600 outline-none"
+                              className={machineNvlLineMobileQtyReadonlyClass}
                             />
                           </label>
                         </>
@@ -871,7 +880,7 @@ export function MachineNvlReportPanel({
                         <>
                           <label className="block min-w-0 space-y-0.5">
                             <span className="machine-nvl-line-mobile-label">SL ĐM</span>
-                            <input type="number" min="0" step="0.01" value={line.standardQuantity} onChange={event => updateLine(line.key, { standardQuantity: event.target.value })} className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-[10px] font-black outline-none focus:border-[#ef1b2d]" />
+                            <input type="number" min="0" step="0.01" value={line.standardQuantity} onChange={event => updateLine(line.key, { standardQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                           </label>
                           <label className="block min-w-0 space-y-0.5">
                             <span className="machine-nvl-line-mobile-label">SL TT</span>
@@ -881,19 +890,29 @@ export function MachineNvlReportPanel({
                               step="0.01"
                               value={line.quantity}
                               onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                              className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-[10px] font-black outline-none focus:border-[#ef1b2d]"
+                              className={machineNvlLineMobileQtyClass}
                             />
                           </label>
                           <label className="col-span-2 block min-w-0 space-y-0.5">
                             <span className="machine-nvl-line-mobile-label">Ghi chú</span>
-                            <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 px-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]" />
+                            <textarea
+                              value={line.note}
+                              onChange={event => updateLine(line.key, { note: event.target.value })}
+                              rows={2}
+                              className="machine-nvl-line-mobile-input min-h-[40px] w-full min-w-0 resize-y rounded-md border border-zinc-200 px-1 py-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]"
+                            />
                           </label>
                         </>
                       )}
                       {isDauCaTab ? (
                         <label className="col-span-4 block min-w-0 space-y-0.5">
                           <span className="machine-nvl-line-mobile-label">Ghi chú</span>
-                          <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 px-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]" />
+                          <textarea
+                            value={line.note}
+                            onChange={event => updateLine(line.key, { note: event.target.value })}
+                            rows={2}
+                            className="machine-nvl-line-mobile-input min-h-[40px] w-full min-w-0 resize-y rounded-md border border-zinc-200 px-1 py-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]"
+                          />
                         </label>
                       ) : null}
                     </div>
@@ -939,7 +958,7 @@ export function MachineNvlReportPanel({
                         step="0.01"
                         value={line.inMachineQuantity}
                         onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })}
-                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                        className={machineNvlLineDesktopQtyClass}
                       />
                     ) : null}
                     {isDauCaTab ? (
@@ -949,7 +968,7 @@ export function MachineNvlReportPanel({
                         step="0.01"
                         value={line.inMixerQuantity}
                         onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })}
-                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                        className={machineNvlLineDesktopQtyClass}
                       />
                     ) : null}
                     {isDauCaTab ? (
@@ -959,7 +978,7 @@ export function MachineNvlReportPanel({
                         step="0.01"
                         value={line.unblendedQuantity}
                         onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })}
-                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                        className={machineNvlLineDesktopQtyClass}
                       />
                     ) : null}
                     {isDauCaTab ? (
@@ -970,7 +989,7 @@ export function MachineNvlReportPanel({
                             (Number(line.unblendedQuantity.replace(',', '.')) || 0)
                         )}
                         readOnly
-                        className="min-w-0 h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-sm font-black text-zinc-600 outline-none"
+                        className={machineNvlLineDesktopQtyReadonlyClass}
                       />
                     ) : null}
                     {!isDauCaTab ? (
@@ -980,7 +999,7 @@ export function MachineNvlReportPanel({
                         step="0.01"
                         value={line.standardQuantity}
                         onChange={event => updateLine(line.key, { standardQuantity: event.target.value })}
-                        className="min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none focus:border-[#ef1b2d]"
+                        className={machineNvlLineDesktopQtyClass}
                       />
                     ) : null}
                     <input
@@ -998,11 +1017,14 @@ export function MachineNvlReportPanel({
                       }
                       onChange={event => updateLine(line.key, { quantity: event.target.value })}
                       readOnly={isDauCaTab}
-                      className={`min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-black outline-none ${
-                        isDauCaTab ? 'bg-zinc-50 text-zinc-600' : 'focus:border-[#ef1b2d]'
-                      }`}
+                      className={isDauCaTab ? machineNvlLineDesktopQtyReadonlyClass : machineNvlLineDesktopQtyClass}
                     />
-                    <input value={line.note} onChange={event => updateLine(line.key, { note: event.target.value })} className="min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
+                    <textarea
+                      value={line.note}
+                      onChange={event => updateLine(line.key, { note: event.target.value })}
+                      rows={2}
+                      className="min-h-[40px] min-w-0 w-full resize-y rounded-lg border border-zinc-200 px-3 py-2 text-sm font-semibold outline-none focus:border-[#ef1b2d]"
+                    />
                     <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -1018,34 +1040,45 @@ export function MachineNvlReportPanel({
               ) : null}
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <button type="button" onClick={() => setLines(prev => [...prev, emptyMachineNvlLine()])} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-black text-zinc-800 hover:border-[#ef1b2d] hover:text-[#ef1b2d]">
-                <Plus className="h-4 w-4" />
-                Thêm dòng NVL
-              </button>
-              <div className="flex items-center gap-3">
-                {message && <span className="text-sm font-bold text-zinc-600">{message}</span>}
+            <div className="mt-3 space-y-2">
+              {message ? (
+                <p className="text-center text-[11px] font-bold text-zinc-600">{message}</p>
+              ) : null}
+              <div className="flex items-stretch gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setLines(prev => [...prev, emptyMachineNvlLine()])}
+                  className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-extrabold text-zinc-800 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]"
+                >
+                  <Plus className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Thêm dòng NVL</span>
+                </button>
                 {editingReportId ? (
                   <button
                     type="button"
                     onClick={cancelEditReport}
-                    className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-black text-zinc-700 transition hover:border-zinc-400"
+                    className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-extrabold text-zinc-700 transition hover:border-zinc-400"
                   >
-                    Hủy sửa
+                    <span className="truncate">Hủy sửa</span>
                   </button>
                 ) : null}
                 <button
                   type="button"
                   onClick={() => printReportPayload(buildCurrentPrintReport())}
                   disabled={!canPrintCurrentReport}
-                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-black text-zinc-700 transition hover:border-zinc-400 disabled:opacity-60"
+                  className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-extrabold text-zinc-700 transition hover:border-zinc-400 disabled:opacity-60"
                 >
-                  <Printer className="h-4 w-4" />
-                  In phiếu
+                  <Printer className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">In phiếu</span>
                 </button>
-                <button type="button" onClick={saveReport} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-[#ef1b2d] px-5 py-2.5 text-sm font-black text-white shadow-sm disabled:opacity-60">
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {editingReportId ? 'Cập nhật báo cáo' : 'Lưu báo cáo'}
+                <button
+                  type="button"
+                  onClick={saveReport}
+                  disabled={isSaving}
+                  className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg bg-[#ef1b2d] px-2 text-[11px] font-extrabold text-white shadow-sm disabled:opacity-60"
+                >
+                  {isSaving ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Save className="h-3.5 w-3.5 shrink-0" />}
+                  <span className="truncate">{editingReportId ? 'Cập nhật' : 'Lưu báo cáo'}</span>
                 </button>
               </div>
             </div>

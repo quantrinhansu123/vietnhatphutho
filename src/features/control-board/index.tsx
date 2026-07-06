@@ -11,7 +11,7 @@ import {
   normalizeWeighingRecords,
   type WeighingPendingAdd,
   type WeighingRecord
-} from '../../components/WeighingShiftSummary';
+} from '../../utils/weighingRecords';
 import { normalizeMachineNvlReports, type MachineNvlSavedReport } from '../../utils/machineNvlReports';
 import { DashboardWindow } from '../dashboard';
 import { normalizeMachines, type MachineRow } from '../danh-sach-may';

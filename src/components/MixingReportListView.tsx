@@ -431,12 +431,6 @@ export default function MixingReportListView({
               <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Bảng trộn vật tư</p>
-                <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">
-                  Danh sách báo cáo phối trộn
-                </h2>
-                <p className="mt-1 text-xs font-semibold text-zinc-500">
-                  Xem phiếu đã lưu theo ca · ngày / máy
-                </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
