@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
-import { PRINT_COMPANY_NAME } from '../../components/layout/constants';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
@@ -14,8 +14,16 @@ import { getProductionShiftOptions } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
-import { normalizeProducts } from '../san-pham';
-import type { ProductRow } from '../san-pham/types';
+import {
+  normalizeProducts,
+  findProductByCode,
+  normalizeProductCodeKey,
+  parseProductSpecNumber,
+  resolveProductMaterialBaseKg
+} from '../san-pham';
+import type { ProductRow, ProductNplItem } from '../san-pham/types';
+import { roundNplNumber } from '../san-pham/types';
+import { normalizeMaterialsInventory, parseInventoryNumber, type MaterialRow } from '../kho-nvl';
 import {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,

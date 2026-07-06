@@ -8,6 +8,17 @@ import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import type { HrBranch } from '../_shared/hr';
 import { normalizeHrBranches } from '../_shared/hr';
 import { STANDARD_SHIFTS } from '../../types';
+import {
+  BriefcaseBusiness,
+  Building2,
+  Loader2,
+  MoreVertical,
+  Plus,
+  Save,
+  Search,
+  ShieldCheck,
+  UserPlus
+} from 'lucide-react';
 
 export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   const [branches, setBranches] = useState<HrBranch[]>([]);
@@ -66,7 +77,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
       .map(department => ({
         ...department,
         members: department.members.filter(member =>
-          `${member.name} ${member.role} ${member.shift}`.toLowerCase().includes(normalizedSearch)
+          `${member.name} ${member.role} ${member.shift} ${member.username ?? ''}`.toLowerCase().includes(normalizedSearch)
         )
       }))
       .filter(department =>
@@ -90,7 +101,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   }, [branches]);
 
   return (
-    <div className="mx-auto w-full max-w-[1680px] space-y-4">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
           <div className="flex items-start justify-end gap-3">
@@ -120,9 +131,9 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
               ['Nhân sự', totalMembers],
               ['Đang làm', activeMembers]
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <span className="block font-bold text-zinc-400">{label}</span>
-                <span className="mt-1 block text-xl font-black text-white">{value}</span>
+              <div key={label} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <span className="block font-bold text-zinc-500">{label}</span>
+                <span className="mt-1 block text-xl font-black text-zinc-950">{value}</span>
               </div>
             ))}
           </div>
@@ -170,7 +181,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         )}
       </section>
 
-      <section className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <section className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {!isLoadingStaff && !staffError && branches.length === 0 && (
           <div className="rounded-2xl border-2 border-zinc-900/10 bg-white px-4 py-8 text-center text-sm font-bold text-zinc-500">
             Supabase chưa có dữ liệu nhân sự để hiển thị.
@@ -180,7 +191,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         {filteredDepartments.map(department => (
           <article
             key={department.id}
-            className="overflow-hidden rounded-xl border-2 border-zinc-900/10 bg-white shadow-sm"
+            className="min-w-0 overflow-hidden rounded-xl border-2 border-zinc-900/10 bg-white shadow-sm"
           >
             <div className="flex items-start justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
               <div className="flex min-w-0 gap-2">
@@ -207,7 +218,10 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
 
             <div className="divide-y divide-zinc-100">
               {department.members.map(member => (
-                <div key={`${department.id}-${member.name}`} className="flex items-center gap-2 px-3 py-2">
+                <div
+                  key={`${department.id}-${member.name}`}
+                  className="flex items-start gap-2 px-3 py-2"
+                >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-950 text-xs font-black text-white">
                     {member.name.split(' ').slice(-1)[0].charAt(0)}
                   </div>
@@ -220,6 +234,23 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                       </span>
                       <span className="rounded-full border border-zinc-200 px-1.5 py-0.5">{member.shift}</span>
                     </p>
+                    {(member.code || member.username || member.password) && (
+                      <p className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-semibold text-zinc-500">
+                        {member.code && (
+                          <span className="font-mono text-zinc-600">{member.code}</span>
+                        )}
+                        {member.username && (
+                          <span className="truncate font-mono text-zinc-600" title={member.username}>
+                            {member.username}
+                          </span>
+                        )}
+                        {member.password && (
+                          <span className="truncate font-mono text-zinc-600" title={member.password}>
+                            {member.password}
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-black ${
                     member.status === 'Đang làm'
@@ -257,6 +288,28 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   );
 }
 
+export function generateNextStaffCode(existingCodes: Iterable<string>) {
+  let max = 0;
+  for (const raw of existingCodes) {
+    const code = String(raw || '').trim().toUpperCase();
+    const match = code.match(/^NV(\d+)$/);
+    if (!match) continue;
+    const num = Number(match[1]);
+    if (Number.isFinite(num) && num > max) max = num;
+  }
+  const next = max + 1;
+  const width = Math.max(3, String(next).length);
+  return `NV${String(next).padStart(width, '0')}`;
+}
+
+export function collectStaffCodes(branches: HrBranch[]): string[] {
+  return branches.flatMap(branch =>
+    branch.departments.flatMap(department =>
+      department.members.map(member => member.code).filter((code): code is string => Boolean(code))
+    )
+  );
+}
+
 export type StaffFormState = {
   name: string;
   code: string;
@@ -265,6 +318,8 @@ export type StaffFormState = {
   role: string;
   shift: string;
   status: string;
+  username: string;
+  password: string;
 };
 
 export function emptyStaffForm(defaults?: { branch?: string; department?: string }): StaffFormState {
@@ -275,7 +330,9 @@ export function emptyStaffForm(defaults?: { branch?: string; department?: string
     department: defaults?.department || 'Sản xuất',
     role: 'Nhân sự',
     shift: STANDARD_SHIFTS[0] || 'Ca 1',
-    status: 'Đang làm'
+    status: 'Đang làm',
+    username: '',
+    password: ''
   };
 }
 
@@ -308,7 +365,11 @@ export function AddStaffModal({
   useEffect(() => {
     if (!open) return;
     const branchName = branches.find(branch => branch.id === defaultBranchId)?.name || branchOptions[0] || 'Đà Nẵng';
-    setForm(emptyStaffForm({ branch: branchName, department: defaultDepartment || departmentOptions[0] || 'Sản xuất' }));
+    const nextCode = generateNextStaffCode(collectStaffCodes(branches));
+    setForm({
+      ...emptyStaffForm({ branch: branchName, department: defaultDepartment || departmentOptions[0] || 'Sản xuất' }),
+      code: nextCode
+    });
     setFormError('');
   }, [open, defaultBranchId, defaultDepartment, branches, branchOptions, departmentOptions]);
 
@@ -338,7 +399,9 @@ export function AddStaffModal({
           phong_ban: form.department.trim(),
           cong_viec: form.role.trim(),
           ca_lam: form.shift.trim(),
-          trang_thai: form.status.trim()
+          trang_thai: form.status.trim(),
+          ten_dang_nhap: form.username.trim(),
+          mat_khau: form.password.trim()
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -393,9 +456,9 @@ export function AddStaffModal({
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã NV</span>
             <input
               value={form.code}
-              onChange={event => setForm(prev => ({ ...prev, code: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-              placeholder="Tuỳ chọn"
+              readOnly
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 font-mono text-sm font-semibold text-zinc-800 outline-none"
+              placeholder="Tự sinh"
             />
           </label>
           <label className="space-y-1.5">
@@ -447,6 +510,27 @@ export function AddStaffModal({
                 </option>
               ))}
             </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên đăng nhập</span>
+            <input
+              value={form.username}
+              onChange={event => setForm(prev => ({ ...prev, username: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              placeholder="Tài khoản đăng nhập"
+              autoComplete="username"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Password</span>
+            <input
+              type="text"
+              value={form.password}
+              onChange={event => setForm(prev => ({ ...prev, password: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 px-3 font-mono text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              placeholder="Mật khẩu"
+              autoComplete="new-password"
+            />
           </label>
           <label className="col-span-2 space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>

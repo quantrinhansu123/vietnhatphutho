@@ -197,6 +197,12 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
 
 export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Nhân sự',
+    desc: 'Quản lý danh sách nhân viên, chi nhánh, bộ phận và ca làm việc.',
+    icon: UsersRound,
+    tab: 'hr'
+  },
+  {
     title: 'Bảng báo cáo Cân',
     desc: 'Xem tổng hợp phiếu cân ca, khối lượng theo ngày và ca sản xuất.',
     icon: Scale,
@@ -310,6 +316,7 @@ export const PRIMARY_NAV_GROUPS: {
     icon: UsersRound,
     tab: 'hcns',
     children: [
+      { label: 'Nhân sự', tab: 'hr' },
       { label: 'Bảng báo cáo Cân', tab: 'weighing-summary' },
       { label: 'Cài đặt', tab: 'settings' }
     ]

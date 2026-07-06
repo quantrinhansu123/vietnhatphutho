@@ -862,7 +862,10 @@ function pickStaffName(row: Record<string, unknown>) {
   if (direct) return direct;
 
   const nameKey = Object.keys(row).find(
-    key => (key === 'nhan_su' || /ten/i.test(key)) && !/phong|ban|chi|nhanh|ma_/i.test(key) && typeof row[key] === 'string'
+    key =>
+      (key === 'nhan_su' || /ten/i.test(key)) &&
+      !/phong|ban|chi|nhanh|ma_|dang_nhap|mat_khau|password|login/i.test(key) &&
+      typeof row[key] === 'string'
   );
   return nameKey ? String(row[nameKey]).trim() : '';
 }
@@ -887,6 +890,8 @@ function mapStaffRecord(row: Record<string, unknown>) {
   const shift = pickStaffField(row, ['ca_lam', 'ca', 'shift'], 'Theo phân công');
   const status = pickStaffField(row, ['trang_thai', 'status'], 'Đang làm');
   const code = pickStaffField(row, ['ma_nhan_su', 'ma_nv', 'id'], name);
+  const username = pickStaffField(row, ['ten_dang_nhap', 'username', 'login'], '');
+  const password = pickStaffField(row, ['mat_khau', 'password'], '');
 
   return {
     id: code || name,
@@ -897,7 +902,9 @@ function mapStaffRecord(row: Record<string, unknown>) {
     role,
     position,
     shift,
-    status
+    status,
+    username,
+    password
   };
 }
 
@@ -998,7 +1005,9 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
       cong_viec: pickRowField(source, ['cong_viec', 'Cong_Viec', 'chuc_vu', 'role'], 'Nhân sự'),
       ca_lam: pickRowField(source, ['ca_lam', 'ca', 'shift'], 'Theo phân công'),
       trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang làm'),
-      ma_nhan_su: code || null
+      ma_nhan_su: code || null,
+      ten_dang_nhap: pickRowField(source, ['ten_dang_nhap', 'username', 'login'], '') || null,
+      mat_khau: pickRowField(source, ['mat_khau', 'password'], '') || null
     }
   };
 }
@@ -2919,6 +2928,30 @@ function pickRowField(row: Record<string, unknown>, keys: string[], fallback = '
 function makeProductionOrderCode(orderCode: string, suffix = '') {
   const base = (orderCode || 'DH').replace(/\s+/g, '-');
   return `LSX-${base}${suffix}`.slice(0, 80);
+}
+
+function generateNextStaffCode(existingCodes: Iterable<string>) {
+  let max = 0;
+  for (const raw of existingCodes) {
+    const code = String(raw || '').trim().toUpperCase();
+    const match = code.match(/^NV(\d+)$/);
+    if (!match) continue;
+    const num = Number(match[1]);
+    if (Number.isFinite(num) && num > max) max = num;
+  }
+  const next = max + 1;
+  const width = Math.max(3, String(next).length);
+  return `NV${String(next).padStart(width, '0')}`;
+}
+
+async function generateNextStaffCodeFromDb() {
+  if (!supabase) return 'NV001';
+  const { data, error } = await supabase.from(SUPABASE_STAFF_TABLE).select('ma_nhan_su');
+  if (error) {
+    console.error('Supabase nhan_su next code query error:', error);
+    return 'NV001';
+  }
+  return generateNextStaffCode((data || []).map(row => String((row as { ma_nhan_su?: string }).ma_nhan_su || '')));
 }
 
 function generateNextOrderCode(existingCodes: Iterable<string>) {
@@ -5341,7 +5374,12 @@ export function createApp() {
     }
 
     try {
-      const parsed = parseStaffBody(req.body);
+      const source = req.body && typeof req.body === 'object' ? { ...(req.body as Record<string, unknown>) } : {};
+      if (!pickRowField(source, ['ma_nhan_su', 'ma_nv', 'code'], '')) {
+        source.ma_nhan_su = await generateNextStaffCodeFromDb();
+      }
+
+      const parsed = parseStaffBody(source);
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
       }

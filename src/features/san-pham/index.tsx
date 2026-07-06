@@ -12,6 +12,7 @@ import { productFieldClass } from './productFieldClass';
 import type { ProductRow, ProductNplItem, MaterialOption } from './types';
 import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount } from './types';
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseBulkProductNplComponentsExcel, parseProductNplComponentsExcel } from '../../utils/productNplComponentsExcel';
+import { vietNhatLogoUrl } from '../../components/layout/constants';
 
 export type ProductViewTab = 'info' | 'components';
 

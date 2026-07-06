@@ -14,7 +14,9 @@ alter table public.nhan_su
   add column if not exists chi_nhanh text,
   add column if not exists cong_viec text,
   add column if not exists ca_lam text,
-  add column if not exists trang_thai text default 'Đang làm';
+  add column if not exists trang_thai text default 'Đang làm',
+  add column if not exists ten_dang_nhap text,
+  add column if not exists mat_khau text;
 
 create index if not exists nhan_su_phong_ban_idx on public.nhan_su (phong_ban);
 create index if not exists nhan_su_chi_nhanh_idx on public.nhan_su (chi_nhanh);
@@ -40,3 +42,5 @@ create policy "nhan_su_delete_all"
 
 comment on table public.nhan_su is 'Danh sach nhan su theo phong ban va chi nhanh.';
 comment on column public.nhan_su.nhan_su is 'Ho ten nhan su.';
+comment on column public.nhan_su.ten_dang_nhap is 'Ten dang nhap he thong.';
+comment on column public.nhan_su.mat_khau is 'Mat khau dang nhap.';

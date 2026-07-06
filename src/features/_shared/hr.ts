@@ -6,6 +6,8 @@ export interface HrMember {
   position?: string;
   shift: string;
   status: string;
+  username?: string;
+  password?: string;
 }
 
 export interface HrDepartment {
@@ -56,7 +58,9 @@ export function normalizeHrBranches(data: unknown): HrBranch[] {
                   role: String(memberRecord.role ?? 'Nhân sự'),
                   position: String(memberRecord.position ?? '').trim() || undefined,
                   shift: String(memberRecord.shift ?? 'Theo phân công'),
-                  status: String(memberRecord.status ?? 'Đang làm')
+                  status: String(memberRecord.status ?? 'Đang làm'),
+                  username: String(memberRecord.username ?? '').trim() || undefined,
+                  password: String(memberRecord.password ?? '').trim() || undefined
                 };
               })
               .filter((member): member is HrMember => Boolean(member))
