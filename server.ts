@@ -3361,12 +3361,40 @@ async function getReportsFromLocalFile(): Promise<ProductionReport[]> {
   }
 }
 
+function isBundledAssetPath(urlPath: string) {
+  return /^\/assets\/.+\.(?:js|mjs|css|map|png|jpe?g|gif|svg|webp|ico|woff2?)$/i.test(urlPath);
+}
+
 async function startServer() {
   const app = createApp();
   const server = http.createServer(app);
   const PORT = 3002;
+  const distPath = path.join(process.cwd(), 'dist');
 
   if (process.env.NODE_ENV !== 'production') {
+    // Cached production index.html may still request /assets/*.js while dev uses /src/main.tsx.
+    // Serve matching files from dist when present; otherwise 404 (not SPA HTML) to avoid MIME errors.
+    app.use((req, res, next) => {
+      const urlPath = (req.url || '/').split('?')[0] || '/';
+      if (!isBundledAssetPath(urlPath)) {
+        next();
+        return;
+      }
+
+      const assetPath = path.join(distPath, urlPath);
+      if (fs.existsSync(assetPath)) {
+        res.sendFile(assetPath);
+        return;
+      }
+
+      res
+        .status(404)
+        .type('text/plain')
+        .send(
+          'Asset not found. Hard-refresh (Ctrl+Shift+R) — dev mode loads /src/main.tsx, not a cached production build.'
+        );
+    });
+
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
@@ -3377,9 +3405,14 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res) => {
+      const urlPath = (req.url || '/').split('?')[0] || '/';
+      if (isBundledAssetPath(urlPath)) {
+        res.status(404).type('text/plain').send('Asset not found');
+        return;
+      }
+      res.set('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

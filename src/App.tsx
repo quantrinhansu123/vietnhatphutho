@@ -8,7 +8,7 @@ import ShiftInfoForm from './components/ShiftInfoForm';
 import ProductEntryForm from './components/ProductEntryForm';
 import MaterialsForm from './components/MaterialsForm';
 import WasteForm from './components/WasteForm';
-import WeighingShiftSummary from './components/WeighingShiftSummary.tsx';
+import WeighingShiftSummary from './components/WeighingShiftSummary';
 import {
   buildWeighingEditPending,
   normalizeWeighingRecords,
