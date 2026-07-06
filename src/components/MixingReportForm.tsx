@@ -16,7 +16,6 @@ import {
   Users,
   X
 } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber, parseMoneyInput } from '../utils';
 import MixingProductionOrderAutofillModal from './MixingProductionOrderAutofillModal';
 import SearchableMultiSelect from './SearchableMultiSelect';
@@ -1759,21 +1758,18 @@ export default function MixingReportForm({
     <>
       {!modalMode && (
         <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="border-b-4 border-[#ef1b2d] bg-white p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex items-start gap-3">
-                <img src={vietNhatLogoUrl} alt="Viet Nhat IPT" className="h-14 w-auto max-w-[190px] object-contain" />
-                <div>
-                  <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Bảng trộn vật tư</p>
-                  <h2 className="text-lg font-black uppercase tracking-tight text-zinc-950">
-                    Báo cáo phối trộn
-                  </h2>
-                  <p className="mt-1 text-xs font-semibold text-zinc-500">
-                    Nhật ký sản xuất kiêm phiếu giao ca · QT-16-BM02
-                  </p>
-                </div>
+          <div className="border-b-4 border-[#ef1b2d] bg-white px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">Bảng trộn vật tư</p>
+                <h2 className="text-base font-black uppercase tracking-tight text-zinc-950 sm:text-lg">
+                  Báo cáo phối trộn
+                </h2>
+                <p className="text-[10px] font-semibold text-zinc-500 sm:text-xs">
+                  Nhật ký sản xuất kiêm phiếu giao ca · QT-16-BM02
+                </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 {onOpenList && (
                   <button
                     type="button"
@@ -1819,18 +1815,9 @@ export default function MixingReportForm({
       )}
 
       <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-2 py-2 sm:px-4 sm:py-3">
-          <div>
-            <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
-            <p className="text-xs font-semibold text-zinc-500">
-              Cùng ca · ngày · máy tự tăng {mixingSessionLabel(sessionRoundStart)}
-              {displayedRoundCount > 1
-                ? ` → ${mixingSessionLabel(sessionRoundStart + displayedRoundCount - 1)}`
-                : ''}
-              · bấm Thêm dòng để thêm lần tiếp theo
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-2 py-2 sm:px-4">
+          <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={addRound}
@@ -1914,10 +1901,15 @@ export default function MixingReportForm({
                             key={`${roundKey}-${entry.lineIndex}-${entry.itemIndex}-mobile`}
                             className="mixing-round-item-mobile px-2 py-1.5"
                           >
-                            <div className="flex items-center justify-between gap-1.5">
-                              <span className="truncate font-mono text-[11px] font-bold text-zinc-800">
-                                {entry.item.ma_nvl || '-'}
-                              </span>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="truncate font-mono text-[11px] font-bold text-zinc-800">
+                                  {entry.item.ma_nvl || '-'}
+                                </span>
+                                <p className="line-clamp-1 text-[10px] font-semibold leading-tight text-zinc-600">
+                                  {entry.item.ten_vat_tu || '-'}
+                                </p>
+                              </div>
                               <div className="flex shrink-0 items-center gap-0.5">
                                 <button
                                   type="button"
@@ -1952,12 +1944,9 @@ export default function MixingReportForm({
                                 </button>
                               </div>
                             </div>
-                            <p className="mt-0.5 line-clamp-1 text-[10px] font-semibold leading-tight text-zinc-600">
-                              {entry.item.ten_vat_tu || '-'}
-                            </p>
                             <div className="mt-1 grid grid-cols-3 gap-1">
                               <div className="text-center">
-                                <span className="mixing-round-item-mobile-label block text-[8px] font-bold leading-none text-zinc-500">
+                                <span className="block text-[11px] font-black leading-none text-zinc-800">
                                   %
                                 </span>
                                 <p className="mt-0.5 font-mono text-[11px] font-bold text-zinc-800">
@@ -1965,7 +1954,7 @@ export default function MixingReportForm({
                                 </p>
                               </div>
                               <div className="text-right">
-                                <span className="mixing-round-item-mobile-label block text-[8px] font-bold leading-none text-zinc-500">
+                                <span className="block text-[11px] font-black leading-none text-zinc-800">
                                   KL ĐM
                                 </span>
                                 <p className="mt-0.5 font-mono text-[11px] font-bold text-emerald-800">
@@ -1973,7 +1962,7 @@ export default function MixingReportForm({
                                 </p>
                               </div>
                               <div className="text-right">
-                                <span className="mixing-round-item-mobile-label block text-[8px] font-bold leading-none text-zinc-500">
+                                <span className="block text-[11px] font-black leading-none text-zinc-800">
                                   KL TT
                                 </span>
                                 <input
