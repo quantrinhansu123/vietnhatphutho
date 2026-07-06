@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { openCameraImagePicker } from '../utils/cameraCapture';
 import { createPortal } from 'react-dom';
 import {
   CalendarDays,
@@ -1528,37 +1529,11 @@ export default function MixingReportForm({
     }
   };
 
-  const handleRoundPhotoFile = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-    roundKey: RoundKey
-  ) => {
-    const files = event.target.files;
-    event.target.value = '';
-    if (!files?.length) return;
-    await processRoundPhotoFiles(files, roundKey);
-  };
-
   const pickRoundPhotos = (roundKey: RoundKey) => {
     if (uploadingRoundKey === roundKey) return;
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.multiple = true;
-    input.style.position = 'fixed';
-    input.style.left = '-9999px';
-    document.body.appendChild(input);
-    input.addEventListener(
-      'change',
-      () => {
-        const files = input.files;
-        if (files?.length) {
-          void processRoundPhotoFiles(files, roundKey);
-        }
-        input.remove();
-      },
-      { once: true }
-    );
-    input.click();
+    openCameraImagePicker(file => {
+      void processRoundPhotoFiles([file], roundKey);
+    });
   };
 
   const resetForm = () => {
@@ -2217,26 +2192,18 @@ export default function MixingReportForm({
                       Ảnh xác nhận {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}
                     </p>
                     <div className="mt-1.5 flex flex-col gap-1.5 sm:mt-2 sm:flex-row sm:items-center sm:gap-2">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        disabled={uploadingRoundKey === roundKey}
-                        onChange={event => handleRoundPhotoFile(event, roundKey)}
-                        className="min-w-0 flex-1 rounded-md border border-dashed border-[#ef1b2d]/35 bg-white px-1.5 py-1.5 text-[10px] font-semibold text-zinc-600 file:mr-1.5 file:cursor-pointer file:rounded file:border-0 file:bg-[#ef1b2d] file:px-2 file:py-1 file:text-[9px] file:font-extrabold file:text-white hover:bg-red-50/40 disabled:opacity-60 sm:rounded-lg sm:px-2 sm:py-2 sm:text-[11px] sm:file:mr-2 sm:file:rounded-md sm:file:px-3 sm:file:py-1.5 sm:file:text-[10px]"
-                      />
                       <button
                         type="button"
                         onClick={() => pickRoundPhotos(roundKey)}
                         disabled={uploadingRoundKey === roundKey}
-                        className="inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-md border border-[#ef1b2d]/30 bg-red-50 px-2 text-[10px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:opacity-60 sm:h-9 sm:rounded-lg sm:gap-1.5 sm:px-3 sm:text-[11px]"
+                        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:opacity-60 sm:h-10 sm:text-xs"
                       >
                         {uploadingRoundKey === roundKey ? (
-                          <Loader2 className="h-3 w-3 animate-spin sm:h-3.5 sm:w-3.5" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                          <ImagePlus className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                          <ImagePlus className="h-3.5 w-3.5" />
                         )}
-                        Thêm ảnh
+                        {uploadingRoundKey === roundKey ? 'Đang chụp...' : 'Chụp ảnh'}
                       </button>
                     </div>
                     {getRoundPhotos(roundKey).length > 0 ? (
@@ -2262,7 +2229,7 @@ export default function MixingReportForm({
                       </div>
                     ) : (
                       <p className="mt-1 hidden text-[10px] font-semibold text-zinc-400 sm:block sm:text-[11px]">
-                        Chọn file bằng ô &quot;Chọn tệp&quot; hoặc bấm Thêm ảnh · có thể chọn nhiều ảnh.
+                        Bấm Chụp ảnh để mở camera · có thể chụp nhiều lần.
                       </p>
                     )}
                   </div>

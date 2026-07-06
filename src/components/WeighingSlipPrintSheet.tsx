@@ -158,7 +158,7 @@ function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrintData; 
               <th>Tên SP</th>
               <th>TL lõi</th>
               <th>TL bì</th>
-              <th>TL</th>
+              <th>TL nhựa</th>
               <th className="weighing-slip-print-total-head">Tổng trọng lượng</th>
               <th>Giờ</th>
               <th>NT</th>

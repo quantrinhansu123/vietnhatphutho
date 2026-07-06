@@ -8,6 +8,7 @@ import WeighingImagePreviewModal, {
   WeighingImageThumbnail,
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
+import { CAMERA_IMAGE_INPUT_PROPS } from '../utils/cameraCapture';
 
 interface WeighingRow {
   id: number;
@@ -59,6 +60,7 @@ import {
 } from '../utils/shiftSettings';
 import {
   buildWeighingProductOptionsFromOrders,
+  findMatchedMachineForShift,
   normalizeMixingProductionOrders,
   type MixingProductionOrder
 } from '../utils/mixingOrderAutofill';
@@ -90,9 +92,8 @@ const compactHeaderInputClass =
   'mt-0.5 h-8 w-full rounded-md border border-ink-200 bg-white px-2 text-[11px] font-semibold text-ink-900 outline-none focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
 const modalInputClass =
   'h-9 w-full rounded-md border border-ink-200 bg-ink-50 focus:bg-white px-2.5 text-[13px] font-semibold text-ink-900 outline-none transition placeholder:text-ink-400 placeholder:italic focus:border-accent-700 focus:ring-2 focus:ring-accent-700/20';
-const modalFileClass =
-  'w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-2 py-1.5 text-[11px] font-bold text-zinc-600 file:mr-2 file:rounded file:border-0 file:bg-red-50 file:px-2 file:py-1 file:text-[10px] file:font-bold file:text-[#ef1b2d] hover:bg-white';
-const modalLabelClass = 'text-[10px] font-black uppercase tracking-wider text-zinc-500';
+const modalLabelClass = 'text-[9px] font-extrabold uppercase tracking-wide text-zinc-500 leading-tight';
+const modalCompactLabelClass = 'text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none';
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -495,6 +496,8 @@ export default function WeighingReportForm({
   const [currentWeigherName, setCurrentWeigherName] = useState(() => readStoredWeigherName(config.weigherStorageKey));
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const hasAutoOpenedNewSlip = useRef(false);
+  const coreWeightCameraInputRef = useRef<HTMLInputElement>(null);
+  const weightCameraInputRef = useRef<HTMLInputElement>(null);
 
   const updateCurrentWeigherName = (name: string) => {
     setCurrentWeigherName(name);
@@ -974,7 +977,7 @@ export default function WeighingReportForm({
       !imageFile &&
       !coreWeightImageFile
     ) {
-      setAddFormError('Vui lòng nhập thông tin hoặc chọn ảnh trước khi thêm form.');
+      setAddFormError('Vui lòng nhập thông tin hoặc chụp ảnh trước khi thêm form.');
       return;
     }
 
@@ -1078,13 +1081,16 @@ export default function WeighingReportForm({
       const saveResult = await persistRowsToServer([newRowData]);
       const [savedRow] = applySavedRowIds(saveResult.rows, [newRowData]);
       newRowData.dbId = savedRow.dbId;
-      newRowData.savedToDb = true;
+      newRowData.savedToDb = Boolean(savedRow.dbId);
 
       setRows(prev => [...prev, newRowData]);
       setSaveMessage({
         type: 'success',
-        text: getSaveSuccessMessage(saveResult.mode, saveResult.inserted ?? 1, saveResult.warning)
+        text: savedRow.dbId
+          ? getSaveSuccessMessage(saveResult.mode, saveResult.inserted ?? 1, saveResult.warning)
+          : 'Đã thêm dòng — bấm Lưu phiếu để đồng bộ lên server.'
       });
+      setIsAddFormOpen(false);
       setImageFile(null);
       setCoreWeightImageFile(null);
       setAddFormError('');
@@ -1193,29 +1199,48 @@ export default function WeighingReportForm({
       return;
     }
 
-    const unsavedRows = filledRows.filter(row => !row.savedToDb);
-    if (unsavedRows.length === 0) {
-      setSaveMessage({ type: 'success', text: 'Tất cả dòng đã được lưu lên Supabase.' });
-      return;
-    }
+    const unsavedRows = filledRows.filter(row => !row.savedToDb || !row.dbId);
 
     setIsSaving(true);
     setSaveMessage(null);
 
     try {
-      const saveResult = await persistRowsToServer(unsavedRows);
-      const savedRows = applySavedRowIds(saveResult.rows, unsavedRows);
-      const savedIds = new Set(unsavedRows.map(row => row.id));
-      setRows(prev =>
-        prev.map(row => {
+      let workingRows = rows;
+      let mode: string | undefined;
+      let warning: string | undefined;
+      let inserted = 0;
+
+      if (unsavedRows.length > 0) {
+        const saveResult = await persistRowsToServer(unsavedRows);
+        const savedRows = applySavedRowIds(saveResult.rows, unsavedRows);
+        const savedIds = new Set(unsavedRows.map(row => row.id));
+        workingRows = rows.map(row => {
           if (!savedIds.has(row.id)) return row;
           const saved = savedRows.find(item => item.id === row.id);
-          return saved ? { ...row, ...saved } : { ...row, savedToDb: true };
-        })
-      );
+          return saved
+            ? { ...row, ...saved, dbId: saved.dbId, savedToDb: Boolean(saved.dbId) }
+            : { ...row, savedToDb: false };
+        });
+        setRows(workingRows);
+        mode = saveResult.mode;
+        warning = saveResult.warning;
+        inserted = saveResult.inserted ?? unsavedRows.length;
+      }
+
+      const filledIds = new Set(filledRows.map(row => row.id));
+      const rowsToSync = workingRows.filter(row => filledIds.has(row.id) && row.dbId);
+      for (const row of rowsToSync) {
+        await updateRowOnServer(row);
+      }
+
       setSaveMessage({
         type: 'success',
-        text: getSaveSuccessMessage(saveResult.mode, saveResult.inserted ?? unsavedRows.length, saveResult.warning)
+        text:
+          unsavedRows.length > 0
+            ? getSaveSuccessMessage(mode, inserted, warning)
+            : rowsToSync.length > 0
+              ? 'Đã lưu phiếu thành công.'
+              : 'Không thể đồng bộ phiếu — vui lòng thêm lại dòng cân.'
       });
     } catch (error: any) {
       setSaveMessage({ type: 'error', text: error.message || 'Không thể lưu phiếu cân.' });
@@ -1239,6 +1264,20 @@ export default function WeighingReportForm({
   const weighRoundCount = useMemo(() => countWeighingRounds(rows), [rows]);
   const showSlipFields = !editingRow && weighingRows.length === 0 && rows.length === 0;
   const slipContext = rows.length > 0 ? getSlipContextFromRows(rows) : null;
+
+  useEffect(() => {
+    if (!showSlipFields || isLoadingProductionOrders) return;
+
+    const matchedMachine = findMatchedMachineForShift(
+      productionOrders,
+      { ngay: newRow.productionDate, ca: newRow.shiftName },
+      machines
+    );
+
+    if (matchedMachine && matchedMachine !== newRow.machineName) {
+      setNewRow(prev => ({ ...prev, machineName: matchedMachine }));
+    }
+  }, [showSlipFields, isLoadingProductionOrders, newRow.productionDate, newRow.shiftName, productionOrders, machines]);
 
   const productFilterContext = useMemo(() => {
     const machineName =
@@ -1539,27 +1578,21 @@ export default function WeighingReportForm({
                       </button>
                     </div>
                   </div>
-                  <div className="mt-1 grid grid-cols-5 gap-0.5">
-                    <div className="min-w-0">
-                      <span className="weighing-row-mobile-label">CN</span>
-                      <p className="truncate text-[10px] font-bold text-zinc-800" title={row.weigherName || undefined}>
-                        {row.weigherName || '—'}
-                      </p>
-                    </div>
+                  <div className="mt-1 grid grid-cols-4 gap-0.5">
                     <div>
-                      <span className="weighing-row-mobile-label">Lõi</span>
+                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">Lõi</span>
                       <p className="font-mono text-[10px] font-bold text-zinc-800">{row.coreWeight || '—'}</p>
                     </div>
                     <div>
-                      <span className="weighing-row-mobile-label">Bì</span>
+                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">Bì</span>
                       <p className="font-mono text-[10px] font-bold text-zinc-800">{row.shellWeight || '—'}</p>
                     </div>
                     <div>
-                      <span className="weighing-row-mobile-label">TL</span>
+                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">TL nhựa</span>
                       <p className="font-mono text-[10px] font-black text-zinc-900">{row.weight || '—'}</p>
                     </div>
                     <div>
-                      <span className="weighing-row-mobile-label">Tổng</span>
+                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">Tổng</span>
                       <p className="font-mono text-[10px] font-black text-[#ef1b2d]">
                         {formatWeighingRowTotalWeight(row)}
                       </p>
@@ -1580,7 +1613,7 @@ export default function WeighingReportForm({
                 <th className="px-3 py-3">Người cân</th>
                 <th className="px-3 py-3">Trọng lượng lõi</th>
                 <th className="px-3 py-3">Trọng lượng bì</th>
-                <th className="px-3 py-3">Trọng lượng</th>
+                <th className="px-3 py-3">TL nhựa</th>
                 <th className="px-3 py-3">Tổng cân</th>
                 <th className="px-3 py-3">Giờ cân</th>
                 <th className="px-3 py-3">Nghiệm thu</th>
@@ -1694,13 +1727,16 @@ export default function WeighingReportForm({
 
       <section className="rounded-lg border border-ink-200 bg-white overflow-hidden" style={{ boxShadow: 'var(--shadow-card)' }}>
         <div className="space-y-2 px-2 py-2 sm:px-3 sm:py-2.5">
-          {productsError || staffError || saveMessage?.type === 'error' ? (
+          {productsError || staffError || saveMessage ? (
             <div className="min-w-0 space-y-0.5">
               {productsError ? (
                 <p className="text-xs font-bold text-rose-600">{productsError}</p>
               ) : null}
               {staffError ? (
                 <p className="text-xs font-bold text-rose-600">{staffError}</p>
+              ) : null}
+              {saveMessage?.type === 'success' ? (
+                <p className="text-xs font-bold text-emerald-700">{saveMessage.text}</p>
               ) : null}
               {saveMessage?.type === 'error' ? (
                 <p className="text-xs font-bold text-rose-600">{saveMessage.text}</p>
@@ -1750,7 +1786,7 @@ export default function WeighingReportForm({
           <div className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
             <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-3 py-2">
               <div className="min-w-0 pr-2">
-                <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
+                <h3 className="text-xs font-black uppercase tracking-wide text-zinc-950">
                   {editingRow ? 'Sửa dòng cân' : 'Nhập liệu'}
                 </h3>
                 <p className="mt-0.5 truncate text-[11px] font-semibold text-zinc-500">
@@ -1971,9 +2007,9 @@ export default function WeighingReportForm({
                   <p className="text-[11px] font-bold text-rose-600">{productsError}</p>
                 )}
               </label>
-              <div className="col-span-2 grid grid-cols-3 gap-2">
+              <div className="col-span-2 grid grid-cols-3 gap-1.5">
                 <label className="space-y-1">
-                  <span className={modalLabelClass}>TL cân</span>
+                  <span className={modalCompactLabelClass}>TL nhựa</span>
                   <input
                     value={newRow.weight ?? ''}
                     onChange={e => setNewRow(prev => ({ ...prev, weight: e.target.value }))}
@@ -1982,7 +2018,7 @@ export default function WeighingReportForm({
                   />
                 </label>
                 <label className="space-y-1">
-                  <span className={modalLabelClass}>TL lõi</span>
+                  <span className={modalCompactLabelClass}>TL lõi</span>
                   <input
                     value={newRow.coreWeight ?? ''}
                     onChange={e => setNewRow(prev => ({ ...prev, coreWeight: e.target.value }))}
@@ -1991,7 +2027,7 @@ export default function WeighingReportForm({
                   />
                 </label>
                 <label className="space-y-1">
-                  <span className={modalLabelClass}>TL bì</span>
+                  <span className={modalCompactLabelClass}>TL bì</span>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -2029,48 +2065,68 @@ export default function WeighingReportForm({
                   placeholder="Ghi chú lần cân"
                 />
               </label>
-              <label className="space-y-1">
+              <div className="space-y-1">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Ảnh lõi
                 </span>
                 <input
-                  type="file"
-                  accept="image/*"
+                  ref={coreWeightCameraInputRef}
+                  {...CAMERA_IMAGE_INPUT_PROPS}
+                  className="hidden"
                   onChange={e => {
                     const file = e.target.files?.[0] || null;
+                    e.target.value = '';
                     setCoreWeightImageFile(file);
                     if (file) handleCoreImageUpload(file);
                   }}
-                  className={modalFileClass}
                 />
+                <button
+                  type="button"
+                  onClick={() => coreWeightCameraInputRef.current?.click()}
+                  disabled={isUploadingImage}
+                  className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  {coreWeightImageFile || newRow.coreWeightImageUrl ? 'Chụp lại' : 'Chụp ảnh'}
+                </button>
                 {(coreWeightImageFile || newRow.coreWeightImageUrl) && (
                   <p className="truncate text-[10px] font-semibold text-zinc-500">
                     {newRow.coreWeightImageUrl ? 'Đã upload' : coreWeightImageFile?.name}
                   </p>
                 )}
-              </label>
-              <label className="space-y-1">
+              </div>
+              <div className="space-y-1">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Ảnh cân
                 </span>
                 <input
-                  type="file"
-                  accept="image/*"
+                  ref={weightCameraInputRef}
+                  {...CAMERA_IMAGE_INPUT_PROPS}
+                  className="hidden"
                   onChange={e => {
                     const file = e.target.files?.[0] || null;
+                    e.target.value = '';
                     setImageFile(file);
                     if (file) handleWeightImageUpload(file);
                   }}
-                  className={modalFileClass}
                 />
+                <button
+                  type="button"
+                  onClick={() => weightCameraInputRef.current?.click()}
+                  disabled={isUploadingImage}
+                  className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  {imageFile || newRow.imageUrl ? 'Chụp lại' : 'Chụp ảnh'}
+                </button>
                 {(imageFile || newRow.imageUrl) && (
                   <p className="truncate text-[10px] font-semibold text-zinc-500">
                     {newRow.imageUrl ? 'Đã upload' : imageFile?.name}
                   </p>
                 )}
-              </label>
+              </div>
             </div>
             </div>
             <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-3 py-2.5">
@@ -2118,7 +2174,7 @@ export default function WeighingReportForm({
           <div className="w-full max-w-lg rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
-                <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết dòng cân</h3>
+                <h3 className="text-xs font-black uppercase tracking-wide text-zinc-950">Chi tiết dòng cân</h3>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
                   {viewingRow.weighNo ? formatWeighRound(viewingRow.weighNo) : '—'} · {viewingRow.weighTime || '—'}
                 </p>
@@ -2175,7 +2231,7 @@ export default function WeighingReportForm({
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.shellWeight || '—'}</p>
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="font-black uppercase tracking-wider text-zinc-400">Trọng lượng</span>
+                <span className="font-black uppercase tracking-wide text-zinc-400 text-[10px]">TL nhựa</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.weight || '—'}</p>
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">

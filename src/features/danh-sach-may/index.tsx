@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
+import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 
 export interface MachineRow {
@@ -533,7 +534,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
               <div className="col-span-2 rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-3">
                 <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Hình ảnh máy</p>
                 <p className="mt-1 text-[11px] font-semibold text-zinc-500">
-                  Chọn ảnh để upload lên Cloudinary và lưu vào cột anh_url trên Supabase.
+                  Chụp ảnh bằng camera để upload lên Cloudinary và lưu vào cột anh_url trên Supabase.
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   {formImagePreview ? (
@@ -551,16 +552,15 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                     </a>
                   ) : (
                     <div className="flex h-24 w-36 items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-white text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                      Chưa chọn ảnh
+                      Chưa chụp ảnh
                     </div>
                   )}
 
                   <label className="flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]">
                     <ImagePlus className="h-4 w-4" />
-                    {formImageFile ? 'Đổi ảnh' : formImagePreview ? 'Chọn ảnh khác' : 'Chọn ảnh'}
+                    {formImageFile ? 'Chụp lại' : formImagePreview ? 'Chụp lại' : 'Chụp ảnh'}
                     <input
-                      type="file"
-                      accept="image/*"
+                      {...CAMERA_IMAGE_INPUT_PROPS}
                       className="hidden"
                       onChange={event => {
                         const file = event.target.files?.[0];
@@ -704,10 +704,9 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                           ) : (
                             <ImagePlus className="h-4 w-4" />
                           )}
-                          {uploadingMachineIds.has(machine.id) ? 'Đang tải' : machine.imageUrl ? 'Đổi ảnh' : 'Tải ảnh'}
+                          {uploadingMachineIds.has(machine.id) ? 'Đang chụp...' : machine.imageUrl ? 'Chụp lại' : 'Chụp ảnh'}
                           <input
-                            type="file"
-                            accept="image/*"
+                            {...CAMERA_IMAGE_INPUT_PROPS}
                             className="hidden"
                             disabled={uploadingMachineIds.has(machine.id)}
                             onChange={event => {

@@ -14,6 +14,13 @@ import {
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
+import { openCameraImagePicker } from '../utils/cameraCapture';
+
+const productLineGridClass =
+  'grid-cols-2 sm:grid-cols-[2.25rem_minmax(0,1.1fr)_minmax(0,1.3fr)_4rem_6rem_2.5rem]';
+
+const mobileFieldLabelClass =
+  'mb-0.5 block text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:hidden';
 
 export type AcceptanceReport = {
   id: string;
@@ -281,7 +288,6 @@ export default function AcceptanceReportForm({
   editReport?: AcceptanceReport | null;
   onEditConsumed?: () => void;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrderOption[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductSelectOption[]>([]);
@@ -582,22 +588,46 @@ export default function AcceptanceReportForm({
   const handleImagePick = async (file: File | null) => {
     if (!file) return;
     setError('');
+    setMessage('');
     setIsUploading(true);
     try {
       const dataUrl = await fileToDataUrl(file);
-      setForm(prev => ({ ...prev, imagePreview: dataUrl }));
-      const uploaded = await uploadImage(dataUrl);
-      setForm(prev => ({
-        ...prev,
-        hinh_anh: uploaded.imageUrl,
-        hinh_anh_public_id: uploaded.imagePublicId,
-        imagePreview: uploaded.imageUrl
-      }));
+      setForm(prev => ({ ...prev, imagePreview: dataUrl, hinh_anh: dataUrl, hinh_anh_public_id: '' }));
+      try {
+        const uploaded = await uploadImage(dataUrl);
+        setForm(prev => ({
+          ...prev,
+          hinh_anh: uploaded.imageUrl,
+          hinh_anh_public_id: uploaded.imagePublicId,
+          imagePreview: uploaded.imageUrl
+        }));
+        setMessage('Đã chụp ảnh.');
+      } catch {
+        setMessage('Đã chụp ảnh (sẽ upload khi lưu báo cáo).');
+      }
     } catch (err: any) {
-      setError(err.message || 'Không thể upload ảnh.');
+      setForm(prev => ({ ...prev, imagePreview: '', hinh_anh: '', hinh_anh_public_id: '' }));
+      setError(err.message || 'Không thể đọc file ảnh.');
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const pickImage = () => {
+    if (isUploading) return;
+    openCameraImagePicker(file => {
+      void handleImagePick(file);
+    });
+  };
+
+  const resolveImageForSave = async () => {
+    const source = form.hinh_anh.trim() || form.imagePreview.trim();
+    if (!source) return null;
+    if (!source.startsWith('data:')) {
+      return { hinh_anh: source, hinh_anh_public_id: form.hinh_anh_public_id || '' };
+    }
+    const uploaded = await uploadImage(source);
+    return { hinh_anh: uploaded.imageUrl, hinh_anh_public_id: uploaded.imagePublicId };
   };
 
   const resetForm = () => {
@@ -651,7 +681,7 @@ export default function AcceptanceReportForm({
       return null;
     }
     if (!form.ma_may.trim() && !form.ten_may.trim()) {
-      setError('Vui lòng chọn tổ.');
+      setError('Vui lòng chọn máy.');
       return null;
     }
     if (!form.lan.trim()) {
@@ -682,7 +712,7 @@ export default function AcceptanceReportForm({
       }
     }
 
-    if (!form.hinh_anh.trim()) {
+    if (!form.hinh_anh.trim() && !form.imagePreview.trim()) {
       setError('Vui lòng chụp ảnh chung cho các dòng sản lượng.');
       return null;
     }
@@ -698,18 +728,24 @@ export default function AcceptanceReportForm({
     setError('');
     setMessage('');
 
-    const sharedPayload = {
-      ngay: form.ngay,
-      ca: form.ca,
-      lan: form.lan,
-      gio: form.gio,
-      ma_may: form.ma_may,
-      ten_may: form.ten_may,
-      hinh_anh: form.hinh_anh,
-      hinh_anh_public_id: form.hinh_anh_public_id
-    };
-
     try {
+      const resolvedImage = await resolveImageForSave();
+      if (!resolvedImage) {
+        setError('Vui lòng chụp ảnh chung cho các dòng sản lượng.');
+        return;
+      }
+
+      const sharedPayload = {
+        ngay: form.ngay,
+        ca: form.ca,
+        lan: form.lan,
+        gio: form.gio,
+        ma_may: form.ma_may,
+        ten_may: form.ten_may,
+        hinh_anh: resolvedImage.hinh_anh,
+        hinh_anh_public_id: resolvedImage.hinh_anh_public_id
+      };
+
       if (editingId) {
         const line = validLines[0];
         const res = await fetch(`/api/bao-cao-nghiem-thu/${editingId}`, {
@@ -788,64 +824,68 @@ export default function AcceptanceReportForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-4 md:grid-cols-3 lg:grid-cols-6">
-          <label className="space-y-1">
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" /> Ngày
-            </span>
-            <input type="date" value={form.ngay} onChange={e => handleDateChange(e.target.value)} className={inputClass} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
-            <select value={form.ca} onChange={e => handleShiftChange(e.target.value)} className={inputClass}>
-              <option value="">Chọn ca từ lệnh SX...</option>
-              {shiftOptions.map(shift => (
-                <option key={shift} value={shift}>
-                  {shift}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 lg:col-span-2">
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <Cpu className="h-3.5 w-3.5 text-[#ef1b2d]" /> Tổ
-            </span>
-            <select
-              value={teamSelectValue}
-              onChange={e => handleTeamChange(e.target.value)}
-              className={inputClass}
-              disabled={!form.ca}
-            >
-              <option value="">{form.ca ? 'Chọn tổ...' : 'Chọn ca trước'}</option>
-              {teamOptions.map(team => (
-                <option key={team.id} value={team.id}>
-                  {team.code && team.name && team.code !== team.name
-                    ? `${team.code} · ${team.name}`
-                    : team.name || team.code}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lần</span>
-            <input
-              value={form.lan}
-              onChange={e => setForm(prev => ({ ...prev, lan: e.target.value }))}
-              className={inputClass}
-              placeholder="VD: 1"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <Clock3 className="h-3.5 w-3.5 text-[#ef1b2d]" /> Giờ
-            </span>
-            <input
-              type="time"
-              value={form.gio}
-              onChange={e => setForm(prev => ({ ...prev, gio: e.target.value }))}
-              className={inputClass}
-            />
-          </label>
+        <div className="space-y-3 bg-zinc-50 p-4">
+          <div className="grid grid-cols-3 gap-3">
+            <label className="space-y-1">
+              <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" /> Ngày
+              </span>
+              <input type="date" value={form.ngay} onChange={e => handleDateChange(e.target.value)} className={inputClass} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
+              <select value={form.ca} onChange={e => handleShiftChange(e.target.value)} className={inputClass}>
+                <option value="">Chọn ca...</option>
+                {shiftOptions.map(shift => (
+                  <option key={shift} value={shift}>
+                    {shift}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                <Clock3 className="h-3.5 w-3.5 text-[#ef1b2d]" /> Giờ
+              </span>
+              <input
+                type="time"
+                value={form.gio}
+                onChange={e => setForm(prev => ({ ...prev, gio: e.target.value }))}
+                className={inputClass}
+              />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                <Cpu className="h-3.5 w-3.5 text-[#ef1b2d]" /> Máy
+              </span>
+              <select
+                value={teamSelectValue}
+                onChange={e => handleTeamChange(e.target.value)}
+                className={inputClass}
+                disabled={!form.ca}
+              >
+                <option value="">{form.ca ? 'Chọn máy...' : 'Chọn ca trước'}</option>
+                {teamOptions.map(team => (
+                  <option key={team.id} value={team.id}>
+                    {team.code && team.name && team.code !== team.name
+                      ? `${team.code} · ${team.name}`
+                      : team.name || team.code}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lần</span>
+              <input
+                value={form.lan}
+                onChange={e => setForm(prev => ({ ...prev, lan: e.target.value }))}
+                className={inputClass}
+                placeholder="VD: 1"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="border-t border-zinc-100 bg-white p-4">
@@ -853,6 +893,8 @@ export default function AcceptanceReportForm({
             title="Mã SP & số lượng"
             required
             showColumnHeaders
+            actionsAtBottom
+            gridTemplateClass={productLineGridClass}
             onAdd={addProductLine}
             addLabel="Thêm dòng"
             hideAddButton={Boolean(editingId)}
@@ -869,11 +911,12 @@ export default function AcceptanceReportForm({
               ) : null
             }
             columns={[
-              { key: 'mat_hang', label: 'Mã SP', className: 'min-w-[180px] flex-[1.2]', required: true },
-              { key: 'ten_sp', label: 'Tên SP', className: 'min-w-[220px] flex-[1.5]' },
-              { key: 'don_vi', label: 'ĐVT', className: 'w-20' },
-              { key: 'so_luong', label: 'SL', className: 'w-28', required: true },
-              { key: 'actions', label: '', className: 'w-10' }
+              { key: 'stt', label: 'STT', className: 'text-center' },
+              { key: 'mat_hang', label: 'Mã SP', required: true },
+              { key: 'ten_sp', label: 'Tên SP' },
+              { key: 'don_vi', label: 'ĐVT' },
+              { key: 'so_luong', label: 'SL', required: true },
+              { key: 'actions', label: '' }
             ]}
           >
             {form.lines.map((line, index) => {
@@ -881,24 +924,72 @@ export default function AcceptanceReportForm({
               return (
               <RepeatableLineRow
                 key={line.id}
+                gridTemplateClass={productLineGridClass}
                 className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
               >
-                <div className="min-w-[180px] flex-[1.2]">
-                  <SearchableSelect
-                    value={line.mat_hang}
-                    onChange={code => handleLineProductChange(line.id, code)}
-                    options={productSelectOptions}
-                    placeholder="Gõ để tìm mã SP"
-                    isLoading={isLoadingProducts}
-                    inputClassName={inputClass}
-                    getValue={item => (item as ProductSelectOption).code}
-                    getLabel={item => {
-                      const product = item as ProductSelectOption;
-                      return product.name ? `${product.code} · ${product.name}` : product.code;
-                    }}
-                  />
+                <div className="flex min-w-0 items-end gap-1.5 sm:contents">
+                  <div className="flex shrink-0 items-center justify-center self-center sm:col-start-1">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ef1b2d] text-[11px] font-black text-white">
+                      {index + 1}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1 sm:col-start-2">
+                    <span className={mobileFieldLabelClass}>
+                      Mã SP *
+                    </span>
+                    <SearchableSelect
+                      value={line.mat_hang}
+                      onChange={code => handleLineProductChange(line.id, code)}
+                      options={productSelectOptions}
+                      placeholder="Gõ để tìm mã SP"
+                      isLoading={isLoadingProducts}
+                      inputClassName={inputClass}
+                      getValue={item => (item as ProductSelectOption).code}
+                      getLabel={item => {
+                        const product = item as ProductSelectOption;
+                        return product.name ? `${product.code} · ${product.name}` : product.code;
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="min-w-[220px] flex-[1.5]">
+                <div className="flex items-end gap-1 sm:contents">
+                  <div className="w-11 min-w-0 sm:col-start-4 sm:w-auto">
+                    <span className={mobileFieldLabelClass}>ĐVT</span>
+                    <input
+                      value={line.don_vi}
+                      readOnly
+                      className={`${inputClass} bg-zinc-50 text-zinc-600`}
+                      placeholder="-"
+                      aria-label="ĐVT"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1 sm:col-start-5 sm:w-auto sm:flex-none">
+                    <span className={mobileFieldLabelClass}>SL *</span>
+                    <input
+                      value={line.so_luong}
+                      onChange={e => handleLineQuantityChange(line.id, e.target.value)}
+                      className={inputClass}
+                      inputMode="decimal"
+                      placeholder="0"
+                      aria-label="Số lượng"
+                    />
+                  </div>
+                  {!editingId && form.lines.length > 1 ? (
+                    <div className="shrink-0 sm:col-start-6">
+                      <span className={`${mobileFieldLabelClass} invisible`}>Xóa</span>
+                      <button
+                        type="button"
+                        onClick={() => removeProductLine(line.id)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 sm:h-10 sm:w-10"
+                        aria-label={`Xóa dòng ${index + 1}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-3">
+                  <span className={mobileFieldLabelClass}>Tên SP</span>
                   <input
                     value={matchedProduct?.name || ''}
                     readOnly
@@ -907,35 +998,6 @@ export default function AcceptanceReportForm({
                     aria-label="Tên SP"
                   />
                 </div>
-                <div className="w-20">
-                  <input
-                    value={line.don_vi}
-                    readOnly
-                    className={`${inputClass} bg-zinc-50 text-zinc-600`}
-                    placeholder="-"
-                    aria-label="ĐVT"
-                  />
-                </div>
-                <div className="w-28">
-                  <input
-                    value={line.so_luong}
-                    onChange={e => handleLineQuantityChange(line.id, e.target.value)}
-                    className={inputClass}
-                    inputMode="decimal"
-                    placeholder="0"
-                    aria-label="Số lượng"
-                  />
-                </div>
-                {!editingId && form.lines.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeProductLine(line.id)}
-                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-                    aria-label={`Xóa dòng ${index + 1}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
               </RepeatableLineRow>
             );
             })}
@@ -944,29 +1006,26 @@ export default function AcceptanceReportForm({
           <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>
             <div className="flex items-center gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={e => handleImagePick(e.target.files?.[0] ?? null)}
-              />
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={pickImage}
                 disabled={isUploading}
-                className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+                className={`inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-60 ${
+                  form.imagePreview
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                    : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
+                }`}
               >
                 {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                {isUploading ? 'Đang tải ảnh...' : 'Chụp / chọn ảnh chung'}
+                {isUploading ? 'Đang xử lý ảnh...' : form.imagePreview ? 'Chụp lại ảnh' : 'Chụp ảnh'}
               </button>
               {form.imagePreview && (
                 <a
                   href={form.imagePreview}
                   target="_blank"
                   rel="noreferrer"
-                  className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200"
+                  className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-emerald-200 ring-2 ring-emerald-100"
+                  title="Ảnh đã chụp — bấm để xem"
                 >
                   <img src={form.imagePreview} alt="Ảnh chung" className="h-full w-full object-cover" />
                 </a>

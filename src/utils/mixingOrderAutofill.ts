@@ -385,6 +385,32 @@ export function filterMixingProductionOrders(
   });
 }
 
+export function findMatchedMachineForShift(
+  orders: MixingProductionOrder[],
+  filters: { ngay: string; ca: string },
+  machines: Array<{ code: string; name: string }> = []
+): string {
+  const ngay = filters.ngay.trim();
+  const ca = filters.ca.trim();
+  if (!ngay || !ca) return '';
+
+  const match = orders.find(order => {
+    if (!order.machine.trim()) return false;
+    const orderDate = extractIsoDate(order.startDate);
+    if (orderDate !== ngay) return false;
+    return shiftMatches(order.shift, ca);
+  });
+  if (!match) return '';
+
+  const machineRef = match.machine.trim();
+  const known = machines.find(
+    machine =>
+      (machine.code && normalizeKey(machine.code) === normalizeKey(machineRef)) ||
+      (machine.name && normalizeKey(machine.name) === normalizeKey(machineRef))
+  );
+  return known?.name || machineRef;
+}
+
 export type WeighingOrderProductOption = {
   productCode: string;
   productName: string;

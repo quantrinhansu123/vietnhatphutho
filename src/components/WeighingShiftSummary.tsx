@@ -654,7 +654,7 @@ export default function WeighingShiftSummary({
                           <th className="px-3 py-2">Người cân</th>
                           <th className="px-3 py-2">TL lõi</th>
                           <th className="px-3 py-2">TL bì</th>
-                          <th className="px-3 py-2">Trọng lượng</th>
+                          <th className="px-3 py-2">TL nhựa</th>
                           <th className="px-3 py-2">Tổng trọng lượng</th>
                           <th className="px-3 py-2">Giờ</th>
                           <th className="px-3 py-2">Nghiệm thu</th>
@@ -841,7 +841,7 @@ export default function WeighingShiftSummary({
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.shellWeight || '—'}</p>
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="font-black uppercase tracking-wider text-zinc-400">Trọng lượng</span>
+                <span className="font-black uppercase tracking-wider text-zinc-400">TL nhựa</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.weight || '—'}</p>
               </div>
               <div className="rounded-lg bg-red-50 px-3 py-2">

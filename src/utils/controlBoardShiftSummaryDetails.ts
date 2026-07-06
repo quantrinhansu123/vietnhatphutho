@@ -264,7 +264,7 @@ export function getShiftSummaryDetail(input: {
         { key: 'gioCan', label: 'Giờ cân', mono: true },
         { key: 'tlLoi', label: 'TL lõi', align: 'right', mono: true },
         { key: 'tlBi', label: 'TL bì', align: 'right', mono: true },
-        { key: 'tl', label: 'TL', align: 'right', mono: true },
+        { key: 'tl', label: 'TL nhựa', align: 'right', mono: true },
         { key: 'tongKl', label: 'Tổng KL', align: 'right', mono: true, accent: true }
       ],
       rows,
