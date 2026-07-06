@@ -3,11 +3,14 @@ import { formatNumber } from '../../utils';
 import type { AppTab } from '../../routes';
 import ControlBoardShiftSummaryTable from '../../components/ControlBoardShiftSummaryTable';
 import { buildControlBoardShiftSummary, defaultShiftSummaryDateRange, collectShiftSummaryStaffOptions } from '../../utils/controlBoardShiftSummary';
+import { shiftNamesMatch } from '../../utils/shiftSettings';
 import { normalizeAcceptanceReports, type AcceptanceReport } from '../../components/AcceptanceReportForm';
 import { normalizeMixingReport } from '../../lib/mixingReportModel';
 import type { MixingReport } from '../../components/MixingReportForm';
 import {
   buildWeighingEditPending,
+  formatWeighingRowTotalWeight,
+  getWeighingDataRows,
   normalizeWeighingRecords,
   type WeighingPendingAdd,
   type WeighingRecord
@@ -24,10 +27,7 @@ import {
   mapWarehouseMovementsForShiftSummary,
   type WarehouseMovementRow
 } from '../phieu-xuat-nhap-kho';
-import type { HrBranch } from '../_shared/hr';
-import { normalizeHrBranches } from '../_shared/hr';
 import {
-  flattenHrMembers,
   splitProductionOrderStaffNames,
   parseProductionOrderFilterDate
 } from '../cai-dat-thoi-gian';
@@ -55,9 +55,9 @@ import {
 import {
   Factory,
   ClipboardCheck,
-  UsersRound,
+  Scale,
   ClipboardList,
-  Cpu,
+  Boxes,
   Eye,
   Pencil,
   Trash2,
@@ -74,7 +74,6 @@ export function ControlBoardPanel({
   onMachineReport: (machine: MachineRow, type: 'mixing' | 'nvl') => void;
   onEditWeighing?: (pending: WeighingPendingAdd) => void;
 }) {
-  const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [machines, setMachines] = useState<MachineRow[]>([]);
@@ -92,17 +91,16 @@ export function ControlBoardPanel({
   const [shiftSummaryDateTo, setShiftSummaryDateTo] = useState(defaultShiftSummaryRange.to);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [staffSearch, setStaffSearch] = useState('');
+  const [weighingSearch, setWeighingSearch] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
-  const [machineSearch, setMachineSearch] = useState('');
+  const [machineNvlReportSearch, setMachineNvlReportSearch] = useState('');
   const [materialSearch, setMaterialSearch] = useState('');
   const [productionOrderSearch, setProductionOrderSearch] = useState('');
-  const [productionOrderDateFrom, setProductionOrderDateFrom] = useState('');
-  const [productionOrderDateTo, setProductionOrderDateTo] = useState('');
-  const [productionOrderShiftFilter, setProductionOrderShiftFilter] = useState('all');
   const [productionOrderStaffFilters, setProductionOrderStaffFilters] = useState<Set<string>>(() => new Set());
   const [acceptanceReportSearch, setAcceptanceReportSearch] = useState('');
+  const [panelFilterDate, setPanelFilterDate] = useState('');
+  const [panelFilterShift, setPanelFilterShift] = useState('all');
   const [showAddProductionOrder, setShowAddProductionOrder] = useState(false);
   const [showProductionPlan, setShowProductionPlan] = useState(false);
   const [viewingProductionOrder, setViewingProductionOrder] = useState<ProductionOrderRow | null>(null);
@@ -122,9 +120,8 @@ export function ControlBoardPanel({
     try {
       const summaryFrom = shiftSummaryDateFrom || defaultShiftSummaryRange.from;
       const summaryTo = shiftSummaryDateTo || defaultShiftSummaryRange.to;
-      const [staffRes, orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, machineNvlRes, warehouseMovementRes] =
+      const [orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, machineNvlRes, warehouseMovementRes] =
         await Promise.all([
-        fetch('/api/nhan-su?format=groups'),
         fetch('/api/don-hang'),
         fetch('/api/san-pham?format=table'),
         fetch('/api/danh-sach-may'),
@@ -143,7 +140,6 @@ export function ControlBoardPanel({
         )
       ]);
 
-      const staffData = await staffRes.json().catch(() => ({}));
       const orderData = await orderRes.json().catch(() => ({}));
       const productData = await productRes.json().catch(() => ({}));
       const machineData = await machineRes.json().catch(() => ({}));
@@ -157,14 +153,12 @@ export function ControlBoardPanel({
       const machineNvlData = await machineNvlRes.json().catch(() => ({}));
       const warehouseMovementData = await warehouseMovementRes.json().catch(() => ({}));
 
-      if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
       if (!orderRes.ok) throw new Error(orderData.error || 'Không thể tải đơn hàng.');
       if (!productRes.ok) throw new Error(productData.error || 'Không thể tải sản phẩm.');
       if (!machineRes.ok) throw new Error(machineData.error || 'Không thể tải danh sách máy.');
       if (!materialRes.ok) throw new Error(materialData.error || 'Không thể tải kho NVL.');
       if (!productionRes.ok) throw new Error(productionData.error || 'Không thể tải lệnh sản xuất.');
 
-      setStaffBranches(normalizeHrBranches(staffData));
       setOrders(normalizeOrders(orderData));
       setProducts(normalizeProducts(productData));
       setMachines(normalizeMachines(machineData));
@@ -208,7 +202,7 @@ export function ControlBoardPanel({
         setShiftSummaryWarehouseMovements([]);
       }
 
-      const usingLocalFallback = [machineData, staffData, orderData, materialData, productionData].some(
+      const usingLocalFallback = [machineData, orderData, materialData, productionData].some(
         payload => payload && typeof payload === 'object' && (payload as { source?: string }).source === 'local'
       );
       if (usingLocalFallback) {
@@ -321,6 +315,55 @@ export function ControlBoardPanel({
     () => collectShiftSummaryStaffOptions(shiftSummaryFilterSources),
     [shiftSummaryFilterSources]
   );
+
+  const panelShiftOptions = useMemo(() => {
+    const fromSettings = productionOrderSettings
+      .filter(setting => setting.loaiCaiDat === 'Thời gian')
+      .map(setting => setting.name || setting.code)
+      .filter(value => value && value !== '-');
+
+    const fromData = [
+      ...shiftSummaryRows.map(row => row.ca),
+      ...acceptanceReports.map(report => report.ca),
+      ...weighingRecords.map(record => record.shiftName),
+      ...machineNvlReports.map(report => report.ca),
+      ...productionOrders.map(row => (row.shift && row.shift !== '-' ? row.shift : ''))
+    ].filter(Boolean);
+
+    return [...new Set(fromSettings.length > 0 ? fromSettings : fromData)].sort((a, b) =>
+      a.localeCompare(b, 'vi', { numeric: true })
+    );
+  }, [
+    productionOrderSettings,
+    shiftSummaryRows,
+    acceptanceReports,
+    weighingRecords,
+    machineNvlReports,
+    productionOrders
+  ]);
+
+  const formatPanelShiftLabel = (shift: string) => formatProductionOrderShiftLabel(shift, productionOrderSettings);
+
+  const matchesPanelDate = (value?: string) => {
+    if (!panelFilterDate) return true;
+    return String(value ?? '').slice(0, 10) === panelFilterDate;
+  };
+
+  const matchesPanelShift = (value?: string) => {
+    if (!panelFilterShift || panelFilterShift === 'all') return true;
+    const shift = String(value ?? '').trim();
+    if (!shift) return false;
+    return shiftNamesMatch(shift, panelFilterShift);
+  };
+
+  const panelDateShiftFilterProps = {
+    filterDate: panelFilterDate,
+    onFilterDateChange: setPanelFilterDate,
+    filterShift: panelFilterShift,
+    onFilterShiftChange: setPanelFilterShift,
+    shiftOptions: panelShiftOptions,
+    formatShiftLabel: formatPanelShiftLabel
+  };
 
   const handleDeleteWeighingRecord = async (recordId: string | number) => {
     const res = await fetch(`/api/phieu-can-dinh-ki/${recordId}`, { method: 'DELETE' });
@@ -441,24 +484,52 @@ export function ControlBoardPanel({
     ]
   );
 
-  const staffMembers = useMemo(() => flattenHrMembers(staffBranches), [staffBranches]);
-  const staffQuery = staffSearch.trim().toLowerCase();
-  const filteredStaff = useMemo(() => {
-    if (!staffQuery) return staffMembers;
-    return staffMembers.filter(member =>
-      `${member.name} ${member.role} ${member.shift} ${member.status}`.toLowerCase().includes(staffQuery)
-    );
-  }, [staffMembers, staffQuery]);
+  const weighingDataRows = useMemo(() => getWeighingDataRows(weighingRecords), [weighingRecords]);
+  const weighingQuery = weighingSearch.trim().toLowerCase();
+  const filteredWeighingRows = useMemo(() => {
+    return weighingDataRows.filter(row => {
+      if (weighingQuery) {
+        const haystack = `${row.documentNo} ${row.productionDate} ${row.shiftName} ${row.productCode} ${row.productName} ${row.weigherName}`
+          .toLowerCase();
+        if (!haystack.includes(weighingQuery)) return false;
+      }
+      return matchesPanelDate(row.productionDate || row.reportDate) && matchesPanelShift(row.shiftName);
+    });
+  }, [weighingDataRows, weighingQuery, panelFilterDate, panelFilterShift]);
+  const recentWeighingRows = useMemo(
+    () =>
+      [...filteredWeighingRows].sort((a, b) => {
+        const dateCompare = (b.productionDate || '').localeCompare(a.productionDate || '');
+        if (dateCompare !== 0) return dateCompare;
+        return (b.weighTime || '').localeCompare(a.weighTime || '');
+      }),
+    [filteredWeighingRows]
+  );
 
   const orderQuery = orderSearch.trim().toLowerCase();
   const filteredOrders = useMemo(() => {
-    if (!orderQuery) return orders;
-    return orders.filter(order =>
-      `${order.orderCode} ${formatOrderProductsSummary(getOrderProductLines(order))} ${order.customer} ${order.status} ${order.stockQuantity}`
-        .toLowerCase()
-        .includes(orderQuery)
-    );
-  }, [orders, orderQuery]);
+    return orders.filter(order => {
+      if (orderQuery) {
+        const haystack = `${order.orderCode} ${formatOrderProductsSummary(getOrderProductLines(order))} ${order.customer} ${order.status} ${order.stockQuantity}`
+          .toLowerCase();
+        if (!haystack.includes(orderQuery)) return false;
+      }
+      if (!panelFilterDate && panelFilterShift === 'all') return true;
+
+      const linkedProduction = productionOrders.filter(
+        row => row.orderRef === order.orderCode || row.orderRef === order.id
+      );
+      if (linkedProduction.length === 0) return !panelFilterDate && panelFilterShift === 'all';
+
+      return linkedProduction.some(row => {
+        const rowDate = parseProductionOrderFilterDate(row.startDate);
+        const matchesDate = !panelFilterDate || (rowDate && rowDate === panelFilterDate);
+        const rowShift = row.shift && row.shift !== '-' ? row.shift : '';
+        const matchesShift = matchesPanelShift(rowShift);
+        return matchesDate && matchesShift;
+      });
+    });
+  }, [orders, orderQuery, productionOrders, panelFilterDate, panelFilterShift]);
 
   const productQuery = productSearch.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
@@ -468,15 +539,25 @@ export function ControlBoardPanel({
     );
   }, [products, productQuery]);
 
-  const machineQuery = machineSearch.trim().toLowerCase();
-  const filteredMachines = useMemo(() => {
-    if (!machineQuery) return machines;
-    return machines.filter(machine =>
-      `${machine.code} ${machine.name} ${machine.type} ${machine.branch} ${machine.location} ${machine.status}`
-        .toLowerCase()
-        .includes(machineQuery)
-    );
-  }, [machines, machineQuery]);
+  const machineNvlReportQuery = machineNvlReportSearch.trim().toLowerCase();
+  const filteredMachineNvlReports = useMemo(() => {
+    return machineNvlReports.filter(report => {
+      if (machineNvlReportQuery) {
+        const haystack = `${report.maMay} ${report.tenMay} ${report.ca} ${report.ngay} ${report.nhanSu} ${report.note}`.toLowerCase();
+        if (!haystack.includes(machineNvlReportQuery)) return false;
+      }
+      return matchesPanelDate(report.ngay) && matchesPanelShift(report.ca);
+    });
+  }, [machineNvlReports, machineNvlReportQuery, panelFilterDate, panelFilterShift]);
+  const recentMachineNvlReports = useMemo(
+    () =>
+      [...filteredMachineNvlReports].sort((a, b) => {
+        const dateCompare = (b.ngay || '').localeCompare(a.ngay || '');
+        if (dateCompare !== 0) return dateCompare;
+        return (b.gio || '').localeCompare(a.gio || '');
+      }),
+    [filteredMachineNvlReports]
+  );
 
   const materialQuery = materialSearch.trim().toLowerCase();
   const filteredMaterials = useMemo(() => {
@@ -487,20 +568,6 @@ export function ControlBoardPanel({
   }, [materials, materialQuery]);
 
   const productionOrderQuery = productionOrderSearch.trim().toLowerCase();
-  const productionOrderShiftOptions = useMemo(() => {
-    const fromTimeSettings = productionOrderSettings
-      .filter(setting => setting.loaiCaiDat === 'Thời gian')
-      .map(setting => setting.name || setting.code)
-      .filter(value => value && value !== '-');
-
-    const fallbackFromOrders = productionOrders
-      .map(row => (row.shift && row.shift !== '-' ? row.shift : 'Chưa phân ca'))
-      .filter(Boolean);
-
-    return [...new Set(fromTimeSettings.length > 0 ? fromTimeSettings : fallbackFromOrders)].sort((a, b) =>
-      a.localeCompare(b, 'vi', { numeric: true })
-    );
-  }, [productionOrderSettings, productionOrders]);
   const productionOrderStaffOptions = useMemo(() => {
     return [
       ...new Set(productionOrders.flatMap(row => splitProductionOrderStaffNames(row.staff)))
@@ -517,37 +584,37 @@ export function ControlBoardPanel({
             .toLowerCase()
             .includes(productionOrderQuery);
         const rowDate = parseProductionOrderFilterDate(row.startDate);
-        const matchesDateFrom = !productionOrderDateFrom || (rowDate && rowDate >= productionOrderDateFrom);
-        const matchesDateTo = !productionOrderDateTo || (rowDate && rowDate <= productionOrderDateTo);
+        const matchesDate = matchesPanelDate(rowDate || undefined);
         const rowShift = row.shift && row.shift !== '-' ? row.shift : 'Chưa phân ca';
-        const matchesShift = productionOrderShiftFilter === 'all' || rowShift === productionOrderShiftFilter;
+        const matchesShift = matchesPanelShift(rowShift === 'Chưa phân ca' ? '' : rowShift);
         const rowStaff = splitProductionOrderStaffNames(row.staff);
         const matchesStaff =
           productionOrderStaffFilters.size === 0 ||
           rowStaff.some(name => productionOrderStaffFilters.has(name));
 
-        return matchesSearch && matchesDateFrom && matchesDateTo && matchesShift && matchesStaff;
+        return matchesSearch && matchesDate && matchesShift && matchesStaff;
       }
     );
   }, [
     productionOrders,
     productionOrderQuery,
-    productionOrderDateFrom,
-    productionOrderDateTo,
-    productionOrderShiftFilter,
+    panelFilterDate,
+    panelFilterShift,
     productionOrderStaffFilters,
     machines
   ]);
 
   const acceptanceReportQuery = acceptanceReportSearch.trim().toLowerCase();
   const filteredAcceptanceReports = useMemo(() => {
-    if (!acceptanceReportQuery) return acceptanceReports;
-    return acceptanceReports.filter(report =>
-      `${report.ngay} ${report.ca} ${report.lan} ${report.gio} ${report.ma_may} ${report.ten_may} ${report.mat_hang} ${report.don_vi} ${report.so_luong ?? ''}`
-        .toLowerCase()
-        .includes(acceptanceReportQuery)
-    );
-  }, [acceptanceReports, acceptanceReportQuery]);
+    return acceptanceReports.filter(report => {
+      if (acceptanceReportQuery) {
+        const haystack = `${report.ngay} ${report.ca} ${report.lan} ${report.gio} ${report.ma_may} ${report.ten_may} ${report.mat_hang} ${report.don_vi} ${report.so_luong ?? ''}`
+          .toLowerCase();
+        if (!haystack.includes(acceptanceReportQuery)) return false;
+      }
+      return matchesPanelDate(report.ngay) && matchesPanelShift(report.ca);
+    });
+  }, [acceptanceReports, acceptanceReportQuery, panelFilterDate, panelFilterShift]);
   const totalAcceptanceRolls = useMemo(
     () =>
       acceptanceReports.reduce((sum, report) => {
@@ -651,9 +718,8 @@ export function ControlBoardPanel({
   };
 
   const clearProductionOrderFilters = () => {
-    setProductionOrderDateFrom('');
-    setProductionOrderDateTo('');
-    setProductionOrderShiftFilter('all');
+    setPanelFilterDate('');
+    setPanelFilterShift('all');
     setProductionOrderStaffFilters(new Set());
   };
 
@@ -765,51 +831,17 @@ export function ControlBoardPanel({
             disabled: !hasAnyVisibleProductionOrderSelected,
             loading: isBatchPrinting
           }}
+          {...panelDateShiftFilterProps}
         >
           <div className="border-b border-zinc-100 bg-white p-3">
-            <div className="grid gap-2 md:grid-cols-[1fr_1fr_1.2fr_auto]">
-              <label className="space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
-                <input
-                  type="date"
-                  value={productionOrderDateFrom}
-                  onChange={event => setProductionOrderDateFrom(event.target.value)}
-                  className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tới ngày</span>
-                <input
-                  type="date"
-                  value={productionOrderDateTo}
-                  onChange={event => setProductionOrderDateTo(event.target.value)}
-                  className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
-                <select
-                  value={productionOrderShiftFilter}
-                  onChange={event => setProductionOrderShiftFilter(event.target.value)}
-                  className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
-                >
-                  <option value="all">Tất cả ca</option>
-                  {productionOrderShiftOptions.map(shift => (
-                    <option key={shift} value={shift}>
-                      {formatProductionOrderShiftLabel(shift, productionOrderSettings)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={clearProductionOrderFilters}
-                  className="h-9 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-700 transition hover:bg-zinc-100"
-                >
-                  Xóa lọc
-                </button>
-              </div>
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={clearProductionOrderFilters}
+                className="h-8 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-700 transition hover:bg-zinc-100"
+              >
+                Xóa lọc
+              </button>
             </div>
 
             <div className="mt-3">
@@ -977,6 +1009,7 @@ export function ControlBoardPanel({
           onOpen={() => onNavigate('acceptance-report')}
           openLabel="Thêm mới"
           compact
+          {...panelDateShiftFilterProps}
         >
           <table className="w-full table-fixed text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
@@ -1049,37 +1082,46 @@ export function ControlBoardPanel({
         </DashboardWindow>
 
         <DashboardWindow
-          title="Nhân sự"
-          subtitle="Danh sách thợ máy, phụ máy theo ca"
-          icon={UsersRound}
-          accentClass="bg-gradient-to-r from-zinc-950 to-zinc-800"
-          count={staffMembers.length}
-          countLabel="NV"
-          search={staffSearch}
-          onSearchChange={setStaffSearch}
+          title="Bảng báo cáo Cân"
+          subtitle="Phiếu cân ca, khối lượng theo ngày và ca SX"
+          icon={Scale}
+          accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
+          count={weighingDataRows.length}
+          countLabel="Dòng"
+          search={weighingSearch}
+          onSearchChange={setWeighingSearch}
           isLoading={isLoading}
           error=""
-          onOpen={() => onNavigate('hr')}
+          onOpen={() => onNavigate('weighing-summary')}
           openLabel="Mở"
           compact
+          {...panelDateShiftFilterProps}
         >
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
               <tr>
-                <th className="px-2 py-1.5 font-black">Tên</th>
+                <th className="px-2 py-1.5 font-black">Phiếu</th>
                 <th className="px-2 py-1.5 font-black">Ca</th>
+                <th className="px-2 py-1.5 font-black">SP</th>
+                <th className="px-2 py-1.5 text-right font-black">Tổng KL</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {filteredStaff.slice(0, sidePreviewLimit).map(member => (
-                <tr key={member.id} className="hover:bg-red-50/50">
-                  <td className="px-2 py-1.5 font-bold text-zinc-900">{member.name}</td>
-                  <td className="px-2 py-1.5 text-zinc-600">{member.shift}</td>
+              {recentWeighingRows.slice(0, sidePreviewLimit).map((row, index) => (
+                <tr key={`${row.id ?? row.documentNo}-${index}`} className="hover:bg-red-50/50">
+                  <td className="px-2 py-1.5 font-mono text-[10px] font-bold text-zinc-800">{row.documentNo || '—'}</td>
+                  <td className="px-2 py-1.5 text-zinc-600">{row.shiftName || '—'}</td>
+                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.productName || row.productCode || '—'}</td>
+                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
+                    {formatWeighingRowTotalWeight(row)}
+                  </td>
                 </tr>
               ))}
-              {!isLoading && filteredStaff.length === 0 && (
+              {!isLoading && recentWeighingRows.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">Không có nhân sự.</td>
+                  <td colSpan={4} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
+                    Chưa có báo cáo cân.
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -1099,6 +1141,7 @@ export function ControlBoardPanel({
           error=""
           onOpen={() => onNavigate('orders')}
           openLabel="Mở Đơn hàng"
+          {...panelDateShiftFilterProps}
         >
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
@@ -1134,79 +1177,50 @@ export function ControlBoardPanel({
         </DashboardWindow>
 
         <DashboardWindow
-          title="Danh sách máy"
-          subtitle="Ảnh máy, mã, tên và trạng thái vận hành"
-          icon={Cpu}
+          title="Báo cáo tồn máy"
+          subtitle="NVL tồn theo máy, ca và ngày sản xuất"
+          icon={Boxes}
           accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
-          count={machines.length}
-          countLabel="Máy"
-          search={machineSearch}
-          onSearchChange={setMachineSearch}
+          count={machineNvlReports.length}
+          countLabel="BC"
+          search={machineNvlReportSearch}
+          onSearchChange={setMachineNvlReportSearch}
           isLoading={isLoading}
           error=""
-          onOpen={() => onNavigate('machines')}
+          onOpen={() => onNavigate('machine-nvl-report-list')}
           openLabel="Mở"
           compact
+          {...panelDateShiftFilterProps}
         >
-          <div className="grid grid-cols-1 gap-1.5 p-0.5">
-            {filteredMachines.slice(0, sidePreviewLimit).map(machine => (
-              <div
-                key={machine.id}
-                className="flex flex-col gap-2 overflow-hidden rounded-lg border border-zinc-200 bg-white p-2 transition hover:border-[#ef1b2d]/30 sm:flex-row sm:items-center sm:gap-2 sm:p-1.5"
-              >
-                <div className="flex min-w-0 flex-1 gap-2">
-                {machine.imageUrl ? (
-                  <a
-                    href={machine.imageUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block h-12 w-12 shrink-0 overflow-hidden rounded-md bg-zinc-100"
-                  >
-                    <img
-                      src={machine.imageUrl}
-                      alt={`Ảnh ${machine.name || machine.code}`}
-                      className="h-full w-full object-cover"
-                    />
-                  </a>
-                ) : (
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-zinc-50 text-zinc-400">
-                    <Cpu className="h-4 w-4" />
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[9px] font-black uppercase tracking-wider text-zinc-400">
-                    {machine.code || '-'}
-                  </p>
-                  <p className="truncate text-[11px] font-black text-zinc-900">{machine.name || '-'}</p>
-                  <span className="inline-block rounded-full border border-[#ef1b2d]/20 bg-red-50 px-1.5 py-0.5 text-[9px] font-black text-[#ef1b2d]">
-                    {machine.status}
-                  </span>
-                </div>
-                </div>
-                <div className="grid shrink-0 grid-cols-2 gap-1 sm:flex sm:flex-col">
-                  <button
-                    type="button"
-                    onClick={() => onMachineReport(machine, 'nvl')}
-                    className="rounded-md border border-emerald-500/50 bg-emerald-700 px-2 py-1.5 text-[9px] font-extrabold leading-tight text-white transition hover:bg-emerald-800 sm:py-1"
-                  >
-                    <span className="sm:hidden">NVL tồn</span>
-                    <span className="hidden sm:inline">Báo cáo NVL tồn</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onMachineReport(machine, 'mixing')}
-                    className="rounded-md border border-emerald-500/50 bg-emerald-700 px-2 py-1.5 text-[9px] font-extrabold leading-tight text-white transition hover:bg-emerald-800 sm:py-1"
-                  >
-                    <span className="sm:hidden">Phối trộn</span>
-                    <span className="hidden sm:inline">Báo cáo phối trộn</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-            {!isLoading && filteredMachines.length === 0 && (
-              <div className="py-6 text-center text-[10px] font-bold text-zinc-400">Không có máy.</div>
-            )}
-          </div>
+          <table className="w-full text-left text-[11px]">
+            <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-2 py-1.5 font-black">Máy</th>
+                <th className="px-2 py-1.5 font-black">Ca</th>
+                <th className="px-2 py-1.5 font-black">Ngày</th>
+                <th className="px-2 py-1.5 text-right font-black">Tổng tồn</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {recentMachineNvlReports.slice(0, sidePreviewLimit).map(report => (
+                <tr key={report.id} className="hover:bg-red-50/50">
+                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{report.tenMay || report.maMay || '—'}</td>
+                  <td className="px-2 py-1.5 text-zinc-600">{report.ca || '—'}</td>
+                  <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-700">{report.ngay || '—'}</td>
+                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
+                    {formatNumber(report.total, 2)}
+                  </td>
+                </tr>
+              ))}
+              {!isLoading && recentMachineNvlReports.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
+                    Chưa có báo cáo tồn máy.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </DashboardWindow>
       </div>
 

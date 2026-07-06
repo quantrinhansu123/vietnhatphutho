@@ -19,6 +19,12 @@ export function DashboardWindow({
   tertiaryAction,
   summaryExtra,
   compact = false,
+  filterDate,
+  onFilterDateChange,
+  filterShift,
+  onFilterShiftChange,
+  shiftOptions,
+  formatShiftLabel,
   children
 }: {
   title: string;
@@ -48,6 +54,12 @@ export function DashboardWindow({
   };
   summaryExtra?: React.ReactNode;
   compact?: boolean;
+  filterDate?: string;
+  onFilterDateChange?: (value: string) => void;
+  filterShift?: string;
+  onFilterShiftChange?: (value: string) => void;
+  shiftOptions?: string[];
+  formatShiftLabel?: (shift: string) => string;
   children: React.ReactNode;
 }) {
   const actionButtonClass =
@@ -161,6 +173,41 @@ export function DashboardWindow({
             }`}
           />
         </label>
+
+        {onFilterDateChange && onFilterShiftChange && shiftOptions ? (
+          <div className={`mt-2 grid grid-cols-2 gap-2 ${compact ? '' : 'sm:grid-cols-[1fr_1fr]'}`}>
+            <label className="space-y-0.5">
+              <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
+              <input
+                type="date"
+                value={filterDate ?? ''}
+                onChange={event => onFilterDateChange(event.target.value)}
+                disabled={isLoading}
+                className={`w-full rounded-lg border border-zinc-200 bg-white px-2 font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10 ${
+                  compact ? 'h-8 text-[11px]' : 'h-9 text-xs'
+                }`}
+              />
+            </label>
+            <label className="space-y-0.5">
+              <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
+              <select
+                value={filterShift ?? 'all'}
+                onChange={event => onFilterShiftChange(event.target.value)}
+                disabled={isLoading}
+                className={`w-full rounded-lg border border-zinc-200 bg-white px-2 font-bold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10 ${
+                  compact ? 'h-8 text-[11px]' : 'h-9 text-xs'
+                }`}
+              >
+                <option value="all">Tất cả ca</option>
+                {shiftOptions.map(shift => (
+                  <option key={shift} value={shift}>
+                    {formatShiftLabel ? formatShiftLabel(shift) : shift}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
 
         {error && (
           <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] font-bold text-rose-700 sm:rounded-xl sm:px-3 sm:text-xs">

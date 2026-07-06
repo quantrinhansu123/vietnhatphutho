@@ -137,10 +137,10 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'products'
   },
   {
-    title: 'Danh sách máy',
-    desc: 'Theo dõi mã máy, vị trí, loại máy và trạng thái vận hành.',
-    icon: Cpu,
-    tab: 'machines'
+    title: 'Báo cáo tồn máy',
+    desc: 'Xem báo cáo NVL tồn theo từng máy và ca sản xuất.',
+    icon: Boxes,
+    tab: 'machine-nvl-report-list'
   },
   {
     title: 'Phiếu xuất nhập kho',
@@ -197,10 +197,10 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
 
 export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Nhân sự',
-    desc: 'Quản lý thợ máy, phụ máy và phân công ca trực.',
-    icon: UsersRound,
-    tab: 'hr'
+    title: 'Bảng báo cáo Cân',
+    desc: 'Xem tổng hợp phiếu cân ca, khối lượng theo ngày và ca sản xuất.',
+    icon: Scale,
+    tab: 'weighing-summary'
   },
   {
     title: 'Cài đặt',
@@ -300,17 +300,17 @@ export const PRIMARY_NAV_GROUPS: {
     children: [
       { label: 'Kho NVL', tab: 'materials' },
       { label: 'Sản phẩm', tab: 'products' },
-      { label: 'Danh sách máy', tab: 'machines' },
+      { label: 'Báo cáo tồn máy', tab: 'machine-nvl-report-list' },
       { label: 'Phiếu xuất nhập', tab: 'warehouse-slip' },
       { label: 'Lịch sử XNK', tab: 'warehouse-history' }
     ]
   },
   {
-    title: 'Nhân sự',
+    title: 'HCNS',
     icon: UsersRound,
     tab: 'hcns',
     children: [
-      { label: 'Nhân sự', tab: 'hr' },
+      { label: 'Bảng báo cáo Cân', tab: 'weighing-summary' },
       { label: 'Cài đặt', tab: 'settings' }
     ]
   },
@@ -347,13 +347,13 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'form': { group: 'Sản xuất', sub: 'Phiếu báo cáo' },
   'report-lists': { group: 'Sản xuất', sub: 'Danh sách báo cáo' },
   'acceptance-report-list': { group: 'Sản xuất', sub: 'DS phiếu nghiệm thu' },
-  'weighing-summary': { group: 'Sản xuất', sub: 'Phiếu cân ca' },
+  'weighing-summary': { group: 'Sản xuất', sub: 'Bảng báo cáo Cân' },
   'weighing-summary-list': { group: 'Sản xuất', sub: 'DS phiếu cân' },
   'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
   'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },
   'mixing-report-list': { group: 'Sản xuất', sub: 'DS phiếu trộn' },
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
-  'machine-nvl-report-list': { group: 'Sản xuất', sub: 'DS báo cáo tồn' },
+  'machine-nvl-report-list': { group: 'CSVC & Kho', sub: 'Báo cáo tồn máy' },
   'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
   'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },
   'machine-downtime-list': { group: 'Sản xuất', sub: 'DS máy dừng' },
@@ -364,8 +364,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machines': { group: 'CSVC & Kho', sub: 'Danh sách máy' },
   'warehouse-slip': { group: 'CSVC & Kho', sub: 'Phiếu xuất nhập kho' },
   'warehouse-history': { group: 'CSVC & Kho', sub: 'Lịch sử XNK' },
-  'hr': { group: 'Nhân sự', sub: 'Nhân sự' },
-  'settings': { group: 'Nhân sự', sub: 'Cài đặt' },
+  'settings': { group: 'HCNS', sub: 'Cài đặt' },
+  'hr': { group: 'HCNS', sub: 'Nhân sự' },
   'orders': { group: 'Kinh doanh', sub: 'Đơn hàng' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
   'production-orders': { group: 'Nhà máy', sub: 'Lệnh sản xuất' },

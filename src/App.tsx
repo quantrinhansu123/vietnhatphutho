@@ -709,7 +709,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="HCNS" desc="Nhân sự và cấu hình hệ thống." />
+                <MenuPageHeader title="HCNS" desc="Bảng báo cáo cân và cấu hình hệ thống." />
                 <MenuCardGrid items={HCNS_MENU_ITEMS} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'business' ? (
