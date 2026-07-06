@@ -2,11 +2,30 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Boxes,
+  Eye,
+  History,
+  Loader2,
+  Package,
+  Pencil,
+  Plus,
+  Printer,
+  Save,
+  Search,
+  Trash2
+} from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
+import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
-import WarehouseSlipPrintModal from '../../components/WarehouseSlipPrintModal';
+import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
+import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
+import type { ShiftSummaryWarehouseMovement } from '../../utils/controlBoardShiftSummary';
+import type { MaterialOption } from '../san-pham/types';
 
 export type WarehouseSlipType = 'nhap' | 'xuat';
 export type WarehouseKind = 'nvl' | 'san_pham';

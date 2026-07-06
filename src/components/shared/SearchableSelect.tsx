@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Loader2, Search } from 'lucide-react';
 import { orderFieldClass } from '../../features/_shared/orderHelpers';
 

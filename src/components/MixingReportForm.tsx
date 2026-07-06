@@ -1956,20 +1956,26 @@ export default function MixingReportForm({
                               {entry.item.ten_vat_tu || '-'}
                             </p>
                             <div className="mt-1 grid grid-cols-3 gap-1">
-                              <div>
-                                <span className="mixing-round-item-mobile-label">%</span>
-                                <p className="font-mono text-[11px] font-bold text-zinc-800">
+                              <div className="text-center">
+                                <span className="mixing-round-item-mobile-label block text-[8px] font-bold leading-none text-zinc-500">
+                                  %
+                                </span>
+                                <p className="mt-0.5 font-mono text-[11px] font-bold text-zinc-800">
                                   {formatOptionalNumber(entry.item.ti_le_phan_tram) || '-'}
                                 </p>
                               </div>
-                              <div>
-                                <span className="mixing-round-item-mobile-label">KL ĐM</span>
-                                <p className="font-mono text-[11px] font-bold text-emerald-800">
+                              <div className="text-right">
+                                <span className="mixing-round-item-mobile-label block text-[8px] font-bold leading-none text-zinc-500">
+                                  KL ĐM
+                                </span>
+                                <p className="mt-0.5 font-mono text-[11px] font-bold text-emerald-800">
                                   {formatNormWeight(entry.item.so_luong) || '-'}
                                 </p>
                               </div>
-                              <div>
-                                <span className="mixing-round-item-mobile-label">KL TT</span>
+                              <div className="text-right">
+                                <span className="mixing-round-item-mobile-label block text-[8px] font-bold leading-none text-zinc-500">
+                                  KL TT
+                                </span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -2023,7 +2029,7 @@ export default function MixingReportForm({
                                       return next;
                                     });
                                   }}
-                                  className="mixing-round-item-mobile-input h-7 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-1 text-right font-mono text-[11px] font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                                  className="mixing-round-item-mobile-input mt-0.5 h-7 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-1 text-right font-mono text-[11px] font-bold text-[#ef1b2d] outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
                                   placeholder="0"
                                 />
                               </div>
