@@ -3396,47 +3396,14 @@ async function startServer() {
 
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
+      configFile: path.join(process.cwd(), 'vite.config.ts'),
       server: {
         middlewareMode: true,
         hmr: process.env.DISABLE_HMR === 'true' ? false : { server },
       },
-      // "custom" disables Vite SPA fallback that returns index.html for missing .js (MIME type error).
-      appType: 'custom',
+      appType: 'spa',
     });
     app.use(vite.middlewares);
-
-    const indexHtmlPath = path.join(process.cwd(), 'index.html');
-    app.use(async (req, res, next) => {
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        next();
-        return;
-      }
-
-      const urlPath = (req.url || '/').split('?')[0] || '/';
-      if (urlPath.startsWith('/api') || isBundledAssetPath(urlPath)) {
-        next();
-        return;
-      }
-      if (/\.[a-z0-9]+$/i.test(urlPath) && !urlPath.endsWith('.html')) {
-        res.status(404).type('text/plain').send('Not found');
-        return;
-      }
-
-      const accept = String(req.headers.accept || '');
-      if (!accept.includes('text/html') && urlPath !== '/') {
-        next();
-        return;
-      }
-
-      try {
-        let html = fs.readFileSync(indexHtmlPath, 'utf-8');
-        html = await vite.transformIndexHtml(req.url, html);
-        res.status(200).set({ 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' }).end(html);
-      } catch (error) {
-        vite.ssrFixStacktrace(error as Error);
-        next(error);
-      }
-    });
   } else {
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
