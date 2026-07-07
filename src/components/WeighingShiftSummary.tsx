@@ -698,7 +698,7 @@ export default function WeighingShiftSummary({
                                 {group.entries.map((entry, index) => (
                                   <tr key={entry.row.id ?? `${group.roundKey}-${entry.slip.key}-${index}`}>
                                     <td className="px-3 py-2 font-semibold text-zinc-800">
-                                      <p>{formatWeighingProductLabel(entry.row)}</p>
+                                      <p>{formatWeighingProductLabel(entry.row, entry.slip)}</p>
                                       {shift.slips.length > 1 ? (
                                         <p className="mt-0.5 text-[10px] font-semibold text-zinc-400">
                                           Phiếu {entry.slip.documentNo || '—'}
