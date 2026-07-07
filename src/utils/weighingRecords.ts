@@ -156,18 +156,11 @@ export function parseWeighingWeight(value: string): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-/** Tổng trọng lượng 1 lần cân = TL lõi + TL bì + TL (báo cáo cân ca) */
+/** Tổng trọng lượng 1 lần cân = giá trị nhập trực tiếp ở ô "Tổng trọng lượng" (field weight) */
 export function sumWeighingRowTotalWeight(
   row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
 ): number {
-  const core = parseWeighingWeight(row.coreWeight) ?? 0;
-  const shell = parseWeighingWeight(row.shellWeight) ?? 0;
-  const weight = parseWeighingWeight(row.weight) ?? 0;
-  const hasValue =
-    parseWeighingWeight(row.coreWeight) !== null ||
-    parseWeighingWeight(row.shellWeight) !== null ||
-    parseWeighingWeight(row.weight) !== null;
-  return hasValue ? core + shell + weight : 0;
+  return parseWeighingWeight(row.weight) ?? 0;
 }
 
 function trimTrailingDecimalZeros(formatted: string) {
@@ -181,15 +174,35 @@ function trimTrailingDecimalZeros(formatted: string) {
 export function formatWeighingRowTotalWeight(
   row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
 ): string {
-  const hasValue =
-    parseWeighingWeight(row.coreWeight) !== null ||
-    parseWeighingWeight(row.shellWeight) !== null ||
-    parseWeighingWeight(row.weight) !== null;
-  if (!hasValue) return '—';
+  const total = parseWeighingWeight(row.weight);
+  if (total === null) return '—';
   const formatted = new Intl.NumberFormat('vi-VN', {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3
-  }).format(sumWeighingRowTotalWeight(row));
+  }).format(total);
+  return trimTrailingDecimalZeros(formatted);
+}
+
+/** TL nhựa = Tổng trọng lượng - TL lõi - TL bì */
+export function computeWeighingNetWeight(
+  row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
+): number | null {
+  const total = parseWeighingWeight(row.weight);
+  if (total === null) return null;
+  const core = parseWeighingWeight(row.coreWeight) ?? 0;
+  const shell = parseWeighingWeight(row.shellWeight) ?? 0;
+  return total - core - shell;
+}
+
+export function formatWeighingNetWeight(
+  row: Pick<WeighingRecord, 'coreWeight' | 'shellWeight' | 'weight'>
+): string {
+  const net = computeWeighingNetWeight(row);
+  if (net === null) return '—';
+  const formatted = new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3
+  }).format(net);
   return trimTrailingDecimalZeros(formatted);
 }
 

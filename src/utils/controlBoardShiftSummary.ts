@@ -280,7 +280,7 @@ export function buildControlBoardShiftSummary(input: {
     if (!ngay || !inRange(ngay)) continue;
     const bucket = getOrCreateBucket(map, ngay, record.shiftName, shiftOptions);
     if (!bucket) continue;
-    // Khối lượng hàng TT — chỉ từ báo cáo cân ca (phieu_can_dinh_ki): TL lõi + TL bì + TL
+    // Khối lượng hàng TT — chỉ từ báo cáo cân ca (phieu_can_dinh_ki): Tổng trọng lượng mỗi lần cân
     bucket.khoiLuongHangThucTe += sumWeighingRowTotalWeight(record);
   }
 

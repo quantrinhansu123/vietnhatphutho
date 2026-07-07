@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, ScanBarcode, Trash2, UserCheck, Users } from 'lucide-react';
 import type { WeighingPendingAdd, WeighingRecord } from '../utils/weighingRecords';
-import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, isSlipHeaderRow } from '../utils/weighingRecords';
+import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, isSlipHeaderRow } from '../utils/weighingRecords';
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import WeighingImagePreviewModal, {
@@ -1101,8 +1101,8 @@ export default function WeighingReportForm({
         worker1: slipAfterAdd?.worker1 ?? worker1,
         worker2: slipAfterAdd?.worker2 ?? worker2,
         machineName: slipAfterAdd?.machineName || machineName,
-        productCode: '',
-        productName: '',
+        productCode: newRowData.productCode,
+        productName: newRowData.productName,
         coreWeight: '',
         shellWeight: DEFAULT_SHELL_WEIGHT,
         acceptanceStatus: '',
@@ -1589,7 +1589,7 @@ export default function WeighingReportForm({
                     </div>
                     <div>
                       <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">TL nhựa</span>
-                      <p className="font-mono text-[10px] font-black text-zinc-900">{row.weight || '—'}</p>
+                      <p className="font-mono text-[10px] font-black text-zinc-900">{formatWeighingNetWeight(row)}</p>
                     </div>
                     <div>
                       <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">Tổng</span>
@@ -1634,7 +1634,7 @@ export default function WeighingReportForm({
                   <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weigherName || '—'}</td>
                   <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.coreWeight || '—'}</td>
                   <td className="px-2 py-2 text-sm font-semibold text-zinc-700">{row.shellWeight || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">{row.weight || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">{formatWeighingNetWeight(row)}</td>
                   <td className="px-2 py-2 font-mono text-sm font-black text-[#ef1b2d]">
                     Tổng {formatWeighingRowTotalWeight(row)}
                   </td>
@@ -2009,7 +2009,7 @@ export default function WeighingReportForm({
               </label>
               <div className="col-span-2 grid grid-cols-3 gap-1.5">
                 <label className="space-y-1">
-                  <span className={modalCompactLabelClass}>TL nhựa</span>
+                  <span className={modalCompactLabelClass}>Tổng trọng lượng</span>
                   <input
                     value={newRow.weight ?? ''}
                     onChange={e => setNewRow(prev => ({ ...prev, weight: e.target.value }))}
@@ -2232,7 +2232,11 @@ export default function WeighingReportForm({
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wide text-zinc-400 text-[10px]">TL nhựa</span>
-                <p className="mt-1 font-bold text-zinc-800">{viewingRow.weight || '—'}</p>
+                <p className="mt-1 font-bold text-zinc-800">{formatWeighingNetWeight(viewingRow)}</p>
+              </div>
+              <div className="rounded-lg bg-red-50 px-3 py-2">
+                <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
+                <p className="mt-1 font-black text-[#ef1b2d]">{formatWeighingRowTotalWeight(viewingRow)}</p>
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Nghiệm thu</span>

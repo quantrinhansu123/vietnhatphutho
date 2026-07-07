@@ -68,15 +68,12 @@ function formatPrintWeightNumber(value: number | null) {
   return trimTrailingDecimalZeros(formatted);
 }
 
-function sumRowTotalWeight(row: WeighingRecord) {
+function netRowWeight(row: WeighingRecord) {
+  const total = parsePrintWeight(row.weight);
+  if (total === null) return null;
   const core = parsePrintWeight(row.coreWeight) ?? 0;
   const shell = parsePrintWeight(row.shellWeight) ?? 0;
-  const weight = parsePrintWeight(row.weight) ?? 0;
-  const hasValue =
-    parsePrintWeight(row.coreWeight) !== null ||
-    parsePrintWeight(row.shellWeight) !== null ||
-    parsePrintWeight(row.weight) !== null;
-  return hasValue ? core + shell + weight : null;
+  return total - core - shell;
 }
 
 function resolveWeigherName(rows: WeighingRecord[]) {
@@ -186,10 +183,10 @@ function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrintData; 
                     {formatPrintWeight(row.shellWeight)}
                   </td>
                   <td className="weighing-slip-print-right weighing-slip-print-num weighing-slip-print-weight">
-                    {formatPrintWeight(row.weight)}
+                    {formatPrintWeightNumber(netRowWeight(row))}
                   </td>
                   <td className="weighing-slip-print-right weighing-slip-print-num weighing-slip-print-total">
-                    {formatPrintWeightNumber(sumRowTotalWeight(row))}
+                    {formatPrintWeight(row.weight)}
                   </td>
                   <td className="weighing-slip-print-center weighing-slip-print-time">
                     {formatPrintTime(row.weighTime)}

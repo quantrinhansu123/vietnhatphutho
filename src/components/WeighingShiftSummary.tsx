@@ -28,6 +28,7 @@ import {
 import {
   countWeighingRounds,
   formatWeighingRowTotalWeight,
+  formatWeighingNetWeight,
   generateWeighingDocumentNo,
   getWeighingDataRows,
   normalizeWeighingRecords,
@@ -140,11 +141,18 @@ function groupShiftRowsByRound(slips: WeighingSlip[]): WeighingRoundGroup[] {
     }));
 }
 
-function formatWeighingProductLabel(row: WeighingRecord) {
+function formatWeighingProductLabel(row: WeighingRecord, slip?: WeighingSlip) {
   const code = row.productCode?.trim();
   const name = row.productName?.trim();
-  if (code && name) return `${code} · ${name}`;
-  return name || code || '—';
+  if (code || name) return code && name ? `${code} · ${name}` : name || code || '—';
+
+  const fallbackRow = slip?.rows.find(r => r.productCode?.trim() || r.productName?.trim());
+  const fallbackCode = fallbackRow?.productCode?.trim();
+  const fallbackName = fallbackRow?.productName?.trim();
+  if (fallbackCode || fallbackName) {
+    return fallbackCode && fallbackName ? `${fallbackCode} · ${fallbackName}` : fallbackName || fallbackCode || '—';
+  }
+  return '—';
 }
 
 function groupByShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): ShiftSummary[] {
@@ -700,7 +708,7 @@ export default function WeighingShiftSummary({
                                     <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weigherName || '—'}</td>
                                     <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.coreWeight || '—'}</td>
                                     <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.shellWeight || '—'}</td>
-                                    <td className="px-3 py-2 font-bold text-zinc-900">{entry.row.weight || '—'}</td>
+                                    <td className="px-3 py-2 font-bold text-zinc-900">{formatWeighingNetWeight(entry.row)}</td>
                                     <td className="px-3 py-2 font-black text-[#ef1b2d]">
                                       {formatWeighingRowTotalWeight(entry.row)}
                                     </td>
@@ -842,7 +850,7 @@ export default function WeighingShiftSummary({
               </div>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">TL nhựa</span>
-                <p className="mt-1 font-bold text-zinc-800">{viewingRow.weight || '—'}</p>
+                <p className="mt-1 font-bold text-zinc-800">{formatWeighingNetWeight(viewingRow)}</p>
               </div>
               <div className="rounded-lg bg-red-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>

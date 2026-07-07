@@ -83,18 +83,6 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'weighing-summary'
   },
   {
-    title: 'Báo cáo sản lượng',
-    desc: 'Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca.',
-    icon: ClipboardCheck,
-    tab: 'acceptance-report'
-  },
-  {
-    title: 'Phiếu nhập kho thành phẩm',
-    desc: 'Lập phiếu nhập kho thành phẩm theo từng lô và mã hàng.',
-    icon: ArrowDownToLine,
-    tab: 'warehouse-slip'
-  },
-  {
     title: 'Phiếu báo dừng máy',
     desc: 'Ghi nhận thời gian dừng, lý do và số cuộn ảnh hưởng theo ca.',
     icon: MachineDowntimeIcon,
@@ -105,6 +93,12 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Lập phiếu hàng hỏng với các cột và chức năng giống phiếu cân ca.',
     icon: PackageX,
     tab: 'damaged-goods-report'
+  },
+  {
+    title: 'Báo cáo sản lượng',
+    desc: 'Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca.',
+    icon: ClipboardCheck,
+    tab: 'acceptance-report'
   }
 ];
 

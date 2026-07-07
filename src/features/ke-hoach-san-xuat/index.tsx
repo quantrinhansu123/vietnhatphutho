@@ -64,7 +64,8 @@ import {
   QrCode,
   Save,
   Search,
-  Trash2
+  Trash2,
+  Users
 } from 'lucide-react';
 
 export {
@@ -407,6 +408,92 @@ export function ProductionPlanPrintSheet({
           </div>
           <div>
             <p>Người nhận</p>
+            <span>(Ký, ghi rõ họ tên)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type StaffAssignmentRow = {
+  key: string;
+  staff: string;
+  shift: string;
+  machine: string;
+  order: string;
+};
+
+export function StaffAssignmentPrintSheet({
+  rows,
+  planDate,
+  planNote
+}: {
+  rows: StaffAssignmentRow[];
+  planDate: string;
+  planNote: string;
+}) {
+  const parsedPlanDate = planDate ? new Date(planDate) : null;
+  const printDate =
+    parsedPlanDate && !Number.isNaN(parsedPlanDate.getTime())
+      ? parsedPlanDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  return (
+    <div className="production-plan-print-sheet">
+      <div className="production-plan-print-doc">
+        <header className="production-plan-print-header">
+          <div className="production-plan-print-brand">
+            <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="production-plan-print-logo" />
+            <div className="production-plan-print-company">
+              <p className="production-plan-print-company-name">{PRINT_COMPANY_NAME}</p>
+            </div>
+          </div>
+          <div className="production-plan-print-title-wrap">
+            <h1>PHÂN CÔNG NHÂN SỰ</h1>
+          </div>
+          <p className="production-plan-print-date">Ngày: {printDate}</p>
+        </header>
+
+        {planNote ? <p className="production-plan-print-date">Ghi chú: {planNote}</p> : null}
+
+        <table className="production-plan-print-table">
+          <thead>
+            <tr>
+              <th>STT</th>
+              <th>Nhân sự</th>
+              <th>Ca làm việc</th>
+              <th>Tên máy</th>
+              <th>Lệnh sản xuất</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={row.key}>
+                <td className="production-plan-print-center">{index + 1}</td>
+                <td>{row.staff}</td>
+                <td>{row.shift}</td>
+                <td>{row.machine}</td>
+                <td className="font-mono">{row.order}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td className="production-plan-print-center" colSpan={5}>
+                  Không có dữ liệu phân công nhân sự.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        <div className="production-plan-print-signatures">
+          <div>
+            <p>Người lập</p>
+            <span>(Ký, ghi rõ họ tên)</span>
+          </div>
+          <div>
+            <p>Quản đốc</p>
             <span>(Ký, ghi rõ họ tên)</span>
           </div>
         </div>
@@ -1845,6 +1932,7 @@ export function ProductionPlanModal({
   const [showQrPrintModal, setShowQrPrintModal] = useState(false);
   const [planDate, setPlanDate] = useState(todayDateInputValue());
   const [planHeaderNote, setPlanHeaderNote] = useState('');
+  const [pendingStaffAssignmentPrint, setPendingStaffAssignmentPrint] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -1866,12 +1954,60 @@ export function ProductionPlanModal({
     setShowQrPrintModal(false);
     setPlanDate(todayDateInputValue());
     setPlanHeaderNote('');
+    setPendingStaffAssignmentPrint(false);
   }, [open, productionOrders, machines]);
 
   const displayLines = useMemo(
     () => enrichProductionPlanLines(planLines, productionOrders, machines),
     [planLines, productionOrders, machines]
   );
+
+  const staffAssignmentRows = useMemo(() => {
+    const rows: Array<{
+      key: string;
+      staff: string;
+      shift: string;
+      machine: string;
+      order: string;
+    }> = [];
+
+    displayLines.forEach((line, lineIndex) => {
+      const shiftLabel = line.shift && line.shift !== '-' ? line.shift : 'Chưa phân ca';
+      const machineLabel = line.position && line.position !== '-' ? line.position : '-';
+      const orderLabel = formatProductionPlanProductCodes(line) || '-';
+      const names = String(line.staff || '')
+        .split(/[,;/]/)
+        .map(name => name.trim())
+        .filter(name => name && name !== '-');
+
+      if (names.length === 0) {
+        rows.push({
+          key: `${line.id}-${lineIndex}-none`,
+          staff: 'Chưa phân công',
+          shift: shiftLabel,
+          machine: machineLabel,
+          order: orderLabel
+        });
+        return;
+      }
+
+      names.forEach((name, index) => {
+        rows.push({
+          key: `${line.id}-${lineIndex}-${index}`,
+          staff: name,
+          shift: shiftLabel,
+          machine: machineLabel,
+          order: orderLabel
+        });
+      });
+    });
+
+    return rows.sort((a, b) => {
+      const staffCompare = a.staff.localeCompare(b.staff, 'vi');
+      if (staffCompare !== 0) return staffCompare;
+      return a.shift.localeCompare(b.shift, 'vi', { numeric: true });
+    });
+  }, [displayLines]);
 
   useEffect(() => {
     if (!pendingPrint || displayLines.length === 0) return;
@@ -1892,9 +2028,19 @@ export function ProductionPlanModal({
   }, [pendingNvlPrint, displayLines]);
 
   useEffect(() => {
+    if (!pendingStaffAssignmentPrint) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingStaffAssignmentPrint(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [pendingStaffAssignmentPrint]);
+
+  useEffect(() => {
     const handleAfterPrint = () => {
       setPendingPrint(false);
       setPendingNvlPrint(false);
+      setPendingStaffAssignmentPrint(false);
       setShowNvlPrintSheet(false);
       setPrintMaterialsByLine({});
       setNvlPrintMaterialsByLine({});
@@ -2208,6 +2354,15 @@ export function ProductionPlanModal({
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-4 sm:px-5">
             <button
               type="button"
+              onClick={() => setPendingStaffAssignmentPrint(true)}
+              disabled={displayLines.length === 0}
+              className="mr-auto inline-flex h-10 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Users className="h-4 w-4" />
+              Phân công nhân sự
+            </button>
+            <button
+              type="button"
               onClick={handleOpenMaterialAccounting}
               disabled={displayLines.length === 0 || isLoadingMaterialAccounting}
               className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-4 text-sm font-extrabold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2254,6 +2409,10 @@ export function ProductionPlanModal({
           </div>
         </div>
       </div>
+
+      {pendingStaffAssignmentPrint && (
+        <StaffAssignmentPrintSheet rows={staffAssignmentRows} planDate={planDate} planNote={planHeaderNote} />
+      )}
 
       {pendingPrint && displayLines.length > 0 && (
         <ProductionPlanPrintSheet lines={displayLines} materialsByLine={printMaterialsByLine} />

@@ -1,6 +1,6 @@
 import type { AcceptanceReport } from '../components/AcceptanceReportForm';
 import type { WeighingRecord } from './weighingRecords';
-import { getWeighingDataRows, sumWeighingRowTotalWeight } from './weighingRecords';
+import { getWeighingDataRows, sumWeighingRowTotalWeight, computeWeighingNetWeight } from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
 import { getProductionShiftOptions, type ShiftSetting } from './shiftSettings';
 import {
@@ -252,7 +252,7 @@ export function getShiftSummaryDetail(input: {
         gioCan: record.weighTime || '-',
         tlLoi: record.coreWeight || '-',
         tlBi: record.shellWeight || '-',
-        tl: record.weight || '-',
+        tl: formatDetailNumber(computeWeighingNetWeight(record), 3),
         tongKl: formatDetailNumber(rowTotal, 3)
       });
     }
