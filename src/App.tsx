@@ -40,6 +40,7 @@ import {
 
 import { readCachedReports, STORAGE_DRAFT_KEY, STORAGE_OFFLINE_KEY, STORAGE_REPORTS_CACHE_KEY, STORAGE_AUTH_KEY } from './features/_shared/storage';
 import LoginPage, { type AuthUser } from './components/LoginPage';
+import { buildAllowedTabSet, hasFullMenuAccess, STAFF_MENU_VIEW_TREE } from './features/nhan-su/menuViews';
 import { VietNhatLogo } from './components/layout/Logo';
 import { HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
 import {
@@ -455,6 +456,19 @@ export default function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
+  // Chỉ quản trị mới xem toàn bộ; còn lại đúng theo "Quyền xem menu"
+  const menuFullAccess = hasFullMenuAccess(authUser.role);
+  const allowedMenuTabs = buildAllowedTabSet(authUser.viewPermissions ?? []);
+  const knownPermissionTabs = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
+  // Tab không thuộc cây phân quyền => không bị kiểm soát, luôn hiển thị
+  const canSeeTab = (tab: AppTab) =>
+    menuFullAccess || !knownPermissionTabs.has(tab) || allowedMenuTabs.has(tab);
+  const visibleMainMenuItems = menuFullAccess
+    ? MAIN_MENU_ITEMS
+    : MAIN_MENU_ITEMS.filter(item => canSeeTab(item.tab));
+  const filterMenuItems = <T extends { tab: AppTab }>(items: T[]): T[] =>
+    menuFullAccess ? items : items.filter(item => canSeeTab(item.tab));
+
   return (
     <div
       className="flex h-[100dvh] overflow-hidden bg-slate-50 font-sans text-slate-800 selection:bg-brand-500 selection:text-white"
@@ -608,6 +622,8 @@ export default function App() {
               <div className="flex-1 min-h-0 overflow-y-auto p-2">
                 <SubNav
                   activeTab={activeTab}
+                  allowedTabs={allowedMenuTabs}
+                  fullAccess={menuFullAccess}
                   onNavigate={(tab) => {
                     navigateToTab(tab);
                     setQuickNavOpen(false);
@@ -682,7 +698,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-5"
               >
-                <MenuCardGrid items={MAIN_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={visibleMainMenuItems} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'production-reports' ? (
               <motion.div
@@ -694,7 +710,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <MenuPageHeader title="Báo cáo sản xuất" desc="Chọn loại báo cáo cần mở." />
-                <MenuCardGrid items={PRODUCTION_REPORT_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={filterMenuItems(PRODUCTION_REPORT_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'report-forms' ? (
               <motion.div
@@ -706,7 +722,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <MenuPageHeader title="Phiếu báo cáo" desc="Chọn phiếu báo cáo cần lập hoặc mở." />
-                <MenuCardGrid items={REPORT_FORM_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={filterMenuItems(REPORT_FORM_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'report-lists' ? (
               <motion.div
@@ -718,7 +734,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <MenuPageHeader title="Danh sách báo cáo" desc="Chọn danh sách báo cáo cần mở." />
-                <MenuCardGrid items={REPORT_LIST_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={filterMenuItems(REPORT_LIST_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'acceptance-report-list' ? (
               <motion.div
@@ -752,7 +768,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <MenuPageHeader title="Quản lý CSVC" desc="Cơ sở vật chất, kho hàng và thiết bị sản xuất." />
-                <MenuCardGrid items={FACILITY_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={filterMenuItems(FACILITY_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'hcns' ? (
               <motion.div
@@ -764,7 +780,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <MenuPageHeader title="HCNS" desc="Nhân sự, bảng báo cáo cân và cấu hình hệ thống." />
-                <MenuCardGrid items={HCNS_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={filterMenuItems(HCNS_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'business' ? (
               <motion.div
@@ -776,7 +792,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <MenuPageHeader title="Kinh doanh" desc="Đơn hàng và khách hàng." />
-                <MenuCardGrid items={BUSINESS_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={filterMenuItems(BUSINESS_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'factory' ? (
               <motion.div
@@ -788,7 +804,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <MenuPageHeader title="Nhà máy" desc="Lệnh sản xuất và điều phối nhà máy." />
-                <MenuCardGrid items={FACTORY_MENU_ITEMS} onNavigate={navigateToTab} />
+                <MenuCardGrid items={filterMenuItems(FACTORY_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'form' ? (
               <motion.div

@@ -121,6 +121,27 @@ export function normalizeStaffViewPermissions(raw: unknown): StaffViewPermission
     .filter((group): group is StaffViewGroup => Boolean(group));
 }
 
+/** Tập hợp tab (menu cha + con) mà nhân sự được xem */
+export function buildAllowedTabSet(permissions: StaffViewPermissions): Set<string> {
+  const tabs = new Set<string>();
+  permissions.forEach(group => {
+    if (group.menu) tabs.add(String(group.menu));
+    group.children.forEach(child => {
+      if (child.tab) tabs.add(String(child.tab));
+    });
+  });
+  return tabs;
+}
+
+/** Chỉ tài khoản quản trị mới được xem toàn bộ menu */
+export function hasFullMenuAccess(role: string | null | undefined): boolean {
+  const normalized = (role ?? '')
+    .normalize('NFC')
+    .trim()
+    .toLowerCase();
+  return normalized === 'quản trị' || normalized === 'admin' || normalized === 'quản trị viên';
+}
+
 export function summarizeStaffViewPermissions(permissions: StaffViewPermissions): string {
   if (permissions.length === 0) return 'Chưa cấu hình';
   return permissions

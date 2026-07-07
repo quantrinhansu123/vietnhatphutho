@@ -3,12 +3,14 @@ import { Eye, EyeOff, Loader2, Lock, User2, ShieldCheck } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { PRINT_COMPANY_NAME } from './layout/constants';
 import { normalizeHrBranches } from '../features/_shared/hr';
+import type { StaffViewPermissions } from '../features/nhan-su/menuViews';
 
 export type AuthUser = {
   id: string;
   name: string;
   username: string;
   role: string;
+  viewPermissions?: StaffViewPermissions;
 };
 
 const FALLBACK_ADMIN = {
@@ -44,11 +46,17 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
 
     try {
       if (user === FALLBACK_ADMIN.username && pass === FALLBACK_ADMIN.password) {
-        onLogin({ id: 'admin', name: FALLBACK_ADMIN.name, username: FALLBACK_ADMIN.username, role: FALLBACK_ADMIN.role });
+        onLogin({
+          id: 'admin',
+          name: FALLBACK_ADMIN.name,
+          username: FALLBACK_ADMIN.username,
+          role: FALLBACK_ADMIN.role,
+          viewPermissions: []
+        });
         return;
       }
 
-      const res = await fetch('/api/nhan-su');
+      const res = await fetch('/api/nhan-su?format=groups&scope=all');
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.error || 'Không thể kết nối máy chủ. Vui lòng thử lại.');
@@ -75,7 +83,8 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
         id: matched.id,
         name: matched.name,
         username: matched.username || user,
-        role: matched.role || 'Nhân sự'
+        role: matched.role || 'Nhân sự',
+        viewPermissions: matched.viewPermissions || []
       });
     } catch (err: any) {
       setError(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.');

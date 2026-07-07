@@ -366,15 +366,27 @@ export function getActivePageMeta(tab: AppTab): { group: string; sub: string } {
 
 export function SubNav({
   activeTab,
-  onNavigate
+  onNavigate,
+  allowedTabs,
+  fullAccess = true
 }: {
   activeTab: AppTab;
   onNavigate: (tab: AppTab) => void;
+  allowedTabs?: Set<string>;
+  fullAccess?: boolean;
 }) {
+  const canSee = (tab: AppTab) => fullAccess || (allowedTabs?.has(tab) ?? false);
+  const visibleGroups = PRIMARY_NAV_GROUPS
+    .map(group => ({
+      ...group,
+      children: group.children.filter(child => canSee(child.tab))
+    }))
+    .filter(group => canSee(group.tab) || group.children.length > 0);
+
   return (
     <nav className="rounded-xl bg-white border border-slate-100 p-2">
       <ul className="flex flex-col gap-0.5">
-        {PRIMARY_NAV_GROUPS.map(group => {
+        {visibleGroups.map(group => {
           const Icon = group.icon;
           const isActiveGroup = activeTab === group.tab || group.children.some(c => c.tab === activeTab);
           const isExact = activeTab === group.tab;
