@@ -4496,16 +4496,20 @@ export function createApp() {
       const warnings: string[] = [];
 
       // Xóa dữ liệu liên quan trước; lệnh SX xóa sau cùng để lỗi giữa chừng vẫn thử lại được.
-      const { data: planLinesById, error: planLinesByIdError } = await supabase
-        .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
-        .delete()
-        .eq('lenh_sx_id', id)
-        .select('id');
-      if (planLinesByIdError && !isMissingTableError(planLinesByIdError) && !isMissingColumnError(planLinesByIdError)) {
-        console.error('Supabase ke_hoach_san_xuat_dong delete error:', planLinesByIdError);
-        warnings.push(`Chưa xóa được dòng kế hoạch SX: ${planLinesByIdError.message}`);
+      // Cột lenh_sx_id (schema cũ) kiểu bigint — chỉ lọc khi id là số, tránh lỗi khi lệnh SX dùng UUID.
+      const isNumericId = /^\d+$/.test(id);
+      if (isNumericId) {
+        const { data: planLinesById, error: planLinesByIdError } = await supabase
+          .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+          .delete()
+          .eq('lenh_sx_id', id)
+          .select('id');
+        if (planLinesByIdError && !isMissingTableError(planLinesByIdError) && !isMissingColumnError(planLinesByIdError)) {
+          console.error('Supabase ke_hoach_san_xuat_dong delete error:', planLinesByIdError);
+          warnings.push(`Chưa xóa được dòng kế hoạch SX: ${planLinesByIdError.message}`);
+        }
+        cascade.planLines += planLinesById?.length || 0;
       }
-      cascade.planLines += planLinesById?.length || 0;
 
       if (code) {
         const { data: planLinesByCode, error: planLinesByCodeError } = await supabase

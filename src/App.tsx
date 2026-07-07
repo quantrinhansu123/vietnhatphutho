@@ -19,7 +19,11 @@ import { DAMAGED_GOODS_SLIP_CONFIG } from './lib/weighingSlipConfig';
 import MixingReportForm from './components/MixingReportForm';
 import MixingReportListView from './components/MixingReportListView';
 import MachineNvlReportListView from './components/MachineNvlReportListView';
-import AcceptanceReportForm, { normalizeAcceptanceReports, type AcceptanceReport } from './components/AcceptanceReportForm';
+import AcceptanceReportForm, {
+  normalizeAcceptanceReports,
+  type AcceptanceReport,
+  type AcceptanceReportCreatePrefill
+} from './components/AcceptanceReportForm';
 import AcceptanceReportListView from './components/AcceptanceReportListView';
 import ControlBoardShiftSummaryTable from './components/ControlBoardShiftSummaryTable';
 import { buildControlBoardShiftSummary, collectShiftSummaryStaffOptions, defaultShiftSummaryDateRange, type ShiftSummaryWarehouseMovement } from './utils/controlBoardShiftSummary';
@@ -31,10 +35,11 @@ import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel'
 import { AppTab, pathFromTab, tabFromPath, isWeighingFormPath, isWeighingListPath } from './routes';
 import {
   FilePlus2, BarChart3, CheckCircle, Sparkles, Loader2, Menu, Search, Save, ChevronRight, ChevronLeft,
-  Layers, Package, Cpu, Boxes, ClipboardList, X
+  Layers, Package, Cpu, Boxes, ClipboardList, X, LogOut
 } from 'lucide-react';
 
-import { readCachedReports, STORAGE_DRAFT_KEY, STORAGE_OFFLINE_KEY, STORAGE_REPORTS_CACHE_KEY } from './features/_shared/storage';
+import { readCachedReports, STORAGE_DRAFT_KEY, STORAGE_OFFLINE_KEY, STORAGE_REPORTS_CACHE_KEY, STORAGE_AUTH_KEY } from './features/_shared/storage';
+import LoginPage, { type AuthUser } from './components/LoginPage';
 import { VietNhatLogo } from './components/layout/Logo';
 import { HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
 import {
@@ -81,7 +86,34 @@ const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
   notes: ''
 };
 
+function readStoredAuthUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_AUTH_KEY);
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(() => readStoredAuthUser());
+  const handleLogin = (user: AuthUser) => {
+    try {
+      localStorage.setItem(STORAGE_AUTH_KEY, JSON.stringify(user));
+    } catch {
+      /* ignore storage errors */
+    }
+    setAuthUser(user);
+  };
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem(STORAGE_AUTH_KEY);
+    } catch {
+      /* ignore storage errors */
+    }
+    setAuthUser(null);
+  };
+
   const [activeTab, setActiveTab] = useState<AppTab>(() => tabFromPath(window.location.pathname));
   const [locationPath, setLocationPath] = useState(() => window.location.pathname);
   const resolvedTab = useMemo(() => tabFromPath(locationPath), [locationPath]);
@@ -123,6 +155,7 @@ export default function App() {
   }, []);
 
   const [acceptanceEditReport, setAcceptanceEditReport] = useState<AcceptanceReport | null>(null);
+  const [acceptanceCreatePrefill, setAcceptanceCreatePrefill] = useState<AcceptanceReportCreatePrefill | null>(null);
   const [mixingReportMachinePrefill, setMixingReportMachinePrefill] = useState<{
     id: string;
     code: string;
@@ -418,6 +451,10 @@ export default function App() {
   // Derived metrics for real-time stepper footer preview
   const activeMetrics = computeReportMetrics(reportForm);
 
+  if (!authUser) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
   return (
     <div
       className="flex h-[100dvh] overflow-hidden bg-slate-50 font-sans text-slate-800 selection:bg-brand-500 selection:text-white"
@@ -482,6 +519,21 @@ export default function App() {
             VN
           </span>
           <VietNhatLogo className="h-9 md:h-10 w-auto max-h-full object-contain shrink-0 ml-0.5" />
+          <div className="ml-1 flex items-center gap-1.5 pl-1.5 md:border-l md:border-slate-200 md:pl-2.5">
+            <span className="hidden max-w-[140px] flex-col leading-tight md:flex">
+              <span className="truncate text-[12px] font-bold text-slate-900">{authUser.name}</span>
+              <span className="truncate text-[10px] font-semibold text-slate-400">{authUser.role}</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleLogout}
+              aria-label="Đăng xuất"
+              title="Đăng xuất"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 active:scale-95 shrink-0"
+            >
+              <LogOut className="h-[18px] w-[18px]" />
+            </button>
+          </div>
         </header>
 
         {/* Floating notifications / Toasts layout */}
@@ -678,11 +730,13 @@ export default function App() {
               >
                 <AcceptanceReportListView
                   onBack={() => navigateToTab('report-lists')}
-                  onCreate={() => {
+                  onCreate={prefill => {
                     setAcceptanceEditReport(null);
+                    setAcceptanceCreatePrefill(prefill ?? null);
                     navigateToTab('acceptance-report');
                   }}
                   onEdit={report => {
+                    setAcceptanceCreatePrefill(null);
                     setAcceptanceEditReport(report);
                     navigateToTab('acceptance-report');
                   }}
@@ -941,6 +995,8 @@ export default function App() {
                   onOpenList={() => navigateToTab('acceptance-report-list')}
                   editReport={acceptanceEditReport}
                   onEditConsumed={() => setAcceptanceEditReport(null)}
+                  createPrefill={acceptanceCreatePrefill}
+                  onCreatePrefillConsumed={() => setAcceptanceCreatePrefill(null)}
                 />
               </motion.div>
             ) : activeTab === 'machine-downtime-report' ? (

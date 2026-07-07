@@ -131,22 +131,10 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'products'
   },
   {
-    title: 'Báo cáo tồn máy',
-    desc: 'Xem báo cáo NVL tồn theo từng máy và ca sản xuất.',
-    icon: Boxes,
-    tab: 'machine-nvl-report-list'
-  },
-  {
-    title: 'Phiếu xuất nhập kho',
-    desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
-    icon: ArrowDownToLine,
-    tab: 'warehouse-slip'
-  },
-  {
-    title: 'Lịch sử xuất nhập kho',
-    desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
-    icon: History,
-    tab: 'warehouse-history'
+    title: 'Danh sách máy',
+    desc: 'Quản lý danh sách máy móc, tình trạng và thông tin vận hành.',
+    icon: Cpu,
+    tab: 'machines'
   }
 ];
 

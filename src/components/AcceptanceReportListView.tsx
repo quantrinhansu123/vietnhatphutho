@@ -89,7 +89,7 @@ export default function AcceptanceReportListView({
   onEdit
 }: {
   onBack: () => void;
-  onCreate: () => void;
+  onCreate: (prefill?: { ngay: string; ca: string }) => void;
   onEdit: (report: AcceptanceReport) => void;
 }) {
   const [filterDate, setFilterDate] = useState(todayIso());
@@ -216,8 +216,6 @@ export default function AcceptanceReportListView({
     if (!viewingGroup) return;
     startPrint(buildAcceptancePrintSlips(addProductNamesForPrint(viewingGroup.reports)));
   };
-
-  const sortedReports = useMemo(() => [...reports].sort(compareAcceptanceReports), [reports]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Xóa báo cáo sản lượng này?')) return;
@@ -388,59 +386,6 @@ export default function AcceptanceReportListView({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 px-4 py-3">
-          <p className="text-sm font-black text-zinc-950">Chi tiết từng dòng</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-black">Ca</th>
-                <th className="px-3 py-2 font-black">Tổ</th>
-                <th className="px-3 py-2 font-black">Lần</th>
-                <th className="px-3 py-2 font-black">Giờ</th>
-                <th className="px-3 py-2 font-black">Mặt hàng</th>
-                <th className="px-3 py-2 font-black">ĐVT</th>
-                <th className="px-3 py-2 font-black">SL</th>
-                <th className="px-3 py-2 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center font-bold text-zinc-400">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải...
-                  </td>
-                </tr>
-              ) : sortedReports.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center font-bold text-zinc-400">
-                    Chưa có báo cáo trong ngày này.
-                  </td>
-                </tr>
-              ) : (
-                sortedReports.map(report => (
-                  <tr key={report.id} className="hover:bg-emerald-50/40">
-                    <td className="px-3 py-2 font-semibold text-zinc-800">{report.ca || '-'}</td>
-                    <td className="px-3 py-2 text-zinc-700">{report.ten_may || report.ma_may || '-'}</td>
-                    <td className="px-3 py-2 font-bold text-zinc-700">{report.lan || '-'}</td>
-                    <td className="px-3 py-2 font-mono text-zinc-600">{report.gio || '-'}</td>
-                    <td className="px-3 py-2 text-zinc-700">{report.mat_hang || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-600">{report.don_vi || '-'}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-emerald-700">
-                      {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
-                    </td>
-                    <td className="px-3 py-2">{renderReportActions(report)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
           {error}
@@ -463,6 +408,17 @@ export default function AcceptanceReportListView({
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreate({ ngay: viewingGroup.ngay, ca: viewingGroup.ca });
+                    setViewingCa(null);
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm mới
+                </button>
                 <button
                   type="button"
                   onClick={handlePrintGroup}

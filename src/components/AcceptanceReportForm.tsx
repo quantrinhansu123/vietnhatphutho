@@ -260,10 +260,10 @@ function newProductLine(): ProductLine {
   };
 }
 
-function newReportForm() {
+function newReportForm(overrides?: Partial<{ ngay: string; ca: string }>) {
   return {
-    ngay: todayIso(),
-    ca: '',
+    ngay: overrides?.ngay || todayIso(),
+    ca: overrides?.ca || '',
     lan: '1',
     gio: nowTimeValue(),
     ma_may: '',
@@ -277,16 +277,25 @@ function newReportForm() {
   };
 }
 
+export type AcceptanceReportCreatePrefill = {
+  ngay: string;
+  ca: string;
+};
+
 export default function AcceptanceReportForm({
   onBack,
   onOpenList,
   editReport,
-  onEditConsumed
+  onEditConsumed,
+  createPrefill,
+  onCreatePrefillConsumed
 }: {
   onBack: () => void;
   onOpenList?: () => void;
   editReport?: AcceptanceReport | null;
   onEditConsumed?: () => void;
+  createPrefill?: AcceptanceReportCreatePrefill | null;
+  onCreatePrefillConsumed?: () => void;
 }) {
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrderOption[]>([]);
@@ -345,6 +354,15 @@ export default function AcceptanceReportForm({
     startEdit(editReport);
     onEditConsumed?.();
   }, [editReport, machines, onEditConsumed]);
+
+  useEffect(() => {
+    if (!createPrefill) return;
+    setForm(newReportForm({ ngay: createPrefill.ngay, ca: createPrefill.ca }));
+    setEditingId(null);
+    setError('');
+    setMessage('');
+    onCreatePrefillConsumed?.();
+  }, [createPrefill, onCreatePrefillConsumed]);
 
   useEffect(() => {
     if (!highlightLineId) return;
@@ -952,6 +970,16 @@ export default function AcceptanceReportForm({
                     />
                   </div>
                 </div>
+                <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-3">
+                  <span className={mobileFieldLabelClass}>Tên SP</span>
+                  <input
+                    value={matchedProduct?.name || ''}
+                    readOnly
+                    className={`${inputClass} bg-zinc-50 text-zinc-700`}
+                    placeholder="Tự động theo mã SP"
+                    aria-label="Tên SP"
+                  />
+                </div>
                 <div className="flex items-end gap-1 sm:contents">
                   <div className="w-11 min-w-0 sm:col-start-4 sm:w-auto">
                     <span className={mobileFieldLabelClass}>ĐVT</span>
@@ -987,16 +1015,6 @@ export default function AcceptanceReportForm({
                       </button>
                     </div>
                   ) : null}
-                </div>
-                <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-3">
-                  <span className={mobileFieldLabelClass}>Tên SP</span>
-                  <input
-                    value={matchedProduct?.name || ''}
-                    readOnly
-                    className={`${inputClass} bg-zinc-50 text-zinc-700`}
-                    placeholder="Tự động theo mã SP"
-                    aria-label="Tên SP"
-                  />
                 </div>
               </RepeatableLineRow>
             );
