@@ -1,3 +1,6 @@
+import type { StaffViewPermissions } from '../nhan-su/menuViews';
+import { normalizeStaffViewPermissions } from '../nhan-su/menuViews';
+
 export interface HrMember {
   id: string;
   code?: string;
@@ -8,6 +11,7 @@ export interface HrMember {
   status: string;
   username?: string;
   password?: string;
+  viewPermissions: StaffViewPermissions;
 }
 
 export interface HrDepartment {
@@ -60,7 +64,10 @@ export function normalizeHrBranches(data: unknown): HrBranch[] {
                   shift: String(memberRecord.shift ?? 'Theo phân công'),
                   status: String(memberRecord.status ?? 'Đang làm'),
                   username: String(memberRecord.username ?? '').trim() || undefined,
-                  password: String(memberRecord.password ?? '').trim() || undefined
+                  password: String(memberRecord.password ?? '').trim() || undefined,
+                  viewPermissions: normalizeStaffViewPermissions(
+                    memberRecord.viewPermissions ?? memberRecord.quyen_xem
+                  )
                 };
               })
               .filter((member): member is HrMember => Boolean(member))

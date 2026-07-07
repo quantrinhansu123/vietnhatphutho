@@ -30,7 +30,8 @@ alter table public.danh_sach_may
   add column if not exists trang_thai text default 'Đang dùng',
   add column if not exists ghi_chu text,
   add column if not exists anh_url text,
-  add column if not exists anh_public_id text;
+  add column if not exists anh_public_id text,
+  add column if not exists dinh_luong numeric(10,2);
 
 alter table public.danh_sach_may enable row level security;
 
@@ -61,3 +62,4 @@ comment on column public.danh_sach_may.ma_may is 'Ma may.';
 comment on column public.danh_sach_may.ten_may is 'Ten may.';
 comment on column public.danh_sach_may.anh_url is 'URL hinh anh may.';
 comment on column public.danh_sach_may.anh_public_id is 'Cloudinary public id cua hinh anh may.';
+comment on column public.danh_sach_may.dinh_luong is 'Dinh luong may, 2 chu so thap phan.';

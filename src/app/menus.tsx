@@ -185,12 +185,6 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'hr'
   },
   {
-    title: 'Bảng báo cáo Cân',
-    desc: 'Xem tổng hợp phiếu cân ca, khối lượng theo ngày và ca sản xuất.',
-    icon: Scale,
-    tab: 'weighing-summary'
-  },
-  {
     title: 'Cài đặt',
     desc: 'Xem tham số cấu hình và giá trị mặc định của hệ thống.',
     icon: Settings,
@@ -299,7 +293,6 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'hcns',
     children: [
       { label: 'Nhân sự', tab: 'hr' },
-      { label: 'Bảng báo cáo Cân', tab: 'weighing-summary' },
       { label: 'Cài đặt', tab: 'settings' }
     ]
   },

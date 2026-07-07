@@ -54,6 +54,19 @@ export function generateNextOrderCode(existingCodes: Iterable<string>) {
   return `DH${String(next).padStart(width, '0')}`;
 }
 
+function formatOrderCreatedAt(value: string): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '—';
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return trimmed;
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const year = parsed.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 export function normalizeOrders(data: unknown): OrderRow[] {
   if (!data || typeof data !== 'object') return [];
   const orders = (data as { orders?: unknown }).orders;
@@ -90,7 +103,8 @@ export function normalizeOrders(data: unknown): OrderRow[] {
           const parsed = new Date(raw);
           if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
           return '';
-        })()
+        })(),
+        createdAt: formatCell(record.created_at)
       };
     })
     .filter((order): order is OrderRow => Boolean(order));
@@ -707,6 +721,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <div className="grid grid-cols-2 gap-3 p-4 text-sm">
               {[
                 ['Mã đơn', viewingOrder.orderCode],
+                ['Ngày tạo', formatOrderCreatedAt(viewingOrder.createdAt)],
                 ['Loại đơn', viewingOrder.orderType],
                 ['Trạng thái', viewingOrder.status],
                 ['Nhân viên', viewingOrder.staffName],
@@ -818,11 +833,19 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           <thead className="sticky top-0 z-10 bg-zinc-950 text-xs uppercase tracking-wider text-white">
             <tr>
               <th className="px-3 py-2.5 font-black">Mã đơn</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-black">Ngày tạo</th>
               <th className="px-3 py-2.5 font-black">Loại đơn</th>
               <th className="px-3 py-2.5 font-black">Trạng thái</th>
               <th className="px-3 py-2.5 font-black">Nhân viên</th>
               <th className="px-3 py-2.5 font-black">Khách hàng</th>
-              <th className="min-w-[420px] px-3 py-2.5 font-black">Sản phẩm</th>
+              <th className="min-w-[420px] px-3 py-2.5 font-black">
+                <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
+                  <span>Mã SP</span>
+                  <span>Tên sản phẩm</span>
+                  <span className="text-right">SL</span>
+                  <span>ĐVT</span>
+                </div>
+              </th>
               <th className="px-3 py-2.5 font-black">Ghi chú</th>
               <th className="w-28 px-3 py-2.5 text-center font-black">Thao tác</th>
             </tr>
@@ -831,6 +854,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             {filteredOrders.map(order => (
               <tr key={order.id} className="align-top transition hover:bg-red-50/30">
                 <td className="px-3 py-2.5 font-black text-zinc-950">{order.orderCode || '-'}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs font-semibold text-zinc-600">
+                  {formatOrderCreatedAt(order.createdAt)}
+                </td>
                 <td className="px-3 py-2.5">
                   <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2 py-0.5 text-[11px] font-black text-[#ef1b2d]">
                     {order.orderType}
@@ -897,7 +923,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
             {!isLoadingOrders && filteredOrders.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center font-bold text-zinc-500">
+                <td colSpan={9} className="px-4 py-10 text-center font-bold text-zinc-500">
                   Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
                 </td>
               </tr>

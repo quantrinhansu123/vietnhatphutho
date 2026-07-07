@@ -5,25 +5,40 @@ import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
-import type { HrBranch } from '../_shared/hr';
+import type { HrBranch, HrMember } from '../_shared/hr';
 import { normalizeHrBranches } from '../_shared/hr';
 import { STANDARD_SHIFTS } from '../../types';
 import {
-  BriefcaseBusiness,
-  Building2,
+  STAFF_MENU_VIEW_TREE,
+  defaultStaffViewPermissions,
+  clearStaffViewPermissions,
+  formatStaffViewPermissionsJson,
+  isStaffChildViewSelected,
+  summarizeStaffViewPermissions,
+  toggleStaffChildView,
+  type StaffViewPermissions
+} from './menuViews';
+import {
+  Eye,
   Loader2,
-  MoreVertical,
+  Pencil,
   Plus,
   Save,
   Search,
-  ShieldCheck,
-  UserPlus
+  Trash2
 } from 'lucide-react';
 
 export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [searchText, setSearchText] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [viewPermissionsMember, setViewPermissionsMember] = useState<HrMember | null>(null);
+  const [viewMember, setViewMember] = useState<{ member: HrMember; departmentName: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<
+    { member: HrMember; departmentName: string; branchName: string } | null
+  >(null);
+  const [deletingCode, setDeletingCode] = useState('');
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [staffError, setStaffError] = useState('');
   const [showAddStaffForm, setShowAddStaffForm] = useState(false);
@@ -59,6 +74,32 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     void loadStaffGroups();
   }, []);
 
+  useEffect(() => {
+    setDepartmentFilter('');
+  }, [selectedBranchId]);
+
+  const handleDeleteMember = async (member: HrMember) => {
+    if (!member.code) {
+      window.alert('Nhân sự này chưa có mã (ma_nhan_su) nên không thể xóa tự động.');
+      return;
+    }
+    if (!window.confirm(`Xóa nhân sự "${member.name}" (${member.code})?`)) return;
+
+    setDeletingCode(member.code);
+    try {
+      const res = await fetch(`/api/nhan-su/${encodeURIComponent(member.code)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa nhân sự.');
+      }
+      await loadStaffGroups();
+    } catch (error: any) {
+      window.alert(error.message || 'Không thể xóa nhân sự.');
+    } finally {
+      setDeletingCode('');
+    }
+  };
+
   const openAddStaffForm = (defaults?: { branchId?: string; department?: string }) => {
     setAddStaffDefaults({
       branchId: defaults?.branchId || selectedBranchId || branches[0]?.id || '',
@@ -69,11 +110,22 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
 
   const selectedBranch = branches.find(branch => branch.id === selectedBranchId) ?? branches[0];
   const normalizedSearch = searchText.trim().toLowerCase();
+  const branchDepartmentOptions = useMemo(() => {
+    if (!selectedBranch) return [];
+    return [...selectedBranch.departments.map(department => department.name)].sort((a, b) =>
+      a.localeCompare(b, 'vi')
+    );
+  }, [selectedBranch]);
   const filteredDepartments = useMemo(() => {
     if (!selectedBranch) return [];
-    if (!normalizedSearch) return selectedBranch.departments;
 
-    return selectedBranch.departments
+    const scopedDepartments = departmentFilter
+      ? selectedBranch.departments.filter(department => department.name === departmentFilter)
+      : selectedBranch.departments;
+
+    if (!normalizedSearch) return scopedDepartments;
+
+    return scopedDepartments
       .map(department => ({
         ...department,
         members: department.members.filter(member =>
@@ -85,7 +137,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         department.lead.toLowerCase().includes(normalizedSearch) ||
         department.members.length > 0
       );
-  }, [normalizedSearch, selectedBranch]);
+  }, [departmentFilter, normalizedSearch, selectedBranch]);
 
   const totalDepartments = selectedBranch?.departments.length ?? 0;
   const totalMembers = selectedBranch?.departments.reduce((sum, department) => sum + department.members.length, 0) ?? 0;
@@ -93,6 +145,17 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     (sum, department) => sum + department.members.filter(member => member.status === 'Đang làm').length,
     0
   ) ?? 0;
+  const tableRows = useMemo(
+    () =>
+      filteredDepartments.flatMap(department =>
+        department.members.map(member => ({
+          key: `${department.id}-${member.id || member.name}`,
+          departmentName: department.name,
+          member
+        }))
+      ),
+    [filteredDepartments]
+  );
   const departmentOptions = useMemo(() => {
     const names = new Set<string>();
     branches.forEach(branch => branch.departments.forEach(department => names.add(department.name)));
@@ -101,7 +164,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   }, [branches]);
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-4">
+    <div className="mx-auto w-full min-w-0 max-w-[1680px] space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
           <div className="flex items-start justify-end gap-3">
@@ -163,6 +226,23 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
           )}
         </div>
 
+        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[220px]">
+          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider text-zinc-400">Phòng ban</span>
+          <select
+            value={departmentFilter}
+            onChange={event => setDepartmentFilter(event.target.value)}
+            disabled={isLoadingStaff || branches.length === 0}
+            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 focus:outline-none"
+          >
+            <option value="">Tất cả</option>
+            {branchDepartmentOptions.map(department => (
+              <option key={department} value={department}>
+                {department}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[360px]">
           <Search className="h-4 w-4 text-zinc-400" />
           <input
@@ -181,109 +261,356 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         )}
       </section>
 
-      <section className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         {!isLoadingStaff && !staffError && branches.length === 0 && (
-          <div className="rounded-2xl border-2 border-zinc-900/10 bg-white px-4 py-8 text-center text-sm font-bold text-zinc-500">
+          <div className="px-4 py-8 text-center text-sm font-bold text-zinc-500">
             Supabase chưa có dữ liệu nhân sự để hiển thị.
           </div>
         )}
 
-        {filteredDepartments.map(department => (
-          <article
-            key={department.id}
-            className="min-w-0 overflow-hidden rounded-xl border-2 border-zinc-900/10 bg-white shadow-sm"
-          >
-            <div className="flex items-start justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
-              <div className="flex min-w-0 gap-2">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-[#ef1b2d]">
-                  <Building2 className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <h3 className="truncate text-sm font-black leading-tight text-zinc-950">{department.name}</h3>
-                  <p className="mt-0.5 flex items-center gap-1 text-[11px] font-bold text-zinc-500">
-                    <ShieldCheck className="h-3.5 w-3.5 text-[#ef1b2d]" />
-                    <span className="truncate">Trưởng nhóm: {department.lead}</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label={`Thêm nhân sự vào ${department.name}`}
-                onClick={() => openAddStaffForm({ branchId: selectedBranchId, department: department.name })}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ef1b2d] text-white transition hover:bg-[#b30d1c]"
-              >
-                <UserPlus className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="divide-y divide-zinc-100">
-              {department.members.map(member => (
-                <div
-                  key={`${department.id}-${member.name}`}
-                  className="flex items-start gap-2 px-3 py-2"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-950 text-xs font-black text-white">
-                    {member.name.split(' ').slice(-1)[0].charAt(0)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-black leading-tight text-zinc-950">{member.name}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-zinc-500">
-                      <span className="inline-flex items-center gap-1">
-                        <BriefcaseBusiness className="h-3 w-3" />
-                        {member.role}
+        {filteredDepartments.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="min-w-[1280px] w-full text-left text-xs">
+              <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2.5 font-black">Họ tên</th>
+                  <th className="px-3 py-2.5 font-black">Mã NV</th>
+                  <th className="px-3 py-2.5 font-black">Phòng ban</th>
+                  <th className="px-3 py-2.5 font-black">Chức vụ</th>
+                  <th className="px-3 py-2.5 font-black">Ca</th>
+                  <th className="px-3 py-2.5 font-black">Tên đăng nhập</th>
+                  <th className="px-3 py-2.5 font-black">Mật khẩu</th>
+                  <th className="min-w-[220px] px-3 py-2.5 font-black">Quyền xem (JSON)</th>
+                  <th className="px-3 py-2.5 font-black">Trạng thái</th>
+                  <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {tableRows.map(({ key, departmentName, member }) => (
+                  <tr key={key} className="hover:bg-red-50/40">
+                    <td className="whitespace-nowrap px-3 py-2.5 font-black text-zinc-950">{member.name}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-mono font-semibold text-zinc-700">
+                      {member.code || '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-700">{departmentName}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.role || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.shift || '—'}</td>
+                    <td className="max-w-[200px] truncate px-3 py-2.5 font-mono text-zinc-700" title={member.username}>
+                      {member.username || '—'}
+                    </td>
+                    <td className="max-w-[140px] truncate px-3 py-2.5 font-mono text-zinc-700" title={member.password}>
+                      {member.password || '—'}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewPermissionsMember(member)}
+                        className="max-w-[280px] truncate text-left text-[11px] font-semibold text-[#ef1b2d] underline decoration-dotted underline-offset-2 hover:text-[#b30d1c]"
+                        title={formatStaffViewPermissionsJson(member.viewPermissions)}
+                      >
+                        {summarizeStaffViewPermissions(member.viewPermissions)}
+                      </button>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${
+                          member.status === 'Đang làm'
+                            ? 'border-[#ef1b2d]/20 bg-red-50 text-[#ef1b2d]'
+                            : 'border-zinc-200 bg-zinc-50 text-zinc-600'
+                        }`}
+                      >
+                        {member.status}
                       </span>
-                      <span className="rounded-full border border-zinc-200 px-1.5 py-0.5">{member.shift}</span>
-                    </p>
-                    {(member.code || member.username || member.password) && (
-                      <p className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-semibold text-zinc-500">
-                        {member.code && (
-                          <span className="font-mono text-zinc-600">{member.code}</span>
-                        )}
-                        {member.username && (
-                          <span className="truncate font-mono text-zinc-600" title={member.username}>
-                            {member.username}
-                          </span>
-                        )}
-                        {member.password && (
-                          <span className="truncate font-mono text-zinc-600" title={member.password}>
-                            {member.password}
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                  <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-black ${
-                    member.status === 'Đang làm'
-                      ? 'border-[#ef1b2d]/20 bg-red-50 text-[#ef1b2d]'
-                      : 'border-zinc-200 bg-zinc-50 text-zinc-600'
-                  }`}>
-                    {member.status}
-                  </span>
-                  <button type="button" className="h-7 w-7 shrink-0 rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-950">
-                    <MoreVertical className="mx-auto h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setViewMember({ member, departmentName })}
+                          aria-label={`Xem ${member.name}`}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[11px] font-bold text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          Xem
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditTarget({
+                              member,
+                              departmentName,
+                              branchName: selectedBranch?.name || ''
+                            })
+                          }
+                          aria-label={`Sửa ${member.name}`}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Sửa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteMember(member)}
+                          disabled={deletingCode === member.code}
+                          aria-label={`Xóa ${member.name}`}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingCode === member.code ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          Xoá
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {tableRows.length === 0 && !isLoadingStaff && (
+                  <tr>
+                    <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
+                      Không có nhân sự phù hợp bộ lọc.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-              {department.members.length === 0 && (
-                <div className="px-4 py-5 text-center text-sm font-semibold text-zinc-500">
-                  Không có nhân sự phù hợp bộ lọc.
-                </div>
-              )}
-            </div>
-          </article>
-        ))}
+        {isLoadingStaff && (
+          <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm font-bold text-zinc-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Đang tải nhân sự...
+          </div>
+        )}
       </section>
 
       <AddStaffModal
-        open={showAddStaffForm}
+        open={showAddStaffForm || Boolean(editTarget)}
+        editTarget={editTarget}
         branches={branches}
         departmentOptions={departmentOptions}
         defaultBranchId={addStaffDefaults.branchId}
         defaultDepartment={addStaffDefaults.department}
-        onClose={() => setShowAddStaffForm(false)}
+        onClose={() => {
+          setShowAddStaffForm(false);
+          setEditTarget(null);
+        }}
         onCreated={loadStaffGroups}
       />
+
+      {viewMember && (
+        <StaffDetailModal
+          member={viewMember.member}
+          departmentName={viewMember.departmentName}
+          branchName={selectedBranch?.name || ''}
+          onClose={() => setViewMember(null)}
+          onEdit={() => {
+            setEditTarget({
+              member: viewMember.member,
+              departmentName: viewMember.departmentName,
+              branchName: selectedBranch?.name || ''
+            });
+            setViewMember(null);
+          }}
+        />
+      )}
+
+      {viewPermissionsMember && (
+        <StaffViewPermissionsModal
+          member={viewPermissionsMember}
+          onClose={() => setViewPermissionsMember(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function StaffDetailModal({
+  member,
+  departmentName,
+  branchName,
+  onClose,
+  onEdit
+}: {
+  member: HrMember;
+  departmentName: string;
+  branchName: string;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const rows: [string, string][] = [
+    ['Họ tên', member.name],
+    ['Mã NV', member.code || '—'],
+    ['Chi nhánh', branchName || '—'],
+    ['Phòng ban', departmentName || '—'],
+    ['Chức vụ', member.role || '—'],
+    ['Ca làm', member.shift || '—'],
+    ['Tên đăng nhập', member.username || '—'],
+    ['Mật khẩu', member.password || '—'],
+    ['Trạng thái', member.status || '—']
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết nhân sự</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">{member.name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+          >
+            Đóng
+          </button>
+        </div>
+        <div className="space-y-2 p-4">
+          <dl className="grid grid-cols-1 gap-1.5">
+            {rows.map(([label, value]) => (
+              <div key={label} className="flex items-start justify-between gap-3 rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
+                <dt className="text-xs font-black uppercase tracking-wider text-zinc-500">{label}</dt>
+                <dd className="text-right text-sm font-semibold text-zinc-800">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
+            <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Quyền xem menu</p>
+            <p className="mt-1 text-sm font-semibold text-zinc-800">
+              {summarizeStaffViewPermissions(member.viewPermissions)}
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-zinc-200 px-4 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-10 rounded-xl border border-zinc-200 px-4 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50"
+          >
+            Đóng
+          </button>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c]"
+          >
+            <Pencil className="h-4 w-4" />
+            Sửa
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StaffViewPermissionsModal({ member, onClose }: { member: HrMember; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Quyền xem menu</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">{member.name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+          >
+            Đóng
+          </button>
+        </div>
+        <div className="space-y-3 p-4">
+          {member.viewPermissions.length === 0 ? (
+            <p className="text-sm font-semibold text-zinc-500">Chưa cấu hình quyền xem.</p>
+          ) : (
+            member.viewPermissions.map(group => (
+              <div key={group.menu} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-xs font-black uppercase tracking-wider text-zinc-700">{group.label}</p>
+                <p className="mt-1 font-mono text-[10px] text-zinc-400">{group.menu}</p>
+                {group.children.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {group.children.map(child => (
+                      <li key={`${group.menu}-${child.tab}`} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-zinc-800">{child.label}</span>
+                        <span className="font-mono text-[10px] text-zinc-400">{child.tab}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-xs font-semibold text-zinc-500">Không có menu con.</p>
+                )}
+              </div>
+            ))
+          )}
+          <pre className="overflow-x-auto rounded-xl border border-zinc-200 bg-zinc-950 p-3 text-[11px] leading-5 text-emerald-300">
+            {formatStaffViewPermissionsJson(member.viewPermissions)}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StaffViewPermissionsPicker({
+  value,
+  onChange
+}: {
+  value: StaffViewPermissions;
+  onChange: (next: StaffViewPermissions) => void;
+}) {
+  return (
+    <div className="col-span-2 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Quyền xem menu</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onChange(defaultStaffViewPermissions())}
+            className="text-[10px] font-bold uppercase tracking-wider text-[#ef1b2d] hover:underline"
+          >
+            Chọn tất cả
+          </button>
+          <span className="text-zinc-300">|</span>
+          <button
+            type="button"
+            onClick={() => onChange(clearStaffViewPermissions())}
+            className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:underline"
+          >
+            Bỏ chọn tất cả
+          </button>
+        </div>
+      </div>
+      <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+        {STAFF_MENU_VIEW_TREE.map(group => (
+          <div key={group.menu} className="rounded-lg border border-zinc-200 bg-white p-2.5">
+            <p className="text-xs font-black text-zinc-800">{group.label}</p>
+            <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {group.children.map(child => {
+                const checked = isStaffChildViewSelected(value, group.menu, child.tab);
+                return (
+                  <label key={`${group.menu}-${child.tab}`} className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={event =>
+                        onChange(
+                          toggleStaffChildView(value, group.menu, group.label, child, event.target.checked)
+                        )
+                      }
+                      className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                    />
+                    <span>{child.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -320,6 +647,7 @@ export type StaffFormState = {
   status: string;
   username: string;
   password: string;
+  viewPermissions: StaffViewPermissions;
 };
 
 export function emptyStaffForm(defaults?: { branch?: string; department?: string }): StaffFormState {
@@ -332,7 +660,8 @@ export function emptyStaffForm(defaults?: { branch?: string; department?: string
     shift: STANDARD_SHIFTS[0] || 'Ca 1',
     status: 'Đang làm',
     username: '',
-    password: ''
+    password: '',
+    viewPermissions: []
   };
 }
 
@@ -343,7 +672,8 @@ export function AddStaffModal({
   branches,
   departmentOptions,
   defaultBranchId,
-  defaultDepartment
+  defaultDepartment,
+  editTarget
 }: {
   open: boolean;
   onClose: () => void;
@@ -352,10 +682,13 @@ export function AddStaffModal({
   departmentOptions: string[];
   defaultBranchId: string;
   defaultDepartment: string;
+  editTarget?: { member: HrMember; departmentName: string; branchName: string } | null;
 }) {
   const [form, setForm] = useState<StaffFormState>(emptyStaffForm());
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const isEditing = Boolean(editTarget);
 
   const branchOptions = useMemo(() => {
     const names = branches.map(branch => branch.name).filter(Boolean);
@@ -364,6 +697,25 @@ export function AddStaffModal({
 
   useEffect(() => {
     if (!open) return;
+
+    if (editTarget) {
+      const { member, departmentName, branchName } = editTarget;
+      setForm({
+        name: member.name,
+        code: member.code || '',
+        branch: branchName || branchOptions[0] || 'Đà Nẵng',
+        department: departmentName || departmentOptions[0] || 'Sản xuất',
+        role: member.role || 'Nhân sự',
+        shift: member.shift || STANDARD_SHIFTS[0] || 'Ca 1',
+        status: member.status || 'Đang làm',
+        username: member.username || '',
+        password: member.password || '',
+        viewPermissions: member.viewPermissions || []
+      });
+      setFormError('');
+      return;
+    }
+
     const branchName = branches.find(branch => branch.id === defaultBranchId)?.name || branchOptions[0] || 'Đà Nẵng';
     const nextCode = generateNextStaffCode(collectStaffCodes(branches));
     setForm({
@@ -371,7 +723,7 @@ export function AddStaffModal({
       code: nextCode
     });
     setFormError('');
-  }, [open, defaultBranchId, defaultDepartment, branches, branchOptions, departmentOptions]);
+  }, [open, editTarget, defaultBranchId, defaultDepartment, branches, branchOptions, departmentOptions]);
 
   if (!open) return null;
 
@@ -384,35 +736,48 @@ export function AddStaffModal({
       setFormError('Vui lòng chọn phòng ban.');
       return;
     }
+    if (isEditing && !form.code.trim()) {
+      setFormError('Nhân sự này chưa có mã (ma_nhan_su) nên không thể cập nhật.');
+      return;
+    }
 
     setIsSaving(true);
     setFormError('');
 
     try {
-      const res = await fetch('/api/nhan-su', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nhan_su: form.name.trim(),
-          ma_nhan_su: form.code.trim(),
-          chi_nhanh: form.branch.trim(),
-          phong_ban: form.department.trim(),
-          cong_viec: form.role.trim(),
-          ca_lam: form.shift.trim(),
-          trang_thai: form.status.trim(),
-          ten_dang_nhap: form.username.trim(),
-          mat_khau: form.password.trim()
-        })
-      });
+      const payload = {
+        nhan_su: form.name.trim(),
+        ma_nhan_su: form.code.trim(),
+        chi_nhanh: form.branch.trim(),
+        phong_ban: form.department.trim(),
+        cong_viec: form.role.trim(),
+        ca_lam: form.shift.trim(),
+        trang_thai: form.status.trim(),
+        ten_dang_nhap: form.username.trim(),
+        mat_khau: form.password.trim(),
+        quyen_xem: form.viewPermissions
+      };
+
+      const res = isEditing
+        ? await fetch(`/api/nhan-su/${encodeURIComponent(form.code.trim())}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+        : await fetch('/api/nhan-su', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || 'Không thể thêm nhân sự.');
+        throw new Error(data.error || (isEditing ? 'Không thể cập nhật nhân sự.' : 'Không thể thêm nhân sự.'));
       }
 
       await onCreated();
       onClose();
     } catch (error: any) {
-      setFormError(error.message || 'Không thể thêm nhân sự.');
+      setFormError(error.message || (isEditing ? 'Không thể cập nhật nhân sự.' : 'Không thể thêm nhân sự.'));
     } finally {
       setIsSaving(false);
     }
@@ -423,8 +788,12 @@ export function AddStaffModal({
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm nhân sự mới</h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi vào bảng nhan_su trên Supabase</p>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
+              {isEditing ? 'Sửa nhân sự' : 'Thêm nhân sự mới'}
+            </h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+              {isEditing ? 'Cập nhật bảng nhan_su trên Supabase' : 'Ghi vào bảng nhan_su trên Supabase'}
+            </p>
           </div>
           <button
             type="button"
@@ -546,6 +915,11 @@ export function AddStaffModal({
               ))}
             </select>
           </label>
+
+          <StaffViewPermissionsPicker
+            value={form.viewPermissions}
+            onChange={viewPermissions => setForm(prev => ({ ...prev, viewPermissions }))}
+          />
         </div>
 
         <div className="flex justify-end gap-2 border-t border-zinc-200 px-4 py-4">
@@ -564,7 +938,7 @@ export function AddStaffModal({
             className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isSaving ? 'Đang lưu...' : 'Lưu nhân sự'}
+            {isSaving ? 'Đang lưu...' : isEditing ? 'Cập nhật' : 'Lưu nhân sự'}
           </button>
         </div>
       </div>

@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
+import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
 
 dotenv.config();
 
@@ -904,7 +905,9 @@ function mapStaffRecord(row: Record<string, unknown>) {
     shift,
     status,
     username,
-    password
+    password,
+    viewPermissions: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
+    quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions)
   };
 }
 
@@ -978,7 +981,11 @@ function staffWriteErrorMessage(error: { code?: string; message?: string }) {
   return `Không thể lưu nhân sự vào ${SUPABASE_STAFF_TABLE}. ${error.message}`;
 }
 
-function parseStaffBody(body: unknown): { error: string } | { record: Record<string, string | null> } {
+function parseStaffQuyenXem(source: Record<string, unknown>) {
+  return normalizeStaffViewPermissions(source.quyen_xem ?? source.viewPermissions);
+}
+
+function parseStaffBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
   if (!body || typeof body !== 'object') {
     return { error: 'Dữ liệu không hợp lệ.' };
   }
@@ -1007,7 +1014,8 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
       trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang làm'),
       ma_nhan_su: code || null,
       ten_dang_nhap: pickRowField(source, ['ten_dang_nhap', 'username', 'login'], '') || null,
-      mat_khau: pickRowField(source, ['mat_khau', 'password'], '') || null
+      mat_khau: pickRowField(source, ['mat_khau', 'password'], '') || null,
+      quyen_xem: parseStaffQuyenXem(source)
     }
   };
 }
@@ -2332,7 +2340,14 @@ function isMaterialKgUnitValue(value: unknown) {
   return String(value ?? '').trim().toLowerCase() === 'kg';
 }
 
-function parseMachineBody(body: unknown): { error: string } | { record: Record<string, string> } {
+function parseMachineDinhLuong(value: unknown): number | null {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return null;
+  const num = Number(raw.replace(',', '.'));
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseMachineBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const code = typeof source.code === 'string' ? source.code.trim() : '';
   const name = typeof source.name === 'string' ? source.name.trim() : '';
@@ -2348,7 +2363,8 @@ function parseMachineBody(body: unknown): { error: string } | { record: Record<s
       chi_nhanh: typeof source.branch === 'string' ? source.branch.trim() : '',
       vi_tri: typeof source.location === 'string' ? source.location.trim() : '',
       trang_thai: typeof source.status === 'string' ? source.status.trim() || 'Đang dùng' : 'Đang dùng',
-      ghi_chu: typeof source.note === 'string' ? source.note.trim() : ''
+      ghi_chu: typeof source.note === 'string' ? source.note.trim() : '',
+      dinh_luong: parseMachineDinhLuong(source.dinhLuong)
     }
   };
 }
@@ -3803,7 +3819,8 @@ export function createApp() {
         chi_nhanh: typeof req.body?.branch === 'string' ? req.body.branch.trim() : '',
         vi_tri: typeof req.body?.location === 'string' ? req.body.location.trim() : '',
         trang_thai: typeof req.body?.status === 'string' ? req.body.status.trim() || 'Đang dùng' : 'Đang dùng',
-        ghi_chu: typeof req.body?.note === 'string' ? req.body.note.trim() : ''
+        ghi_chu: typeof req.body?.note === 'string' ? req.body.note.trim() : '',
+        dinh_luong: parseMachineDinhLuong(req.body?.dinhLuong)
       };
 
       const { data, error } = await supabase
@@ -5409,6 +5426,75 @@ export function createApp() {
     }
   });
 
+  app.put('/api/nhan-su/:code', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    const code = String(req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Thiếu mã nhân sự.' });
+    }
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? { ...(req.body as Record<string, unknown>) } : {};
+      const parsed = parseStaffBody(source);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const record = { ...parsed.record };
+      delete (record as Record<string, unknown>).ma_nhan_su;
+
+      const { data: updated, error: updateError } = await supabase
+        .from(SUPABASE_STAFF_TABLE)
+        .update(record)
+        .eq('ma_nhan_su', code)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('Supabase nhan_su update error:', updateError);
+        return res.status(500).json({ error: staffWriteErrorMessage(updateError) });
+      }
+
+      return res.json({
+        success: true,
+        staff: updated,
+        person: mapStaffRecord(updated as Record<string, unknown>)
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật nhân sự.' });
+    }
+  });
+
+  app.delete('/api/nhan-su/:code', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    const code = String(req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Thiếu mã nhân sự.' });
+    }
+
+    try {
+      const { error: deleteError } = await supabase
+        .from(SUPABASE_STAFF_TABLE)
+        .delete()
+        .eq('ma_nhan_su', code);
+
+      if (deleteError) {
+        console.error('Supabase nhan_su delete error:', deleteError);
+        return res.status(500).json({ error: staffWriteErrorMessage(deleteError) });
+      }
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhân sự.' });
+    }
+  });
+
   registerWeighingSlipRoutes(app, '/api/phieu-can-dinh-ki', {
     localFilePath: WEIGHING_DB_FILE_PATH,
     supabaseTable: SUPABASE_WEIGHING_TABLE,
@@ -5501,7 +5587,7 @@ export function createApp() {
           return res.json({
             reasons: collectMixingReasonSuggestions(
               (fallback.data || []).filter(
-                (row): row is Record<string, unknown> => Boolean(row && typeof row === 'object')
+                (row): row is { chi_tiet: any } => Boolean(row && typeof row === 'object')
               )
             )
           });
@@ -5511,7 +5597,9 @@ export function createApp() {
 
       return res.json({
         reasons: collectMixingReasonSuggestions(
-          (data || []).filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+          (data || []).filter(
+            (row): row is { ly_do_theo_lan: any; chi_tiet: any } => Boolean(row && typeof row === 'object')
+          )
         )
       });
     } catch (err: any) {

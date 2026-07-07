@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
+import { Cpu, ImagePlus, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import { sanitizeDecimalTyping } from '../../lib/mixingReportModel';
 
 export interface MachineRow {
   id: string;
@@ -17,8 +19,20 @@ export interface MachineRow {
   location: string;
   status: string;
   note: string;
+  dinhLuong: string;
   imageUrl?: string;
   imagePublicId?: string;
+}
+
+export function parseMachineDinhLuong(value: string) {
+  if (!value || value === '-') return null;
+  const num = Number(String(value).trim().replace(',', '.'));
+  return Number.isFinite(num) ? num : null;
+}
+
+export function formatMachineDinhLuong(value: string) {
+  const num = parseMachineDinhLuong(value);
+  return num === null ? '-' : formatNumber(num, 2);
 }
 
 export function normalizeMachines(data: unknown): MachineRow[] {
@@ -43,6 +57,7 @@ export function normalizeMachines(data: unknown): MachineRow[] {
         location: pickText(record, ['vi_tri', 'khu_vuc', 'location', 'line'], '-'),
         status: pickText(record, ['trang_thai', 'status', 'tinh_trang'], 'Đang dùng'),
         note: pickText(record, ['ghi_chu', 'mo_ta', 'note', 'description'], ''),
+        dinhLuong: pickText(record, ['dinh_luong', 'dinhLuong'], ''),
         imageUrl: pickText(record, ['anh_url', 'hinh_anh_url', 'image_url', 'imageUrl'], ''),
         imagePublicId: pickText(record, ['anh_public_id', 'image_public_id', 'imagePublicId'], '')
       };
@@ -98,7 +113,8 @@ export function buildMachineSelectOptions(machines: MachineRow[], currentValue =
       branch: '-',
       location: '-',
       status: '-',
-      note: ''
+      note: '',
+      dinhLuong: ''
     },
     ...machines
   ];
@@ -137,6 +153,7 @@ export type MachineFormState = {
   location: string;
   status: string;
   note: string;
+  dinhLuong: string;
 };
 
 const emptyMachineForm = (): MachineFormState => ({
@@ -146,7 +163,8 @@ const emptyMachineForm = (): MachineFormState => ({
   branch: 'Đà Nẵng',
   location: '',
   status: 'Đang dùng',
-  note: ''
+  note: '',
+  dinhLuong: ''
 });
 
 export function machineCellToInput(value: string) {
@@ -161,7 +179,8 @@ export function machineToForm(machine: MachineRow): MachineFormState {
     branch: machineCellToInput(machine.branch),
     location: machineCellToInput(machine.location),
     status: machineCellToInput(machine.status) || 'Đang dùng',
-    note: machineCellToInput(machine.note)
+    note: machineCellToInput(machine.note),
+    dinhLuong: machineCellToInput(machine.dinhLuong)
   };
 }
 
@@ -493,6 +512,16 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                 />
               </label>
               <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Định lượng</span>
+                <input
+                  value={machineForm.dinhLuong}
+                  onChange={e => setMachineForm(prev => ({ ...prev, dinhLuong: sanitizeDecimalTyping(e.target.value) }))}
+                  className={machineFieldClass}
+                  inputMode="decimal"
+                  placeholder="VD: 12,50"
+                />
+              </label>
+              <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Chi nhánh</span>
                 <input
                   value={machineForm.branch}
@@ -663,6 +692,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-4 py-3 font-black">Tên máy</th>
                 <th className="px-4 py-3 font-black">Hình ảnh</th>
                 <th className="px-4 py-3 font-black">Loại/Nhóm</th>
+                <th className="px-4 py-3 text-right font-black">Định lượng</th>
                 <th className="px-4 py-3 font-black">Chi nhánh</th>
                 <th className="px-4 py-3 font-black">Vị trí</th>
                 <th className="px-4 py-3 font-black">Trạng thái</th>
@@ -721,6 +751,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                     </div>
                   </td>
                   <td className="px-4 py-3 font-bold text-zinc-700">{machine.type}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-zinc-700">{formatMachineDinhLuong(machine.dinhLuong)}</td>
                   <td className="px-4 py-3 font-semibold text-zinc-600">{machine.branch}</td>
                   <td className="px-4 py-3 font-semibold text-zinc-600">{machine.location}</td>
                   <td className="px-4 py-3">
@@ -759,7 +790,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
 
               {!isLoadingMachines && filteredMachines.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={10} className="px-4 py-8 text-center font-bold text-zinc-500">
                     Bảng danh_sach_may chưa có dữ liệu hoặc không có máy phù hợp bộ lọc.
                   </td>
                 </tr>

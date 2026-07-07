@@ -3285,6 +3285,7 @@ export function AddProductionOrderModal({
   onCreated: () => void | Promise<void>;
 }) {
   const [form, setForm] = useState<ProductionOrderFormState>(emptyProductionOrderForm);
+  const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
@@ -3310,6 +3311,7 @@ export function AddProductionOrderModal({
     if (!open) return;
 
     setForm(emptyProductionOrderForm());
+    setSelectedShifts([]);
     setFormError('');
     setShowAutofillOrders(false);
     setAutofillSearch('');
@@ -3393,16 +3395,20 @@ export function AddProductionOrderModal({
   }, [settings]);
 
   const assignedMachineKeys = useMemo(() => {
-    if (!form.shift) return new Set<string>();
+    if (selectedShifts.length === 0) return new Set<string>();
 
     const keys = settings
-      .filter(setting => setting.loaiCaiDat === 'Ca máy' && settingMatchesShift(setting, form.shift))
+      .filter(
+        setting =>
+          setting.loaiCaiDat === 'Ca máy' &&
+          selectedShifts.some(shift => settingMatchesShift(setting, shift))
+      )
       .flatMap(setting =>
         [setting.code, setting.name].filter(value => value && value !== '-').map(value => value.toLowerCase())
       );
 
     return new Set(keys);
-  }, [form.shift, settings]);
+  }, [selectedShifts, settings]);
 
   const availableMachines = useMemo(() => {
     return machines.filter(machine => {
@@ -3423,16 +3429,16 @@ export function AddProductionOrderModal({
       branch.departments.flatMap(department => department.members)
     );
 
-    if (!form.shift) return allMembers;
+    if (selectedShifts.length === 0) return allMembers;
 
-    const needle = form.shift.toLowerCase();
+    const needles = selectedShifts.map(shift => shift.toLowerCase());
     const filtered = allMembers.filter(member => {
       const memberShift = member.shift.toLowerCase();
-      return memberShift.includes(needle) || needle.includes(memberShift);
+      return needles.some(needle => memberShift.includes(needle) || needle.includes(memberShift));
     });
 
     return filtered.length > 0 ? filtered : allMembers;
-  }, [form.shift, staffBranches]);
+  }, [selectedShifts, staffBranches]);
 
   const selectedStaffNames = useMemo(() => {
     return staffOptions
@@ -3677,6 +3683,13 @@ export function AddProductionOrderModal({
     }));
   };
 
+  const toggleShift = (shift: string) => {
+    setSelectedShifts(prev =>
+      prev.includes(shift) ? prev.filter(item => item !== shift) : [...prev, shift]
+    );
+    setForm(prev => ({ ...prev, machine: '' }));
+  };
+
   if (!open) return null;
 
   const handleSubmit = async () => {
@@ -3716,8 +3729,8 @@ export function AddProductionOrderModal({
         return;
       }
     }
-    if (!form.shift.trim()) {
-      setFormError('Vui lòng chọn ca.');
+    if (selectedShifts.length === 0) {
+      setFormError('Vui lòng chọn ít nhất một ca.');
       return;
     }
     if (!form.machine.trim()) {
@@ -3732,16 +3745,26 @@ export function AddProductionOrderModal({
     setIsSaving(true);
     setFormError('');
 
-    try {
-      const res = await fetch('/api/lenh-sx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines, selectedStaffNames))
-      });
-      const data = await res.json().catch(() => ({}));
+    const multipleShifts = selectedShifts.length > 1;
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể tạo lệnh SX.');
+    try {
+      for (const shift of selectedShifts) {
+        const shiftForm: ProductionOrderFormState = {
+          ...form,
+          shift,
+          // Nhiều ca: để trống mã để tự sinh, tránh trùng mã lệnh
+          code: multipleShifts ? '' : form.code
+        };
+        const res = await fetch('/api/lenh-sx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(productionOrderFormToCreatePayload(shiftForm, filledLines, selectedStaffNames))
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data.error || `Không thể tạo lệnh SX cho ${shift}.`);
+        }
       }
 
       await onCreated();
@@ -3940,17 +3963,45 @@ export function AddProductionOrderModal({
             })}
           </RepeatableLinesBlock>
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca *</span>
-            <SearchableSelect
-              value={form.shift}
-              onChange={shift => setForm(prev => ({ ...prev, shift, machine: '' }))}
-              options={shiftOptions}
-              placeholder="Gõ để tìm ca"
-              isLoading={isLoadingLookups}
-              getLabel={item => formatProductionOrderShiftLabel(String(item), settings)}
-              getValue={item => String(item)}
-            />
+          <label className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+              Ca * <span className="text-zinc-400">(chọn nhiều ca cho cùng ngày)</span>
+            </span>
+            {shiftOptions.length === 0 ? (
+              <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-400">
+                {isLoadingLookups ? 'Đang tải ca...' : 'Chưa có ca nào được khai báo.'}
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+                {shiftOptions.map(shift => {
+                  const shiftValue = String(shift);
+                  const checked = selectedShifts.includes(shiftValue);
+                  return (
+                    <label
+                      key={shiftValue}
+                      className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                        checked
+                          ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
+                          : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleShift(shiftValue)}
+                        className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                      />
+                      {formatProductionOrderShiftLabel(shiftValue, settings)}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            {selectedShifts.length > 1 && (
+              <p className="text-[11px] font-semibold text-emerald-700">
+                Sẽ tạo {selectedShifts.length} lệnh SX — mỗi ca một lệnh (cùng sản phẩm, máy, nhân sự, ngày).
+              </p>
+            )}
           </label>
 
           <label className="space-y-1.5">
@@ -3973,13 +4024,13 @@ export function AddProductionOrderModal({
               machine => setForm(prev => ({ ...prev, machine })),
               availableMachines,
               {
-                disabled: !form.shift,
-                placeholder: form.shift ? 'Gõ để tìm máy' : 'Chọn ca trước'
+                disabled: selectedShifts.length === 0,
+                placeholder: selectedShifts.length > 0 ? 'Gõ để tìm máy' : 'Chọn ca trước'
               }
             )}
-            {form.shift && availableMachines.length === 0 && (
+            {selectedShifts.length > 0 && availableMachines.length === 0 && (
               <p className="text-[11px] font-semibold text-amber-700">
-                Không còn máy trống cho ca này (các máy đã khai báo trong Ca máy).
+                Không còn máy trống cho ca đã chọn (các máy đã khai báo trong Ca máy).
               </p>
             )}
           </label>
