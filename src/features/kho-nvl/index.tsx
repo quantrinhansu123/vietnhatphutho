@@ -1466,7 +1466,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
             {[
               ['Mã NVL', materials.length],
-              ['Tổng kg', formatNumber(totalWeightAll, 2)],
+              ['Tổng kg', formatNumber(totalWeightAll, 4)],
               ['Đơn vị', units.length > 0 ? units.length - 1 : 0]
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">

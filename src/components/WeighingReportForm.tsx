@@ -1015,8 +1015,8 @@ export default function WeighingReportForm({
         const slipForEdit = getSlipContextFromRows(rows);
         const updatedRow: WeighingRow = {
           ...editingRow,
-          productionDate: slipForEdit?.productionDate || editingRow.productionDate,
-          shiftName: slipForEdit?.shiftName || editingRow.shiftName,
+          productionDate: newRow.productionDate || slipForEdit?.productionDate || editingRow.productionDate,
+          shiftName: newRow.shiftName || slipForEdit?.shiftName || editingRow.shiftName,
           worker1: slipForEdit?.worker1 ?? editingRow.worker1 ?? '',
           worker2: slipForEdit?.worker2 ?? editingRow.worker2 ?? '',
           weigherName: currentWeigherName.trim(),
@@ -1264,6 +1264,7 @@ export default function WeighingReportForm({
   const weighRoundCount = useMemo(() => countWeighingRounds(rows), [rows]);
   const showSlipFields = !editingRow && weighingRows.length === 0 && rows.length === 0;
   const slipContext = rows.length > 0 ? getSlipContextFromRows(rows) : null;
+  const restrictProductsToOrders = config.restrictProductsToOrders !== false;
 
   useEffect(() => {
     if (!showSlipFields || isLoadingProductionOrders) return;
@@ -1310,7 +1311,7 @@ export default function WeighingReportForm({
   );
 
   const productSelectOptions = useMemo(() => {
-    const options = [...orderProductOptions];
+    const options = restrictProductsToOrders ? [...orderProductOptions] : [...products];
     const currentCode = newRow.productCode.trim();
     if (currentCode && !options.some(item => item.productCode === currentCode)) {
       const catalog = findProductByCode(products, currentCode);
@@ -1321,9 +1322,10 @@ export default function WeighingReportForm({
       });
     }
     return options.sort((a, b) => a.productCode.localeCompare(b.productCode, 'vi'));
-  }, [orderProductOptions, newRow.productCode, newRow.productName, products]);
+  }, [orderProductOptions, newRow.productCode, newRow.productName, products, restrictProductsToOrders]);
 
   const productCodePlaceholder = useMemo(() => {
+    if (!restrictProductsToOrders) return 'Gõ để tìm mã SP';
     if (isLoadingProductionOrders) return 'Đang tải lệnh SX...';
     if (!productFilterContext.ngay || !productFilterContext.ca || !productFilterContext.machineName) {
       return 'Chọn ngày, ca và máy trước';
@@ -1332,14 +1334,16 @@ export default function WeighingReportForm({
       return 'Không có SP trong lệnh SX phù hợp';
     }
     return 'Gõ để tìm mã SP';
-  }, [isLoadingProductionOrders, productFilterContext, productSelectOptions.length]);
+  }, [isLoadingProductionOrders, productFilterContext, productSelectOptions.length, restrictProductsToOrders]);
 
   const productCodeSelectDisabled =
-    isLoadingProductionOrders ||
-    !productFilterContext.ngay ||
-    !productFilterContext.ca ||
-    !productFilterContext.machineName ||
-    productSelectOptions.length === 0;
+    (!restrictProductsToOrders && (isLoadingProducts || productSelectOptions.length === 0)) ||
+    (restrictProductsToOrders &&
+      (isLoadingProductionOrders ||
+        !productFilterContext.ngay ||
+        !productFilterContext.ca ||
+        !productFilterContext.machineName ||
+        productSelectOptions.length === 0));
 
   const handleProductCodeScan = useCallback(
     (code: string): boolean => {
@@ -1348,7 +1352,7 @@ export default function WeighingReportForm({
 
       const match = findProductByCode(productSelectOptions, trimmed);
       if (!match) {
-        setAddFormError('Mã SP không có trong lệnh SX của ca, ngày và máy này.');
+        setAddFormError(restrictProductsToOrders ? 'Mã SP không có trong lệnh SX của ca, ngày và máy này.' : 'Mã SP không có trong danh sách sản phẩm.');
         return false;
       }
 
@@ -1824,7 +1828,7 @@ export default function WeighingReportForm({
                   className={modalInputClass}
                 />
               </label>
-              {!showSlipFields && modalSlipInfo && (
+              {!showSlipFields && !editingRow && modalSlipInfo && (
                 <div className="col-span-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[11px] font-semibold text-zinc-600">
                   <span className="font-bold text-zinc-900">{modalSlipInfo.productionDate}</span>
                   {' · '}
@@ -1832,6 +1836,47 @@ export default function WeighingReportForm({
                   {' · '}
                   <span className="font-bold text-zinc-900">{modalSlipInfo.machineName}</span>
                 </div>
+              )}
+              {editingRow && (
+                <>
+                  <label className="space-y-1">
+                    <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                      <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                      Ngày SX
+                    </span>
+                    <input
+                      type="date"
+                      value={newRow.productionDate}
+                      onChange={e => setNewRow(prev => ({ ...prev, productionDate: e.target.value }))}
+                      className={modalInputClass}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                      <FileText className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                      Ca SX
+                    </span>
+                    <select
+                      value={newRow.shiftName}
+                      onChange={e => setNewRow(prev => ({ ...prev, shiftName: e.target.value }))}
+                      className={modalInputClass}
+                    >
+                      <option value="">Chọn ca</option>
+                      {newRow.shiftName &&
+                        !shiftOptions.some(shift => shift.value === newRow.shiftName) && (
+                          <option value={newRow.shiftName}>{newRow.shiftName}</option>
+                        )}
+                      {shiftOptions.map(shift => (
+                        <option key={shift.value} value={shift.value}>{shift.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {modalSlipInfo && (
+                    <div className="col-span-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[11px] font-semibold text-zinc-600">
+                      Máy: <span className="font-bold text-zinc-900">{modalSlipInfo.machineName}</span>
+                    </div>
+                  )}
+                </>
               )}
               {showSlipFields && (
               <>

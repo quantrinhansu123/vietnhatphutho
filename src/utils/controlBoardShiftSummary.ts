@@ -279,16 +279,21 @@ export function buildControlBoardShiftSummary(input: {
     if (report.so_luong !== null && Number.isFinite(report.so_luong)) {
       bucket.slHangThucTe += report.so_luong;
     }
+
+    // Khối lượng hàng TT — lấy từ báo cáo sản lượng: Số lượng * định mức kg của sản phẩm
+    const unitWeight = findProductWeight(input.products, report.mat_hang);
+    if (
+      unitWeight !== null &&
+      unitWeight > 0 &&
+      report.so_luong !== null &&
+      Number.isFinite(report.so_luong) &&
+      report.so_luong > 0
+    ) {
+      bucket.khoiLuongHangThucTe += unitWeight * report.so_luong;
+    }
   }
 
-  for (const record of getWeighingDataRows(input.weighingRecords)) {
-    const ngay = parseIsoDate(record.productionDate || record.reportDate);
-    if (!ngay || !inRange(ngay)) continue;
-    const bucket = getOrCreateBucket(map, ngay, record.shiftName, shiftOptions);
-    if (!bucket) continue;
-    // Khối lượng hàng TT — chỉ từ báo cáo cân ca (phieu_can_dinh_ki): Tổng trọng lượng mỗi lần cân
-    bucket.khoiLuongHangThucTe += sumWeighingRowTotalWeight(record);
-  }
+  // Không lấy Khối lượng hàng TT từ phiếu cân ca nữa (phieu_can_dinh_ki).
 
   for (const record of getWeighingDataRows(input.damagedRecords ?? [])) {
     const ngay = parseIsoDate(record.productionDate || record.reportDate);

@@ -5,6 +5,8 @@ export type WeighingSlipConfig = {
   summaryTitle: string;
   summarySubtitle: string;
   printTitle: string;
+  /** Nếu true: Mã SP chỉ chọn theo lệnh SX của ngày+ca+máy. Nếu false: chọn từ danh sách SP. */
+  restrictProductsToOrders?: boolean;
 };
 
 export const DEFAULT_WEIGHING_SLIP_CONFIG: WeighingSlipConfig = {
@@ -13,7 +15,8 @@ export const DEFAULT_WEIGHING_SLIP_CONFIG: WeighingSlipConfig = {
   backLabel: 'Quay lại Phiếu cân ca',
   summaryTitle: 'Tổng hợp báo cáo cân',
   summarySubtitle: 'Theo dõi phiếu cân theo từng ca sản xuất',
-  printTitle: 'PHIẾU CÂN CA'
+  printTitle: 'PHIẾU CÂN CA',
+  restrictProductsToOrders: true
 };
 
 export const DAMAGED_GOODS_SLIP_CONFIG: WeighingSlipConfig = {
@@ -22,5 +25,6 @@ export const DAMAGED_GOODS_SLIP_CONFIG: WeighingSlipConfig = {
   backLabel: 'Quay lại Báo cáo hàng hỏng',
   summaryTitle: 'Tổng hợp báo cáo hàng hỏng',
   summarySubtitle: 'Theo dõi phiếu hàng hỏng theo từng ca sản xuất',
-  printTitle: 'BÁO CÁO HÀNG HỎNG'
+  printTitle: 'BÁO CÁO HÀNG HỎNG',
+  restrictProductsToOrders: false
 };
