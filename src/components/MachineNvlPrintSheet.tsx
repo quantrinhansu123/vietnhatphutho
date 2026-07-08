@@ -55,16 +55,13 @@ function parseQty(raw: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function hasFormLineData(line: FormLine, isDauCa: boolean) {
+function hasFormLineData(line: FormLine) {
   if (line.code.trim() || line.name.trim()) return true;
-  if (isDauCa) {
-    return (
-      parseQty(line.inMachineQuantity) !== null ||
-      parseQty(line.inMixerQuantity) !== null ||
-      parseQty(line.unblendedQuantity) !== null
-    );
-  }
-  return parseQty(line.standardQuantity) !== null || parseQty(line.quantity) !== null;
+  return (
+    parseQty(line.inMachineQuantity) !== null ||
+    parseQty(line.inMixerQuantity) !== null ||
+    parseQty(line.unblendedQuantity) !== null
+  );
 }
 
 export function buildMachineNvlPrintReportFromForm(input: {
@@ -77,21 +74,13 @@ export function buildMachineNvlPrintReportFromForm(input: {
   note: string;
   lines: FormLine[];
 }): MachineNvlPrintReport {
-  const isDauCa = input.reportKind === 'dau_ca';
-
   const lines = input.lines
-    .filter(line => hasFormLineData(line, isDauCa))
+    .filter(hasFormLineData)
     .map((line, index): MachineNvlPrintLine => {
       const inMachineQty = parseQty(line.inMachineQuantity);
       const inMixerQty = parseQty(line.inMixerQuantity);
       const unblendedQty = parseQty(line.unblendedQuantity);
-      const standardQty = parseQty(line.standardQuantity);
-      const actualQty = parseQty(line.quantity);
-
-      const totalStart =
-        isDauCa
-          ? (inMachineQty ?? 0) + (inMixerQty ?? 0) + (unblendedQty ?? 0)
-          : actualQty ?? 0;
+      const totalQty = (inMachineQty ?? 0) + (inMixerQty ?? 0) + (unblendedQty ?? 0);
 
       return {
         stt: index + 1,
@@ -102,8 +91,8 @@ export function buildMachineNvlPrintReportFromForm(input: {
         soLuongTrongMay: inMachineQty,
         soLuongTrongBonTron: inMixerQty,
         soLuongNlChuaTron: unblendedQty,
-        soLuongTonDinhMuc: standardQty,
-        soLuongTon: totalStart,
+        soLuongTonDinhMuc: parseQty(line.standardQuantity),
+        soLuongTon: totalQty,
         ghiChu: line.note.trim()
       };
     });
@@ -131,7 +120,6 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
   const totalInMachine = lines.reduce((sum, line) => sum + (line.soLuongTrongMay ?? 0), 0);
   const totalInMixer = lines.reduce((sum, line) => sum + (line.soLuongTrongBonTron ?? 0), 0);
   const totalUnblended = lines.reduce((sum, line) => sum + (line.soLuongNlChuaTron ?? 0), 0);
-  const totalStandard = lines.reduce((sum, line) => sum + (line.soLuongTonDinhMuc ?? 0), 0);
   const totalActual = lines.reduce((sum, line) => sum + line.soLuongTon, 0);
 
   return (
@@ -178,12 +166,10 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
               <th>Mã vật tư</th>
               <th>Tên vật tư</th>
               <th>ĐVT</th>
-              {isDauCaReport ? <th>Tồn máy</th> : null}
-              {isDauCaReport ? <th>Tồn bồn</th> : null}
-              {isDauCaReport ? <th>Chưa trộn</th> : null}
-              {isDauCaReport ? <th>Tổng tồn đầu ca</th> : null}
-              {!isDauCaReport ? <th>SL tồn định mức</th> : null}
-              {!isDauCaReport ? <th>SL tồn thực tế</th> : null}
+              <th>Tồn máy</th>
+              <th>Tồn bồn</th>
+              <th>Chưa trộn</th>
+              <th>{isDauCaReport ? 'Tổng tồn đầu ca' : 'Tổng tồn cuối ca'}</th>
               <th>Ghi chú</th>
             </tr>
           </thead>
@@ -194,32 +180,16 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
                 <td>{line.maNvl || '-'}</td>
                 <td>{line.tenNvl || '-'}</td>
                 <td className="production-order-print-center">{line.donVi || '-'}</td>
-                {isDauCaReport ? (
-                  <td className="production-order-print-right">
-                    {line.soLuongTrongMay !== null ? formatNumber(line.soLuongTrongMay) : ''}
-                  </td>
-                ) : null}
-                {isDauCaReport ? (
-                  <td className="production-order-print-right">
-                    {line.soLuongTrongBonTron !== null ? formatNumber(line.soLuongTrongBonTron) : ''}
-                  </td>
-                ) : null}
-                {isDauCaReport ? (
-                  <td className="production-order-print-right">
-                    {line.soLuongNlChuaTron !== null ? formatNumber(line.soLuongNlChuaTron) : ''}
-                  </td>
-                ) : null}
-                {isDauCaReport ? (
-                  <td className="production-order-print-right">{formatNumber(line.soLuongTon)}</td>
-                ) : null}
-                {!isDauCaReport ? (
-                  <td className="production-order-print-right">
-                    {line.soLuongTonDinhMuc !== null ? formatNumber(line.soLuongTonDinhMuc) : ''}
-                  </td>
-                ) : null}
-                {!isDauCaReport ? (
-                  <td className="production-order-print-right">{formatNumber(line.soLuongTon)}</td>
-                ) : null}
+                <td className="production-order-print-right">
+                  {line.soLuongTrongMay !== null ? formatNumber(line.soLuongTrongMay) : ''}
+                </td>
+                <td className="production-order-print-right">
+                  {line.soLuongTrongBonTron !== null ? formatNumber(line.soLuongTrongBonTron) : ''}
+                </td>
+                <td className="production-order-print-right">
+                  {line.soLuongNlChuaTron !== null ? formatNumber(line.soLuongNlChuaTron) : ''}
+                </td>
+                <td className="production-order-print-right">{formatNumber(line.soLuongTon)}</td>
                 <td className="whitespace-pre-wrap">{line.ghiChu || ''}</td>
               </tr>
             ))}
@@ -227,46 +197,26 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
               <td colSpan={4} className="production-order-print-center" style={{ fontWeight: 700 }}>
                 TỔNG CỘNG
               </td>
-              {isDauCaReport ? (
-                <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                  {formatNumber(totalInMachine)}
-                </td>
-              ) : null}
-              {isDauCaReport ? (
-                <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                  {formatNumber(totalInMixer)}
-                </td>
-              ) : null}
-              {isDauCaReport ? (
-                <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                  {formatNumber(totalUnblended)}
-                </td>
-              ) : null}
-              {isDauCaReport ? (
-                <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                  {formatNumber(totalActual)}
-                </td>
-              ) : null}
-              {!isDauCaReport ? (
-                <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                  {formatNumber(totalStandard)}
-                </td>
-              ) : null}
-              {!isDauCaReport ? (
-                <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                  {formatNumber(totalActual)}
-                </td>
-              ) : null}
+              <td className="production-order-print-right" style={{ fontWeight: 700 }}>
+                {formatNumber(totalInMachine)}
+              </td>
+              <td className="production-order-print-right" style={{ fontWeight: 700 }}>
+                {formatNumber(totalInMixer)}
+              </td>
+              <td className="production-order-print-right" style={{ fontWeight: 700 }}>
+                {formatNumber(totalUnblended)}
+              </td>
+              <td className="production-order-print-right" style={{ fontWeight: 700 }}>
+                {formatNumber(totalActual)}
+              </td>
               <td></td>
             </tr>
           </tbody>
         </table>
 
-        {isDauCaReport ? (
-          <p className="machine-nvl-print-note">
-            Ghi chú: Tồn đầu ca gồm nhựa tồn trong máy, trong bồn trộn và nguyên liệu chưa trộn.
-          </p>
-        ) : null}
+        <p className="machine-nvl-print-note">
+          Ghi chú: Tổng tồn gồm nhựa tồn trong máy, trong bồn trộn và nguyên liệu chưa trộn.
+        </p>
 
         <div className="machine-nvl-print-signatures">
           <div>

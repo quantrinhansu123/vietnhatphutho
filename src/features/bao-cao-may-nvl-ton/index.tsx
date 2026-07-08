@@ -170,8 +170,6 @@ export function formatMachineNvlQuantityValue(value: number | null | undefined) 
 
 export const MACHINE_NVL_DAU_CA_GRID =
   'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_96px_96px_96px_104px_96px_minmax(96px,1fr)_40px]';
-export const MACHINE_NVL_CUOI_CA_GRID =
-  'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_112px_112px_minmax(96px,1fr)_40px]';
 
 const machineNvlLineMobileQtyClass =
   'machine-nvl-line-mobile-input h-9 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-center font-mono text-sm font-black tracking-tight outline-none focus:border-[#ef1b2d]';
@@ -446,11 +444,10 @@ export function MachineNvlReportPanel({
   }, [materials]);
 
   const totalQuantity = lines.reduce((sum, line) => {
-    const value = isDauCaTab
-      ? (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-        (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-        (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-      : Number(line.quantity.replace(',', '.'));
+    const value =
+      (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+      (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+      (Number(line.unblendedQuantity.replace(',', '.')) || 0);
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
 
@@ -485,32 +482,26 @@ export function MachineNvlReportPanel({
           don_vi: line.unit.trim() || 'kg',
           ghi_chu: line.note.trim()
         };
+        const inMachineQty = Number(line.inMachineQuantity.replace(',', '.'));
+        const inMixerQty = Number(line.inMixerQuantity.replace(',', '.'));
+        const unblendedQty = Number(line.unblendedQuantity.replace(',', '.'));
+        if (Number.isFinite(inMachineQty) && inMachineQty >= 0) {
+          row.so_luong_trong_may = inMachineQty;
+        }
+        if (Number.isFinite(inMixerQty) && inMixerQty >= 0) {
+          row.so_luong_trong_bon_tron = inMixerQty;
+        }
+        if (Number.isFinite(unblendedQty) && unblendedQty >= 0) {
+          row.so_luong_nl_chua_tron = unblendedQty;
+        }
+        row.so_luong_ton =
+          (Number.isFinite(inMachineQty) ? inMachineQty : 0) +
+          (Number.isFinite(inMixerQty) ? inMixerQty : 0) +
+          (Number.isFinite(unblendedQty) ? unblendedQty : 0);
         if (isDauCaTab) {
           const prevQty = Number(line.previousQuantity.replace(',', '.'));
-          const inMachineQty = Number(line.inMachineQuantity.replace(',', '.'));
-          const inMixerQty = Number(line.inMixerQuantity.replace(',', '.'));
-          const unblendedQty = Number(line.unblendedQuantity.replace(',', '.'));
           if (Number.isFinite(prevQty) && prevQty >= 0) {
             row.so_luong_ton_ca_truoc = prevQty;
-          }
-          if (Number.isFinite(inMachineQty) && inMachineQty >= 0) {
-            row.so_luong_trong_may = inMachineQty;
-          }
-          if (Number.isFinite(inMixerQty) && inMixerQty >= 0) {
-            row.so_luong_trong_bon_tron = inMixerQty;
-          }
-          if (Number.isFinite(unblendedQty) && unblendedQty >= 0) {
-            row.so_luong_nl_chua_tron = unblendedQty;
-          }
-          row.so_luong_ton =
-            (Number.isFinite(inMachineQty) ? inMachineQty : 0) +
-            (Number.isFinite(inMixerQty) ? inMixerQty : 0) +
-            (Number.isFinite(unblendedQty) ? unblendedQty : 0);
-        } else {
-          const standardQty = Number(line.standardQuantity.replace(',', '.'));
-          row.so_luong_ton = Number(line.quantity.replace(',', '.')) || 0;
-          if (Number.isFinite(standardQty) && standardQty >= 0) {
-            row.so_luong_ton_dinh_muc = standardQty;
           }
         }
         return row;
@@ -598,14 +589,9 @@ export function MachineNvlReportPanel({
 
   const canPrintCurrentReport = lines.some(line => {
     if (line.code.trim() || line.name.trim()) return true;
-    if (isDauCaTab) {
-      return (
-        line.inMachineQuantity.trim() ||
-        line.inMixerQuantity.trim() ||
-        line.unblendedQuantity.trim()
-      );
-    }
-    return line.standardQuantity.trim() || line.quantity.trim();
+    return Boolean(
+      line.inMachineQuantity.trim() || line.inMixerQuantity.trim() || line.unblendedQuantity.trim()
+    );
   });
 
   useEffect(() => {
@@ -762,17 +748,16 @@ export function MachineNvlReportPanel({
 
             <div className="mt-3 min-w-0 max-w-full overflow-hidden rounded-lg border border-zinc-200 md:mt-4 md:rounded-xl">
               <div
-                className={`hidden md:grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white ${isDauCaTab ? 'md:min-w-[1120px]' : 'md:min-w-[980px]'}`}
+                className={`hidden md:grid gap-2 ${MACHINE_NVL_DAU_CA_GRID} bg-zinc-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white md:min-w-[1120px]`}
               >
                 <span>STT</span>
                 <span>Mã NVL</span>
                 <span>Tên NVL</span>
                 <span>ĐVT</span>
-                {isDauCaTab ? <span>Tồn máy</span> : null}
-                {isDauCaTab ? <span>Tồn bồn</span> : null}
-                {isDauCaTab ? <span>Chưa trộn</span> : null}
-                {isDauCaTab ? <span>Tổng tồn đầu ca</span> : null}
-                {!isDauCaTab ? <span>SL tồn định mức</span> : null}
+                <span>Tồn máy</span>
+                <span>Tồn bồn</span>
+                <span>Chưa trộn</span>
+                <span>{isDauCaTab ? 'Tổng tồn đầu ca' : 'Tổng tồn cuối ca'}</span>
                 <span>SL tồn thực tế</span>
                 <span>Ghi chú</span>
                 <span></span>
@@ -794,7 +779,7 @@ export function MachineNvlReportPanel({
                 {lines.map((line, index) => (
                   <div
                     key={line.key}
-                    className={`min-w-0 max-w-full px-1 py-1.5 md:px-3 md:py-2 ${isDauCaTab ? 'md:min-w-[1120px]' : 'md:min-w-[980px]'}`}
+                    className="min-w-0 max-w-full px-1 py-1.5 md:px-3 md:py-2 md:min-w-[1120px]"
                   >
                     <div className="mb-1.5 flex min-w-0 items-center gap-1.5 md:hidden">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-500 text-[10px] font-black text-white">
@@ -849,75 +834,42 @@ export function MachineNvlReportPanel({
                         <span className="machine-nvl-line-mobile-label">ĐVT</span>
                         <input value={line.unit} readOnly className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-0.5 text-center text-[10px] font-semibold text-zinc-700 outline-none" />
                       </label>
-                      {isDauCaTab ? (
-                        <>
-                          <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">Tồn máy</span>
-                            <input type="number" min="0" step="0.01" value={line.inMachineQuantity} onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
-                          </label>
-                          <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">Tồn bồn</span>
-                            <input type="number" min="0" step="0.01" value={line.inMixerQuantity} onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
-                          </label>
-                          <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">Chưa trộn</span>
-                            <input type="number" min="0" step="0.01" value={line.unblendedQuantity} onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
-                          </label>
-                          <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">Tổng</span>
-                            <input
-                              value={formatMachineNvlQuantityValue(
-                                (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                                  (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                                  (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                              )}
-                              readOnly
-                              className={machineNvlLineMobileQtyReadonlyClass}
-                            />
-                          </label>
-                        </>
-                      ) : (
-                        <>
-                          <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">SL ĐM</span>
-                            <input type="number" min="0" step="0.01" value={line.standardQuantity} onChange={event => updateLine(line.key, { standardQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
-                          </label>
-                          <label className="block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">SL TT</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.quantity}
-                              onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                              className={machineNvlLineMobileQtyClass}
-                            />
-                          </label>
-                          <label className="col-span-2 block min-w-0 space-y-0.5">
-                            <span className="machine-nvl-line-mobile-label">Ghi chú</span>
-                            <textarea
-                              value={line.note}
-                              onChange={event => updateLine(line.key, { note: event.target.value })}
-                              rows={2}
-                              className="machine-nvl-line-mobile-input min-h-[40px] w-full min-w-0 resize-y rounded-md border border-zinc-200 px-1 py-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]"
-                            />
-                          </label>
-                        </>
-                      )}
-                      {isDauCaTab ? (
-                        <label className="col-span-4 block min-w-0 space-y-0.5">
-                          <span className="machine-nvl-line-mobile-label">Ghi chú</span>
-                          <textarea
-                            value={line.note}
-                            onChange={event => updateLine(line.key, { note: event.target.value })}
-                            rows={2}
-                            className="machine-nvl-line-mobile-input min-h-[40px] w-full min-w-0 resize-y rounded-md border border-zinc-200 px-1 py-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]"
-                          />
-                        </label>
-                      ) : null}
+                      <label className="block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">Tồn máy</span>
+                        <input type="number" min="0" step="0.01" value={line.inMachineQuantity} onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
+                      </label>
+                      <label className="block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">Tồn bồn</span>
+                        <input type="number" min="0" step="0.01" value={line.inMixerQuantity} onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
+                      </label>
+                      <label className="block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">Chưa trộn</span>
+                        <input type="number" min="0" step="0.01" value={line.unblendedQuantity} onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
+                      </label>
+                      <label className="block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">Tổng</span>
+                        <input
+                          value={formatMachineNvlQuantityValue(
+                            (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                              (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                              (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                          )}
+                          readOnly
+                          className={machineNvlLineMobileQtyReadonlyClass}
+                        />
+                      </label>
+                      <label className="col-span-4 block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">Ghi chú</span>
+                        <textarea
+                          value={line.note}
+                          onChange={event => updateLine(line.key, { note: event.target.value })}
+                          rows={2}
+                          className="machine-nvl-line-mobile-input min-h-[40px] w-full min-w-0 resize-y rounded-md border border-zinc-200 px-1 py-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]"
+                        />
+                      </label>
                     </div>
                     <div
-                      className={`hidden md:grid gap-2 ${isDauCaTab ? MACHINE_NVL_DAU_CA_GRID : MACHINE_NVL_CUOI_CA_GRID} items-center ${isDauCaTab ? 'md:min-w-[1120px]' : 'md:min-w-[980px]'}`}
+                      className={`hidden md:grid gap-2 ${MACHINE_NVL_DAU_CA_GRID} items-center md:min-w-[1120px]`}
                     >
                     <span className="min-w-0 font-mono text-sm font-black text-[#ef1b2d]">{index + 1}</span>
                     <div className="min-w-0">
@@ -951,73 +903,50 @@ export function MachineNvlReportPanel({
                     </div>
                     <input value={line.name} readOnly className="min-w-0 h-10 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-semibold text-zinc-700 outline-none" />
                     <input value={line.unit} onChange={event => updateLine(line.key, { unit: event.target.value })} className="min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]" />
-                    {isDauCaTab ? (
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.inMachineQuantity}
-                        onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })}
-                        className={machineNvlLineDesktopQtyClass}
-                      />
-                    ) : null}
-                    {isDauCaTab ? (
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.inMixerQuantity}
-                        onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })}
-                        className={machineNvlLineDesktopQtyClass}
-                      />
-                    ) : null}
-                    {isDauCaTab ? (
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.unblendedQuantity}
-                        onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })}
-                        className={machineNvlLineDesktopQtyClass}
-                      />
-                    ) : null}
-                    {isDauCaTab ? (
-                      <input
-                        value={formatMachineNvlQuantityValue(
-                          (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                            (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                            (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                        )}
-                        readOnly
-                        className={machineNvlLineDesktopQtyReadonlyClass}
-                      />
-                    ) : null}
-                    {!isDauCaTab ? (
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.standardQuantity}
-                        onChange={event => updateLine(line.key, { standardQuantity: event.target.value })}
-                        className={machineNvlLineDesktopQtyClass}
-                      />
-                    ) : null}
                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      value={
-                        isDauCaTab
-                          ? formatMachineNvlQuantityValue(
-                              (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                                (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                                (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                            )
-                          : line.quantity
-                      }
-                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                      readOnly={isDauCaTab}
-                      className={isDauCaTab ? machineNvlLineDesktopQtyReadonlyClass : machineNvlLineDesktopQtyClass}
+                      value={line.inMachineQuantity}
+                      onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })}
+                      className={machineNvlLineDesktopQtyClass}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.inMixerQuantity}
+                      onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })}
+                      className={machineNvlLineDesktopQtyClass}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.unblendedQuantity}
+                      onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })}
+                      className={machineNvlLineDesktopQtyClass}
+                    />
+                    <input
+                      value={formatMachineNvlQuantityValue(
+                        (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                          (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                          (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                      )}
+                      readOnly
+                      className={machineNvlLineDesktopQtyReadonlyClass}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formatMachineNvlQuantityValue(
+                        (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
+                          (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
+                          (Number(line.unblendedQuantity.replace(',', '.')) || 0)
+                      )}
+                      readOnly
+                      className={machineNvlLineDesktopQtyReadonlyClass}
                     />
                     <textarea
                       value={line.note}

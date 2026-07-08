@@ -469,6 +469,42 @@ function createWeighingLocalStore(cfg: Pick<WeighingSlipApiConfig, 'localFilePat
     return true;
   };
 
+  const remapShiftLocal = (fromShift: string, toShift: string) => {
+    const from = String(fromShift || '').trim();
+    const to = String(toShift || '').trim();
+    if (!from || !to || from === to) return 0;
+
+    const entries = readLocalEntries();
+    let updated = 0;
+    let changed = false;
+
+    for (const entry of entries) {
+      const entryShift = String(entry?.shiftName ?? entry?.ca_san_xuat ?? '').trim();
+      if (entryShift === from) {
+        entry.shiftName = to;
+        entry.ca_san_xuat = to;
+        changed = true;
+      }
+
+      const rows = Array.isArray(entry?.rows) ? entry.rows : [];
+      for (const row of rows) {
+        const rowShift = String(row?.ca_san_xuat ?? row?.shiftName ?? entryShift).trim();
+        if (rowShift === from) {
+          row.ca_san_xuat = to;
+          row.shiftName = to;
+          updated += 1;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      writeLocalEntries(entries);
+    }
+
+    return updated;
+  };
+
   const savePayloadLocally = async (payload: any, rows: any[]) => {
     const stamp = Date.now();
     const rowsWithIds = rows.map((row, index) => ({
@@ -500,6 +536,7 @@ function createWeighingLocalStore(cfg: Pick<WeighingSlipApiConfig, 'localFilePat
     findLocalRow,
     updateRecordLocal,
     deleteRecordLocal,
+    remapShiftLocal,
     savePayloadLocally
   };
 }
@@ -677,6 +714,56 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
       return res.status(500).json({ error: `Không thể lưu ${cfg.entityLabel} local.` });
     } catch (err: any) {
       res.status(500).json({ error: err.message || `Lỗi hệ thống khi lưu ${cfg.entityLabel}.` });
+    }
+  });
+
+  app.post(`${apiPath}/remap-shift`, async (req, res) => {
+    try {
+      const fromShift = String(req.body?.from ?? req.body?.fromShift ?? 'HC1').trim();
+      const toShift = String(req.body?.to ?? req.body?.toShift ?? '12C1').trim();
+
+      if (!fromShift || !toShift) {
+        return res.status(400).json({ error: 'Thiếu ca nguồn hoặc ca đích.' });
+      }
+      if (fromShift === toShift) {
+        return res.status(400).json({ error: 'Ca nguồn và ca đích phải khác nhau.' });
+      }
+
+      let supabaseUpdated = 0;
+      if (supabase) {
+        const { data, error } = await supabase
+          .from(cfg.supabaseTable)
+          .update({ ca_san_xuat: toShift })
+          .eq('ca_san_xuat', fromShift)
+          .select('id');
+
+        if (error) {
+          console.error(`Supabase ${cfg.entityLabel} remap-shift error:`, error);
+          const rlsBlocked = error.code === '42501';
+          return res.status(500).json({
+            error: rlsBlocked
+              ? `Supabase chặn cập nhật do RLS. Chạy ${cfg.sqlMigrationFile} hoặc dùng SUPABASE_SERVICE_KEY.`
+              : `Không thể đổi ca ${fromShift} → ${toShift}. ${error.message}`
+          });
+        }
+
+        supabaseUpdated = Array.isArray(data) ? data.length : 0;
+      }
+
+      const localUpdated = store.remapShiftLocal(fromShift, toShift);
+      const updated = supabase ? supabaseUpdated : localUpdated;
+
+      return res.json({
+        success: true,
+        from: fromShift,
+        to: toShift,
+        updated,
+        supabaseUpdated,
+        localUpdated,
+        mode: supabase ? 'supabase' : 'local'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi đổi ca hàng loạt.' });
     }
   });
 
@@ -5076,6 +5163,45 @@ export function createApp() {
     }
   });
 
+  app.post('/api/phieu-xuat-nhap-kho/remap-shift', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const fromShift = String(req.body?.from ?? req.body?.fromShift ?? 'HC1').trim();
+      const toShift = String(req.body?.to ?? req.body?.toShift ?? '12C1').trim();
+
+      if (!fromShift || !toShift) {
+        return res.status(400).json({ error: 'Thiếu ca nguồn hoặc ca đích.' });
+      }
+      if (fromShift === toShift) {
+        return res.status(400).json({ error: 'Ca nguồn và ca đích phải khác nhau.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .update({ ca: toShift })
+        .eq('ca', fromShift)
+        .select('id');
+
+      if (error) {
+        console.error('Supabase phieu_xuat_nhap_kho remap-shift error:', error);
+        return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error) });
+      }
+
+      return res.json({
+        success: true,
+        from: fromShift,
+        to: toShift,
+        updated: Array.isArray(data) ? data.length : 0,
+        mode: 'supabase'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi đổi ca hàng loạt.' });
+    }
+  });
+
   app.put('/api/phieu-xuat-nhap-kho/:slipCode', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -6027,6 +6153,45 @@ export function createApp() {
       return res.status(201).json({ success: true, report: data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo sản lượng.' });
+    }
+  });
+
+  app.post('/api/bao-cao-nghiem-thu/remap-shift', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const fromShift = String(req.body?.from ?? req.body?.fromShift ?? 'HC1').trim();
+      const toShift = String(req.body?.to ?? req.body?.toShift ?? '12C1').trim();
+
+      if (!fromShift || !toShift) {
+        return res.status(400).json({ error: 'Thiếu ca nguồn hoặc ca đích.' });
+      }
+      if (fromShift === toShift) {
+        return res.status(400).json({ error: 'Ca nguồn và ca đích phải khác nhau.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_ACCEPTANCE_REPORTS_TABLE)
+        .update({ ca: toShift })
+        .eq('ca', fromShift)
+        .select('id');
+
+      if (error) {
+        console.error('Supabase acceptance remap-shift error:', error);
+        return res.status(500).json({ error: acceptanceReportWriteError(error) });
+      }
+
+      return res.json({
+        success: true,
+        from: fromShift,
+        to: toShift,
+        updated: Array.isArray(data) ? data.length : 0,
+        mode: 'supabase'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi đổi ca hàng loạt.' });
     }
   });
 

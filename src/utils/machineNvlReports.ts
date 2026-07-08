@@ -113,8 +113,23 @@ export function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport
     .filter((report): report is MachineNvlSavedReport => Boolean(report));
 }
 
+function isKgUnit(unit: unknown) {
+  const normalized = String(unit ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
+}
+
 /** Tổng tồn đầu ca 1 dòng NVL = tồn máy + bồn trộn + NL chưa trộn (hoặc soLuongTon đã lưu). */
-export function sumMachineNvlDauCaLineTotal(line: Pick<MachineNvlSavedLine, 'soLuongTon' | 'soLuongTrongMay' | 'soLuongTrongBonTron' | 'soLuongNlChuaTron'>) {
+export function sumMachineNvlDauCaLineTotal(
+  line: Pick<
+    MachineNvlSavedLine,
+    'donVi' | 'soLuongTon' | 'soLuongTrongMay' | 'soLuongTrongBonTron' | 'soLuongNlChuaTron'
+  >
+) {
+  if (!isKgUnit(line.donVi)) return 0;
   if (line.soLuongTon > 0) return line.soLuongTon;
   return (
     (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0)
@@ -130,7 +145,8 @@ export function sumMachineNvlDauCaReportTotal(report: Pick<MachineNvlSavedReport
 }
 
 /** Tổng tồn cuối ca 1 dòng NVL = SL tồn đã lưu. */
-export function sumMachineNvlCuoiCaLineTotal(line: Pick<MachineNvlSavedLine, 'soLuongTon'>) {
+export function sumMachineNvlCuoiCaLineTotal(line: Pick<MachineNvlSavedLine, 'donVi' | 'soLuongTon'>) {
+  if (!isKgUnit(line.donVi)) return 0;
   return Number.isFinite(line.soLuongTon) && line.soLuongTon > 0 ? line.soLuongTon : 0;
 }
 

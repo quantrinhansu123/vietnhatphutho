@@ -8,6 +8,7 @@ import {
   Plus,
   Printer,
   RefreshCw,
+  Replace,
   Trash2
 } from 'lucide-react';
 import WeighingReportForm from './WeighingReportForm';
@@ -116,28 +117,36 @@ interface WeighingRoundEntry {
 
 interface WeighingRoundGroup {
   roundKey: string;
+  date: string;
   weighNo: string;
   entries: WeighingRoundEntry[];
 }
 
 function groupShiftRowsByRound(slips: WeighingSlip[]): WeighingRoundGroup[] {
-  const roundMap = new Map<string, WeighingRoundEntry[]>();
+  const roundMap = new Map<string, { date: string; weighNo: string; entries: WeighingRoundEntry[] }>();
 
   slips.forEach(slip => {
+    const date = slip.productionDate || slip.reportDate || '';
     getWeighingDataRows(slip.rows).forEach(row => {
       const weighNo = String(row.weighNo ?? '').trim() || '1';
-      const bucket = roundMap.get(weighNo) ?? [];
-      bucket.push({ slip, row });
-      roundMap.set(weighNo, bucket);
+      const key = `${date}__${weighNo}`;
+      const bucket = roundMap.get(key) ?? { date, weighNo, entries: [] };
+      bucket.entries.push({ slip, row });
+      roundMap.set(key, bucket);
     });
   });
 
   return [...roundMap.entries()]
-    .sort(([a], [b]) => parseWeighRoundNumber(a) - parseWeighRoundNumber(b))
-    .map(([weighNo, entries]) => ({
-      roundKey: weighNo,
-      weighNo,
-      entries
+    .sort(([, a], [, b]) => {
+      const dateCmp = b.date.localeCompare(a.date);
+      if (dateCmp !== 0) return dateCmp;
+      return parseWeighRoundNumber(a.weighNo) - parseWeighRoundNumber(b.weighNo);
+    })
+    .map(([key, group]) => ({
+      roundKey: key,
+      date: group.date,
+      weighNo: group.weighNo,
+      entries: group.entries
     }));
 }
 
@@ -230,7 +239,8 @@ export default function WeighingShiftSummary({
   defaultShowForm?: boolean;
 } = {}) {
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [records, setRecords] = useState<WeighingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -248,13 +258,15 @@ export default function WeighingShiftSummary({
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [printSlip, setPrintSlip] = useState<WeighingSlipPrintData | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [isRemappingShift, setIsRemappingShift] = useState(false);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
   useEffect(() => {
     if (!initialPendingAdd) return;
     if (initialPendingAdd.productionDate) {
-      setSelectedDate(initialPendingAdd.productionDate);
+      setDateFrom(initialPendingAdd.productionDate);
+      setDateTo(initialPendingAdd.productionDate);
     }
     setPendingAdd(initialPendingAdd);
     setShowReportForm(true);
@@ -320,7 +332,10 @@ export default function WeighingShiftSummary({
     setError('');
 
     try {
-      const params = new URLSearchParams({ ngay: selectedDate });
+      const params =
+        dateFrom === dateTo
+          ? new URLSearchParams({ ngay: dateFrom })
+          : new URLSearchParams({ from: dateFrom, to: dateTo });
       const res = await fetch(`${config.apiBasePath}?${params.toString()}`);
       const data = await res.json().catch(() => ({}));
 
@@ -341,7 +356,7 @@ export default function WeighingShiftSummary({
     loadReports();
     setViewingRow(null);
     setActionMessage('');
-  }, [selectedDate, config.apiBasePath]);
+  }, [dateFrom, dateTo, config.apiBasePath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -498,6 +513,42 @@ export default function WeighingShiftSummary({
     }
   };
 
+  const handleRemapHc1To12C1 = async () => {
+    if (
+      !window.confirm(
+        'Đổi toàn bộ ca HC2 thành 12C1 trên tất cả phiếu cân (không chỉ ngày đang chọn). Tiếp tục?'
+      )
+    ) {
+      return;
+    }
+
+    setIsRemappingShift(true);
+    setActionMessage('');
+    try {
+      const res = await fetch(`${config.apiBasePath}/remap-shift`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'HC2', to: '12C1' })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể đổi ca HC2 → 12C1.');
+      }
+
+      const updated = Number(data.updated ?? 0);
+      setActionMessage(
+        updated > 0
+          ? `Đã đổi ${updated} dòng từ HC2 thành 12C1.`
+          : 'Không có dòng nào mang ca HC2.'
+      );
+      await loadReports();
+    } catch (err: any) {
+      setActionMessage(err.message || 'Không thể đổi ca HC2 → 12C1.');
+    } finally {
+      setIsRemappingShift(false);
+    }
+  };
+
   if (showReportForm) {
     return (
       <div className="relative space-y-3 pb-28">
@@ -522,19 +573,50 @@ export default function WeighingShiftSummary({
     <div className="relative space-y-4 pb-28">
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-2 border-b border-zinc-100 bg-zinc-50 p-3 sm:p-4">
-          <label className="min-w-[140px] flex-1 space-y-1 sm:max-w-[200px]">
-            <span className="flex items-center gap-1 text-xs font-bold text-zinc-600">
-              <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
-              Ngày sản xuất
-            </span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
-            />
-          </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[140px] flex-1 space-y-1 sm:max-w-[180px]">
+              <span className="flex items-center gap-1 text-xs font-bold text-zinc-600">
+                <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                Từ ngày
+              </span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+              />
+            </label>
+            <label className="min-w-[140px] flex-1 space-y-1 sm:max-w-[180px]">
+              <span className="flex items-center gap-1 text-xs font-bold text-zinc-600">
+                <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                Đến ngày
+              </span>
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom}
+                onChange={e => setDateTo(e.target.value)}
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {config.apiBasePath === DEFAULT_WEIGHING_SLIP_CONFIG.apiBasePath && (
+              <button
+                type="button"
+                onClick={handleRemapHc1To12C1}
+                disabled={isLoading || isRemappingShift}
+                title="Đổi toàn bộ ca HC2 thành 12C1"
+                className="flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+              >
+                {isRemappingShift ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Replace className="h-4 w-4" />
+                )}
+                Sửa hết HC2 → 12C1
+              </button>
+            )}
             <button
               type="button"
               onClick={loadReports}
@@ -546,7 +628,7 @@ export default function WeighingShiftSummary({
             </button>
             <button
               type="button"
-              onClick={() => handleOpenSlipSetup({ productionDate: selectedDate })}
+              onClick={() => handleOpenSlipSetup({ productionDate: dateTo })}
               className="hidden h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white shadow-sm transition hover:bg-[#b30d1c] sm:flex"
             >
               <Plus className="h-4 w-4" />
@@ -581,7 +663,8 @@ export default function WeighingShiftSummary({
             const primaryMachine = primarySlip
               ? resolveMachineName(primarySlip.machineName, ...primarySlip.rows.map(row => row.machineName))
               : '—';
-            const tableColSpan = 12;
+            const isMultiDayRange = dateFrom !== dateTo;
+            const tableColSpan = isMultiDayRange ? 13 : 12;
 
             return (
             <section key={shift.shiftKey} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
@@ -640,7 +723,7 @@ export default function WeighingShiftSummary({
                     type="button"
                     onClick={() =>
                       handleOpenSlipSetup({
-                        productionDate: selectedDate,
+                        productionDate: dateTo,
                         shiftName: shift.shiftKey
                       })
                     }
@@ -660,6 +743,7 @@ export default function WeighingShiftSummary({
                     <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
                       <thead>
                         <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
+                          {isMultiDayRange && <th className="px-3 py-2">Ngày</th>}
                           <th className="px-3 py-2">Sản phẩm</th>
                           <th className="px-3 py-2">Người cân</th>
                           <th className="px-3 py-2">TL lõi</th>
@@ -691,6 +775,7 @@ export default function WeighingShiftSummary({
                                 <tr className="bg-red-50/60">
                                   <td colSpan={tableColSpan} className="px-3 py-1.5">
                                     <span className="text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">
+                                      {isMultiDayRange ? `${formatDateVi(group.date)} · ` : ''}
                                       Lần {group.weighNo}
                                       {metaWeigher ? ` · ${metaWeigher}` : ''}
                                       {metaTime ? ` · ${metaTime}` : ''}
@@ -699,6 +784,11 @@ export default function WeighingShiftSummary({
                                 </tr>
                                 {group.entries.map((entry, index) => (
                                   <tr key={entry.row.id ?? `${group.roundKey}-${entry.slip.key}-${index}`}>
+                                    {isMultiDayRange && (
+                                      <td className="px-3 py-2 font-mono text-[11px] font-bold text-zinc-700">
+                                        {formatDateVi(entry.slip.productionDate || entry.slip.reportDate)}
+                                      </td>
+                                    )}
                                     <td className="px-3 py-2 font-semibold text-zinc-800">
                                       <p>{formatWeighingProductLabel(entry.row, entry.slip)}</p>
                                       {shift.slips.length > 1 ? (
@@ -814,7 +904,7 @@ export default function WeighingShiftSummary({
 
       <button
         type="button"
-        onClick={() => handleOpenSlipSetup({ productionDate: selectedDate })}
+        onClick={() => handleOpenSlipSetup({ productionDate: dateTo })}
         className="fixed bottom-24 right-4 z-30 flex h-14 items-center gap-2 rounded-full bg-[#ef1b2d] px-5 text-sm font-extrabold text-white shadow-lg shadow-red-500/30 transition hover:bg-[#b30d1c] sm:hidden"
       >
         <Plus className="h-5 w-5" />

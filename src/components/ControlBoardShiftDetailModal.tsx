@@ -102,7 +102,7 @@ export default function ControlBoardShiftDetailModal({
     [metric, ngay, ca, sources]
   );
 
-  const isWeighingMetric = metric === 'khoiLuongHangThucTe';
+  const isWeighingMetric = false;
   const isWarehouseNplMetric = metric === 'khoiLuongNpl';
   const isMachineNvlDauCaMetric = metric === 'tonDauCa';
   const isMachineNvlCuoiCaMetric = metric === 'tonCuoiCa';

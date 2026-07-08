@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ClipboardList, Loader2, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
+import { ChevronLeft, ClipboardList, Loader2, Pencil, Plus, Printer, Replace, Trash2 } from 'lucide-react';
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { formatNumber } from '../utils';
 import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips, sumByUnit } from './AcceptanceReportPrintSheet';
@@ -103,6 +103,7 @@ export default function AcceptanceReportListView({
   const [pendingPrint, setPendingPrint] = useState(false);
   const [activePrintSlips, setActivePrintSlips] = useState<ReturnType<typeof buildAcceptancePrintSlips>>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isRemappingShift, setIsRemappingShift] = useState(false);
   const [productNameByCode, setProductNameByCode] = useState<Map<string, string>>(() => new Map());
 
   const dateGroups = useMemo(() => buildDateGroups(reports), [reports]);
@@ -217,6 +218,41 @@ export default function AcceptanceReportListView({
     }
   };
 
+  const handleRemapHc1To12C1 = async () => {
+    if (
+      !window.confirm(
+        'Đổi toàn bộ ca HC1 thành 12C1 trên tất cả báo cáo sản lượng (không chỉ khoảng ngày đang chọn). Tiếp tục?'
+      )
+    ) {
+      return;
+    }
+
+    setError('');
+    setMessage('');
+    setIsRemappingShift(true);
+    try {
+      const res = await fetch('/api/bao-cao-nghiem-thu/remap-shift', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'HC1', to: '12C1' })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể đổi ca HC1 → 12C1.');
+
+      const updated = Number(data.updated ?? 0);
+      setMessage(
+        updated > 0
+          ? `Đã đổi ${updated} dòng từ HC1 thành 12C1.`
+          : 'Không có dòng nào mang ca HC1.'
+      );
+      await loadReports(filterFromDate, filterToDate);
+    } catch (err: any) {
+      setError(err.message || 'Không thể đổi ca HC1 → 12C1.');
+    } finally {
+      setIsRemappingShift(false);
+    }
+  };
+
   const renderReportActions = (report: AcceptanceReport) => (
     <div className="flex items-center justify-center gap-1">
       <button
@@ -254,6 +290,20 @@ export default function AcceptanceReportListView({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRemapHc1To12C1}
+                disabled={isLoading || isRemappingShift}
+                title="Đổi toàn bộ ca HC1 thành 12C1"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+              >
+                {isRemappingShift ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Replace className="h-4 w-4" />
+                )}
+                Sửa hết HC1 → 12C1
+              </button>
               <button
                 type="button"
                 onClick={onCreate}
