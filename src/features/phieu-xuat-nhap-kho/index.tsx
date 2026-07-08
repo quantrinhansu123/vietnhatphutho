@@ -779,15 +779,6 @@ export function WarehouseSlipPanel({
         </div>
       </section>
 
-      {editSlipCode ? (
-        <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 shadow-sm">
-          <p className="text-xs font-black uppercase tracking-wider text-amber-800">Chế độ sửa phiếu</p>
-          <p className="mt-1 text-sm font-bold text-amber-950">
-            Mã phiếu: <span className="font-black">{editSlipCode}</span> — thay đổi sẽ ghi đè toàn bộ dòng của phiếu này.
-          </p>
-        </section>
-      ) : null}
-
       {(formError || actionMessage) && (
         <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
           {formError && (

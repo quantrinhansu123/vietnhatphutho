@@ -118,6 +118,11 @@ export function formatPercent(val: number): string {
 }
 
 export function parsePercentInput(value: string): number {
-  const normalized = value.trim().replace(/\s/g, '').replace(',', '.');
+  const cleaned = value.trim().replace(/\s/g, '');
+  // Định dạng vi-VN "3.000,00": dấu chấm là phân tách hàng nghìn, dấu phẩy là thập phân.
+  const normalized =
+    cleaned.includes('.') && cleaned.includes(',')
+      ? cleaned.replace(/\./g, '').replace(',', '.')
+      : cleaned.replace(',', '.');
   return Number(normalized);
 }
