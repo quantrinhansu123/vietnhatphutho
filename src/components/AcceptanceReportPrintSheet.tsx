@@ -68,45 +68,79 @@ export function sumByUnit(lines: AcceptancePrintLine[]) {
 }
 
 export function buildAcceptancePrintSlips(reports: AcceptanceReportSource[]): AcceptancePrintSlip[] {
-  const grouped = new Map<string, AcceptancePrintSlip>();
+  type AcceptanceSlipAcc = {
+    ngay: string;
+    ca: string;
+    gio: string;
+    lanSet: Set<string>;
+    machineSet: Set<string>;
+    lineMap: Map<string, AcceptancePrintLine>;
+    lineOrder: string[];
+  };
+  const grouped = new Map<string, AcceptanceSlipAcc>();
 
+  // Gộp tất cả các lần trong cùng 1 NGÀY + CA thành 1 phiếu, cộng dồn số lượng theo mặt hàng.
   reports.forEach(report => {
-    const key = [report.ngay, report.ca, report.lan, report.ma_may || report.ten_may].join('|');
-    const slip =
-      grouped.get(key) ??
-      {
+    const key = [report.ngay, report.ca].join('|');
+    let acc = grouped.get(key);
+    if (!acc) {
+      acc = {
         ngay: report.ngay,
         ca: report.ca || '-',
-        lan: report.lan || '-',
         gio: report.gio || '-',
-        machineLabel: machineLabelFromReport(report),
-        lines: []
+        lanSet: new Set<string>(),
+        machineSet: new Set<string>(),
+        lineMap: new Map<string, AcceptancePrintLine>(),
+        lineOrder: []
       };
-
-    slip.lines.push({
-      mat_hang: report.mat_hang,
-      ten_sp: report.ten_sp,
-      don_vi: report.don_vi,
-      so_luong: report.so_luong
-    });
-
-    if (report.gio && (slip.gio === '-' || report.gio < slip.gio)) {
-      slip.gio = report.gio;
+      grouped.set(key, acc);
     }
 
-    grouped.set(key, slip);
+    if (report.lan) acc.lanSet.add(report.lan);
+    const machineLabel = machineLabelFromReport(report);
+    if (machineLabel && machineLabel !== '-') acc.machineSet.add(machineLabel);
+
+    const lineKey = [report.mat_hang, report.ten_sp, report.don_vi].join('|');
+    const existing = acc.lineMap.get(lineKey);
+    if (existing) {
+      existing.so_luong = (existing.so_luong ?? 0) + (report.so_luong ?? 0);
+    } else {
+      const line: AcceptancePrintLine = {
+        mat_hang: report.mat_hang,
+        ten_sp: report.ten_sp,
+        don_vi: report.don_vi,
+        so_luong: report.so_luong
+      };
+      acc.lineMap.set(lineKey, line);
+      acc.lineOrder.push(lineKey);
+    }
+
+    if (report.gio && (acc.gio === '-' || report.gio < acc.gio)) {
+      acc.gio = report.gio;
+    }
   });
 
-  return [...grouped.values()].sort((a, b) => {
-    const ca = a.ca.localeCompare(b.ca, 'vi');
-    if (ca !== 0) return ca;
-    const lan = a.lan.localeCompare(b.lan, 'vi', { numeric: true });
-    if (lan !== 0) return lan;
-    return a.machineLabel.localeCompare(b.machineLabel, 'vi');
-  });
+  return [...grouped.values()]
+    .map(acc => ({
+      ngay: acc.ngay,
+      ca: acc.ca,
+      lan:
+        acc.lanSet.size > 0
+          ? [...acc.lanSet].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true })).join(', ')
+          : '-',
+      gio: acc.gio,
+      machineLabel:
+        acc.machineSet.size > 0 ? [...acc.machineSet].sort((a, b) => a.localeCompare(b, 'vi')).join(', ') : '-',
+      lines: acc.lineOrder.map(k => acc.lineMap.get(k)!)
+    }))
+    .sort((a, b) => {
+      const ca = a.ca.localeCompare(b.ca, 'vi');
+      if (ca !== 0) return ca;
+      return a.ngay.localeCompare(b.ngay, 'vi');
+    });
 }
 
-function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
+export function AcceptanceReportPrintSheet({ slip }: { slip: AcceptancePrintSlip }) {
   const totalsByUnit = sumByUnit(slip.lines);
 
   return (

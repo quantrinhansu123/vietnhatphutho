@@ -135,6 +135,24 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Quản lý danh sách máy móc, tình trạng và thông tin vận hành.',
     icon: Cpu,
     tab: 'machines'
+  },
+  {
+    title: 'Lệnh sản xuất',
+    desc: 'Xem danh sách lệnh SX, mã hàng, trạng thái và kế hoạch sản xuất.',
+    icon: Factory,
+    tab: 'production-orders'
+  },
+  {
+    title: 'Phiếu xuất nhập kho',
+    desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
+    icon: ArrowDownToLine,
+    tab: 'warehouse-slip'
+  },
+  {
+    title: 'Lịch sử xuất nhập kho',
+    desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
+    icon: History,
+    tab: 'warehouse-history'
   }
 ];
 

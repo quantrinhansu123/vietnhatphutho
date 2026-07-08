@@ -120,7 +120,7 @@ export function buildMachineNvlPrintReportFromForm(input: {
   };
 }
 
-function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
+export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport }) {
   const isDauCaReport = report.reportKind === 'dau_ca';
   const printDate = formatPrintDate(report.ngay);
   const machineLabel =

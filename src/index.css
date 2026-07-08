@@ -1972,12 +1972,25 @@ input[type="number"] {
   line-height: 1.3;
 }
 
-.production-order-print-materials-table th:nth-child(1) { width: 14%; }
-.production-order-print-materials-table th:nth-child(2) { width: 34%; }
-.production-order-print-materials-table th:nth-child(3) { width: 8%; }
-.production-order-print-materials-table th:nth-child(4) { width: 14%; }
-.production-order-print-materials-table th:nth-child(5) { width: 15%; }
-.production-order-print-materials-table th:nth-child(6) { width: 15%; }
+.production-order-print-materials-table th:nth-child(1) { width: 15%; }
+.production-order-print-materials-table th:nth-child(2) { width: 40%; }
+.production-order-print-materials-table th:nth-child(3) { width: 9%; }
+.production-order-print-materials-table th:nth-child(4) { width: 16%; }
+.production-order-print-materials-table th:nth-child(5) { width: 20%; }
+
+/* Biến thể 6 cột: in kèm cột KL thực tế từ Lệnh xuất vật tư — thu nhỏ chữ để đủ cột trên khổ giấy */
+.production-order-print-materials-table--actual th,
+.production-order-print-materials-table--actual td {
+  font-size: 10pt;
+  padding: 1.6mm 1.8mm;
+}
+
+.production-order-print-materials-table--actual th:nth-child(1) { width: 14%; }
+.production-order-print-materials-table--actual th:nth-child(2) { width: 32%; }
+.production-order-print-materials-table--actual th:nth-child(3) { width: 8%; }
+.production-order-print-materials-table--actual th:nth-child(4) { width: 14%; }
+.production-order-print-materials-table--actual th:nth-child(5) { width: 15%; }
+.production-order-print-materials-table--actual th:nth-child(6) { width: 17%; }
 
 .production-order-print-params-table th:nth-child(1),
 .production-order-print-params-table td:nth-child(1) {

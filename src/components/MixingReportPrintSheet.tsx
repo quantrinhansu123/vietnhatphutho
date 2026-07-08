@@ -127,7 +127,7 @@ export function buildMixingReportPrintRows(reports: MixingReport | MixingReport[
   return reportList.flatMap(report => buildRowsForReport(report));
 }
 
-function MixingReportPrintSheet({
+export function MixingReportPrintSheet({
   reports,
   context
 }: {

@@ -10,7 +10,12 @@ import { SearchableSelect, SimpleSelect } from '../../components/shared/Searchab
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
 import ProductionPlanNvlPrintSheet from '../../components/ProductionPlanNvlPrintSheet';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
-import { getProductionShiftOptions } from '../../utils/shiftSettings';
+import {
+  loadProductionPlanRelatedReports,
+  ProductionPlanRelatedPrintContent,
+  type ProductionPlanRelatedReports
+} from './relatedReportsPrint';
+import { getProductionShiftOptions, shiftNamesMatch } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
@@ -1933,6 +1938,11 @@ export function ProductionPlanModal({
   const [planDate, setPlanDate] = useState(todayDateInputValue());
   const [planHeaderNote, setPlanHeaderNote] = useState('');
   const [pendingStaffAssignmentPrint, setPendingStaffAssignmentPrint] = useState(false);
+  const [isLoadingRelatedPrint, setIsLoadingRelatedPrint] = useState(false);
+  const [relatedPrintData, setRelatedPrintData] = useState<ProductionPlanRelatedReports | null>(null);
+  const [relatedPrintOrders, setRelatedPrintOrders] = useState<PrintableProductionOrder[]>([]);
+  const [relatedPrintCatalog, setRelatedPrintCatalog] = useState<ProductRow[]>([]);
+  const [pendingRelatedPrint, setPendingRelatedPrint] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -1955,6 +1965,11 @@ export function ProductionPlanModal({
     setPlanDate(todayDateInputValue());
     setPlanHeaderNote('');
     setPendingStaffAssignmentPrint(false);
+    setIsLoadingRelatedPrint(false);
+    setRelatedPrintData(null);
+    setRelatedPrintOrders([]);
+    setRelatedPrintCatalog([]);
+    setPendingRelatedPrint(false);
   }, [open, productionOrders, machines]);
 
   const displayLines = useMemo(
@@ -2037,6 +2052,16 @@ export function ProductionPlanModal({
   }, [pendingStaffAssignmentPrint]);
 
   useEffect(() => {
+    if (!pendingRelatedPrint) return;
+    if (!relatedPrintData && relatedPrintOrders.length === 0) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingRelatedPrint(false);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [pendingRelatedPrint, relatedPrintData, relatedPrintOrders]);
+
+  useEffect(() => {
     const handleAfterPrint = () => {
       setPendingPrint(false);
       setPendingNvlPrint(false);
@@ -2044,6 +2069,10 @@ export function ProductionPlanModal({
       setShowNvlPrintSheet(false);
       setPrintMaterialsByLine({});
       setNvlPrintMaterialsByLine({});
+      setPendingRelatedPrint(false);
+      setRelatedPrintData(null);
+      setRelatedPrintOrders([]);
+      setRelatedPrintCatalog([]);
     };
     window.addEventListener('afterprint', handleAfterPrint);
     return () => window.removeEventListener('afterprint', handleAfterPrint);
@@ -2124,6 +2153,77 @@ export function ProductionPlanModal({
       setFormError(error.message || 'Không thể tải thành phần NVL để in phiếu.');
     } finally {
       setIsLoadingNvlPrint(false);
+    }
+  };
+
+  const handlePrintRelated = async () => {
+    if (!planDate) {
+      setFormError('Vui lòng chọn ngày kế hoạch trước khi in các phiếu liên quan.');
+      return;
+    }
+    setIsLoadingRelatedPrint(true);
+    setFormError('');
+
+    try {
+      const shiftSet = new Set<string>();
+      displayLines.forEach(line => {
+        const shiftValue = (line.shift || '').trim();
+        if (shiftValue) shiftSet.add(shiftValue);
+      });
+      const shifts = Array.from(shiftSet);
+
+      const ordersToPrint = displayLines
+        .map(line => productionOrders.find(order => order.id === line.id))
+        .filter((order): order is ProductionOrderRow => Boolean(order));
+
+      const [productCatalog, data] = await Promise.all([
+        loadProductionOrderProductCatalog(),
+        loadProductionPlanRelatedReports(planDate, shifts)
+      ]);
+
+      const printableOrders = (
+        await Promise.allSettled(
+          ordersToPrint.map(async order => {
+            const [{ materials, product }, machineLabel] = await Promise.all([
+              loadProductionOrderPrintMaterials(order),
+              resolveProductionOrderMachineLabel(order.machine)
+            ]);
+            return { order, materials, machineLabel, product } as PrintableProductionOrder;
+          })
+        )
+      )
+        .filter((result): result is PromiseFulfilledResult<PrintableProductionOrder> => result.status === 'fulfilled')
+        .map(result => result.value);
+
+      if (data.isEmpty && printableOrders.length === 0) {
+        setFormError('Không tìm thấy lệnh sản xuất hay phiếu nào liên quan tới ngày/ca của kế hoạch để in.');
+        return;
+      }
+
+      setRelatedPrintCatalog(productCatalog);
+      setRelatedPrintOrders(applyWarehouseActualQuantities(printableOrders, data.warehouseSlips));
+      setRelatedPrintData(data);
+      setPendingRelatedPrint(true);
+
+      const messages: string[] = [];
+      if (data.errors.length > 0) {
+        messages.push(`Một số loại lỗi khi tải: ${data.errors.join(', ')}.`);
+      }
+      const droppedByShift = data.diagnostics.filter(d => d.matched === 0 && d.dayTotal > 0);
+      if (droppedByShift.length > 0) {
+        messages.push(
+          `Có phiếu đúng ngày nhưng KHÁC CA nên không in: ${droppedByShift
+            .map(d => `${d.label} (${d.dayTotal})`)
+            .join(', ')}.`
+        );
+      }
+      if (messages.length > 0) {
+        setFormError(messages.join(' '));
+      }
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể tải các phiếu liên quan để in.');
+    } finally {
+      setIsLoadingRelatedPrint(false);
     }
   };
 
@@ -2399,6 +2499,16 @@ export function ProductionPlanModal({
             </button>
             <button
               type="button"
+              onClick={handlePrintRelated}
+              disabled={displayLines.length === 0 || isLoadingRelatedPrint}
+              title="In gộp tất cả phiếu liên quan (lệnh SX, tồn NVL, trộn, cân, dừng máy, hàng hỏng, sản lượng, phiếu xuất vật tư) theo ngày + ca của kế hoạch"
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-4 text-sm font-extrabold text-teal-800 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoadingRelatedPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              In tất cả phiếu liên quan
+            </button>
+            <button
+              type="button"
               onClick={handleSave}
               disabled={isSaving || displayLines.length === 0}
               className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
@@ -2413,6 +2523,26 @@ export function ProductionPlanModal({
       {pendingStaffAssignmentPrint && (
         <StaffAssignmentPrintSheet rows={staffAssignmentRows} planDate={planDate} planNote={planHeaderNote} />
       )}
+
+      {(relatedPrintOrders.length > 0 || relatedPrintData) &&
+        createPortal(
+          <div className="production-order-print-batch">
+            {relatedPrintOrders.map(item => (
+              <div key={`po-${item.order.id}`} className="production-order-print-page">
+                <ProductionOrderPrintSheet
+                  order={item.order}
+                  materials={item.materials}
+                  machineLabel={item.machineLabel}
+                  product={item.product}
+                  productCatalog={relatedPrintCatalog}
+                  showActualQuantity
+                />
+              </div>
+            ))}
+            {relatedPrintData && <ProductionPlanRelatedPrintContent data={relatedPrintData} />}
+          </div>,
+          document.body
+        )}
 
       {pendingPrint && displayLines.length > 0 && (
         <ProductionPlanPrintSheet lines={displayLines} materialsByLine={printMaterialsByLine} />
@@ -2500,6 +2630,8 @@ export interface ProductionOrderMaterialLine {
   weightKg: number | null;
   proposedQuantity: number;
   unit: string;
+  /** KL xuất thực tế từ Lệnh xuất vật tư (phiếu xuất kho NVL) cùng ngày + ca của lệnh SX. */
+  actualQuantity?: number | null;
 }
 
 export function formatProductionOrderNormLabel(item: ProductNplItem): string {
@@ -2686,6 +2818,48 @@ export async function loadProductionOrderPrintMaterials(
   return { materials: [...merged.values()], product: primaryProduct };
 }
 
+function warehouseSlipShiftMatchesOrder(slipShift: string | undefined, orderShift: string): boolean {
+  const slipShifts = String(slipShift || '')
+    .split(/[,;+]/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  if (slipShifts.length === 0) return true;
+  const target = (orderShift || '').trim();
+  if (!target || target === '-') return true;
+  return slipShifts.some(part => shiftNamesMatch(part, target));
+}
+
+/**
+ * Gán KL xuất thực tế từ các Lệnh xuất vật tư (phiếu xuất kho NVL cùng ngày kế hoạch)
+ * vào bảng định mức NVL của từng lệnh SX, khớp theo ca của lệnh + mã NVL.
+ */
+export function applyWarehouseActualQuantities(
+  items: PrintableProductionOrder[],
+  warehouseSlips: Array<{ shift?: string; lines: Array<{ code: string; quantity: number }> }>
+): PrintableProductionOrder[] {
+  return items.map(item => {
+    const totalsByMaterial = new Map<string, number>();
+    warehouseSlips.forEach(slip => {
+      if (!warehouseSlipShiftMatchesOrder(slip.shift, item.order.shift)) return;
+      slip.lines.forEach(line => {
+        const key = normalizeProductCodeKey(line.code);
+        if (!key) return;
+        const quantity = Number(line.quantity);
+        if (!Number.isFinite(quantity) || quantity <= 0) return;
+        totalsByMaterial.set(key, roundNplNumber((totalsByMaterial.get(key) ?? 0) + quantity));
+      });
+    });
+
+    return {
+      ...item,
+      materials: item.materials.map(material => ({
+        ...material,
+        actualQuantity: totalsByMaterial.get(normalizeProductCodeKey(material.code)) ?? null
+      }))
+    };
+  });
+}
+
 let machinePrintCache: MachineRow[] | null = null;
 
 export async function resolveProductionOrderMachineLabel(machineValue: string): Promise<string> {
@@ -2723,7 +2897,8 @@ export function ProductionOrderPrintSheet({
   machineLabel,
   product,
   productCatalog = [],
-  shiftSettings = []
+  shiftSettings = [],
+  showActualQuantity = false
 }: {
   order: ProductionOrderRow;
   materials: ProductionOrderMaterialLine[];
@@ -2731,6 +2906,8 @@ export function ProductionOrderPrintSheet({
   product?: ProductRow | null;
   productCatalog?: ProductRow[];
   shiftSettings?: ProductionOrderLookupSetting[];
+  /** Hiện cột KL thực tế lấy từ Lệnh xuất vật tư cùng ngày + ca. */
+  showActualQuantity?: boolean;
 }) {
   const printDate = formatProductionOrderPrintDate(order.startDate);
   const orderQuantity = parseProductionOrderQuantity(order.quantity);
@@ -2850,15 +3027,19 @@ export function ProductionOrderPrintSheet({
             Sản phẩm chưa khai báo thành phần NPL. Vào Sản phẩm → tab Thành phần để nhập định mức.
           </p>
         ) : (
-          <table className="production-order-print-grid-table production-order-print-materials-table">
+          <table
+            className={`production-order-print-grid-table production-order-print-materials-table${
+              showActualQuantity ? ' production-order-print-materials-table--actual' : ''
+            }`}
+          >
             <thead>
               <tr>
                 <th>Mã nguyên vật liệu</th>
                 <th>Tên nguyên vật liệu</th>
                 <th>ĐVT</th>
                 <th>Định mức (%)</th>
-                <th>Khối lượng (kg)</th>
                 <th>Số lượng</th>
+                {showActualQuantity && <th>KL thực tế (kg)</th>}
               </tr>
             </thead>
             <tbody>
@@ -2868,8 +3049,12 @@ export function ProductionOrderPrintSheet({
                   <td>{line.name}</td>
                   <td className="production-order-print-center">{line.unit || '-'}</td>
                   <td className="production-order-print-right">{line.percent !== null ? `${formatPercent(line.percent)}%` : '-'}</td>
-                  <td className="production-order-print-right">{line.weightKg !== null ? formatProductionOrderPrintQuantity(line.weightKg) : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.proposedQuantity)}</td>
+                  {showActualQuantity && (
+                    <td className="production-order-print-right">
+                      {line.actualQuantity != null ? formatProductionOrderPrintQuantity(line.actualQuantity) : '-'}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

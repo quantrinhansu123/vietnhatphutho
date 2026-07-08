@@ -87,7 +87,7 @@ function hasAnyPhoto(row: WeighingRecord) {
   return Boolean(row.imageUrl || row.coreWeightImageUrl);
 }
 
-function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrintData; title: string }) {
+export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrintData; title: string }) {
   const dataRows = getWeighingDataRows(slip.rows);
   const weigherName = resolveWeigherName(dataRows);
 

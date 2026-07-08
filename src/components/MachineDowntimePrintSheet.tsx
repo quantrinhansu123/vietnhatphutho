@@ -42,7 +42,7 @@ function formatPrintTime(value: string) {
   return `${match[1].padStart(2, '0')}:${match[2]}`;
 }
 
-function MachineDowntimePrintSheet({ slip }: { slip: MachineDowntimePrintSlip }) {
+export function MachineDowntimePrintSheet({ slip }: { slip: MachineDowntimePrintSlip }) {
   return (
     <div className="production-order-print-sheet">
       <div className="production-order-print-doc">

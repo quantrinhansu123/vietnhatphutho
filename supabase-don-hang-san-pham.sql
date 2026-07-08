@@ -4,12 +4,21 @@
 
 alter table public.don_hang
   add column if not exists trang_thai text default 'Chờ sx',
-  add column if not exists san_pham jsonb not null default '[]'::jsonb;
+  add column if not exists san_pham jsonb not null default '[]'::jsonb,
+  add column if not exists loai_don_hang text default '',
+  add column if not exists nhan_vien text default '',
+  add column if not exists khach_hang text default '',
+  add column if not exists ghi_chu text default '',
+  add column if not exists so_luong_ton numeric,
+  add column if not exists lenh_sx text default '',
+  add column if not exists created_at timestamptz not null default now();
 
 comment on column public.don_hang.trang_thai is
   'Trạng thái đơn hàng: Chờ sx, Đang sx, Hoàn thành, Hủy.';
 comment on column public.don_hang.san_pham is
   'Danh sách sản phẩm trong đơn: ma_sp, ten_sp, don_vi, so_luong.';
+comment on column public.don_hang.created_at is
+  'Ngày tạo đơn (server ghi đè theo ngày người dùng chọn khi tạo/sửa đơn).';
 
 -- Gộp dữ liệu cũ (1 SP / dòng) sang jsonb nếu cột đang rỗng
 do $$
