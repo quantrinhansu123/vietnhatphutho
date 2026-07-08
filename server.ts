@@ -2916,6 +2916,12 @@ function parseOrderBody(
   if (Object.prototype.hasOwnProperty.call(source, 'productionOrder')) {
     record.lenh_sx = typeof source.productionOrder === 'string' ? source.productionOrder.trim() : '';
   }
+  if (typeof source.createdAt === 'string' && source.createdAt.trim()) {
+    const dateMatch = source.createdAt.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    if (dateMatch) {
+      record.created_at = `${dateMatch[1]}T12:00:00.000Z`;
+    }
+  }
 
   return { record };
 }

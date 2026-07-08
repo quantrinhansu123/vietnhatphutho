@@ -2496,6 +2496,8 @@ export interface ProductionOrderMaterialLine {
   code: string;
   name: string;
   normLabel: string;
+  percent: number | null;
+  weightKg: number | null;
   proposedQuantity: number;
   unit: string;
 }
@@ -2517,6 +2519,34 @@ export function formatProductionOrderFinishedWeight(
   return formatProductionOrderPrintQuantity(roundNplNumber(unitWeight * orderQuantity));
 }
 
+export function resolveProductUnitNormKg(product?: Pick<ProductRow, 'totalWeight'> | null): number | null {
+  const unitWeight = parseProductSpecNumber(product?.totalWeight ?? '');
+  return unitWeight !== null && unitWeight > 0 ? unitWeight : null;
+}
+
+export function formatProductionOrderProductNorm(product?: Pick<ProductRow, 'totalWeight'> | null): string {
+  const normKg = resolveProductUnitNormKg(product);
+  return normKg === null ? '-' : formatProductionOrderPrintQuantity(normKg);
+}
+
+export function resolveFinishedProductDisplay(
+  quantity: string,
+  productCode: string,
+  productCatalog: ProductRow[],
+  fallbackProduct?: ProductRow | null
+) {
+  const catalogProduct =
+    findProductByCode(productCatalog, productCode) ??
+    (fallbackProduct && normalizeProductCodeKey(fallbackProduct.code) === normalizeProductCodeKey(productCode)
+      ? fallbackProduct
+      : null);
+  const orderQuantity = parseProductionOrderQuantity(quantity);
+  return {
+    norm: formatProductionOrderProductNorm(catalogProduct),
+    weight: formatProductionOrderFinishedWeight(orderQuantity, catalogProduct)
+  };
+}
+
 export function parseProductionOrderQuantity(value: string) {
   const normalized = value.replace(/[^\d.,-]/g, '').replace(',', '.');
   const parsed = Number(normalized);
@@ -2533,23 +2563,24 @@ export function buildProductionOrderMaterialProposal(
   items: ProductNplItem[],
   product?: Pick<ProductRow, 'plasticWeight' | 'totalWeight' | 'coreWeight' | 'bagWeight'> | null
 ): ProductionOrderMaterialLine[] {
-  const materialBaseKg = resolveProductMaterialBaseKg(product);
+  const totalWeightKg = resolveProductUnitNormKg(product);
+  const finishedWeightKg = totalWeightKg !== null && totalWeightKg > 0 ? totalWeightKg * orderQuantity : orderQuantity;
 
   return items.map(item => {
-    const proposedQuantity =
-      item.amountType === 'quantity'
-        ? roundNplNumber((item.quantity ?? 0) * orderQuantity)
-        : materialBaseKg > 0
-          ? roundNplNumber((materialBaseKg * orderQuantity * (item.percent ?? 0)) / 100)
-          : roundNplNumber((orderQuantity * (item.percent ?? 0)) / 100);
+    const isPercent = item.amountType !== 'quantity';
+    const percent = isPercent ? item.percent ?? 0 : null;
+    const weightKg = isPercent ? roundNplNumber((finishedWeightKg * (item.percent ?? 0)) / 100) : null;
+    const proposedQuantity = isPercent ? weightKg ?? 0 : roundNplNumber((item.quantity ?? 0) * orderQuantity);
 
     return {
       code: item.code,
       name: item.name || item.code,
       normLabel: formatProductionOrderNormLabel(item),
+      percent,
+      weightKg,
       proposedQuantity,
       unit:
-        item.amountType === 'percent'
+        isPercent
           ? 'kg'
           : item.unit && item.unit !== '-'
             ? item.unit
@@ -2582,6 +2613,10 @@ async function loadProductsForPrint(): Promise<ProductRow[]> {
     });
 
   return productNplCachePromise;
+}
+
+export async function loadProductionOrderProductCatalog(): Promise<ProductRow[]> {
+  return loadProductsForPrint();
 }
 
 export async function fetchProductPrintData(
@@ -2623,6 +2658,34 @@ async function fetchProductNplItems(productCode: string): Promise<ProductNplItem
   return items;
 }
 
+export async function loadProductionOrderPrintMaterials(
+  order: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>
+): Promise<{ materials: ProductionOrderMaterialLine[]; product: ProductRow | null }> {
+  const productLines = getProductionOrderProductLines(order);
+  if (productLines.length === 0) return { materials: [], product: null };
+
+  let primaryProduct: ProductRow | null = null;
+  const merged = new Map<string, ProductionOrderMaterialLine>();
+
+  for (const line of productLines) {
+    const { items, product } = await fetchProductPrintData(line.productCode);
+    if (!primaryProduct && product) primaryProduct = product;
+
+    const lineQuantity = parseProductionOrderQuantity(line.quantity);
+    buildProductionOrderMaterialProposal(lineQuantity, items, product).forEach(material => {
+      const key = `${normalizeProductCodeKey(material.code)}__${material.unit || '-'}`;
+      const existing = merged.get(key);
+      if (existing) {
+        existing.proposedQuantity = roundNplNumber(existing.proposedQuantity + material.proposedQuantity);
+      } else {
+        merged.set(key, { ...material });
+      }
+    });
+  }
+
+  return { materials: [...merged.values()], product: primaryProduct };
+}
+
 let machinePrintCache: MachineRow[] | null = null;
 
 export async function resolveProductionOrderMachineLabel(machineValue: string): Promise<string> {
@@ -2659,12 +2722,14 @@ export function ProductionOrderPrintSheet({
   materials,
   machineLabel,
   product,
+  productCatalog = [],
   shiftSettings = []
 }: {
   order: ProductionOrderRow;
   materials: ProductionOrderMaterialLine[];
   machineLabel?: string;
   product?: ProductRow | null;
+  productCatalog?: ProductRow[];
   shiftSettings?: ProductionOrderLookupSetting[];
 }) {
   const printDate = formatProductionOrderPrintDate(order.startDate);
@@ -2729,28 +2794,52 @@ export function ProductionOrderPrintSheet({
               <th>Tên thành phẩm</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
+              <th>Định mức</th>
+              <th>KL (kg)</th>
               <th>Đối tượng THCP</th>
             </tr>
           </thead>
           <tbody>
             {productLines.length > 0 ? (
-              productLines.map((line, index) => (
+              productLines.map((line, index) => {
+                const { norm, weight } = resolveFinishedProductDisplay(
+                  line.quantity,
+                  line.productCode,
+                  productCatalog,
+                  product
+                );
+                return (
                 <tr key={`${line.productCode}-${index}`}>
                   <td>{line.productCode || '-'}</td>
                   <td className="production-order-print-product-name-cell">{line.productName || '-'}</td>
                   <td className="production-order-print-center">{line.unit && line.unit !== '-' ? line.unit : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.quantity)}</td>
+                  <td className="production-order-print-right">{norm}</td>
+                  <td className="production-order-print-right">{weight}</td>
                   <td>{costObject}</td>
                 </tr>
-              ))
+                );
+              })
             ) : (
+              (() => {
+                const { norm, weight } = resolveFinishedProductDisplay(
+                  order.quantity,
+                  order.productCode,
+                  productCatalog,
+                  product
+                );
+                return (
               <tr>
                 <td>{order.productCode || '-'}</td>
                 <td className="production-order-print-product-name-cell">{order.productName || '-'}</td>
                 <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
                 <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
+                <td className="production-order-print-right">{norm}</td>
+                <td className="production-order-print-right">{weight}</td>
                 <td>{costObject}</td>
               </tr>
+                );
+              })()
             )}
           </tbody>
         </table>
@@ -2767,6 +2856,8 @@ export function ProductionOrderPrintSheet({
                 <th>Mã nguyên vật liệu</th>
                 <th>Tên nguyên vật liệu</th>
                 <th>ĐVT</th>
+                <th>Định mức (%)</th>
+                <th>Khối lượng (kg)</th>
                 <th>Số lượng</th>
               </tr>
             </thead>
@@ -2776,6 +2867,8 @@ export function ProductionOrderPrintSheet({
                   <td>{line.code}</td>
                   <td>{line.name}</td>
                   <td className="production-order-print-center">{line.unit || '-'}</td>
+                  <td className="production-order-print-right">{line.percent !== null ? `${formatPercent(line.percent)}%` : '-'}</td>
+                  <td className="production-order-print-right">{line.weightKg !== null ? formatProductionOrderPrintQuantity(line.weightKg) : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.proposedQuantity)}</td>
                 </tr>
               ))}
@@ -2815,10 +2908,12 @@ export type PrintableProductionOrder = {
 
 export function ProductionOrderBatchPrintSheets({
   items,
-  shiftSettings = []
+  shiftSettings = [],
+  productCatalog = []
 }: {
   items: PrintableProductionOrder[];
   shiftSettings?: ProductionOrderLookupSetting[];
+  productCatalog?: ProductRow[];
 }) {
   if (items.length === 0) return null;
 
@@ -2831,6 +2926,7 @@ export function ProductionOrderBatchPrintSheets({
             materials={item.materials}
             machineLabel={item.machineLabel}
             product={item.product}
+            productCatalog={productCatalog}
             shiftSettings={shiftSettings}
           />
         </div>
@@ -2843,6 +2939,7 @@ export function useProductionOrderPrint() {
   const [printingOrder, setPrintingOrder] = useState<ProductionOrderRow | null>(null);
   const [printingMaterials, setPrintingMaterials] = useState<ProductionOrderMaterialLine[]>([]);
   const [printingProduct, setPrintingProduct] = useState<ProductRow | null>(null);
+  const [printingProductCatalog, setPrintingProductCatalog] = useState<ProductRow[]>([]);
   const [printingMachineLabel, setPrintingMachineLabel] = useState('');
   const [shiftSettings, setShiftSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
@@ -2858,14 +2955,14 @@ export function useProductionOrderPrint() {
   const printProductionOrder = async (order: ProductionOrderRow) => {
     setIsLoadingPrint(true);
     try {
-      const [{ items, product }, machineLabel] = await Promise.all([
-        fetchProductPrintData(order.productCode),
+      const [productCatalog, { materials, product }, machineLabel] = await Promise.all([
+        loadProductionOrderProductCatalog(),
+        loadProductionOrderPrintMaterials(order),
         resolveProductionOrderMachineLabel(order.machine)
       ]);
-      const orderQuantity = parseProductionOrderQuantity(order.quantity);
-      const materials = buildProductionOrderMaterialProposal(orderQuantity, items, product);
       setPrintingMaterials(materials);
       setPrintingProduct(product);
+      setPrintingProductCatalog(productCatalog);
       setPrintingMachineLabel(machineLabel);
       setPrintingOrder(order);
       setPendingPrint(true);
@@ -2893,6 +2990,7 @@ export function useProductionOrderPrint() {
       setPrintingOrder(null);
       setPrintingMaterials([]);
       setPrintingProduct(null);
+      setPrintingProductCatalog([]);
       setPrintingMachineLabel('');
       setPendingPrint(false);
     };
@@ -2900,7 +2998,16 @@ export function useProductionOrderPrint() {
     return () => window.removeEventListener('afterprint', handleAfterPrint);
   }, []);
 
-  return { printingOrder, printingMaterials, printingProduct, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder };
+  return {
+    printingOrder,
+    printingMaterials,
+    printingProduct,
+    printingProductCatalog,
+    printingMachineLabel,
+    shiftSettings,
+    isLoadingPrint,
+    printProductionOrder
+  };
 }
 
 export const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'];
@@ -4437,9 +4544,11 @@ export function ProductionOrderViewModal({
 }) {
   if (!row) return null;
 
+  const productLines = getProductionOrderProductLines(row);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết lệnh SX</h3>
@@ -4453,7 +4562,6 @@ export function ProductionOrderViewModal({
           {[
             ['Mã lệnh', row.code],
             ['Tên lệnh', row.name],
-            ['Sản phẩm', formatProductionOrderProductsSummary(row)],
             ['Trạng thái', row.status],
             ['Khách hàng', row.customer],
             ['Đơn hàng', row.orderRef],
@@ -4469,6 +4577,40 @@ export function ProductionOrderViewModal({
               <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
             </div>
           ))}
+        </div>
+        <div className="px-4 pb-4">
+          <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+            Sản phẩm ({productLines.length})
+          </p>
+          <div className="overflow-hidden rounded-xl border border-zinc-200">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2 font-black">Mã hàng</th>
+                  <th className="px-3 py-2 font-black">Tên sản phẩm</th>
+                  <th className="px-3 py-2 text-right font-black">Số lượng</th>
+                  <th className="px-3 py-2 font-black">ĐVT</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 bg-white">
+                {productLines.map((product, index) => (
+                  <tr key={`${product.productCode}-${index}`}>
+                    <td className="px-3 py-2 font-black text-zinc-950">{product.productCode || '-'}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-700">{product.productName || '-'}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{product.quantity || '-'}</td>
+                    <td className="px-3 py-2 text-zinc-600">{product.unit && product.unit !== '-' ? product.unit : '-'}</td>
+                  </tr>
+                ))}
+                {productLines.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-4 text-center font-bold text-zinc-400">
+                      Chưa có sản phẩm.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

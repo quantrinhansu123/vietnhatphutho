@@ -83,12 +83,13 @@ export default function ControlBoardShiftSummaryTable({
   isLoading,
   dateFrom,
   dateTo,
-  onDateFromChange,
-  onDateToChange,
+  shiftFilter,
+  machineFilter,
+  onStaffFilterChange,
   detailSources,
   filterSources,
-  shiftOptions,
   staffOptions,
+  selectedMachine,
   onEditWeighingRecord,
   onDeleteWeighingRecord,
   onDeleteWeighingRecords,
@@ -101,12 +102,13 @@ export default function ControlBoardShiftSummaryTable({
   isLoading: boolean;
   dateFrom: string;
   dateTo: string;
-  onDateFromChange: (value: string) => void;
-  onDateToChange: (value: string) => void;
+  shiftFilter: string;
+  machineFilter: string;
+  onStaffFilterChange?: (value: string) => void;
   detailSources: DetailSources;
   filterSources: ShiftSummaryFilterSources;
-  shiftOptions: string[];
   staffOptions: string[];
+  selectedMachine?: { code?: string; name?: string } | null;
   onEditWeighingRecord?: (recordId: string | number) => void;
   onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
   onDeleteWeighingRecords?: (recordIds: Array<string | number>) => Promise<void>;
@@ -120,7 +122,6 @@ export default function ControlBoardShiftSummaryTable({
     ca: string;
     metric: ShiftSummaryMetric;
   } | null>(null);
-  const [shiftFilter, setShiftFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
   const [printPayload, setPrintPayload] = useState<{
     rows: ControlBoardShiftSummaryRow[];
@@ -134,11 +135,13 @@ export default function ControlBoardShiftSummaryTable({
         rows,
         {
           shiftFilter,
-          staffFilter
+          staffFilter,
+          machineFilter
         },
-        filterSources
+        filterSources,
+        selectedMachine
       ),
-    [rows, shiftFilter, staffFilter, filterSources]
+    [rows, shiftFilter, staffFilter, machineFilter, filterSources, selectedMachine]
   );
 
   const totals = {
@@ -152,6 +155,7 @@ export default function ControlBoardShiftSummaryTable({
   };
 
   const shiftFilterLabel = shiftFilter === 'all' ? 'Tất cả ca' : shiftFilter;
+  const machineFilterLabel = machineFilter === 'all' ? 'Tất cả máy' : machineFilter;
   const staffFilterLabel = staffFilter === 'all' ? 'Tất cả nhân viên' : staffFilter;
 
   const openDetail = (row: ControlBoardShiftSummaryRow, metric: ShiftSummaryMetric) => {
@@ -165,7 +169,8 @@ export default function ControlBoardShiftSummaryTable({
         dateFrom,
         dateTo,
         shiftLabel: shiftFilterLabel,
-        staffLabel: staffFilterLabel
+        staffLabel: staffFilterLabel,
+        machineLabel: machineFilterLabel
       }
     });
     setPendingPrint(true);
@@ -220,43 +225,13 @@ export default function ControlBoardShiftSummaryTable({
             </div>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
               <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
-                <span className="shrink-0">Từ</span>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={event => onDateFromChange(event.target.value)}
-                  className={`${inputClass} w-full min-w-0`}
-                />
-              </label>
-              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
-                <span className="shrink-0">Đến</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={event => onDateToChange(event.target.value)}
-                  className={`${inputClass} w-full min-w-0`}
-                />
-              </label>
-              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
-                <span className="shrink-0">Ca</span>
-                <select
-                  value={shiftFilter}
-                  onChange={event => setShiftFilter(event.target.value)}
-                  className={`${inputClass} w-full min-w-0`}
-                >
-                  <option value="all">Tất cả ca</option>
-                  {shiftOptions.map(shift => (
-                    <option key={shift} value={shift}>
-                      {shift}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
                 <span className="shrink-0">NV</span>
                 <select
                   value={staffFilter}
-                  onChange={event => setStaffFilter(event.target.value)}
+                  onChange={event => {
+                    setStaffFilter(event.target.value);
+                    onStaffFilterChange?.(event.target.value);
+                  }}
                   className={`${inputClass} w-full min-w-0 sm:max-w-[180px]`}
                 >
                   <option value="all">Tất cả</option>

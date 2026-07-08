@@ -27,7 +27,7 @@ export function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
   const [loadError, setLoadError] = useState('');
   const [viewingRow, setViewingRow] = useState<ProductionOrderRow | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
+  const { printingOrder, printingMaterials, printingProduct, printingProductCatalog, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
 
   const loadProductionOrders = async () => {
     setIsLoading(true);
@@ -266,6 +266,7 @@ export function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
           materials={printingMaterials}
           machineLabel={printingMachineLabel}
           product={printingProduct}
+          productCatalog={printingProductCatalog}
           shiftSettings={shiftSettings}
         />
       )}

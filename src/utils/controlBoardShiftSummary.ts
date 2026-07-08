@@ -28,17 +28,19 @@ export type ShiftSummaryWarehouseMovement = {
 
 export type ShiftSummaryFilterSources = {
   shiftSettings: ShiftSetting[];
-  productionOrders: Array<{ startDate: string; shift: string; staff: string }>;
-  mixingReports: Array<{ ngay: string; ca: string; nhan_su: string }>;
+  productionOrders: Array<{ startDate: string; shift: string; staff: string; machine?: string; position?: string }>;
+  mixingReports: Array<{ ngay: string; ca: string; nhan_su: string; ma_may?: string; ten_may?: string }>;
   warehouseMovements: Array<{ slipDate: string; shift: string; createdBy: string }>;
-  machineNvlReports: Array<{ ngay: string; ca: string; nhanSu: string }>;
+  machineNvlReports: Array<{ ngay: string; ca: string; nhanSu: string; maMay?: string; tenMay?: string }>;
   weighingRecords: Array<{
     productionDate: string;
     reportDate: string;
     shiftName: string;
     worker1: string;
     worker2: string;
+    machineName?: string;
   }>;
+  acceptanceReports?: Array<{ ngay: string; ca: string; ma_may?: string; ten_may?: string }>;
 };
 
 export type ControlBoardShiftSummaryRow = {
@@ -357,6 +359,57 @@ function staffNameMatches(value: string, staffFilter: string) {
   return splitStaffNames(value).some(name => name.toLowerCase() === target);
 }
 
+export function normalizeMachineToken(value: string) {
+  return String(value || '').trim().replace(/\s+/g, '').toUpperCase();
+}
+
+export function machineValueMatchesFilter(
+  machineFilter: string,
+  selected: { code?: string; name?: string } | null,
+  ...candidates: Array<string | undefined | null>
+) {
+  if (!machineFilter || machineFilter === 'all') return true;
+
+  const tokens = new Set<string>();
+  const addToken = (value?: string | null) => {
+    const token = normalizeMachineToken(value || '');
+    if (token) tokens.add(token);
+  };
+
+  addToken(machineFilter);
+  addToken(selected?.code);
+  addToken(selected?.name);
+
+  return candidates.some(candidate => {
+    const token = normalizeMachineToken(candidate || '');
+    if (!token) return false;
+    for (const selectedToken of tokens) {
+      if (token === selectedToken || token.includes(selectedToken) || selectedToken.includes(token)) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+export function parseControlBoardFilterDate(value?: string) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '-') return '';
+  const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
+export function matchesControlBoardDateRange(value: string | undefined, dateFrom: string, dateTo: string) {
+  const date = parseControlBoardFilterDate(value);
+  if (!date) return !dateFrom && !dateTo;
+  if (dateFrom && date < dateFrom) return false;
+  if (dateTo && date > dateTo) return false;
+  return true;
+}
+
 export function shiftSummaryRowHasStaff(
   row: Pick<ControlBoardShiftSummaryRow, 'ngay' | 'ca'>,
   staffFilter: string,
@@ -396,13 +449,57 @@ export function shiftSummaryRowHasStaff(
   return false;
 }
 
+export function shiftSummaryRowHasMachine(
+  row: Pick<ControlBoardShiftSummaryRow, 'ngay' | 'ca'>,
+  machineFilter: string,
+  sources: ShiftSummaryFilterSources,
+  selectedMachine?: { code?: string; name?: string } | null
+) {
+  const target = machineFilter.trim();
+  if (!target || target === 'all') return true;
+
+  const shiftOptions = getProductionShiftOptions(sources.shiftSettings);
+  const matches = (...candidates: Array<string | undefined | null>) =>
+    machineValueMatchesFilter(target, selectedMachine ?? null, ...candidates);
+
+  for (const order of sources.productionOrders) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, order.startDate, order.shift, shiftOptions)) continue;
+    if (matches(order.machine, order.position)) return true;
+  }
+
+  for (const report of sources.acceptanceReports ?? []) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, report.ngay, report.ca, shiftOptions)) continue;
+    if (matches(report.ma_may, report.ten_may)) return true;
+  }
+
+  for (const report of sources.mixingReports) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, report.ngay, report.ca, shiftOptions)) continue;
+    if (matches(report.ma_may, report.ten_may)) return true;
+  }
+
+  for (const report of sources.machineNvlReports) {
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, report.ngay, report.ca, shiftOptions)) continue;
+    if (matches(report.maMay, report.tenMay)) return true;
+  }
+
+  for (const record of sources.weighingRecords) {
+    const recordNgay = record.productionDate || record.reportDate;
+    if (!matchesShiftSummaryBucket(row.ngay, row.ca, recordNgay, record.shiftName, shiftOptions)) continue;
+    if (matches(record.machineName)) return true;
+  }
+
+  return false;
+}
+
 export function filterControlBoardShiftSummaryRows(
   rows: ControlBoardShiftSummaryRow[],
   filters: {
     shiftFilter: string;
     staffFilter: string;
+    machineFilter?: string;
   },
-  sources: ShiftSummaryFilterSources
+  sources: ShiftSummaryFilterSources,
+  selectedMachine?: { code?: string; name?: string } | null
 ) {
   const shiftOptions = getProductionShiftOptions(sources.shiftSettings);
 
@@ -415,7 +512,11 @@ export function filterControlBoardShiftSummaryRows(
       }
     }
 
-    return shiftSummaryRowHasStaff(row, filters.staffFilter, sources);
+    if (!shiftSummaryRowHasStaff(row, filters.staffFilter, sources)) {
+      return false;
+    }
+
+    return shiftSummaryRowHasMachine(row, filters.machineFilter || 'all', sources, selectedMachine);
   });
 }
 

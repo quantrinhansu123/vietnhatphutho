@@ -13,6 +13,7 @@ export type ShiftSummaryPrintFilters = {
   dateTo: string;
   shiftLabel: string;
   staffLabel: string;
+  machineLabel?: string;
 };
 
 function formatPrintDate(iso: string) {

@@ -136,6 +136,7 @@ export type OrderFormState = {
   productLines: OrderProductFormLine[];
   note: string;
   status: string;
+  createdAt: string;
 };
 
 const emptyOrderForm = (): OrderFormState => ({
@@ -145,8 +146,19 @@ const emptyOrderForm = (): OrderFormState => ({
   customer: '',
   productLines: [newOrderProductFormLine()],
   note: '',
-  status: ORDER_STATUS_DEFAULT
+  status: ORDER_STATUS_DEFAULT,
+  createdAt: new Date().toISOString().slice(0, 10)
 });
+
+function orderCreatedAtToInput(value: string): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return new Date().toISOString().slice(0, 10);
+  const iso = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
+}
 
 export function orderProductLinesToPayload(lines: OrderProductFormLine[], productOptions: OrderProductOption[]) {
   return lines
@@ -203,7 +215,8 @@ export function orderToForm(order: OrderRow): OrderFormState {
       ? order.status
       : order.status && order.status !== '-'
         ? order.status
-        : ORDER_STATUS_DEFAULT
+        : ORDER_STATUS_DEFAULT,
+    createdAt: orderCreatedAtToInput(order.createdAt || order.orderDate)
   };
 }
 
@@ -366,6 +379,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       setFormError('Vui lòng nhập mã đơn hàng.');
       return;
     }
+    if (!orderForm.createdAt.trim()) {
+      setFormError('Vui lòng chọn ngày tạo.');
+      return;
+    }
 
     const products = orderProductLinesToPayload(orderForm.productLines, productOptions);
     if (products.length === 0) {
@@ -391,7 +408,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       customer: orderForm.customer,
       products,
       note: orderForm.note,
-      status: orderForm.status
+      status: orderForm.status,
+      createdAt: orderForm.createdAt
     };
 
     setIsSavingOrder(true);
@@ -517,6 +535,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 {formMode === 'add' ? (
                   <p className="text-[11px] font-semibold text-zinc-400">Mã tự tăng theo thứ tự DH001, DH002, DH003...</p>
                 ) : null}
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày tạo *</span>
+                <input
+                  type="date"
+                  value={orderForm.createdAt}
+                  onChange={e => setOrderForm(prev => ({ ...prev, createdAt: e.target.value }))}
+                  className={orderFieldClass}
+                />
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại đơn</span>

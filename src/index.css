@@ -1951,11 +1951,13 @@ input[type="number"] {
 .production-order-print-grid-table th:nth-child(4) { width: 12%; }
 .production-order-print-grid-table th:nth-child(5) { width: 28%; }
 
-.production-order-print-product-table th:nth-child(1) { width: 11%; }
-.production-order-print-product-table th:nth-child(2) { width: 35%; }
-.production-order-print-product-table th:nth-child(3) { width: 8%; }
-.production-order-print-product-table th:nth-child(4) { width: 11%; }
-.production-order-print-product-table th:nth-child(5) { width: 35%; }
+.production-order-print-product-table th:nth-child(1) { width: 10%; }
+.production-order-print-product-table th:nth-child(2) { width: 24%; }
+.production-order-print-product-table th:nth-child(3) { width: 7%; }
+.production-order-print-product-table th:nth-child(4) { width: 9%; }
+.production-order-print-product-table th:nth-child(5) { width: 10%; }
+.production-order-print-product-table th:nth-child(6) { width: 10%; }
+.production-order-print-product-table th:nth-child(7) { width: 30%; }
 
 .production-order-print-product-table td {
   vertical-align: top;
@@ -1971,9 +1973,11 @@ input[type="number"] {
 }
 
 .production-order-print-materials-table th:nth-child(1) { width: 14%; }
-.production-order-print-materials-table th:nth-child(2) { width: 46%; }
-.production-order-print-materials-table th:nth-child(3) { width: 10%; }
-.production-order-print-materials-table th:nth-child(4) { width: 16%; }
+.production-order-print-materials-table th:nth-child(2) { width: 34%; }
+.production-order-print-materials-table th:nth-child(3) { width: 8%; }
+.production-order-print-materials-table th:nth-child(4) { width: 14%; }
+.production-order-print-materials-table th:nth-child(5) { width: 15%; }
+.production-order-print-materials-table th:nth-child(6) { width: 15%; }
 
 .production-order-print-params-table th:nth-child(1),
 .production-order-print-params-table td:nth-child(1) {

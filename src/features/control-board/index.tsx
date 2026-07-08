@@ -2,7 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { formatNumber } from '../../utils';
 import type { AppTab } from '../../routes';
 import ControlBoardShiftSummaryTable from '../../components/ControlBoardShiftSummaryTable';
-import { buildControlBoardShiftSummary, defaultShiftSummaryDateRange, collectShiftSummaryStaffOptions } from '../../utils/controlBoardShiftSummary';
+import { ControlBoardCommonFilters } from '../../components/ControlBoardCommonFilters';
+import {
+  buildControlBoardShiftSummary,
+  defaultShiftSummaryDateRange,
+  collectShiftSummaryStaffOptions,
+  matchesControlBoardDateRange,
+  machineValueMatchesFilter
+} from '../../utils/controlBoardShiftSummary';
 import { shiftNamesMatch } from '../../utils/shiftSettings';
 import { normalizeAcceptanceReports, type AcceptanceReport } from '../../components/AcceptanceReportForm';
 import { normalizeMixingReport } from '../../lib/mixingReportModel';
@@ -44,9 +51,8 @@ import {
   ProductionPlanModal,
   ProductionOrderPrintSheet,
   ProductionOrderBatchPrintSheets,
-  buildProductionOrderMaterialProposal,
-  parseProductionOrderQuantity,
-  fetchProductPrintData,
+  loadProductionOrderPrintMaterials,
+  loadProductionOrderProductCatalog,
   resolveProductionOrderMachineLabel,
   type ProductionOrderRow,
   type ProductionOrderLookupSetting,
@@ -113,8 +119,8 @@ export function ControlBoardPanel({
   const [productionOrderSearch, setProductionOrderSearch] = useState('');
   const [productionOrderStaffFilters, setProductionOrderStaffFilters] = useState<Set<string>>(() => new Set());
   const [acceptanceReportSearch, setAcceptanceReportSearch] = useState('');
-  const [panelFilterDate, setPanelFilterDate] = useState('');
-  const [panelFilterShift, setPanelFilterShift] = useState('all');
+  const [boardFilterShift, setBoardFilterShift] = useState('all');
+  const [boardFilterMachine, setBoardFilterMachine] = useState('all');
   const [showAddProductionOrder, setShowAddProductionOrder] = useState(false);
   const [showProductionPlan, setShowProductionPlan] = useState(false);
   const [viewingProductionOrder, setViewingProductionOrder] = useState<ProductionOrderRow | null>(null);
@@ -123,9 +129,19 @@ export function ControlBoardPanel({
   const [deletingAcceptanceReportId, setDeletingAcceptanceReportId] = useState('');
   const [selectedProductionOrderIds, setSelectedProductionOrderIds] = useState<string[]>([]);
   const [printingBatchOrders, setPrintingBatchOrders] = useState<PrintableProductionOrder[]>([]);
+  const [printingBatchProductCatalog, setPrintingBatchProductCatalog] = useState<ProductRow[]>([]);
   const [pendingBatchPrint, setPendingBatchPrint] = useState(false);
   const [isBatchPrinting, setIsBatchPrinting] = useState(false);
-  const { printingOrder, printingMaterials, printingProduct, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
+  const {
+    printingOrder,
+    printingMaterials,
+    printingProduct,
+    printingProductCatalog,
+    printingMachineLabel,
+    shiftSettings,
+    isLoadingPrint,
+    printProductionOrder
+  } = useProductionOrderPrint();
 
   const loadBoard = async () => {
     setIsLoading(true);
@@ -225,7 +241,6 @@ export function ControlBoardPanel({
         );
       }
     } catch (error: any) {
-      setStaffBranches([]);
       setOrders([]);
       setProducts([]);
       setMachines([]);
@@ -285,12 +300,16 @@ export function ControlBoardPanel({
       productionOrders: productionOrders.map(order => ({
         startDate: order.startDate,
         shift: order.shift,
-        staff: order.staff
+        staff: order.staff,
+        machine: order.machine,
+        position: order.position
       })),
       mixingReports: mixingReports.map(report => ({
         ngay: report.ngay,
         ca: report.ca,
-        nhan_su: report.nhan_su
+        nhan_su: report.nhan_su,
+        ma_may: report.ma_may,
+        ten_may: report.ten_may
       })),
       warehouseMovements: shiftSummaryWarehouseMovementRefs.map(movement => ({
         slipDate: movement.slipDate,
@@ -300,30 +319,27 @@ export function ControlBoardPanel({
       machineNvlReports: machineNvlReports.map(report => ({
         ngay: report.ngay,
         ca: report.ca,
-        nhanSu: report.nhanSu
+        nhanSu: report.nhanSu,
+        maMay: report.maMay,
+        tenMay: report.tenMay
       })),
       weighingRecords: weighingRecords.map(record => ({
         productionDate: record.productionDate,
         reportDate: record.reportDate,
         shiftName: record.shiftName,
         worker1: record.worker1,
-        worker2: record.worker2
+        worker2: record.worker2,
+        machineName: record.machineName
+      })),
+      acceptanceReports: shiftSummaryAcceptanceReports.map(report => ({
+        ngay: report.ngay,
+        ca: report.ca,
+        ma_may: report.ma_may,
+        ten_may: report.ten_may
       }))
     }),
-    [productionOrderSettings, productionOrders, mixingReports, shiftSummaryWarehouseMovementRefs, machineNvlReports, weighingRecords]
+    [productionOrderSettings, productionOrders, mixingReports, shiftSummaryWarehouseMovementRefs, machineNvlReports, weighingRecords, shiftSummaryAcceptanceReports]
   );
-
-  const shiftSummaryShiftOptions = useMemo(() => {
-    const fromSettings = productionOrderSettings
-      .filter(setting => setting.loaiCaiDat === 'Thời gian')
-      .map(setting => setting.name || setting.code)
-      .filter(value => value && value !== '-');
-
-    const fromRows = shiftSummaryRows.map(row => row.ca).filter(Boolean);
-    return [...new Set(fromSettings.length > 0 ? fromSettings : fromRows)].sort((a, b) =>
-      a.localeCompare(b, 'vi', { numeric: true })
-    );
-  }, [productionOrderSettings, shiftSummaryRows]);
 
   const shiftSummaryStaffOptions = useMemo(
     () => collectShiftSummaryStaffOptions(shiftSummaryFilterSources),
@@ -358,25 +374,31 @@ export function ControlBoardPanel({
 
   const formatPanelShiftLabel = (shift: string) => formatProductionOrderShiftLabel(shift, productionOrderSettings);
 
-  const matchesPanelDate = (value?: string) => {
-    if (!panelFilterDate) return true;
-    return String(value ?? '').slice(0, 10) === panelFilterDate;
-  };
+  const selectedBoardMachine = useMemo(() => {
+    if (!boardFilterMachine || boardFilterMachine === 'all') return null;
+    return machines.find(machine => machine.code === boardFilterMachine) ?? { code: boardFilterMachine };
+  }, [boardFilterMachine, machines]);
 
-  const matchesPanelShift = (value?: string) => {
-    if (!panelFilterShift || panelFilterShift === 'all') return true;
+  const matchesBoardDateRange = (value?: string) =>
+    matchesControlBoardDateRange(value, shiftSummaryDateFrom, shiftSummaryDateTo);
+
+  const matchesBoardShift = (value?: string) => {
+    if (!boardFilterShift || boardFilterShift === 'all') return true;
     const shift = String(value ?? '').trim();
     if (!shift) return false;
-    return shiftNamesMatch(shift, panelFilterShift);
+    return shiftNamesMatch(shift, boardFilterShift);
   };
 
-  const panelDateShiftFilterProps = {
-    filterDate: panelFilterDate,
-    onFilterDateChange: setPanelFilterDate,
-    filterShift: panelFilterShift,
-    onFilterShiftChange: setPanelFilterShift,
-    shiftOptions: panelShiftOptions,
-    formatShiftLabel: formatPanelShiftLabel
+  const matchesBoardMachine = (...candidates: Array<string | undefined | null>) =>
+    machineValueMatchesFilter(boardFilterMachine, selectedBoardMachine, ...candidates);
+
+  const clearBoardFilters = () => {
+    const defaultRange = defaultShiftSummaryDateRange(14);
+    setShiftSummaryDateFrom(defaultRange.from);
+    setShiftSummaryDateTo(defaultRange.to);
+    setBoardFilterShift('all');
+    setBoardFilterMachine('all');
+    setProductionOrderStaffFilters(new Set());
   };
 
   const handleDeleteWeighingRecord = async (recordId: string | number) => {
@@ -507,9 +529,9 @@ export function ControlBoardPanel({
           .toLowerCase();
         if (!haystack.includes(weighingQuery)) return false;
       }
-      return matchesPanelDate(row.productionDate || row.reportDate) && matchesPanelShift(row.shiftName);
+      return matchesBoardDateRange(row.productionDate || row.reportDate) && matchesBoardShift(row.shiftName) && matchesBoardMachine(row.machineName);
     });
-  }, [weighingDataRows, weighingQuery, panelFilterDate, panelFilterShift]);
+  }, [weighingDataRows, weighingQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine]);
   const recentWeighingRows = useMemo(
     () =>
       [...filteredWeighingRows].sort((a, b) => {
@@ -528,22 +550,25 @@ export function ControlBoardPanel({
           .toLowerCase();
         if (!haystack.includes(orderQuery)) return false;
       }
-      if (!panelFilterDate && panelFilterShift === 'all') return true;
+      if (boardFilterShift === 'all' && boardFilterMachine === 'all') return true;
 
       const linkedProduction = productionOrders.filter(
         row => row.orderRef === order.orderCode || row.orderRef === order.id
       );
-      if (linkedProduction.length === 0) return !panelFilterDate && panelFilterShift === 'all';
+      if (linkedProduction.length === 0) {
+        return boardFilterShift === 'all' && boardFilterMachine === 'all';
+      }
 
       return linkedProduction.some(row => {
         const rowDate = parseProductionOrderFilterDate(row.startDate);
-        const matchesDate = !panelFilterDate || (rowDate && rowDate === panelFilterDate);
+        const matchesDate = matchesBoardDateRange(rowDate || undefined);
         const rowShift = row.shift && row.shift !== '-' ? row.shift : '';
-        const matchesShift = matchesPanelShift(rowShift);
-        return matchesDate && matchesShift;
+        const matchesShift = matchesBoardShift(rowShift);
+        const matchesMachine = matchesBoardMachine(row.machine, row.position, resolveProductionOrderMachine(row, machines));
+        return matchesDate && matchesShift && matchesMachine;
       });
     });
-  }, [orders, orderQuery, productionOrders, panelFilterDate, panelFilterShift]);
+  }, [orders, orderQuery, productionOrders, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, machines, selectedBoardMachine]);
 
   const productQuery = productSearch.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
@@ -560,9 +585,9 @@ export function ControlBoardPanel({
         const haystack = `${report.maMay} ${report.tenMay} ${report.ca} ${report.ngay} ${report.nhanSu} ${report.note}`.toLowerCase();
         if (!haystack.includes(machineNvlReportQuery)) return false;
       }
-      return matchesPanelDate(report.ngay) && matchesPanelShift(report.ca);
+      return matchesBoardDateRange(report.ngay) && matchesBoardShift(report.ca) && matchesBoardMachine(report.maMay, report.tenMay);
     });
-  }, [machineNvlReports, machineNvlReportQuery, panelFilterDate, panelFilterShift]);
+  }, [machineNvlReports, machineNvlReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine]);
   const recentMachineNvlReports = useMemo(
     () =>
       [...filteredMachineNvlReports].sort((a, b) => {
@@ -598,24 +623,28 @@ export function ControlBoardPanel({
             .toLowerCase()
             .includes(productionOrderQuery);
         const rowDate = parseProductionOrderFilterDate(row.startDate);
-        const matchesDate = matchesPanelDate(rowDate || undefined);
+        const matchesDate = matchesBoardDateRange(rowDate || undefined);
         const rowShift = row.shift && row.shift !== '-' ? row.shift : 'Chưa phân ca';
-        const matchesShift = matchesPanelShift(rowShift === 'Chưa phân ca' ? '' : rowShift);
+        const matchesShift = matchesBoardShift(rowShift === 'Chưa phân ca' ? '' : rowShift);
+        const matchesMachine = matchesBoardMachine(row.machine, row.position, resolveProductionOrderMachine(row, machines));
         const rowStaff = splitProductionOrderStaffNames(row.staff);
         const matchesStaff =
           productionOrderStaffFilters.size === 0 ||
           rowStaff.some(name => productionOrderStaffFilters.has(name));
 
-        return matchesSearch && matchesDate && matchesShift && matchesStaff;
+        return matchesSearch && matchesDate && matchesShift && matchesMachine && matchesStaff;
       }
     );
   }, [
     productionOrders,
     productionOrderQuery,
-    panelFilterDate,
-    panelFilterShift,
+    shiftSummaryDateFrom,
+    shiftSummaryDateTo,
+    boardFilterShift,
+    boardFilterMachine,
     productionOrderStaffFilters,
-    machines
+    machines,
+    selectedBoardMachine
   ]);
 
   const acceptanceReportQuery = acceptanceReportSearch.trim().toLowerCase();
@@ -626,12 +655,12 @@ export function ControlBoardPanel({
           .toLowerCase();
         if (!haystack.includes(acceptanceReportQuery)) return false;
       }
-      return matchesPanelDate(report.ngay) && matchesPanelShift(report.ca);
+      return matchesBoardDateRange(report.ngay) && matchesBoardShift(report.ca) && matchesBoardMachine(report.ma_may, report.ten_may);
     });
-  }, [acceptanceReports, acceptanceReportQuery, panelFilterDate, panelFilterShift]);
+  }, [acceptanceReports, acceptanceReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine]);
   const totalAcceptanceRolls = useMemo(
     () =>
-      acceptanceReports.reduce((sum, report) => {
+      filteredAcceptanceReports.reduce((sum, report) => {
         const unit = String(report.don_vi || '')
           .trim()
           .toLowerCase()
@@ -640,7 +669,7 @@ export function ControlBoardPanel({
         if (unit !== 'cuon') return sum;
         return sum + (report.so_luong ?? 0);
       }, 0),
-    [acceptanceReports]
+    [filteredAcceptanceReports]
   );
 
   const previewLimit = 12;
@@ -740,8 +769,6 @@ export function ControlBoardPanel({
   };
 
   const clearProductionOrderFilters = () => {
-    setPanelFilterDate('');
-    setPanelFilterShift('all');
     setProductionOrderStaffFilters(new Set());
   };
 
@@ -751,21 +778,22 @@ export function ControlBoardPanel({
 
     setIsBatchPrinting(true);
     try {
+      const productCatalog = await loadProductionOrderProductCatalog();
       const printableItems = await Promise.all(
         rowsToPrint.map(async order => {
-          const [{ items, product }, machineLabel] = await Promise.all([
-            fetchProductPrintData(order.productCode),
+          const [{ materials, product }, machineLabel] = await Promise.all([
+            loadProductionOrderPrintMaterials(order),
             resolveProductionOrderMachineLabel(order.machine)
           ]);
-          const orderQuantity = parseProductionOrderQuantity(order.quantity);
           return {
             order,
-            materials: buildProductionOrderMaterialProposal(orderQuantity, items, product),
+            materials,
             machineLabel,
             product
           };
         })
       );
+      setPrintingBatchProductCatalog(productCatalog);
       setPrintingBatchOrders(printableItems);
       setPendingBatchPrint(true);
     } catch (error) {
@@ -790,6 +818,7 @@ export function ControlBoardPanel({
   useEffect(() => {
     const handleAfterPrint = () => {
       setPrintingBatchOrders([]);
+      setPrintingBatchProductCatalog([]);
       setPendingBatchPrint(false);
     };
     window.addEventListener('afterprint', handleAfterPrint);
@@ -804,17 +833,33 @@ export function ControlBoardPanel({
         </p>
       )}
 
+      <ControlBoardCommonFilters
+        dateFrom={shiftSummaryDateFrom}
+        dateTo={shiftSummaryDateTo}
+        onDateFromChange={setShiftSummaryDateFrom}
+        onDateToChange={setShiftSummaryDateTo}
+        shift={boardFilterShift}
+        onShiftChange={setBoardFilterShift}
+        shiftOptions={panelShiftOptions}
+        formatShiftLabel={formatPanelShiftLabel}
+        machine={boardFilterMachine}
+        onMachineChange={setBoardFilterMachine}
+        machines={machines}
+        onClear={clearBoardFilters}
+        isLoading={isLoading}
+      />
+
       <ControlBoardShiftSummaryTable
         rows={shiftSummaryRows}
         isLoading={isLoading}
         dateFrom={shiftSummaryDateFrom}
         dateTo={shiftSummaryDateTo}
-        onDateFromChange={setShiftSummaryDateFrom}
-        onDateToChange={setShiftSummaryDateTo}
+        shiftFilter={boardFilterShift}
+        machineFilter={boardFilterMachine}
         detailSources={shiftSummaryDetailSources}
         filterSources={shiftSummaryFilterSources}
-        shiftOptions={shiftSummaryShiftOptions}
         staffOptions={shiftSummaryStaffOptions}
+        selectedMachine={selectedBoardMachine}
         onEditWeighingRecord={onEditWeighing ? handleEditWeighingRecord : undefined}
         onDeleteWeighingRecord={handleDeleteWeighingRecord}
         onDeleteWeighingRecords={handleDeleteWeighingRecords}
@@ -830,7 +875,7 @@ export function ControlBoardPanel({
           subtitle="Các dòng lệnh mới nhất từ bảng lenh_sx"
           icon={Factory}
           accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
-          count={productionOrders.length}
+          count={recentProductionOrders.length}
           countLabel="Lệnh"
           search={productionOrderSearch}
           onSearchChange={setProductionOrderSearch}
@@ -853,7 +898,6 @@ export function ControlBoardPanel({
             disabled: !hasAnyVisibleProductionOrderSelected,
             loading: isBatchPrinting
           }}
-          {...panelDateShiftFilterProps}
         >
           <div className="border-b border-zinc-100 bg-white p-3">
             <div className="flex items-center justify-end">
@@ -1024,7 +1068,7 @@ export function ControlBoardPanel({
           subtitle="Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca"
           icon={ClipboardCheck}
           accentClass="bg-gradient-to-r from-sky-900 to-sky-700"
-          count={acceptanceReports.length}
+          count={filteredAcceptanceReports.length}
           countLabel="Báo cáo"
           summaryExtra={
             <>
@@ -1038,7 +1082,6 @@ export function ControlBoardPanel({
           onOpen={() => onNavigate('acceptance-report')}
           openLabel="Thêm mới"
           compact
-          {...panelDateShiftFilterProps}
         >
           <table className="w-full table-fixed text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
@@ -1115,7 +1158,7 @@ export function ControlBoardPanel({
           subtitle="Phiếu cân ca, khối lượng theo ngày và ca SX"
           icon={Scale}
           accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
-          count={weighingDataRows.length}
+          count={recentWeighingRows.length}
           countLabel="Dòng"
           search={weighingSearch}
           onSearchChange={setWeighingSearch}
@@ -1124,7 +1167,6 @@ export function ControlBoardPanel({
           onOpen={() => onNavigate('weighing-summary')}
           openLabel="Mở"
           compact
-          {...panelDateShiftFilterProps}
         >
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
@@ -1162,7 +1204,7 @@ export function ControlBoardPanel({
           subtitle="Mã đơn, hàng hóa, số lượng và trạng thái"
           icon={ClipboardList}
           accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
-          count={orders.length}
+          count={filteredOrders.length}
           countLabel="Đơn"
           search={orderSearch}
           onSearchChange={setOrderSearch}
@@ -1170,7 +1212,6 @@ export function ControlBoardPanel({
           error=""
           onOpen={() => onNavigate('orders')}
           openLabel="Mở Đơn hàng"
-          {...panelDateShiftFilterProps}
         >
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
@@ -1210,7 +1251,7 @@ export function ControlBoardPanel({
           subtitle="NVL tồn theo máy, ca và ngày sản xuất"
           icon={Boxes}
           accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
-          count={machineNvlReports.length}
+          count={recentMachineNvlReports.length}
           countLabel="BC"
           search={machineNvlReportSearch}
           onSearchChange={setMachineNvlReportSearch}
@@ -1219,7 +1260,6 @@ export function ControlBoardPanel({
           onOpen={() => onNavigate('machine-nvl-report-list')}
           openLabel="Mở"
           compact
-          {...panelDateShiftFilterProps}
         >
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
@@ -1290,12 +1330,17 @@ export function ControlBoardPanel({
           materials={printingMaterials}
           machineLabel={printingMachineLabel}
           product={printingProduct}
+          productCatalog={printingProductCatalog}
           shiftSettings={shiftSettings}
         />
       )}
 
       {printingBatchOrders.length > 0 && (
-        <ProductionOrderBatchPrintSheets items={printingBatchOrders} shiftSettings={productionOrderSettings} />
+        <ProductionOrderBatchPrintSheets
+          items={printingBatchOrders}
+          shiftSettings={productionOrderSettings}
+          productCatalog={printingBatchProductCatalog}
+        />
       )}
     </div>
   );
