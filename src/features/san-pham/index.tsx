@@ -323,21 +323,31 @@ export function ProductViewModal({
 
   const materialBaseKg = resolveProductMaterialBaseKg(product);
 
+  const roundWeightKg = (value: number) => Math.round(value * 10000) / 10000;
+
   const resolveItemWeightKg = (item: ProductNplItem): number | null => {
     if (item.amountType === 'percent') {
       if (item.percent === null || materialBaseKg <= 0) return null;
-      return roundNplNumber((item.percent / 100) * materialBaseKg);
+      return roundWeightKg((item.percent / 100) * materialBaseKg);
     }
     if (item.quantity === null) return null;
     const unit = (item.unit || '').trim().toLowerCase();
-    if (unit === '' || unit === 'kg' || unit === '-') return roundNplNumber(item.quantity);
+    if (unit === '' || unit === 'kg' || unit === '-') return roundWeightKg(item.quantity);
     return null;
   };
 
   const formatItemWeight = (item: ProductNplItem): string => {
     const weight = resolveItemWeightKg(item);
     if (weight === null) return '-';
-    return `${formatNumber(weight, 3)} kg`;
+    return `${formatNumber(weight, 4)} kg`;
+  };
+
+  const resolveItemUnit = (item: ProductNplItem): string => {
+    const key = normalizeProductCodeKey(item.code);
+    const material = materialOptions.find(option => normalizeProductCodeKey(option.code) === key);
+    if (material && material.unit && material.unit !== '-') return material.unit;
+    if (item.unit && item.unit !== '-') return item.unit;
+    return '-';
   };
 
   const openAddForm = () => {
@@ -730,7 +740,7 @@ export function ProductViewModal({
                           {formatItemWeight(item)}
                         </td>
                         <td className="px-4 py-3 font-bold text-zinc-700">
-                          {item.amountType === 'quantity' ? item.unit || '-' : '-'}
+                          {resolveItemUnit(item)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-center gap-1">
@@ -795,7 +805,7 @@ export function ProductViewModal({
                 ['Loại', productNplAmountTypeLabel(detailItem.amountType)],
                 ['Giá trị', formatProductNplAmount(detailItem)],
                 ['Khối lượng', formatItemWeight(detailItem)],
-                ['Đơn vị', detailItem.amountType === 'quantity' ? detailItem.unit || '-' : '-'],
+                ['Đơn vị', resolveItemUnit(detailItem)],
                 ['Sản phẩm', product.code]
               ].map(([label, value]) => (
                 <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
