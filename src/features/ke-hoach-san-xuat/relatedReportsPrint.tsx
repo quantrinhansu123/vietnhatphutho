@@ -30,6 +30,7 @@ import {
   normalizeAcceptanceReports,
   type AcceptanceReport
 } from '../../components/AcceptanceReportForm';
+import { findProductByCode, normalizeProductCodeKey, type ProductRow } from '../san-pham';
 import { MachineNvlPrintSheet, savedReportToMachineNvlPrintReport } from '../../components/MachineNvlPrintSheet';
 import { MixingReportPrintSheet } from '../../components/MixingReportPrintSheet';
 import { WeighingSlipPrintSheet, type WeighingSlipPrintData } from '../../components/WeighingSlipPrintSheet';
@@ -58,6 +59,7 @@ export type ProductionPlanRelatedReports = {
   weighing: WeighingRecord[];
   downtime: MachineDowntimeSlip[];
   damaged: WeighingRecord[];
+  damagedDefective: WeighingRecord[];
   acceptance: AcceptanceReport[];
   warehouseSlips: WarehouseSlipPrintData[];
   isEmpty: boolean;
@@ -159,22 +161,38 @@ function tokensMatch(left: Set<string>, right: Set<string>): boolean {
 function matchShift(rowShift: string, shiftList: string[], shiftOptions: ShiftOption[]): boolean {
   if (shiftList.length === 0) return true;
   const trimmed = (rowShift || '').trim();
-  if (!trimmed) return true;
+  // Khi đã lọc ca, phiếu không có ca coi như không thuộc ca nào -> loại bỏ.
+  if (!trimmed) return false;
 
   const matchers = buildShiftMatchers(shiftList, shiftOptions);
   const rowTokens = collectShiftTokens(trimmed, shiftOptions);
   return tokensMatch(matchers, rowTokens);
 }
 
-function shouldIncludeRelatedReport(
-  rowShift: string,
-  shiftList: string[],
-  shiftOptions: ShiftOption[],
-  machineMatchers: Set<string>,
-  machineCandidates: Array<string | undefined | null>
-): boolean {
-  if (matchShift(rowShift, shiftList, shiftOptions)) return true;
-  return machineMatches(machineMatchers, ...machineCandidates);
+function shouldIncludeRelatedReport(rowShift: string, shiftList: string[], shiftOptions: ShiftOption[]): boolean {
+  return matchShift(rowShift, shiftList, shiftOptions);
+}
+
+function normalizeProductKey(value: string) {
+  return normalizeProductCodeKey(value || '');
+}
+
+function addAcceptanceProductNamesForPrint(reports: AcceptanceReport[], productCatalog: ProductRow[]) {
+  const productNameByCode = new Map<string, string>();
+  productCatalog.forEach(product => {
+    const key = normalizeProductKey(product.code);
+    if (!key) return;
+    if (!productNameByCode.has(key)) productNameByCode.set(key, product.name || '');
+  });
+
+  return reports.map(report => {
+    const product = findProductByCode(productCatalog, report.mat_hang || '');
+    const fallbackName = product?.name || '';
+    return {
+      ...report,
+      ten_sp: report.ten_sp || productNameByCode.get(normalizeProductKey(report.mat_hang)) || fallbackName
+    };
+  });
 }
 
 async function loadShiftOptions(): Promise<ShiftOption[]> {
@@ -202,7 +220,7 @@ async function fetchJson(url: string): Promise<{ ok: boolean; data: unknown }> {
 export async function loadProductionPlanRelatedReports(
   planDate: string,
   shiftList: string[],
-  planMachines: string[] = []
+  productCatalog: ProductRow[] = []
 ): Promise<ProductionPlanRelatedReports> {
   if (!planDate) {
     throw new Error('Chưa có ngày kế hoạch để in các phiếu liên quan.');
@@ -212,24 +230,22 @@ export async function loadProductionPlanRelatedReports(
   const errors: string[] = [];
   const encodedDate = encodeURIComponent(planDate);
   const shiftOptions = await loadShiftOptions();
-  const machineMatchers = buildMachineMatchers(planMachines);
 
-  const [nvlRes, mixingRes, weighingRes, downtimeRes, damagedRes, acceptanceRes, warehouseRes] = await Promise.all([
+  const [nvlRes, mixingRes, weighingRes, downtimeRes, damagedRes, damagedDefectiveRes, acceptanceRes, warehouseRes] = await Promise.all([
     fetchJson(`/api/bao-cao-may-nvl-ton?ngay=${encodedDate}`),
     fetchJson(`/api/bao-cao-phoi-tron?ngay=${encodedDate}`),
     fetchJson(`/api/phieu-can-dinh-ki?ngay=${encodedDate}`),
     fetchJson(`/api/phieu-bao-dung-may?ngay=${encodedDate}`),
     fetchJson(`/api/bao-cao-hang-hong?ngay=${encodedDate}`),
+    // Một số cơ sở gọi báo cáo này là "hàng lỗi/hỏng" -> thử thêm route alias (nếu server chưa có sẽ fail ok=false).
+    fetchJson(`/api/bao-cao-hang-loi-hong?ngay=${encodedDate}`),
     fetchJson(`/api/bao-cao-nghiem-thu?ngay=${encodedDate}`),
     fetchJson(`/api/phieu-xuat-nhap-kho?loai=xuat&loai_kho=nvl&from=${encodedDate}&to=${encodedDate}`)
   ]);
 
   const machineNvlAll = nvlRes.ok ? normalizeMachineNvlReports(nvlRes.data) : [];
   const machineNvl = machineNvlAll.filter(report =>
-    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions, machineMatchers, [
-      report.maMay,
-      report.tenMay
-    ])
+    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions)
   );
   if (!nvlRes.ok) errors.push('Báo cáo tồn NVL');
 
@@ -239,46 +255,44 @@ export async function loadProductionPlanRelatedReports(
       ? mixingReportsRaw.map((item: Record<string, unknown>) => normalizeMixingReport(item))
       : [];
   const mixing = mixingAll.filter(report =>
-    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions, machineMatchers, [
-      report.ma_may,
-      report.ten_may
-    ])
+    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions)
   );
   if (!mixingRes.ok) errors.push('Trộn nguyên vật liệu');
 
   const weighingAll = weighingRes.ok ? normalizeWeighingRecords(weighingRes.data) : [];
   const weighing = weighingAll.filter(record =>
-    shouldIncludeRelatedReport(record.shiftName, shifts, shiftOptions, machineMatchers, [record.machineName])
+    shouldIncludeRelatedReport(record.shiftName, shifts, shiftOptions)
   );
   if (!weighingRes.ok) errors.push('Phiếu cân');
 
   const downtimeAll = downtimeRes.ok ? normalizeMachineDowntimeSlips(downtimeRes.data) : [];
   const downtime = downtimeAll.filter(slip =>
-    shouldIncludeRelatedReport(slip.shift, shifts, shiftOptions, machineMatchers, [
-      slip.machineCode,
-      slip.machineName
-    ])
+    shouldIncludeRelatedReport(slip.shift, shifts, shiftOptions)
   );
   if (!downtimeRes.ok) errors.push('Phiếu báo dừng máy');
 
   const damagedAll = damagedRes.ok ? normalizeWeighingRecords(damagedRes.data) : [];
   const damaged = damagedAll.filter(record =>
-    shouldIncludeRelatedReport(record.shiftName, shifts, shiftOptions, machineMatchers, [record.machineName])
+    shouldIncludeRelatedReport(record.shiftName, shifts, shiftOptions)
   );
   if (!damagedRes.ok) errors.push('Báo cáo hàng hỏng');
 
-  const acceptanceAll = acceptanceRes.ok ? normalizeAcceptanceReports(acceptanceRes.data) : [];
+  const damagedDefectiveAll = damagedDefectiveRes.ok ? normalizeWeighingRecords(damagedDefectiveRes.data) : [];
+  const damagedDefective = damagedDefectiveAll.filter(record =>
+    shouldIncludeRelatedReport(record.shiftName, shifts, shiftOptions)
+  );
+  if (!damagedDefectiveRes.ok) errors.push('Báo cáo hàng lỗi/hỏng');
+
+  const acceptanceAllRaw = acceptanceRes.ok ? normalizeAcceptanceReports(acceptanceRes.data) : [];
+  const acceptanceAll = productCatalog.length > 0 ? addAcceptanceProductNamesForPrint(acceptanceAllRaw, productCatalog) : acceptanceAllRaw;
   const acceptance = acceptanceAll.filter(report =>
-    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions, machineMatchers, [
-      report.ma_may,
-      report.ten_may
-    ])
+    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions)
   );
   if (!acceptanceRes.ok) errors.push('Báo cáo sản lượng');
 
   const warehouseMovementsAll = warehouseRes.ok ? normalizeWarehouseMovements(warehouseRes.data) : [];
   const warehouseMovements = warehouseMovementsAll.filter(row =>
-    shouldIncludeRelatedReport(row.shift, shifts, shiftOptions, machineMatchers, [])
+    shouldIncludeRelatedReport(row.shift, shifts, shiftOptions)
   );
   if (!warehouseRes.ok) errors.push('Phiếu xuất vật tư');
   const warehouseSlips = buildWarehouseExportSlips(warehouseMovements);
@@ -289,6 +303,7 @@ export async function loadProductionPlanRelatedReports(
     getWeighingDataRows(weighing).length === 0 &&
     downtime.length === 0 &&
     getWeighingDataRows(damaged).length === 0 &&
+    getWeighingDataRows(damagedDefective).length === 0 &&
     acceptance.length === 0 &&
     warehouseSlips.length === 0;
 
@@ -298,11 +313,12 @@ export async function loadProductionPlanRelatedReports(
     { label: 'Phiếu cân', matched: getWeighingDataRows(weighing).length, dayTotal: getWeighingDataRows(weighingAll).length },
     { label: 'Phiếu báo dừng máy', matched: downtime.length, dayTotal: downtimeAll.length },
     { label: 'Báo cáo hàng hỏng', matched: getWeighingDataRows(damaged).length, dayTotal: getWeighingDataRows(damagedAll).length },
+    { label: 'Báo cáo hàng lỗi/hỏng', matched: getWeighingDataRows(damagedDefective).length, dayTotal: getWeighingDataRows(damagedDefectiveAll).length },
     { label: 'Báo cáo sản lượng', matched: acceptance.length, dayTotal: acceptanceAll.length },
     { label: 'Phiếu xuất vật tư', matched: warehouseMovements.length, dayTotal: warehouseMovementsAll.length }
   ];
 
-  return { machineNvl, mixing, weighing, downtime, damaged, acceptance, warehouseSlips, isEmpty, errors, diagnostics };
+  return { machineNvl, mixing, weighing, downtime, damaged, damagedDefective, acceptance, warehouseSlips, isEmpty, errors, diagnostics };
 }
 
 function buildWarehouseExportSlips(rows: WarehouseMovementRow[]): WarehouseSlipPrintData[] {
@@ -386,6 +402,7 @@ export function ProductionPlanRelatedPrintContent({ data }: { data: ProductionPl
   const mixingGroups = groupMixingReportsForPrint(data.mixing);
   const weighingSlips = buildWeighingSlips(data.weighing);
   const damagedSlips = buildWeighingSlips(data.damaged);
+  const damagedDefectiveSlips = buildWeighingSlips(data.damagedDefective);
   const downtimeSlips = data.downtime.map(slip =>
     buildMachineDowntimePrintSlip({
       slipCode: slip.slipCode,
@@ -428,6 +445,11 @@ export function ProductionPlanRelatedPrintContent({ data }: { data: ProductionPl
       {damagedSlips.map((slip, index) => (
         <div key={`damaged-${index}`} className="production-order-print-page">
           <WeighingSlipPrintSheet slip={slip} title="BÁO CÁO HÀNG HỎNG" />
+        </div>
+      ))}
+      {damagedDefectiveSlips.map((slip, index) => (
+        <div key={`damaged-defective-${index}`} className="production-order-print-page">
+          <WeighingSlipPrintSheet slip={slip} title="BÁO CÁO HÀNG LỖI/HỎNG" />
         </div>
       ))}
       {downtimeSlips.map((slip, index) => (

@@ -2209,10 +2209,8 @@ export function ProductionPlanModal({
         .map(line => productionOrders.find(order => order.id === line.id))
         .filter((order): order is ProductionOrderRow => Boolean(order));
 
-      const [productCatalog, data] = await Promise.all([
-        loadProductionOrderProductCatalog(),
-        loadProductionPlanRelatedReports(planDate, shifts, planMachines)
-      ]);
+      const productCatalog = await loadProductionOrderProductCatalog();
+      const data = await loadProductionPlanRelatedReports(planDate, shifts, productCatalog);
 
       const printableOrders = (
         await Promise.allSettled(
@@ -3038,8 +3036,8 @@ export function ProductionOrderPrintSheet({
         <table className="production-order-print-grid-table production-order-print-params-table">
           <thead>
             <tr>
-              <th>Ca</th>
-              <th>Máy</th>
+              <th>Ca sản xuất</th>
+              <th>Máy sản xuất</th>
               <th>Nhân sự phụ trách</th>
             </tr>
           </thead>
@@ -3056,12 +3054,12 @@ export function ProductionOrderPrintSheet({
         <table className="production-order-print-grid-table production-order-print-product-table">
           <thead>
             <tr>
-              <th>Mã thành phẩm</th>
+              <th>Mã TP</th>
               <th>Tên thành phẩm</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
-              <th>Định mức</th>
-              <th>KL (kg)</th>
+              <th>Định mức (kg/cuộn)</th>
+              <th>Tổng trọng lượng (kg)</th>
               <th>Đối tượng THCP</th>
             </tr>
           </thead>
