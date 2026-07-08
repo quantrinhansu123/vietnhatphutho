@@ -148,6 +148,7 @@ export default function ControlBoardShiftSummaryTable({
     slHang: sumShiftSummaryColumn(filteredRows, 'slHang'),
     khoiLuongHang: sumShiftSummaryColumn(filteredRows, 'khoiLuongHang'),
     khoiLuongHangThucTe: sumShiftSummaryColumn(filteredRows, 'khoiLuongHangThucTe'),
+    hangHong: sumShiftSummaryColumn(filteredRows, 'hangHong'),
     khoiLuongNpl: sumShiftSummaryColumn(filteredRows, 'khoiLuongNpl'),
     tonDauCa: sumShiftSummaryColumn(filteredRows, 'tonDauCa'),
     tonCuoiCa: sumShiftSummaryColumn(filteredRows, 'tonCuoiCa'),
@@ -292,6 +293,10 @@ export default function ControlBoardShiftSummaryTable({
                       <dd className="font-mono font-bold text-[#ef1b2d]">{formatShiftSummaryNumber(row.khoiLuongHangThucTe, 3)}</dd>
                     </div>
                     <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Hàng hỏng</dt>
+                      <dd className="font-mono font-bold text-rose-700">{formatShiftSummaryNumber(row.hangHong, 3)}</dd>
+                    </div>
+                    <div>
                       <dt className="font-bold uppercase tracking-wider text-zinc-400">KL NPL</dt>
                       <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryNumber(row.khoiLuongNpl, 3)}</dd>
                     </div>
@@ -320,7 +325,7 @@ export default function ControlBoardShiftSummaryTable({
         </div>
 
         <div className="hidden overflow-x-auto md:block">
-          <table className="min-w-[1180px] w-full text-left text-xs">
+          <table className="min-w-[1280px] w-full text-left text-xs">
             <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -328,6 +333,7 @@ export default function ControlBoardShiftSummaryTable({
                 <th className="px-3 py-2.5 text-right font-black">SL hàng</th>
                 <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng</th>
                 <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng TT</th>
+                <th className="px-3 py-2.5 text-right font-black">Hàng hỏng</th>
                 <th className="px-3 py-2.5 text-right font-black">Khối lượng NPL</th>
                 <th className="px-3 py-2.5 text-right font-black">Tồn đầu ca</th>
                 <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca</th>
@@ -337,14 +343,14 @@ export default function ControlBoardShiftSummaryTable({
             <tbody className="divide-y divide-zinc-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải dữ liệu tổng hợp...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có dữ liệu theo bộ lọc đã chọn.
                   </td>
                 </tr>
@@ -374,6 +380,9 @@ export default function ControlBoardShiftSummaryTable({
                       className="px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]"
                       onOpen={openDetail}
                     />
+                    <td className="px-3 py-2 text-right font-mono font-bold text-rose-700">
+                      {formatShiftSummaryNumber(row.hangHong, 3)}
+                    </td>
                     <SummaryValueCell
                       row={row}
                       metric="khoiLuongNpl"
@@ -414,6 +423,9 @@ export default function ControlBoardShiftSummaryTable({
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-[#ef1b2d]">
                     {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-rose-700">
+                    {formatShiftSummaryNumber(totals.hangHong, 3)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-amber-700">
                     {formatShiftSummaryNumber(totals.khoiLuongNpl, 3)}

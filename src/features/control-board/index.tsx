@@ -104,6 +104,7 @@ export function ControlBoardPanel({
   const [shiftSummaryAcceptanceReports, setShiftSummaryAcceptanceReports] = useState<AcceptanceReport[]>([]);
   const [mixingReports, setMixingReports] = useState<MixingReport[]>([]);
   const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
+  const [damagedRecords, setDamagedRecords] = useState<WeighingRecord[]>([]);
   const [machineNvlReports, setMachineNvlReports] = useState<MachineNvlSavedReport[]>([]);
   const [shiftSummaryWarehouseMovements, setShiftSummaryWarehouseMovements] = useState<WarehouseMovementRow[]>([]);
   const defaultShiftSummaryRange = defaultShiftSummaryDateRange(14);
@@ -150,7 +151,7 @@ export function ControlBoardPanel({
     try {
       const summaryFrom = shiftSummaryDateFrom || defaultShiftSummaryRange.from;
       const summaryTo = shiftSummaryDateTo || defaultShiftSummaryRange.to;
-      const [orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, machineNvlRes, warehouseMovementRes] =
+      const [orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, damagedRes, machineNvlRes, warehouseMovementRes] =
         await Promise.all([
         fetch('/api/don-hang'),
         fetch('/api/san-pham?format=table'),
@@ -164,6 +165,7 @@ export function ControlBoardPanel({
         ),
         fetch(`/api/bao-cao-phoi-tron?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`),
         fetch(`/api/phieu-can-dinh-ki?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
+        fetch(`/api/bao-cao-hang-hong?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
         fetch('/api/bao-cao-may-nvl-ton?limit=300'),
         fetch(
           `/api/phieu-xuat-nhap-kho?loai_kho=nvl&from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`
@@ -180,6 +182,7 @@ export function ControlBoardPanel({
       const shiftSummaryAcceptanceData = await shiftSummaryAcceptanceRes.json().catch(() => ({}));
       const mixingData = await mixingRes.json().catch(() => ({}));
       const weighingData = await weighingRes.json().catch(() => ([]));
+      const damagedData = await damagedRes.json().catch(() => ([]));
       const machineNvlData = await machineNvlRes.json().catch(() => ({}));
       const warehouseMovementData = await warehouseMovementRes.json().catch(() => ({}));
 
@@ -220,6 +223,12 @@ export function ControlBoardPanel({
         setWeighingRecords([]);
       }
 
+      if (damagedRes.ok) {
+        setDamagedRecords(normalizeWeighingRecords(damagedData));
+      } else {
+        setDamagedRecords([]);
+      }
+
       if (machineNvlRes.ok) {
         setMachineNvlReports(normalizeMachineNvlReports(machineNvlData));
       } else {
@@ -251,6 +260,7 @@ export function ControlBoardPanel({
       setShiftSummaryAcceptanceReports([]);
       setMixingReports([]);
       setWeighingRecords([]);
+      setDamagedRecords([]);
       setMachineNvlReports([]);
       setShiftSummaryWarehouseMovements([]);
       setLoadError(error.message || 'Không thể tải dữ liệu bảng điều khiển.');
@@ -277,6 +287,7 @@ export function ControlBoardPanel({
         acceptanceReports: shiftSummaryAcceptanceReports,
         warehouseMovements: shiftSummaryWarehouseMovementRefs,
         weighingRecords,
+        damagedRecords,
         machineNvlReports,
         dateFrom: shiftSummaryDateFrom,
         dateTo: shiftSummaryDateTo
@@ -288,6 +299,7 @@ export function ControlBoardPanel({
       shiftSummaryAcceptanceReports,
       shiftSummaryWarehouseMovementRefs,
       weighingRecords,
+      damagedRecords,
       machineNvlReports,
       shiftSummaryDateFrom,
       shiftSummaryDateTo
@@ -1227,7 +1239,12 @@ export function ControlBoardPanel({
               {filteredOrders.slice(0, previewLimit).map(order => (
                 <tr key={order.id} className="hover:bg-red-50/50">
                   <td className="px-3 py-2 font-bold text-zinc-900">{order.orderCode || '-'}</td>
-                  <td className="px-3 py-2 text-zinc-700">{formatOrderProductsSummary(getOrderProductLines(order))}</td>
+                  <td className="px-3 py-2 text-zinc-700">
+                    {getOrderProductLines(order)
+                      .map(line => line.productCode)
+                      .filter(code => code && code !== '-')
+                      .join(', ') || '-'}
+                  </td>
                   <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.quantity}</td>
                   <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.stockQuantity}</td>
                   <td className="px-3 py-2">

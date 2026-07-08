@@ -51,6 +51,7 @@ export type ControlBoardShiftSummaryRow = {
   khoiLuongHang: number;
   slHangThucTe: number;
   khoiLuongHangThucTe: number;
+  hangHong: number;
   khoiLuongNpl: number;
   tonDauCa: number;
   tonCuoiCa: number;
@@ -79,6 +80,7 @@ type SummaryBucket = {
   khoiLuongHang: number;
   slHangThucTe: number;
   khoiLuongHangThucTe: number;
+  hangHong: number;
   khoiLuongNpl: number;
   tonDauCa: number;
   tonCuoiCa: number;
@@ -141,6 +143,7 @@ function getOrCreateBucket(
     khoiLuongHang: 0,
     slHangThucTe: 0,
     khoiLuongHangThucTe: 0,
+    hangHong: 0,
     khoiLuongNpl: 0,
     tonDauCa: 0,
     tonCuoiCa: 0
@@ -233,6 +236,7 @@ export function buildControlBoardShiftSummary(input: {
   acceptanceReports: AcceptanceReport[];
   warehouseMovements?: ShiftSummaryWarehouseMovement[];
   weighingRecords: WeighingRecord[];
+  damagedRecords?: WeighingRecord[];
   machineNvlReports?: MachineNvlSavedReport[];
   dateFrom?: string;
   dateTo?: string;
@@ -286,6 +290,15 @@ export function buildControlBoardShiftSummary(input: {
     bucket.khoiLuongHangThucTe += sumWeighingRowTotalWeight(record);
   }
 
+  for (const record of getWeighingDataRows(input.damagedRecords ?? [])) {
+    const ngay = parseIsoDate(record.productionDate || record.reportDate);
+    if (!ngay || !inRange(ngay)) continue;
+    const bucket = getOrCreateBucket(map, ngay, record.shiftName, shiftOptions);
+    if (!bucket) continue;
+    // Hàng hỏng — tổng trọng lượng từ báo cáo hàng hỏng (bao_cao_hang_hong)
+    bucket.hangHong += sumWeighingRowTotalWeight(record);
+  }
+
   for (const movement of input.warehouseMovements ?? []) {
     if (!inRange(movement.slipDate)) continue;
     const bucket = getOrCreateBucket(map, movement.slipDate, movement.shift, shiftOptions);
@@ -317,6 +330,7 @@ export function buildControlBoardShiftSummary(input: {
         khoiLuongHang: roundNormWeight(bucket.khoiLuongHang),
         slHangThucTe: bucket.slHangThucTe,
         khoiLuongHangThucTe: roundNormWeight(bucket.khoiLuongHangThucTe),
+        hangHong: roundNormWeight(bucket.hangHong),
         khoiLuongNpl,
         tonDauCa,
         tonCuoiCa,

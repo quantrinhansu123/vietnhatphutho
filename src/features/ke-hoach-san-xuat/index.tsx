@@ -19,6 +19,8 @@ import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, typ
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
+import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';
+import { buildControlBoardShiftSummary, type ControlBoardShiftSummaryRow } from '../../utils/controlBoardShiftSummary';
 import {
   normalizeProducts,
   findProductByCode,
@@ -1945,6 +1947,14 @@ export function ProductionPlanModal({
   const [pendingRelatedPrint, setPendingRelatedPrint] = useState(false);
   const [relatedShiftOptions, setRelatedShiftOptions] = useState<ShiftOption[]>([]);
   const [selectedRelatedShifts, setSelectedRelatedShifts] = useState<string[]>([]);
+  const [relatedShiftSummaryRows, setRelatedShiftSummaryRows] = useState<ControlBoardShiftSummaryRow[]>([]);
+  const [relatedShiftSummaryFilters, setRelatedShiftSummaryFilters] = useState<{
+    dateFrom: string;
+    dateTo: string;
+    shiftLabel: string;
+    staffLabel: string;
+    machineLabel?: string;
+  } | null>(null);
 
   const displayLines = useMemo(
     () => enrichProductionPlanLines(planLines, productionOrders, machines),
@@ -1978,6 +1988,8 @@ export function ProductionPlanModal({
     setRelatedPrintCatalog([]);
     setPendingRelatedPrint(false);
     setSelectedRelatedShifts([]);
+    setRelatedShiftSummaryRows([]);
+    setRelatedShiftSummaryFilters(null);
 
     fetch('/api/cai-dat')
       .then(res => (res.ok ? res.json() : null))
@@ -2234,6 +2246,69 @@ export function ProductionPlanModal({
       setRelatedPrintCatalog(productCatalog);
       setRelatedPrintOrders(applyWarehouseActualQuantities(printableOrders, data.warehouseSlips));
       setRelatedPrintData(data);
+
+      // BẢNG TỔNG HỢP THEO CA (đặt trang đầu tiên)
+      try {
+        const settingRes = await fetch('/api/cai-dat');
+        const settingData = await settingRes.json().catch(() => ({}));
+        const shiftSettings = normalizeShiftSettings(settingData);
+
+        const productionOrderRefs = ordersToPrint.map(order => ({
+          startDate: order.startDate,
+          shift: order.shift,
+          productCode: order.productCode,
+          productName: order.productName,
+          quantity: order.quantity,
+          unit: order.unit,
+          products: getProductionOrderProductLines(order).map(line => ({
+            productCode: line.productCode,
+            productName: line.productName,
+            quantity: line.quantity,
+            unit: line.unit
+          }))
+        }));
+
+        const warehouseMovements = data.warehouseSlips.flatMap(slip =>
+          slip.lines.map(line => ({
+            id: `${slip.slipCode || slip.slipDate}-${line.code}`,
+            slipCode: slip.slipCode || '',
+            slipDate: slip.slipDate || planDate,
+            shift: slip.shift || '',
+            slipType: slip.slipType,
+            warehouseKind: slip.warehouseKind,
+            itemCode: line.code,
+            itemName: line.name,
+            unit: line.unit,
+            quantity: line.quantity,
+            createdBy: slip.createdBy || ''
+          }))
+        );
+
+        const summaryRows = buildControlBoardShiftSummary({
+          shiftSettings,
+          productionOrders: productionOrderRefs,
+          products: productCatalog.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
+          acceptanceReports: data.acceptance,
+          warehouseMovements,
+          weighingRecords: data.weighing,
+          damagedRecords: [...data.damaged, ...data.damagedDefective],
+          machineNvlReports: data.machineNvl,
+          dateFrom: planDate,
+          dateTo: planDate
+        }).filter(row => selectedRelatedShifts.length === 0 || selectedRelatedShifts.some(shift => shiftNamesMatch(shift, row.ca)));
+
+        setRelatedShiftSummaryRows(summaryRows);
+        setRelatedShiftSummaryFilters({
+          dateFrom: planDate,
+          dateTo: planDate,
+          shiftLabel: selectedRelatedShifts.length > 0 ? selectedRelatedShifts.join(', ') : 'Tất cả ca',
+          staffLabel: 'Tất cả nhân viên'
+        });
+      } catch {
+        setRelatedShiftSummaryRows([]);
+        setRelatedShiftSummaryFilters(null);
+      }
+
       setPendingRelatedPrint(true);
 
       const messages: string[] = [];
@@ -2614,6 +2689,11 @@ export function ProductionPlanModal({
       {(relatedPrintOrders.length > 0 || relatedPrintData) &&
         createPortal(
           <div className="production-order-print-batch">
+            {relatedShiftSummaryRows.length > 0 && relatedShiftSummaryFilters ? (
+              <div className="production-order-print-page">
+                <ControlBoardShiftSummaryPrintBatch rows={relatedShiftSummaryRows} filters={relatedShiftSummaryFilters} />
+              </div>
+            ) : null}
             {relatedPrintOrders.map(item => (
               <div key={`po-${item.order.id}`} className="production-order-print-page">
                 <ProductionOrderPrintSheet
