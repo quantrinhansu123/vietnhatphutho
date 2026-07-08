@@ -399,6 +399,13 @@ input[type="number"] {
     background: #ffffff !important;
   }
 
+  html,
+  body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
   body * {
     visibility: hidden !important;
   }
@@ -624,7 +631,9 @@ input[type="number"] {
   .weighing-slip-print-batch,
   .weighing-slip-print-batch *,
   .weighing-slip-print-sheet,
-  .weighing-slip-print-sheet * {
+  .weighing-slip-print-sheet *,
+  .warehouse-slip-print-sheet,
+  .warehouse-slip-print-sheet * {
     visibility: visible !important;
   }
 
@@ -706,15 +715,16 @@ input[type="number"] {
 
   .production-order-print-batch {
     display: block !important;
-    position: absolute;
-    inset: 0;
-    left: 0;
-    top: 0;
-    width: 100%;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
     z-index: 9999;
     background: #ffffff;
     color: #111111;
     padding: 0;
+    overflow: visible !important;
   }
 
   .production-order-print-sheet {
@@ -736,6 +746,30 @@ input[type="number"] {
     left: auto;
     top: auto;
     width: auto;
+  }
+
+  .production-order-print-batch .production-order-print-page {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .production-order-print-batch .weighing-slip-print-sheet,
+  .production-order-print-batch .mixing-report-print-sheet,
+  .production-order-print-batch .warehouse-slip-print-sheet {
+    display: block !important;
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    z-index: auto !important;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+    margin: 0;
+    overflow: visible !important;
   }
 
   .shift-summary-print-batch,
@@ -1106,7 +1140,9 @@ input[type="number"] {
   .weighing-slip-print-sheet,
   .weighing-slip-print-sheet *,
   .weighing-slip-print-batch,
-  .weighing-slip-print-batch * {
+  .weighing-slip-print-batch *,
+  .warehouse-slip-print-sheet,
+  .warehouse-slip-print-sheet * {
     visibility: visible !important;
   }
 
@@ -1187,15 +1223,16 @@ input[type="number"] {
 
   .production-order-print-batch {
     display: block !important;
-    position: absolute;
-    inset: 0;
-    left: 0;
-    top: 0;
-    width: 100%;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
     z-index: 9999;
     background: #ffffff;
     color: #111111;
     padding: 0;
+    overflow: visible !important;
   }
 
   .weighing-slip-print-batch {
@@ -1247,6 +1284,30 @@ input[type="number"] {
     left: auto;
     top: auto;
     width: auto;
+  }
+
+  .production-order-print-batch .production-order-print-page {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .production-order-print-batch .weighing-slip-print-sheet,
+  .production-order-print-batch .mixing-report-print-sheet,
+  .production-order-print-batch .warehouse-slip-print-sheet {
+    display: block !important;
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    z-index: auto !important;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+    margin: 0;
+    overflow: visible !important;
   }
 
   .weighing-slip-print-batch .weighing-slip-print-sheet {
@@ -1332,6 +1393,18 @@ input[type="number"] {
   body.mixing-report-print-active .mixing-report-print-table {
     width: 100% !important;
     margin: 0 !important;
+  }
+
+  body.production-plan-related-print-active #root {
+    display: none !important;
+  }
+
+  body.production-plan-related-print-active .production-order-print-batch {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
   }
 }
 

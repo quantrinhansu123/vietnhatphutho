@@ -1,5 +1,11 @@
 import React from 'react';
-import { shiftNamesMatch } from '../../utils/shiftSettings';
+import {
+  getProductionShiftOptions,
+  normalizeShiftSettings,
+  resolveShiftName,
+  shiftNamesMatch,
+  type ShiftOption
+} from '../../utils/shiftSettings';
 import {
   normalizeMachineNvlReports,
   type MachineNvlSavedReport
@@ -59,11 +65,127 @@ export type ProductionPlanRelatedReports = {
   diagnostics: ProductionPlanReportDiagnostic[];
 };
 
-function matchShift(rowShift: string, shifts: string[]): boolean {
-  if (shifts.length === 0) return true;
+function addShiftToken(tokens: Set<string>, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  const lower = trimmed.toLowerCase();
+  tokens.add(lower);
+
+  const withoutCa = lower.replace(/^ca\s+/i, '').trim();
+  if (withoutCa) tokens.add(withoutCa);
+
+  const hcMatch = lower.match(/\bhc\s*(\d+)\b/i);
+  if (hcMatch) tokens.add(`hc${hcMatch[1]}`);
+
+  const caNumberMatch = lower.match(/^ca\s*(\d+)$/i);
+  if (caNumberMatch) {
+    tokens.add(caNumberMatch[1]);
+    tokens.add(`hc${caNumberMatch[1]}`);
+  }
+}
+
+function normalizeMachineKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function buildMachineMatchers(planMachines: string[]): Set<string> {
+  const matchers = new Set<string>();
+  planMachines.forEach(machine => {
+    const key = normalizeMachineKey(machine);
+    if (key && key !== '-') matchers.add(key);
+  });
+  return matchers;
+}
+
+function machineMatches(
+  machineMatchers: Set<string>,
+  ...candidates: Array<string | undefined | null>
+): boolean {
+  if (machineMatchers.size === 0) return false;
+  const normalizedCandidates = candidates.map(value => normalizeMachineKey(String(value || ''))).filter(Boolean);
+  if (normalizedCandidates.length === 0) return false;
+
+  for (const candidate of normalizedCandidates) {
+    for (const matcher of machineMatchers) {
+      if (candidate === matcher || candidate.includes(matcher) || matcher.includes(candidate)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function collectShiftTokens(rawShift: string, shiftOptions: ShiftOption[]): Set<string> {
+  const tokens = new Set<string>();
+  const trimmed = (rawShift || '').trim();
+  if (!trimmed) return tokens;
+
+  addShiftToken(tokens, trimmed);
+  addShiftToken(tokens, resolveShiftName(trimmed, shiftOptions));
+
+  shiftOptions.forEach(option => {
+    if (shiftNamesMatch(trimmed, option.value) || shiftNamesMatch(trimmed, option.label)) {
+      addShiftToken(tokens, option.value);
+      addShiftToken(tokens, option.label);
+    }
+  });
+
+  return tokens;
+}
+
+function buildShiftMatchers(shiftList: string[], shiftOptions: ShiftOption[]): Set<string> {
+  const matchers = new Set<string>();
+  shiftList.forEach(shift => {
+    collectShiftTokens(shift, shiftOptions).forEach(token => matchers.add(token));
+  });
+  return matchers;
+}
+
+function tokensMatch(left: Set<string>, right: Set<string>): boolean {
+  if (left.size === 0 || right.size === 0) return false;
+  for (const a of left) {
+    for (const b of right) {
+      if (a === b || a.includes(b) || b.includes(a)) return true;
+    }
+  }
+  return false;
+}
+
+function matchShift(rowShift: string, shiftList: string[], shiftOptions: ShiftOption[]): boolean {
+  if (shiftList.length === 0) return true;
   const trimmed = (rowShift || '').trim();
   if (!trimmed) return true;
-  return shifts.some(shift => shiftNamesMatch(shift, trimmed));
+
+  const matchers = buildShiftMatchers(shiftList, shiftOptions);
+  const rowTokens = collectShiftTokens(trimmed, shiftOptions);
+  return tokensMatch(matchers, rowTokens);
+}
+
+function shouldIncludeRelatedReport(
+  rowShift: string,
+  shiftList: string[],
+  shiftOptions: ShiftOption[],
+  machineMatchers: Set<string>,
+  machineCandidates: Array<string | undefined | null>
+): boolean {
+  if (matchShift(rowShift, shiftList, shiftOptions)) return true;
+  return machineMatches(machineMatchers, ...machineCandidates);
+}
+
+async function loadShiftOptions(): Promise<ShiftOption[]> {
+  try {
+    const res = await fetch('/api/cai-dat');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return [];
+    return getProductionShiftOptions(normalizeShiftSettings(data));
+  } catch {
+    return [];
+  }
 }
 
 async function fetchJson(url: string): Promise<{ ok: boolean; data: unknown }> {
@@ -76,10 +198,11 @@ async function fetchJson(url: string): Promise<{ ok: boolean; data: unknown }> {
   }
 }
 
-/** Tải toàn bộ phiếu liên quan tới NGÀY + CA của kế hoạch để in gộp. */
+/** Tải toàn bộ phiếu liên quan tới NGÀY + CA (+ máy) của kế hoạch để in gộp. */
 export async function loadProductionPlanRelatedReports(
   planDate: string,
-  shiftList: string[]
+  shiftList: string[],
+  planMachines: string[] = []
 ): Promise<ProductionPlanRelatedReports> {
   if (!planDate) {
     throw new Error('Chưa có ngày kế hoạch để in các phiếu liên quan.');
@@ -88,6 +211,8 @@ export async function loadProductionPlanRelatedReports(
   const shifts = Array.from(new Set((shiftList ?? []).map(s => s.trim()).filter(Boolean)));
   const errors: string[] = [];
   const encodedDate = encodeURIComponent(planDate);
+  const shiftOptions = await loadShiftOptions();
+  const machineMatchers = buildMachineMatchers(planMachines);
 
   const [nvlRes, mixingRes, weighingRes, downtimeRes, damagedRes, acceptanceRes, warehouseRes] = await Promise.all([
     fetchJson(`/api/bao-cao-may-nvl-ton?ngay=${encodedDate}`),
@@ -100,7 +225,12 @@ export async function loadProductionPlanRelatedReports(
   ]);
 
   const machineNvlAll = nvlRes.ok ? normalizeMachineNvlReports(nvlRes.data) : [];
-  const machineNvl = machineNvlAll.filter(report => matchShift(report.ca, shifts));
+  const machineNvl = machineNvlAll.filter(report =>
+    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions, machineMatchers, [
+      report.maMay,
+      report.tenMay
+    ])
+  );
   if (!nvlRes.ok) errors.push('Báo cáo tồn NVL');
 
   const mixingReportsRaw = (mixingRes.data as { reports?: unknown })?.reports;
@@ -108,27 +238,48 @@ export async function loadProductionPlanRelatedReports(
     mixingRes.ok && Array.isArray(mixingReportsRaw)
       ? mixingReportsRaw.map((item: Record<string, unknown>) => normalizeMixingReport(item))
       : [];
-  const mixing = mixingAll.filter(report => matchShift(report.ca, shifts));
+  const mixing = mixingAll.filter(report =>
+    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions, machineMatchers, [
+      report.ma_may,
+      report.ten_may
+    ])
+  );
   if (!mixingRes.ok) errors.push('Trộn nguyên vật liệu');
 
   const weighingAll = weighingRes.ok ? normalizeWeighingRecords(weighingRes.data) : [];
-  const weighing = weighingAll.filter(record => matchShift(record.shiftName, shifts));
+  const weighing = weighingAll.filter(record =>
+    shouldIncludeRelatedReport(record.shiftName, shifts, shiftOptions, machineMatchers, [record.machineName])
+  );
   if (!weighingRes.ok) errors.push('Phiếu cân');
 
   const downtimeAll = downtimeRes.ok ? normalizeMachineDowntimeSlips(downtimeRes.data) : [];
-  const downtime = downtimeAll.filter(slip => matchShift(slip.shift, shifts));
+  const downtime = downtimeAll.filter(slip =>
+    shouldIncludeRelatedReport(slip.shift, shifts, shiftOptions, machineMatchers, [
+      slip.machineCode,
+      slip.machineName
+    ])
+  );
   if (!downtimeRes.ok) errors.push('Phiếu báo dừng máy');
 
   const damagedAll = damagedRes.ok ? normalizeWeighingRecords(damagedRes.data) : [];
-  const damaged = damagedAll.filter(record => matchShift(record.shiftName, shifts));
+  const damaged = damagedAll.filter(record =>
+    shouldIncludeRelatedReport(record.shiftName, shifts, shiftOptions, machineMatchers, [record.machineName])
+  );
   if (!damagedRes.ok) errors.push('Báo cáo hàng hỏng');
 
   const acceptanceAll = acceptanceRes.ok ? normalizeAcceptanceReports(acceptanceRes.data) : [];
-  const acceptance = acceptanceAll.filter(report => matchShift(report.ca, shifts));
+  const acceptance = acceptanceAll.filter(report =>
+    shouldIncludeRelatedReport(report.ca, shifts, shiftOptions, machineMatchers, [
+      report.ma_may,
+      report.ten_may
+    ])
+  );
   if (!acceptanceRes.ok) errors.push('Báo cáo sản lượng');
 
   const warehouseMovementsAll = warehouseRes.ok ? normalizeWarehouseMovements(warehouseRes.data) : [];
-  const warehouseMovements = warehouseMovementsAll.filter(row => matchShift(row.shift, shifts));
+  const warehouseMovements = warehouseMovementsAll.filter(row =>
+    shouldIncludeRelatedReport(row.shift, shifts, shiftOptions, machineMatchers, [])
+  );
   if (!warehouseRes.ok) errors.push('Phiếu xuất vật tư');
   const warehouseSlips = buildWarehouseExportSlips(warehouseMovements);
 

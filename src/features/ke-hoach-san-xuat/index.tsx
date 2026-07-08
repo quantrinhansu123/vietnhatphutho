@@ -15,7 +15,7 @@ import {
   ProductionPlanRelatedPrintContent,
   type ProductionPlanRelatedReports
 } from './relatedReportsPrint';
-import { getProductionShiftOptions, shiftNamesMatch } from '../../utils/shiftSettings';
+import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, type ShiftOption } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
@@ -1943,6 +1943,13 @@ export function ProductionPlanModal({
   const [relatedPrintOrders, setRelatedPrintOrders] = useState<PrintableProductionOrder[]>([]);
   const [relatedPrintCatalog, setRelatedPrintCatalog] = useState<ProductRow[]>([]);
   const [pendingRelatedPrint, setPendingRelatedPrint] = useState(false);
+  const [relatedShiftOptions, setRelatedShiftOptions] = useState<ShiftOption[]>([]);
+  const [selectedRelatedShifts, setSelectedRelatedShifts] = useState<string[]>([]);
+
+  const displayLines = useMemo(
+    () => enrichProductionPlanLines(planLines, productionOrders, machines),
+    [planLines, productionOrders, machines]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -1970,12 +1977,26 @@ export function ProductionPlanModal({
     setRelatedPrintOrders([]);
     setRelatedPrintCatalog([]);
     setPendingRelatedPrint(false);
+    setSelectedRelatedShifts([]);
+
+    fetch('/api/cai-dat')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => setRelatedShiftOptions(data ? getProductionShiftOptions(normalizeShiftSettings(data)) : []))
+      .catch(() => setRelatedShiftOptions([]));
   }, [open, productionOrders, machines]);
 
-  const displayLines = useMemo(
-    () => enrichProductionPlanLines(planLines, productionOrders, machines),
-    [planLines, productionOrders, machines]
-  );
+  useEffect(() => {
+    if (!open) return;
+    if (selectedRelatedShifts.length > 0) return;
+    const defaults = Array.from(
+      new Set(
+        displayLines
+          .map(line => (line.shift || '').trim())
+          .filter(shift => shift && shift !== '-')
+      )
+    );
+    if (defaults.length > 0) setSelectedRelatedShifts(defaults);
+  }, [open, displayLines, selectedRelatedShifts.length]);
 
   const staffAssignmentRows = useMemo(() => {
     const rows: Array<{
@@ -2052,12 +2073,20 @@ export function ProductionPlanModal({
   }, [pendingStaffAssignmentPrint]);
 
   useEffect(() => {
+    if (!pendingRelatedPrint && relatedPrintOrders.length === 0 && !relatedPrintData) return;
+    document.body.classList.add('production-plan-related-print-active');
+    return () => {
+      document.body.classList.remove('production-plan-related-print-active');
+    };
+  }, [pendingRelatedPrint, relatedPrintOrders, relatedPrintData]);
+
+  useEffect(() => {
     if (!pendingRelatedPrint) return;
     if (!relatedPrintData && relatedPrintOrders.length === 0) return;
     const timer = window.setTimeout(() => {
       window.print();
       setPendingRelatedPrint(false);
-    }, 250);
+    }, 350);
     return () => window.clearTimeout(timer);
   }, [pendingRelatedPrint, relatedPrintData, relatedPrintOrders]);
 
@@ -2165,12 +2194,16 @@ export function ProductionPlanModal({
     setFormError('');
 
     try {
-      const shiftSet = new Set<string>();
+      const machineSet = new Set<string>();
       displayLines.forEach(line => {
-        const shiftValue = (line.shift || '').trim();
-        if (shiftValue) shiftSet.add(shiftValue);
+        const position = (line.position || '').trim();
+        if (position && position !== '-') machineSet.add(position);
+        const order = productionOrders.find(item => item.id === line.id);
+        const orderMachine = (order?.machine || '').trim();
+        if (orderMachine && orderMachine !== '-') machineSet.add(orderMachine);
       });
-      const shifts = Array.from(shiftSet);
+      const shifts = selectedRelatedShifts.length > 0 ? selectedRelatedShifts : [];
+      const planMachines = Array.from(machineSet);
 
       const ordersToPrint = displayLines
         .map(line => productionOrders.find(order => order.id === line.id))
@@ -2178,7 +2211,7 @@ export function ProductionPlanModal({
 
       const [productCatalog, data] = await Promise.all([
         loadProductionOrderProductCatalog(),
-        loadProductionPlanRelatedReports(planDate, shifts)
+        loadProductionPlanRelatedReports(planDate, shifts, planMachines)
       ]);
 
       const printableOrders = (
@@ -2212,10 +2245,17 @@ export function ProductionPlanModal({
       const droppedByShift = data.diagnostics.filter(d => d.matched === 0 && d.dayTotal > 0);
       if (droppedByShift.length > 0) {
         messages.push(
-          `Có phiếu đúng ngày nhưng KHÁC CA nên không in: ${droppedByShift
+          `Một số loại phiếu có dữ liệu trong ngày nhưng chưa khớp ca/máy: ${droppedByShift
             .map(d => `${d.label} (${d.dayTotal})`)
             .join(', ')}.`
         );
+      }
+      const foundSummary = data.diagnostics
+        .filter(d => d.matched > 0)
+        .map(d => `${d.label}: ${d.matched}`)
+        .join(', ');
+      if (foundSummary) {
+        messages.push(`Đã tải: ${foundSummary}.`);
       }
       if (messages.length > 0) {
         setFormError(messages.join(' '));
@@ -2369,6 +2409,55 @@ export function ProductionPlanModal({
                 />
               </label>
             </div>
+
+            <section className="mb-4 rounded-xl border border-zinc-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Lọc phiếu theo ca (khi in phiếu liên quan)</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRelatedShifts(relatedShiftOptions.map(opt => opt.value))}
+                    className="h-8 rounded-lg border border-zinc-200 bg-white px-3 text-[11px] font-black text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    Chọn tất cả
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRelatedShifts([])}
+                    className="h-8 rounded-lg border border-zinc-200 bg-white px-3 text-[11px] font-black text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    Bỏ chọn
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(relatedShiftOptions.length > 0 ? relatedShiftOptions : STANDARD_SHIFTS.map(shift => ({ value: shift, label: shift }))).map(opt => {
+                  const checked = selectedRelatedShifts.some(item => shiftNamesMatch(item, opt.value));
+                  return (
+                    <label
+                      key={opt.value}
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-extrabold transition ${
+                        checked ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={event => {
+                          const nextChecked = event.target.checked;
+                          setSelectedRelatedShifts(current => {
+                            const without = current.filter(item => !shiftNamesMatch(item, opt.value));
+                            return nextChecked ? [...without, opt.value] : without;
+                          });
+                        }}
+                      />
+                      <span>{opt.label || opt.value}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
 
             {displayLines.length === 0 ? (
               <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm font-semibold text-zinc-500">
