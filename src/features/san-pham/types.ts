@@ -76,7 +76,8 @@ export function productNplAmountTypeLabel(type: ProductNplAmountType) {
 export function formatProductNplAmount(item: ProductNplItem) {
   if (item.amountType === 'quantity') {
     const unitSuffix = item.unit && item.unit !== '-' ? ` ${item.unit}` : '';
-    return `${formatNumber(item.quantity ?? 0, 2)}${unitSuffix}`;
+    const quantityLabel = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 20 }).format(item.quantity ?? 0);
+    return `${quantityLabel}${unitSuffix}`;
   }
   return `${formatPercent(item.percent ?? 0)}%`;
 }
@@ -119,7 +120,7 @@ export function parseProductNplItems(raw: unknown): ProductNplItem[] {
           name,
           amountType: 'quantity',
           percent: null,
-          quantity: roundNplNumber(quantity),
+          quantity,
           unit
         };
       }

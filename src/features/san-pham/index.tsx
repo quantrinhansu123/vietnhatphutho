@@ -16,6 +16,12 @@ import { vietNhatLogoUrl } from '../../components/layout/constants';
 
 export type ProductViewTab = 'info' | 'components';
 
+/** Hiển thị số lượng giữ nguyên giá trị nhập (không làm tròn, bỏ số 0 thừa). */
+function formatQuantityFull(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 20 }).format(value);
+}
+
 export function ProductNplItemFormModal({
   mode,
   initialItem,
@@ -41,7 +47,7 @@ export function ProductNplItemFormModal({
   const [amountValue, setAmountValue] = useState(() => {
     if (!initialItem) return '';
     if (initialItem.amountType === 'quantity') {
-      return formatNumber(initialItem.quantity ?? 0, 2);
+      return String(initialItem.quantity ?? 0).replace('.', ',');
     }
     return formatPercent(initialItem.percent ?? 0);
   });
@@ -101,7 +107,7 @@ export function ProductNplItemFormModal({
         name: name.trim() || material?.name || '',
         amountType,
         percent: amountType === 'percent' ? roundNplNumber(numericValue) : null,
-        quantity: amountType === 'quantity' ? roundNplNumber(numericValue) : null,
+        quantity: amountType === 'quantity' ? numericValue : null,
         unit: resolvedUnit
       });
     } catch (error: any) {
@@ -507,7 +513,7 @@ export function ProductViewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="flex h-full max-h-[98vh] min-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div>
             <p className="text-xs font-black uppercase tracking-wider text-red-500">Xem sản phẩm</p>
@@ -741,7 +747,7 @@ export function ProductViewModal({
                           <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
                             {item.amountType === 'percent'
                               ? formatPercent(item.percent ?? 0)
-                              : formatNumber(item.quantity ?? 0, 2)}
+                              : formatQuantityFull(item.quantity ?? 0)}
                             {item.amountType === 'percent' ? '%' : ''}
                           </span>
                         </td>
