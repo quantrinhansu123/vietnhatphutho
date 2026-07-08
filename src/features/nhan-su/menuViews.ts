@@ -20,8 +20,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     label: 'Sản xuất',
     children: [
       { tab: 'control-board', label: 'Bảng điều khiển' },
-      { tab: 'report-forms', label: 'Phiếu báo cáo' },
-      { tab: 'report-lists', label: 'Danh sách báo cáo' },
+      { tab: 'report-forms', label: 'Nhập báo cáo' },
+      { tab: 'report-lists', label: 'Xem báo cáo' },
       { tab: 'weighing-summary', label: 'Tổng hợp cân ca' },
       { tab: 'production-plan-history', label: 'Kế hoạch SX' }
     ]

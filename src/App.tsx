@@ -721,7 +721,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Phiếu báo cáo" desc="Chọn phiếu báo cáo cần lập hoặc mở." />
+                <MenuPageHeader title="Nhập báo cáo" desc="Chọn phiếu báo cáo cần lập hoặc mở." />
                 <MenuCardGrid items={filterMenuItems(REPORT_FORM_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'report-lists' ? (
@@ -733,7 +733,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Danh sách báo cáo" desc="Chọn danh sách báo cáo cần mở." />
+                <MenuPageHeader title="Xem báo cáo" desc="Chọn danh sách báo cáo cần mở." />
                 <MenuCardGrid items={filterMenuItems(REPORT_LIST_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'acceptance-report-list' ? (
@@ -931,6 +931,7 @@ export default function App() {
                 <WeighingShiftSummary
                   config={DAMAGED_GOODS_SLIP_CONFIG}
                   onBackToMenu={() => navigateToTab('report-forms')}
+                  defaultShowForm
                 />
               </motion.div>
             ) : activeTab === 'mixing-report' ? (

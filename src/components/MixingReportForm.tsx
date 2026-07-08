@@ -61,8 +61,12 @@ import {
   type ShiftSetting
 } from '../utils/shiftSettings';
 
-const ROUND_KEYS = ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const;
-type RoundKey = (typeof ROUND_KEYS)[number];
+const MIXING_MAX_ROUNDS = 20;
+type RoundKey = `lan_${number}`;
+const ROUND_KEYS: readonly RoundKey[] = Array.from(
+  { length: MIXING_MAX_ROUNDS },
+  (_, index) => `lan_${index + 1}` as RoundKey
+);
 
 export type MixingRoundItem = {
   ma_nvl: string;
@@ -81,11 +85,8 @@ export type MixingRoundPhoto = {
 export type MixingPhoiTron = {
   so_lan?: number;
   khoi_luong_me?: Partial<Record<RoundKey, number | null>>;
-  lan_1?: MixingRoundItem[];
-  lan_2?: MixingRoundItem[];
-  lan_3?: MixingRoundItem[];
-  lan_4?: MixingRoundItem[];
-  lan_5?: MixingRoundItem[];
+} & {
+  [K in RoundKey]?: MixingRoundItem[];
 };
 
 export type MixingReportLine = {
@@ -329,7 +330,7 @@ function visibleRoundCount(phoiTron: MixingPhoiTron) {
 
 function addNextRound(phoiTron: MixingPhoiTron): MixingPhoiTron | null {
   const current = visibleRoundCount(phoiTron);
-  if (current >= 5) return null;
+  if (current >= MIXING_MAX_ROUNDS) return null;
   const nextKey = ROUND_KEYS[current];
   return { ...phoiTron, [nextKey]: [] };
 }
@@ -1201,7 +1202,7 @@ export default function MixingReportForm({
       (max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)),
       0
     );
-    return Math.min(5, Math.max(activeRoundCount, fromLines));
+    return Math.min(MIXING_MAX_ROUNDS, Math.max(activeRoundCount, fromLines));
   }, [activeRoundCount, computedLines]);
 
   useEffect(() => {
@@ -1213,13 +1214,6 @@ export default function MixingReportForm({
       setActiveRoundCount(fromLines);
     }
   }, [form.chi_tiet, activeRoundCount]);
-
-  const addRound = () => {
-    if (!canAddSessionRound || activeRoundCount >= 5) return;
-    const next = activeRoundCount + 1;
-    setActiveRoundCount(next);
-    setForm(prev => ({ ...prev, so_lan: Math.max(prev.so_lan, next) }));
-  };
 
   const removeSessionRound = (roundKey: RoundKey, roundIndex: number) => {
     const lastRoundKey = ROUND_KEYS[displayedRoundCount - 1];
@@ -1260,6 +1254,68 @@ export default function MixingReportForm({
       return next;
     });
     setMessage(`Đã xóa ${label}.`);
+    setError('');
+  };
+
+  const applySessionRoundStart = (nextStart: number) => {
+    const maxStart = Math.max(1, MAX_MIXING_SESSIONS_PER_SHIFT - displayedRoundCount + 1);
+    const target = Math.max(1, Math.min(maxStart, Math.round(nextStart || 1)));
+    setSessionRoundStart(target);
+    setForm(prev => ({ ...prev, lan_thu: target }));
+    setError('');
+  };
+
+  const applyRoundCount = (nextCount: number) => {
+    const maxAllowed = Math.min(MIXING_MAX_ROUNDS, MAX_MIXING_SESSIONS_PER_SHIFT - sessionRoundStart + 1);
+    const target = Math.max(1, Math.min(maxAllowed, Math.round(nextCount || 1)));
+    if (target === displayedRoundCount) return;
+
+    if (target > displayedRoundCount) {
+      setActiveRoundCount(target);
+      setForm(prev => ({ ...prev, so_lan: Math.max(prev.so_lan, target) }));
+      setError('');
+      return;
+    }
+
+    const removedKeys = ROUND_KEYS.slice(target, displayedRoundCount);
+    const hasData = removedKeys.some(
+      key =>
+        listRoundMaterialEntries(form.chi_tiet, key).length > 0 ||
+        (form.hinh_anh_theo_lan[key]?.length ?? 0) > 0 ||
+        (form.ly_do_theo_lan[key]?.length ?? 0) > 0 ||
+        Boolean(form.giai_trinh_theo_lan[key]?.trim())
+    );
+    if (hasData && !window.confirm(`Giảm còn ${target} lần? Dữ liệu các lần bị bỏ sẽ bị xóa.`)) {
+      return;
+    }
+
+    setForm(prev => {
+      let chi_tiet = prev.chi_tiet;
+      const hinh_anh_theo_lan = { ...prev.hinh_anh_theo_lan };
+      const ly_do_theo_lan = { ...prev.ly_do_theo_lan };
+      const giai_trinh_theo_lan = { ...prev.giai_trinh_theo_lan };
+      removedKeys.forEach(key => {
+        chi_tiet = clearRoundFromLines(chi_tiet, key);
+        delete hinh_anh_theo_lan[key];
+        delete ly_do_theo_lan[key];
+        delete giai_trinh_theo_lan[key];
+      });
+      return { ...prev, chi_tiet, hinh_anh_theo_lan, ly_do_theo_lan, giai_trinh_theo_lan, so_lan: target };
+    });
+    setActiveRoundCount(target);
+    setRoundBatchWeightDrafts(prev => {
+      const next = { ...prev };
+      removedKeys.forEach(key => delete next[key]);
+      return next;
+    });
+    setActualWeightDrafts(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(draftKey => {
+        if (removedKeys.some(key => draftKey.startsWith(`${key}-`))) delete next[draftKey];
+      });
+      return next;
+    });
+    setMessage(`Đã đặt ${target} lần trộn.`);
     setError('');
   };
 
@@ -1440,7 +1496,7 @@ export default function MixingReportForm({
 
     setForm(prev => ({
       ...prev,
-      so_lan: Math.min(5, nextSoLan),
+      so_lan: Math.min(MIXING_MAX_ROUNDS, nextSoLan),
       chi_tiet: normalizedLines
     }));
 
@@ -1787,15 +1843,37 @@ export default function MixingReportForm({
         <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-2 py-2 sm:px-4">
           <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={addRound}
-              disabled={!canAddSessionRound || activeRoundCount >= 5}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
-            >
-              <Plus className="h-4 w-4" />
-              Thêm dòng
-            </button>
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-1.5 py-1">
+              <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                Số lần
+              </span>
+              <button
+                type="button"
+                onClick={() => applyRoundCount(displayedRoundCount - 1)}
+                disabled={displayedRoundCount <= 1}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-sm font-black text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50"
+                title="Giảm số lần"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={1}
+                max={MIXING_MAX_ROUNDS}
+                value={displayedRoundCount}
+                onChange={event => applyRoundCount(Number(event.target.value))}
+                className="h-7 w-11 rounded-md border border-zinc-200 bg-white text-center text-sm font-black text-zinc-900 outline-none focus:border-[#ef1b2d]"
+              />
+              <button
+                type="button"
+                onClick={() => applyRoundCount(displayedRoundCount + 1)}
+                disabled={!canAddSessionRound || displayedRoundCount >= MIXING_MAX_ROUNDS}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[#ef1b2d] text-sm font-black text-white transition hover:bg-[#b30d1c] disabled:opacity-50"
+                title="Tăng số lần"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1810,9 +1888,24 @@ export default function MixingReportForm({
                 <div key={roundKey} className="mixing-round-card relative rounded-lg border border-zinc-200 sm:rounded-xl">
                   <div className="border-b border-zinc-100 bg-zinc-50 px-2 py-1.5 sm:px-3 sm:py-2">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-zinc-700 sm:text-xs">
-                        {roundColumnLabel(sessionRoundStart, roundIndex)}
-                      </p>
+                      {roundIndex === 0 ? (
+                        <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-700 sm:text-xs">
+                          <span>Lần</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={MAX_MIXING_SESSIONS_PER_SHIFT}
+                            value={sessionRoundStart}
+                            onChange={event => applySessionRoundStart(Number(event.target.value))}
+                            className="h-7 w-12 rounded-md border border-zinc-200 bg-white text-center text-xs font-black text-zinc-900 outline-none focus:border-[#ef1b2d]"
+                            title="Đổi số lần bắt đầu"
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-[10px] font-black uppercase tracking-wider text-zinc-700 sm:text-xs">
+                          {roundColumnLabel(sessionRoundStart, roundIndex)}
+                        </p>
+                      )}
                       <div className="flex items-center gap-1.5">
                         {canRemoveRound ? (
                           <button

@@ -3,12 +3,15 @@ import { ChevronLeft, ClipboardList, Eye, Loader2, Pencil, Plus, Printer, Search
 import vietNhatLogoUrl from '../../logovietnhat_1.png';
 import { MixingReportPrintBatch } from './MixingReportPrintSheet';
 import {
+  MIXING_MAX_ROUNDS,
   MIXING_ROUND_KEYS,
   compareMixingReportsBySession,
   deriveLineUnit,
   formatNormWeight,
   formatOptionalNumber,
   formatMixingReportSessionLabel,
+  getRoundItems,
+  mixingSessionLabel,
   mixingSessionColumnLabel,
   resolveMixingReportRoundPhotos,
   resolveMixingReportRoundReasons,
@@ -148,8 +151,59 @@ function formatFilterSummary(filters: MixingReportFilters, machines: MachineOpti
   return parts.length > 0 ? parts.join(' · ') : 'tất cả';
 }
 
-function sumReportKlDinhMuc(report: MixingReport) {
-  return sumReportNormTotal(report.chi_tiet);
+type MixingRoundRow = {
+  session: number;
+  label: string;
+  lineCount: number;
+  normTotal: number;
+  actualTotal: number | null;
+};
+
+/** Tách 1 phiếu thành từng lần (Lần 1, Lần 2, ...) — mỗi lần 1 dòng. */
+function expandReportRounds(report: MixingReport): MixingRoundRow[] {
+  const start = report.lan_thu && report.lan_thu > 0 ? report.lan_thu : 1;
+  const count = Math.min(Math.max(report.so_lan || 1, 1), MIXING_ROUND_KEYS.length);
+  const rows: MixingRoundRow[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const roundKey = MIXING_ROUND_KEYS[index];
+    if (!roundKey) break;
+
+    const normTotal = report.chi_tiet.reduce(
+      (sum, line) => sum + sumLineRoundNormQuantity(line, roundKey),
+      0
+    );
+    const actualTotalRaw = report.chi_tiet.reduce(
+      (sum, line) => sum + sumRoundActualQuantity(line.lan_su_dung, roundKey),
+      0
+    );
+    const roundHasActual = report.chi_tiet.some(line =>
+      getRoundItems(line.lan_su_dung, roundKey).some(
+        item => item.kl_thuc_te !== null && item.kl_thuc_te !== undefined && !Number.isNaN(item.kl_thuc_te)
+      )
+    );
+    const lineCount = report.chi_tiet.filter(
+      line => getRoundItems(line.lan_su_dung, roundKey).length > 0
+    ).length;
+
+    rows.push({
+      session: start + index,
+      label: mixingSessionLabel(start + index),
+      lineCount: lineCount || report.chi_tiet.length,
+      normTotal,
+      actualTotal: roundHasActual ? actualTotalRaw : null
+    });
+  }
+
+  return rows.length > 0 ? rows : [
+    {
+      session: start,
+      label: mixingSessionLabel(start),
+      lineCount: report.chi_tiet.length,
+      normTotal: sumReportNormTotal(report.chi_tiet),
+      actualTotal: report.thuc_te_su_dung ?? null
+    }
+  ];
 }
 
 function renderReasonList(reasons: string[] | undefined) {
@@ -198,6 +252,18 @@ export default function MixingReportListView({
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
   const shiftGroups = useMemo(() => buildShiftGroups(reports, shiftOptions), [reports, shiftOptions]);
   const sortedReports = useMemo(() => [...reports].sort(compareMixingReportsBySession), [reports]);
+  const dateGroups = useMemo(() => {
+    const map = new Map<string, MixingReport[]>();
+    for (const report of sortedReports) {
+      const key = report.ngay || '-';
+      const list = map.get(key) ?? [];
+      list.push(report);
+      map.set(key, list);
+    }
+    return [...map.entries()]
+      .sort((left, right) => right[0].localeCompare(left[0]))
+      .map(([ngay, groupReports]) => ({ ngay, reports: groupReports }));
+  }, [sortedReports]);
 
   const loadReferenceData = async () => {
     const [machineRes, settingRes] = await Promise.all([
@@ -308,7 +374,7 @@ export default function MixingReportListView({
       (max, line) => Math.max(max, visibleRoundCount(line.lan_su_dung)),
       1
     );
-    return Math.min(5, Math.max(viewingReport.so_lan || 1, fromLines));
+    return Math.min(MIXING_MAX_ROUNDS, Math.max(viewingReport.so_lan || 1, fromLines));
   }, [viewingReport]);
 
   const detailSessionStart = viewingReport?.lan_thu && viewingReport.lan_thu > 0 ? viewingReport.lan_thu : 1;
@@ -591,61 +657,78 @@ export default function MixingReportListView({
         <div className="border-b border-zinc-100 px-4 py-3">
           <p className="text-sm font-black text-zinc-950">Danh sách phiếu phối trộn</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-black">Ngày</th>
-                <th className="px-3 py-2 font-black">Ca</th>
-                <th className="px-3 py-2 font-black">Lần</th>
-                <th className="px-3 py-2 font-black">Giờ</th>
-                <th className="px-3 py-2 font-black">Máy</th>
-                <th className="px-3 py-2 font-black">Nhân sự</th>
-                <th className="px-3 py-2 font-black">Dòng VT</th>
-                <th className="px-3 py-2 text-right font-black">KL định mức</th>
-                <th className="px-3 py-2 text-right font-black">KL thực tế</th>
-                <th className="px-3 py-2 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải...
-                  </td>
-                </tr>
-              ) : sortedReports.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
-                    Chưa có báo cáo phối trộn phù hợp bộ lọc.
-                  </td>
-                </tr>
-              ) : (
-                sortedReports.map(report => (
-                  <tr key={report.id} className="transition hover:bg-emerald-50/40">
-                    <td className="whitespace-nowrap px-3 py-2 font-mono font-bold text-zinc-700">{report.ngay || '-'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-800">{report.ca || '-'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-800">
-                      {formatMixingReportSessionLabel(report)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-600">{report.gio || '-'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-zinc-700">{report.ten_may || report.ma_may || '-'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-zinc-600">{report.nhan_su || '-'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-700">{report.chi_tiet.length}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-emerald-700">
-                      {formatNormWeight(sumReportKlDinhMuc(report)) || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]">
-                      {formatOptionalNumber(report.thuc_te_su_dung) || '-'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-center">{renderReportActions(report)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        {isLoading ? (
+          <div className="px-3 py-8 text-center font-bold text-zinc-400">
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+            Đang tải...
+          </div>
+        ) : dateGroups.length === 0 ? (
+          <div className="px-3 py-8 text-center font-bold text-zinc-400">
+            Chưa có báo cáo phối trộn phù hợp bộ lọc.
+          </div>
+        ) : (
+          <div className="space-y-3 p-3 sm:p-4">
+            {dateGroups.map(group => (
+              <div key={group.ngay} className="overflow-hidden rounded-xl border border-zinc-200">
+                <div className="flex items-baseline justify-between gap-1.5 border-b border-zinc-200 bg-zinc-100 px-3 py-1.5">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
+                    <span className="font-mono text-xs font-black text-zinc-900">{group.ngay}</span>
+                  </div>
+                  <span className="text-[11px] font-black text-emerald-800">{group.reports.length} phiếu</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-xs">
+                    <thead className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                      <tr>
+                        <th className="px-3 py-2 font-black">Ca</th>
+                        <th className="px-3 py-2 font-black">Lần</th>
+                        <th className="px-3 py-2 font-black">Giờ</th>
+                        <th className="px-3 py-2 font-black">Máy</th>
+                        <th className="px-3 py-2 font-black">Nhân sự</th>
+                        <th className="px-3 py-2 font-black">Dòng VT</th>
+                        <th className="px-3 py-2 text-right font-black">KL định mức</th>
+                        <th className="px-3 py-2 text-right font-black">KL thực tế</th>
+                        <th className="px-3 py-2 text-center font-black">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {group.reports.flatMap(report => {
+                        const rounds = expandReportRounds(report);
+                        return rounds.map(round => (
+                          <tr
+                            key={`${report.id}-${round.session}`}
+                            className="transition hover:bg-emerald-50/40"
+                          >
+                            <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-800">
+                              {report.ca || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-800">{round.label}</td>
+                            <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-600">{report.gio || '-'}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-zinc-700">
+                              {report.ten_may || report.ma_may || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-zinc-600">{report.nhan_su || '-'}</td>
+                            <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-700">{round.lineCount}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-emerald-700">
+                              {formatNormWeight(round.normTotal) || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]">
+                              {round.actualTotal !== null ? formatOptionalNumber(round.actualTotal) : '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-center">
+                              {renderReportActions(report)}
+                            </td>
+                          </tr>
+                        ));
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {viewingReport && (

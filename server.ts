@@ -1278,8 +1278,13 @@ function parseMixingRoundItem(source: unknown): {
   return { ma_nvl, ten_vat_tu, don_vi, so_luong, kl_thuc_te, ti_le_phan_tram };
 }
 
+const MIXING_ROUND_KEYS_SERVER: string[] = Array.from(
+  { length: 20 },
+  (_, index) => `lan_${index + 1}`
+);
+
 function hasMixingRoundMaterial(phoiTron: Record<string, unknown>) {
-  return (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).some(key =>
+  return MIXING_ROUND_KEYS_SERVER.some(key =>
     parseMixingRoundItems(phoiTron[key]).some(
       item => item.ma_nvl || item.ten_vat_tu || item.so_luong !== null || item.kl_thuc_te !== null
     )
@@ -1322,7 +1327,7 @@ function parseMixingRoundItems(source: unknown) {
 function parseMixingPhoiTron(source: unknown) {
   const record = source && typeof source === 'object' ? (source as Record<string, unknown>) : {};
   const phoiTron: Record<string, unknown> = {};
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     const rawItems = record[key];
     const items = parseMixingRoundItems(rawItems);
     if (items.length > 0) {
@@ -1341,7 +1346,7 @@ function parseMixingPhoiTron(source: unknown) {
   const rawBatch = record.khoi_luong_me;
   if (rawBatch && typeof rawBatch === 'object') {
     const khoi_luong_me: Record<string, number> = {};
-    (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+    MIXING_ROUND_KEYS_SERVER.forEach(key => {
       const val = parseMixingNumber((rawBatch as Record<string, unknown>)[key]);
       if (val !== null && val > 0) khoi_luong_me[key] = val;
     });
@@ -1354,7 +1359,7 @@ function parseMixingPhoiTron(source: unknown) {
 }
 
 function visiblePhoiTronRoundCount(phoiTron: Record<string, unknown>) {
-  const keys = ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const;
+  const keys = MIXING_ROUND_KEYS_SERVER;
   for (let index = keys.length - 1; index >= 0; index -= 1) {
     if (phoiTron[keys[index]] !== undefined) return index + 1;
   }
@@ -1364,7 +1369,7 @@ function visiblePhoiTronRoundCount(phoiTron: Record<string, unknown>) {
 function sumPhoiTronActualQuantity(phoiTron: Record<string, unknown>) {
   let total = 0;
   let hasAny = false;
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     const items = parseMixingRoundItems(phoiTron[key]);
     items.forEach(item => {
       if (item.kl_thuc_te !== null && item.kl_thuc_te !== undefined) {
@@ -1382,7 +1387,7 @@ function sumPhoiTronQuantity(phoiTron: Record<string, unknown>) {
     const roundCount = visiblePhoiTronRoundCount(phoiTron);
     let total = 0;
     let hasAny = false;
-    (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).slice(0, roundCount).forEach(key => {
+    MIXING_ROUND_KEYS_SERVER.slice(0, roundCount).forEach(key => {
       const val = parseMixingNumber((rawBatch as Record<string, unknown>)[key]);
       if (val !== null && val > 0) {
         total += val;
@@ -1393,7 +1398,7 @@ function sumPhoiTronQuantity(phoiTron: Record<string, unknown>) {
   }
 
   let total = 0;
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     const items = parseMixingRoundItems(phoiTron[key]);
     total += items.reduce((sum, item) => sum + (item.so_luong ?? 0), 0);
   });
@@ -1413,7 +1418,7 @@ function parseMixingRoundPhotos(source: unknown) {
   const record = value as Record<string, unknown>;
   const result: Record<string, Array<{ url: string; public_id: string | null }>> = {};
 
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     const raw = record[key];
     if (!Array.isArray(raw)) return;
     const photos = raw
@@ -1478,7 +1483,7 @@ function parseMixingRoundReasons(source: unknown) {
   if (!value || typeof value !== 'object') return {};
   const record = value as Record<string, unknown>;
   const result: Record<string, string[]> = {};
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     const reasons = normalizeMixingReasonList(record[key]);
     if (reasons.length > 0) result[key] = reasons;
   });
@@ -1497,7 +1502,7 @@ function parseMixingRoundExplanations(source: unknown) {
   if (!value || typeof value !== 'object') return {};
   const record = value as Record<string, unknown>;
   const result: Record<string, string> = {};
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     const text = String(record[key] ?? '').trim();
     if (text) result[key] = text;
   });
@@ -1710,7 +1715,7 @@ function backfillMixingItemKlFromLine(
   ten_vat_tu: string,
   kl: number
 ) {
-  const hasItemKl = (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).some(key =>
+  const hasItemKl = MIXING_ROUND_KEYS_SERVER.some(key =>
     parseMixingRoundItems(phoiTron[key]).some(
       item => item.kl_thuc_te !== null && item.kl_thuc_te !== undefined
     )
@@ -1718,7 +1723,7 @@ function backfillMixingItemKlFromLine(
   if (hasItemKl) return phoiTron;
 
   const codeKey = ma_nvl.trim().toLowerCase() || ten_vat_tu.trim().toLowerCase();
-  for (const key of ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const) {
+  for (const key of MIXING_ROUND_KEYS_SERVER) {
     const items = parseMixingRoundItems(phoiTron[key]);
     if (items.length === 0) continue;
     const updated = items.map(item => {
@@ -1737,7 +1742,7 @@ function resolveMixingLineKlFromPhoiTron(
 ) {
   let total = 0;
   let hasAny = false;
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     parseMixingRoundItems(phoiTron[key]).forEach(item => {
       if (item.kl_thuc_te !== null && item.kl_thuc_te !== undefined) {
         hasAny = true;
@@ -1756,7 +1761,7 @@ function parseMixingReportLine(source: unknown, index: number) {
   const derivedMa = String(record.ma_npl ?? record.ma_nvl ?? record.code ?? '').trim();
   const derivedTen = String(record.ten_vat_tu ?? record.ten_npl ?? record.name ?? '').trim();
   const ma_nvl = derivedMa || (() => {
-    for (const key of ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const) {
+    for (const key of MIXING_ROUND_KEYS_SERVER) {
       for (const item of parseMixingRoundItems(lan_su_dung[key])) {
         if (item.ma_nvl) return item.ma_nvl;
       }
@@ -1764,7 +1769,7 @@ function parseMixingReportLine(source: unknown, index: number) {
     return '';
   })();
   const ten_vat_tu = derivedTen || (() => {
-    for (const key of ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const) {
+    for (const key of MIXING_ROUND_KEYS_SERVER) {
       for (const item of parseMixingRoundItems(lan_su_dung[key])) {
         if (item.ten_vat_tu) return item.ten_vat_tu;
       }
@@ -1846,7 +1851,7 @@ function parseMixingReportBody(body: unknown): { error: string } | { record: Rec
     source.giai_trinh_theo_lan,
     extractMixingReportExplanationsFromChiTiet(chiTietRaw)
   );
-  (['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const).forEach(key => {
+  MIXING_ROUND_KEYS_SERVER.forEach(key => {
     if (!giai_trinh_theo_lan[key] && ly_do_theo_lan[key]?.length) {
       giai_trinh_theo_lan[key] = formatMixingReasonsExplanation(ly_do_theo_lan[key]);
     }
@@ -5523,28 +5528,38 @@ export function createApp() {
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
 
-      let query = supabase
-        .from(SUPABASE_MIXING_REPORTS_TABLE)
-        .select('*')
-        .order('ngay', { ascending: false })
-        .order('gio', { ascending: false });
+      const buildQuery = () => {
+        let query = supabase!
+          .from(SUPABASE_MIXING_REPORTS_TABLE)
+          .select('*')
+          .order('ngay', { ascending: false })
+          .order('gio', { ascending: false });
 
-      if (ngay) {
-        query = query.eq('ngay', ngay);
-      } else {
-        if (tuNgay) query = query.gte('ngay', tuNgay);
-        if (denNgay) query = query.lte('ngay', denNgay);
+        if (ngay) {
+          query = query.eq('ngay', ngay);
+        } else {
+          if (tuNgay) query = query.gte('ngay', tuNgay);
+          if (denNgay) query = query.lte('ngay', denNgay);
+        }
+        if (ca) query = query.eq('ca', ca);
+        if (maMay) query = query.eq('ma_may', maMay);
+        return query;
+      };
+
+      // PostgREST giới hạn mặc định 1000 dòng/query -> phân trang để lấy hết dữ liệu.
+      const PAGE_SIZE = 1000;
+      const data: Record<string, unknown>[] = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data: page, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
+        if (error) {
+          console.error('Supabase mixing report query error:', error);
+          return res.status(500).json({ error: mixingReportWriteError(error) });
+        }
+        data.push(...(page || []));
+        if (!page || page.length < PAGE_SIZE) break;
       }
-      if (ca) query = query.eq('ca', ca);
-      if (maMay) query = query.eq('ma_may', maMay);
 
-      const { data, error } = await query;
-      if (error) {
-        console.error('Supabase mixing report query error:', error);
-        return res.status(500).json({ error: mixingReportWriteError(error) });
-      }
-
-      const reports = (data || []).map(row =>
+      const reports = data.map(row =>
         row && typeof row === 'object'
           ? {
               ...row,
@@ -5714,6 +5729,8 @@ export function createApp() {
 
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const tuNgay = parseWarehouseSlipDate(req.query.tu_ngay ?? req.query.fromDate);
+      const denNgay = parseWarehouseSlipDate(req.query.den_ngay ?? req.query.toDate);
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
       const loaiBaoCaoRaw = typeof req.query.loai_bao_cao === 'string' ? req.query.loai_bao_cao.trim() : '';
       const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
@@ -5726,7 +5743,12 @@ export function createApp() {
         .order('gio', { ascending: false })
         .limit(limit);
 
-      if (ngay) query = query.eq('ngay', ngay);
+      if (ngay) {
+        query = query.eq('ngay', ngay);
+      } else {
+        if (tuNgay) query = query.gte('ngay', tuNgay);
+        if (denNgay) query = query.lte('ngay', denNgay);
+      }
       if (maMay) query = query.eq('ma_may', maMay);
       if (loaiBaoCaoRaw) query = query.eq('loai_bao_cao', parseMachineNvlReportKind(loaiBaoCaoRaw));
 

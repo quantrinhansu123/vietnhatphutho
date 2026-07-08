@@ -370,6 +370,45 @@ export default function AcceptanceReportForm({
     return () => window.clearTimeout(timer);
   }, [highlightLineId]);
 
+  // Tự tăng "Lần" theo cùng ngày + cùng ca khi tạo phiếu mới
+  useEffect(() => {
+    if (editingId) return;
+    const ngay = form.ngay.trim();
+    const ca = form.ca.trim();
+    if (!ngay || !ca) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/bao-cao-nghiem-thu?ngay=${encodeURIComponent(ngay)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+        const rows = Array.isArray((data as { reports?: unknown }).reports)
+          ? ((data as { reports: Record<string, unknown>[] }).reports)
+          : [];
+        let maxLan = 0;
+        rows.forEach(row => {
+          if (!row || typeof row !== 'object') return;
+          const report = normalizeReportFromApi(row);
+          if (report.ca.trim() !== ca) return;
+          const parsed = parseInt(report.lan.replace(/[^\d]/g, ''), 10);
+          if (Number.isFinite(parsed) && parsed > maxLan) maxLan = parsed;
+        });
+        if (cancelled) return;
+        setForm(prev => {
+          if (prev.ngay.trim() !== ngay || prev.ca.trim() !== ca) return prev;
+          return { ...prev, lan: String(maxLan + 1) };
+        });
+      } catch {
+        // Bỏ qua lỗi tải, giữ nguyên giá trị lần hiện tại
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.ngay, form.ca, editingId]);
+
   const ordersForSelectedDay = useMemo(
     () => productionOrders.filter(order => order.startDate === form.ngay),
     [productionOrders, form.ngay]

@@ -9,8 +9,8 @@ import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { normalizeMaterialsInventory } from '../kho-nvl';
 import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, Search } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
-import type { ProductRow, ProductNplItem, MaterialOption } from './types';
-import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount } from './types';
+import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType } from './types';
+import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber } from './types';
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseBulkProductNplComponentsExcel, parseProductNplComponentsExcel } from '../../utils/productNplComponentsExcel';
 import { vietNhatLogoUrl } from '../../components/layout/constants';
 
@@ -281,7 +281,10 @@ export function ProductViewModal({
   isLoadingMaterials,
   isSaving,
   onClose,
-  onSaveItems
+  onSaveItems,
+  onEdit,
+  onDelete,
+  isDeleting
 }: {
   product: ProductRow;
   initialTab?: ProductViewTab;
@@ -290,6 +293,9 @@ export function ProductViewModal({
   isSaving: boolean;
   onClose: () => void;
   onSaveItems: (items: ProductNplItem[]) => Promise<void>;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  isDeleting?: boolean;
 }) {
   const [tab, setTab] = useState<ProductViewTab>(initialTab);
   const [items, setItems] = useState<ProductNplItem[]>(product.nplItems);
@@ -314,6 +320,25 @@ export function ProductViewModal({
     return sum + item.percent;
   }, 0);
   const percentItemCount = items.filter(item => item.amountType === 'percent').length;
+
+  const materialBaseKg = resolveProductMaterialBaseKg(product);
+
+  const resolveItemWeightKg = (item: ProductNplItem): number | null => {
+    if (item.amountType === 'percent') {
+      if (item.percent === null || materialBaseKg <= 0) return null;
+      return roundNplNumber((item.percent / 100) * materialBaseKg);
+    }
+    if (item.quantity === null) return null;
+    const unit = (item.unit || '').trim().toLowerCase();
+    if (unit === '' || unit === 'kg' || unit === '-') return roundNplNumber(item.quantity);
+    return null;
+  };
+
+  const formatItemWeight = (item: ProductNplItem): string => {
+    const weight = resolveItemWeightKg(item);
+    if (weight === null) return '-';
+    return `${formatNumber(weight, 3)} kg`;
+  };
 
   const openAddForm = () => {
     setFormIndex(null);
@@ -388,19 +413,36 @@ export function ProductViewModal({
         );
       }
 
-      const nextItems = excelRowsToProductNplItems(rows, materialOptions);
-      const replaceLabel = items.length > 0 ? 'thay thế' : 'nhập';
-      if (
-        !window.confirm(
-          `Tải ${nextItems.length} thành phần từ Excel và ${replaceLabel} danh sách hiện tại?`
-        )
-      ) {
+      const importedItems = excelRowsToProductNplItems(rows, materialOptions);
+      const mergedItems = [...items];
+      let addedCount = 0;
+      let updatedCount = 0;
+
+      importedItems.forEach(importedItem => {
+        const key = normalizeProductCodeKey(importedItem.code);
+        const existingIndex = mergedItems.findIndex(existing => normalizeProductCodeKey(existing.code) === key);
+        if (existingIndex >= 0) {
+          mergedItems[existingIndex] = importedItem;
+          updatedCount += 1;
+        } else {
+          mergedItems.push(importedItem);
+          addedCount += 1;
+        }
+      });
+
+      const summaryParts = [
+        addedCount > 0 ? `thêm ${addedCount} mới` : '',
+        updatedCount > 0 ? `cập nhật ${updatedCount}` : ''
+      ].filter(Boolean);
+      const summary = summaryParts.join(', ');
+
+      if (!window.confirm(`Excel có ${importedItems.length} dòng (${summary}). Thêm vào danh sách thành phần hiện tại?`)) {
         return;
       }
 
-      await onSaveItems(nextItems);
-      setItems(nextItems);
-      setComponentsExcelMessage(`Đã tải ${nextItems.length} thành phần từ Excel.`);
+      await onSaveItems(mergedItems);
+      setItems(mergedItems);
+      setComponentsExcelMessage(`Đã ${summary} thành phần từ Excel.`);
     } catch (error: any) {
       setComponentsExcelError(error.message || 'Không thể đọc file Excel.');
     } finally {
@@ -453,7 +495,32 @@ export function ProductViewModal({
             <h3 className="mt-1 text-lg font-black text-zinc-950">{product.name || product.code}</h3>
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product.code}{product.newCode ? ` · ${product.newCode}` : ''}</p>
           </div>
-          <BackButton onClick={onClose} />
+          <div className="flex shrink-0 items-center gap-1.5">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                title="Sửa"
+                className="flex h-9 items-center gap-1 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-[#ef1b2d] transition hover:bg-red-50"
+              >
+                <Pencil className="h-4 w-4" />
+                Sửa
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={isDeleting}
+                title="Xóa"
+                className="flex h-9 items-center gap-1 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Xóa
+              </button>
+            )}
+            <BackButton onClick={onClose} />
+          </div>
         </div>
 
         <div className="flex gap-1 border-b border-zinc-200 px-4">
@@ -558,7 +625,12 @@ export function ProductViewModal({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-black text-zinc-950">Bảng thành phần NVL</p>
-                  <p className="mt-0.5 text-xs font-semibold text-zinc-500">Nguyên vật liệu · phần trăm hoặc số lượng</p>
+                  <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                    Nguyên vật liệu · phần trăm hoặc số lượng
+                    {materialBaseKg > 0
+                      ? ` · Quy đổi % theo ${formatNumber(materialBaseKg, 3)} kg nhựa+phụ gia`
+                      : ' · Chưa có KL nhựa+phụ gia để quy đổi %'}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {percentItemCount > 0 && (
@@ -618,7 +690,7 @@ export function ProductViewModal({
               )}
 
               <p className="text-[11px] font-semibold text-zinc-500">
-                Excel gồm các cột: <strong>Mã NPL</strong>, <strong>Tên NVL</strong>, <strong>Loại</strong> (Phần trăm / Số lượng), <strong>Giá trị</strong>, <strong>ĐVT</strong> (bắt buộc nếu Số lượng). Tải lên sẽ thay thế toàn bộ thành phần hiện tại.
+                Excel gồm các cột: <strong>Mã NPL</strong>, <strong>Tên NVL</strong>, <strong>Loại</strong> (Phần trăm / Số lượng), <strong>Giá trị</strong>, <strong>ĐVT</strong> (bắt buộc nếu Số lượng). Tải lên sẽ thêm mới vào danh sách hiện tại, dòng trùng Mã NPL sẽ được cập nhật.
               </p>
 
               <div className="overflow-hidden rounded-xl border border-zinc-200">
@@ -630,6 +702,7 @@ export function ProductViewModal({
                       <th className="px-4 py-3 font-black">Tên NVL</th>
                       <th className="px-4 py-3 font-black">Loại</th>
                       <th className="px-4 py-3 font-black">Giá trị</th>
+                      <th className="px-4 py-3 font-black">Khối lượng (kg)</th>
                       <th className="px-4 py-3 font-black">ĐVT</th>
                       <th className="px-4 py-3 text-center font-black">Hành động</th>
                     </tr>
@@ -652,6 +725,9 @@ export function ProductViewModal({
                               : formatNumber(item.quantity ?? 0, 2)}
                             {item.amountType === 'percent' ? '%' : ''}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-emerald-700">
+                          {formatItemWeight(item)}
                         </td>
                         <td className="px-4 py-3 font-bold text-zinc-700">
                           {item.amountType === 'quantity' ? item.unit || '-' : '-'}
@@ -689,7 +765,7 @@ export function ProductViewModal({
                     ))}
                     {items.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center font-bold text-zinc-400">
+                        <td colSpan={8} className="px-4 py-8 text-center font-bold text-zinc-400">
                           Chưa khai báo thành phần NVL.
                         </td>
                       </tr>
@@ -718,6 +794,7 @@ export function ProductViewModal({
                 ['Tên NVL', detailItem.name || '-'],
                 ['Loại', productNplAmountTypeLabel(detailItem.amountType)],
                 ['Giá trị', formatProductNplAmount(detailItem)],
+                ['Khối lượng', formatItemWeight(detailItem)],
                 ['Đơn vị', detailItem.amountType === 'quantity' ? detailItem.unit || '-' : '-'],
                 ['Sản phẩm', product.code]
               ].map(([label, value]) => (
@@ -1296,12 +1373,27 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         throw new Error(`Không tìm thấy NVL trong kho theo tên: ${sample}.`);
       }
       const updates = products
-        .map(product => ({
-          product,
-          key: normalizeProductCodeKey(product.code || product.amisCode || product.newCode || ''),
-          items: productMap.get(normalizeProductCodeKey(product.code || product.amisCode || product.newCode || '')) || []
-        }))
-        .filter(entry => entry.key && entry.items.length > 0);
+        .map(product => {
+          const key = normalizeProductCodeKey(product.code || product.amisCode || product.newCode || '');
+          const importedItems = productMap.get(key) || [];
+          if (!key || importedItems.length === 0) return null;
+
+          const mergedItems = [...product.nplItems];
+          importedItems.forEach(importedItem => {
+            const importKey = normalizeProductCodeKey(importedItem.code);
+            const existingIndex = mergedItems.findIndex(
+              existing => normalizeProductCodeKey(existing.code) === importKey
+            );
+            if (existingIndex >= 0) {
+              mergedItems[existingIndex] = importedItem;
+            } else {
+              mergedItems.push(importedItem);
+            }
+          });
+
+          return { product, key, items: mergedItems };
+        })
+        .filter((entry): entry is { product: ProductRow; key: string; items: ProductNplItem[] } => Boolean(entry));
 
       if (updates.length === 0) {
         throw new Error('Không tìm thấy sản phẩm nào trong file khớp với danh sách hiện tại.');
@@ -1752,12 +1844,12 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-3 py-4 text-center font-black">Xuất</th>
                 <th className="px-3 py-4 text-center font-black">Tồn</th>
                 <th className="px-3 py-4 text-center font-black">Tồn tối thiểu</th>
-                <th className="px-3 py-4 text-center font-black">Thao tác</th>
+                <th className="sticky right-0 z-10 border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-center font-black">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {filteredProducts.map(product => (
-                <tr key={`${product.code}-${product.name}`} className="align-middle transition hover:bg-red-50/40">
+                <tr key={`${product.code}-${product.name}`} className="group align-middle transition hover:bg-red-50/40">
                   <td className="px-3 py-3.5 text-center">
                     <input
                       type="checkbox"
@@ -1801,7 +1893,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.outbound}</td>
                   <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
                   <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.minStock}</td>
-                  <td className="px-3 py-3.5">
+                  <td className="sticky right-0 z-10 border-l border-zinc-100 bg-white px-3 py-3.5 group-hover:bg-red-50/40">
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
@@ -1865,6 +1957,9 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           isSaving={isSavingProductNpl}
           onClose={() => setViewingProduct(null)}
           onSaveItems={items => saveProductNplItems(viewingProduct.id, items)}
+          onEdit={() => openProductEdit(viewingProduct)}
+          onDelete={() => handleDeleteProduct(viewingProduct)}
+          isDeleting={deletingProductId === viewingProduct.id}
         />
       )}
 

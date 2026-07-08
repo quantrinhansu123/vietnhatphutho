@@ -2,12 +2,29 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
+import {
+  ClipboardCheck,
+  ClipboardPaste,
+  Download,
+  Eye,
+  FlaskConical,
+  History,
+  Loader2,
+  Package,
+  Pencil,
+  Plus,
+  Save,
+  Search,
+  Trash2,
+  Upload
+} from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { downloadBulkOpeningStockTemplate, parseBulkOpeningStockExcel } from '../../utils/bulkOpeningStockExcel';
 import { downloadBulkMaterialTotalWeightTemplate, parseBulkMaterialTotalWeightExcel } from '../../utils/bulkMaterialTotalWeightExcel';
 import { productFieldClass } from '../san-pham/productFieldClass';
+import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
 
 export interface MaterialRow {
   id: string;
@@ -1382,19 +1399,21 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex items-start justify-end gap-3">
-            <div className="hidden">
-              <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý kho</p>
-              <h2 className="mt-1 text-2xl font-black leading-tight">Kho NVL</h2>
-              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Nguyên phụ liệu · dữ liệu từ bảng Supabase kho_nvl.
-              </p>
-            </div>
+          <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
+            <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:w-[360px]">
+              <Search className="h-4 w-4 shrink-0 text-zinc-400" />
+              <input
+                value={searchText}
+                onChange={event => setSearchText(event.target.value)}
+                placeholder="Tìm mã NVL, tên nguyên phụ liệu..."
+                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+              />
+            </label>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               <button
                 type="button"
                 onClick={handleDownloadOpeningStockTemplate}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 text-xs font-extrabold text-emerald-100 transition hover:bg-emerald-500/25"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100"
               >
                 <Download className="h-4 w-4" />
                 Tải mẫu Tồn đầu
@@ -1402,7 +1421,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={() => setShowBulkOpeningStock(true)}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-extrabold text-white transition hover:bg-white/20"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200"
               >
                 <ClipboardPaste className="h-4 w-4" />
                 Excel Tồn đầu
@@ -1410,7 +1429,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={handleDownloadTotalWeightTemplate}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 text-xs font-extrabold text-emerald-100 transition hover:bg-emerald-500/25"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100"
               >
                 <Download className="h-4 w-4" />
                 Tải mẫu Excel
@@ -1418,7 +1437,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={() => setShowBulkTotalWeight(true)}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-extrabold text-white transition hover:bg-white/20"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200"
               >
                 <Upload className="h-4 w-4" />
                 Tải Excel lên
@@ -1427,7 +1446,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 type="button"
                 onClick={handleFillKgTotalWeight25}
                 disabled={isFillingKgTotalWeight || isLoadingMaterials || materials.length === 0}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-300/40 bg-amber-500/15 px-3 text-xs font-extrabold text-amber-100 transition hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-extrabold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isFillingKgTotalWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
                 Điền 25 kg (Kg)
@@ -1450,9 +1469,9 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               ['Tổng kg', formatNumber(totalWeightAll, 2)],
               ['Đơn vị', units.length > 0 ? units.length - 1 : 0]
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <span className="block font-bold text-zinc-400">{label}</span>
-                <span className="mt-1 block text-xl font-black text-white">{value}</span>
+              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <span className="block font-bold text-slate-500">{label}</span>
+                <span className="mt-1 block text-xl font-black text-slate-900">{value}</span>
               </div>
             ))}
           </div>
@@ -1481,17 +1500,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
             </div>
           )}
         </div>
-
-        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[420px]">
-          <Search className="h-4 w-4 text-zinc-400" />
-          <input
-            value={searchText}
-            onChange={event => setSearchText(event.target.value)}
-            placeholder="Tìm mã NVL, tên nguyên phụ liệu..."
-            disabled={isLoadingMaterials || materials.length === 0}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-          />
-        </label>
 
         {materialsError && (
           <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">

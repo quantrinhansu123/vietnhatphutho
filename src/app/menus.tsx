@@ -104,13 +104,13 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
 
 export const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Phiếu báo cáo',
+    title: 'Nhập báo cáo',
     desc: 'Mở các phiếu nhập báo cáo theo ca sản xuất.',
     icon: FilePlus2,
     tab: 'report-forms'
   },
   {
-    title: 'Danh sách báo cáo',
+    title: 'Xem báo cáo',
     desc: 'Mở danh sách phiếu cân, phối trộn và báo cáo sản lượng đã lưu.',
     icon: ClipboardList,
     tab: 'report-lists'
@@ -269,8 +269,8 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'production-reports',
     children: [
       { label: 'Bảng điều khiển', tab: 'control-board' },
-      { label: 'Phiếu báo cáo', tab: 'report-forms' },
-      { label: 'Danh sách báo cáo', tab: 'report-lists' },
+      { label: 'Nhập báo cáo', tab: 'report-forms' },
+      { label: 'Xem báo cáo', tab: 'report-lists' },
       { label: 'Tổng hợp cân ca', tab: 'weighing-summary' },
       { label: 'Kế hoạch SX', tab: 'production-plan-history' }
     ]
@@ -325,9 +325,9 @@ export const PRIMARY_NAV_GROUPS: {
 export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'menu': { group: 'Trang chủ', sub: 'Chọn chức năng' },
   'control-board': { group: 'Sản xuất', sub: 'Bảng điều khiển' },
-  'report-forms': { group: 'Sản xuất', sub: 'Phiếu báo cáo' },
-  'form': { group: 'Sản xuất', sub: 'Phiếu báo cáo' },
-  'report-lists': { group: 'Sản xuất', sub: 'Danh sách báo cáo' },
+  'report-forms': { group: 'Sản xuất', sub: 'Nhập báo cáo' },
+  'form': { group: 'Sản xuất', sub: 'Nhập báo cáo' },
+  'report-lists': { group: 'Sản xuất', sub: 'Xem báo cáo' },
   'acceptance-report-list': { group: 'Sản xuất', sub: 'DS phiếu nghiệm thu' },
   'weighing-summary': { group: 'Sản xuất', sub: 'Bảng báo cáo Cân' },
   'weighing-summary-list': { group: 'Sản xuất', sub: 'DS phiếu cân' },

@@ -1,8 +1,12 @@
 import { formatNumber } from '../utils';
 import type { MixingPhoiTron, MixingReport, MixingReportLine, MixingRoundItem, MixingRoundPhoto } from '../components/MixingReportForm';
 
-export const MIXING_ROUND_KEYS = ['lan_1', 'lan_2', 'lan_3', 'lan_4', 'lan_5'] as const;
-export type MixingRoundKey = (typeof MIXING_ROUND_KEYS)[number];
+export const MIXING_MAX_ROUNDS = 20;
+export type MixingRoundKey = `lan_${number}`;
+export const MIXING_ROUND_KEYS: readonly MixingRoundKey[] = Array.from(
+  { length: MIXING_MAX_ROUNDS },
+  (_, index) => `lan_${index + 1}` as MixingRoundKey
+);
 
 const NORM_WEIGHT_DECIMALS = 3;
 const NORM_WEIGHT_SCALE = 10 ** NORM_WEIGHT_DECIMALS;
@@ -313,7 +317,7 @@ export function mixingSessionColumnLabel(sessionStart: number, roundIndex: numbe
   return mixingSessionLabel(sessionStart + roundIndex);
 }
 
-export const MAX_MIXING_SESSIONS_PER_SHIFT = 5;
+export const MAX_MIXING_SESSIONS_PER_SHIFT = MIXING_MAX_ROUNDS;
 
 export function getMixingReportSessionEnd(report: Pick<MixingReport, 'lan_thu' | 'so_lan'>) {
   const start = report.lan_thu && report.lan_thu > 0 ? report.lan_thu : 1;

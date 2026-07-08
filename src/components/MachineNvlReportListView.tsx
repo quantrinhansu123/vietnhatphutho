@@ -67,7 +67,8 @@ export default function MachineNvlReportListView({
   onEdit: (report: MachineNvlSavedReport) => void;
 }) {
   const [activeKind, setActiveKind] = useState<MachineNvlReportKind>('dau_ca');
-  const [filterDate, setFilterDate] = useState(todayIso());
+  const [filterFromDate, setFilterFromDate] = useState(todayIso());
+  const [filterToDate, setFilterToDate] = useState(todayIso());
   const [filterCa, setFilterCa] = useState('');
   const [filterMachine, setFilterMachine] = useState('');
   const [reports, setReports] = useState<MachineNvlSavedReport[]>([]);
@@ -117,11 +118,12 @@ export default function MachineNvlReportListView({
     return [...map.entries()].sort((left, right) => left[1].localeCompare(right[1], 'vi'));
   }, [reports]);
 
-  const loadReports = async (kind = activeKind, ngay = filterDate) => {
+  const loadReports = async (kind = activeKind, tuNgay = filterFromDate, denNgay = filterToDate) => {
     const params = new URLSearchParams();
     params.set('limit', '300');
     params.set('loai_bao_cao', kind);
-    if (ngay) params.set('ngay', ngay);
+    if (tuNgay) params.set('tu_ngay', tuNgay);
+    if (denNgay) params.set('den_ngay', denNgay);
     const res = await fetch(`/api/bao-cao-may-nvl-ton?${params.toString()}`);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách báo cáo NVL tồn.');
@@ -140,7 +142,7 @@ export default function MachineNvlReportListView({
         if (!cancelled && settingsRes.ok) {
           setShiftSettings(normalizeShiftSettings(settingsData));
         }
-        await loadReports(activeKind, filterDate);
+        await loadReports(activeKind, filterFromDate, filterToDate);
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Không thể tải danh sách báo cáo.');
       } finally {
@@ -151,7 +153,7 @@ export default function MachineNvlReportListView({
     return () => {
       cancelled = true;
     };
-  }, [activeKind, filterDate]);
+  }, [activeKind, filterFromDate, filterToDate]);
 
   useEffect(() => {
     if (!pendingPrint || !printReport) return;
@@ -245,12 +247,23 @@ export default function MachineNvlReportListView({
             ))}
           </div>
           <div className="mt-2 grid grid-cols-2 gap-1.5 sm:gap-2">
-            <label className="col-span-2 text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
-              Ngày
+            <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              Từ ngày
               <input
                 type="date"
-                value={filterDate}
-                onChange={event => setFilterDate(event.target.value)}
+                value={filterFromDate}
+                max={filterToDate || undefined}
+                onChange={event => setFilterFromDate(event.target.value)}
+                className={`${inputClass} mt-0.5`}
+              />
+            </label>
+            <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+              Đến ngày
+              <input
+                type="date"
+                value={filterToDate}
+                min={filterFromDate || undefined}
+                onChange={event => setFilterToDate(event.target.value)}
                 className={`${inputClass} mt-0.5`}
               />
             </label>
@@ -303,106 +316,111 @@ export default function MachineNvlReportListView({
               <Boxes className="mx-auto h-8 w-8 text-zinc-300" />
               <p className="mt-2 text-sm font-black text-zinc-700">Chưa có báo cáo {activeTabLabel.toLowerCase()}</p>
               <p className="mt-1 text-xs font-semibold text-zinc-500">
-                {filterDate ? `Ngày ${filterDate}` : 'Chọn ngày khác hoặc tạo báo cáo mới.'}
+                {filterFromDate || filterToDate
+                  ? `Từ ${filterFromDate || '...'} đến ${filterToDate || '...'}`
+                  : 'Chọn khoảng ngày khác hoặc tạo báo cáo mới.'}
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {historyGroups.map(dateGroup => (
-                <div key={dateGroup.ngay} className="overflow-hidden rounded-lg border border-zinc-200 sm:rounded-xl">
-                  <div className="flex items-baseline gap-1.5 border-b border-zinc-200 bg-zinc-100 px-2 py-1 sm:px-3 sm:py-1.5">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
-                    <span className="font-mono text-[11px] font-black text-zinc-900 sm:text-xs">{dateGroup.ngay}</span>
-                  </div>
-                  <div className="divide-y divide-zinc-100">
-                    {dateGroup.shifts.map(shiftGroup => (
-                      <div key={`${dateGroup.ngay}-${shiftGroup.ca}`} className="px-2 py-1.5 sm:p-2">
-                        <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">
-                          Ca{' '}
-                          <span className="text-[11px] normal-case text-zinc-800 sm:text-xs">
-                            {shiftGroup.ca || '-'}
-                          </span>
-                        </p>
-                        <div className="mt-1 space-y-1 border-l border-zinc-200 pl-1.5 sm:pl-2">
-                          {shiftGroup.machines.map(machineGroup => (
-                            <div key={machineGroup.key} className="space-y-0.5">
-                              <p className="truncate text-[10px] font-bold text-zinc-700 sm:text-[11px]">
-                                {machineGroup.tenMay || machineGroup.maMay || '-'}
-                              </p>
-                              {machineGroup.reports.map(report => (
-                                <div
-                                  key={report.id || `${report.ngay}-${report.maMay}-${report.ca}`}
-                                  className="rounded-md border border-zinc-200 bg-zinc-50/60 px-1.5 py-1"
-                                >
-                                  <div className="flex items-center gap-1">
-                                    <div className="min-w-0 flex-1 truncate text-[9px] font-bold leading-tight text-zinc-600 sm:text-[10px]">
-                                      <span className="text-zinc-800">{report.lines.length} NVL</span>
-                                      {report.nhanSu ? (
-                                        <>
-                                          <span className="text-zinc-300"> · </span>
-                                          <span>{report.nhanSu}</span>
-                                        </>
-                                      ) : null}
-                                      {report.gio ? (
-                                        <>
-                                          <span className="text-zinc-300"> · </span>
-                                          <span className="font-semibold text-zinc-400">{report.gio}</span>
-                                        </>
-                                      ) : null}
-                                    </div>
-                                    <span className="shrink-0 font-mono text-[10px] font-black text-emerald-800 sm:text-[11px]">
-                                      {formatNumber(reportTotal(report))} kg
-                                    </span>
-                                    <div className="flex shrink-0 items-center gap-0.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => onEdit(report)}
-                                        className="inline-flex h-6 w-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 sm:h-7 sm:w-7 sm:rounded-md"
-                                        title="Sửa báo cáo"
-                                      >
-                                        <Pencil className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handlePrint(report)}
-                                        className="inline-flex h-6 w-6 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 sm:h-7 sm:w-7 sm:rounded-md"
-                                        title="In phiếu"
-                                      >
-                                        <Printer className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDelete(report.id)}
-                                        disabled={deletingId === report.id}
-                                        className="inline-flex h-6 w-6 items-center justify-center rounded border border-zinc-200 bg-white text-[#ef1b2d] hover:bg-red-50 disabled:opacity-50 sm:h-7 sm:w-7 sm:rounded-md"
-                                        title="Xóa báo cáo"
-                                      >
-                                        {deletingId === report.id ? (
-                                          <Loader2 className="h-3 w-3 animate-spin sm:h-3.5 sm:w-3.5" />
-                                        ) : (
-                                          <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                                        )}
-                                      </button>
-                                    </div>
-                                  </div>
-                                  {report.lines.length > 0 ? (
-                                    <p
-                                      className="mt-0.5 truncate font-mono text-[9px] font-semibold leading-tight text-zinc-500 sm:text-[10px]"
-                                      title={formatReportLineSummary(report, isDauCaTab)}
-                                    >
-                                      {formatReportLineSummary(report, isDauCaTab)}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
+            <div className="space-y-3">
+              {historyGroups.map(dateGroup => {
+                const dateRows = dateGroup.shifts.flatMap(shiftGroup =>
+                  shiftGroup.machines.flatMap(machineGroup =>
+                    machineGroup.reports.map(report => ({ shiftGroup, machineGroup, report }))
+                  )
+                );
+                const dateTotal = dateRows.reduce((sum, { report }) => sum + reportTotal(report), 0);
+
+                return (
+                  <div key={dateGroup.ngay} className="overflow-hidden rounded-xl border border-zinc-200">
+                    <div className="flex items-baseline justify-between gap-1.5 border-b border-zinc-200 bg-zinc-100 px-3 py-1.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
+                        <span className="font-mono text-xs font-black text-zinc-900">{dateGroup.ngay}</span>
                       </div>
-                    ))}
+                      <span className="font-mono text-[11px] font-black text-emerald-800">
+                        {formatNumber(dateTotal)} kg
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[720px] border-collapse text-left text-[11px] sm:text-xs">
+                        <thead className="bg-zinc-50 text-[9px] uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+                          <tr>
+                            <th className="px-2 py-1.5 font-black">Ca</th>
+                            <th className="px-2 py-1.5 font-black">Máy</th>
+                            <th className="px-2 py-1.5 font-black">Nhân sự</th>
+                            <th className="px-2 py-1.5 font-black">Giờ</th>
+                            <th className="px-2 py-1.5 text-right font-black">Số NVL</th>
+                            <th className="px-2 py-1.5 text-right font-black">Tổng (kg)</th>
+                            <th className="px-2 py-1.5 font-black">Chi tiết NVL</th>
+                            <th className="px-2 py-1.5 text-center font-black">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                          {dateRows.map(({ shiftGroup, machineGroup, report }) => (
+                            <tr
+                              key={report.id || `${report.ngay}-${report.maMay}-${report.ca}`}
+                              className="align-top transition hover:bg-zinc-50"
+                            >
+                              <td className="px-2 py-1.5 font-bold text-zinc-800">{shiftGroup.ca || '-'}</td>
+                              <td className="px-2 py-1.5 font-semibold text-zinc-700">
+                                {machineGroup.tenMay || machineGroup.maMay || '-'}
+                              </td>
+                              <td className="px-2 py-1.5 text-zinc-600">{report.nhanSu || '-'}</td>
+                              <td className="px-2 py-1.5 font-mono text-zinc-500">{report.gio || '-'}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-zinc-700">{report.lines.length}</td>
+                              <td className="px-2 py-1.5 text-right font-mono font-black text-emerald-800">
+                                {formatNumber(reportTotal(report))}
+                              </td>
+                              <td className="max-w-[260px] px-2 py-1.5">
+                                <span
+                                  className="block truncate font-mono text-[10px] text-zinc-500"
+                                  title={formatReportLineSummary(report, isDauCaTab)}
+                                >
+                                  {report.lines.length > 0 ? formatReportLineSummary(report, isDauCaTab) : '-'}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <div className="flex items-center justify-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => onEdit(report)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                                    title="Sửa báo cáo"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePrint(report)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                                    title="In phiếu"
+                                  >
+                                    <Printer className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(report.id)}
+                                    disabled={deletingId === report.id}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-white text-[#ef1b2d] hover:bg-red-50 disabled:opacity-50"
+                                    title="Xóa báo cáo"
+                                  >
+                                    {deletingId === report.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

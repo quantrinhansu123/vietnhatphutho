@@ -220,12 +220,14 @@ export default function WeighingShiftSummary({
   config = DEFAULT_WEIGHING_SLIP_CONFIG,
   onBackToMenu,
   initialPendingAdd = null,
-  onInitialPendingConsumed
+  onInitialPendingConsumed,
+  defaultShowForm = false
 }: {
   config?: WeighingSlipConfig;
   onBackToMenu?: () => void;
   initialPendingAdd?: WeighingPendingAdd | null;
   onInitialPendingConsumed?: () => void;
+  defaultShowForm?: boolean;
 } = {}) {
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [selectedDate, setSelectedDate] = useState(today);
@@ -237,7 +239,7 @@ export default function WeighingShiftSummary({
   const [deletingRowId, setDeletingRowId] = useState<string | number | null>(null);
   const [deletingSlipKey, setDeletingSlipKey] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
-  const [showReportForm, setShowReportForm] = useState(false);
+  const [showReportForm, setShowReportForm] = useState(defaultShowForm);
   const [pendingAdd, setPendingAdd] = useState<WeighingPendingAdd | null>(null);
   const [slipSetupOpen, setSlipSetupOpen] = useState(false);
   const [slipSetupDefaults, setSlipSetupDefaults] = useState<{ productionDate: string; shiftName?: string }>({
