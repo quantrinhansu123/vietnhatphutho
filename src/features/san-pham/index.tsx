@@ -59,6 +59,15 @@ export function ProductNplItemFormModal({
     }
   };
 
+  useEffect(() => {
+    const trimmedCode = code.trim();
+    if (!trimmedCode) return;
+    const material = materialOptions.find(option => option.code === trimmedCode);
+    if (material?.unit && material.unit !== '-') {
+      setUnit(material.unit);
+    }
+  }, [code, materialOptions]);
+
   const handleSave = async () => {
     const trimmedCode = code.trim();
     const numericValue = parsePercentInput(amountValue);
