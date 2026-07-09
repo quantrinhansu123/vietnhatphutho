@@ -4,6 +4,11 @@ import type { WeighingRecord } from '../utils/weighingRecords';
 import { getWeighingDataRows } from '../utils/weighingRecords';
 import { PRINT_COMPANY_NAME } from './layout/constants';
 
+export type WeighingSlipPrintLayout = {
+  hideProductFields?: boolean;
+  splitPlasticFilmWeights?: boolean;
+};
+
 export type WeighingSlipPrintData = {
   documentNo: string;
   reportDate: string;
@@ -76,6 +81,13 @@ function netRowWeight(row: WeighingRecord) {
   return total - core - shell;
 }
 
+function damagedGoodsRowTotal(row: WeighingRecord) {
+  const plastic = parsePrintWeight(row.weight) ?? 0;
+  const film = parsePrintWeight(row.shellWeight) ?? 0;
+  if (parsePrintWeight(row.weight) === null && parsePrintWeight(row.shellWeight) === null) return null;
+  return plastic + film;
+}
+
 function resolveWeigherName(rows: WeighingRecord[]) {
   const names = [...new Set(rows.map(row => row.weigherName.trim()).filter(Boolean))];
   if (names.length === 0) return '—';
@@ -87,9 +99,20 @@ function hasAnyPhoto(row: WeighingRecord) {
   return Boolean(row.imageUrl || row.coreWeightImageUrl);
 }
 
-export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrintData; title: string }) {
+export function WeighingSlipPrintSheet({
+  slip,
+  title,
+  layout
+}: {
+  slip: WeighingSlipPrintData;
+  title: string;
+  layout?: WeighingSlipPrintLayout;
+}) {
   const dataRows = getWeighingDataRows(slip.rows);
   const weigherName = resolveWeigherName(dataRows);
+  const splitPlasticFilmWeights = Boolean(layout?.splitPlasticFilmWeights);
+  const hideProductFields = Boolean(layout?.hideProductFields);
+  const detailColSpan = splitPlasticFilmWeights ? 7 : hideProductFields ? 9 : 11;
 
   return (
     <div className="weighing-slip-print-sheet">
@@ -135,6 +158,57 @@ export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrin
 
         <p className="weighing-slip-print-section-title">Bảng chi tiết cân</p>
         <table className="weighing-slip-print-table">
+          {splitPlasticFilmWeights ? (
+            <>
+              <colgroup>
+                <col className="weighing-slip-print-col-lan" />
+                <col className="weighing-slip-print-col-weight" />
+                <col className="weighing-slip-print-col-shell" />
+                <col className="weighing-slip-print-col-total" />
+                <col className="weighing-slip-print-col-time" />
+                <col className="weighing-slip-print-col-note" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Lần</th>
+                  <th>KL nhựa</th>
+                  <th>KL màng</th>
+                  <th className="weighing-slip-print-total-head">Tổng</th>
+                  <th>Giờ</th>
+                  <th>Ghi chú</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dataRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="weighing-slip-print-center">
+                      Chưa có lần cân.
+                    </td>
+                  </tr>
+                ) : (
+                  dataRows.map((row, index) => (
+                    <tr key={row.id ?? `${slip.documentNo}-${index}`}>
+                      <td className="weighing-slip-print-center weighing-slip-print-lan">{row.weighNo || index + 1}</td>
+                      <td className="weighing-slip-print-right weighing-slip-print-num weighing-slip-print-weight">
+                        {formatPrintWeight(row.weight)}
+                      </td>
+                      <td className="weighing-slip-print-right weighing-slip-print-num">
+                        {formatPrintWeight(row.shellWeight)}
+                      </td>
+                      <td className="weighing-slip-print-right weighing-slip-print-num weighing-slip-print-total">
+                        {formatPrintWeightNumber(damagedGoodsRowTotal(row))}
+                      </td>
+                      <td className="weighing-slip-print-center weighing-slip-print-time">
+                        {formatPrintTime(row.weighTime)}
+                      </td>
+                      <td className="weighing-slip-print-note">{row.note || ''}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </>
+          ) : (
+            <>
           <colgroup>
             <col className="weighing-slip-print-col-lan" />
             <col className="weighing-slip-print-col-code" />
@@ -151,8 +225,8 @@ export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrin
           <thead>
             <tr>
               <th>Lần</th>
-              <th>Mã SP</th>
-              <th>Tên SP</th>
+              {!hideProductFields && <th>Mã SP</th>}
+              {!hideProductFields && <th>Tên SP</th>}
               <th>TL lõi</th>
               <th>TL bì</th>
               <th>TL nhựa</th>
@@ -166,7 +240,7 @@ export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrin
           <tbody>
             {dataRows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="weighing-slip-print-center">
+                <td colSpan={detailColSpan} className="weighing-slip-print-center">
                   Chưa có lần cân.
                 </td>
               </tr>
@@ -174,8 +248,12 @@ export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrin
               dataRows.map((row, index) => (
                 <tr key={row.id ?? `${slip.documentNo}-${index}`}>
                   <td className="weighing-slip-print-center weighing-slip-print-lan">{row.weighNo || index + 1}</td>
-                  <td className="weighing-slip-print-code">{row.productCode || '—'}</td>
-                  <td className="weighing-slip-print-product-name">{row.productName || '—'}</td>
+                  {!hideProductFields && (
+                    <td className="weighing-slip-print-code">{row.productCode || '—'}</td>
+                  )}
+                  {!hideProductFields && (
+                    <td className="weighing-slip-print-product-name">{row.productName || '—'}</td>
+                  )}
                   <td className="weighing-slip-print-right weighing-slip-print-num">
                     {formatPrintWeight(row.coreWeight)}
                   </td>
@@ -202,6 +280,8 @@ export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrin
               ))
             )}
           </tbody>
+            </>
+          )}
         </table>
 
         <div className="weighing-slip-print-signatures">
@@ -225,17 +305,19 @@ export function WeighingSlipPrintSheet({ slip, title }: { slip: WeighingSlipPrin
 
 export function WeighingSlipPrintBatch({
   slip,
-  title
+  title,
+  layout
 }: {
   slip: WeighingSlipPrintData | null;
   title: string;
+  layout?: WeighingSlipPrintLayout;
 }) {
   if (!slip) return null;
 
   return (
     <div className="weighing-slip-print-batch">
       <div className="weighing-slip-print-page">
-        <WeighingSlipPrintSheet slip={slip} title={title} />
+        <WeighingSlipPrintSheet slip={slip} title={title} layout={layout} />
       </div>
     </div>
   );

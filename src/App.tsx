@@ -791,7 +791,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Kinh doanh" desc="Đơn hàng và khách hàng." />
+                <MenuPageHeader title="Kinh doanh" desc="Khách hàng phục vụ lập và tra cứu đơn." />
                 <MenuCardGrid items={filterMenuItems(BUSINESS_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'factory' ? (
@@ -1125,7 +1125,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <OrdersPanel onBack={() => navigateToTab('business')} />
+                <OrdersPanel onBack={() => navigateToTab('menu')} />
               </motion.div>
             ) : activeTab === 'customers' ? (
               <motion.div

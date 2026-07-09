@@ -25,7 +25,7 @@ import {
 import { normalizeMachineNvlReports, type MachineNvlSavedReport } from '../../utils/machineNvlReports';
 import { DashboardWindow } from '../dashboard';
 import { normalizeMachines, type MachineRow } from '../danh-sach-may';
-import { normalizeOrders, getOrderProductLines, formatOrderProductsSummary, type OrderRow } from '../don-hang';
+import { normalizeOrders, type OrderRow } from '../don-hang';
 import { normalizeProducts } from '../san-pham';
 import type { ProductRow } from '../san-pham/types';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
@@ -62,7 +62,6 @@ import {
   Factory,
   ClipboardCheck,
   Scale,
-  ClipboardList,
   Boxes,
   Eye,
   Pencil,
@@ -113,7 +112,6 @@ export function ControlBoardPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [weighingSearch, setWeighingSearch] = useState('');
-  const [orderSearch, setOrderSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [machineNvlReportSearch, setMachineNvlReportSearch] = useState('');
   const [materialSearch, setMaterialSearch] = useState('');
@@ -555,34 +553,6 @@ export function ControlBoardPanel({
       }),
     [filteredWeighingRows]
   );
-
-  const orderQuery = orderSearch.trim().toLowerCase();
-  const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
-      if (orderQuery) {
-        const haystack = `${order.orderCode} ${formatOrderProductsSummary(getOrderProductLines(order))} ${order.customer} ${order.status} ${order.stockQuantity}`
-          .toLowerCase();
-        if (!haystack.includes(orderQuery)) return false;
-      }
-      if (boardFilterShift === 'all' && boardFilterMachine === 'all') return true;
-
-      const linkedProduction = productionOrders.filter(
-        row => row.orderRef === order.orderCode || row.orderRef === order.id
-      );
-      if (linkedProduction.length === 0) {
-        return boardFilterShift === 'all' && boardFilterMachine === 'all';
-      }
-
-      return linkedProduction.some(row => {
-        const rowDate = parseProductionOrderFilterDate(row.startDate);
-        const matchesDate = matchesBoardDateRange(rowDate || undefined);
-        const rowShift = row.shift && row.shift !== '-' ? row.shift : '';
-        const matchesShift = matchesBoardShift(rowShift);
-        const matchesMachine = matchesBoardMachine(row.machine, row.position, resolveProductionOrderMachine(row, machines));
-        return matchesDate && matchesShift && matchesMachine;
-      });
-    });
-  }, [orders, orderQuery, productionOrders, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, machines, selectedBoardMachine]);
 
   const productQuery = productSearch.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
@@ -1185,7 +1155,6 @@ export function ControlBoardPanel({
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
               <tr>
-                <th className="px-2 py-1.5 font-black">Phiếu</th>
                 <th className="px-2 py-1.5 font-black">Ca</th>
                 <th className="px-2 py-1.5 font-black">SP</th>
                 <th className="px-2 py-1.5 text-right font-black">Tổng KL</th>
@@ -1194,7 +1163,6 @@ export function ControlBoardPanel({
             <tbody className="divide-y divide-zinc-100">
               {recentWeighingRows.slice(0, sidePreviewLimit).map((row, index) => (
                 <tr key={`${row.id ?? row.documentNo}-${index}`} className="hover:bg-red-50/50">
-                  <td className="px-2 py-1.5 font-mono text-[10px] font-bold text-zinc-800">{row.documentNo || '—'}</td>
                   <td className="px-2 py-1.5 text-zinc-600">{row.shiftName || '—'}</td>
                   <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.productName || row.productCode || '—'}</td>
                   <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
@@ -1204,61 +1172,9 @@ export function ControlBoardPanel({
               ))}
               {!isLoading && recentWeighingRows.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
+                  <td colSpan={3} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
                     Chưa có báo cáo cân.
                   </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DashboardWindow>
-
-        <DashboardWindow
-          title="Đơn hàng"
-          subtitle="Mã đơn, hàng hóa, số lượng và trạng thái"
-          icon={ClipboardList}
-          accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
-          count={filteredOrders.length}
-          countLabel="Đơn"
-          search={orderSearch}
-          onSearchChange={setOrderSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('orders')}
-          openLabel="Mở Đơn hàng"
-        >
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-black">Mã đơn</th>
-                <th className="px-3 py-2 font-black">Hàng</th>
-                <th className="px-3 py-2 font-black">Số lượng</th>
-                <th className="px-3 py-2 font-black">Số lượng tồn</th>
-                <th className="px-3 py-2 font-black">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredOrders.slice(0, previewLimit).map(order => (
-                <tr key={order.id} className="hover:bg-red-50/50">
-                  <td className="px-3 py-2 font-bold text-zinc-900">{order.orderCode || '-'}</td>
-                  <td className="px-3 py-2 text-zinc-700">
-                    {getOrderProductLines(order)
-                      .map(line => line.productCode)
-                      .filter(code => code && code !== '-')
-                      .join(', ') || '-'}
-                  </td>
-                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.quantity}</td>
-                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{order.stockQuantity}</td>
-                  <td className="px-3 py-2">
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
-                      {order.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && filteredOrders.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center font-bold text-zinc-400">Không có đơn hàng.</td>
                 </tr>
               )}
             </tbody>

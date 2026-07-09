@@ -83,7 +83,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'warehouse-history': 'facility-management',
   'hr': 'hcns',
   'settings': 'hcns',
-  'orders': 'business',
+  'orders': 'menu',
   'customers': 'business',
   'production-orders': 'factory',
   'production-plan-history': 'production-reports',

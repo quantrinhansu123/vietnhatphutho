@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, ScanBarcode, Trash2, UserCheck, Users } from 'lucide-react';
 import type { WeighingPendingAdd, WeighingRecord } from '../utils/weighingRecords';
-import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, isSlipHeaderRow } from '../utils/weighingRecords';
+import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, formatDamagedGoodsRowTotalWeight, formatWeighingWeightField, isSlipHeaderRow } from '../utils/weighingRecords';
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import WeighingImagePreviewModal, {
@@ -462,6 +462,8 @@ export default function WeighingReportForm({
   onOpenList?: () => void;
   config?: WeighingSlipConfig;
 } = {}) {
+  const hideProductFields = Boolean(config.hideProductFields);
+  const splitPlasticFilmWeights = Boolean(config.splitPlasticFilmWeights);
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [form, setForm] = useState({
     documentNo: '',
@@ -966,7 +968,12 @@ export default function WeighingReportForm({
       return;
     }
 
-    if (
+    if (splitPlasticFilmWeights) {
+      if (!newRow.weight.trim() && !newRow.shellWeight.trim() && !newRow.note.trim()) {
+        setAddFormError('Vui lòng nhập KL nhựa, KL màng hoặc ghi chú.');
+        return;
+      }
+    } else if (
       !newRow.productCode.trim() &&
       !newRow.productName.trim() &&
       !newRow.coreWeight.trim() &&
@@ -1506,11 +1513,13 @@ export default function WeighingReportForm({
                       <span className="shrink-0 font-mono text-[9px] font-bold text-zinc-600">
                         {row.weighTime || '—'}
                       </span>
-                      <span className="truncate font-mono text-[10px] font-bold text-zinc-800">
-                        {row.productCode || '—'}
-                      </span>
+                      {!hideProductFields ? (
+                        <span className="truncate font-mono text-[10px] font-bold text-zinc-800">
+                          {row.productCode || '—'}
+                        </span>
+                      ) : null}
                       <div className="flex shrink-0 items-center gap-0.5">
-                        {row.acceptanceStatus ? (
+                        {!config.hideAcceptanceStatus && row.acceptanceStatus ? (
                           <span
                             className={`rounded-full px-1 py-0.5 text-[8px] font-black uppercase tracking-wider ${
                               row.acceptanceStatus === 'Đạt'
@@ -1522,10 +1531,13 @@ export default function WeighingReportForm({
                           </span>
                         ) : null}
                         <span className="font-mono text-[9px] font-black text-[#ef1b2d]">
-                          Tổng {formatWeighingRowTotalWeight(row)}
+                          Tổng{' '}
+                          {splitPlasticFilmWeights
+                            ? formatDamagedGoodsRowTotalWeight(row)
+                            : formatWeighingRowTotalWeight(row)}
                         </span>
                       </div>
-                      {row.coreWeightImageUrl || row.imageUrl ? (
+                      {!config.hideCoreWeightImage && !config.hideWeightImage && (row.coreWeightImageUrl || row.imageUrl) ? (
                         <div className="flex shrink-0 items-center gap-0.5">
                           {row.coreWeightImageUrl ? (
                             <WeighingImageThumbnail
@@ -1582,25 +1594,68 @@ export default function WeighingReportForm({
                       </button>
                     </div>
                   </div>
-                  <div className="mt-1 grid grid-cols-4 gap-0.5">
-                    <div>
-                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">Lõi</span>
-                      <p className="font-mono text-[10px] font-bold text-zinc-800">{row.coreWeight || '—'}</p>
-                    </div>
-                    <div>
-                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">Bì</span>
-                      <p className="font-mono text-[10px] font-bold text-zinc-800">{row.shellWeight || '—'}</p>
-                    </div>
-                    <div>
-                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">TL nhựa</span>
-                      <p className="font-mono text-[10px] font-black text-zinc-900">{formatWeighingNetWeight(row)}</p>
-                    </div>
-                    <div>
-                      <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">Tổng</span>
-                      <p className="font-mono text-[10px] font-black text-[#ef1b2d]">
-                        {formatWeighingRowTotalWeight(row)}
-                      </p>
-                    </div>
+                  <div
+                    className={`mt-1 grid gap-0.5 ${
+                      splitPlasticFilmWeights ? 'grid-cols-3' : 'grid-cols-4'
+                    }`}
+                  >
+                    {splitPlasticFilmWeights ? (
+                      <>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            KL nhựa
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.weight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            KL màng
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.shellWeight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Tổng
+                          </span>
+                          <p className="font-mono text-[10px] font-black text-[#ef1b2d]">
+                            {formatDamagedGoodsRowTotalWeight(row)}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Lõi
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">{row.coreWeight || '—'}</p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Bì
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">{row.shellWeight || '—'}</p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            TL nhựa
+                          </span>
+                          <p className="font-mono text-[10px] font-black text-zinc-900">{formatWeighingNetWeight(row)}</p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Tổng
+                          </span>
+                          <p className="font-mono text-[10px] font-black text-[#ef1b2d]">
+                            {formatWeighingRowTotalWeight(row)}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
                 );
@@ -1608,6 +1663,81 @@ export default function WeighingReportForm({
             </div>
 
             <div className="hidden md:block md:overflow-x-auto">
+          {splitPlasticFilmWeights ? (
+          <table className="responsive-table w-full md:min-w-[640px] border-collapse text-left">
+            <thead className="table-header-group">
+              <tr className="bg-zinc-950 text-xs font-black uppercase tracking-wider text-white">
+                <th className="w-20 px-3 py-3 text-center">Lần cân</th>
+                <th className="px-3 py-3">Người cân</th>
+                <th className="px-3 py-3">KL nhựa</th>
+                <th className="px-3 py-3">KL màng</th>
+                <th className="px-3 py-3">Tổng</th>
+                <th className="px-3 py-3">Giờ cân</th>
+                <th className="px-3 py-3">Ghi chú</th>
+                <th className="w-28 px-3 py-3 text-center">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {weighingRows.map(row => (
+                <tr key={row.id} className="transition hover:bg-red-50/40">
+                  <td className="border-r border-zinc-100 px-3 py-2 text-center text-sm font-black text-[#ef1b2d]">
+                    {row.weighNo ? formatWeighRound(row.weighNo) : '—'}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weigherName || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {formatWeighingWeightField(row.weight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-700">
+                    {formatWeighingWeightField(row.shellWeight)}
+                  </td>
+                  <td className="px-2 py-2 font-mono text-sm font-black text-[#ef1b2d]">
+                    {formatDamagedGoodsRowTotalWeight(row)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weighTime || '—'}</td>
+                  <td
+                    className="max-w-[160px] truncate px-2 py-2 text-sm font-semibold text-zinc-600"
+                    title={row.note || undefined}
+                  >
+                    {row.note || '—'}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setViewingRow(row)}
+                        title="Xem"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditRow(row)}
+                        title="Sửa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRow(row)}
+                        disabled={deletingRowId === row.id}
+                        title="Xóa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingRowId === row.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          ) : (
           <table className="responsive-table w-full md:min-w-[760px] border-collapse text-left">
             <thead className="table-header-group">
               <tr className="bg-zinc-950 text-xs font-black uppercase tracking-wider text-white">
@@ -1724,6 +1854,7 @@ export default function WeighingReportForm({
               ))}
             </tbody>
           </table>
+          )}
             </div>
           </>
         )}
@@ -1958,6 +2089,8 @@ export default function WeighingReportForm({
               </label>
               </>
               )}
+              {!hideProductFields && (
+              <>
               <label className="col-span-2 space-y-1">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <Hash className="h-3.5 w-3.5 text-[#ef1b2d]" />
@@ -2056,6 +2189,34 @@ export default function WeighingReportForm({
                   <p className="text-[11px] font-bold text-rose-600">{productsError}</p>
                 )}
               </label>
+              </>
+              )}
+              {splitPlasticFilmWeights ? (
+                <div className="col-span-2 grid grid-cols-2 gap-1.5">
+                  <label className="space-y-1">
+                    <span className={modalCompactLabelClass}>KL nhựa</span>
+                    <input
+                      value={newRow.weight ?? ''}
+                      onChange={e => setNewRow(prev => ({ ...prev, weight: sanitizeDecimalTyping(e.target.value) }))}
+                      className={modalInputClass}
+                      placeholder="8,0"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={modalCompactLabelClass}>KL màng</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={newRow.shellWeight ?? ''}
+                      onChange={e =>
+                        setNewRow(prev => ({ ...prev, shellWeight: sanitizeDecimalTyping(e.target.value) }))
+                      }
+                      className={modalInputClass}
+                      placeholder="0,5"
+                    />
+                  </label>
+                </div>
+              ) : (
               <div
                 className={`col-span-2 grid gap-1.5 ${
                   config.hideCoreShellWeights ? 'grid-cols-1' : 'grid-cols-3'
@@ -2097,6 +2258,7 @@ export default function WeighingReportForm({
                   </>
                 )}
               </div>
+              )}
               {!config.hideAcceptanceStatus && (
                 <label className="space-y-1">
                   <span className={modalLabelClass}>Nghiệm thu</span>
@@ -2277,6 +2439,8 @@ export default function WeighingReportForm({
                   {isRealMachineName(viewingRow.machineName) ? viewingRow.machineName : '—'}
                 </p>
               </div>
+              {!hideProductFields && (
+              <>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Mã sản phẩm</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.productCode || '—'}</p>
@@ -2285,6 +2449,25 @@ export default function WeighingReportForm({
                 <span className="font-black uppercase tracking-wider text-zinc-400">Tên sản phẩm</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.productName || '—'}</p>
               </div>
+              </>
+              )}
+              {splitPlasticFilmWeights ? (
+                <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">KL nhựa</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.weight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">KL màng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.shellWeight)}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-red-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
+                    <p className="mt-1 font-black text-[#ef1b2d]">{formatDamagedGoodsRowTotalWeight(viewingRow)}</p>
+                  </div>
+                </>
+              ) : (
+              <>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">TL lõi</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.coreWeight || '—'}</p>
@@ -2301,10 +2484,14 @@ export default function WeighingReportForm({
                 <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
                 <p className="mt-1 font-black text-[#ef1b2d]">{formatWeighingRowTotalWeight(viewingRow)}</p>
               </div>
+              </>
+              )}
+              {!config.hideAcceptanceStatus && (
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Nghiệm thu</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.acceptanceStatus || '—'}</p>
               </div>
+              )}
               <div className="col-span-2 rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Ghi chú</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.note || '—'}</p>

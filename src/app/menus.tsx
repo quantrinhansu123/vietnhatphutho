@@ -36,9 +36,15 @@ export const MAIN_MENU_ITEMS: MenuCardConfig[] = [
   },
   {
     title: 'Kinh doanh',
-    desc: 'Đơn hàng và danh sách khách hàng phục vụ sản xuất.',
+    desc: 'Danh sách khách hàng phục vụ lập và tra cứu đơn.',
     icon: BriefcaseBusiness,
     tab: 'business'
+  },
+  {
+    title: 'Đơn hàng',
+    desc: 'Theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
+    icon: ClipboardList,
+    tab: 'orders'
   },
   {
     title: 'Nhà máy',
@@ -218,12 +224,6 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
 
 export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Đơn hàng',
-    desc: 'Theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
-    icon: ClipboardList,
-    tab: 'orders'
-  },
-  {
     title: 'Khách hàng',
     desc: 'Xem danh sách khách hàng phục vụ lập và tra cứu đơn hàng.',
     icon: BriefcaseBusiness,
@@ -324,10 +324,13 @@ export const PRIMARY_NAV_GROUPS: {
     title: 'Kinh doanh',
     icon: BriefcaseBusiness,
     tab: 'business',
-    children: [
-      { label: 'Đơn hàng', tab: 'orders' },
-      { label: 'Khách hàng', tab: 'customers' }
-    ]
+    children: [{ label: 'Khách hàng', tab: 'customers' }]
+  },
+  {
+    title: 'Đơn hàng',
+    icon: ClipboardList,
+    tab: 'orders',
+    children: []
   },
   {
     title: 'Nhà máy',
@@ -373,7 +376,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'warehouse-history': { group: 'CSVC & Kho', sub: 'Lịch sử XNK' },
   'settings': { group: 'HCNS', sub: 'Cài đặt' },
   'hr': { group: 'HCNS', sub: 'Nhân sự' },
-  'orders': { group: 'Kinh doanh', sub: 'Đơn hàng' },
+  'orders': { group: 'Đơn hàng', sub: 'Quản lý đơn' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
   'production-orders': { group: 'Nhà máy', sub: 'Lệnh sản xuất' },
   'dashboard': { group: 'Phân tích', sub: 'Dashboard' }

@@ -17,6 +17,10 @@ export type WeighingSlipConfig = {
   hideCoreWeightImage?: boolean;
   /** Ẩn khối Ảnh cân trong modal Nhập liệu */
   hideWeightImage?: boolean;
+  /** Ẩn Mã SP / Tên SP trong nhập liệu và bảng chi tiết */
+  hideProductFields?: boolean;
+  /** KL nhựa (weight) + KL màng (shellWeight) thay cho Tổng trọng lượng */
+  splitPlasticFilmWeights?: boolean;
 };
 
 export const DEFAULT_WEIGHING_SLIP_CONFIG: WeighingSlipConfig = {
@@ -41,5 +45,7 @@ export const DAMAGED_GOODS_SLIP_CONFIG: WeighingSlipConfig = {
   hideCoreShellWeights: true,
   hideAcceptanceStatus: true,
   hideCoreWeightImage: true,
-  hideWeightImage: true
+  hideWeightImage: true,
+  hideProductFields: true,
+  splitPlasticFilmWeights: true
 };

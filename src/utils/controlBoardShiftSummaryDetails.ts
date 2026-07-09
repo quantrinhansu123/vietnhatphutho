@@ -1,6 +1,6 @@
 import type { AcceptanceReport } from '../components/AcceptanceReportForm';
 import type { WeighingRecord } from './weighingRecords';
-import { getWeighingDataRows, parseWeighingWeight, sumWeighingRowTotalWeight, computeWeighingNetWeight } from './weighingRecords';
+import { getWeighingDataRows, parseWeighingWeight, sumWeighingRowTotalWeight, sumDamagedGoodsRowWeight, formatWeighingWeightField, computeWeighingNetWeight } from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
 import { getProductionShiftOptions, type ShiftSetting } from './shiftSettings';
 import {
@@ -315,18 +315,18 @@ export function getShiftSummaryDetail(input: {
         continue;
       }
 
-      const lineWeight = sumWeighingRowTotalWeight(record);
-      if (lineWeight <= 0 && !record.productCode && !record.productName) continue;
+      const lineWeight = sumDamagedGoodsRowWeight(record);
+      if (lineWeight <= 0 && !record.note?.trim()) continue;
 
       total += lineWeight;
       rows.push({
-        rowKey: String(record.id ?? `${record.documentNo}|${record.weighNo}|${record.productCode}`),
+        rowKey: String(record.id ?? `${record.documentNo}|${record.weighNo}|${record.weighTime}`),
         recordId: record.id != null ? String(record.id) : '',
         soPhieu: record.documentNo || '-',
         gio: record.weighTime || '-',
         may: record.machineName || '-',
-        maSp: record.productCode || '-',
-        tenSp: record.productName || '-',
+        klNhua: formatWeighingWeightField(record.weight),
+        klMang: formatWeighingWeightField(record.shellWeight),
         lanCan: record.weighNo || '-',
         khoiLuong: formatDetailNumber(lineWeight, 3),
         ghiChu: record.note || '-'
@@ -338,10 +338,10 @@ export function getShiftSummaryDetail(input: {
         { key: 'soPhieu', label: 'Mã phiếu' },
         { key: 'gio', label: 'Giờ', mono: true },
         { key: 'may', label: 'Máy' },
-        { key: 'maSp', label: 'Mã SP' },
-        { key: 'tenSp', label: 'Tên SP' },
+        { key: 'klNhua', label: 'KL nhựa', align: 'right', mono: true },
+        { key: 'klMang', label: 'KL màng', align: 'right', mono: true },
         { key: 'lanCan', label: 'Lần' },
-        { key: 'khoiLuong', label: 'Khối lượng', align: 'right', mono: true, accent: true },
+        { key: 'khoiLuong', label: 'Tổng KL', align: 'right', mono: true, accent: true },
         { key: 'ghiChu', label: 'Ghi chú' }
       ],
       rows,

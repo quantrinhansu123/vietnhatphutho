@@ -1,6 +1,6 @@
 import type { AcceptanceReport } from '../components/AcceptanceReportForm';
 import type { WeighingRecord } from './weighingRecords';
-import { getWeighingDataRows, parseWeighingWeight, sumWeighingRowTotalWeight } from './weighingRecords';
+import { getWeighingDataRows, parseWeighingWeight, sumWeighingRowTotalWeight, sumDamagedGoodsRowWeight } from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
 import { sumMachineNvlDauCaReportTotal, sumMachineNvlCuoiCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import {
@@ -315,7 +315,7 @@ export function buildControlBoardShiftSummary(input: {
     const bucket = getOrCreateBucket(map, ngay, record.shiftName, shiftOptions);
     if (!bucket) continue;
     // Hàng hỏng — tổng trọng lượng từ báo cáo hàng hỏng (bao_cao_hang_hong)
-    bucket.hangHong += sumWeighingRowTotalWeight(record);
+    bucket.hangHong += sumDamagedGoodsRowWeight(record);
   }
 
   for (const movement of input.warehouseMovements ?? []) {

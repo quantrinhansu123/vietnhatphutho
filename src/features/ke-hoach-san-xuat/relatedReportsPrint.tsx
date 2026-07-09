@@ -444,12 +444,20 @@ export function ProductionPlanRelatedPrintContent({ data }: { data: ProductionPl
       ))}
       {damagedSlips.map((slip, index) => (
         <div key={`damaged-${index}`} className="production-order-print-page">
-          <WeighingSlipPrintSheet slip={slip} title="BÁO CÁO HÀNG HỎNG" />
+          <WeighingSlipPrintSheet
+            slip={slip}
+            title="BÁO CÁO HÀNG HỎNG"
+            layout={{ hideProductFields: true, splitPlasticFilmWeights: true }}
+          />
         </div>
       ))}
       {damagedDefectiveSlips.map((slip, index) => (
         <div key={`damaged-defective-${index}`} className="production-order-print-page">
-          <WeighingSlipPrintSheet slip={slip} title="BÁO CÁO HÀNG LỖI/HỎNG" />
+          <WeighingSlipPrintSheet
+            slip={slip}
+            title="BÁO CÁO HÀNG LỖI/HỎNG"
+            layout={{ hideProductFields: true, splitPlasticFilmWeights: true }}
+          />
         </div>
       ))}
       {downtimeSlips.map((slip, index) => (

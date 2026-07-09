@@ -163,6 +163,35 @@ export function sumWeighingRowTotalWeight(
   return parseWeighingWeight(row.weight) ?? 0;
 }
 
+/** Báo cáo hàng hỏng: KL nhựa + KL màng */
+export function sumDamagedGoodsRowWeight(
+  row: Pick<WeighingRecord, 'weight' | 'shellWeight'>
+): number {
+  return (parseWeighingWeight(row.weight) ?? 0) + (parseWeighingWeight(row.shellWeight) ?? 0);
+}
+
+function formatWeighingWeightNumber(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  const formatted = new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3
+  }).format(value);
+  return trimTrailingDecimalZeros(formatted);
+}
+
+export function formatWeighingWeightField(value: string | undefined): string {
+  return formatWeighingWeightNumber(parseWeighingWeight(value ?? ''));
+}
+
+export function formatDamagedGoodsRowTotalWeight(
+  row: Pick<WeighingRecord, 'weight' | 'shellWeight'>
+): string {
+  const plastic = parseWeighingWeight(row.weight);
+  const film = parseWeighingWeight(row.shellWeight);
+  if (plastic === null && film === null) return '—';
+  return formatWeighingWeightNumber((plastic ?? 0) + (film ?? 0));
+}
+
 function trimTrailingDecimalZeros(formatted: string) {
   const match = formatted.match(/^(.+),(\d+)$/);
   if (!match) return formatted;

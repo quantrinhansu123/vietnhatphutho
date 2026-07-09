@@ -3565,7 +3565,10 @@ async function startServer() {
   }
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[FULLSTACK] Server running on http://0.0.0.0:${PORT}`);
+    console.log(`[FULLSTACK] Server running on http://127.0.0.1:${PORT}`);
+    console.log(
+      `[FULLSTACK] Nếu http://localhost:${PORT} báo "Not Found", port IPv6 có thể bị app khác chiếm — dùng http://127.0.0.1:${PORT}`
+    );
     getReportsFromDb();
     void ensureWarehouseSlipNumericColumns();
   });

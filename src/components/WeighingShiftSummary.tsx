@@ -28,8 +28,10 @@ import {
 } from '../utils/shiftSettings';
 import {
   countWeighingRounds,
+  formatDamagedGoodsRowTotalWeight,
   formatWeighingRowTotalWeight,
   formatWeighingNetWeight,
+  formatWeighingWeightField,
   generateWeighingDocumentNo,
   getWeighingDataRows,
   normalizeWeighingRecords,
@@ -238,6 +240,8 @@ export default function WeighingShiftSummary({
   onInitialPendingConsumed?: () => void;
   defaultShowForm?: boolean;
 } = {}) {
+  const splitPlasticFilmWeights = Boolean(config.splitPlasticFilmWeights);
+  const hideProductFields = Boolean(config.hideProductFields);
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -664,7 +668,13 @@ export default function WeighingShiftSummary({
               ? resolveMachineName(primarySlip.machineName, ...primarySlip.rows.map(row => row.machineName))
               : '—';
             const isMultiDayRange = dateFrom !== dateTo;
-            const tableColSpan = isMultiDayRange ? 13 : 12;
+            const tableColSpan = splitPlasticFilmWeights
+              ? isMultiDayRange
+                ? 8
+                : 7
+              : isMultiDayRange
+                ? 13
+                : 12;
 
             return (
             <section key={shift.shiftKey} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
@@ -744,17 +754,27 @@ export default function WeighingShiftSummary({
                       <thead>
                         <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
                           {isMultiDayRange && <th className="px-3 py-2">Ngày</th>}
-                          <th className="px-3 py-2">Sản phẩm</th>
+                          {!hideProductFields && <th className="px-3 py-2">Sản phẩm</th>}
                           <th className="px-3 py-2">Người cân</th>
-                          <th className="px-3 py-2">TL lõi</th>
-                          <th className="px-3 py-2">TL bì</th>
-                          <th className="px-3 py-2">TL nhựa</th>
-                          <th className="px-3 py-2">Tổng trọng lượng</th>
+                          {splitPlasticFilmWeights ? (
+                            <>
+                              <th className="px-3 py-2">KL nhựa</th>
+                              <th className="px-3 py-2">KL màng</th>
+                              <th className="px-3 py-2">Tổng</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="px-3 py-2">TL lõi</th>
+                              <th className="px-3 py-2">TL bì</th>
+                              <th className="px-3 py-2">TL nhựa</th>
+                              <th className="px-3 py-2">Tổng trọng lượng</th>
+                            </>
+                          )}
                           <th className="px-3 py-2">Giờ</th>
-                          <th className="px-3 py-2">Nghiệm thu</th>
+                          {!config.hideAcceptanceStatus && <th className="px-3 py-2">Nghiệm thu</th>}
                           <th className="px-3 py-2">Ghi chú</th>
-                          <th className="px-3 py-2">Ảnh TL lõi</th>
-                          <th className="px-3 py-2">Ảnh</th>
+                          {!config.hideCoreWeightImage && <th className="px-3 py-2">Ảnh TL lõi</th>}
+                          {!config.hideWeightImage && <th className="px-3 py-2">Ảnh</th>}
                           <th className="px-3 py-2 text-center">Thao tác</th>
                         </tr>
                       </thead>
@@ -789,6 +809,7 @@ export default function WeighingShiftSummary({
                                         {formatDateVi(entry.slip.productionDate || entry.slip.reportDate)}
                                       </td>
                                     )}
+                                    {!hideProductFields && (
                                     <td className="px-3 py-2 font-semibold text-zinc-800">
                                       <p>{formatWeighingProductLabel(entry.row, entry.slip)}</p>
                                       {shift.slips.length > 1 ? (
@@ -797,14 +818,32 @@ export default function WeighingShiftSummary({
                                         </p>
                                       ) : null}
                                     </td>
+                                    )}
                                     <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weigherName || '—'}</td>
-                                    <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.coreWeight || '—'}</td>
-                                    <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.shellWeight || '—'}</td>
-                                    <td className="px-3 py-2 font-bold text-zinc-900">{formatWeighingNetWeight(entry.row)}</td>
-                                    <td className="px-3 py-2 font-black text-[#ef1b2d]">
-                                      {formatWeighingRowTotalWeight(entry.row)}
-                                    </td>
+                                    {splitPlasticFilmWeights ? (
+                                      <>
+                                        <td className="px-3 py-2 font-bold text-zinc-900">
+                                          {formatWeighingWeightField(entry.row.weight)}
+                                        </td>
+                                        <td className="px-3 py-2 font-semibold text-zinc-700">
+                                          {formatWeighingWeightField(entry.row.shellWeight)}
+                                        </td>
+                                        <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                                          {formatDamagedGoodsRowTotalWeight(entry.row)}
+                                        </td>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.coreWeight || '—'}</td>
+                                        <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.shellWeight || '—'}</td>
+                                        <td className="px-3 py-2 font-bold text-zinc-900">{formatWeighingNetWeight(entry.row)}</td>
+                                        <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                                          {formatWeighingRowTotalWeight(entry.row)}
+                                        </td>
+                                      </>
+                                    )}
                                     <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weighTime || '—'}</td>
+                                    {!config.hideAcceptanceStatus && (
                                     <td className="px-3 py-2">
                                       {entry.row.acceptanceStatus ? (
                                         <span
@@ -820,12 +859,14 @@ export default function WeighingShiftSummary({
                                         <span className="text-zinc-300">—</span>
                                       )}
                                     </td>
+                                    )}
                                     <td
                                       className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600"
                                       title={entry.row.note || undefined}
                                     >
                                       {entry.row.note || '—'}
                                     </td>
+                                    {!config.hideCoreWeightImage && (
                                     <td className="px-3 py-2">
                                       {entry.row.coreWeightImageUrl ? (
                                         <WeighingImageThumbnail
@@ -840,6 +881,8 @@ export default function WeighingShiftSummary({
                                         <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                                       )}
                                     </td>
+                                    )}
+                                    {!config.hideWeightImage && (
                                     <td className="px-3 py-2">
                                       {entry.row.imageUrl ? (
                                         <WeighingImageThumbnail
@@ -852,6 +895,7 @@ export default function WeighingShiftSummary({
                                         <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
                                       )}
                                     </td>
+                                    )}
                                     <td className="px-3 py-2">
                                       <div className="flex items-center justify-center gap-1">
                                         <button
@@ -932,22 +976,43 @@ export default function WeighingShiftSummary({
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3 p-4 text-xs">
-              <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="font-black uppercase tracking-wider text-zinc-400">TL lõi</span>
-                <p className="mt-1 font-bold text-zinc-800">{viewingRow.coreWeight || '—'}</p>
-              </div>
-              <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="font-black uppercase tracking-wider text-zinc-400">TL bì</span>
-                <p className="mt-1 font-bold text-zinc-800">{viewingRow.shellWeight || '—'}</p>
-              </div>
-              <div className="rounded-lg bg-zinc-50 px-3 py-2">
-                <span className="font-black uppercase tracking-wider text-zinc-400">TL nhựa</span>
-                <p className="mt-1 font-bold text-zinc-800">{formatWeighingNetWeight(viewingRow)}</p>
-              </div>
-              <div className="rounded-lg bg-red-50 px-3 py-2">
-                <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
-                <p className="mt-1 font-black text-[#ef1b2d]">{formatWeighingRowTotalWeight(viewingRow)}</p>
-              </div>
+              {splitPlasticFilmWeights ? (
+                <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">KL nhựa</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.weight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">KL màng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.shellWeight)}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-red-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
+                    <p className="mt-1 font-black text-[#ef1b2d]">{formatDamagedGoodsRowTotalWeight(viewingRow)}</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">TL lõi</span>
+                    <p className="mt-1 font-bold text-zinc-800">{viewingRow.coreWeight || '—'}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">TL bì</span>
+                    <p className="mt-1 font-bold text-zinc-800">{viewingRow.shellWeight || '—'}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">TL nhựa</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingNetWeight(viewingRow)}</p>
+                  </div>
+                  <div className="rounded-lg bg-red-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
+                    <p className="mt-1 font-black text-[#ef1b2d]">{formatWeighingRowTotalWeight(viewingRow)}</p>
+                  </div>
+                </>
+              )}
+              {!hideProductFields && (
+              <>
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Mã SP</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.productCode || '—'}</p>
@@ -956,14 +1021,18 @@ export default function WeighingShiftSummary({
                 <span className="font-black uppercase tracking-wider text-zinc-400">Sản phẩm</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.productName || '—'}</p>
               </div>
+              </>
+              )}
               <div className="col-span-2 rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Người cân</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.weigherName || '—'}</p>
               </div>
+              {!config.hideAcceptanceStatus && (
               <div className="rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Nghiệm thu</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.acceptanceStatus || '—'}</p>
               </div>
+              )}
               <div className="col-span-2 rounded-lg bg-zinc-50 px-3 py-2">
                 <span className="font-black uppercase tracking-wider text-zinc-400">Ghi chú</span>
                 <p className="mt-1 font-bold text-zinc-800">{viewingRow.note || '—'}</p>
@@ -1033,7 +1102,14 @@ export default function WeighingShiftSummary({
         onCreate={handleCreateSlipHeader}
       />
 
-      <WeighingSlipPrintBatch slip={printSlip} title={config.printTitle} />
+      <WeighingSlipPrintBatch
+        slip={printSlip}
+        title={config.printTitle}
+        layout={{
+          hideProductFields: config.hideProductFields,
+          splitPlasticFilmWeights: config.splitPlasticFilmWeights
+        }}
+      />
     </div>
   );
 }

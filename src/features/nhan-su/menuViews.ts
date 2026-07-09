@@ -48,10 +48,12 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
   {
     menu: 'business',
     label: 'Kinh doanh',
-    children: [
-      { tab: 'orders', label: 'Đơn hàng' },
-      { tab: 'customers', label: 'Khách hàng' }
-    ]
+    children: [{ tab: 'customers', label: 'Khách hàng' }]
+  },
+  {
+    menu: 'orders',
+    label: 'Đơn hàng',
+    children: [{ tab: 'orders', label: 'Quản lý đơn' }]
   },
   {
     menu: 'factory',
