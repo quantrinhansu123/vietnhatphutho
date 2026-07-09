@@ -920,9 +920,9 @@ export default function App() {
                   onOpenList={() => navigateToTab('weighing-summary-list')}
                 />
               </motion.div>
-            ) : activeTab === 'damaged-goods-report' ? (
+            ) : resolvedTab === 'damaged-goods-report-list' ? (
               <motion.div
-                key="damaged-goods-report"
+                key="damaged-goods-report-list"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
@@ -930,8 +930,22 @@ export default function App() {
               >
                 <WeighingShiftSummary
                   config={DAMAGED_GOODS_SLIP_CONFIG}
-                  onBackToMenu={() => navigateToTab('report-forms')}
-                  defaultShowForm
+                  onBackToMenu={() => navigateToTab('report-lists')}
+                />
+              </motion.div>
+            ) : resolvedTab === 'damaged-goods-report' ? (
+              <motion.div
+                key="damaged-goods-report"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <WeighingReportForm
+                  config={DAMAGED_GOODS_SLIP_CONFIG}
+                  autoOpenNewSlip
+                  onBack={() => navigateToTab('report-forms')}
+                  onOpenList={() => navigateToTab('damaged-goods-report-list')}
                 />
               </motion.div>
             ) : activeTab === 'mixing-report' ? (

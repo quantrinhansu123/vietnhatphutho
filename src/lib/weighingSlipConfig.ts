@@ -7,6 +7,16 @@ export type WeighingSlipConfig = {
   printTitle: string;
   /** Nếu true: Mã SP chỉ chọn theo lệnh SX của ngày+ca+máy. Nếu false: chọn từ danh sách SP. */
   restrictProductsToOrders?: boolean;
+  /** Ẩn CN1/CN2 trong modal Nhập liệu */
+  hideWorkersInEntry?: boolean;
+  /** Ẩn TL lõi / TL bì trong modal Nhập liệu */
+  hideCoreShellWeights?: boolean;
+  /** Ẩn trường Nghiệm thu trong modal Nhập liệu */
+  hideAcceptanceStatus?: boolean;
+  /** Ẩn khối Ảnh lõi trong modal Nhập liệu */
+  hideCoreWeightImage?: boolean;
+  /** Ẩn khối Ảnh cân trong modal Nhập liệu */
+  hideWeightImage?: boolean;
 };
 
 export const DEFAULT_WEIGHING_SLIP_CONFIG: WeighingSlipConfig = {
@@ -26,5 +36,10 @@ export const DAMAGED_GOODS_SLIP_CONFIG: WeighingSlipConfig = {
   summaryTitle: 'Tổng hợp báo cáo hàng hỏng',
   summarySubtitle: 'Theo dõi phiếu hàng hỏng theo từng ca sản xuất',
   printTitle: 'BÁO CÁO HÀNG HỎNG',
-  restrictProductsToOrders: false
+  restrictProductsToOrders: false,
+  hideWorkersInEntry: true,
+  hideCoreShellWeights: true,
+  hideAcceptanceStatus: true,
+  hideCoreWeightImage: true,
+  hideWeightImage: true
 };

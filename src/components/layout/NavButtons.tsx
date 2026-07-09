@@ -90,6 +90,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'weighing-summary': 'report-forms',
   'weighing-summary-list': 'report-lists',
   'damaged-goods-report': 'report-forms',
+  'damaged-goods-report-list': 'report-lists',
   'machine-nvl-report': 'report-forms',
   'machine-nvl-report-list': 'report-lists',
   'machine-downtime-list': 'report-lists',

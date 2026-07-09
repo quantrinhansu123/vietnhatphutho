@@ -30,6 +30,7 @@ type DetailSources = {
   mixingReports: MixingReport[];
   warehouseMovements?: import('../utils/controlBoardShiftSummary').ShiftSummaryWarehouseMovement[];
   weighingRecords: WeighingRecord[];
+  damagedRecords?: WeighingRecord[];
   machineNvlReports?: import('../utils/machineNvlReports').MachineNvlSavedReport[];
 };
 
@@ -64,6 +65,7 @@ export default function ControlBoardShiftDetailModal({
   ca,
   metric,
   sources,
+  summaryRow = null,
   onClose,
   onEditWeighingRecord,
   onDeleteWeighingRecord,
@@ -77,6 +79,7 @@ export default function ControlBoardShiftDetailModal({
   ca: string;
   metric: ShiftSummaryMetric;
   sources: DetailSources;
+  summaryRow?: import('../utils/controlBoardShiftSummary').ControlBoardShiftSummaryRow | null;
   onClose: () => void;
   onEditWeighingRecord?: (recordId: string | number) => void;
   onDeleteWeighingRecord?: (recordId: string | number) => Promise<void>;
@@ -97,9 +100,10 @@ export default function ControlBoardShiftDetailModal({
         metric,
         ngay,
         ca,
-        ...sources
+        ...sources,
+        summaryRow
       }),
-    [metric, ngay, ca, sources]
+    [metric, ngay, ca, sources, summaryRow]
   );
 
   const isWeighingMetric = false;

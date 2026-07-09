@@ -451,7 +451,7 @@ export default function AnalyticsDashboard({ reports, onResetDb, isLoading }: An
                 } space-y-1.5`}>
                   <div className="flex items-center justify-between font-bold text-sm">
                     <span>Hao Hụt Polymer Thực Tế:</span>
-                    <span className="font-mono text-base">{selectedReportDetails.metrics.variancePercent.toFixed(1)}%</span>
+                    <span className="font-mono text-base">{formatNumber(selectedReportDetails.metrics.variancePercent, 1)}%</span>
                   </div>
                   <p className="text-xs font-medium leading-relaxed opacity-90">{selectedReportDetails.metrics.statusMessage}</p>
                 </div>

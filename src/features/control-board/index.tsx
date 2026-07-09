@@ -519,6 +519,7 @@ export function ControlBoardPanel({
       acceptanceReports: shiftSummaryAcceptanceReports,
       warehouseMovements: shiftSummaryWarehouseMovementRefs,
       weighingRecords,
+      damagedRecords,
       machineNvlReports
     }),
     [
@@ -528,6 +529,7 @@ export function ControlBoardPanel({
       shiftSummaryAcceptanceReports,
       shiftSummaryWarehouseMovementRefs,
       weighingRecords,
+      damagedRecords,
       machineNvlReports
     ]
   );

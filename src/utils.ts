@@ -50,13 +50,13 @@ export function computeReportMetrics(report: Omit<ProductionReport, 'id' | 'crea
   } else if (variancePercent < -2 || variancePercent > 8) {
     status = 'error';
     statusMessage = variancePercent < 0 
-      ? `Lỗi hao hụt âm (${variancePercent.toFixed(1)}%): Thành phẩm lớn hơn lượng hạt nhựa nạp vào`
-      : `Lao hụt quá cao (${variancePercent.toFixed(1)}%): Khách hàng hoặc kỹ thuật cần kiểm tra máy`;
+      ? `Lỗi hao hụt âm (${formatNumber(variancePercent, 1)}%): Thành phẩm lớn hơn lượng hạt nhựa nạp vào`
+      : `Lao hụt quá cao (${formatNumber(variancePercent, 1)}%): Khách hàng hoặc kỹ thuật cần kiểm tra máy`;
   } else if (variancePercent < 0 || variancePercent > 3.5) {
     status = 'warning';
     statusMessage = variancePercent < 0 
-      ? `Hao hụt âm nhẹ (${variancePercent.toFixed(1)}%): Kiểm tra hiệu chuẩn cân`
-      : `Hao hụt hơi cao (${variancePercent.toFixed(1)}%): Kiểm tra phế phẩm biên`;
+      ? `Hao hụt âm nhẹ (${formatNumber(variancePercent, 1)}%): Kiểm tra hiệu chuẩn cân`
+      : `Hao hụt hơi cao (${formatNumber(variancePercent, 1)}%): Kiểm tra phế phẩm biên`;
   }
   
   return {
@@ -80,7 +80,7 @@ export function computeReportMetrics(report: Omit<ProductionReport, 'id' | 'crea
 
 export function formatNumber(val: number, fractionDigits: number = 1): string {
   return new Intl.NumberFormat('vi-VN', {
-    minimumFractionDigits: fractionDigits,
+    minimumFractionDigits: 0,
     maximumFractionDigits: fractionDigits
   }).format(val);
 }
@@ -93,7 +93,8 @@ export function formatMoney(val: number, fractionDigits: number = 0): string {
   const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const sign = rounded < 0 ? '-' : '';
   if (fractionDigits > 0) {
-    return `${sign}${withDots},${decPart}`;
+    const trimmedDec = decPart.replace(/0+$/, '');
+    return trimmedDec ? `${sign}${withDots},${trimmedDec}` : `${sign}${withDots}`;
   }
   return `${sign}${withDots}`;
 }

@@ -177,7 +177,7 @@ export function formatWeighingRowTotalWeight(
   const total = parseWeighingWeight(row.weight);
   if (total === null) return '—';
   const formatted = new Intl.NumberFormat('vi-VN', {
-    minimumFractionDigits: 3,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(total);
   return trimTrailingDecimalZeros(formatted);
@@ -200,7 +200,7 @@ export function formatWeighingNetWeight(
   const net = computeWeighingNetWeight(row);
   if (net === null) return '—';
   const formatted = new Intl.NumberFormat('vi-VN', {
-    minimumFractionDigits: 3,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(net);
   return trimTrailingDecimalZeros(formatted);

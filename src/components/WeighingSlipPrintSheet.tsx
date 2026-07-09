@@ -45,7 +45,7 @@ function formatPrintWeight(value: string) {
     return trimmed && trimmed !== '—' ? trimmed : '—';
   }
   const formatted = new Intl.NumberFormat('vi-VN', {
-    minimumFractionDigits: 3,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(num);
   return trimTrailingDecimalZeros(formatted);
@@ -62,7 +62,7 @@ function parsePrintWeight(value: string): number | null {
 function formatPrintWeightNumber(value: number | null) {
   if (value === null || !Number.isFinite(value)) return '—';
   const formatted = new Intl.NumberFormat('vi-VN', {
-    minimumFractionDigits: 3,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(value);
   return trimTrailingDecimalZeros(formatted);

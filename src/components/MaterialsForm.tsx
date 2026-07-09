@@ -77,17 +77,17 @@ export default function MaterialsForm({ data, onChange }: MaterialsFormProps) {
                 id="bar-virgin-plastic"
                 className="bg-emerald-500 transition-all duration-300 flex items-center justify-center text-[10px] font-extrabold text-slate-950"
                 style={{ width: `${virginPercent}%` }}
-                title={`Virgin: ${virginPercent.toFixed(1)}%`}
+                title={`Virgin: ${formatNumber(virginPercent, 1)}%`}
               >
-                {virginPercent >= 15 ? `${virginPercent.toFixed(0)}%` : ''}
+                {virginPercent >= 15 ? `${formatNumber(virginPercent, 0)}%` : ''}
               </div>
               <div 
                 id="bar-recycled-plastic"
                 className="bg-amber-400 transition-all duration-300 flex items-center justify-center text-[10px] font-extrabold text-slate-950"
                 style={{ width: `${recycledPercent}%` }}
-                title={`Recycled: ${recycledPercent.toFixed(1)}%`}
+                title={`Recycled: ${formatNumber(recycledPercent, 1)}%`}
               >
-                {recycledPercent >= 15 ? `${recycledPercent.toFixed(0)}%` : ''}
+                {recycledPercent >= 15 ? `${formatNumber(recycledPercent, 0)}%` : ''}
               </div>
             </>
           ) : (

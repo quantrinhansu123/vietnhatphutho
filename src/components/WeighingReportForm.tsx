@@ -1908,34 +1908,38 @@ export default function WeighingReportForm({
                   ))}
                 </select>
               </label>
-              <label className="space-y-1">
-                <span className={`flex items-center gap-1 ${modalLabelClass}`}>
-                  <Users className="h-3.5 w-3.5 text-[#ef1b2d]" />
-                  CN 1
-                </span>
-                <StaffSelect
-                  value={newRow.worker1}
-                  onChange={value => setNewRow(prev => ({ ...prev, worker1: value }))}
-                  staff={staff}
-                  isLoading={isLoadingStaff}
-                  placeholder="CN 1"
-                  className={modalInputClass}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className={`flex items-center gap-1 ${modalLabelClass}`}>
-                  <Users className="h-3.5 w-3.5 text-[#ef1b2d]" />
-                  CN 2
-                </span>
-                <StaffSelect
-                  value={newRow.worker2}
-                  onChange={value => setNewRow(prev => ({ ...prev, worker2: value }))}
-                  staff={staff}
-                  isLoading={isLoadingStaff}
-                  placeholder="CN 2"
-                  className={modalInputClass}
-                />
-              </label>
+              {!config.hideWorkersInEntry && (
+                <>
+                  <label className="space-y-1">
+                    <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                      <Users className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                      CN 1
+                    </span>
+                    <StaffSelect
+                      value={newRow.worker1}
+                      onChange={value => setNewRow(prev => ({ ...prev, worker1: value }))}
+                      staff={staff}
+                      isLoading={isLoadingStaff}
+                      placeholder="CN 1"
+                      className={modalInputClass}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                      <Users className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                      CN 2
+                    </span>
+                    <StaffSelect
+                      value={newRow.worker2}
+                      onChange={value => setNewRow(prev => ({ ...prev, worker2: value }))}
+                      staff={staff}
+                      isLoading={isLoadingStaff}
+                      placeholder="CN 2"
+                      className={modalInputClass}
+                    />
+                  </label>
+                </>
+              )}
               <label className="col-span-2 space-y-1">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <Factory className="h-3.5 w-3.5 text-[#ef1b2d]" />
@@ -2052,7 +2056,11 @@ export default function WeighingReportForm({
                   <p className="text-[11px] font-bold text-rose-600">{productsError}</p>
                 )}
               </label>
-              <div className="col-span-2 grid grid-cols-3 gap-1.5">
+              <div
+                className={`col-span-2 grid gap-1.5 ${
+                  config.hideCoreShellWeights ? 'grid-cols-1' : 'grid-cols-3'
+                }`}
+              >
                 <label className="space-y-1">
                   <span className={modalCompactLabelClass}>Tổng trọng lượng</span>
                   <input
@@ -2062,45 +2070,51 @@ export default function WeighingReportForm({
                     placeholder="8,0"
                   />
                 </label>
-                <label className="space-y-1">
-                  <span className={modalCompactLabelClass}>TL lõi</span>
-                  <input
-                    value={newRow.coreWeight ?? ''}
-                    onChange={e => setNewRow(prev => ({ ...prev, coreWeight: e.target.value }))}
-                    className={modalInputClass}
-                    placeholder="0,5"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={modalCompactLabelClass}>TL bì</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={newRow.shellWeight ?? ''}
-                    onChange={e =>
-                      setNewRow(prev => ({ ...prev, shellWeight: sanitizeDecimalTyping(e.target.value) }))
-                    }
-                    className={modalInputClass}
-                    placeholder={DEFAULT_SHELL_WEIGHT}
-                  />
-                </label>
+                {!config.hideCoreShellWeights && (
+                  <>
+                    <label className="space-y-1">
+                      <span className={modalCompactLabelClass}>TL lõi</span>
+                      <input
+                        value={newRow.coreWeight ?? ''}
+                        onChange={e => setNewRow(prev => ({ ...prev, coreWeight: e.target.value }))}
+                        className={modalInputClass}
+                        placeholder="0,5"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className={modalCompactLabelClass}>TL bì</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={newRow.shellWeight ?? ''}
+                        onChange={e =>
+                          setNewRow(prev => ({ ...prev, shellWeight: sanitizeDecimalTyping(e.target.value) }))
+                        }
+                        className={modalInputClass}
+                        placeholder={DEFAULT_SHELL_WEIGHT}
+                      />
+                    </label>
+                  </>
+                )}
               </div>
-              <label className="space-y-1">
-                <span className={modalLabelClass}>Nghiệm thu</span>
-                <select
-                  value={newRow.acceptanceStatus ?? ''}
-                  onChange={e => setNewRow(prev => ({ ...prev, acceptanceStatus: e.target.value }))}
-                  className={modalInputClass}
-                >
-                  <option value="">Chọn...</option>
-                  {ACCEPTANCE_STATUS_OPTIONS.map(option => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1">
+              {!config.hideAcceptanceStatus && (
+                <label className="space-y-1">
+                  <span className={modalLabelClass}>Nghiệm thu</span>
+                  <select
+                    value={newRow.acceptanceStatus ?? ''}
+                    onChange={e => setNewRow(prev => ({ ...prev, acceptanceStatus: e.target.value }))}
+                    className={modalInputClass}
+                  >
+                    <option value="">Chọn...</option>
+                    {ACCEPTANCE_STATUS_OPTIONS.map(option => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className={`space-y-1 ${config.hideAcceptanceStatus ? 'col-span-2' : ''}`}>
                 <span className={modalLabelClass}>Ghi chú</span>
                 <input
                   type="text"
@@ -2110,68 +2124,72 @@ export default function WeighingReportForm({
                   placeholder="Ghi chú lần cân"
                 />
               </label>
-              <div className="space-y-1">
-                <span className={`flex items-center gap-1 ${modalLabelClass}`}>
-                  <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
-                  Ảnh lõi
-                </span>
-                <input
-                  ref={coreWeightCameraInputRef}
-                  {...CAMERA_IMAGE_INPUT_PROPS}
-                  className="hidden"
-                  onChange={e => {
-                    const file = e.target.files?.[0] || null;
-                    e.target.value = '';
-                    setCoreWeightImageFile(file);
-                    if (file) handleCoreImageUpload(file);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => coreWeightCameraInputRef.current?.click()}
-                  disabled={isUploadingImage}
-                  className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <ImagePlus className="h-4 w-4" />
-                  {coreWeightImageFile || newRow.coreWeightImageUrl ? 'Chụp lại' : 'Chụp ảnh'}
-                </button>
-                {(coreWeightImageFile || newRow.coreWeightImageUrl) && (
-                  <p className="truncate text-[10px] font-semibold text-zinc-500">
-                    {newRow.coreWeightImageUrl ? 'Đã upload' : coreWeightImageFile?.name}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <span className={`flex items-center gap-1 ${modalLabelClass}`}>
-                  <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
-                  Ảnh cân
-                </span>
-                <input
-                  ref={weightCameraInputRef}
-                  {...CAMERA_IMAGE_INPUT_PROPS}
-                  className="hidden"
-                  onChange={e => {
-                    const file = e.target.files?.[0] || null;
-                    e.target.value = '';
-                    setImageFile(file);
-                    if (file) handleWeightImageUpload(file);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => weightCameraInputRef.current?.click()}
-                  disabled={isUploadingImage}
-                  className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <ImagePlus className="h-4 w-4" />
-                  {imageFile || newRow.imageUrl ? 'Chụp lại' : 'Chụp ảnh'}
-                </button>
-                {(imageFile || newRow.imageUrl) && (
-                  <p className="truncate text-[10px] font-semibold text-zinc-500">
-                    {newRow.imageUrl ? 'Đã upload' : imageFile?.name}
-                  </p>
-                )}
-              </div>
+              {!config.hideCoreWeightImage && (
+                <div className="space-y-1">
+                  <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                    <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                    Ảnh lõi
+                  </span>
+                  <input
+                    ref={coreWeightCameraInputRef}
+                    {...CAMERA_IMAGE_INPUT_PROPS}
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0] || null;
+                      e.target.value = '';
+                      setCoreWeightImageFile(file);
+                      if (file) handleCoreImageUpload(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => coreWeightCameraInputRef.current?.click()}
+                    disabled={isUploadingImage}
+                    className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                    {coreWeightImageFile || newRow.coreWeightImageUrl ? 'Chụp lại' : 'Chụp ảnh'}
+                  </button>
+                  {(coreWeightImageFile || newRow.coreWeightImageUrl) && (
+                    <p className="truncate text-[10px] font-semibold text-zinc-500">
+                      {newRow.coreWeightImageUrl ? 'Đã upload' : coreWeightImageFile?.name}
+                    </p>
+                  )}
+                </div>
+              )}
+              {!config.hideWeightImage && (
+                <div className="space-y-1">
+                  <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                    <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                    Ảnh cân
+                  </span>
+                  <input
+                    ref={weightCameraInputRef}
+                    {...CAMERA_IMAGE_INPUT_PROPS}
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0] || null;
+                      e.target.value = '';
+                      setImageFile(file);
+                      if (file) handleWeightImageUpload(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => weightCameraInputRef.current?.click()}
+                    disabled={isUploadingImage}
+                    className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                    {imageFile || newRow.imageUrl ? 'Chụp lại' : 'Chụp ảnh'}
+                  </button>
+                  {(imageFile || newRow.imageUrl) && (
+                    <p className="truncate text-[10px] font-semibold text-zinc-500">
+                      {newRow.imageUrl ? 'Đã upload' : imageFile?.name}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
             </div>
             <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-3 py-2.5">

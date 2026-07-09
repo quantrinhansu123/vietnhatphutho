@@ -1,6 +1,6 @@
 import type { AcceptanceReport } from '../components/AcceptanceReportForm';
 import type { WeighingRecord } from './weighingRecords';
-import { getWeighingDataRows, sumWeighingRowTotalWeight } from './weighingRecords';
+import { getWeighingDataRows, parseWeighingWeight, sumWeighingRowTotalWeight } from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
 import { sumMachineNvlDauCaReportTotal, sumMachineNvlCuoiCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import {
@@ -10,7 +10,6 @@ import {
   type ShiftOption,
   type ShiftSetting
 } from './shiftSettings';
-import { formatNumber } from '../utils';
 
 export type ShiftSummaryWarehouseMovement = {
   id: string;
@@ -53,9 +52,11 @@ export type ControlBoardShiftSummaryRow = {
   khoiLuongHangThucTe: number;
   hangHong: number;
   khoiLuongNpl: number;
+  khoiLuongLoi: number;
   tonDauCa: number;
   tonCuoiCa: number;
   tongVatLieu: number;
+  chenhLech: number;
 };
 
 type ProductRef = {
@@ -82,6 +83,7 @@ type SummaryBucket = {
   khoiLuongHangThucTe: number;
   hangHong: number;
   khoiLuongNpl: number;
+  khoiLuongLoi: number;
   tonDauCa: number;
   tonCuoiCa: number;
 };
@@ -145,6 +147,7 @@ function getOrCreateBucket(
     khoiLuongHangThucTe: 0,
     hangHong: 0,
     khoiLuongNpl: 0,
+    khoiLuongLoi: 0,
     tonDauCa: 0,
     tonCuoiCa: 0
   };
@@ -294,6 +297,17 @@ export function buildControlBoardShiftSummary(input: {
   }
 
   // Không lấy Khối lượng hàng TT từ phiếu cân ca nữa (phieu_can_dinh_ki).
+  // KL lõi — lấy từ phiếu cân ca (trọng lượng lõi).
+  for (const record of getWeighingDataRows(input.weighingRecords ?? [])) {
+    const ngay = parseIsoDate(record.productionDate || record.reportDate);
+    if (!ngay || !inRange(ngay)) continue;
+    const bucket = getOrCreateBucket(map, ngay, record.shiftName, shiftOptions);
+    if (!bucket) continue;
+    const coreWeight = parseWeighingWeight(record.coreWeight);
+    if (coreWeight !== null && coreWeight > 0) {
+      bucket.khoiLuongLoi += coreWeight;
+    }
+  }
 
   for (const record of getWeighingDataRows(input.damagedRecords ?? [])) {
     const ngay = parseIsoDate(record.productionDate || record.reportDate);
@@ -327,6 +341,10 @@ export function buildControlBoardShiftSummary(input: {
       const khoiLuongNpl = roundNormWeight(bucket.khoiLuongNpl);
       const tonDauCa = roundNormWeight(bucket.tonDauCa);
       const tonCuoiCa = roundNormWeight(bucket.tonCuoiCa);
+      const khoiLuongHangThucTe = roundNormWeight(bucket.khoiLuongHangThucTe);
+      const hangHong = roundNormWeight(bucket.hangHong);
+      const khoiLuongLoi = roundNormWeight(bucket.khoiLuongLoi);
+      const tongVatLieu = roundNormWeight(khoiLuongNpl + tonDauCa);
       return {
         key: `${bucket.ngay}|${bucket.ca}`,
         ngay: bucket.ngay,
@@ -334,12 +352,14 @@ export function buildControlBoardShiftSummary(input: {
         slHang: bucket.slHang,
         khoiLuongHang: roundNormWeight(bucket.khoiLuongHang),
         slHangThucTe: bucket.slHangThucTe,
-        khoiLuongHangThucTe: roundNormWeight(bucket.khoiLuongHangThucTe),
-        hangHong: roundNormWeight(bucket.hangHong),
+        khoiLuongHangThucTe,
+        hangHong,
         khoiLuongNpl,
+        khoiLuongLoi,
         tonDauCa,
         tonCuoiCa,
-        tongVatLieu: roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa)
+        tongVatLieu,
+        chenhLech: roundNormWeight(tongVatLieu - khoiLuongHangThucTe - tonCuoiCa - hangHong + khoiLuongLoi)
       };
     })
     .sort((a, b) => compareSummaryRows(a, b, shiftOptions));
@@ -347,7 +367,10 @@ export function buildControlBoardShiftSummary(input: {
 
 export function formatShiftSummaryNumber(value: number, fractionDigits = 2) {
   if (!Number.isFinite(value) || value === 0) return '-';
-  return formatNumber(value, fractionDigits);
+  return new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: fractionDigits
+  }).format(value);
 }
 
 export function sumShiftSummaryColumn(rows: ControlBoardShiftSummaryRow[], key: keyof ControlBoardShiftSummaryRow) {

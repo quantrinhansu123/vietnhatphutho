@@ -176,6 +176,12 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'weighing-summary-list'
   },
   {
+    title: 'Danh sách báo cáo hàng hỏng',
+    desc: 'Xem, sửa và in các phiếu hàng hỏng đã lưu theo ngày, ca và máy.',
+    icon: PackageX,
+    tab: 'damaged-goods-report-list'
+  },
+  {
     title: 'Danh sách báo cáo sản lượng',
     desc: 'Xem, sửa và in các phiếu báo cáo sản lượng đã lưu.',
     icon: ClipboardList,
@@ -350,6 +356,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'weighing-summary': { group: 'Sản xuất', sub: 'Bảng báo cáo Cân' },
   'weighing-summary-list': { group: 'Sản xuất', sub: 'DS phiếu cân' },
   'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
+  'damaged-goods-report-list': { group: 'Sản xuất', sub: 'DS báo cáo hàng hư' },
   'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },
   'mixing-report-list': { group: 'Sản xuất', sub: 'DS phiếu trộn' },
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
