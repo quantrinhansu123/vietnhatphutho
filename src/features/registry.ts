@@ -20,6 +20,7 @@ export type TableId =
   | 'bao_cao_nghiem_thu'
   | 'bao_cao_may_nvl_ton'
   | 'phieu_bao_dung_may'
+  | 'nhat_ky_chay_may'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -220,6 +221,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appTab: 'machine-downtime-report | machine-downtime-list',
     appLines: 'src/components/MachineDowntimeReportPanel.tsx',
     components: ['src/components/MachineDowntimeReportPanel.tsx', 'src/components/MachineDowntimePrintSheet.tsx', 'src/components/icons/MachineDowntimeIcon.tsx'],
+    utils: []
+  },
+  nhat_ky_chay_may: {
+    table: 'nhat_ky_chay_may',
+    label: 'Nhật ký chạy máy (BM-SX-11)',
+    sql: ['supabase-nhat-ky-chay-may.sql'],
+    apiPrefix: '/api/nhat-ky-chay-may',
+    serverLines: '6217+ (sau /api/phieu-bao-dung-may)',
+    appTab: 'machine-run-log | machine-run-log-list',
+    appLines: 'src/components/MachineRunLogPanel.tsx',
+    components: ['src/components/MachineRunLogPanel.tsx', 'src/components/MachineRunLogPrintSheet.tsx'],
     utils: []
   },
   control_board: {

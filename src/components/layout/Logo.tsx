@@ -1,10 +1,10 @@
 import React from 'react';
-import vietNhatLogoNewUrl from '../../../logo-new.png';
+import { vietNhatLogoUrl } from './constants';
 
 export function VietNhatLogo({ className = '' }: { className?: string }) {
   return (
     <img
-      src={vietNhatLogoNewUrl}
+      src={vietNhatLogoUrl}
       alt="Công ty Việt Nhật - Đà Nẵng"
       className={`brand-logo h-9 md:h-10 w-auto max-h-full object-contain ${className}`}
     />

@@ -2,7 +2,7 @@
 import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Settings, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale,
-  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3
+  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { pathFromTab } from '../routes';
@@ -93,6 +93,12 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Ghi nhận thời gian dừng, lý do và số cuộn ảnh hưởng theo ca.',
     icon: MachineDowntimeIcon,
     tab: 'machine-downtime-report'
+  },
+  {
+    title: 'Nhật ký chạy máy',
+    desc: 'Thợ chính ghi mỗi 2 giờ: tốc độ, nhiệt độ, cuộn ra và hiệu suất ca.',
+    icon: Activity,
+    tab: 'machine-run-log'
   },
   {
     title: 'Báo cáo hàng hỏng',
@@ -204,6 +210,12 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Xem các phiếu báo dừng máy đã lưu và lịch sử gần nhất.',
     icon: MachineDowntimeIcon,
     tab: 'machine-downtime-list'
+  },
+  {
+    title: 'Danh sách nhật ký chạy máy',
+    desc: 'Xem các nhật ký chạy máy BM-SX-11 đã lưu và in lại.',
+    icon: Activity,
+    tab: 'machine-run-log-list'
   }
 ];
 
@@ -367,6 +379,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
   'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },
   'machine-downtime-list': { group: 'Sản xuất', sub: 'DS máy dừng' },
+  'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
+  'machine-run-log-list': { group: 'Sản xuất', sub: 'DS nhật ký chạy máy' },
   'production-plan-history': { group: 'Sản xuất', sub: 'Kế hoạch SX' },
   'materials': { group: 'CSVC & Kho', sub: 'Kho NVL' },
   'materials-inventory': { group: 'CSVC & Kho', sub: 'Kho NVL' },

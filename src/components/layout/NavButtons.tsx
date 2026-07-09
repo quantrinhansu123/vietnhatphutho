@@ -95,6 +95,8 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'machine-nvl-report-list': 'report-lists',
   'machine-downtime-list': 'report-lists',
   'machine-downtime-report': 'report-forms',
+  'machine-run-log': 'report-forms',
+  'machine-run-log-list': 'report-lists',
   'acceptance-report': 'report-forms'
 };
 

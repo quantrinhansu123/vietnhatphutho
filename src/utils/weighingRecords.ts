@@ -170,6 +170,30 @@ export function sumDamagedGoodsRowWeight(
   return (parseWeighingWeight(row.weight) ?? 0) + (parseWeighingWeight(row.shellWeight) ?? 0);
 }
 
+export function sumDamagedGoodsRowPlasticWeight(
+  row: Pick<WeighingRecord, 'weight'>
+): number {
+  return parseWeighingWeight(row.weight) ?? 0;
+}
+
+export function sumDamagedGoodsRowFilmWeight(
+  row: Pick<WeighingRecord, 'shellWeight'>
+): number {
+  return parseWeighingWeight(row.shellWeight) ?? 0;
+}
+
+export function formatDamagedGoodsRowPlasticWeight(
+  row: Pick<WeighingRecord, 'weight'>
+): string {
+  return formatWeighingWeightField(row.weight);
+}
+
+export function formatDamagedGoodsRowFilmWeight(
+  row: Pick<WeighingRecord, 'shellWeight'>
+): string {
+  return formatWeighingWeightField(row.shellWeight);
+}
+
 function formatWeighingWeightNumber(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
   const formatted = new Intl.NumberFormat('vi-VN', {

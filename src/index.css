@@ -375,6 +375,10 @@ input[type="number"] {
   display: none;
 }
 
+.order-print-sheet {
+  display: none;
+}
+
 .production-plan-qr-print-sheet {
   display: none;
 }
@@ -383,6 +387,11 @@ input[type="number"] {
   @page {
     size: A4;
     margin: 10mm;
+  }
+
+  @page order-print-page {
+    size: A4 landscape;
+    margin: 8mm;
   }
 
   @page mixing-report-page {
@@ -496,6 +505,182 @@ input[type="number"] {
     margin: 1.5mm 0 0;
     font-size: 8pt;
     font-weight: 700;
+  }
+
+  .order-print-sheet,
+  .order-print-sheet * {
+    visibility: visible !important;
+  }
+
+  .order-print-sheet {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    z-index: 9999;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+    page: order-print-page;
+  }
+
+  .order-print-page {
+    width: 100%;
+    max-width: 277mm;
+    margin: 0 auto;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Times New Roman", serif;
+    font-size: 11pt;
+    line-height: 1.35;
+  }
+
+  .order-print-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-top: 2mm;
+    border-bottom: 1.5px solid #111111;
+    padding-bottom: 3mm;
+  }
+
+  .order-print-brand {
+    display: flex;
+    align-items: center;
+    gap: 4mm;
+    min-width: 0;
+  }
+
+  .order-print-logo {
+    height: 14mm;
+    width: auto;
+    max-width: 42mm;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  .order-print-company {
+    font-weight: 700;
+    font-size: 12pt;
+    text-transform: uppercase;
+  }
+
+  .order-print-subtitle {
+    font-size: 10pt;
+    font-style: italic;
+    margin-top: 1mm;
+  }
+
+  .order-print-form-meta {
+    text-align: right;
+    font-size: 10pt;
+  }
+
+  .order-print-form-code {
+    font-weight: 700;
+    color: #1f4e79;
+  }
+
+  .order-print-form-version {
+    margin-top: 1mm;
+  }
+
+  .order-print-title {
+    text-align: center;
+    font-weight: 700;
+    font-size: 16pt;
+    margin: 6mm 0 4mm;
+  }
+
+  .order-print-info-grid {
+    border: 1px solid #222222;
+    border-bottom: 0;
+  }
+
+  .order-print-info-row {
+    display: grid;
+    grid-template-columns: 40mm 1fr;
+    border-bottom: 1px solid #222222;
+  }
+
+  .order-print-info-row--full {
+    grid-template-columns: 40mm 1fr;
+  }
+
+  .order-print-info-label {
+    padding: 2mm 2mm;
+    border-right: 1px solid #222222;
+    background: #f5f5f5;
+    font-weight: 700;
+  }
+
+  .order-print-info-value {
+    padding: 2mm 2mm;
+    min-height: 7mm;
+  }
+
+  .order-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0;
+    table-layout: fixed;
+  }
+
+  .order-print-table th,
+  .order-print-table td {
+    border: 1px solid #222222;
+    padding: 1.6mm 1.8mm;
+    vertical-align: top;
+    word-wrap: break-word;
+  }
+
+  .order-print-table thead th {
+    background: #f5f5f5;
+    color: #111111;
+    font-weight: 700;
+    font-size: 9.5pt;
+    text-align: center;
+  }
+
+  .order-print-table td.center {
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .order-print-product-name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.25;
+    max-height: 2.5em;
+  }
+
+  .order-print-total-label {
+    text-align: center;
+    font-weight: 700;
+    background: #f5f5f5;
+  }
+
+  .order-print-total-value {
+    font-weight: 700;
+  }
+
+  .order-print-signatures {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8mm;
+    margin-top: 10mm;
+    text-align: center;
+  }
+
+  .order-print-signature-title {
+    font-weight: 700;
+  }
+
+  .order-print-signature-hint {
+    font-style: italic;
+    font-size: 10pt;
+    margin-top: 12mm;
   }
 
   .production-plan-qr-print-sheet,
@@ -2331,6 +2516,92 @@ input[type="number"] {
 }
 
 .machine-downtime-print-signatures span {
+  display: block;
+  margin-top: 18mm;
+  font-style: italic;
+  font-weight: 400;
+  color: #444444;
+  white-space: nowrap;
+}
+
+.machine-run-log-print-form-code {
+  margin-left: auto;
+  text-align: right;
+  font-size: 10pt;
+}
+
+.machine-run-log-print-form-code p {
+  margin: 0;
+  font-weight: 700;
+  color: #1f3864;
+}
+
+.machine-run-log-print-form-code span {
+  font-size: 9pt;
+  color: #666666;
+}
+
+.machine-run-log-print-subtitle {
+  margin: 1mm 0 3mm;
+  text-align: center;
+  font-size: 10pt;
+  font-style: italic;
+  color: #444444;
+}
+
+.machine-run-log-print-info-table th {
+  width: 18%;
+  text-align: left;
+  background: #eef3fa;
+}
+
+.machine-run-log-print-info-table td {
+  width: 32%;
+}
+
+.machine-run-log-print-table th:nth-child(1) { width: 4%; }
+.machine-run-log-print-table th:nth-child(2) { width: 10%; }
+.machine-run-log-print-table th:nth-child(3) { width: 10%; }
+.machine-run-log-print-table th:nth-child(4),
+.machine-run-log-print-table th:nth-child(5) { width: 10%; }
+.machine-run-log-print-table th:nth-child(6) { width: 9%; }
+.machine-run-log-print-table th:nth-child(7) { width: 9%; }
+.machine-run-log-print-table th:nth-child(8) { width: 24%; }
+.machine-run-log-print-table th:nth-child(9) { width: 14%; }
+
+.machine-run-log-print-summary-table th {
+  width: 32%;
+  text-align: left;
+  background: #eef3fa;
+}
+
+.machine-run-log-print-summary-table td:nth-child(2) {
+  width: 12%;
+  font-weight: 700;
+}
+
+.machine-run-log-print-summary-table td:nth-child(3) {
+  font-size: 9pt;
+  font-style: italic;
+  color: #555555;
+}
+
+.machine-run-log-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4mm;
+  margin-top: 10mm;
+  text-align: center;
+  font-size: 10pt;
+}
+
+.machine-run-log-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.machine-run-log-print-signatures span {
   display: block;
   margin-top: 18mm;
   font-style: italic;

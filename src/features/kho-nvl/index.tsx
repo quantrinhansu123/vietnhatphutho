@@ -54,6 +54,41 @@ export function isMaterialKgUnit(unit: string) {
   return normalized === 'kg';
 }
 
+function parseDecimalParts(raw: string) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed || trimmed === '-') return null;
+  // Accept both "1.234,56" (vi-VN) and "1234.56" (dot decimal).
+  // If there's a comma, treat comma as decimal separator and dots as thousands separators.
+  // If no comma, keep dot as decimal separator (do NOT strip it).
+  const normalized = trimmed.includes(',')
+    ? trimmed.replace(/\./g, '').replace(',', '.')
+    : trimmed.replace(/\s+/g, '');
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return null;
+  const [intPart, fracPart = ''] = normalized.split('.');
+  return { intPart, fracPart };
+}
+
+function sumDecimalStrings(values: string[]) {
+  const parts = values.map(parseDecimalParts).filter(Boolean) as Array<{ intPart: string; fracPart: string }>;
+  if (parts.length === 0) return '0';
+  const maxScale = parts.reduce((max, item) => Math.max(max, item.fracPart.length), 0);
+  const sum = parts.reduce((acc, item) => {
+    const scaled = BigInt(item.intPart + item.fracPart.padEnd(maxScale, '0'));
+    return acc + scaled;
+  }, 0n);
+  const rawSum = sum.toString().padStart(maxScale + 1, '0');
+  const intPart = rawSum.slice(0, rawSum.length - maxScale) || '0';
+  const fracPart = maxScale > 0 ? rawSum.slice(rawSum.length - maxScale) : '';
+  return fracPart ? `${intPart}.${fracPart}` : intPart;
+}
+
+function formatKgNoRounding(value: string) {
+  if (!value) return '0';
+  const [intPart, fracPart = ''] = value.split('.');
+  const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return fracPart ? `${withSeparators},${fracPart}` : withSeparators;
+}
+
 export function computeClosingStock(opening: string, inbound: string, outbound: string): string {
   const openingVal = parseInventoryNumber(opening);
   if (openingVal === null) return '-';
@@ -1205,10 +1240,10 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     });
   }, [materials, normalizedSearch, selectedUnit]);
 
-  const totalWeightAll = materials.reduce((sum, material) => {
-    const value = parseInventoryNumber(material.totalWeight);
-    return Number.isFinite(value) ? sum + value : sum;
-  }, 0);
+  const totalWeightAllText = useMemo(() => {
+    const sum = sumDecimalStrings(materials.map(material => material.totalWeight));
+    return formatKgNoRounding(sum);
+  }, [materials]);
 
   const handleDownloadTotalWeightTemplate = () => {
     downloadBulkMaterialTotalWeightTemplate(
@@ -1466,7 +1501,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
             {[
               ['Mã NVL', materials.length],
-              ['Tổng kg', formatNumber(totalWeightAll, 4)],
+              ['Tổng kg', totalWeightAllText],
               ['Đơn vị', units.length > 0 ? units.length - 1 : 0]
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">

@@ -245,6 +245,8 @@ export default function MixingReportListView({
   const [formModalMode, setFormModalMode] = useState<'create' | 'edit'>('create');
   const [pendingEditReport, setPendingEditReport] = useState<MixingReport | null>(null);
   const [deletingId, setDeletingId] = useState('');
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [reloadTick, setReloadTick] = useState(0);
   const [printReports, setPrintReports] = useState<MixingReport[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
@@ -309,6 +311,7 @@ export default function MixingReportListView({
         await loadReports(filters, machines);
         if (!cancelled) {
           setViewingReportId(null);
+          setSelectedIds(new Set());
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Không thể tải báo cáo.');
@@ -465,10 +468,59 @@ export default function MixingReportListView({
       if (viewingReportId === id) setViewingReportId(null);
       setMessage('Đã xóa báo cáo phối trộn.');
       await loadReports(filters, machines);
+      setSelectedIds(prev => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (err: any) {
       setError(err.message || 'Không thể xóa báo cáo.');
     } finally {
       setDeletingId('');
+    }
+  };
+
+  const allReportIds = useMemo(() => reports.map(report => report.id).filter(Boolean), [reports]);
+  const selectedCount = selectedIds.size;
+  const allSelected = allReportIds.length > 0 && selectedIds.size === allReportIds.length;
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(() => (allSelected ? new Set() : new Set(allReportIds)));
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Xóa ${ids.length} báo cáo phối trộn đã chọn?`)) return;
+    setError('');
+    setMessage('');
+    setBulkDeleting(true);
+    try {
+      const res = await fetch('/api/bao-cao-phoi-tron/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể xóa nhiều báo cáo.');
+      const deleted = Number(data.deleted ?? ids.length);
+      setMessage(deleted > 0 ? `Đã xóa ${deleted} báo cáo phối trộn.` : 'Không có báo cáo nào được xóa.');
+      setSelectedIds(new Set());
+      await loadReports(filters, machines);
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa nhiều báo cáo.');
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -655,7 +707,28 @@ export default function MixingReportListView({
 
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-100 px-4 py-3">
-          <p className="text-sm font-black text-zinc-950">Danh sách phiếu phối trộn</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-black text-zinc-950">Danh sách phiếu phối trộn</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={selectedCount === 0 || bulkDeleting || isLoading}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Xoá đã chọn ({selectedCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                disabled={selectedCount === 0 || bulkDeleting || isLoading}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Bỏ chọn
+              </button>
+            </div>
+          </div>
         </div>
         {isLoading ? (
           <div className="px-3 py-8 text-center font-bold text-zinc-400">
@@ -681,6 +754,15 @@ export default function MixingReportListView({
                   <table className="min-w-full text-left text-xs">
                     <thead className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
                       <tr>
+                        <th className="w-10 px-3 py-2 text-center font-black">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={toggleSelectAll}
+                            aria-label="Chọn tất cả"
+                            className="h-4 w-4 accent-[#ef1b2d]"
+                          />
+                        </th>
                         <th className="px-3 py-2 font-black">Ca</th>
                         <th className="px-3 py-2 font-black">Lần</th>
                         <th className="px-3 py-2 font-black">Giờ</th>
@@ -700,6 +782,17 @@ export default function MixingReportListView({
                             key={`${report.id}-${round.session}`}
                             className="transition hover:bg-emerald-50/40"
                           >
+                            {round.session === rounds[0].session ? (
+                              <td className="whitespace-nowrap px-3 py-2 text-center" rowSpan={rounds.length}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(report.id)}
+                                  onChange={() => toggleSelected(report.id)}
+                                  aria-label="Chọn phiếu"
+                                  className="h-4 w-4 accent-[#ef1b2d]"
+                                />
+                              </td>
+                            ) : null}
                             <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-800">
                               {report.ca || '-'}
                             </td>
@@ -716,9 +809,11 @@ export default function MixingReportListView({
                             <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]">
                               {round.actualTotal !== null ? formatOptionalNumber(round.actualTotal) : '-'}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-center">
-                              {renderReportActions(report)}
-                            </td>
+                            {round.session === rounds[0].session ? (
+                              <td className="whitespace-nowrap px-3 py-2 text-center" rowSpan={rounds.length}>
+                                {renderReportActions(report)}
+                              </td>
+                            ) : null}
                           </tr>
                         ));
                       })}

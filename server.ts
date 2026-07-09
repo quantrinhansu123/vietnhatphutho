@@ -42,6 +42,8 @@ const SUPABASE_MACHINE_NVL_REPORTS_TABLE =
   process.env.SUPABASE_MACHINE_NVL_REPORTS_TABLE || 'bao_cao_may_nvl_ton';
 const SUPABASE_MACHINE_DOWNTIME_TABLE =
   process.env.SUPABASE_MACHINE_DOWNTIME_TABLE || 'phieu_bao_dung_may';
+const SUPABASE_MACHINE_RUN_LOG_TABLE =
+  process.env.SUPABASE_MACHINE_RUN_LOG_TABLE || 'nhat_ky_chay_may';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Đà Nẵng';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -1304,22 +1306,22 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
     record.ma_amis = parseMaterialText(source.amisCode ?? source.ma_amis) || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'totalWeight') || Object.prototype.hasOwnProperty.call(source, 'tong_trong_luong')) {
-    record.tong_trong_luong = parseOptionalMaterialNumber(source.totalWeight ?? source.tong_trong_luong);
+    record.tong_trong_luong = parseOptionalMaterialDecimalText(source.totalWeight ?? source.tong_trong_luong);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'rollWidth') || Object.prototype.hasOwnProperty.call(source, 'kho_cuon')) {
-    record.kho_cuon = parseOptionalMaterialNumber(source.rollWidth ?? source.kho_cuon);
+    record.kho_cuon = parseOptionalMaterialDecimalText(source.rollWidth ?? source.kho_cuon);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'rollLength') || Object.prototype.hasOwnProperty.call(source, 'chieu_dai_cuon')) {
-    record.chieu_dai_cuon = parseOptionalMaterialNumber(source.rollLength ?? source.chieu_dai_cuon);
+    record.chieu_dai_cuon = parseOptionalMaterialDecimalText(source.rollLength ?? source.chieu_dai_cuon);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'coreWeight') || Object.prototype.hasOwnProperty.call(source, 'trong_luong_loi')) {
-    record.trong_luong_loi = parseOptionalMaterialNumber(source.coreWeight ?? source.trong_luong_loi);
+    record.trong_luong_loi = parseOptionalMaterialDecimalText(source.coreWeight ?? source.trong_luong_loi);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'bagWeight') || Object.prototype.hasOwnProperty.call(source, 'trong_luong_tui')) {
-    record.trong_luong_tui = parseOptionalMaterialNumber(source.bagWeight ?? source.trong_luong_tui);
+    record.trong_luong_tui = parseOptionalMaterialDecimalText(source.bagWeight ?? source.trong_luong_tui);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'plasticWeight') || Object.prototype.hasOwnProperty.call(source, 'trong_luong_nhua')) {
-    record.trong_luong_nhua = parseOptionalMaterialNumber(source.plasticWeight ?? source.trong_luong_nhua);
+    record.trong_luong_nhua = parseOptionalMaterialDecimalText(source.plasticWeight ?? source.trong_luong_nhua);
   }
 
   return { record };
@@ -2240,6 +2242,141 @@ function machineDowntimeWriteError(error: { code?: string; message?: string }) {
   return `Không thể lưu phiếu báo dừng máy. ${error.message || ''}`.trim();
 }
 
+function generateMachineRunLogCode() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const time =
+    String(now.getHours()).padStart(2, '0') +
+    String(now.getMinutes()).padStart(2, '0') +
+    String(now.getSeconds()).padStart(2, '0');
+  return `NKC-${date}-${time}`;
+}
+
+function parseMachineRunLogLine(source: unknown, index: number) {
+  if (!source || typeof source !== 'object') return null;
+  const record = source as Record<string, unknown>;
+  const thoi_diem_ghi = parseDowntimeTime(record.thoi_diem_ghi ?? record.logTime);
+  const nhiet_do_gia_nhiet = parseMixingNumber(record.nhiet_do_gia_nhiet ?? record.temperature);
+  const toc_do_thuc = parseMixingNumber(record.toc_do_thuc ?? record.actualSpeed);
+  const toc_do_dinh_muc = parseMixingNumber(record.toc_do_dinh_muc ?? record.standardSpeed);
+  const so_cuon_ra = parseMixingNumber(record.so_cuon_ra ?? record.rollsProduced);
+  const thoi_gian_dung_phut = parseMixingNumber(record.thoi_gian_dung_phut ?? record.downtimeMinutes);
+  const ly_do = String(record.ly_do ?? record.reason ?? '').trim();
+  const nguoi_ghi = String(record.nguoi_ghi ?? record.recordedBy ?? '').trim();
+
+  if (
+    !thoi_diem_ghi &&
+    nhiet_do_gia_nhiet === null &&
+    toc_do_thuc === null &&
+    so_cuon_ra === null &&
+    thoi_gian_dung_phut === null &&
+    !ly_do
+  ) {
+    return null;
+  }
+
+  return {
+    stt: Number(record.stt ?? index + 1) || index + 1,
+    thoi_diem_ghi,
+    nhiet_do_gia_nhiet,
+    toc_do_thuc,
+    toc_do_dinh_muc,
+    so_cuon_ra: so_cuon_ra ?? 0,
+    thoi_gian_dung_phut: thoi_gian_dung_phut ?? 0,
+    ly_do,
+    nguoi_ghi
+  };
+}
+
+function parseMachineRunLogBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const ngay = String(source.ngay ?? '').trim();
+  const ca = String(source.ca ?? '').trim();
+  const ma_may = String(source.ma_may ?? source.machineCode ?? '').trim();
+  const ten_may = String(source.ten_may ?? source.machineName ?? '').trim();
+
+  if (!ngay) return { error: 'Vui lòng chọn ngày sản xuất.' };
+  if (!ca) return { error: 'Vui lòng chọn ca.' };
+  if (!ma_may && !ten_may) return { error: 'Vui lòng chọn máy.' };
+
+  const rawLines = source.chi_tiet ?? source.lines ?? source.items;
+  const list = Array.isArray(rawLines) ? rawLines : [];
+  const chi_tiet = list
+    .map((line, index) => parseMachineRunLogLine(line, index))
+    .filter((line): line is NonNullable<typeof line> => Boolean(line));
+
+  if (chi_tiet.length === 0) {
+    return { error: 'Vui lòng nhập ít nhất một dòng nhật ký chạy máy.' };
+  }
+
+  for (const line of chi_tiet) {
+    if (!line.thoi_diem_ghi) {
+      return { error: `Dòng ${line.stt}: vui lòng nhập thời điểm ghi (giờ:phút).` };
+    }
+  }
+
+  const gio_chay_kh = parseMixingNumber(source.gio_chay_kh ?? source.plannedRunHours) ?? 0;
+  const tong_cuon_ra =
+    Math.round(chi_tiet.reduce((sum, line) => sum + (line.so_cuon_ra ?? 0), 0) * 100) / 100;
+  const tong_thoi_gian_dung_phut =
+    Math.round(chi_tiet.reduce((sum, line) => sum + (line.thoi_gian_dung_phut ?? 0), 0) * 100) / 100;
+
+  const plannedMinutes = gio_chay_kh * 60;
+  const thoi_gian_chay_thuc_te_phut =
+    Math.round(Math.max(0, plannedMinutes - tong_thoi_gian_dung_phut) * 100) / 100;
+  const hieu_suat_thoi_gian_pct =
+    plannedMinutes > 0 ? Math.round((thoi_gian_chay_thuc_te_phut / plannedMinutes) * 10000) / 100 : null;
+
+  const speedRatios = chi_tiet
+    .filter(line => (line.toc_do_dinh_muc ?? 0) > 0 && (line.toc_do_thuc ?? 0) > 0)
+    .map(line => (line.toc_do_thuc as number) / (line.toc_do_dinh_muc as number));
+  const toc_do_dat_dinh_muc_pct =
+    speedRatios.length > 0
+      ? Math.round((speedRatios.reduce((sum, ratio) => sum + ratio, 0) / speedRatios.length) * 10000) / 100
+      : null;
+
+  const nang_suat_cuon_gio =
+    thoi_gian_chay_thuc_te_phut > 0
+      ? Math.round((tong_cuon_ra / (thoi_gian_chay_thuc_te_phut / 60)) * 100) / 100
+      : null;
+
+  const so_phieu =
+    String(source.so_phieu ?? source.slipCode ?? '').trim() || generateMachineRunLogCode();
+
+  return {
+    record: {
+      so_phieu,
+      ngay,
+      ca,
+      ma_may: ma_may || null,
+      ten_may: ten_may || null,
+      lenh_sx: String(source.lenh_sx ?? source.productionOrder ?? '').trim() || null,
+      ma_san_pham: String(source.ma_san_pham ?? source.productCode ?? '').trim() || null,
+      tho_chinh: String(source.tho_chinh ?? source.mainOperator ?? '').trim() || null,
+      tho_phu: String(source.tho_phu ?? source.assistantOperator ?? '').trim() || null,
+      gio_chay_kh,
+      tong_cuon_ra,
+      tong_thoi_gian_dung_phut,
+      thoi_gian_chay_thuc_te_phut,
+      hieu_suat_thoi_gian_pct,
+      toc_do_dat_dinh_muc_pct,
+      nang_suat_cuon_gio,
+      ghi_chu: String(source.ghi_chu ?? source.note ?? '').trim() || null,
+      chi_tiet
+    }
+  };
+}
+
+function machineRunLogWriteError(error: { code?: string; message?: string }) {
+  if (isMissingTableError(error)) {
+    return `Bảng ${SUPABASE_MACHINE_RUN_LOG_TABLE} chưa tồn tại. Hãy chạy supabase-nhat-ky-chay-may.sql.`;
+  }
+  if (isMissingColumnError(error)) {
+    return `Bảng ${SUPABASE_MACHINE_RUN_LOG_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-nhat-ky-chay-may.sql.`;
+  }
+  return `Không thể lưu nhật ký chạy máy. ${error.message || ''}`.trim();
+}
+
 function parseAcceptanceNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
   const num = Number(String(value).replace(',', '.'));
@@ -2413,6 +2550,16 @@ function parseOptionalMaterialNumber(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function parseOptionalMaterialDecimalText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw || raw === '-') return null;
+  const normalized = raw.replace(',', '.');
+  // Validate to avoid sending garbage to Postgres numeric columns.
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null;
+  return normalized;
+}
+
 function parseMaterialText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -2550,12 +2697,12 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
     ma_npl: code,
     ten_npl: name,
     don_vi: parseMaterialText(source.unit) || null,
-    tong_trong_luong: parseOptionalMaterialNumber(source.totalWeight),
-    trong_luong_nhua: parseOptionalMaterialNumber(source.plasticWeight),
-    trong_luong_tui: parseOptionalMaterialNumber(source.bagWeight),
-    trong_luong_loi: parseOptionalMaterialNumber(source.coreWeight),
-    kho_cuon: parseOptionalMaterialNumber(source.rollWidth),
-    chieu_dai_don_vi: parseOptionalMaterialNumber(source.unitLength),
+    tong_trong_luong: parseOptionalMaterialDecimalText(source.totalWeight),
+    trong_luong_nhua: parseOptionalMaterialDecimalText(source.plasticWeight),
+    trong_luong_tui: parseOptionalMaterialDecimalText(source.bagWeight),
+    trong_luong_loi: parseOptionalMaterialDecimalText(source.coreWeight),
+    kho_cuon: parseOptionalMaterialDecimalText(source.rollWidth),
+    chieu_dai_don_vi: parseOptionalMaterialDecimalText(source.unitLength),
     ton_dau_ky: parseOptionalMaterialNumber(source.openingStock),
     nhap_trong_ky: parseOptionalMaterialNumber(source.inbound),
     xuat_trong_ky: parseOptionalMaterialNumber(source.outbound)
@@ -3515,7 +3662,7 @@ function isBundledAssetPath(urlPath: string) {
 async function startServer() {
   const app = createApp();
   const server = http.createServer(app);
-  const PORT = 3002;
+  const PORT = Number(process.env.PORT) || 3001;
   const distPath = path.join(process.cwd(), 'dist');
 
   if (process.env.NODE_ENV !== 'production') {
@@ -5857,6 +6004,37 @@ export function createApp() {
     }
   });
 
+  app.post('/api/bao-cao-phoi-tron/bulk-delete', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const idsRaw = Array.isArray(body.ids) ? body.ids : [];
+      const ids = [...new Set(idsRaw.map(id => String(id || '').trim()).filter(Boolean))];
+      if (ids.length === 0) {
+        return res.status(400).json({ error: 'Thiếu danh sách ID báo cáo.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MIXING_REPORTS_TABLE)
+        .delete()
+        .in('id', ids)
+        .select('id');
+
+      if (error) {
+        console.error('Supabase mixing report bulk delete error:', error);
+        return res.status(500).json({ error: mixingReportWriteError(error) });
+      }
+
+      const deleted = Array.isArray(data) ? data.length : 0;
+      return res.json({ success: true, deleted });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhiều báo cáo phối trộn.' });
+    }
+  });
+
   app.get('/api/bao-cao-may-nvl-ton', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -5988,6 +6166,37 @@ export function createApp() {
     }
   });
 
+  app.post('/api/bao-cao-may-nvl-ton/bulk-delete', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const idsRaw = Array.isArray(body.ids) ? body.ids : [];
+      const ids = [...new Set(idsRaw.map(id => String(id || '').trim()).filter(Boolean))];
+      if (ids.length === 0) {
+        return res.status(400).json({ error: 'Thiếu danh sách ID báo cáo.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MACHINE_NVL_REPORTS_TABLE)
+        .delete()
+        .in('id', ids)
+        .select('id');
+
+      if (error) {
+        console.error('Supabase machine NVL report bulk delete error:', error);
+        return res.status(500).json({ error: machineNvlReportWriteError(error) });
+      }
+
+      const deleted = Array.isArray(data) ? data.length : 0;
+      return res.json({ success: true, deleted });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhiều báo cáo NVL tồn theo máy.' });
+    }
+  });
+
   app.get('/api/phieu-bao-dung-may', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -6074,6 +6283,95 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa phiếu báo dừng máy.' });
+    }
+  });
+
+  app.get('/api/nhat-ky-chay-may', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 300) : 100;
+
+      let query = supabase
+        .from(SUPABASE_MACHINE_RUN_LOG_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (ngay) query = query.eq('ngay', ngay);
+      if (maMay) query = query.eq('ma_may', maMay);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase machine run log query error:', error);
+        return res.status(500).json({ error: machineRunLogWriteError(error) });
+      }
+
+      return res.json({ logs: data || [], total: data?.length || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải nhật ký chạy máy.' });
+    }
+  });
+
+  app.post('/api/nhat-ky-chay-may', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseMachineRunLogBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MACHINE_RUN_LOG_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase machine run log insert error:', error);
+        return res.status(500).json({ error: machineRunLogWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, log: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu nhật ký chạy máy.' });
+    }
+  });
+
+  app.delete('/api/nhat-ky-chay-may/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID nhật ký.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MACHINE_RUN_LOG_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Supabase machine run log delete error:', error);
+        return res.status(500).json({ error: machineRunLogWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy nhật ký.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhật ký chạy máy.' });
     }
   });
 
@@ -6256,6 +6554,37 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo sản lượng.' });
+    }
+  });
+
+  app.post('/api/bao-cao-nghiem-thu/bulk-delete', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const idsRaw = Array.isArray(body.ids) ? body.ids : [];
+      const ids = [...new Set(idsRaw.map(id => String(id || '').trim()).filter(Boolean))];
+      if (ids.length === 0) {
+        return res.status(400).json({ error: 'Thiếu danh sách ID báo cáo.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_ACCEPTANCE_REPORTS_TABLE)
+        .delete()
+        .in('id', ids)
+        .select('id');
+
+      if (error) {
+        console.error('Supabase acceptance report bulk delete error:', error);
+        return res.status(500).json({ error: acceptanceReportWriteError(error) });
+      }
+
+      const deleted = Array.isArray(data) ? data.length : 0;
+      return res.json({ success: true, deleted });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhiều báo cáo sản lượng.' });
     }
   });
 

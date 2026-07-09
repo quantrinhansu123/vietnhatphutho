@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120">
+  <defs>
+    <style>
+      .t1{font:700 34px "Times New Roman",serif; letter-spacing:0.5px;}
+      .t2{font:700 16px "Times New Roman",serif;}
+      .box{fill:#ffffff; stroke:#111111; stroke-width:4;}
+    </style>
+  </defs>
+  <rect x="6" y="6" width="408" height="108" rx="10" class="box"/>
+  <text x="210" y="55" text-anchor="middle" class="t1">VIÆT NH¬T</text>
+  <text x="210" y="84" text-anchor="middle" class="t2">À N´NG</text>
+</svg>

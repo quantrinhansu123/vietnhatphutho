@@ -48,6 +48,7 @@ export type MachineNvlReportLine = {
   code: string;
   name: string;
   unit: string;
+  unitWeightKg: string;
   previousQuantity: string;
   inMachineQuantity: string;
   inMixerQuantity: string;
@@ -68,6 +69,7 @@ const emptyMachineNvlLine = (): MachineNvlReportLine => ({
   code: '',
   name: '',
   unit: 'kg',
+  unitWeightKg: '',
   previousQuantity: '',
   inMachineQuantity: '',
   inMixerQuantity: '',
@@ -76,6 +78,46 @@ const emptyMachineNvlLine = (): MachineNvlReportLine => ({
   quantity: '',
   note: ''
 });
+
+function isKgUnitValue(unit: string) {
+  const normalized = String(unit ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
+}
+
+function parseMachineNvlNumber(value: string) {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resolveMachineNvlLineQty(line: Pick<MachineNvlReportLine, 'inMachineQuantity' | 'inMixerQuantity' | 'unblendedQuantity'>) {
+  return parseMachineNvlNumber(line.inMachineQuantity) + parseMachineNvlNumber(line.inMixerQuantity) + parseMachineNvlNumber(line.unblendedQuantity);
+}
+
+function resolveMachineNvlLineActualQty(line: Pick<MachineNvlReportLine, 'quantity'>) {
+  return parseMachineNvlNumber(line.quantity);
+}
+
+function resolveMachineNvlLineKg(line: Pick<MachineNvlReportLine, 'unit' | 'unitWeightKg' | 'inMachineQuantity' | 'inMixerQuantity' | 'unblendedQuantity'>) {
+  const qty = resolveMachineNvlLineQty(line);
+  if (qty <= 0) return 0;
+  if (isKgUnitValue(line.unit)) return qty;
+  const factor = parseMachineNvlNumber(line.unitWeightKg);
+  return factor > 0 ? qty * factor : 0;
+}
+
+function resolveMachineNvlLineActualKg(
+  line: Pick<MachineNvlReportLine, 'unit' | 'unitWeightKg' | 'quantity'>
+) {
+  const qty = resolveMachineNvlLineActualQty(line);
+  if (qty <= 0) return 0;
+  if (isKgUnitValue(line.unit)) return qty;
+  const factor = parseMachineNvlNumber(line.unitWeightKg);
+  return factor > 0 ? qty * factor : 0;
+}
 
 export function machineNvlReportMatchesMachine(
   report: Pick<MachineNvlSavedReport, 'maMay' | 'tenMay'>,
@@ -169,7 +211,7 @@ export function formatMachineNvlQuantityValue(value: number | null | undefined) 
 }
 
 export const MACHINE_NVL_DAU_CA_GRID =
-  'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_96px_96px_96px_104px_96px_minmax(96px,1fr)_40px]';
+  'grid-cols-[52px_minmax(130px,1.1fr)_minmax(160px,2fr)_64px_96px_96px_96px_96px_104px_96px_minmax(96px,1fr)_104px_40px]';
 
 const machineNvlLineMobileQtyClass =
   'machine-nvl-line-mobile-input h-9 w-full min-w-0 rounded-md border border-zinc-200 px-0.5 text-center font-mono text-sm font-black tracking-tight outline-none focus:border-[#ef1b2d]';
@@ -197,6 +239,7 @@ export function savedMachineNvlLineToFormLine(line: MachineNvlSavedLine): Machin
     code: line.maNvl,
     name: line.tenNvl,
     unit: line.donVi || 'kg',
+    unitWeightKg: line.trongLuongQuyDoiKg !== null ? String(line.trongLuongQuyDoiKg) : '',
     previousQuantity: formatMachineNvlQuantityValue(line.soLuongTonCaTruoc),
     inMachineQuantity: formatMachineNvlQuantityValue(line.soLuongTrongMay),
     inMixerQuantity: formatMachineNvlQuantityValue(line.soLuongTrongBonTron),
@@ -436,36 +479,52 @@ export function MachineNvlReportPanel({
         return {
           ...line,
           name: material.name,
-          unit: material.unit === '-' ? 'kg' : material.unit
+          unit: material.unit === '-' ? 'kg' : material.unit,
+          unitWeightKg:
+            line.unitWeightKg.trim() ? line.unitWeightKg : material.totalWeight === '-' ? '' : material.totalWeight
         };
       });
       return changed ? next : prev;
     });
   }, [materials]);
 
-  const totalQuantity = lines.reduce((sum, line) => {
-    const value =
-      (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-      (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-      (Number(line.unblendedQuantity.replace(',', '.')) || 0);
-    return sum + (Number.isFinite(value) ? value : 0);
-  }, 0);
+  const totalWeightKg = lines.reduce((sum, line) => sum + resolveMachineNvlLineActualKg(line), 0);
 
   const updateLine = (key: string, updates: Partial<MachineNvlReportLine>) => {
-    setLines(prev => prev.map(line => (line.key === key ? { ...line, ...updates } : line)));
+    setLines(prev =>
+      prev.map(line => {
+        if (line.key !== key) return line;
+        const next = { ...line, ...updates };
+        const touchesStorageFields = Boolean(
+          updates.inMachineQuantity !== undefined ||
+            updates.inMixerQuantity !== undefined ||
+            updates.unblendedQuantity !== undefined
+        );
+        if (touchesStorageFields && !line.quantity.trim() && !next.quantity.trim()) {
+          const totalQty = resolveMachineNvlLineQty(next);
+          if (totalQty > 0) {
+            next.quantity = formatMachineNvlQuantityValue(totalQty);
+          }
+        }
+        return next;
+      })
+    );
   };
 
   const selectMaterial = (key: string, material: MaterialRow | null) => {
     if (!material) {
-      updateLine(key, { code: '', name: '', unit: '' });
+      updateLine(key, { code: '', name: '', unit: '', unitWeightKg: '' });
       return;
     }
     const codeKey = normalizeProductCodeKey(material.code);
     const prevQty = isDauCaTab && codeKey ? previousShiftQtyMap.get(codeKey) : undefined;
+    const unitRaw = material.unit === '-' ? 'kg' : material.unit;
+    const autoUnitWeightKg = material.totalWeight === '-' ? '' : material.totalWeight;
     updateLine(key, {
       code: material.code,
       name: material.name,
-      unit: material.unit === '-' ? 'kg' : material.unit,
+      unit: unitRaw,
+      unitWeightKg: autoUnitWeightKg,
       previousQuantity:
         isDauCaTab && prevQty !== undefined ? formatMachineNvlQuantityValue(prevQty) : ''
     });
@@ -480,6 +539,10 @@ export function MachineNvlReportPanel({
           ma_nvl: line.code.trim(),
           ten_nvl: line.name.trim(),
           don_vi: line.unit.trim() || 'kg',
+          trong_luong_quy_doi_kg: (() => {
+            const raw = Number(String(line.unitWeightKg || '').replace(',', '.'));
+            return Number.isFinite(raw) && raw > 0 ? raw : null;
+          })(),
           ghi_chu: line.note.trim()
         };
         const inMachineQty = Number(line.inMachineQuantity.replace(',', '.'));
@@ -494,10 +557,12 @@ export function MachineNvlReportPanel({
         if (Number.isFinite(unblendedQty) && unblendedQty >= 0) {
           row.so_luong_nl_chua_tron = unblendedQty;
         }
-        row.so_luong_ton =
+        const computedQty =
           (Number.isFinite(inMachineQty) ? inMachineQty : 0) +
           (Number.isFinite(inMixerQty) ? inMixerQty : 0) +
           (Number.isFinite(unblendedQty) ? unblendedQty : 0);
+        const actualQty = Number(String(line.quantity || '').replace(',', '.'));
+        row.so_luong_ton = Number.isFinite(actualQty) && actualQty >= 0 ? actualQty : computedQty;
         if (isDauCaTab) {
           const prevQty = Number(line.previousQuantity.replace(',', '.'));
           if (Number.isFinite(prevQty) && prevQty >= 0) {
@@ -623,7 +688,7 @@ export function MachineNvlReportPanel({
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-right">
             <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Tổng tồn</p>
-            <p className="text-lg font-black text-emerald-900">{formatNumber(totalQuantity)} kg</p>
+            <p className="text-lg font-black text-emerald-900">{formatNumber(totalWeightKg)} kg</p>
           </div>
         </div>
         <div className="mt-2 flex items-center gap-1 sm:mt-3 sm:gap-2">
@@ -754,12 +819,14 @@ export function MachineNvlReportPanel({
                 <span>Mã NVL</span>
                 <span>Tên NVL</span>
                 <span>ĐVT</span>
+                <span>Tổng kg NVL</span>
                 <span>Tồn máy</span>
                 <span>Tồn bồn</span>
                 <span>Chưa trộn</span>
                 <span>{isDauCaTab ? 'Tổng tồn đầu ca' : 'Tổng tồn cuối ca'}</span>
                 <span>SL tồn thực tế</span>
                 <span>Ghi chú</span>
+                <span>Trọng lượng</span>
                 <span></span>
               </div>
               {lines.length === 0 ? (
@@ -834,6 +901,18 @@ export function MachineNvlReportPanel({
                         <span className="machine-nvl-line-mobile-label">ĐVT</span>
                         <input value={line.unit} readOnly className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-0.5 text-center text-[10px] font-semibold text-zinc-700 outline-none" />
                       </label>
+                      <label className="col-span-4 block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">Trọng lượng (kg/đvt)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.0001"
+                          value={line.unitWeightKg}
+                          onChange={event => updateLine(line.key, { unitWeightKg: event.target.value })}
+                          className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-1.5 text-[10px] font-bold outline-none focus:border-[#ef1b2d]"
+                          placeholder={line.unit.trim().toLowerCase() === 'kg' ? '—' : 'VD: 0.238'}
+                        />
+                      </label>
                       <label className="block min-w-0 space-y-0.5">
                         <span className="machine-nvl-line-mobile-label">Tồn máy</span>
                         <input type="number" min="0" step="0.01" value={line.inMachineQuantity} onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
@@ -849,13 +928,20 @@ export function MachineNvlReportPanel({
                       <label className="block min-w-0 space-y-0.5">
                         <span className="machine-nvl-line-mobile-label">Tổng</span>
                         <input
-                          value={formatMachineNvlQuantityValue(
-                            (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                              (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                              (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                          )}
+                          value={formatMachineNvlQuantityValue(resolveMachineNvlLineQty(line))}
                           readOnly
                           className={machineNvlLineMobileQtyReadonlyClass}
+                        />
+                      </label>
+                      <label className="block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">SL tồn thực tế</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.quantity}
+                          onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                          className={machineNvlLineMobileQtyClass}
                         />
                       </label>
                       <label className="col-span-4 block min-w-0 space-y-0.5">
@@ -865,6 +951,14 @@ export function MachineNvlReportPanel({
                           onChange={event => updateLine(line.key, { note: event.target.value })}
                           rows={2}
                           className="machine-nvl-line-mobile-input min-h-[40px] w-full min-w-0 resize-y rounded-md border border-zinc-200 px-1 py-1 text-[10px] font-semibold outline-none focus:border-[#ef1b2d]"
+                        />
+                      </label>
+                      <label className="col-span-4 block min-w-0 space-y-0.5">
+                        <span className="machine-nvl-line-mobile-label">Trọng lượng (kg)</span>
+                        <input
+                          value={formatMachineNvlQuantityValue(resolveMachineNvlLineActualKg(line))}
+                          readOnly
+                          className={machineNvlLineMobileQtyReadonlyClass}
                         />
                       </label>
                     </div>
@@ -906,6 +1000,16 @@ export function MachineNvlReportPanel({
                     <input
                       type="number"
                       min="0"
+                      step="0.0001"
+                      value={line.unitWeightKg}
+                      onChange={event => updateLine(line.key, { unitWeightKg: event.target.value })}
+                      className="min-w-0 h-10 rounded-lg border border-zinc-200 px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d]"
+                      placeholder={line.unit.trim().toLowerCase() === 'kg' ? '—' : 'kg/đvt'}
+                      title="Kg quy đổi cho 1 đơn vị (vd m2 → kg/m2)"
+                    />
+                    <input
+                      type="number"
+                      min="0"
                       step="0.01"
                       value={line.inMachineQuantity}
                       onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })}
@@ -928,11 +1032,7 @@ export function MachineNvlReportPanel({
                       className={machineNvlLineDesktopQtyClass}
                     />
                     <input
-                      value={formatMachineNvlQuantityValue(
-                        (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                          (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                          (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                      )}
+                      value={formatMachineNvlQuantityValue(resolveMachineNvlLineQty(line))}
                       readOnly
                       className={machineNvlLineDesktopQtyReadonlyClass}
                     />
@@ -940,19 +1040,20 @@ export function MachineNvlReportPanel({
                       type="number"
                       min="0"
                       step="0.01"
-                      value={formatMachineNvlQuantityValue(
-                        (Number(line.inMachineQuantity.replace(',', '.')) || 0) +
-                          (Number(line.inMixerQuantity.replace(',', '.')) || 0) +
-                          (Number(line.unblendedQuantity.replace(',', '.')) || 0)
-                      )}
-                      readOnly
-                      className={machineNvlLineDesktopQtyReadonlyClass}
+                      value={line.quantity}
+                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                      className={machineNvlLineDesktopQtyClass}
                     />
                     <textarea
                       value={line.note}
                       onChange={event => updateLine(line.key, { note: event.target.value })}
                       rows={2}
                       className="min-h-[40px] min-w-0 w-full resize-y rounded-lg border border-zinc-200 px-3 py-2 text-sm font-semibold outline-none focus:border-[#ef1b2d]"
+                    />
+                    <input
+                      value={formatMachineNvlQuantityValue(resolveMachineNvlLineActualKg(line))}
+                      readOnly
+                      className={machineNvlLineDesktopQtyReadonlyClass}
                     />
                     <button type="button" onClick={() => setLines(prev => prev.length > 1 ? prev.filter(item => item.key !== line.key) : prev)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] hover:bg-red-50" title="Xóa dòng">
                       <Trash2 className="h-4 w-4" />

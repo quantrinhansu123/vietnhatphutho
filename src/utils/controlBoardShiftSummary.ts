@@ -1,6 +1,13 @@
 import type { AcceptanceReport } from '../components/AcceptanceReportForm';
 import type { WeighingRecord } from './weighingRecords';
-import { getWeighingDataRows, parseWeighingWeight, sumWeighingRowTotalWeight, sumDamagedGoodsRowWeight } from './weighingRecords';
+import {
+  getWeighingDataRows,
+  parseWeighingWeight,
+  sumDamagedGoodsRowFilmWeight,
+  sumDamagedGoodsRowPlasticWeight,
+  sumDamagedGoodsRowWeight,
+  sumWeighingRowTotalWeight
+} from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
 import { sumMachineNvlDauCaReportTotal, sumMachineNvlCuoiCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import {
@@ -51,6 +58,8 @@ export type ControlBoardShiftSummaryRow = {
   slHangThucTe: number;
   khoiLuongHangThucTe: number;
   hangHong: number;
+  hangHongNhua: number;
+  hangHongMang: number;
   khoiLuongNpl: number;
   khoiLuongLoi: number;
   tonDauCa: number;
@@ -82,6 +91,8 @@ type SummaryBucket = {
   slHangThucTe: number;
   khoiLuongHangThucTe: number;
   hangHong: number;
+  hangHongNhua: number;
+  hangHongMang: number;
   khoiLuongNpl: number;
   khoiLuongLoi: number;
   tonDauCa: number;
@@ -146,6 +157,8 @@ function getOrCreateBucket(
     slHangThucTe: 0,
     khoiLuongHangThucTe: 0,
     hangHong: 0,
+    hangHongNhua: 0,
+    hangHongMang: 0,
     khoiLuongNpl: 0,
     khoiLuongLoi: 0,
     tonDauCa: 0,
@@ -281,6 +294,8 @@ export function buildControlBoardShiftSummary(input: {
     // Số lượng hàng TT — chỉ từ báo cáo sản lượng (bao_cao_nghiem_thu)
     if (report.so_luong !== null && Number.isFinite(report.so_luong)) {
       bucket.slHangThucTe += report.so_luong;
+      // KL lõi = Số lượng cuộn thực tế × 1kg
+      bucket.khoiLuongLoi += report.so_luong;
     }
 
     // Khối lượng hàng TT — lấy từ báo cáo sản lượng: Số lượng * định mức kg của sản phẩm
@@ -297,17 +312,7 @@ export function buildControlBoardShiftSummary(input: {
   }
 
   // Không lấy Khối lượng hàng TT từ phiếu cân ca nữa (phieu_can_dinh_ki).
-  // KL lõi — lấy từ phiếu cân ca (trọng lượng lõi).
-  for (const record of getWeighingDataRows(input.weighingRecords ?? [])) {
-    const ngay = parseIsoDate(record.productionDate || record.reportDate);
-    if (!ngay || !inRange(ngay)) continue;
-    const bucket = getOrCreateBucket(map, ngay, record.shiftName, shiftOptions);
-    if (!bucket) continue;
-    const coreWeight = parseWeighingWeight(record.coreWeight);
-    if (coreWeight !== null && coreWeight > 0) {
-      bucket.khoiLuongLoi += coreWeight;
-    }
-  }
+  // KL lõi không lấy từ phiếu cân ca; lấy từ SL cuộn thực tế (báo cáo sản lượng) × 1kg.
 
   for (const record of getWeighingDataRows(input.damagedRecords ?? [])) {
     const ngay = parseIsoDate(record.productionDate || record.reportDate);
@@ -316,6 +321,8 @@ export function buildControlBoardShiftSummary(input: {
     if (!bucket) continue;
     // Hàng hỏng — tổng trọng lượng từ báo cáo hàng hỏng (bao_cao_hang_hong)
     bucket.hangHong += sumDamagedGoodsRowWeight(record);
+    bucket.hangHongNhua += sumDamagedGoodsRowPlasticWeight(record);
+    bucket.hangHongMang += sumDamagedGoodsRowFilmWeight(record);
   }
 
   for (const movement of input.warehouseMovements ?? []) {
@@ -343,6 +350,8 @@ export function buildControlBoardShiftSummary(input: {
       const tonCuoiCa = roundNormWeight(bucket.tonCuoiCa);
       const khoiLuongHangThucTe = roundNormWeight(bucket.khoiLuongHangThucTe);
       const hangHong = roundNormWeight(bucket.hangHong);
+      const hangHongNhua = roundNormWeight(bucket.hangHongNhua);
+      const hangHongMang = roundNormWeight(bucket.hangHongMang);
       const khoiLuongLoi = roundNormWeight(bucket.khoiLuongLoi);
       const tongVatLieu = roundNormWeight(khoiLuongNpl + tonDauCa);
       return {
@@ -354,6 +363,8 @@ export function buildControlBoardShiftSummary(input: {
         slHangThucTe: bucket.slHangThucTe,
         khoiLuongHangThucTe,
         hangHong,
+        hangHongNhua,
+        hangHongMang,
         khoiLuongNpl,
         khoiLuongLoi,
         tonDauCa,

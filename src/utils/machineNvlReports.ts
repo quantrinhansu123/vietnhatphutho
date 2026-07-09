@@ -5,6 +5,8 @@ export type MachineNvlSavedLine = {
   maNvl: string;
   tenNvl: string;
   donVi: string;
+  /** Kg quy đổi cho 1 đơn vị (vd m2 → kg/m2). Nếu null thì chỉ tính khi đơn vị là kg. */
+  trongLuongQuyDoiKg: number | null;
   soLuongTonCaTruoc: number | null;
   soLuongTrongMay: number | null;
   soLuongTrongBonTron: number | null;
@@ -79,11 +81,22 @@ export function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport
             unblendedRaw === null || unblendedRaw === undefined || unblendedRaw === ''
               ? null
               : Number(String(unblendedRaw).replace(',', '.'));
+          const unitWeightRaw =
+            detail.trong_luong_quy_doi_kg ??
+            detail.trong_luong_quy_doi ??
+            detail.trong_luong ??
+            detail.kg_per_unit ??
+            detail.unitWeightKg;
+          const unitWeightParsed =
+            unitWeightRaw === null || unitWeightRaw === undefined || unitWeightRaw === ''
+              ? null
+              : Number(String(unitWeightRaw).replace(',', '.'));
           return {
             stt: Number(detail.stt ?? index + 1) || index + 1,
             maNvl,
             tenNvl,
             donVi: String(detail.don_vi ?? detail.unit ?? 'kg').trim() || 'kg',
+            trongLuongQuyDoiKg: Number.isFinite(unitWeightParsed) && unitWeightParsed! > 0 ? unitWeightParsed! : null,
             soLuongTonCaTruoc: Number.isFinite(prevParsed) ? prevParsed : null,
             soLuongTrongMay: Number.isFinite(inMachineParsed) ? inMachineParsed : null,
             soLuongTrongBonTron: Number.isFinite(inMixerParsed) ? inMixerParsed : null,
@@ -122,18 +135,28 @@ function isKgUnit(unit: unknown) {
   return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
 }
 
+function resolveMachineNvlLineKgFactor(
+  line: Pick<MachineNvlSavedLine, 'donVi' | 'trongLuongQuyDoiKg'>
+): number | null {
+  if (isKgUnit(line.donVi)) return 1;
+  const factor = line.trongLuongQuyDoiKg;
+  return Number.isFinite(factor as number) && (factor as number) > 0 ? (factor as number) : null;
+}
+
 /** Tổng tồn đầu ca 1 dòng NVL = tồn máy + bồn trộn + NL chưa trộn (hoặc soLuongTon đã lưu). */
 export function sumMachineNvlDauCaLineTotal(
   line: Pick<
     MachineNvlSavedLine,
-    'donVi' | 'soLuongTon' | 'soLuongTrongMay' | 'soLuongTrongBonTron' | 'soLuongNlChuaTron'
+    'donVi' | 'trongLuongQuyDoiKg' | 'soLuongTon' | 'soLuongTrongMay' | 'soLuongTrongBonTron' | 'soLuongNlChuaTron'
   >
 ) {
-  if (!isKgUnit(line.donVi)) return 0;
-  if (line.soLuongTon > 0) return line.soLuongTon;
-  return (
-    (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0)
-  );
+  const factor = resolveMachineNvlLineKgFactor(line);
+  if (factor === null) return 0;
+  const base =
+    line.soLuongTon > 0
+      ? line.soLuongTon
+      : (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0);
+  return base > 0 ? base * factor : 0;
 }
 
 /** Tổng tồn đầu ca của 1 báo cáo = tổng SL tồn các dòng (trong máy + bồn trộn + NL chưa trộn). */
@@ -145,9 +168,12 @@ export function sumMachineNvlDauCaReportTotal(report: Pick<MachineNvlSavedReport
 }
 
 /** Tổng tồn cuối ca 1 dòng NVL = SL tồn đã lưu. */
-export function sumMachineNvlCuoiCaLineTotal(line: Pick<MachineNvlSavedLine, 'donVi' | 'soLuongTon'>) {
-  if (!isKgUnit(line.donVi)) return 0;
-  return Number.isFinite(line.soLuongTon) && line.soLuongTon > 0 ? line.soLuongTon : 0;
+export function sumMachineNvlCuoiCaLineTotal(
+  line: Pick<MachineNvlSavedLine, 'donVi' | 'trongLuongQuyDoiKg' | 'soLuongTon'>
+) {
+  const factor = resolveMachineNvlLineKgFactor(line);
+  if (factor === null) return 0;
+  return Number.isFinite(line.soLuongTon) && line.soLuongTon > 0 ? line.soLuongTon * factor : 0;
 }
 
 /** Tổng tồn cuối ca của 1 báo cáo = tổng SL tồn các dòng. */

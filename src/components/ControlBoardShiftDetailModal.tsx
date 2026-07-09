@@ -26,6 +26,7 @@ type DetailSources = {
     products: Array<{ productCode: string; productName: string; quantity: string; unit: string }>;
   }>;
   products: Array<{ code: string; totalWeight: string }>;
+  materials?: Array<{ code: string; totalWeight: string }>;
   acceptanceReports: AcceptanceReport[];
   mixingReports: MixingReport[];
   warehouseMovements?: import('../utils/controlBoardShiftSummary').ShiftSummaryWarehouseMovement[];

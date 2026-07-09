@@ -29,6 +29,13 @@ import { normalizeProducts } from '../san-pham';
 import { normalizeMaterialsInventory } from '../kho-nvl';
 import type { ShiftSummaryWarehouseMovement } from '../../utils/controlBoardShiftSummary';
 import type { MaterialOption } from '../san-pham/types';
+import {
+  convertWarehouseQuantityToKg,
+  formatWarehouseWeightKg,
+  mapMaterialToWeightCatalogItem,
+  mapProductToWeightCatalogItem,
+  type WarehouseWeightCatalogItem
+} from '../../utils/warehouseWeight';
 
 export type WarehouseSlipType = 'nhap' | 'xuat';
 export type WarehouseKind = 'nvl' | 'san_pham';
@@ -494,6 +501,7 @@ export function WarehouseSlipPanel({
   const [warehouseLocation, setWarehouseLocation] = useState('Đà Nẵng');
   const [lines, setLines] = useState<WarehouseSlipLineDraft[]>(() => [createWarehouseLineDraft()]);
   const [itemOptions, setItemOptions] = useState<MaterialOption[]>([]);
+  const [weightCatalog, setWeightCatalog] = useState<WarehouseWeightCatalogItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -592,6 +600,7 @@ export function WarehouseSlipPanel({
               unit: product.unit && product.unit !== '-' ? product.unit : ''
             }))
           );
+          setWeightCatalog(products.map(mapProductToWeightCatalogItem));
         } else {
           const res = await fetch('/api/kho-nvl');
           const data = await res.json().catch(() => ({}));
@@ -606,9 +615,11 @@ export function WarehouseSlipPanel({
                 unit: material.unit && material.unit !== '-' ? material.unit : ''
               }))
           );
+          setWeightCatalog(materials.map(mapMaterialToWeightCatalogItem));
         }
       } catch {
         setItemOptions([]);
+        setWeightCatalog([]);
       } finally {
         setIsLoadingItems(false);
       }
@@ -669,6 +680,36 @@ export function WarehouseSlipPanel({
     () => lines.reduce((sum, line) => sum + computeWarehouseLineAmount(line.quantity, line.unitPrice), 0),
     [lines]
   );
+
+  const resolveLineWeightKg = (line: WarehouseSlipLineDraft) =>
+    convertWarehouseQuantityToKg({
+      quantity: parsePercentInput(line.quantity),
+      unit: line.unit,
+      itemCode: line.code,
+      warehouseKind,
+      materials: warehouseKind === 'nvl' ? weightCatalog : [],
+      products: warehouseKind === 'san_pham' ? weightCatalog : []
+    });
+
+  const slipTotalWeightKg = useMemo(() => {
+    let total = 0;
+    let hasWeight = false;
+    for (const line of lines) {
+      const weight = convertWarehouseQuantityToKg({
+        quantity: parsePercentInput(line.quantity),
+        unit: line.unit,
+        itemCode: line.code,
+        warehouseKind,
+        materials: warehouseKind === 'nvl' ? weightCatalog : [],
+        products: warehouseKind === 'san_pham' ? weightCatalog : []
+      });
+      if (weight !== null) {
+        total += weight;
+        hasWeight = true;
+      }
+    }
+    return hasWeight ? total : null;
+  }, [lines, warehouseKind, weightCatalog]);
 
   const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
 
@@ -832,14 +873,25 @@ export function WarehouseSlipPanel({
       </section>
 
       <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
-          <div>
-            <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Tổng tiền phiếu</p>
-            <p className="mt-1 text-2xl font-black text-zinc-950">{formatWarehouseMoney(slipTotal)} đ</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Tổng tiền phiếu</p>
+              <p className="mt-1 text-2xl font-black text-zinc-950">{formatWarehouseMoney(slipTotal)} đ</p>
+            </div>
+            <p className="text-xs font-semibold text-zinc-500">
+              Tự động cộng thành tiền các dòng (Giá × Số lượng)
+            </p>
           </div>
-          <p className="text-xs font-semibold text-zinc-500">
-            Tự động cộng thành tiền các dòng (Giá × Số lượng)
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-emerald-600/20 bg-emerald-50 px-4 py-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Quy đổi khối lượng</p>
+              <p className="mt-1 text-2xl font-black text-zinc-950">{formatWarehouseWeightKg(slipTotalWeightKg)}</p>
+            </div>
+            <p className="text-xs font-semibold text-zinc-500">
+              Tự động quy đổi SL × định mức kg (kg, tấn, g hoặc theo danh mục {warehouseKind === 'san_pham' ? 'SP' : 'NVL'})
+            </p>
+          </div>
         </div>
 
         <div>
@@ -996,8 +1048,8 @@ export function WarehouseSlipPanel({
           <div
             className={
               slipType === 'nhap'
-                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
             }
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
@@ -1015,6 +1067,7 @@ export function WarehouseSlipPanel({
             ) : (
               <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
             )}
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Quy đổi kg</span>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thành tiền</span>
             <span />
@@ -1026,8 +1079,8 @@ export function WarehouseSlipPanel({
                 key={line.key}
                 className={
                   slipType === 'nhap'
-                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:items-end xl:gap-3'
-                    : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3'
+                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:items-end xl:gap-3'
+                    : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3'
                 }
               >
                 <div className="sm:col-span-2 xl:col-span-1">
@@ -1101,6 +1154,14 @@ export function WarehouseSlipPanel({
                     />
                   </div>
                 )}
+                <div>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                    Quy đổi kg
+                  </span>
+                  <div className={`${warehouseFieldClass} flex items-center bg-emerald-50/60 font-mono font-bold text-emerald-800`}>
+                    {formatWarehouseWeightKg(resolveLineWeightKg(line))}
+                  </div>
+                </div>
                 <div>
                   <input
                     type="text"
@@ -1201,6 +1262,45 @@ export function WarehouseHistoryPanel({
   const [historyPrintSlip, setHistoryPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
   const [historyPrintOpen, setHistoryPrintOpen] = useState(false);
   const [historyPrintAutoTrigger, setHistoryPrintAutoTrigger] = useState(false);
+  const [weightCatalogMaterials, setWeightCatalogMaterials] = useState<WarehouseWeightCatalogItem[]>([]);
+  const [weightCatalogProducts, setWeightCatalogProducts] = useState<WarehouseWeightCatalogItem[]>([]);
+
+  const loadWeightCatalog = async () => {
+    try {
+      const [materialRes, productRes] = await Promise.all([fetch('/api/kho-nvl'), fetch('/api/san-pham?format=table')]);
+      const materialData = await materialRes.json().catch(() => ({}));
+      const productData = await productRes.json().catch(() => ({}));
+
+      if (materialRes.ok) {
+        setWeightCatalogMaterials(normalizeMaterialsInventory(materialData).map(mapMaterialToWeightCatalogItem));
+      } else {
+        setWeightCatalogMaterials([]);
+      }
+
+      if (productRes.ok) {
+        setWeightCatalogProducts(normalizeProducts(productData).map(mapProductToWeightCatalogItem));
+      } else {
+        setWeightCatalogProducts([]);
+      }
+    } catch {
+      setWeightCatalogMaterials([]);
+      setWeightCatalogProducts([]);
+    }
+  };
+
+  const resolveWarehouseRowWeightKg = (row: WarehouseMovementRow) =>
+    convertWarehouseQuantityToKg({
+      quantity: row.quantity,
+      unit: row.unit,
+      itemCode: row.itemCode,
+      warehouseKind: row.warehouseKind,
+      materials: weightCatalogMaterials,
+      products: weightCatalogProducts
+    });
+
+  useEffect(() => {
+    void loadWeightCatalog();
+  }, []);
 
   const loadMovements = async () => {
     setIsLoading(true);
@@ -1302,6 +1402,18 @@ export function WarehouseHistoryPanel({
       });
   }, [filteredMovements]);
 
+  const sortedMovementLines = useMemo(
+    () =>
+      [...filteredMovements].sort((a, b) => {
+        const byDate = (b.slipDate || '').localeCompare(a.slipDate || '');
+        if (byDate !== 0) return byDate;
+        const bySlip = (b.slipCode || '').localeCompare(a.slipCode || '', 'vi');
+        if (bySlip !== 0) return bySlip;
+        return (a.itemCode || '').localeCompare(b.itemCode || '', 'vi');
+      }),
+    [filteredMovements]
+  );
+
   const selectableSlips = useMemo(
     () => slipGroups.filter(group => group.slipCode && group.rows.some(row => row.id)),
     [slipGroups]
@@ -1333,6 +1445,26 @@ export function WarehouseHistoryPanel({
     () => viewingRows.reduce((sum, row) => sum + row.lineAmount, 0),
     [viewingRows]
   );
+
+  const viewingSlipTotalWeightKg = useMemo(() => {
+    let total = 0;
+    let hasWeight = false;
+    for (const row of viewingRows) {
+      const weight = convertWarehouseQuantityToKg({
+        quantity: row.quantity,
+        unit: row.unit,
+        itemCode: row.itemCode,
+        warehouseKind: row.warehouseKind,
+        materials: weightCatalogMaterials,
+        products: weightCatalogProducts
+      });
+      if (weight !== null) {
+        total += weight;
+        hasWeight = true;
+      }
+    }
+    return hasWeight ? total : 0;
+  }, [viewingRows, weightCatalogMaterials, weightCatalogProducts]);
 
   const handlePrintSlipByCode = (slipCode: string, autoPrint = false) => {
     const rows = filteredMovements.filter(row => row.slipCode === slipCode);
@@ -1695,10 +1827,101 @@ export function WarehouseHistoryPanel({
         </div>
       </section>
 
+      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết từng dòng</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+              Cuộn để xem {warehouseTab === 'san_pham' ? 'từng dòng SP' : 'từng dòng NVL'} · {sortedMovementLines.length} dòng
+            </p>
+          </div>
+        </div>
+        <div className="max-h-[min(70vh,720px)] overflow-auto">
+          <table className="min-w-[1080px] w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-zinc-950 text-xs uppercase tracking-wider text-white">
+              <tr>
+                <th className="px-3 py-3 font-black">Mã phiếu</th>
+                <th className="px-3 py-3 font-black">Loại</th>
+                <th className="px-3 py-3 font-black">Ngày</th>
+                <th className="px-3 py-3 font-black">Ca</th>
+                <th className="px-3 py-3 font-black">{warehouseItemCodeLabel(warehouseTab)}</th>
+                <th className="px-3 py-3 font-black">{warehouseItemNameLabel(warehouseTab)}</th>
+                <th className="px-3 py-3 text-right font-black">SL</th>
+                <th className="px-3 py-3 font-black">ĐVT</th>
+                <th className="px-3 py-3 text-right font-black">Trọng lượng</th>
+                <th className="px-3 py-3 text-right font-black">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8 text-center font-bold text-zinc-500">
+                    Đang tải dữ liệu...
+                  </td>
+                </tr>
+              ) : sortedMovementLines.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8 text-center font-bold text-zinc-400">
+                    Chưa có dòng {warehouseTab === 'san_pham' ? 'sản phẩm' : 'NVL'}.
+                  </td>
+                </tr>
+              ) : (
+                sortedMovementLines.map((row, index) => (
+                  <tr
+                    key={row.id || `${row.slipCode}-${row.itemCode}-${index}`}
+                    className="hover:bg-red-50/40"
+                  >
+                    <td className="px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingSlipCode(row.slipCode)}
+                        className="font-black text-[#ef1b2d] underline-offset-2 hover:underline"
+                        title="Xem phiếu"
+                      >
+                        {row.slipCode || '—'}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${
+                          row.slipType === 'nhap'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        {warehouseSlipTypeLabel(row.slipType)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-xs font-semibold text-zinc-700">
+                      {row.slipDate || '—'}
+                    </td>
+                    <td className="px-3 py-2.5 font-semibold text-zinc-600">{row.shift || '—'}</td>
+                    <td className="px-3 py-2.5 font-bold text-zinc-900">{row.itemCode || '—'}</td>
+                    <td className="max-w-[200px] truncate px-3 py-2.5 font-semibold text-zinc-700" title={row.itemName || undefined}>
+                      {row.itemName || '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-zinc-800">
+                      {formatNumber(row.quantity, 2)}
+                    </td>
+                    <td className="px-3 py-2.5 font-semibold text-zinc-600">{row.unit || '—'}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-800">
+                      {formatWarehouseWeightKg(resolveWarehouseRowWeightKg(row))}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-zinc-900">
+                      {formatWarehouseMoney(row.lineAmount)} đ
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {viewingSlipCode && viewingRows[0] && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="w-full max-w-2xl overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết phiếu</h3>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
@@ -1707,24 +1930,26 @@ export function WarehouseHistoryPanel({
               </div>
               <BackButton onClick={() => setViewingSlipCode(null)} />
             </div>
-            <div className="grid grid-cols-2 gap-3 p-4">
-              {[
-                ['Kho', warehouseKindLabel(viewingRows[0].warehouseKind)],
-                ['Loại', warehouseSlipTypeLabel(viewingRows[0].slipType)],
-                ['Ngày', viewingRows[0].slipDate || '-'],
-                ['Ca', viewingRows[0].shift || '-'],
-                ['Tổng tiền', `${formatWarehouseMoney(viewingSlipTotal)} đ`],
-                ['Lý do', viewingRows[0].reason || '-'],
-                ['Ghi chú', viewingRows[0].note || '-'],
-                ['Người lập', viewingRows[0].createdBy || '-']
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
-                  <p className="mt-1 font-bold text-zinc-900">{value}</p>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-zinc-200 px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
+                {[
+                  ['Kho', warehouseKindLabel(viewingRows[0].warehouseKind)],
+                  ['Loại', warehouseSlipTypeLabel(viewingRows[0].slipType)],
+                  ['Ngày', viewingRows[0].slipDate || '-'],
+                  ['Ca', viewingRows[0].shift || '-'],
+                  ['Tổng tiền', `${formatWarehouseMoney(viewingSlipTotal)} đ`],
+                  ['Tổng trọng lượng', formatWarehouseWeightKg(viewingSlipTotalWeightKg > 0 ? viewingSlipTotalWeightKg : null)],
+                  ['Lý do', viewingRows[0].reason || '-'],
+                  ['Ghi chú', viewingRows[0].note || '-'],
+                  ['Người lập', viewingRows[0].createdBy || '-']
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
+                    <p className="mt-0.5 text-sm font-bold text-zinc-900">{value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-zinc-200 px-4 py-3">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-[10px] uppercase tracking-wider text-zinc-500">
                   <tr>
@@ -1732,6 +1957,7 @@ export function WarehouseHistoryPanel({
                     <th className="py-2 pr-3 font-black">{warehouseItemNameLabel(viewingRows[0].warehouseKind)}</th>
                     <th className="py-2 pr-3 font-black">SL</th>
                     <th className="py-2 pr-3 font-black">ĐVT</th>
+                    <th className="py-2 pr-3 text-right font-black">Trọng lượng</th>
                     <th className="py-2 pr-3 font-black">Giá</th>
                     <th className="py-2 font-black">Thành tiền</th>
                   </tr>
@@ -1743,34 +1969,38 @@ export function WarehouseHistoryPanel({
                       <td className="py-2 pr-3 text-zinc-700">{row.itemName || '-'}</td>
                       <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatNumber(row.quantity, 2)}</td>
                       <td className="py-2 pr-3 text-zinc-700">{row.unit}</td>
+                      <td className="py-2 pr-3 text-right font-mono font-bold text-emerald-800">
+                        {formatWarehouseWeightKg(resolveWarehouseRowWeightKg(row))}
+                      </td>
                       <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatWarehouseMoney(row.unitPrice)} đ</td>
                       <td className="py-2 font-mono font-bold text-zinc-900">{formatWarehouseMoney(row.lineAmount)} đ</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
-                <p className="text-sm font-black text-zinc-950">
-                  Tổng tiền: <span className="text-[#ef1b2d]">{formatWarehouseMoney(viewingSlipTotal)} đ</span>
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleEditSlip(viewingSlipCode!)}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    Sửa phiếu
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePrintViewingSlip(true)}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-                  >
-                    <Printer className="h-4 w-4" />
-                    In phiếu
-                  </button>
-                </div>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
+              <p className="text-sm font-black text-zinc-950">
+                Tổng tiền: <span className="text-[#ef1b2d]">{formatWarehouseMoney(viewingSlipTotal)} đ</span>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleEditSlip(viewingSlipCode!)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Sửa phiếu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintViewingSlip(true)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  <Printer className="h-4 w-4" />
+                  In phiếu
+                </button>
               </div>
             </div>
           </div>

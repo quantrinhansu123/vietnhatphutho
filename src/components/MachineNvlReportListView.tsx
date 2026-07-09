@@ -91,7 +91,13 @@ function MachineNvlSection({
   onEdit,
   onPrint,
   onDelete,
-  deletingId
+  deletingId,
+  selectedIds,
+  onToggleSelected,
+  onToggleSelectAll,
+  onBulkDelete,
+  onClearSelection,
+  bulkDeleting
 }: {
   kind: MachineNvlReportKind;
   title: string;
@@ -102,13 +108,50 @@ function MachineNvlSection({
   onPrint: (report: MachineNvlSavedReport) => void;
   onDelete: (id: string) => void;
   deletingId: string | null;
+  selectedIds: Set<string>;
+  onToggleSelected: (id: string) => void;
+  onToggleSelectAll: (ids: string[]) => void;
+  onBulkDelete: (ids: string[]) => void;
+  onClearSelection: () => void;
+  bulkDeleting: boolean;
 }) {
   const isDauCaTab = kind === 'dau_ca';
+  const reportIds = useMemo(
+    () =>
+      groups.flatMap(dateGroup =>
+        dateGroup.shifts.flatMap(shiftGroup =>
+          shiftGroup.machines.flatMap(machineGroup => machineGroup.reports.map(report => report.id).filter(Boolean))
+        )
+      ),
+    [groups]
+  );
+  const allSelected = reportIds.length > 0 && selectedIds.size === reportIds.length;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
       <div className="border-b-4 border-[#ef1b2d] bg-white px-3 py-2.5">
-        <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">{title}</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">{title}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onBulkDelete([...selectedIds])}
+              disabled={selectedIds.size === 0 || bulkDeleting || isLoading}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Xoá đã chọn ({selectedIds.size})
+            </button>
+            <button
+              type="button"
+              onClick={onClearSelection}
+              disabled={selectedIds.size === 0 || bulkDeleting || isLoading}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Bỏ chọn
+            </button>
+          </div>
+        </div>
       </div>
       <div className="p-2 sm:p-4">
         {isLoading ? (
@@ -147,6 +190,15 @@ function MachineNvlSection({
                     <table className="w-full min-w-[720px] border-collapse text-left text-[11px] sm:text-xs">
                       <thead className="bg-zinc-50 text-[9px] uppercase tracking-wider text-zinc-500 sm:text-[10px]">
                         <tr>
+                          <th className="w-10 px-2 py-1.5 text-center font-black">
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              onChange={() => onToggleSelectAll(reportIds)}
+                              aria-label="Chọn tất cả"
+                              className="h-4 w-4 accent-[#ef1b2d]"
+                            />
+                          </th>
                           <th className="px-2 py-1.5 font-black">Ca</th>
                           <th className="px-2 py-1.5 font-black">Máy</th>
                           <th className="px-2 py-1.5 font-black">Nhân sự</th>
@@ -163,6 +215,15 @@ function MachineNvlSection({
                             key={report.id || `${report.ngay}-${report.maMay}-${report.ca}`}
                             className="align-top transition hover:bg-zinc-50"
                           >
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(report.id)}
+                                onChange={() => onToggleSelected(report.id)}
+                                aria-label="Chọn dòng"
+                                className="h-4 w-4 accent-[#ef1b2d]"
+                              />
+                            </td>
                             <td className="px-2 py-1.5 font-bold text-zinc-800">{shiftGroup.ca || '-'}</td>
                             <td className="px-2 py-1.5 font-semibold text-zinc-700">
                               {machineGroup.tenMay || machineGroup.maMay || '-'}
@@ -336,6 +397,9 @@ export default function MachineNvlReportListView({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selectedDauCaIds, setSelectedDauCaIds] = useState<Set<string>>(() => new Set());
+  const [selectedCuoiCaIds, setSelectedCuoiCaIds] = useState<Set<string>>(() => new Set());
   const [printReport, setPrintReport] = useState<MachineNvlPrintReport | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
 
@@ -451,6 +515,8 @@ export default function MachineNvlReportListView({
           setShiftSettings(normalizeShiftSettings(settingsData));
         }
         await loadReports(filterFromDate, filterToDate);
+        setSelectedDauCaIds(new Set());
+        setSelectedCuoiCaIds(new Set());
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Không thể tải danh sách báo cáo.');
       } finally {
@@ -492,10 +558,66 @@ export default function MachineNvlReportListView({
       if (!res.ok) throw new Error(data.error || 'Không thể xóa báo cáo.');
       setMessage('Đã xóa báo cáo NVL tồn.');
       await loadReports();
+      setSelectedDauCaIds(prev => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setSelectedCuoiCaIds(prev => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (err: any) {
       setError(err.message || 'Không thể xóa báo cáo.');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const toggleSelected = (kind: MachineNvlReportKind, id: string) => {
+    const setter = kind === 'dau_ca' ? setSelectedDauCaIds : setSelectedCuoiCaIds;
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (kind: MachineNvlReportKind, ids: string[]) => {
+    const setter = kind === 'dau_ca' ? setSelectedDauCaIds : setSelectedCuoiCaIds;
+    setter(prev => (prev.size === ids.length ? new Set() : new Set(ids)));
+  };
+
+  const clearSelection = (kind: MachineNvlReportKind) => {
+    (kind === 'dau_ca' ? setSelectedDauCaIds : setSelectedCuoiCaIds)(new Set());
+  };
+
+  const handleBulkDelete = async (kind: MachineNvlReportKind, ids: string[]) => {
+    if (ids.length === 0) return;
+    if (!window.confirm(`Xóa ${ids.length} báo cáo NVL tồn đã chọn?`)) return;
+    setError('');
+    setMessage('');
+    setBulkDeleting(true);
+    try {
+      const res = await fetch('/api/bao-cao-may-nvl-ton/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể xóa nhiều báo cáo.');
+      const deleted = Number(data.deleted ?? ids.length);
+      setMessage(deleted > 0 ? `Đã xóa ${deleted} báo cáo NVL tồn.` : 'Không có báo cáo nào được xóa.');
+      clearSelection(kind);
+      await loadReports();
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa nhiều báo cáo.');
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -608,6 +730,12 @@ export default function MachineNvlReportListView({
         onPrint={handlePrint}
         onDelete={handleDelete}
         deletingId={deletingId}
+        selectedIds={selectedDauCaIds}
+        onToggleSelected={id => toggleSelected('dau_ca', id)}
+        onToggleSelectAll={ids => toggleSelectAll('dau_ca', ids)}
+        onBulkDelete={ids => void handleBulkDelete('dau_ca', ids)}
+        onClearSelection={() => clearSelection('dau_ca')}
+        bulkDeleting={bulkDeleting}
       />
 
       <MachineNvlSection
@@ -620,6 +748,12 @@ export default function MachineNvlReportListView({
         onPrint={handlePrint}
         onDelete={handleDelete}
         deletingId={deletingId}
+        selectedIds={selectedCuoiCaIds}
+        onToggleSelected={id => toggleSelected('cuoi_ca', id)}
+        onToggleSelectAll={ids => toggleSelectAll('cuoi_ca', ids)}
+        onBulkDelete={ids => void handleBulkDelete('cuoi_ca', ids)}
+        onClearSelection={() => clearSelection('cuoi_ca')}
+        bulkDeleting={bulkDeleting}
       />
 
       <DamagedGoodsSection groups={damagedGroups} isLoading={isLoading} />

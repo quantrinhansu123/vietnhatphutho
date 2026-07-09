@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import QRCode from 'qrcode';
-import { Eye, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { Eye, Loader2, Pencil, Plus, Printer, Save, Search, Trash2 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
@@ -28,6 +27,7 @@ import {
   type OrderProductLine
 } from '../_shared/orderRecordHelpers';
 import { normalizeDaNangBusinessStaffOptions, normalizeCustomerOptions } from '../khach-hang';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 
 export type { OrderProductLine, OrderRow };
 
@@ -229,6 +229,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingOrder, setViewingOrder] = useState<OrderRow | null>(null);
+  const [printOrder, setPrintOrder] = useState<OrderRow | null>(null);
+  const [pendingPrint, setPendingPrint] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [formError, setFormError] = useState('');
@@ -356,6 +358,29 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       a.localeCompare(b, 'vi')
     );
   }, [orders, productOptions]);
+
+  const handlePrintOrder = async (order: OrderRow) => {
+    setPendingPrint(false);
+    setPrintOrder(order);
+    setPendingPrint(true);
+  };
+
+  useEffect(() => {
+    if (!pendingPrint || !printOrder) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [pendingPrint, printOrder]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPendingPrint(false);
+      setPrintOrder(null);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
 
   const updateProductLine = (key: string, patch: Partial<OrderProductFormLine>) => {
     setOrderForm(prev => ({
@@ -776,6 +801,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => handlePrintOrder(viewingOrder)}
+                className="flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+              >
+                <Printer className="h-4 w-4" />
+                In phiếu
+              </button>
               <button type="button" onClick={() => openEditForm(viewingOrder)} className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
                 <Pencil className="h-4 w-4" />
                 Sửa
@@ -793,6 +826,124 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       )}
+
+      {printOrder
+        ? createPortal(
+            <div className="order-print-sheet">
+              <div className="order-print-page">
+                <div className="order-print-header">
+                  <div className="order-print-brand">
+                    <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="order-print-logo" />
+                    <div>
+                      <div className="order-print-company">{PRINT_COMPANY_NAME}</div>
+                      <div className="order-print-subtitle">Dự án Chuyển đổi số sản xuất</div>
+                    </div>
+                  </div>
+                  <div className="order-print-form-meta">
+                    <div className="order-print-form-code">BM-SX-01</div>
+                    <div className="order-print-form-version">Phiên bản 1.0</div>
+                  </div>
+                </div>
+
+                <div className="order-print-title">ĐƠN ĐẶT HÀNG SẢN XUẤT</div>
+
+                <div className="order-print-info-grid">
+                  <div className="order-print-info-row">
+                    <div className="order-print-info-label">Số đơn hàng:</div>
+                    <div className="order-print-info-value">{printOrder.orderCode || '-'}</div>
+                  </div>
+                  <div className="order-print-info-row">
+                    <div className="order-print-info-label">Ngày lập:</div>
+                    <div className="order-print-info-value">{formatOrderCreatedAt(printOrder.orderDate || printOrder.createdAt)}</div>
+                  </div>
+                  <div className="order-print-info-row">
+                    <div className="order-print-info-label">Khách hàng:</div>
+                    <div className="order-print-info-value">{printOrder.customer || '-'}</div>
+                  </div>
+                  <div className="order-print-info-row">
+                    <div className="order-print-info-label">Bộ phận lập:</div>
+                    <div className="order-print-info-value">{printOrder.staffName || '-'}</div>
+                  </div>
+                  <div className="order-print-info-row order-print-info-row--full">
+                    <div className="order-print-info-label">Địa chỉ khách hàng</div>
+                    <div className="order-print-info-value"> </div>
+                  </div>
+                  <div className="order-print-info-row">
+                    <div className="order-print-info-label">Thời hạn giao hàng:</div>
+                    <div className="order-print-info-value"> </div>
+                  </div>
+                </div>
+
+                <table className="order-print-table">
+                  <colgroup>
+                    <col style={{ width: '8mm' }} />
+                    <col style={{ width: '32mm' }} />
+                    <col style={{ width: '86mm' }} />
+                    <col style={{ width: '26mm' }} />
+                    <col style={{ width: '14mm' }} />
+                    <col style={{ width: '18mm' }} />
+                    <col style={{ width: '22mm' }} />
+                    <col style={{ width: '65mm' }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>STT</th>
+                      <th>Mã sản phẩm</th>
+                      <th>Tên sản phẩm</th>
+                      <th>Quy cách</th>
+                      <th>ĐVT</th>
+                      <th>Số lượng</th>
+                      <th>Hạn giao</th>
+                      <th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getOrderProductLines(printOrder).map((line, idx) => (
+                      <tr key={`${line.productCode}-${idx}`}>
+                        <td className="center">{idx + 1}</td>
+                        <td>{line.productCode || ''}</td>
+                        <td>
+                          <div className="order-print-product-name">{line.productName || ''}</div>
+                        </td>
+                        <td>{''}</td>
+                        <td className="center">{line.unit && line.unit !== '-' ? line.unit : ''}</td>
+                        <td className="center">{line.quantity && line.quantity !== '-' ? line.quantity : ''}</td>
+                        <td className="center">{''}</td>
+                        <td>{printOrder.note || ''}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td colSpan={5} className="order-print-total-label">TỔNG CỘNG</td>
+                      <td className="center order-print-total-value">
+                        {formatNumber(
+                          getOrderProductLines(printOrder).reduce((sum, item) => sum + parsePercentInput(item.quantity), 0)
+                        )}
+                      </td>
+                      <td />
+                      <td />
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="order-print-signatures">
+                  <div className="order-print-signature">
+                    <div className="order-print-signature-title">Người lập</div>
+                    <div className="order-print-signature-hint">(Ký, ghi rõ họ tên)</div>
+                  </div>
+                  <div className="order-print-signature">
+                    <div className="order-print-signature-title">Phụ trách bộ phận</div>
+                    <div className="order-print-signature-hint">(Ký, ghi rõ họ tên)</div>
+                  </div>
+                  <div className="order-print-signature">
+                    <div className="order-print-signature-title">Bộ phận kế hoạch (tiếp nhận)</div>
+                    <div className="order-print-signature-hint">(Ký, ghi rõ họ tên)</div>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
         <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
@@ -914,6 +1065,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <td className="px-3 py-2.5 font-semibold text-zinc-500">{order.note || '-'}</td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handlePrintOrder(order)}
+                      title="In phiếu"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50"
+                    >
+                      <Printer className="h-4 w-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => setViewingOrder(order)}

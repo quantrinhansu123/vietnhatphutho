@@ -5,6 +5,7 @@
 | **Bảng** | `kho_nvl` |
 | **Tab** | `materials` → `/kho-nvl` |
 | **SQL** | `supabase-kho-nvl.sql` |
+| **Fix precision** | `supabase-kho-nvl-precision.sql` (giữ số lẻ, không bị làm tròn) |
 
 ## API (`server.ts`)
 

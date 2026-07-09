@@ -11,6 +11,7 @@ import {
 } from './controlBoardShiftSummary';
 import { formatNumber } from '../utils';
 import { sumMachineNvlDauCaLineTotal, sumMachineNvlCuoiCaLineTotal, type MachineNvlSavedReport } from './machineNvlReports';
+import { normalizeProductCodeKey } from '../features/san-pham/types';
 
 export type ShiftSummaryMetric =
   | 'slHang'
@@ -35,7 +36,7 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   khoiLuongHangThucTe: { label: 'Khối lượng hàng TT', source: 'Báo cáo sản lượng (SL × kg định mức)' },
   hangHong: { label: 'Hàng hỏng', source: 'Báo cáo hàng hỏng' },
   khoiLuongNpl: { label: 'Khối lượng nhựa', source: 'Lịch sử xuất nhập kho (kg)' },
-  khoiLuongLoi: { label: 'KL lõi', source: 'Phiếu cân ca' },
+  khoiLuongLoi: { label: 'KL lõi', source: 'Báo cáo sản lượng (SL cuộn TT × 1kg)' },
   tonDauCa: { label: 'Tồn đầu ca', source: 'Bảng tồn NVL (đầu ca)' },
   tonCuoiCa: { label: 'Tồn cuối ca', source: 'Bảng tồn NVL (cuối ca)' },
   tongVatLieu: { label: 'Tổng nhựa', source: 'KL nhựa + Tồn đầu ca' },
@@ -138,6 +139,7 @@ export function getShiftSummaryDetail(input: {
   shiftSettings: ShiftSetting[];
   productionOrders: ProductionOrderRef[];
   products: ProductRef[];
+  materials?: Array<{ code: string; totalWeight: string }>;
   acceptanceReports: AcceptanceReport[];
   warehouseMovements?: ShiftSummaryWarehouseMovement[];
   weighingRecords: WeighingRecord[];
@@ -157,6 +159,23 @@ export function getShiftSummaryDetail(input: {
 }): ShiftSummaryDetailView {
   const shiftOptions = getProductionShiftOptions(input.shiftSettings);
   const { ngay, ca, metric } = input;
+
+  const inventoryTotalKgByCode = (() => {
+    const map = new Map<string, number>();
+    for (const material of input.materials ?? []) {
+      const key = normalizeProductCodeKey(material.code);
+      if (!key) continue;
+      const totalKg = parseFlexibleNumber(material.totalWeight);
+      if (totalKg !== null && totalKg > 0) map.set(key, totalKg);
+    }
+    return map;
+  })();
+
+  const resolveLineKgFactor = (unit: string, code: string, lineFactor: number | null | undefined) => {
+    if (isKgUnit(unit)) return 1;
+    if (lineFactor !== null && lineFactor !== undefined && Number.isFinite(lineFactor) && lineFactor > 0) return lineFactor;
+    return inventoryTotalKgByCode.get(normalizeProductCodeKey(code)) ?? null;
+  };
 
   if (metric === 'slHang' || metric === 'khoiLuongHang') {
     const rows: ShiftSummaryDetailRow[] = [];
@@ -361,7 +380,12 @@ export function getShiftSummaryDetail(input: {
       const machineLabel = report.tenMay || report.maMay || '-';
 
       for (const line of report.lines) {
-        const lineTotal = sumMachineNvlDauCaLineTotal(line);
+        const qtyBase =
+          (line.soLuongTon > 0
+            ? line.soLuongTon
+            : (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0)) || 0;
+        const factor = resolveLineKgFactor(line.donVi || '', line.maNvl || '', line.trongLuongQuyDoiKg);
+        const lineTotal = factor !== null && qtyBase > 0 ? qtyBase * factor : 0;
         if (lineTotal <= 0 && !line.maNvl && !line.tenNvl) continue;
 
         total += lineTotal;
@@ -390,10 +414,10 @@ export function getShiftSummaryDetail(input: {
         { key: 'tonTrongMay', label: 'Tồn máy', align: 'right', mono: true },
         { key: 'tonTrongBonTron', label: 'Tồn bồn', align: 'right', mono: true },
         { key: 'nlChuaTron', label: 'NL chưa trộn', align: 'right', mono: true },
-        { key: 'tongTon', label: 'Tổng tồn', align: 'right', mono: true, accent: true }
+        { key: 'tongTon', label: 'Tổng tồn (kg)', align: 'right', mono: true, accent: true }
       ],
       rows,
-      totalLabel: 'Tổng tồn đầu ca',
+      totalLabel: 'Tổng tồn đầu ca (kg)',
       totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
       showActions: true
     };
@@ -488,48 +512,33 @@ export function getShiftSummaryDetail(input: {
     const rows: ShiftSummaryDetailRow[] = [];
     let total = 0;
 
-    for (const record of getWeighingDataRows(input.weighingRecords ?? [])) {
-      if (
-        !matchesShiftSummaryBucket(
-          ngay,
-          ca,
-          record.productionDate || record.reportDate,
-          record.shiftName,
-          shiftOptions
-        )
-      ) {
-        continue;
-      }
+    for (const report of input.acceptanceReports) {
+      if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
+      if (report.so_luong === null || !Number.isFinite(report.so_luong) || report.so_luong <= 0) continue;
 
-      const coreWeight = parseWeighingWeight(record.coreWeight);
-      if (coreWeight === null || coreWeight <= 0) continue;
-
-      total += coreWeight;
+      // KL lõi = Số lượng cuộn thực tế × 1kg
+      total += report.so_luong;
       rows.push({
-        rowKey: String(record.id ?? `${record.documentNo}|${record.weighNo}|${record.productCode}`),
-        recordId: record.id != null ? String(record.id) : '',
-        soPhieu: record.documentNo || '-',
-        gio: record.weighTime || '-',
-        may: record.machineName || '-',
-        maSp: record.productCode || '-',
-        tenSp: record.productName || '-',
-        lanCan: record.weighNo || '-',
-        klLoi: formatDetailNumber(coreWeight, 3)
+        gio: report.gio || '-',
+        may: report.ten_may || report.ma_may || '-',
+        lan: report.lan || '-',
+        matHang: report.mat_hang || '-',
+        donVi: report.don_vi || '-',
+        khoiLuong: formatDetailNumber(report.so_luong, 3)
       });
     }
 
     return {
       columns: [
-        { key: 'soPhieu', label: 'Mã phiếu' },
         { key: 'gio', label: 'Giờ', mono: true },
         { key: 'may', label: 'Máy' },
-        { key: 'maSp', label: 'Mã SP' },
-        { key: 'tenSp', label: 'Tên SP' },
-        { key: 'lanCan', label: 'Lần cân' },
-        { key: 'klLoi', label: 'KL lõi', align: 'right', mono: true, accent: true }
+        { key: 'lan', label: 'Lần' },
+        { key: 'matHang', label: 'Mặt hàng' },
+        { key: 'donVi', label: 'ĐVT' },
+        { key: 'khoiLuong', label: 'KL lõi (kg)', align: 'right', mono: true, accent: true }
       ],
       rows,
-      totalLabel: 'Tổng KL lõi',
+      totalLabel: 'Tổng KL lõi (SL cuộn × 1kg)',
       totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3)
     };
   }

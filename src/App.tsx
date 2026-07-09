@@ -32,6 +32,7 @@ import { getProductionShiftOptions, normalizeShiftSettings } from './utils/shift
 import { normalizeMixingReport } from './lib/mixingReportModel';
 import type { MixingReport } from './components/MixingReportForm';
 import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
+import MachineRunLogPanel from './components/MachineRunLogPanel';
 import { AppTab, pathFromTab, tabFromPath, isWeighingFormPath, isWeighingListPath } from './routes';
 import {
   FilePlus2, BarChart3, CheckCircle, Sparkles, Loader2, Menu, Search, Save, ChevronRight, ChevronLeft,
@@ -1049,6 +1050,26 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MachineDowntimeReportPanel onBack={() => navigateToTab('report-lists')} />
+              </motion.div>
+            ) : activeTab === 'machine-run-log' ? (
+              <motion.div
+                key="machine-run-log"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MachineRunLogPanel onBack={() => navigateToTab('report-forms')} />
+              </motion.div>
+            ) : activeTab === 'machine-run-log-list' ? (
+              <motion.div
+                key="machine-run-log-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MachineRunLogPanel onBack={() => navigateToTab('report-lists')} />
               </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div
