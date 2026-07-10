@@ -2689,11 +2689,14 @@ export function ProductionPlanModal({
       {(relatedPrintOrders.length > 0 || relatedPrintData) &&
         createPortal(
           <div className="production-order-print-batch">
-            {relatedShiftSummaryRows.length > 0 && relatedShiftSummaryFilters ? (
+            {/* 2. Kế hoạch sản xuất */}
+            {displayLines.length > 0 ? (
               <div className="production-order-print-page">
-                <ControlBoardShiftSummaryPrintBatch rows={relatedShiftSummaryRows} filters={relatedShiftSummaryFilters} />
+                <ProductionPlanPrintSheet lines={displayLines} materialsByLine={printMaterialsByLine} />
               </div>
             ) : null}
+
+            {/* 3. Lệnh sản xuất */}
             {relatedPrintOrders.map(item => (
               <div key={`po-${item.order.id}`} className="production-order-print-page">
                 <ProductionOrderPrintSheet
@@ -2706,7 +2709,16 @@ export function ProductionPlanModal({
                 />
               </div>
             ))}
+
+            {/* 4..13. Các phiếu liên quan */}
             {relatedPrintData && <ProductionPlanRelatedPrintContent data={relatedPrintData} />}
+
+            {/* (Ngoài danh sách thứ tự) Bảng tổng hợp ca */}
+            {relatedShiftSummaryRows.length > 0 && relatedShiftSummaryFilters ? (
+              <div className="production-order-print-page">
+                <ControlBoardShiftSummaryPrintBatch rows={relatedShiftSummaryRows} filters={relatedShiftSummaryFilters} />
+              </div>
+            ) : null}
           </div>,
           document.body
         )}

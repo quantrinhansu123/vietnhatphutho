@@ -1,12 +1,11 @@
 import React from 'react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import {
   formatShiftSummaryNumber,
+  formatShiftSummaryKg,
   sumShiftSummaryColumn,
   type ControlBoardShiftSummaryRow
 } from '../utils/controlBoardShiftSummary';
-import { PRINT_COMPANY_NAME } from './layout/constants';
-
 export type ShiftSummaryPrintFilters = {
   dateFrom: string;
   dateTo: string;
@@ -47,9 +46,12 @@ function ControlBoardShiftSummaryPrintSheet({
     slHangThucTe: sumShiftSummaryColumn(rows, 'slHangThucTe'),
     khoiLuongHang: sumShiftSummaryColumn(rows, 'khoiLuongHang'),
     khoiLuongHangThucTe: sumShiftSummaryColumn(rows, 'khoiLuongHangThucTe'),
+    khoiLuongNhuaTp: sumShiftSummaryColumn(rows, 'khoiLuongNhuaTp'),
     hangHong: sumShiftSummaryColumn(rows, 'hangHong'),
     khoiLuongNpl: sumShiftSummaryColumn(rows, 'khoiLuongNpl'),
+    khoiLuongMangXuat: sumShiftSummaryColumn(rows, 'khoiLuongMangXuat'),
     khoiLuongLoi: sumShiftSummaryColumn(rows, 'khoiLuongLoi'),
+    khoiLuongMang: sumShiftSummaryColumn(rows, 'khoiLuongMang'),
     tonDauCa: sumShiftSummaryColumn(rows, 'tonDauCa'),
     tonCuoiCa: sumShiftSummaryColumn(rows, 'tonCuoiCa'),
     tongVatLieu: sumShiftSummaryColumn(rows, 'tongVatLieu'),
@@ -101,28 +103,34 @@ function ControlBoardShiftSummaryPrintSheet({
             <col className="shift-summary-print-col-num" />
             <col className="shift-summary-print-col-num" />
             <col className="shift-summary-print-col-num" />
+            <col className="shift-summary-print-col-num" />
+            <col className="shift-summary-print-col-num" />
+            <col className="shift-summary-print-col-num" />
           </colgroup>
           <thead>
             <tr>
               <th>Ngày</th>
               <th>Ca</th>
-              <th className="shift-summary-print-num">SL hàng LT</th>
+              <th className="shift-summary-print-num">SL đặt SX</th>
               <th className="shift-summary-print-num">SL hàng TT</th>
               <th className="shift-summary-print-num">KL hàng</th>
               <th className="shift-summary-print-num">KL hàng TT</th>
+              <th className="shift-summary-print-num">KL nhựa TP</th>
               <th className="shift-summary-print-num">Hàng hỏng</th>
-              <th className="shift-summary-print-num">KL nhựa</th>
+              <th className="shift-summary-print-num">KL nhựa xuất</th>
+              <th className="shift-summary-print-num">KL màng xuất (kg)</th>
               <th className="shift-summary-print-num">KL lõi</th>
-              <th className="shift-summary-print-num">Tồn đầu ca</th>
-              <th className="shift-summary-print-num">Tồn cuối ca</th>
-              <th className="shift-summary-print-num">Tổng nhựa</th>
-              <th className="shift-summary-print-num">Chênh lệch</th>
+              <th className="shift-summary-print-num">KL bì</th>
+              <th className="shift-summary-print-num">Tồn đầu ca nhựa</th>
+              <th className="shift-summary-print-num">Tồn cuối ca nhựa</th>
+              <th className="shift-summary-print-num">Tổng nhựa sử dụng</th>
+              <th className="shift-summary-print-num">Chênh lệch nhựa</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={13} className="shift-summary-print-center">
+                <td colSpan={16} className="shift-summary-print-center">
                   Không có dữ liệu theo bộ lọc đã chọn.
                 </td>
               </tr>
@@ -135,9 +143,12 @@ function ControlBoardShiftSummaryPrintSheet({
                   <td className="shift-summary-print-num">{formatPrintValue(row.slHangThucTe, 0)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.khoiLuongHang, 3)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.khoiLuongHangThucTe, 3)}</td>
+                  <td className="shift-summary-print-num">{formatPrintValue(row.khoiLuongNhuaTp, 3)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.hangHong, 3)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.khoiLuongNpl, 3)}</td>
+                  <td className="shift-summary-print-num">{formatShiftSummaryKg(row.khoiLuongMangXuat, 3)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.khoiLuongLoi, 3)}</td>
+                  <td className="shift-summary-print-num">{formatPrintValue(row.khoiLuongMang, 3)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.tonDauCa, 3)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.tonCuoiCa, 3)}</td>
                   <td className="shift-summary-print-num">{formatPrintValue(row.tongVatLieu, 3)}</td>
@@ -156,9 +167,14 @@ function ControlBoardShiftSummaryPrintSheet({
                 <td className="shift-summary-print-num">
                   {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}
                 </td>
+                <td className="shift-summary-print-num">
+                  {formatShiftSummaryNumber(totals.khoiLuongNhuaTp, 3)}
+                </td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.hangHong, 3)}</td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.khoiLuongNpl, 3)}</td>
+                <td className="shift-summary-print-num">{formatShiftSummaryKg(totals.khoiLuongMangXuat, 3)}</td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.khoiLuongLoi, 3)}</td>
+                <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.khoiLuongMang, 3)}</td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.tonDauCa, 3)}</td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.tonCuoiCa, 3)}</td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.tongVatLieu, 3)}</td>

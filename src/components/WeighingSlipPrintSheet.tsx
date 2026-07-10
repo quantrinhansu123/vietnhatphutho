@@ -1,9 +1,7 @@
 import React from 'react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { WeighingRecord } from '../utils/weighingRecords';
 import { getWeighingDataRows } from '../utils/weighingRecords';
-import { PRINT_COMPANY_NAME } from './layout/constants';
-
 export type WeighingSlipPrintLayout = {
   hideProductFields?: boolean;
   splitPlasticFilmWeights?: boolean;

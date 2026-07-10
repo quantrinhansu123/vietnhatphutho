@@ -399,6 +399,8 @@ function buildWeighingSlips(records: WeighingRecord[]): WeighingSlipPrintData[] 
 export function ProductionPlanRelatedPrintContent({ data }: { data: ProductionPlanRelatedReports }) {
 
   const nvlReports = data.machineNvl.map(savedReportToMachineNvlPrintReport);
+  const nvlDauCaReports = nvlReports.filter(report => report.reportKind === 'dau_ca');
+  const nvlCuoiCaReports = nvlReports.filter(report => report.reportKind === 'cuoi_ca');
   const mixingGroups = groupMixingReportsForPrint(data.mixing);
   const weighingSlips = buildWeighingSlips(data.weighing);
   const damagedSlips = buildWeighingSlips(data.damaged);
@@ -427,21 +429,49 @@ export function ProductionPlanRelatedPrintContent({ data }: { data: ProductionPl
 
   return (
     <>
-      {nvlReports.map((report, index) => (
-        <div key={`nvl-${index}`} className="production-order-print-page">
+      {/* 4. Phiếu xuất kho vật tư */}
+      {data.warehouseSlips.map((slip, index) => (
+        <div key={`warehouse-${slip.slipCode || index}`} className="production-order-print-page">
+          <WarehouseSlipPrintSheet data={slip} />
+        </div>
+      ))}
+
+      {/* 5. Bảng kiểm kê vật tư tồn đầu ca */}
+      {nvlDauCaReports.map((report, index) => (
+        <div key={`nvl-dauca-${index}`} className="production-order-print-page">
           <MachineNvlPrintSheet report={report} />
         </div>
       ))}
+
+      {/* 6. Nhật kí trộn nguyên liệu */}
       {mixingGroups.map((group, index) => (
         <div key={`mixing-${index}`} className="production-order-print-page">
           <MixingReportPrintSheet reports={group} context={buildMixingReportPrintContext(group)} />
         </div>
       ))}
+
+      {/* 7. Phiếu cân kiểm tra */}
       {weighingSlips.map((slip, index) => (
         <div key={`weighing-${index}`} className="production-order-print-page">
           <WeighingSlipPrintSheet slip={slip} title="PHIẾU CÂN CA" />
         </div>
       ))}
+
+      {/* 8. Báo cáo sản lượng */}
+      {acceptanceSlips.map((slip, index) => (
+        <div key={`acceptance-${index}`} className="production-order-print-page">
+          <AcceptanceReportPrintSheet slip={slip} />
+        </div>
+      ))}
+
+      {/* 10. Phiếu báo dừng máy */}
+      {downtimeSlips.map((slip, index) => (
+        <div key={`downtime-${index}`} className="production-order-print-page">
+          <MachineDowntimePrintSheet slip={slip} />
+        </div>
+      ))}
+
+      {/* 12. Báo cáo hàng lỗi hỏng (gồm hàng hỏng + lỗi/hỏng nếu có) */}
       {damagedSlips.map((slip, index) => (
         <div key={`damaged-${index}`} className="production-order-print-page">
           <WeighingSlipPrintSheet
@@ -460,19 +490,11 @@ export function ProductionPlanRelatedPrintContent({ data }: { data: ProductionPl
           />
         </div>
       ))}
-      {downtimeSlips.map((slip, index) => (
-        <div key={`downtime-${index}`} className="production-order-print-page">
-          <MachineDowntimePrintSheet slip={slip} />
-        </div>
-      ))}
-      {acceptanceSlips.map((slip, index) => (
-        <div key={`acceptance-${index}`} className="production-order-print-page">
-          <AcceptanceReportPrintSheet slip={slip} />
-        </div>
-      ))}
-      {data.warehouseSlips.map((slip, index) => (
-        <div key={`warehouse-${slip.slipCode || index}`} className="production-order-print-page">
-          <WarehouseSlipPrintSheet data={slip} />
+
+      {/* 13. Bảng kiểm kê vật tư cuối ca */}
+      {nvlCuoiCaReports.map((report, index) => (
+        <div key={`nvl-cuoica-${index}`} className="production-order-print-page">
+          <MachineNvlPrintSheet report={report} />
         </div>
       ))}
     </>

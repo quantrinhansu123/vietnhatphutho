@@ -9,7 +9,7 @@ import {
   sumWeighingRowTotalWeight
 } from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
-import { sumMachineNvlDauCaReportTotal, sumMachineNvlCuoiCaReportTotal, type MachineNvlSavedReport } from './machineNvlReports';
+import type { MachineNvlSavedReport } from './machineNvlReports';
 import {
   getProductionShiftOptions,
   resolveShiftName,
@@ -17,6 +17,7 @@ import {
   type ShiftOption,
   type ShiftSetting
 } from './shiftSettings';
+import { normalizeProductCodeKey } from '../features/san-pham/types';
 
 export type ShiftSummaryWarehouseMovement = {
   id: string;
@@ -57,11 +58,14 @@ export type ControlBoardShiftSummaryRow = {
   khoiLuongHang: number;
   slHangThucTe: number;
   khoiLuongHangThucTe: number;
+  khoiLuongNhuaTp: number;
   hangHong: number;
   hangHongNhua: number;
   hangHongMang: number;
   khoiLuongNpl: number;
+  khoiLuongMangXuat: number;
   khoiLuongLoi: number;
+  khoiLuongMang: number;
   tonDauCa: number;
   tonCuoiCa: number;
   tongVatLieu: number;
@@ -69,6 +73,11 @@ export type ControlBoardShiftSummaryRow = {
 };
 
 type ProductRef = {
+  code: string;
+  totalWeight: string;
+};
+
+type MaterialRef = {
   code: string;
   totalWeight: string;
 };
@@ -94,10 +103,27 @@ type SummaryBucket = {
   hangHongNhua: number;
   hangHongMang: number;
   khoiLuongNpl: number;
+  khoiLuongMangXuat: number;
   khoiLuongLoi: number;
   tonDauCa: number;
   tonCuoiCa: number;
 };
+
+/** KL bì (kg) = số thành phẩm thực tế × 0,16 kg */
+export const KHOI_LUONG_MANG_KG_PER_UNIT = 0.16;
+
+/** KL nhựa TP (kg) = (KL hàng TT − KL lõi − KL bì) × 0,75 */
+export const KHOI_LUONG_NHUA_TP_FACTOR = 0.75;
+
+export function computeKhoiLuongNhuaTp(
+  khoiLuongHangThucTe: number,
+  khoiLuongLoi: number,
+  khoiLuongMang: number
+) {
+  return roundNormWeight(
+    (khoiLuongHangThucTe - khoiLuongLoi - khoiLuongMang) * KHOI_LUONG_NHUA_TP_FACTOR
+  );
+}
 
 function parseFlexibleNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) return null;
@@ -105,6 +131,19 @@ function parseFlexibleNumber(value: string | number | null | undefined) {
   const trimmed = String(value).trim();
   if (!trimmed || trimmed === '-') return null;
   const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+// Dùng cho "Tổng kg" định mức nhỏ (vd 0.238 kg/m2) và cũng hỗ trợ kiểu VN (1.250,5)
+function parseKgFactor(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const trimmed = String(value).trim();
+  if (!trimmed || trimmed === '-') return null;
+  const normalized = trimmed.includes(',')
+    ? trimmed.replace(/\./g, '').replace(',', '.')
+    : trimmed.replace(',', '.');
   const num = Number(normalized);
   return Number.isFinite(num) ? num : null;
 }
@@ -160,6 +199,7 @@ function getOrCreateBucket(
     hangHongNhua: 0,
     hangHongMang: 0,
     khoiLuongNpl: 0,
+    khoiLuongMangXuat: 0,
     khoiLuongLoi: 0,
     tonDauCa: 0,
     tonCuoiCa: 0
@@ -198,6 +238,15 @@ function isKgUnit(unit: string) {
   return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
 }
 
+function isM2Unit(unit: string) {
+  const normalized = unit
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return normalized === 'm2' || normalized === 'm^2' || normalized === 'm²' || normalized === 'm 2';
+}
+
 function splitShiftLabels(label: string) {
   return String(label || '')
     .split(/[,;+]/)
@@ -208,9 +257,25 @@ function splitShiftLabels(label: string) {
 function sumWarehouseMovementNplKg(movement: ShiftSummaryWarehouseMovement) {
   if (movement.warehouseKind !== 'nvl') return 0;
   if (movement.slipType !== 'xuat') return 0;
-  if (!isKgUnit(movement.unit)) return 0;
+  const unit = movement.unit || '';
+  if (!isKgUnit(unit)) return 0;
   const qty = movement.quantity;
-  return Number.isFinite(qty) && qty > 0 ? qty : 0;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  return qty;
+}
+
+function sumWarehouseMovementMangKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (movement.warehouseKind !== 'nvl') return 0;
+  if (movement.slipType !== 'xuat') return 0;
+  const unit = movement.unit || '';
+  if (!isM2Unit(unit)) return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  const factor = resolveKgFactor(unit, movement.itemCode || '', null);
+  return factor !== null && factor > 0 ? qty * factor : 0;
 }
 
 export function matchesShiftSummaryBucket(
@@ -249,6 +314,7 @@ export function buildControlBoardShiftSummary(input: {
   shiftSettings: ShiftSetting[];
   productionOrders: ProductionOrderRef[];
   products: ProductRef[];
+  materials?: MaterialRef[];
   acceptanceReports: AcceptanceReport[];
   warehouseMovements?: ShiftSummaryWarehouseMovement[];
   weighingRecords: WeighingRecord[];
@@ -259,6 +325,23 @@ export function buildControlBoardShiftSummary(input: {
 }): ControlBoardShiftSummaryRow[] {
   const shiftOptions = getProductionShiftOptions(input.shiftSettings);
   const map = new Map<string, SummaryBucket>();
+
+  const inventoryTotalKgByCode = (() => {
+    const m = new Map<string, number>();
+    for (const material of input.materials ?? []) {
+      const key = normalizeProductCodeKey(material.code);
+      if (!key) continue;
+      const totalKg = parseKgFactor(material.totalWeight);
+      if (totalKg !== null && totalKg > 0) m.set(key, totalKg);
+    }
+    return m;
+  })();
+
+  const resolveKgFactor = (unit: string, code: string, lineFactor: number | null | undefined) => {
+    if (isKgUnit(unit)) return 1;
+    if (lineFactor !== null && lineFactor !== undefined && Number.isFinite(lineFactor) && lineFactor > 0) return lineFactor;
+    return inventoryTotalKgByCode.get(normalizeProductCodeKey(code)) ?? null;
+  };
 
   const inRange = (ngay: string) => {
     const date = parseIsoDate(ngay);
@@ -330,6 +413,7 @@ export function buildControlBoardShiftSummary(input: {
     const bucket = getOrCreateBucket(map, movement.slipDate, movement.shift, shiftOptions);
     if (!bucket) continue;
     bucket.khoiLuongNpl += sumWarehouseMovementNplKg(movement);
+    bucket.khoiLuongMangXuat += sumWarehouseMovementMangKg(movement, resolveKgFactor);
   }
 
   for (const report of input.machineNvlReports ?? []) {
@@ -337,15 +421,27 @@ export function buildControlBoardShiftSummary(input: {
     const bucket = getOrCreateBucket(map, report.ngay, report.ca, shiftOptions);
     if (!bucket) continue;
     if (report.reportKind === 'dau_ca') {
-      bucket.tonDauCa += sumMachineNvlDauCaReportTotal(report);
+      for (const line of report.lines) {
+        if (!isKgUnit(line.donVi || '')) continue;
+        const qtyBase =
+          (line.soLuongTon > 0
+            ? line.soLuongTon
+            : (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0)) || 0;
+        if (qtyBase > 0) bucket.tonDauCa += qtyBase;
+      }
     } else if (report.reportKind === 'cuoi_ca') {
-      bucket.tonCuoiCa += sumMachineNvlCuoiCaReportTotal(report);
+      for (const line of report.lines) {
+        if (!isKgUnit(line.donVi || '')) continue;
+        const qty = Number.isFinite(line.soLuongTon) ? line.soLuongTon : 0;
+        if (qty > 0) bucket.tonCuoiCa += qty;
+      }
     }
   }
 
   return [...map.values()]
     .map(bucket => {
       const khoiLuongNpl = roundNormWeight(bucket.khoiLuongNpl);
+      const khoiLuongMangXuat = roundNormWeight(bucket.khoiLuongMangXuat);
       const tonDauCa = roundNormWeight(bucket.tonDauCa);
       const tonCuoiCa = roundNormWeight(bucket.tonCuoiCa);
       const khoiLuongHangThucTe = roundNormWeight(bucket.khoiLuongHangThucTe);
@@ -353,7 +449,9 @@ export function buildControlBoardShiftSummary(input: {
       const hangHongNhua = roundNormWeight(bucket.hangHongNhua);
       const hangHongMang = roundNormWeight(bucket.hangHongMang);
       const khoiLuongLoi = roundNormWeight(bucket.khoiLuongLoi);
-      const tongVatLieu = roundNormWeight(khoiLuongNpl + tonDauCa);
+      const khoiLuongMang = roundNormWeight(bucket.slHangThucTe * KHOI_LUONG_MANG_KG_PER_UNIT);
+      const khoiLuongNhuaTp = computeKhoiLuongNhuaTp(khoiLuongHangThucTe, khoiLuongLoi, khoiLuongMang);
+      const tongVatLieu = roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa);
       return {
         key: `${bucket.ngay}|${bucket.ca}`,
         ngay: bucket.ngay,
@@ -362,15 +460,18 @@ export function buildControlBoardShiftSummary(input: {
         khoiLuongHang: roundNormWeight(bucket.khoiLuongHang),
         slHangThucTe: bucket.slHangThucTe,
         khoiLuongHangThucTe,
+        khoiLuongNhuaTp,
         hangHong,
         hangHongNhua,
         hangHongMang,
         khoiLuongNpl,
+        khoiLuongMangXuat,
         khoiLuongLoi,
+        khoiLuongMang,
         tonDauCa,
         tonCuoiCa,
         tongVatLieu,
-        chenhLech: roundNormWeight(tongVatLieu - khoiLuongHangThucTe - tonCuoiCa - hangHong + khoiLuongLoi)
+        chenhLech: roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa - khoiLuongNhuaTp - hangHongNhua)
       };
     })
     .sort((a, b) => compareSummaryRows(a, b, shiftOptions));
@@ -382,6 +483,10 @@ export function formatShiftSummaryNumber(value: number, fractionDigits = 2) {
     minimumFractionDigits: 0,
     maximumFractionDigits: fractionDigits
   }).format(value);
+}
+
+export function formatShiftSummaryKg(value: number, fractionDigits = 3) {
+  return formatShiftSummaryNumber(value, fractionDigits);
 }
 
 export function sumShiftSummaryColumn(rows: ControlBoardShiftSummaryRow[], key: keyof ControlBoardShiftSummaryRow) {

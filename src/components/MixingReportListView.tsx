@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ClipboardList, Eye, Loader2, Pencil, Plus, Printer, Search, Trash2, X } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import { vietNhatLogoUrl } from './layout/constants';
 import { MixingReportPrintBatch } from './MixingReportPrintSheet';
 import {
   MIXING_MAX_ROUNDS,

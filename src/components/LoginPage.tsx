@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, Lock, User2, ShieldCheck } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
-import { PRINT_COMPANY_NAME } from './layout/constants';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { normalizeHrBranches } from '../features/_shared/hr';
 import type { StaffViewPermissions } from '../features/nhan-su/menuViews';
 

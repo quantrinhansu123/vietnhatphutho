@@ -4,7 +4,9 @@ import { getWeighingDataRows, parseWeighingWeight, sumWeighingRowTotalWeight, su
 import { roundNormWeight } from '../lib/mixingReportModel';
 import { getProductionShiftOptions, type ShiftSetting } from './shiftSettings';
 import {
+  computeKhoiLuongNhuaTp,
   formatShiftSummaryNumber,
+  KHOI_LUONG_NHUA_TP_FACTOR,
   matchesShiftSummaryBucket,
   type ControlBoardShiftSummaryRow,
   type ShiftSummaryWarehouseMovement
@@ -18,8 +20,10 @@ export type ShiftSummaryMetric =
   | 'khoiLuongHang'
   | 'slHangThucTe'
   | 'khoiLuongHangThucTe'
+  | 'khoiLuongNhuaTp'
   | 'hangHong'
   | 'khoiLuongNpl'
+  | 'khoiLuongMangXuat'
   | 'khoiLuongLoi'
   | 'tonDauCa'
   | 'tonCuoiCa'
@@ -30,19 +34,24 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   ShiftSummaryMetric,
   { label: string; source: string }
 > = {
-  slHang: { label: 'SL hàng LT', source: 'Lệnh sản xuất' },
+  slHang: { label: 'SL đặt SX', source: 'Lệnh sản xuất' },
   khoiLuongHang: { label: 'Khối lượng hàng', source: 'Lệnh sản xuất' },
   slHangThucTe: { label: 'SL hàng TT', source: 'Báo cáo sản lượng' },
   khoiLuongHangThucTe: { label: 'Khối lượng hàng TT', source: 'Báo cáo sản lượng (SL × kg định mức)' },
+  khoiLuongNhuaTp: {
+    label: 'KL nhựa TP',
+    source: '(KL hàng TT − KL lõi − KL bì) × 0,75'
+  },
   hangHong: { label: 'Hàng hỏng', source: 'Báo cáo hàng hỏng' },
-  khoiLuongNpl: { label: 'Khối lượng nhựa', source: 'Lịch sử xuất nhập kho (kg)' },
+  khoiLuongNpl: { label: 'Khối lượng nhựa xuất', source: 'Lịch sử xuất kho NVL (kg)' },
+  khoiLuongMangXuat: { label: 'KL màng xuất (kg)', source: 'Xuất kho NVL đơn vị m² → quy đổi kg' },
   khoiLuongLoi: { label: 'KL lõi', source: 'Báo cáo sản lượng (SL cuộn TT × 1kg)' },
-  tonDauCa: { label: 'Tồn đầu ca', source: 'Bảng tồn NVL (đầu ca)' },
-  tonCuoiCa: { label: 'Tồn cuối ca', source: 'Bảng tồn NVL (cuối ca)' },
-  tongVatLieu: { label: 'Tổng nhựa', source: 'KL nhựa + Tồn đầu ca' },
+  tonDauCa: { label: 'Tồn đầu ca nhựa', source: 'Bảng tồn NVL đầu ca (chỉ kg)' },
+  tonCuoiCa: { label: 'Tồn cuối ca nhựa', source: 'Bảng tồn NVL cuối ca (chỉ kg)' },
+  tongVatLieu: { label: 'Tổng nhựa sử dụng', source: 'KL nhựa xuất + Tồn đầu ca nhựa − Tồn cuối ca nhựa' },
   chenhLech: {
-    label: 'Chênh lệch',
-    source: 'Tổng nhựa − KL hàng TT − Tồn cuối ca − Hàng hỏng + KL lõi'
+    label: 'Chênh lệch nhựa',
+    source: 'KL nhựa xuất + Tồn đầu ca nhựa − Tồn cuối ca nhựa − KL nhựa TP − HH nhựa'
   }
 };
 
@@ -87,6 +96,20 @@ function parseFlexibleNumber(value: string | number | null | undefined) {
   return Number.isFinite(num) ? num : null;
 }
 
+// Dùng cho "Tổng kg" dạng định mức nhỏ (vd 0.238 kg/m2) và cũng hỗ trợ kiểu VN (1.250,5)
+function parseKgFactor(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const trimmed = String(value).trim();
+  if (!trimmed || trimmed === '-') return null;
+
+  const normalized = trimmed.includes(',')
+    ? trimmed.replace(/\./g, '').replace(',', '.')
+    : trimmed.replace(',', '.');
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
 function parseOrderQuantity(value: string) {
   const normalized = value.replace(/[^\d.,-]/g, '').replace(',', '.');
   const parsed = Number(normalized);
@@ -123,6 +146,15 @@ function isKgUnit(unit: string) {
   return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
 }
 
+function isM2Unit(unit: string) {
+  const normalized = unit
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return normalized === 'm2' || normalized === 'm^2' || normalized === 'm²' || normalized === 'm 2';
+}
+
 function warehouseSlipTypeLabel(type: 'nhap' | 'xuat') {
   return type === 'nhap' ? 'Nhập kho' : 'Xuất kho';
 }
@@ -151,8 +183,10 @@ export function getShiftSummaryDetail(input: {
     | 'tonDauCa'
     | 'tonCuoiCa'
     | 'khoiLuongHangThucTe'
-    | 'hangHong'
     | 'khoiLuongLoi'
+    | 'khoiLuongMang'
+    | 'khoiLuongNhuaTp'
+    | 'hangHongNhua'
     | 'tongVatLieu'
     | 'chenhLech'
   > | null;
@@ -165,7 +199,7 @@ export function getShiftSummaryDetail(input: {
     for (const material of input.materials ?? []) {
       const key = normalizeProductCodeKey(material.code);
       if (!key) continue;
-      const totalKg = parseFlexibleNumber(material.totalWeight);
+      const totalKg = parseKgFactor(material.totalWeight);
       if (totalKg !== null && totalKg > 0) map.set(key, totalKg);
     }
     return map;
@@ -380,12 +414,12 @@ export function getShiftSummaryDetail(input: {
       const machineLabel = report.tenMay || report.maMay || '-';
 
       for (const line of report.lines) {
+        if (!isKgUnit(line.donVi || '')) continue;
         const qtyBase =
           (line.soLuongTon > 0
             ? line.soLuongTon
             : (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0)) || 0;
-        const factor = resolveLineKgFactor(line.donVi || '', line.maNvl || '', line.trongLuongQuyDoiKg);
-        const lineTotal = factor !== null && qtyBase > 0 ? qtyBase * factor : 0;
+        const lineTotal = qtyBase > 0 ? qtyBase : 0;
         if (lineTotal <= 0 && !line.maNvl && !line.tenNvl) continue;
 
         total += lineTotal;
@@ -417,7 +451,7 @@ export function getShiftSummaryDetail(input: {
         { key: 'tongTon', label: 'Tổng tồn (kg)', align: 'right', mono: true, accent: true }
       ],
       rows,
-      totalLabel: 'Tổng tồn đầu ca (kg)',
+      totalLabel: 'Tổng tồn đầu ca nhựa (kg)',
       totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
       showActions: true
     };
@@ -434,7 +468,12 @@ export function getShiftSummaryDetail(input: {
       const machineLabel = report.tenMay || report.maMay || '-';
 
       for (const line of report.lines) {
-        const lineTotal = sumMachineNvlCuoiCaLineTotal(line);
+        if (!isKgUnit(line.donVi || '')) continue;
+        const qtyBase =
+          (line.soLuongTon > 0
+            ? line.soLuongTon
+            : (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0)) || 0;
+        const lineTotal = qtyBase > 0 ? qtyBase : 0;
         if (lineTotal <= 0 && !line.maNvl && !line.tenNvl) continue;
 
         total += lineTotal;
@@ -446,7 +485,9 @@ export function getShiftSummaryDetail(input: {
           maNvl: line.maNvl || '-',
           tenNvl: line.tenNvl || '-',
           donVi: line.donVi || '-',
-          slTonDinhMuc: formatDetailNumber(line.soLuongTonDinhMuc, 3),
+          tonTrongMay: formatDetailNumber(line.soLuongTrongMay, 3),
+          tonTrongBonTron: formatDetailNumber(line.soLuongTrongBonTron, 3),
+          nlChuaTron: formatDetailNumber(line.soLuongNlChuaTron, 3),
           tongTon: formatDetailNumber(lineTotal, 3)
         });
       }
@@ -458,11 +499,13 @@ export function getShiftSummaryDetail(input: {
         { key: 'maNvl', label: 'Mã NVL' },
         { key: 'tenNvl', label: 'Tên NVL' },
         { key: 'donVi', label: 'ĐVT' },
-        { key: 'slTonDinhMuc', label: 'SL tồn ĐM', align: 'right', mono: true },
-        { key: 'tongTon', label: 'Tổng tồn', align: 'right', mono: true, accent: true }
+        { key: 'tonTrongMay', label: 'Tồn máy', align: 'right', mono: true },
+        { key: 'tonTrongBonTron', label: 'Tồn bồn', align: 'right', mono: true },
+        { key: 'nlChuaTron', label: 'NL chưa trộn', align: 'right', mono: true },
+        { key: 'tongTon', label: 'Tổng tồn (kg)', align: 'right', mono: true, accent: true }
       ],
       rows,
-      totalLabel: 'Tổng tồn cuối ca',
+      totalLabel: 'Tổng tồn cuối ca nhựa (kg)',
       totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
       showActions: true
     };
@@ -476,10 +519,15 @@ export function getShiftSummaryDetail(input: {
       if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
       if (movement.warehouseKind !== 'nvl') continue;
       if (movement.slipType !== 'xuat') continue;
-      if (!isKgUnit(movement.unit)) continue;
       if (!Number.isFinite(movement.quantity) || movement.quantity <= 0) continue;
 
-      total += movement.quantity;
+      const unit = movement.unit || '';
+      if (!isKgUnit(unit)) continue;
+
+      const kg = movement.quantity;
+      if (!Number.isFinite(kg) || kg <= 0) continue;
+
+      total += kg;
       rows.push({
         rowKey: movement.id || `${movement.slipCode}|${movement.itemCode}`,
         recordId: movement.slipCode || '',
@@ -487,8 +535,9 @@ export function getShiftSummaryDetail(input: {
         loaiPhieu: warehouseSlipTypeLabel(movement.slipType),
         maNvl: movement.itemCode || '-',
         tenNvl: movement.itemName || '-',
+        soLuong: formatDetailNumber(movement.quantity, 3),
         donVi: movement.unit || '-',
-        khoiLuong: formatDetailNumber(movement.quantity, 3)
+        khoiLuong: formatDetailNumber(kg, 3)
       });
     }
 
@@ -498,12 +547,61 @@ export function getShiftSummaryDetail(input: {
         { key: 'loaiPhieu', label: 'Loại' },
         { key: 'maNvl', label: 'Mã NVL' },
         { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'soLuong', label: 'SL', align: 'right', mono: true },
         { key: 'donVi', label: 'ĐVT' },
         { key: 'khoiLuong', label: 'KL (kg)', align: 'right', mono: true, accent: true }
       ],
       rows,
-      totalLabel: 'Tổng khối lượng nhựa',
+      totalLabel: 'Tổng khối lượng nhựa xuất (kg)',
       totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
+      showActions: true
+    };
+  }
+
+  if (metric === 'khoiLuongMangXuat') {
+    const rows: ShiftSummaryDetailRow[] = [];
+    let total = 0;
+
+    for (const movement of input.warehouseMovements ?? []) {
+      if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
+      if (movement.warehouseKind !== 'nvl') continue;
+      if (movement.slipType !== 'xuat') continue;
+      if (!Number.isFinite(movement.quantity) || movement.quantity <= 0) continue;
+
+      const unit = movement.unit || '';
+      if (!isM2Unit(unit)) continue;
+
+      const factor = resolveLineKgFactor(unit, movement.itemCode || '', null);
+      const kg = factor !== null && factor > 0 ? movement.quantity * factor : 0;
+      if (kg <= 0) continue;
+
+      total += kg;
+      rows.push({
+        rowKey: movement.id || `${movement.slipCode}|${movement.itemCode}`,
+        recordId: movement.slipCode || '',
+        soPhieu: movement.slipCode || '-',
+        loaiPhieu: warehouseSlipTypeLabel(movement.slipType),
+        maNvl: movement.itemCode || '-',
+        tenNvl: movement.itemName || '-',
+        soLuongM2: formatDetailNumber(movement.quantity, 3),
+        heSoKg: factor !== null ? formatDetailNumber(factor, 3) : '-',
+        khoiLuong: formatDetailNumber(kg, 3)
+      });
+    }
+
+    return {
+      columns: [
+        { key: 'soPhieu', label: 'Mã phiếu' },
+        { key: 'loaiPhieu', label: 'Loại' },
+        { key: 'maNvl', label: 'Mã NVL' },
+        { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'soLuongM2', label: 'SL (m²)', align: 'right', mono: true },
+        { key: 'heSoKg', label: 'Hệ số (kg/m²)', align: 'right', mono: true },
+        { key: 'khoiLuong', label: 'KL (kg)', align: 'right', mono: true, accent: true }
+      ],
+      rows,
+      totalLabel: 'Tổng KL màng xuất',
+      totalValue: `${formatShiftSummaryNumber(roundNormWeight(total), 3)} kg`,
       showActions: true
     };
   }
@@ -543,50 +641,13 @@ export function getShiftSummaryDetail(input: {
     };
   }
 
-  if (metric === 'tongVatLieu') {
+  if (metric === 'khoiLuongNhuaTp') {
     const row = input.summaryRow;
-    const khoiLuongNpl = row?.khoiLuongNpl ?? 0;
-    const tonDauCa = row?.tonDauCa ?? 0;
-    const tongVatLieu = row?.tongVatLieu ?? roundNormWeight(khoiLuongNpl + tonDauCa);
-
-    return {
-      columns: [
-        { key: 'thanhPhan', label: 'Thành phần' },
-        { key: 'congThuc', label: 'Công thức' },
-        { key: 'giaTri', label: 'Giá trị', align: 'right', mono: true, accent: true }
-      ],
-      rows: [
-        {
-          thanhPhan: 'Khối lượng nhựa',
-          congThuc: 'Xuất kho NVL (kg)',
-          giaTri: formatDetailNumber(khoiLuongNpl, 3)
-        },
-        {
-          thanhPhan: 'Tồn đầu ca',
-          congThuc: 'Bảng tồn NVL đầu ca (kg)',
-          giaTri: formatDetailNumber(tonDauCa, 3)
-        },
-        {
-          thanhPhan: 'Tổng nhựa',
-          congThuc: 'KL nhựa + Tồn đầu ca',
-          giaTri: formatDetailNumber(tongVatLieu, 3)
-        }
-      ],
-      totalLabel: 'Tổng nhựa = KL nhựa + Tồn đầu ca',
-      totalValue: formatShiftSummaryNumber(tongVatLieu, 3)
-    };
-  }
-
-  if (metric === 'chenhLech') {
-    const row = input.summaryRow;
-    const tongVatLieu = row?.tongVatLieu ?? 0;
     const khoiLuongHangThucTe = row?.khoiLuongHangThucTe ?? 0;
-    const tonCuoiCa = row?.tonCuoiCa ?? 0;
-    const hangHong = row?.hangHong ?? 0;
     const khoiLuongLoi = row?.khoiLuongLoi ?? 0;
-    const chenhLech =
-      row?.chenhLech ??
-      roundNormWeight(tongVatLieu - khoiLuongHangThucTe - tonCuoiCa - hangHong + khoiLuongLoi);
+    const khoiLuongMang = row?.khoiLuongMang ?? 0;
+    const khoiLuongNhuaTp =
+      row?.khoiLuongNhuaTp ?? computeKhoiLuongNhuaTp(khoiLuongHangThucTe, khoiLuongLoi, khoiLuongMang);
 
     return {
       columns: [
@@ -596,37 +657,129 @@ export function getShiftSummaryDetail(input: {
       ],
       rows: [
         {
-          thanhPhan: 'Tổng nhựa',
-          dau: '',
-          giaTri: formatDetailNumber(tongVatLieu, 3)
-        },
-        {
           thanhPhan: 'Khối lượng hàng TT',
-          dau: '−',
+          dau: '',
           giaTri: formatDetailNumber(khoiLuongHangThucTe, 3)
         },
         {
-          thanhPhan: 'Tồn cuối ca',
+          thanhPhan: 'KL lõi',
+          dau: '−',
+          giaTri: formatDetailNumber(khoiLuongLoi, 3)
+        },
+        {
+          thanhPhan: 'KL bì',
+          dau: '−',
+          giaTri: formatDetailNumber(khoiLuongMang, 3)
+        },
+        {
+          thanhPhan: `× ${KHOI_LUONG_NHUA_TP_FACTOR}`,
+          dau: '',
+          giaTri: formatDetailNumber(
+            roundNormWeight((khoiLuongHangThucTe - khoiLuongLoi - khoiLuongMang) * KHOI_LUONG_NHUA_TP_FACTOR),
+            3
+          )
+        },
+        {
+          thanhPhan: 'KL nhựa TP',
+          dau: '=',
+          giaTri: formatDetailNumber(khoiLuongNhuaTp, 3)
+        }
+      ],
+      totalLabel: 'KL nhựa TP = (KL hàng TT − KL lõi − KL bì) × 0,75',
+      totalValue: formatShiftSummaryNumber(khoiLuongNhuaTp, 3)
+    };
+  }
+
+  if (metric === 'tongVatLieu') {
+    const row = input.summaryRow;
+    const khoiLuongNpl = row?.khoiLuongNpl ?? 0;
+    const tonDauCa = row?.tonDauCa ?? 0;
+    const tonCuoiCa = row?.tonCuoiCa ?? 0;
+    const tongVatLieu = row?.tongVatLieu ?? roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa);
+
+    return {
+      columns: [
+        { key: 'thanhPhan', label: 'Thành phần' },
+        { key: 'congThuc', label: 'Công thức' },
+        { key: 'giaTri', label: 'Giá trị', align: 'right', mono: true, accent: true }
+      ],
+      rows: [
+        {
+          thanhPhan: 'Khối lượng nhựa xuất',
+          congThuc: '+',
+          giaTri: formatDetailNumber(khoiLuongNpl, 3)
+        },
+        {
+          thanhPhan: 'Tồn đầu ca nhựa',
+          congThuc: '+',
+          giaTri: formatDetailNumber(tonDauCa, 3)
+        },
+        {
+          thanhPhan: 'Tồn cuối ca nhựa',
+          congThuc: '−',
+          giaTri: formatDetailNumber(tonCuoiCa, 3)
+        },
+        {
+          thanhPhan: 'Tổng nhựa sử dụng',
+          congThuc: '=',
+          giaTri: formatDetailNumber(tongVatLieu, 3)
+        }
+      ],
+      totalLabel: 'Tổng nhựa sử dụng = KL nhựa xuất + Tồn đầu ca nhựa − Tồn cuối ca nhựa',
+      totalValue: formatShiftSummaryNumber(tongVatLieu, 3)
+    };
+  }
+
+  if (metric === 'chenhLech') {
+    const row = input.summaryRow;
+    const khoiLuongNpl = row?.khoiLuongNpl ?? 0;
+    const tonDauCa = row?.tonDauCa ?? 0;
+    const tonCuoiCa = row?.tonCuoiCa ?? 0;
+    const khoiLuongNhuaTp = row?.khoiLuongNhuaTp ?? 0;
+    const hangHongNhua = row?.hangHongNhua ?? 0;
+    const chenhLech =
+      row?.chenhLech ??
+      roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa - khoiLuongNhuaTp - hangHongNhua);
+
+    return {
+      columns: [
+        { key: 'thanhPhan', label: 'Thành phần' },
+        { key: 'dau', label: '' },
+        { key: 'giaTri', label: 'Giá trị', align: 'right', mono: true, accent: true }
+      ],
+      rows: [
+        {
+          thanhPhan: 'Khối lượng nhựa xuất',
+          dau: '',
+          giaTri: formatDetailNumber(khoiLuongNpl, 3)
+        },
+        {
+          thanhPhan: 'Tồn đầu ca nhựa',
+          dau: '+',
+          giaTri: formatDetailNumber(tonDauCa, 3)
+        },
+        {
+          thanhPhan: 'Tồn cuối ca nhựa',
           dau: '−',
           giaTri: formatDetailNumber(tonCuoiCa, 3)
         },
         {
-          thanhPhan: 'Hàng hỏng',
+          thanhPhan: 'KL nhựa TP',
           dau: '−',
-          giaTri: formatDetailNumber(hangHong, 3)
+          giaTri: formatDetailNumber(khoiLuongNhuaTp, 3)
         },
         {
-          thanhPhan: 'KL lõi',
-          dau: '+',
-          giaTri: formatDetailNumber(khoiLuongLoi, 3)
+          thanhPhan: 'HH nhựa',
+          dau: '−',
+          giaTri: formatDetailNumber(hangHongNhua, 3)
         },
         {
-          thanhPhan: 'Chênh lệch',
+          thanhPhan: 'Chênh lệch nhựa',
           dau: '=',
           giaTri: formatDetailNumber(chenhLech, 3)
         }
       ],
-      totalLabel: 'Chênh lệch = Tổng nhựa − KL hàng TT − Tồn cuối ca − Hàng hỏng + KL lõi',
+      totalLabel: 'Chênh lệch nhựa = KL nhựa xuất + Tồn đầu ca nhựa − Tồn cuối ca nhựa − KL nhựa TP − HH nhựa',
       totalValue: formatShiftSummaryNumber(chenhLech, 3)
     };
   }
@@ -645,6 +798,6 @@ export function isShiftSummaryMetricClickable(
 ) {
   const value = row[metric];
   if (typeof value !== 'number' || !Number.isFinite(value)) return false;
-  if (metric === 'tongVatLieu' || metric === 'chenhLech') return value !== 0;
+  if (metric === 'tongVatLieu' || metric === 'chenhLech' || metric === 'khoiLuongNhuaTp') return value !== 0;
   return value > 0;
 }

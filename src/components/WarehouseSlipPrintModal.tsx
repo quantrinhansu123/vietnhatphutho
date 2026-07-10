@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, Printer, X } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { formatMoney, formatNumber } from '../utils';
 import { formatVietnameseMoneyWords } from '../utils/vietnameseMoneyWords';
-import { PRINT_COMPANY_NAME } from './layout/constants';
-
 export type WarehouseSlipPrintLine = {
   code: string;
   name: string;

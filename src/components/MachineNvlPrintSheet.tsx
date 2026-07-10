@@ -1,8 +1,6 @@
 import React from 'react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { formatNumber } from '../utils';
-import { PRINT_COMPANY_NAME } from './layout/constants';
-
 export type MachineNvlPrintKind = 'dau_ca' | 'cuoi_ca';
 
 export type MachineNvlPrintLine = {

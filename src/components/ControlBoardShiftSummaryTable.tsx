@@ -12,6 +12,7 @@ import {
 import {
   filterControlBoardShiftSummaryRows,
   formatShiftSummaryNumber,
+  formatShiftSummaryKg,
   sumShiftSummaryColumn,
   type ControlBoardShiftSummaryRow,
   type ShiftSummaryFilterSources
@@ -151,10 +152,13 @@ export default function ControlBoardShiftSummaryTable({
     slHangThucTe: sumShiftSummaryColumn(filteredRows, 'slHangThucTe'),
     khoiLuongHang: sumShiftSummaryColumn(filteredRows, 'khoiLuongHang'),
     khoiLuongHangThucTe: sumShiftSummaryColumn(filteredRows, 'khoiLuongHangThucTe'),
+    khoiLuongNhuaTp: sumShiftSummaryColumn(filteredRows, 'khoiLuongNhuaTp'),
     hangHongNhua: sumShiftSummaryColumn(filteredRows, 'hangHongNhua'),
     hangHongMang: sumShiftSummaryColumn(filteredRows, 'hangHongMang'),
     khoiLuongNpl: sumShiftSummaryColumn(filteredRows, 'khoiLuongNpl'),
+    khoiLuongMangXuat: sumShiftSummaryColumn(filteredRows, 'khoiLuongMangXuat'),
     khoiLuongLoi: sumShiftSummaryColumn(filteredRows, 'khoiLuongLoi'),
+    khoiLuongMang: sumShiftSummaryColumn(filteredRows, 'khoiLuongMang'),
     tonDauCa: sumShiftSummaryColumn(filteredRows, 'tonDauCa'),
     tonCuoiCa: sumShiftSummaryColumn(filteredRows, 'tonCuoiCa'),
     tongVatLieu: sumShiftSummaryColumn(filteredRows, 'tongVatLieu'),
@@ -280,18 +284,18 @@ export default function ControlBoardShiftSummaryTable({
                     </div>
                     <div className="flex shrink-0 items-start gap-3">
                       <p className="text-right text-[10px] font-black uppercase tracking-wider text-teal-800">
-                        TN
+                        TN sử dụng
                         <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryNumber(row.tongVatLieu, 3)}</span>
                       </p>
                       <p className="text-right text-[10px] font-black uppercase tracking-wider text-orange-700">
-                        CL
+                        CL nhựa
                         <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryNumber(row.chenhLech, 3)}</span>
                       </p>
                     </div>
                   </div>
                   <dl className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px]">
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">SL hàng LT</dt>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">SL đặt SX</dt>
                       <dd className="font-mono font-bold text-zinc-800">{formatShiftSummaryNumber(row.slHang, 0)}</dd>
                     </div>
                     <div>
@@ -307,6 +311,10 @@ export default function ControlBoardShiftSummaryTable({
                       <dd className="font-mono font-bold text-[#ef1b2d]">{formatShiftSummaryNumber(row.khoiLuongHangThucTe, 3)}</dd>
                     </div>
                     <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL nhựa TP</dt>
+                      <dd className="font-mono font-bold text-purple-700">{formatShiftSummaryNumber(row.khoiLuongNhuaTp, 3)}</dd>
+                    </div>
+                    <div>
                       <dt className="font-bold uppercase tracking-wider text-zinc-400">HH nhựa</dt>
                       <dd className="font-mono font-bold text-rose-700">{formatShiftSummaryNumber(row.hangHongNhua, 3)}</dd>
                     </div>
@@ -315,19 +323,27 @@ export default function ControlBoardShiftSummaryTable({
                       <dd className="font-mono font-bold text-rose-700">{formatShiftSummaryNumber(row.hangHongMang, 3)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL nhựa</dt>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL nhựa xuất</dt>
                       <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryNumber(row.khoiLuongNpl, 3)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL màng xuất (kg)</dt>
+                      <dd className="font-mono font-bold text-fuchsia-700">{formatShiftSummaryKg(row.khoiLuongMangXuat, 3)}</dd>
                     </div>
                     <div>
                       <dt className="font-bold uppercase tracking-wider text-zinc-400">KL lõi</dt>
                       <dd className="font-mono font-bold text-stone-700">{formatShiftSummaryNumber(row.khoiLuongLoi, 3)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn đầu</dt>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL bì</dt>
+                      <dd className="font-mono font-bold text-cyan-700">{formatShiftSummaryNumber(row.khoiLuongMang, 3)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn đầu ca nhựa</dt>
                       <dd className="font-mono font-bold text-indigo-700">{formatShiftSummaryNumber(row.tonDauCa, 3)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn cuối</dt>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn cuối ca nhựa</dt>
                       <dd className="font-mono font-bold text-violet-700">{formatShiftSummaryNumber(row.tonCuoiCa, 3)}</dd>
                     </div>
                   </dl>
@@ -336,12 +352,12 @@ export default function ControlBoardShiftSummaryTable({
               <div className="rounded-lg border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-[10px] font-black text-zinc-800">
                 <p className="mb-1 uppercase tracking-wider text-zinc-500">Tổng cộng</p>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                  <span>SL LT: {formatShiftSummaryNumber(totals.slHang, 0)}</span>
+                  <span>SL đặt SX: {formatShiftSummaryNumber(totals.slHang, 0)}</span>
                   <span className="text-sky-700">SL TT: {formatShiftSummaryNumber(totals.slHangThucTe, 0)}</span>
                   <span className="text-emerald-700">KL: {formatShiftSummaryNumber(totals.khoiLuongHang, 3)}</span>
                   <span className="text-[#ef1b2d]">KL TT: {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}</span>
-                  <span className="text-teal-800">TN: {formatShiftSummaryNumber(totals.tongVatLieu, 3)}</span>
-                  <span className="text-orange-700">CL: {formatShiftSummaryNumber(totals.chenhLech, 3)}</span>
+                  <span className="text-teal-800">TN sử dụng: {formatShiftSummaryNumber(totals.tongVatLieu, 3)}</span>
+                  <span className="text-orange-700">CL nhựa: {formatShiftSummaryNumber(totals.chenhLech, 3)}</span>
                 </div>
               </div>
             </>
@@ -354,31 +370,34 @@ export default function ControlBoardShiftSummaryTable({
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 text-right font-black">SL hàng LT</th>
+                <th className="px-3 py-2.5 text-right font-black">SL đặt SX</th>
                 <th className="px-3 py-2.5 text-right font-black">SL hàng TT</th>
                 <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng</th>
                 <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng TT</th>
+                <th className="px-3 py-2.5 text-right font-black">KL nhựa TP</th>
                 <th className="px-3 py-2.5 text-right font-black">HH nhựa</th>
                 <th className="px-3 py-2.5 text-right font-black">HH màng</th>
-                <th className="px-3 py-2.5 text-right font-black">Khối lượng nhựa</th>
+                <th className="px-3 py-2.5 text-right font-black">Khối lượng nhựa xuất</th>
+                <th className="px-3 py-2.5 text-right font-black">KL màng xuất (kg)</th>
                 <th className="px-3 py-2.5 text-right font-black">KL lõi</th>
-                <th className="px-3 py-2.5 text-right font-black">Tồn đầu ca</th>
-                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng nhựa</th>
-                <th className="px-3 py-2.5 text-right font-black">Chênh lệch</th>
+                <th className="px-3 py-2.5 text-right font-black">KL bì</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn đầu ca nhựa</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca nhựa</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng nhựa sử dụng</th>
+                <th className="px-3 py-2.5 text-right font-black">Chênh lệch nhựa</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={17} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải dữ liệu tổng hợp...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={17} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có dữ liệu theo bộ lọc đã chọn.
                   </td>
                 </tr>
@@ -417,6 +436,13 @@ export default function ControlBoardShiftSummaryTable({
                     />
                     <SummaryValueCell
                       row={row}
+                      metric="khoiLuongNhuaTp"
+                      formatted={formatShiftSummaryNumber(row.khoiLuongNhuaTp, 3)}
+                      className="px-3 py-2 text-right font-mono font-bold text-purple-700"
+                      onOpen={openDetail}
+                    />
+                    <SummaryValueCell
+                      row={row}
                       metric="hangHong"
                       formatted={formatShiftSummaryNumber(row.hangHongNhua, 3)}
                       className="px-3 py-2 text-right font-mono font-bold text-rose-700"
@@ -438,11 +464,21 @@ export default function ControlBoardShiftSummaryTable({
                     />
                     <SummaryValueCell
                       row={row}
+                      metric="khoiLuongMangXuat"
+                      formatted={formatShiftSummaryKg(row.khoiLuongMangXuat, 3)}
+                      className="px-3 py-2 text-right font-mono font-bold text-fuchsia-700"
+                      onOpen={openDetail}
+                    />
+                    <SummaryValueCell
+                      row={row}
                       metric="khoiLuongLoi"
                       formatted={formatShiftSummaryNumber(row.khoiLuongLoi, 3)}
                       className="px-3 py-2 text-right font-mono font-bold text-stone-700"
                       onOpen={openDetail}
                     />
+                    <td className="px-3 py-2 text-right font-mono font-bold text-cyan-700">
+                      {formatShiftSummaryNumber(row.khoiLuongMang, 3)}
+                    </td>
                     <SummaryValueCell
                       row={row}
                       metric="tonDauCa"
@@ -491,6 +527,9 @@ export default function ControlBoardShiftSummaryTable({
                   <td className="px-3 py-2.5 text-right font-mono text-[#ef1b2d]">
                     {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}
                   </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-purple-700">
+                    {formatShiftSummaryNumber(totals.khoiLuongNhuaTp, 3)}
+                  </td>
                   <td className="px-3 py-2.5 text-right font-mono text-rose-700">
                     {formatShiftSummaryNumber(totals.hangHongNhua, 3)}
                   </td>
@@ -500,8 +539,14 @@ export default function ControlBoardShiftSummaryTable({
                   <td className="px-3 py-2.5 text-right font-mono text-amber-700">
                     {formatShiftSummaryNumber(totals.khoiLuongNpl, 3)}
                   </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-fuchsia-700">
+                    {formatShiftSummaryKg(totals.khoiLuongMangXuat, 3)}
+                  </td>
                   <td className="px-3 py-2.5 text-right font-mono text-stone-700">
                     {formatShiftSummaryNumber(totals.khoiLuongLoi, 3)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-cyan-700">
+                    {formatShiftSummaryNumber(totals.khoiLuongMang, 3)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-indigo-700">
                     {formatShiftSummaryNumber(totals.tonDauCa, 3)}

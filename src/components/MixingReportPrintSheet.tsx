@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import {
   MIXING_ROUND_KEYS,
   buildMixingReportPrintContext,
@@ -14,7 +14,6 @@ import {
   type MixingReportPrintContext
 } from '../lib/mixingReportModel';
 import type { MixingReport } from './MixingReportForm';
-import { PRINT_COMPANY_NAME } from './layout/constants';
 const PRINT_PROJECT_NAME = 'Dự án Chuyển đổi số sản xuất';
 const PRINT_DOC_CODE = 'BM-SX-06';
 const PRINT_DOC_VERSION = 'Phiên bản 1.0';

@@ -3,6 +3,20 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Loader2, Search } from 'lucide-react';
 import { orderFieldClass } from '../../features/_shared/orderHelpers';
 
+const DIACRITIC_MARK_RANGE = [
+  String.fromCharCode(0x0300),
+  String.fromCharCode(0x036f)
+];
+const DIACRITIC_MARKS_PATTERN = new RegExp(`[${DIACRITIC_MARK_RANGE[0]}-${DIACRITIC_MARK_RANGE[1]}]`, 'g');
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(DIACRITIC_MARKS_PATTERN, '')
+    .replace(/đ/g, 'd');
+}
+
 export function SearchableSelect({
   value,
   onChange,
@@ -63,11 +77,11 @@ export function SearchableSelect({
   }, [selectedLabel, open]);
 
   const filteredOptions = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = normalizeSearchText(query.trim());
     const list = normalized
       ? options.filter(item => {
-          const label = (getSearchText ?? getLabel)(item).toLowerCase();
-          const optionValue = getValue(item).toLowerCase();
+          const label = normalizeSearchText((getSearchText ?? getLabel)(item));
+          const optionValue = normalizeSearchText(getValue(item));
           return label.includes(normalized) || optionValue.includes(normalized);
         })
       : options;

@@ -607,13 +607,11 @@ export function WarehouseSlipPanel({
           if (!res.ok) throw new Error(data.error || 'Không thể tải kho NVL.');
           const materials = normalizeMaterialsInventory(data);
           setItemOptions(
-            materials
-              .filter(material => String(material.unit || '').trim().toLowerCase() === 'kg')
-              .map(material => ({
-                code: material.code,
-                name: material.name,
-                unit: material.unit && material.unit !== '-' ? material.unit : ''
-              }))
+            materials.map(material => ({
+              code: material.code,
+              name: material.name,
+              unit: material.unit && material.unit !== '-' ? material.unit : ''
+            }))
           );
           setWeightCatalog(materials.map(mapMaterialToWeightCatalogItem));
         }

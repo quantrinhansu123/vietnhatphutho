@@ -1,4 +1,4 @@
-import vietNhatLogoUrl from '../../assets/vietnhat-logo.svg';
+import vietNhatLogoUrl from '../../assets/logovietnhat_1.png';
 
 export const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
 export { vietNhatLogoUrl };

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ClipboardList, Loader2, Pencil, Plus, Printer, Replace, Trash2 } from 'lucide-react';
-import vietNhatLogoUrl from '../../logovietnhat_1.png';
+import { vietNhatLogoUrl } from './layout/constants';
 import { formatNumber } from '../utils';
 import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips, sumByUnit } from './AcceptanceReportPrintSheet';
 import type { AcceptanceReport } from './AcceptanceReportForm';

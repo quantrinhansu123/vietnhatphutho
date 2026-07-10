@@ -108,7 +108,7 @@ export default function ControlBoardShiftDetailModal({
   );
 
   const isWeighingMetric = false;
-  const isWarehouseNplMetric = metric === 'khoiLuongNpl';
+  const isWarehouseNplMetric = metric === 'khoiLuongNpl' || metric === 'khoiLuongMangXuat';
   const isMachineNvlDauCaMetric = metric === 'tonDauCa';
   const isMachineNvlCuoiCaMetric = metric === 'tonCuoiCa';
   const isMachineNvlMetric = isMachineNvlDauCaMetric || isMachineNvlCuoiCaMetric;
