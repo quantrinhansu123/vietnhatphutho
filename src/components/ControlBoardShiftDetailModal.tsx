@@ -109,6 +109,8 @@ export default function ControlBoardShiftDetailModal({
 
   const isWeighingMetric = false;
   const isWarehouseNplMetric = metric === 'khoiLuongNpl' || metric === 'khoiLuongMangXuat';
+  const isWarehouseSanPhamNhapMetric = false;
+  const isWarehouseSlipMetric = isWarehouseNplMetric || isWarehouseSanPhamNhapMetric;
   const isMachineNvlDauCaMetric = metric === 'tonDauCa';
   const isMachineNvlCuoiCaMetric = metric === 'tonCuoiCa';
   const isMachineNvlMetric = isMachineNvlDauCaMetric || isMachineNvlCuoiCaMetric;
@@ -117,7 +119,7 @@ export default function ControlBoardShiftDetailModal({
   const canDeleteMachineNvl = Boolean(onDeleteMachineNvlReport || onDeleteMachineNvlReports);
   const showWeighingActions =
     isWeighingMetric && detail.showActions && Boolean(onEditWeighingRecord || canDeleteWeighing);
-  const showWarehouseNplDelete = isWarehouseNplMetric && detail.showActions && canDeleteWarehouseNpl;
+  const showWarehouseNplDelete = isWarehouseSlipMetric && detail.showActions && canDeleteWarehouseNpl;
   const showMachineNvlDelete = isMachineNvlMetric && detail.showActions && canDeleteMachineNvl;
   const showActionColumn = showWeighingActions || showWarehouseNplDelete || showMachineNvlDelete;
   const showEditAction = showWeighingActions && Boolean(onEditWeighingRecord);
@@ -168,7 +170,7 @@ export default function ControlBoardShiftDetailModal({
       await onDeleteWeighingRecord(targetId);
       return;
     }
-    if (isWarehouseNplMetric && onDeleteWarehouseSlip) {
+    if (isWarehouseSlipMetric && onDeleteWarehouseSlip) {
       await onDeleteWarehouseSlip(String(targetId));
       return;
     }
@@ -191,7 +193,7 @@ export default function ControlBoardShiftDetailModal({
       return;
     }
 
-    if (isWarehouseNplMetric) {
+    if (isWarehouseSlipMetric) {
       if (onDeleteWarehouseSlips) {
         await onDeleteWarehouseSlips(targetIds);
         return;
@@ -218,7 +220,7 @@ export default function ControlBoardShiftDetailModal({
   };
 
   const buildSingleDeleteMessage = (row: ShiftSummaryDetailRow) => {
-    if (isWarehouseNplMetric) {
+    if (isWarehouseSlipMetric) {
       const soPhieu = row.soPhieu ? String(row.soPhieu) : '—';
       return `Bạn có chắc muốn xóa phiếu xuất nhập kho ${soPhieu}? Toàn bộ NVL trong phiếu sẽ bị xóa.`;
     }
@@ -231,7 +233,7 @@ export default function ControlBoardShiftDetailModal({
   };
 
   const buildBulkDeleteMessage = (targetCount: number, selectedRowCount: number) => {
-    if (isWarehouseNplMetric) {
+    if (isWarehouseSlipMetric) {
       if (targetCount === selectedRowCount) {
         return `Bạn có chắc muốn xóa ${targetCount} phiếu xuất nhập kho đã chọn?`;
       }
@@ -264,7 +266,7 @@ export default function ControlBoardShiftDetailModal({
       const message =
         err instanceof Error
           ? err.message
-          : isWarehouseNplMetric
+          : isWarehouseSlipMetric
             ? 'Không thể xóa phiếu xuất nhập kho.'
             : isMachineNvlMetric
               ? 'Không thể xóa báo cáo tồn NVL đầu ca.'
@@ -290,7 +292,7 @@ export default function ControlBoardShiftDetailModal({
       const message =
         err instanceof Error
           ? err.message
-          : isWarehouseNplMetric
+          : isWarehouseSlipMetric
             ? 'Không thể xóa các phiếu xuất nhập kho đã chọn.'
             : isMachineNvlMetric
               ? 'Không thể xóa các báo cáo tồn NVL đầu ca đã chọn.'
@@ -440,7 +442,7 @@ export default function ControlBoardShiftDetailModal({
                                     }}
                                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                                     title={
-                                      isWarehouseNplMetric
+                                      isWarehouseSlipMetric
                                         ? 'Xóa phiếu xuất nhập kho'
                                         : isMachineNvlCuoiCaMetric
                                           ? 'Xóa báo cáo tồn NVL cuối ca'

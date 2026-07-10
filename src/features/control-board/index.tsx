@@ -175,9 +175,11 @@ export function ControlBoardPanel({
         fetch(`/api/bao-cao-phoi-tron?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`),
         fetch(`/api/phieu-can-dinh-ki?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
         fetch(`/api/bao-cao-hang-hong?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
-        fetch('/api/bao-cao-may-nvl-ton?limit=300'),
         fetch(
-          `/api/phieu-xuat-nhap-kho?loai_kho=nvl&from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`
+          `/api/bao-cao-may-nvl-ton?limit=300&tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`
+        ),
+        fetch(
+          `/api/phieu-xuat-nhap-kho?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`
         )
       ]);
 

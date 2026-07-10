@@ -21,6 +21,7 @@ export type MachineNvlPrintLine = {
   soLuongTrongMay: number | null;
   soLuongTrongBonTron: number | null;
   soLuongNlChuaTron: number | null;
+  soLuongTonNgoai: number | null;
   soLuongTonDinhMuc: number | null;
   soLuongTon: number;
   ghiChu: string;
@@ -46,6 +47,7 @@ type FormLine = {
   inMachineQuantity: string;
   inMixerQuantity: string;
   unblendedQuantity: string;
+  outsideQuantity: string;
   standardQuantity: string;
   quantity: string;
   note: string;
@@ -68,7 +70,8 @@ function hasFormLineData(line: FormLine) {
   return (
     parseQty(line.inMachineQuantity) !== null ||
     parseQty(line.inMixerQuantity) !== null ||
-    parseQty(line.unblendedQuantity) !== null
+    parseQty(line.unblendedQuantity) !== null ||
+    parseQty(line.outsideQuantity) !== null
   );
 }
 
@@ -120,7 +123,8 @@ export function buildMachineNvlPrintReportFromForm(input: {
       const inMachineQty = parseQty(line.inMachineQuantity);
       const inMixerQty = parseQty(line.inMixerQuantity);
       const unblendedQty = parseQty(line.unblendedQuantity);
-      const computedQty = (inMachineQty ?? 0) + (inMixerQty ?? 0) + (unblendedQty ?? 0);
+      const outsideQty = parseQty(line.outsideQuantity);
+      const computedQty = (inMachineQty ?? 0) + (inMixerQty ?? 0) + (unblendedQty ?? 0) + (outsideQty ?? 0);
       const actualQty = parseQty(line.quantity);
       const unitWeightParsed = parseQty(line.unitWeightKg);
 
@@ -135,6 +139,7 @@ export function buildMachineNvlPrintReportFromForm(input: {
         soLuongTrongMay: inMachineQty,
         soLuongTrongBonTron: inMixerQty,
         soLuongNlChuaTron: unblendedQty,
+        soLuongTonNgoai: outsideQty,
         soLuongTonDinhMuc: parseQty(line.standardQuantity),
         soLuongTon:
           actualQty !== null && actualQty >= 0 ? actualQty : computedQty,
@@ -165,6 +170,7 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
   const totalInMachineKg = sumMachineNvlPrintColumnKg(lines, line => line.soLuongTrongMay);
   const totalInMixerKg = sumMachineNvlPrintColumnKg(lines, line => line.soLuongTrongBonTron);
   const totalUnblendedKg = sumMachineNvlPrintColumnKg(lines, line => line.soLuongNlChuaTron);
+  const totalOutsideKg = sumMachineNvlPrintColumnKg(lines, line => line.soLuongTonNgoai);
   const totalActualKg = lines.reduce(
     (sum, line) => sum + resolveMachineNvlPrintLineKg(line, report.reportKind),
     0
@@ -217,6 +223,7 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
               <th>Tồn máy</th>
               <th>Tồn bồn</th>
               <th>Chưa trộn</th>
+              <th>Tồn ngoài</th>
               <th>{isDauCaReport ? 'Tổng tồn đầu ca' : 'Tổng tồn cuối ca'}</th>
               <th>Kg quy đổi</th>
               <th>Ghi chú</th>
@@ -241,6 +248,9 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
                     {formatMachineNvlPrintQty(line.soLuongNlChuaTron, line)}
                   </td>
                   <td className="production-order-print-right">
+                    {formatMachineNvlPrintQty(line.soLuongTonNgoai, line)}
+                  </td>
+                  <td className="production-order-print-right">
                     {formatMachineNvlPrintQty(line.soLuongTon, line)}
                   </td>
                   <td className="production-order-print-right">
@@ -262,6 +272,9 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
               </td>
               <td className="production-order-print-right" style={{ fontWeight: 700 }}>
                 {formatNumber(totalUnblendedKg)} kg
+              </td>
+              <td className="production-order-print-right" style={{ fontWeight: 700 }}>
+                {formatNumber(totalOutsideKg)} kg
               </td>
               <td className="production-order-print-right" style={{ fontWeight: 700 }}>
                 {formatNumber(totalActualKg)} kg
@@ -329,6 +342,7 @@ export function savedReportToMachineNvlPrintReport(report: MachineNvlSavedReport
       soLuongTrongMay: line.soLuongTrongMay,
       soLuongTrongBonTron: line.soLuongTrongBonTron,
       soLuongNlChuaTron: line.soLuongNlChuaTron,
+      soLuongTonNgoai: line.soLuongTonNgoai,
       soLuongTonDinhMuc: line.soLuongTonDinhMuc,
       soLuongTon: line.soLuongTon,
       ghiChu: line.ghiChu

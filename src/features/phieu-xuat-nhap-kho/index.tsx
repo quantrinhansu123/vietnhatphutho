@@ -341,8 +341,14 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
       const record = entry as Record<string, unknown>;
       const slipTypeRaw = String(record.loai_phieu ?? record.slipType ?? '').trim().toLowerCase();
       const slipType: WarehouseSlipType = slipTypeRaw === 'xuat' ? 'xuat' : 'nhap';
-      const warehouseKindRaw = String(record.loai_kho ?? record.warehouseKind ?? 'nvl').trim().toLowerCase();
-      const warehouseKind: WarehouseKind = warehouseKindRaw === 'san_pham' ? 'san_pham' : 'nvl';
+      const maSp = String(record.ma_sp ?? record.productCode ?? '').trim();
+      const maNpl = String(record.ma_npl ?? record.materialCode ?? '').trim();
+      const tenSp = String(record.ten_sp ?? record.productName ?? '').trim();
+      const tenNpl = String(record.ten_npl ?? record.materialName ?? '').trim();
+      const warehouseKindRaw = String(record.loai_kho ?? record.warehouseKind ?? '').trim().toLowerCase();
+      // Có mã SP (không có mã NPL) → thành phẩm, kể cả bản ghi cũ thiếu/sai loai_kho
+      const warehouseKind: WarehouseKind =
+        warehouseKindRaw === 'san_pham' || (Boolean(maSp) && !maNpl) ? 'san_pham' : 'nvl';
       const quantity = Number(record.so_luong ?? record.quantity);
       const documentQuantity = Number(record.so_luong_chung_tu ?? record.documentQuantity);
       const unitPrice = Number(record.don_gia ?? record.unitPrice ?? record.price ?? 0);
@@ -354,12 +360,12 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
           : 0;
       const itemCode =
         warehouseKind === 'san_pham'
-          ? String(record.ma_sp ?? record.productCode ?? record.itemCode ?? '').trim()
-          : String(record.ma_npl ?? record.materialCode ?? record.itemCode ?? '').trim();
+          ? maSp || String(record.itemCode ?? '').trim()
+          : maNpl || String(record.itemCode ?? '').trim();
       const itemName =
         warehouseKind === 'san_pham'
-          ? String(record.ten_sp ?? record.productName ?? record.itemName ?? '').trim()
-          : String(record.ten_npl ?? record.materialName ?? record.itemName ?? '').trim();
+          ? tenSp || String(record.itemName ?? '').trim()
+          : tenNpl || String(record.itemName ?? '').trim();
 
       return {
         id: String(record.id ?? '').trim(),

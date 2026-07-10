@@ -21,6 +21,8 @@ export type WeighingSlipConfig = {
   hideProductFields?: boolean;
   /** KL nhựa (weight) + KL màng (shellWeight) thay cho Tổng trọng lượng */
   splitPlasticFilmWeights?: boolean;
+  /** Báo cáo hàng hỏng: tách 3 loại nhựa lỗi + màng + lõi */
+  splitDamagedPlasticDefectWeights?: boolean;
 };
 
 export const DEFAULT_WEIGHING_SLIP_CONFIG: WeighingSlipConfig = {
@@ -47,5 +49,6 @@ export const DAMAGED_GOODS_SLIP_CONFIG: WeighingSlipConfig = {
   hideCoreWeightImage: true,
   hideWeightImage: true,
   hideProductFields: true,
-  splitPlasticFilmWeights: true
+  splitPlasticFilmWeights: true,
+  splitDamagedPlasticDefectWeights: true
 };

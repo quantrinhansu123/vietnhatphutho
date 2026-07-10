@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, ScanBarcode, Trash2, UserCheck, Users } from 'lucide-react';
 import type { WeighingPendingAdd, WeighingRecord } from '../utils/weighingRecords';
-import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, formatDamagedGoodsRowTotalWeight, formatWeighingWeightField, isSlipHeaderRow } from '../utils/weighingRecords';
+import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, formatDamagedGoodsRowTotalWeight, formatWeighingWeightField, isSlipHeaderRow, splitDamagedGoodsDefectWeights } from '../utils/weighingRecords';
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import WeighingImagePreviewModal, {
@@ -24,6 +24,9 @@ interface WeighingRow {
   coreWeightImageUrl?: string;
   coreWeightImagePublicId?: string;
   shellWeight: string;
+  plasticNoFilmWeight?: string;
+  plasticNozzleWeight?: string;
+  plasticFilmAdhesionWeight?: string;
   acceptanceStatus: string;
   note: string;
   machineName: string;
@@ -414,6 +417,9 @@ function recordsToRows(records: WeighingRecord[]): WeighingRow[] {
     coreWeight: record.coreWeight,
     coreWeightImageUrl: record.coreWeightImageUrl,
     shellWeight: record.shellWeight || '',
+    plasticNoFilmWeight: record.plasticNoFilmWeight || '',
+    plasticNozzleWeight: record.plasticNozzleWeight || '',
+    plasticFilmAdhesionWeight: record.plasticFilmAdhesionWeight || '',
     acceptanceStatus: record.acceptanceStatus || '',
     note: record.note || '',
     machineName: isRealMachineName(record.machineName) ? record.machineName : '',
@@ -438,6 +444,9 @@ function rowToNewRowState(row: WeighingRow): Omit<WeighingRow, 'id' | 'weighNo' 
     coreWeightImageUrl: row.coreWeightImageUrl,
     coreWeightImagePublicId: row.coreWeightImagePublicId,
     shellWeight: row.shellWeight || DEFAULT_SHELL_WEIGHT,
+    plasticNoFilmWeight: row.plasticNoFilmWeight || '',
+    plasticNozzleWeight: row.plasticNozzleWeight || '',
+    plasticFilmAdhesionWeight: row.plasticFilmAdhesionWeight || '',
     acceptanceStatus: row.acceptanceStatus,
     note: row.note,
     machineName: row.machineName,
@@ -464,6 +473,7 @@ export default function WeighingReportForm({
 } = {}) {
   const hideProductFields = Boolean(config.hideProductFields);
   const splitPlasticFilmWeights = Boolean(config.splitPlasticFilmWeights);
+  const splitDamagedPlasticDefectWeights = Boolean(config.splitDamagedPlasticDefectWeights);
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [form, setForm] = useState({
     documentNo: '',
@@ -601,7 +611,10 @@ export default function WeighingReportForm({
     productName: '',
     machineName: '',
     coreWeight: '',
-    shellWeight: DEFAULT_SHELL_WEIGHT,
+    shellWeight: splitDamagedPlasticDefectWeights ? '' : DEFAULT_SHELL_WEIGHT,
+    plasticNoFilmWeight: '',
+    plasticNozzleWeight: '',
+    plasticFilmAdhesionWeight: '',
     acceptanceStatus: '',
     note: '',
     weight: '',
@@ -791,7 +804,10 @@ export default function WeighingReportForm({
         slip?.machineName ??
         (isRealMachineName(lastRow?.machineName) ? lastRow.machineName : ''),
       coreWeight: '',
-      shellWeight: DEFAULT_SHELL_WEIGHT,
+      shellWeight: splitDamagedPlasticDefectWeights ? '' : DEFAULT_SHELL_WEIGHT,
+      plasticNoFilmWeight: '',
+      plasticNozzleWeight: '',
+      plasticFilmAdhesionWeight: '',
       acceptanceStatus: '',
       note: '',
       weight: '',
@@ -968,7 +984,19 @@ export default function WeighingReportForm({
       return;
     }
 
-    if (splitPlasticFilmWeights) {
+    if (splitDamagedPlasticDefectWeights) {
+      if (
+        !newRow.plasticNoFilmWeight?.trim() &&
+        !newRow.plasticNozzleWeight?.trim() &&
+        !newRow.plasticFilmAdhesionWeight?.trim() &&
+        !newRow.shellWeight.trim() &&
+        !newRow.coreWeight.trim() &&
+        !newRow.note.trim()
+      ) {
+        setAddFormError('Vui lòng nhập ít nhất một trọng lượng lỗi hỏng hoặc ghi chú.');
+        return;
+      }
+    } else if (splitPlasticFilmWeights) {
       if (!newRow.weight.trim() && !newRow.shellWeight.trim() && !newRow.note.trim()) {
         setAddFormError('Vui lòng nhập KL nhựa, KL màng hoặc ghi chú.');
         return;
@@ -1031,6 +1059,9 @@ export default function WeighingReportForm({
           productName: newRow.productName || '',
           coreWeight: newRow.coreWeight || '',
           shellWeight: newRow.shellWeight || '',
+          plasticNoFilmWeight: newRow.plasticNoFilmWeight || '',
+          plasticNozzleWeight: newRow.plasticNozzleWeight || '',
+          plasticFilmAdhesionWeight: newRow.plasticFilmAdhesionWeight || '',
           acceptanceStatus: newRow.acceptanceStatus || '',
           note: newRow.note || '',
           machineName: slipForEdit?.machineName || editingRow.machineName,
@@ -1074,6 +1105,9 @@ export default function WeighingReportForm({
         productName: newRow.productName || '',
         coreWeight: newRow.coreWeight || '',
         shellWeight: newRow.shellWeight || '',
+        plasticNoFilmWeight: newRow.plasticNoFilmWeight || '',
+        plasticNozzleWeight: newRow.plasticNozzleWeight || '',
+        plasticFilmAdhesionWeight: newRow.plasticFilmAdhesionWeight || '',
         acceptanceStatus: newRow.acceptanceStatus || '',
         note: newRow.note || '',
         machineName,
@@ -1111,7 +1145,10 @@ export default function WeighingReportForm({
         productCode: newRowData.productCode,
         productName: newRowData.productName,
         coreWeight: '',
-        shellWeight: DEFAULT_SHELL_WEIGHT,
+        shellWeight: splitDamagedPlasticDefectWeights ? '' : DEFAULT_SHELL_WEIGHT,
+        plasticNoFilmWeight: '',
+        plasticNozzleWeight: '',
+        plasticFilmAdhesionWeight: '',
         acceptanceStatus: '',
         note: '',
         weight: '',
@@ -1596,10 +1633,65 @@ export default function WeighingReportForm({
                   </div>
                   <div
                     className={`mt-1 grid gap-0.5 ${
-                      splitPlasticFilmWeights ? 'grid-cols-3' : 'grid-cols-4'
+                      splitDamagedPlasticDefectWeights
+                        ? 'grid-cols-3'
+                        : splitPlasticFilmWeights
+                          ? 'grid-cols-3'
+                          : 'grid-cols-4'
                     }`}
                   >
-                    {splitPlasticFilmWeights ? (
+                    {splitDamagedPlasticDefectWeights ? (
+                      <>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Nhựa KM
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.plasticNoFilmWeight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Nhựa ĐN
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.plasticNozzleWeight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Nhựa DM
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.plasticFilmAdhesionWeight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Màng
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.shellWeight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Lõi
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.coreWeight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Tổng
+                          </span>
+                          <p className="font-mono text-[10px] font-black text-[#ef1b2d]">
+                            {formatDamagedGoodsRowTotalWeight(row)}
+                          </p>
+                        </div>
+                      </>
+                    ) : splitPlasticFilmWeights ? (
                       <>
                         <div>
                           <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
@@ -1663,7 +1755,90 @@ export default function WeighingReportForm({
             </div>
 
             <div className="hidden md:block md:overflow-x-auto">
-          {splitPlasticFilmWeights ? (
+          {splitDamagedPlasticDefectWeights ? (
+          <table className="responsive-table w-full md:min-w-[960px] border-collapse text-left">
+            <thead className="table-header-group">
+              <tr className="bg-zinc-950 text-xs font-black uppercase tracking-wider text-white">
+                <th className="w-20 px-3 py-3 text-center">Lần cân</th>
+                <th className="px-3 py-3">Người cân</th>
+                <th className="px-3 py-3">Nhựa KM</th>
+                <th className="px-3 py-3">Nhựa ĐN</th>
+                <th className="px-3 py-3">Nhựa DM</th>
+                <th className="px-3 py-3">Màng</th>
+                <th className="px-3 py-3">Lõi</th>
+                <th className="px-3 py-3">Tổng</th>
+                <th className="px-3 py-3">Giờ cân</th>
+                <th className="px-3 py-3">Ghi chú</th>
+                <th className="w-28 px-3 py-3 text-center">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {weighingRows.map(row => (
+                <tr key={row.id} className="transition hover:bg-red-50/40">
+                  <td className="border-r border-zinc-100 px-3 py-2 text-center text-sm font-black text-[#ef1b2d]">
+                    {row.weighNo ? formatWeighRound(row.weighNo) : '—'}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weigherName || '—'}</td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {formatWeighingWeightField(row.plasticNoFilmWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {formatWeighingWeightField(row.plasticNozzleWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {formatWeighingWeightField(row.plasticFilmAdhesionWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {formatWeighingWeightField(row.shellWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {formatWeighingWeightField(row.coreWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-black text-[#ef1b2d]">
+                    {formatDamagedGoodsRowTotalWeight(row)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weighTime || '—'}</td>
+                  <td className="max-w-[180px] truncate px-2 py-2 text-sm font-semibold text-zinc-600" title={row.note || undefined}>
+                    {row.note || '—'}
+                  </td>
+                  <td className="px-2 py-2">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setViewingRow(row)}
+                        title="Xem"
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditRow(row)}
+                        title="Sửa"
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRow(row)}
+                        disabled={deletingRowId === row.id}
+                        title="Xóa"
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingRowId === row.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          ) : splitPlasticFilmWeights ? (
           <table className="responsive-table w-full md:min-w-[640px] border-collapse text-left">
             <thead className="table-header-group">
               <tr className="bg-zinc-950 text-xs font-black uppercase tracking-wider text-white">
@@ -2191,7 +2366,70 @@ export default function WeighingReportForm({
               </label>
               </>
               )}
-              {splitPlasticFilmWeights ? (
+              {splitDamagedPlasticDefectWeights ? (
+                <div className="col-span-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  <label className="space-y-1">
+                    <span className={modalCompactLabelClass}>Nhựa không mảng</span>
+                    <input
+                      value={newRow.plasticNoFilmWeight ?? ''}
+                      onChange={e =>
+                        setNewRow(prev => ({ ...prev, plasticNoFilmWeight: sanitizeDecimalTyping(e.target.value) }))
+                      }
+                      className={modalInputClass}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={modalCompactLabelClass}>Nhựa đầu nòng</span>
+                    <input
+                      value={newRow.plasticNozzleWeight ?? ''}
+                      onChange={e =>
+                        setNewRow(prev => ({ ...prev, plasticNozzleWeight: sanitizeDecimalTyping(e.target.value) }))
+                      }
+                      className={modalInputClass}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={modalCompactLabelClass}>Nhựa dính màng</span>
+                    <input
+                      value={newRow.plasticFilmAdhesionWeight ?? ''}
+                      onChange={e =>
+                        setNewRow(prev => ({
+                          ...prev,
+                          plasticFilmAdhesionWeight: sanitizeDecimalTyping(e.target.value)
+                        }))
+                      }
+                      className={modalInputClass}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={modalCompactLabelClass}>KL màng</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={newRow.shellWeight ?? ''}
+                      onChange={e =>
+                        setNewRow(prev => ({ ...prev, shellWeight: sanitizeDecimalTyping(e.target.value) }))
+                      }
+                      className={modalInputClass}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={modalCompactLabelClass}>TL lõi dính HH</span>
+                    <input
+                      value={newRow.coreWeight ?? ''}
+                      onChange={e =>
+                        setNewRow(prev => ({ ...prev, coreWeight: sanitizeDecimalTyping(e.target.value) }))
+                      }
+                      className={modalInputClass}
+                      placeholder="0"
+                    />
+                  </label>
+                </div>
+              ) : splitPlasticFilmWeights ? (
                 <div className="col-span-2 grid grid-cols-2 gap-1.5">
                   <label className="space-y-1">
                     <span className={modalCompactLabelClass}>KL nhựa</span>
@@ -2451,7 +2689,34 @@ export default function WeighingReportForm({
               </div>
               </>
               )}
-              {splitPlasticFilmWeights ? (
+              {splitDamagedPlasticDefectWeights ? (
+                <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Nhựa không mảng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.plasticNoFilmWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Nhựa đầu nòng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.plasticNozzleWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Nhựa dính màng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.plasticFilmAdhesionWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">KL màng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.shellWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">TL lõi dính HH</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.coreWeight)}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-red-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng lỗi hỏng</span>
+                    <p className="mt-1 font-black text-[#ef1b2d]">{formatDamagedGoodsRowTotalWeight(viewingRow)}</p>
+                  </div>
+                </>
+              ) : splitPlasticFilmWeights ? (
                 <>
                   <div className="rounded-lg bg-zinc-50 px-3 py-2">
                     <span className="font-black uppercase tracking-wider text-zinc-400">KL nhựa</span>

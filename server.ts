@@ -281,6 +281,9 @@ function buildDbRecordFromClientRow(row: Record<string, unknown>, payload?: Reco
     lan_can: parseOptionalInt(weighNo),
     gio_can: weighTime || normalizeWeighTime(new Date().toTimeString().slice(0, 5)),
     trong_luong: emptyToNull(row.weight),
+    trong_luong_nhua_khong_mang: emptyToNull(row.plasticNoFilmWeight),
+    trong_luong_nhua_dau_nong: emptyToNull(row.plasticNozzleWeight),
+    trong_luong_nhua_dinh_mang: emptyToNull(row.plasticFilmAdhesionWeight),
     anh_url: emptyToNull(row.imageUrl),
     anh_public_id: emptyToNull(row.imagePublicId),
     nghiem_thu: emptyToNull(row.acceptanceStatus),
@@ -306,6 +309,9 @@ function mapWeighingRow(row: Record<string, unknown>) {
     coreWeight: String(row.trong_luong_loi ?? '').trim(),
     shellWeight: String(row.trong_luong_bi ?? '').trim(),
     weight: String(row.trong_luong ?? '').trim(),
+    plasticNoFilmWeight: String(row.trong_luong_nhua_khong_mang ?? '').trim(),
+    plasticNozzleWeight: String(row.trong_luong_nhua_dau_nong ?? '').trim(),
+    plasticFilmAdhesionWeight: String(row.trong_luong_nhua_dinh_mang ?? '').trim(),
     imageUrl: String(row.anh_url ?? '').trim() || undefined,
     coreWeightImageUrl: String(row.anh_trong_luong_loi_url ?? '').trim() || undefined,
     acceptanceStatus: String(row.nghiem_thu ?? '').trim(),
@@ -2012,12 +2018,20 @@ function parseMachineNvlReportLine(source: unknown, index: number) {
   const so_luong_nl_chua_tron = parseMixingNumber(
     record.so_luong_nl_chua_tron ?? record.nl_chua_tron ?? record.unblendedQuantity
   );
+  const so_luong_ton_ngoai = parseMixingNumber(
+    record.so_luong_ton_ngoai ?? record.ton_ngoai ?? record.outsideQuantity
+  );
   const so_luong_ton_dinh_muc = parseMixingNumber(
     record.so_luong_ton_dinh_muc ?? record.so_luong_dinh_muc ?? record.standardQuantity
   );
   const so_luong_ton_ca_truoc = parseMixingNumber(
     record.so_luong_ton_ca_truoc ?? record.so_luong_ca_truoc ?? record.previousQuantity
   );
+  const trong_luong_quy_doi_kg = parseMixingNumber(
+    record.trong_luong_quy_doi_kg ?? record.trong_luong_quy_doi ?? record.unitWeightKg
+  );
+  const loai_vat_tu_raw = String(record.loai_vat_tu ?? record.materialType ?? '').trim().toLowerCase();
+  const loai_vat_tu = ['nhua', 'mang', 'loi', 'bao_bi'].includes(loai_vat_tu_raw) ? loai_vat_tu_raw : null;
   const ghi_chu = String(record.ghi_chu ?? record.note ?? '').trim();
 
   if (
@@ -2027,6 +2041,7 @@ function parseMachineNvlReportLine(source: unknown, index: number) {
     so_luong_trong_may === null &&
     so_luong_trong_bon_tron === null &&
     so_luong_nl_chua_tron === null &&
+    so_luong_ton_ngoai === null &&
     so_luong_ton_dinh_muc === null &&
     so_luong_ton_ca_truoc === null
   ) {
@@ -2041,13 +2056,20 @@ function parseMachineNvlReportLine(source: unknown, index: number) {
     ...(so_luong_trong_may !== null ? { so_luong_trong_may } : {}),
     ...(so_luong_trong_bon_tron !== null ? { so_luong_trong_bon_tron } : {}),
     ...(so_luong_nl_chua_tron !== null ? { so_luong_nl_chua_tron } : {}),
+    ...(so_luong_ton_ngoai !== null ? { so_luong_ton_ngoai } : {}),
     ...(so_luong_ton_dinh_muc !== null ? { so_luong_ton_dinh_muc } : {}),
     so_luong_ton:
       so_luong_ton ??
       Math.round(
-        ((so_luong_trong_may ?? 0) + (so_luong_trong_bon_tron ?? 0) + (so_luong_nl_chua_tron ?? 0)) * 100
+        ((so_luong_trong_may ?? 0) +
+          (so_luong_trong_bon_tron ?? 0) +
+          (so_luong_nl_chua_tron ?? 0) +
+          (so_luong_ton_ngoai ?? 0)) *
+          100
       ) / 100,
     ...(so_luong_ton_ca_truoc !== null ? { so_luong_ton_ca_truoc } : {}),
+    ...(trong_luong_quy_doi_kg !== null && trong_luong_quy_doi_kg > 0 ? { trong_luong_quy_doi_kg } : {}),
+    ...(loai_vat_tu ? { loai_vat_tu } : {}),
     ghi_chu
   };
 }

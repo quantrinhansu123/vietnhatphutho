@@ -3,13 +3,16 @@ import type { WeighingRecord } from './weighingRecords';
 import {
   getWeighingDataRows,
   parseWeighingWeight,
-  sumDamagedGoodsRowFilmWeight,
-  sumDamagedGoodsRowPlasticWeight,
-  sumDamagedGoodsRowWeight,
+  splitDamagedGoodsDefectWeights,
   sumWeighingRowTotalWeight
 } from './weighingRecords';
 import { roundNormWeight } from '../lib/mixingReportModel';
-import type { MachineNvlSavedReport } from './machineNvlReports';
+import type { MachineNvlMaterialType, MachineNvlSavedLine, MachineNvlSavedReport } from './machineNvlReports';
+import {
+  guessMachineNvlMaterialType,
+  sumMachineNvlCuoiCaLineTotal,
+  sumMachineNvlDauCaLineTotal
+} from './machineNvlReports';
 import {
   getProductionShiftOptions,
   resolveShiftName,
@@ -64,12 +67,42 @@ export type ControlBoardShiftSummaryRow = {
   hangHongMang: number;
   khoiLuongNpl: number;
   khoiLuongMangXuat: number;
+  khoiLuongLoiXuatKho: number;
+  khoiLuongTuiXuatKho: number;
   khoiLuongLoi: number;
   khoiLuongMang: number;
   tonDauCa: number;
+  tonDauCaNhua: number;
+  tonDauCaMang: number;
+  tonDauCaLoi: number;
+  tonDauCaTui: number;
   tonCuoiCa: number;
+  tonCuoiCaNhua: number;
+  tonCuoiCaMang: number;
+  tonCuoiCaLoi: number;
+  tonCuoiCaTui: number;
+  tongNhuaThucDung: number;
+  tongMangThucDung: number;
+  loiThucDung: number;
+  tuiThucDung: number;
+  tongThucDung: number;
   tongVatLieu: number;
   chenhLech: number;
+  tongTrongLuongXuatKho: number;
+  tongTrongLuongTonDauCa: number;
+  tongTrongLuongTonCuoiCa: number;
+  slDatThucTeNhapKho: number;
+  tlNhuaTpNhapKho: number;
+  tlMangTpNhapKho: number;
+  tlTuiBaoBiNhapKho: number;
+  tlLoiTpNhapKho: number;
+  tongTpNhapKho: number;
+  tlNhuaKhongMangLoiHong: number;
+  tlNhuaCucDauNongLoiHong: number;
+  tlNhuaDinhMangLoiHong: number;
+  tlMangLoiHong: number;
+  soCuonLoiDinhHangHong: number;
+  tongTrongLuongLoiHong: number;
 };
 
 type ProductRef = {
@@ -102,15 +135,36 @@ type SummaryBucket = {
   hangHong: number;
   hangHongNhua: number;
   hangHongMang: number;
+  tlNhuaKhongMangLoiHong: number;
+  tlNhuaCucDauNongLoiHong: number;
+  tlNhuaDinhMangLoiHong: number;
+  tlMangLoiHong: number;
+  soCuonLoiDinhHangHong: number;
+  tongTrongLuongLoiHong: number;
   khoiLuongNpl: number;
   khoiLuongMangXuat: number;
+  khoiLuongLoiXuatKho: number;
+  khoiLuongTuiXuatKho: number;
   khoiLuongLoi: number;
-  tonDauCa: number;
-  tonCuoiCa: number;
+  tonDauCaNhua: number;
+  tonDauCaMang: number;
+  tonDauCaLoi: number;
+  tonDauCaTui: number;
+  tonCuoiCaNhua: number;
+  tonCuoiCaMang: number;
+  tonCuoiCaLoi: number;
+  tonCuoiCaTui: number;
+  slDatThucTeNhapKho: number;
 };
 
 /** KL bì (kg) = số thành phẩm thực tế × 0,16 kg */
 export const KHOI_LUONG_MANG_KG_PER_UNIT = 0.16;
+
+/** TL túi bao bì nhập kho (kg) = SL đạt thực tế × 0,2 kg */
+export const TL_TUI_BAO_BI_KG_PER_UNIT = 0.2;
+
+/** TL lõi thành phẩm (kg) = SL đạt thực tế × 1 kg */
+export const TL_LOI_TP_KG_PER_UNIT = 1;
 
 /** KL nhựa TP (kg) = (KL hàng TT − KL lõi − KL bì) × 0,75 */
 export const KHOI_LUONG_NHUA_TP_FACTOR = 0.75;
@@ -198,11 +252,26 @@ function getOrCreateBucket(
     hangHong: 0,
     hangHongNhua: 0,
     hangHongMang: 0,
+    tlNhuaKhongMangLoiHong: 0,
+    tlNhuaCucDauNongLoiHong: 0,
+    tlNhuaDinhMangLoiHong: 0,
+    tlMangLoiHong: 0,
+    soCuonLoiDinhHangHong: 0,
+    tongTrongLuongLoiHong: 0,
     khoiLuongNpl: 0,
     khoiLuongMangXuat: 0,
+    khoiLuongLoiXuatKho: 0,
+    khoiLuongTuiXuatKho: 0,
     khoiLuongLoi: 0,
-    tonDauCa: 0,
-    tonCuoiCa: 0
+    tonDauCaNhua: 0,
+    tonDauCaMang: 0,
+    tonDauCaLoi: 0,
+    tonDauCaTui: 0,
+    tonCuoiCaNhua: 0,
+    tonCuoiCaMang: 0,
+    tonCuoiCaLoi: 0,
+    tonCuoiCaTui: 0,
+    slDatThucTeNhapKho: 0
   };
   map.set(key, bucket);
   return bucket;
@@ -254,10 +323,130 @@ function splitShiftLabels(label: string) {
     .filter(Boolean);
 }
 
-function sumWarehouseMovementNplKg(movement: ShiftSummaryWarehouseMovement) {
+function normalizeWarehouseItemHay(code: string, name: string) {
+  return `${code} ${name}`
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function isWarehouseCoreExportItem(code: string, name: string) {
+  const hay = normalizeWarehouseItemHay(code, name);
+  // Nhận diện mã/tên lõi: "lõi", "LOI", "LOI01", "loi giay"...
+  return (
+    hay.includes('loi') ||
+    /\bloi\b/.test(hay) ||
+    hay.includes(' loi ') ||
+    hay.startsWith('loi ') ||
+    hay.startsWith('loi-') ||
+    hay.startsWith('loi_')
+  );
+}
+
+export function isWarehouseBagExportItem(code: string, name: string) {
+  const hay = normalizeWarehouseItemHay(code, name);
+  return (
+    hay.includes('tui') ||
+    hay.includes('bao bi') ||
+    hay.includes('tai nilon') ||
+    hay.includes('bi nilon')
+  );
+}
+
+export function isWarehouseFilmItem(code: string, name: string, unit: string) {
+  if (isM2Unit(unit)) return true;
+  const hay = normalizeWarehouseItemHay(code, name);
+  return hay.includes('mang') || hay.includes('film');
+}
+
+function sumWarehouseSanPhamNhapLineKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveProductKgFactor: (unit: string, code: string) => number | null
+) {
+  if (movement.warehouseKind !== 'san_pham' || movement.slipType !== 'nhap') return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  const unit = movement.unit || '';
+  if (isKgUnit(unit)) return qty;
+  const factor = resolveProductKgFactor(unit, movement.itemCode || '');
+  return factor !== null && factor > 0 ? qty * factor : 0;
+}
+
+export function resolveWarehouseSanPhamNhapSl(
+  movement: Pick<ShiftSummaryWarehouseMovement, 'warehouseKind' | 'slipType' | 'itemCode' | 'itemName' | 'quantity'>
+) {
+  if (movement.warehouseKind !== 'san_pham' || movement.slipType !== 'nhap') return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  const code = movement.itemCode || '';
+  const name = movement.itemName || '';
+  // Chỉ bỏ lõi / túi bao bì phụ; thành phẩm (kể cả SP màng) vẫn tính SL đạt
+  if (isWarehouseCoreExportItem(code, name) || isWarehouseBagExportItem(code, name)) return 0;
+  return qty;
+}
+
+export function splitWarehouseSanPhamNhapLine(
+  movement: Pick<ShiftSummaryWarehouseMovement, 'itemCode' | 'itemName' | 'unit' | 'quantity'>,
+  kg: number
+) {
+  const code = movement.itemCode || '';
+  const name = movement.itemName || '';
+  const unit = movement.unit || '';
+  const qty = resolveWarehouseSanPhamNhapSl({
+    warehouseKind: 'san_pham',
+    slipType: 'nhap',
+    itemCode: code,
+    itemName: name,
+    quantity: movement.quantity
+  });
+  if (isWarehouseCoreExportItem(code, name)) {
+    return { sl: 0, nhua: 0, mang: 0, loi: kg, tui: 0 };
+  }
+  if (isWarehouseBagExportItem(code, name)) {
+    return { sl: 0, nhua: 0, mang: 0, loi: 0, tui: kg };
+  }
+  if (isWarehouseFilmItem(code, name, unit)) {
+    return { sl: qty, nhua: 0, mang: kg, loi: 0, tui: 0 };
+  }
+  return { sl: qty, nhua: kg, mang: 0, loi: 0, tui: 0 };
+}
+
+export function resolveShiftSummarySanPhamNhapLineKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveProductKgFactor: (unit: string, code: string) => number | null
+) {
+  return sumWarehouseSanPhamNhapLineKg(movement, resolveProductKgFactor);
+}
+
+function sumWarehouseMovementExportKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
   if (movement.warehouseKind !== 'nvl') return 0;
   if (movement.slipType !== 'xuat') return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
   const unit = movement.unit || '';
+  if (isKgUnit(unit)) return qty;
+  if (isM2Unit(unit)) {
+    const factor = resolveKgFactor(unit, movement.itemCode || '', null);
+    return factor !== null && factor > 0 ? qty * factor : 0;
+  }
+  const factor = resolveKgFactor(unit, movement.itemCode || '', null);
+  return factor !== null && factor > 0 ? qty * factor : 0;
+}
+
+function sumWarehouseMovementNplKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (movement.warehouseKind !== 'nvl') return 0;
+  if (movement.slipType !== 'xuat') return 0;
+  if (isWarehouseCoreExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  if (isWarehouseBagExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  const unit = movement.unit || '';
+  if (isM2Unit(unit)) return 0;
   if (!isKgUnit(unit)) return 0;
   const qty = movement.quantity;
   if (!Number.isFinite(qty) || qty <= 0) return 0;
@@ -276,6 +465,139 @@ function sumWarehouseMovementMangKg(
   if (!Number.isFinite(qty) || qty <= 0) return 0;
   const factor = resolveKgFactor(unit, movement.itemCode || '', null);
   return factor !== null && factor > 0 ? qty * factor : 0;
+}
+
+function sumWarehouseMovementLoiXuatKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (!isWarehouseCoreExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  return sumWarehouseMovementExportKg(movement, resolveKgFactor);
+}
+
+function sumWarehouseMovementTuiXuatKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (!isWarehouseBagExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  return sumWarehouseMovementExportKg(movement, resolveKgFactor);
+}
+
+type MachineNvlMaterialSplit = { nhua: number; mang: number; loi: number; tui: number };
+
+/** Ưu tiên loai_vat_tu người dùng chọn; không có thì đoán từ mã/tên/ĐVT. */
+export function resolveMachineNvlLineMaterialType(line: MachineNvlSavedLine): MachineNvlMaterialType {
+  if (line.loaiVatTu) return line.loaiVatTu;
+  if (isWarehouseCoreExportItem(line.maNvl || '', line.tenNvl || '')) return 'loi';
+  if (isWarehouseBagExportItem(line.maNvl || '', line.tenNvl || '')) return 'bao_bi';
+  return guessMachineNvlMaterialType(line.maNvl || '', line.tenNvl || '', line.donVi || '');
+}
+
+/**
+ * KL 1 dòng NVL đầu/cuối ca, ưu tiên hệ số quy đổi kg lưu trên chính dòng báo cáo
+ * ("Kg quy đổi" nhập tay khi kiểm kê); nếu dòng chưa nhập hệ số (thường gặp với NVL
+ * đơn vị m2 như màng vì hay bị bỏ trống) thì rơi về hệ số "Tổng trọng lượng" khai báo
+ * trong danh mục NVL — cùng cách quy đổi đã dùng cho phiếu xuất kho NVL.
+ * Lõi không có hệ số → mặc định 1 kg/đơn vị (cùng quy ước SL lõi × 1kg).
+ */
+function computeMachineNvlLineKg(
+  line: MachineNvlSavedLine,
+  reportKind: 'dau_ca' | 'cuoi_ca',
+  resolveKgFactor?: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  const materialType = resolveMachineNvlLineMaterialType(line);
+
+  let factor: number | null = null;
+  if (resolveKgFactor) {
+    factor = resolveKgFactor(line.donVi || '', line.maNvl || '', line.trongLuongQuyDoiKg);
+  } else if (reportKind === 'dau_ca') {
+    return sumMachineNvlDauCaLineTotal(line);
+  } else {
+    return sumMachineNvlCuoiCaLineTotal(line);
+  }
+
+  // Lõi (cái/cuộn…): nếu thiếu hệ số quy đổi thì lấy 1 kg/đơn vị
+  if ((factor === null || factor <= 0) && materialType === 'loi') {
+    factor = TL_LOI_TP_KG_PER_UNIT;
+  }
+  if (factor === null || factor <= 0) return 0;
+
+  const componentQty =
+    (line.soLuongTrongMay ?? 0) +
+    (line.soLuongTrongBonTron ?? 0) +
+    (line.soLuongNlChuaTron ?? 0) +
+    (line.soLuongTonNgoai ?? 0);
+  const base =
+    reportKind === 'dau_ca'
+      ? line.soLuongTon > 0
+        ? line.soLuongTon
+        : componentQty
+      : Number.isFinite(line.soLuongTon) && line.soLuongTon > 0
+        ? line.soLuongTon
+        : componentQty;
+
+  return base > 0 ? base * factor : 0;
+}
+
+function splitMachineNvlLineByMaterial(
+  line: MachineNvlSavedLine,
+  reportKind: 'dau_ca' | 'cuoi_ca',
+  resolveKgFactor?: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+): MachineNvlMaterialSplit {
+  const zero: MachineNvlMaterialSplit = { nhua: 0, mang: 0, loi: 0, tui: 0 };
+  const materialType = resolveMachineNvlLineMaterialType(line);
+  const kg = computeMachineNvlLineKg(line, reportKind, resolveKgFactor);
+  if (kg <= 0) return zero;
+
+  if (materialType === 'loi') return { ...zero, loi: kg };
+  if (materialType === 'bao_bi') return { ...zero, tui: kg };
+  if (materialType === 'mang') return { ...zero, mang: kg };
+  return { ...zero, nhua: kg };
+}
+
+export function computeMaterialUsageKg(xuat: number, tonDauCa: number, tonCuoiCa: number) {
+  return roundNormWeight(xuat + tonDauCa - tonCuoiCa);
+}
+
+/** TL nhựa TP = nhựa xuất dùng + tồn đầu ca nhựa − tồn cuối ca nhựa − 3 loại nhựa lỗi hỏng */
+export function computeTlNhuaTpNhapKhoFromShiftSummary(input: {
+  khoiLuongNpl: number;
+  tonDauCaNhua: number;
+  tonCuoiCaNhua: number;
+  tlNhuaKhongMangLoiHong: number;
+  tlNhuaCucDauNongLoiHong: number;
+  tlNhuaDinhMangLoiHong: number;
+}) {
+  return roundNormWeight(
+    input.khoiLuongNpl
+      + input.tonDauCaNhua
+      - input.tonCuoiCaNhua
+      - input.tlNhuaDinhMangLoiHong
+      - input.tlNhuaCucDauNongLoiHong
+      - input.tlNhuaKhongMangLoiHong
+  );
+}
+
+/** TL màng TP = màng xuất dùng + tồn đầu ca màng − tồn cuối ca màng − màng lỗi hỏng */
+export function computeTlMangTpNhapKhoFromShiftSummary(input: {
+  khoiLuongMangXuat: number;
+  tonDauCaMang: number;
+  tonCuoiCaMang: number;
+  tlMangLoiHong: number;
+}) {
+  return roundNormWeight(
+    input.khoiLuongMangXuat + input.tonDauCaMang - input.tonCuoiCaMang - input.tlMangLoiHong
+  );
+}
+
+/** TL túi bao bì nhập kho (kg) = 0,2 × SL đạt thực tế */
+export function computeTlTuiBaoBiNhapKhoFromShiftSummary(slDatThucTeNhapKho: number) {
+  return roundNormWeight(slDatThucTeNhapKho * TL_TUI_BAO_BI_KG_PER_UNIT);
+}
+
+/** TL lõi thành phẩm (kg) = 1 × SL đạt thực tế */
+export function computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho: number) {
+  return roundNormWeight(slDatThucTeNhapKho * TL_LOI_TP_KG_PER_UNIT);
 }
 
 export function matchesShiftSummaryBucket(
@@ -402,18 +724,29 @@ export function buildControlBoardShiftSummary(input: {
     if (!ngay || !inRange(ngay)) continue;
     const bucket = getOrCreateBucket(map, ngay, record.shiftName, shiftOptions);
     if (!bucket) continue;
-    // Hàng hỏng — tổng trọng lượng từ báo cáo hàng hỏng (bao_cao_hang_hong)
-    bucket.hangHong += sumDamagedGoodsRowWeight(record);
-    bucket.hangHongNhua += sumDamagedGoodsRowPlasticWeight(record);
-    bucket.hangHongMang += sumDamagedGoodsRowFilmWeight(record);
+    const defectSplit = splitDamagedGoodsDefectWeights(record);
+    bucket.hangHong += defectSplit.tong;
+    bucket.hangHongNhua += defectSplit.nhuaKhongMang + defectSplit.nhuaCucDauNong + defectSplit.nhuaDinhMang;
+    bucket.hangHongMang += defectSplit.mang;
+    bucket.tlNhuaKhongMangLoiHong += defectSplit.nhuaKhongMang;
+    bucket.tlNhuaCucDauNongLoiHong += defectSplit.nhuaCucDauNong;
+    bucket.tlNhuaDinhMangLoiHong += defectSplit.nhuaDinhMang;
+    bucket.tlMangLoiHong += defectSplit.mang;
+    bucket.soCuonLoiDinhHangHong += defectSplit.loi;
+    bucket.tongTrongLuongLoiHong += defectSplit.tong;
   }
 
   for (const movement of input.warehouseMovements ?? []) {
     if (!inRange(movement.slipDate)) continue;
     const bucket = getOrCreateBucket(map, movement.slipDate, movement.shift, shiftOptions);
     if (!bucket) continue;
-    bucket.khoiLuongNpl += sumWarehouseMovementNplKg(movement);
+    bucket.khoiLuongNpl += sumWarehouseMovementNplKg(movement, resolveKgFactor);
     bucket.khoiLuongMangXuat += sumWarehouseMovementMangKg(movement, resolveKgFactor);
+    bucket.khoiLuongLoiXuatKho += sumWarehouseMovementLoiXuatKg(movement, resolveKgFactor);
+    bucket.khoiLuongTuiXuatKho += sumWarehouseMovementTuiXuatKg(movement, resolveKgFactor);
+    if (movement.slipType === 'nhap' && movement.warehouseKind === 'san_pham') {
+      bucket.slDatThucTeNhapKho += resolveWarehouseSanPhamNhapSl(movement);
+    }
   }
 
   for (const report of input.machineNvlReports ?? []) {
@@ -422,18 +755,19 @@ export function buildControlBoardShiftSummary(input: {
     if (!bucket) continue;
     if (report.reportKind === 'dau_ca') {
       for (const line of report.lines) {
-        if (!isKgUnit(line.donVi || '')) continue;
-        const qtyBase =
-          (line.soLuongTon > 0
-            ? line.soLuongTon
-            : (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0)) || 0;
-        if (qtyBase > 0) bucket.tonDauCa += qtyBase;
+        const split = splitMachineNvlLineByMaterial(line, 'dau_ca', resolveKgFactor);
+        bucket.tonDauCaNhua += split.nhua;
+        bucket.tonDauCaMang += split.mang;
+        bucket.tonDauCaLoi += split.loi;
+        bucket.tonDauCaTui += split.tui;
       }
     } else if (report.reportKind === 'cuoi_ca') {
       for (const line of report.lines) {
-        if (!isKgUnit(line.donVi || '')) continue;
-        const qty = Number.isFinite(line.soLuongTon) ? line.soLuongTon : 0;
-        if (qty > 0) bucket.tonCuoiCa += qty;
+        const split = splitMachineNvlLineByMaterial(line, 'cuoi_ca', resolveKgFactor);
+        bucket.tonCuoiCaNhua += split.nhua;
+        bucket.tonCuoiCaMang += split.mang;
+        bucket.tonCuoiCaLoi += split.loi;
+        bucket.tonCuoiCaTui += split.tui;
       }
     }
   }
@@ -442,16 +776,64 @@ export function buildControlBoardShiftSummary(input: {
     .map(bucket => {
       const khoiLuongNpl = roundNormWeight(bucket.khoiLuongNpl);
       const khoiLuongMangXuat = roundNormWeight(bucket.khoiLuongMangXuat);
-      const tonDauCa = roundNormWeight(bucket.tonDauCa);
-      const tonCuoiCa = roundNormWeight(bucket.tonCuoiCa);
+      const khoiLuongLoiXuatKho = roundNormWeight(bucket.khoiLuongLoiXuatKho);
+      const khoiLuongTuiXuatKho = roundNormWeight(bucket.khoiLuongTuiXuatKho);
+      const tonDauCaNhua = roundNormWeight(bucket.tonDauCaNhua);
+      const tonDauCaMang = roundNormWeight(bucket.tonDauCaMang);
+      const tonDauCaLoi = roundNormWeight(bucket.tonDauCaLoi);
+      const tonDauCaTui = roundNormWeight(bucket.tonDauCaTui);
+      const tonCuoiCaNhua = roundNormWeight(bucket.tonCuoiCaNhua);
+      const tonCuoiCaMang = roundNormWeight(bucket.tonCuoiCaMang);
+      const tonCuoiCaLoi = roundNormWeight(bucket.tonCuoiCaLoi);
+      const tonCuoiCaTui = roundNormWeight(bucket.tonCuoiCaTui);
+      const tonDauCa = tonDauCaNhua;
+      const tonCuoiCa = tonCuoiCaNhua;
       const khoiLuongHangThucTe = roundNormWeight(bucket.khoiLuongHangThucTe);
       const hangHong = roundNormWeight(bucket.hangHong);
       const hangHongNhua = roundNormWeight(bucket.hangHongNhua);
       const hangHongMang = roundNormWeight(bucket.hangHongMang);
+      const tlNhuaKhongMangLoiHong = roundNormWeight(bucket.tlNhuaKhongMangLoiHong);
+      const tlNhuaCucDauNongLoiHong = roundNormWeight(bucket.tlNhuaCucDauNongLoiHong);
+      const tlNhuaDinhMangLoiHong = roundNormWeight(bucket.tlNhuaDinhMangLoiHong);
+      const tlMangLoiHong = roundNormWeight(bucket.tlMangLoiHong);
+      const soCuonLoiDinhHangHong = roundNormWeight(bucket.soCuonLoiDinhHangHong);
+      const tongTrongLuongLoiHong = roundNormWeight(bucket.tongTrongLuongLoiHong);
       const khoiLuongLoi = roundNormWeight(bucket.khoiLuongLoi);
       const khoiLuongMang = roundNormWeight(bucket.slHangThucTe * KHOI_LUONG_MANG_KG_PER_UNIT);
       const khoiLuongNhuaTp = computeKhoiLuongNhuaTp(khoiLuongHangThucTe, khoiLuongLoi, khoiLuongMang);
-      const tongVatLieu = roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa);
+      const tongNhuaThucDung = computeMaterialUsageKg(khoiLuongNpl, tonDauCaNhua, tonCuoiCaNhua);
+      const tongMangThucDung = computeMaterialUsageKg(khoiLuongMangXuat, tonDauCaMang, tonCuoiCaMang);
+      const loiThucDung = computeMaterialUsageKg(khoiLuongLoiXuatKho, tonDauCaLoi, tonCuoiCaLoi);
+      const tuiThucDung = computeMaterialUsageKg(khoiLuongTuiXuatKho, tonDauCaTui, tonCuoiCaTui);
+      const tongThucDung = roundNormWeight(tongNhuaThucDung + tongMangThucDung + loiThucDung + tuiThucDung);
+      const tongVatLieu = tongNhuaThucDung;
+      const tongTrongLuongXuatKho = roundNormWeight(
+        khoiLuongNpl + khoiLuongMangXuat + khoiLuongLoiXuatKho + khoiLuongTuiXuatKho
+      );
+      const tongTrongLuongTonDauCa = roundNormWeight(tonDauCaNhua + tonDauCaMang + tonDauCaLoi + tonDauCaTui);
+      const tongTrongLuongTonCuoiCa = roundNormWeight(
+        tonCuoiCaNhua + tonCuoiCaMang + tonCuoiCaLoi + tonCuoiCaTui
+      );
+      const slDatThucTeNhapKho = roundNormWeight(bucket.slDatThucTeNhapKho);
+      const tlNhuaTpNhapKho = computeTlNhuaTpNhapKhoFromShiftSummary({
+        khoiLuongNpl,
+        tonDauCaNhua,
+        tonCuoiCaNhua,
+        tlNhuaKhongMangLoiHong,
+        tlNhuaCucDauNongLoiHong,
+        tlNhuaDinhMangLoiHong
+      });
+      const tlMangTpNhapKho = computeTlMangTpNhapKhoFromShiftSummary({
+        khoiLuongMangXuat,
+        tonDauCaMang,
+        tonCuoiCaMang,
+        tlMangLoiHong
+      });
+      const tlTuiBaoBiNhapKho = computeTlTuiBaoBiNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+      const tlLoiTpNhapKho = computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+      const tongTpNhapKho = roundNormWeight(
+        tlNhuaTpNhapKho + tlMangTpNhapKho + tlTuiBaoBiNhapKho + tlLoiTpNhapKho
+      );
       return {
         key: `${bucket.ngay}|${bucket.ca}`,
         ngay: bucket.ngay,
@@ -466,12 +848,42 @@ export function buildControlBoardShiftSummary(input: {
         hangHongMang,
         khoiLuongNpl,
         khoiLuongMangXuat,
+        khoiLuongLoiXuatKho,
+        khoiLuongTuiXuatKho,
         khoiLuongLoi,
         khoiLuongMang,
         tonDauCa,
+        tonDauCaNhua,
+        tonDauCaMang,
+        tonDauCaLoi,
+        tonDauCaTui,
         tonCuoiCa,
+        tonCuoiCaNhua,
+        tonCuoiCaMang,
+        tonCuoiCaLoi,
+        tonCuoiCaTui,
+        tongNhuaThucDung,
+        tongMangThucDung,
+        loiThucDung,
+        tuiThucDung,
+        tongThucDung,
         tongVatLieu,
-        chenhLech: roundNormWeight(khoiLuongNpl + tonDauCa - tonCuoiCa - khoiLuongNhuaTp - hangHongNhua)
+        chenhLech: roundNormWeight(tongNhuaThucDung - khoiLuongNhuaTp - hangHongNhua),
+        tongTrongLuongXuatKho,
+        tongTrongLuongTonDauCa,
+        tongTrongLuongTonCuoiCa,
+        slDatThucTeNhapKho,
+        tlNhuaTpNhapKho,
+        tlMangTpNhapKho,
+        tlTuiBaoBiNhapKho,
+        tlLoiTpNhapKho,
+        tongTpNhapKho,
+        tlNhuaKhongMangLoiHong,
+        tlNhuaCucDauNongLoiHong,
+        tlNhuaDinhMangLoiHong,
+        tlMangLoiHong,
+        soCuonLoiDinhHangHong,
+        tongTrongLuongLoiHong
       };
     })
     .sort((a, b) => compareSummaryRows(a, b, shiftOptions));
@@ -487,6 +899,13 @@ export function formatShiftSummaryNumber(value: number, fractionDigits = 2) {
 
 export function formatShiftSummaryKg(value: number, fractionDigits = 3) {
   return formatShiftSummaryNumber(value, fractionDigits);
+}
+
+export function resolveShiftSummaryTlDinhMucKgCuon(
+  row: Pick<ControlBoardShiftSummaryRow, 'slHang' | 'khoiLuongHang'>
+) {
+  if (!row.slHang || row.slHang <= 0) return 0;
+  return roundNormWeight(row.khoiLuongHang / row.slHang);
 }
 
 export function sumShiftSummaryColumn(rows: ControlBoardShiftSummaryRow[], key: keyof ControlBoardShiftSummaryRow) {

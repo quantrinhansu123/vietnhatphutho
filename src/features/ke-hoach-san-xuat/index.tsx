@@ -2287,9 +2287,11 @@ export function ProductionPlanModal({
               const code = (order.orderCode || '').trim();
               return linkedCodes.has(code) || linkedCodes.has(code.toUpperCase());
             });
-          } else {
-            customerOrders = filterOrdersForProductionDate(allOrders, ordersToPrint, planDate);
           }
+        }
+        if (customerOrders.length === 0) {
+          // Không khớp được mã đơn hàng cụ thể — vẫn in kèm đơn hàng cùng ngày kế hoạch thay vì bỏ trống.
+          customerOrders = filterOrdersForProductionDate(allOrders, ordersToPrint, planDate);
         }
       }
 
@@ -2319,9 +2321,11 @@ export function ProductionPlanModal({
 
       // BẢNG TỔNG HỢP THEO CA (đặt trang đầu tiên)
       try {
-        const settingRes = await fetch('/api/cai-dat');
+        const [settingRes, materialRes] = await Promise.all([fetch('/api/cai-dat'), fetch('/api/kho-nvl')]);
         const settingData = await settingRes.json().catch(() => ({}));
         const shiftSettings = normalizeShiftSettings(settingData);
+        const materialData = await materialRes.json().catch(() => ({}));
+        const materials = materialRes.ok ? normalizeMaterialsInventory(materialData) : [];
 
         const productionOrderRefs = ordersToPrint.map(order => ({
           startDate: order.startDate,
@@ -2358,6 +2362,7 @@ export function ProductionPlanModal({
           shiftSettings,
           productionOrders: productionOrderRefs,
           products: productCatalog.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
+          materials: materials.map(material => ({ code: material.code, totalWeight: material.totalWeight })),
           acceptanceReports: data.acceptance,
           warehouseMovements,
           weighingRecords: data.weighing,
@@ -2400,9 +2405,7 @@ export function ProductionPlanModal({
       if (foundSummary) {
         messages.push(`Đã tải: ${foundSummary}.`);
       }
-      if (customerOrders.length > 0) {
-        messages.push(`Đơn hàng: ${customerOrders.length}.`);
-      }
+      messages.push(`Đơn hàng: ${customerOrders.length}.`);
       if (messages.length > 0) {
         setFormError(messages.join(' '));
       }

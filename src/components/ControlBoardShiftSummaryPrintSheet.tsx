@@ -54,6 +54,11 @@ function ControlBoardShiftSummaryPrintSheet({
     khoiLuongMang: sumShiftSummaryColumn(rows, 'khoiLuongMang'),
     tonDauCa: sumShiftSummaryColumn(rows, 'tonDauCa'),
     tonCuoiCa: sumShiftSummaryColumn(rows, 'tonCuoiCa'),
+    tongNhuaThucDung: sumShiftSummaryColumn(rows, 'tongNhuaThucDung'),
+    tongMangThucDung: sumShiftSummaryColumn(rows, 'tongMangThucDung'),
+    loiThucDung: sumShiftSummaryColumn(rows, 'loiThucDung'),
+    tuiThucDung: sumShiftSummaryColumn(rows, 'tuiThucDung'),
+    tongThucDung: sumShiftSummaryColumn(rows, 'tongThucDung'),
     tongVatLieu: sumShiftSummaryColumn(rows, 'tongVatLieu'),
     chenhLech: sumShiftSummaryColumn(rows, 'chenhLech')
   };
@@ -179,6 +184,54 @@ function ControlBoardShiftSummaryPrintSheet({
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.tonCuoiCa, 3)}</td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.tongVatLieu, 3)}</td>
                 <td className="shift-summary-print-num">{formatShiftSummaryNumber(totals.chenhLech, 3)}</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+
+        <h2 className="production-order-print-section-title">Tổng vật tư thực dùng</h2>
+        <table className="shift-summary-print-table">
+          <thead>
+            <tr>
+              <th>Ngày</th>
+              <th>Ca</th>
+              <th className="shift-summary-print-num">Tổng Nhựa thực dùng</th>
+              <th className="shift-summary-print-num">Tổng Màng thực dùng</th>
+              <th className="shift-summary-print-num">Lõi thực dùng</th>
+              <th className="shift-summary-print-num">Túi thực dùng</th>
+              <th className="shift-summary-print-num">Tổng thực dùng</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="shift-summary-print-center">
+                  Không có dữ liệu theo bộ lọc đã chọn.
+                </td>
+              </tr>
+            ) : (
+              rows.map(row => (
+                <tr key={`usage-${row.key}`}>
+                  <td className="shift-summary-print-center">{formatPrintDate(row.ngay)}</td>
+                  <td className="shift-summary-print-center">{row.ca}</td>
+                  <td className="shift-summary-print-num">{formatShiftSummaryKg(row.tongNhuaThucDung, 3)}</td>
+                  <td className="shift-summary-print-num">{formatShiftSummaryKg(row.tongMangThucDung, 3)}</td>
+                  <td className="shift-summary-print-num">{formatShiftSummaryKg(row.loiThucDung, 3)}</td>
+                  <td className="shift-summary-print-num">{formatShiftSummaryKg(row.tuiThucDung, 3)}</td>
+                  <td className="shift-summary-print-num">{formatShiftSummaryKg(row.tongThucDung, 3)}</td>
+                </tr>
+              ))
+            )}
+            {rows.length > 0 ? (
+              <tr className="shift-summary-print-total-row">
+                <td colSpan={2} className="shift-summary-print-num shift-summary-print-total-label">
+                  Tổng cộng
+                </td>
+                <td className="shift-summary-print-num">{formatShiftSummaryKg(totals.tongNhuaThucDung, 3)}</td>
+                <td className="shift-summary-print-num">{formatShiftSummaryKg(totals.tongMangThucDung, 3)}</td>
+                <td className="shift-summary-print-num">{formatShiftSummaryKg(totals.loiThucDung, 3)}</td>
+                <td className="shift-summary-print-num">{formatShiftSummaryKg(totals.tuiThucDung, 3)}</td>
+                <td className="shift-summary-print-num">{formatShiftSummaryKg(totals.tongThucDung, 3)}</td>
               </tr>
             ) : null}
           </tbody>

@@ -1,5 +1,42 @@
 export type MachineNvlReportKind = 'dau_ca' | 'cuoi_ca';
 
+export type MachineNvlMaterialType = 'nhua' | 'mang' | 'loi' | 'bao_bi';
+
+export const MACHINE_NVL_MATERIAL_TYPE_OPTIONS: Array<{ value: MachineNvlMaterialType; label: string }> = [
+  { value: 'nhua', label: 'Nhựa' },
+  { value: 'mang', label: 'Màng' },
+  { value: 'loi', label: 'Lõi' },
+  { value: 'bao_bi', label: 'Bao Bì' }
+];
+
+export function normalizeMachineNvlMaterialType(value: unknown): MachineNvlMaterialType | null {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return null;
+  if (MACHINE_NVL_MATERIAL_TYPE_OPTIONS.some(option => option.value === raw)) {
+    return raw as MachineNvlMaterialType;
+  }
+  return null;
+}
+
+/** Đoán loại vật tư từ mã/tên/ĐVT khi người dùng chưa chọn tay — chỉ dùng để gợi ý điền sẵn. */
+export function guessMachineNvlMaterialType(code: string, name: string, unit: string): MachineNvlMaterialType {
+  const hay = `${code} ${name}`
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+  if (hay.includes('loi') || /\bloi\b/.test(hay) || hay.startsWith('loi')) return 'loi';
+  if (hay.includes('tui') || hay.includes('bao bi') || hay.includes('tai nilon') || hay.includes('bi nilon')) {
+    return 'bao_bi';
+  }
+  const unitNormalized = unit.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (unitNormalized === 'm2' || unitNormalized === 'm^2' || unitNormalized === 'm 2' || unitNormalized === 'm²') {
+    return 'mang';
+  }
+  if (hay.includes('mang') || hay.includes('film')) return 'mang';
+  return 'nhua';
+}
+
 export type MachineNvlSavedLine = {
   stt: number;
   maNvl: string;
@@ -7,10 +44,14 @@ export type MachineNvlSavedLine = {
   donVi: string;
   /** Kg quy đổi cho 1 đơn vị (vd m2 → kg/m2). Nếu null thì chỉ tính khi đơn vị là kg. */
   trongLuongQuyDoiKg: number | null;
+  /** Loại vật tư do người dùng chọn tay (Nhựa/Màng/Lõi/Bao Bì) — ưu tiên hơn suy đoán tự động. */
+  loaiVatTu: MachineNvlMaterialType | null;
   soLuongTonCaTruoc: number | null;
   soLuongTrongMay: number | null;
   soLuongTrongBonTron: number | null;
   soLuongNlChuaTron: number | null;
+  /** Tồn ngoài máy (kho tạm gần máy, chưa nạp vào máy/bồn). */
+  soLuongTonNgoai: number | null;
   soLuongTonDinhMuc: number | null;
   soLuongTon: number;
   ghiChu: string;
@@ -81,6 +122,11 @@ export function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport
             unblendedRaw === null || unblendedRaw === undefined || unblendedRaw === ''
               ? null
               : Number(String(unblendedRaw).replace(',', '.'));
+          const outsideRaw = detail.so_luong_ton_ngoai ?? detail.ton_ngoai ?? detail.outsideQuantity;
+          const outsideParsed =
+            outsideRaw === null || outsideRaw === undefined || outsideRaw === ''
+              ? null
+              : Number(String(outsideRaw).replace(',', '.'));
           const unitWeightRaw =
             detail.trong_luong_quy_doi_kg ??
             detail.trong_luong_quy_doi ??
@@ -97,10 +143,12 @@ export function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport
             tenNvl,
             donVi: String(detail.don_vi ?? detail.unit ?? 'kg').trim() || 'kg',
             trongLuongQuyDoiKg: Number.isFinite(unitWeightParsed) && unitWeightParsed! > 0 ? unitWeightParsed! : null,
+            loaiVatTu: normalizeMachineNvlMaterialType(detail.loai_vat_tu ?? detail.materialType),
             soLuongTonCaTruoc: Number.isFinite(prevParsed) ? prevParsed : null,
             soLuongTrongMay: Number.isFinite(inMachineParsed) ? inMachineParsed : null,
             soLuongTrongBonTron: Number.isFinite(inMixerParsed) ? inMixerParsed : null,
             soLuongNlChuaTron: Number.isFinite(unblendedParsed) ? unblendedParsed : null,
+            soLuongTonNgoai: Number.isFinite(outsideParsed) ? outsideParsed : null,
             soLuongTonDinhMuc: Number.isFinite(standardParsed) ? standardParsed : null,
             soLuongTon: Number.isFinite(amount) ? amount : 0,
             ghiChu: String(detail.ghi_chu ?? detail.note ?? '').trim()
@@ -153,11 +201,17 @@ export function machineNvlQtyToKg(
   return qty * factor;
 }
 
-/** Tổng tồn đầu ca 1 dòng NVL = tồn máy + bồn trộn + NL chưa trộn (hoặc soLuongTon đã lưu). */
+/** Tổng tồn đầu ca 1 dòng NVL = tồn máy + bồn trộn + NL chưa trộn + tồn ngoài (hoặc soLuongTon đã lưu). */
 export function sumMachineNvlDauCaLineTotal(
   line: Pick<
     MachineNvlSavedLine,
-    'donVi' | 'trongLuongQuyDoiKg' | 'soLuongTon' | 'soLuongTrongMay' | 'soLuongTrongBonTron' | 'soLuongNlChuaTron'
+    | 'donVi'
+    | 'trongLuongQuyDoiKg'
+    | 'soLuongTon'
+    | 'soLuongTrongMay'
+    | 'soLuongTrongBonTron'
+    | 'soLuongNlChuaTron'
+    | 'soLuongTonNgoai'
   >
 ) {
   const factor = resolveMachineNvlLineKgFactor(line);
@@ -165,7 +219,10 @@ export function sumMachineNvlDauCaLineTotal(
   const base =
     line.soLuongTon > 0
       ? line.soLuongTon
-      : (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0);
+      : (line.soLuongTrongMay ?? 0) +
+        (line.soLuongTrongBonTron ?? 0) +
+        (line.soLuongNlChuaTron ?? 0) +
+        (line.soLuongTonNgoai ?? 0);
   return base > 0 ? base * factor : 0;
 }
 
@@ -177,13 +234,28 @@ export function sumMachineNvlDauCaReportTotal(report: Pick<MachineNvlSavedReport
   return report.total > 0 ? report.total : 0;
 }
 
-/** Tổng tồn cuối ca 1 dòng NVL = SL tồn đã lưu. */
+/** Tổng tồn cuối ca 1 dòng NVL = SL tồn đã lưu (lõi thiếu hệ số → 1 kg/đơn vị). */
 export function sumMachineNvlCuoiCaLineTotal(
-  line: Pick<MachineNvlSavedLine, 'donVi' | 'trongLuongQuyDoiKg' | 'soLuongTon'>
+  line: Pick<
+    MachineNvlSavedLine,
+    'donVi' | 'trongLuongQuyDoiKg' | 'soLuongTon' | 'loaiVatTu' | 'maNvl' | 'tenNvl' | 'soLuongTrongMay' | 'soLuongTrongBonTron' | 'soLuongNlChuaTron'
+  >
 ) {
-  const factor = resolveMachineNvlLineKgFactor(line);
-  if (factor === null) return 0;
-  return Number.isFinite(line.soLuongTon) && line.soLuongTon > 0 ? line.soLuongTon * factor : 0;
+  let factor = resolveMachineNvlLineKgFactor(line);
+  const hay = `${line.maNvl || ''} ${line.tenNvl || ''}`
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+  const isLoi =
+    line.loaiVatTu === 'loi' || hay.includes('loi') || /\bloi\b/.test(hay) || hay.startsWith('loi');
+  if ((factor === null || factor <= 0) && isLoi) factor = 1;
+  if (factor === null || factor <= 0) return 0;
+  const componentQty =
+    (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0);
+  const base =
+    Number.isFinite(line.soLuongTon) && line.soLuongTon > 0 ? line.soLuongTon : componentQty;
+  return base > 0 ? base * factor : 0;
 }
 
 /** Tổng tồn cuối ca của 1 báo cáo = tổng SL tồn các dòng. */
