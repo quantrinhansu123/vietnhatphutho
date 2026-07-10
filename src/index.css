@@ -379,6 +379,193 @@ input[type="number"] {
   display: none;
 }
 
+.order-print-doc {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.order-print-letterhead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4mm;
+  margin-bottom: 3mm;
+  padding-bottom: 2.5mm;
+  border-bottom: 1.5px solid #111111;
+}
+
+.order-print-brand {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  min-width: 0;
+  flex: 1;
+}
+
+.order-print-logo {
+  height: 14mm;
+  width: auto;
+  max-width: 40mm;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.order-print-company {
+  min-width: 0;
+}
+
+.order-print-company-name {
+  margin: 0;
+  font-size: 12pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+
+.order-print-company-subtitle {
+  margin: 1mm 0 0;
+  font-size: 9.5pt;
+  font-style: italic;
+  color: #333333;
+}
+
+.order-print-form-meta {
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 10pt;
+}
+
+.order-print-form-code {
+  margin: 0;
+  font-weight: 700;
+  color: #1f4e79;
+}
+
+.order-print-form-version {
+  margin: 1mm 0 0;
+}
+
+.order-print-title {
+  margin: 0 0 4mm;
+  text-align: center;
+  font-size: 15pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.order-print-meta-table,
+.order-print-products-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.order-print-meta-table {
+  margin-bottom: 0;
+}
+
+.order-print-meta-table th,
+.order-print-meta-table td,
+.order-print-products-table th,
+.order-print-products-table td {
+  border: 1px solid #222222;
+  padding: 1.8mm 2mm;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.order-print-meta-table th {
+  width: 18%;
+  font-size: 10.5pt;
+  font-weight: 700;
+  text-align: left;
+  background: #f7f7f7;
+}
+
+.order-print-meta-table td {
+  width: 32%;
+}
+
+.order-print-products-table thead th {
+  background: #f7f7f7;
+  font-size: 10pt;
+  font-weight: 700;
+  text-align: center;
+}
+
+.order-print-products-table th:nth-child(1) { width: 5%; }
+.order-print-products-table th:nth-child(2) { width: 12%; }
+.order-print-products-table th:nth-child(3) { width: 30%; }
+.order-print-products-table th:nth-child(4) { width: 10%; }
+.order-print-products-table th:nth-child(5) { width: 8%; }
+.order-print-products-table th:nth-child(6) { width: 10%; }
+.order-print-products-table th:nth-child(7) { width: 10%; }
+.order-print-products-table th:nth-child(8) { width: 15%; }
+
+.order-print-center {
+  text-align: center;
+}
+
+.order-print-mono {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 10pt;
+}
+
+.order-print-product-name {
+  font-size: 10.5pt;
+  line-height: 1.3;
+}
+
+.order-print-qty {
+  font-weight: 700;
+}
+
+.order-print-empty-row {
+  text-align: center;
+  font-style: italic;
+  color: #555555;
+}
+
+.order-print-total-row td {
+  font-weight: 700;
+  background: #fafafa;
+}
+
+.order-print-total-label {
+  text-align: center;
+}
+
+.order-print-total-value {
+  font-weight: 700;
+}
+
+.order-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6mm;
+  margin-top: 10mm;
+  text-align: center;
+}
+
+.order-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.order-print-signatures span {
+  display: block;
+  margin-top: 14mm;
+  font-size: 10pt;
+  font-style: italic;
+}
+
 .production-plan-qr-print-sheet {
   display: none;
 }
@@ -386,11 +573,6 @@ input[type="number"] {
 @media print {
   @page {
     size: A4;
-    margin: 10mm;
-  }
-
-  @page order-print-page {
-    size: A4 landscape;
     margin: 8mm;
   }
 
@@ -520,167 +702,16 @@ input[type="number"] {
     background: #ffffff;
     color: #111111;
     padding: 0;
-    page: order-print-page;
+    margin: 0;
+    page: auto;
   }
 
-  .order-print-page {
-    width: 100%;
-    max-width: 277mm;
-    margin: 0 auto;
-    padding: 0;
+  .order-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
     box-sizing: border-box;
-    font-family: "Times New Roman", serif;
-    font-size: 11pt;
-    line-height: 1.35;
-  }
-
-  .order-print-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-top: 2mm;
-    border-bottom: 1.5px solid #111111;
-    padding-bottom: 3mm;
-  }
-
-  .order-print-brand {
-    display: flex;
-    align-items: center;
-    gap: 4mm;
-    min-width: 0;
-  }
-
-  .order-print-logo {
-    height: 14mm;
-    width: auto;
-    max-width: 42mm;
-    object-fit: contain;
-    flex-shrink: 0;
-  }
-
-  .order-print-company {
-    font-weight: 700;
-    font-size: 12pt;
-    text-transform: uppercase;
-  }
-
-  .order-print-subtitle {
-    font-size: 10pt;
-    font-style: italic;
-    margin-top: 1mm;
-  }
-
-  .order-print-form-meta {
-    text-align: right;
-    font-size: 10pt;
-  }
-
-  .order-print-form-code {
-    font-weight: 700;
-    color: #1f4e79;
-  }
-
-  .order-print-form-version {
-    margin-top: 1mm;
-  }
-
-  .order-print-title {
-    text-align: center;
-    font-weight: 700;
-    font-size: 16pt;
-    margin: 6mm 0 4mm;
-  }
-
-  .order-print-info-grid {
-    border: 1px solid #222222;
-    border-bottom: 0;
-  }
-
-  .order-print-info-row {
-    display: grid;
-    grid-template-columns: 40mm 1fr;
-    border-bottom: 1px solid #222222;
-  }
-
-  .order-print-info-row--full {
-    grid-template-columns: 40mm 1fr;
-  }
-
-  .order-print-info-label {
-    padding: 2mm 2mm;
-    border-right: 1px solid #222222;
-    background: #f5f5f5;
-    font-weight: 700;
-  }
-
-  .order-print-info-value {
-    padding: 2mm 2mm;
-    min-height: 7mm;
-  }
-
-  .order-print-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 0;
-    table-layout: fixed;
-  }
-
-  .order-print-table th,
-  .order-print-table td {
-    border: 1px solid #222222;
-    padding: 1.6mm 1.8mm;
-    vertical-align: top;
-    word-wrap: break-word;
-  }
-
-  .order-print-table thead th {
-    background: #f5f5f5;
-    color: #111111;
-    font-weight: 700;
-    font-size: 9.5pt;
-    text-align: center;
-  }
-
-  .order-print-table td.center {
-    text-align: center;
-    vertical-align: middle;
-  }
-
-  .order-print-product-name {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    line-height: 1.25;
-    max-height: 2.5em;
-  }
-
-  .order-print-total-label {
-    text-align: center;
-    font-weight: 700;
-    background: #f5f5f5;
-  }
-
-  .order-print-total-value {
-    font-weight: 700;
-  }
-
-  .order-print-signatures {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8mm;
-    margin-top: 10mm;
-    text-align: center;
-  }
-
-  .order-print-signature-title {
-    font-weight: 700;
-  }
-
-  .order-print-signature-hint {
-    font-style: italic;
-    font-size: 10pt;
-    margin-top: 12mm;
   }
 
   .production-plan-qr-print-sheet,
@@ -789,24 +820,39 @@ input[type="number"] {
   .production-plan-print-sheet,
   .production-plan-nvl-print-sheet {
     display: block !important;
-    position: absolute;
-    inset: 0;
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
     z-index: 9999;
     background: #ffffff;
     color: #111111;
     padding: 0;
+    margin: 0;
+  }
+
+  .production-plan-print-sheet .production-plan-print-doc,
+  .production-plan-nvl-print-sheet .production-plan-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
   }
 
   .production-plan-nvl-print-sheet .production-plan-print-doc {
-    width: 190mm !important;
-    max-width: 190mm !important;
-    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
   }
 
   .production-order-print-batch,
   .production-order-print-batch *,
   .production-order-print-sheet,
   .production-order-print-sheet *,
+  .order-print-sheet,
+  .order-print-sheet *,
   .mixing-report-print-batch,
   .mixing-report-print-batch *,
   .mixing-report-print-page,
@@ -933,6 +979,13 @@ input[type="number"] {
     width: auto;
   }
 
+  .production-order-print-batch .production-order-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box;
+  }
+
   .production-order-print-batch .production-order-print-page {
     display: block !important;
     position: static !important;
@@ -940,9 +993,30 @@ input[type="number"] {
     overflow: visible !important;
   }
 
+  .production-order-print-batch .production-order-print-page .order-print-sheet {
+    display: block !important;
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    page: auto;
+  }
+
+  .production-order-print-batch .order-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
+  }
+
   .production-order-print-batch .weighing-slip-print-sheet,
   .production-order-print-batch .mixing-report-print-sheet,
-  .production-order-print-batch .warehouse-slip-print-sheet {
+  .production-order-print-batch .warehouse-slip-print-sheet,
+  .production-order-print-batch .order-print-sheet,
+  .production-order-print-batch .production-plan-print-sheet,
+  .production-order-print-batch .production-plan-nvl-print-sheet {
     display: block !important;
     position: relative !important;
     inset: auto !important;
@@ -955,6 +1029,19 @@ input[type="number"] {
     padding: 0;
     margin: 0;
     overflow: visible !important;
+  }
+
+  .production-order-print-batch .production-plan-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
+  }
+
+  .production-order-print-batch .production-plan-print-table,
+  .production-order-print-batch .production-plan-nvl-print-meta-table {
+    width: 100% !important;
   }
 
   .shift-summary-print-batch,
@@ -1006,8 +1093,10 @@ input[type="number"] {
 }
 
 .production-plan-print-doc {
-  width: 190mm;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  box-sizing: border-box;
   font-family: 'Times New Roman', Times, serif;
   font-size: 11pt;
   line-height: 1.35;
@@ -1016,15 +1105,15 @@ input[type="number"] {
 
 .production-plan-print-header {
   display: grid;
-  grid-template-columns: 1fr 38mm;
+  grid-template-columns: 1fr auto;
   grid-template-areas:
     "brand date"
     "title title";
   align-items: start;
-  gap: 6mm;
-  margin-bottom: 5mm;
+  gap: 3mm;
+  margin-bottom: 4mm;
   border-bottom: 1.5px solid #111111;
-  padding-bottom: 3mm;
+  padding-bottom: 2mm;
 }
 
 .production-plan-print-brand {
@@ -1102,18 +1191,18 @@ input[type="number"] {
   table-layout: fixed;
 }
 
-.production-plan-print-table th:nth-child(1) { width: 6%; }
+.production-plan-print-table th:nth-child(1) { width: 5%; }
 .production-plan-print-table th:nth-child(2) { width: 13%; }
-.production-plan-print-table th:nth-child(3) { width: 10%; }
-.production-plan-print-table th:nth-child(4) { width: 13%; }
-.production-plan-print-table th:nth-child(5) { width: 20%; }
-.production-plan-print-table th:nth-child(6) { width: 25%; }
-.production-plan-print-table th:nth-child(7) { width: 13%; }
+.production-plan-print-table th:nth-child(3) { width: 8%; }
+.production-plan-print-table th:nth-child(4) { width: 16%; }
+.production-plan-print-table th:nth-child(5) { width: 13%; }
+.production-plan-print-table th:nth-child(6) { width: 33%; }
+.production-plan-print-table th:nth-child(7) { width: 12%; }
 
 .production-plan-print-table th,
 .production-plan-print-table td {
   border: 1px solid #222222;
-  padding: 2.2mm 2mm;
+  padding: 2.4mm 2.2mm;
   font-family: 'Times New Roman', Times, serif;
   font-size: 11pt;
   text-align: left;
@@ -1123,7 +1212,7 @@ input[type="number"] {
 }
 
 .production-plan-print-table th {
-  background: #f7f7f7;
+  background: #f2f2f2;
   font-size: 10.5pt;
   font-weight: 700;
   text-align: center;
@@ -1156,17 +1245,23 @@ input[type="number"] {
 }
 
 .production-plan-print-material-list {
-  display: grid;
-  gap: 1mm;
+  display: flex;
+  flex-direction: column;
 }
 
 .production-plan-print-material-item {
   display: grid;
-  gap: 0.4mm;
-  padding-bottom: 1mm;
-  border-bottom: 1px dotted #999999;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 2mm;
+  padding: 1mm 0;
+  border-bottom: 1px dotted #bbbbbb;
   font-size: 9.3pt;
-  line-height: 1.2;
+  line-height: 1.25;
+}
+
+.production-plan-print-material-item:first-child {
+  padding-top: 0;
 }
 
 .production-plan-print-material-item:last-child {
@@ -1176,23 +1271,30 @@ input[type="number"] {
 
 .production-plan-print-material-name {
   font-weight: 700;
+  min-width: 0;
 }
 
 .production-plan-print-material-qty {
+  white-space: nowrap;
   color: #333333;
+  font-weight: 600;
+  text-align: right;
 }
 
 .production-plan-print-empty-material {
+  display: block;
+  padding: 2mm 0;
   font-size: 9.5pt;
   font-style: italic;
-  color: #555555;
+  text-align: center;
+  color: #666666;
 }
 
 .production-plan-print-signatures {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18mm;
-  margin-top: 16mm;
+  margin-top: 14mm;
 }
 
 .production-plan-print-signatures div {
@@ -1221,13 +1323,13 @@ input[type="number"] {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  margin-bottom: 4mm;
+  margin-bottom: 5mm;
 }
 
 .production-plan-nvl-print-meta-table th,
 .production-plan-nvl-print-meta-table td {
   border: 1px solid #222222;
-  padding: 1.8mm 2mm;
+  padding: 2mm 2.2mm;
   font-family: 'Times New Roman', Times, serif;
   font-size: 10.5pt;
   vertical-align: middle;
@@ -1236,8 +1338,12 @@ input[type="number"] {
 .production-plan-nvl-print-meta-table th {
   width: 18%;
   font-weight: 700;
-  background: #f7f7f7;
+  background: #f2f2f2;
   text-align: left;
+}
+
+.production-plan-nvl-print-meta-table td {
+  font-weight: 600;
 }
 
 .production-plan-nvl-print-shift-block {
@@ -1316,6 +1422,8 @@ input[type="number"] {
   .production-order-print-sheet *,
   .production-order-print-batch,
   .production-order-print-batch *,
+  .order-print-sheet,
+  .order-print-sheet *,
   .mixing-report-print-batch,
   .mixing-report-print-batch *,
   .mixing-report-print-page,
@@ -1471,6 +1579,13 @@ input[type="number"] {
     width: auto;
   }
 
+  .production-order-print-batch .production-order-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box;
+  }
+
   .production-order-print-batch .production-order-print-page {
     display: block !important;
     position: static !important;
@@ -1478,9 +1593,30 @@ input[type="number"] {
     overflow: visible !important;
   }
 
+  .production-order-print-batch .production-order-print-page .order-print-sheet {
+    display: block !important;
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    page: auto;
+  }
+
+  .production-order-print-batch .order-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
+  }
+
   .production-order-print-batch .weighing-slip-print-sheet,
   .production-order-print-batch .mixing-report-print-sheet,
-  .production-order-print-batch .warehouse-slip-print-sheet {
+  .production-order-print-batch .warehouse-slip-print-sheet,
+  .production-order-print-batch .order-print-sheet,
+  .production-order-print-batch .production-plan-print-sheet,
+  .production-order-print-batch .production-plan-nvl-print-sheet {
     display: block !important;
     position: relative !important;
     inset: auto !important;
@@ -1493,6 +1629,19 @@ input[type="number"] {
     padding: 0;
     margin: 0;
     overflow: visible !important;
+  }
+
+  .production-order-print-batch .production-plan-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
+  }
+
+  .production-order-print-batch .production-plan-print-table,
+  .production-order-print-batch .production-plan-nvl-print-meta-table {
+    width: 100% !important;
   }
 
   .weighing-slip-print-batch .weighing-slip-print-sheet {
@@ -1953,18 +2102,19 @@ input[type="number"] {
 }
 
 .mixing-report-print-params-table {
-  margin-bottom: 8mm;
+  margin-bottom: 6mm;
 }
 
 .mixing-report-print-params-table th {
   width: 18%;
   font-weight: 700;
   text-align: left;
-  background: #f5f5f5;
+  background: #f2f2f2;
 }
 
 .mixing-report-print-params-table td {
   width: 32%;
+  font-weight: 600;
 }
 
 .mixing-report-print-table {
@@ -1975,7 +2125,7 @@ input[type="number"] {
 
 .mixing-report-print-table th,
 .mixing-report-print-table td {
-  padding: 1.3mm 0.8mm;
+  padding: 1.8mm 1.5mm;
   word-break: break-word;
   overflow-wrap: anywhere;
   vertical-align: middle;
@@ -1983,11 +2133,12 @@ input[type="number"] {
 
 .mixing-report-print-table th {
   text-align: center;
-  font-size: 9pt;
-  line-height: 1.15;
+  font-size: 9.5pt;
+  line-height: 1.2;
   white-space: nowrap;
   overflow-wrap: normal;
   word-wrap: normal;
+  background: #f2f2f2;
 }
 
 .mixing-report-print-table thead {
@@ -2010,14 +2161,14 @@ input[type="number"] {
   page-break-inside: avoid;
 }
 
-.mixing-report-print-col-lan { width: 7mm; }
-.mixing-report-print-col-time { width: 11mm; }
-.mixing-report-print-col-code { width: 14mm; }
-.mixing-report-print-col-name { width: 47%; }
-.mixing-report-print-col-unit { width: 7mm; }
-.mixing-report-print-col-weight { width: 8mm; }
-.mixing-report-print-col-photo { width: 8mm; }
-.mixing-report-print-col-note { width: 12mm; }
+.mixing-report-print-col-lan { width: 5%; }
+.mixing-report-print-col-time { width: 8%; }
+.mixing-report-print-col-code { width: 9%; }
+.mixing-report-print-col-name { width: 38%; }
+.mixing-report-print-col-unit { width: 6%; }
+.mixing-report-print-col-weight { width: 8%; }
+.mixing-report-print-col-photo { width: 6%; }
+.mixing-report-print-col-note { width: 20%; }
 
 .mixing-report-print-lan,
 .mixing-report-print-time,
@@ -2028,33 +2179,25 @@ input[type="number"] {
 }
 
 .mixing-report-print-lan {
-  font-size: 8.5pt;
-  padding-left: 0.2mm !important;
-  padding-right: 0.2mm !important;
+  font-size: 9.5pt;
+  font-weight: 700;
 }
 
 .mixing-report-print-time {
-  font-size: 8.5pt;
-  padding-left: 0.2mm !important;
-  padding-right: 0.2mm !important;
+  font-size: 9.5pt;
 }
 
 .mixing-report-print-unit {
-  font-size: 8.5pt;
-  padding-left: 0.2mm !important;
-  padding-right: 0.2mm !important;
+  font-size: 9.5pt;
 }
 
 .mixing-report-print-weight {
-  font-size: 8.5pt;
-  padding-left: 0.2mm !important;
-  padding-right: 0.2mm !important;
+  font-size: 9.5pt;
+  font-weight: 600;
 }
 
 .mixing-report-print-photo {
-  font-size: 8.5pt;
-  padding-left: 0.2mm !important;
-  padding-right: 0.2mm !important;
+  font-size: 9.5pt;
 }
 
 .mixing-report-print-material-name {
@@ -2067,10 +2210,8 @@ input[type="number"] {
 .mixing-report-print-material-name-text {
   display: block;
   width: 100%;
-  line-height: 1.2;
-  font-size: 8pt;
-  max-height: calc(1.2em * 2);
-  overflow: hidden;
+  line-height: 1.25;
+  font-size: 9.5pt;
   overflow-wrap: break-word;
   word-break: break-word;
 }
@@ -2109,8 +2250,10 @@ input[type="number"] {
 }
 
 .production-order-print-doc {
-  width: 190mm;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  box-sizing: border-box;
   font-family: 'Times New Roman', Times, serif;
   font-size: 11pt;
   line-height: 1.35;
@@ -2209,16 +2352,26 @@ input[type="number"] {
 .production-order-print-grid-table th:nth-child(4) { width: 12%; }
 .production-order-print-grid-table th:nth-child(5) { width: 28%; }
 
-.production-order-print-product-table th:nth-child(1) { width: 10%; }
-.production-order-print-product-table th:nth-child(2) { width: 24%; }
-.production-order-print-product-table th:nth-child(3) { width: 7%; }
-.production-order-print-product-table th:nth-child(4) { width: 9%; }
-.production-order-print-product-table th:nth-child(5) { width: 10%; }
-.production-order-print-product-table th:nth-child(6) { width: 10%; }
-.production-order-print-product-table th:nth-child(7) { width: 30%; }
+.production-order-print-product-table th:nth-child(1) { width: 8%; }
+.production-order-print-product-table th:nth-child(2) { width: 18%; }
+.production-order-print-product-table th:nth-child(3) { width: 5%; }
+.production-order-print-product-table th:nth-child(4) { width: 7%; }
+.production-order-print-product-table th:nth-child(5) { width: 15%; }
+.production-order-print-product-table th:nth-child(6) { width: 16%; }
+.production-order-print-product-table th:nth-child(7) { width: 31%; }
+
+.production-order-print-product-table thead th {
+  font-size: 9.5pt;
+  text-align: center;
+  padding: 1.6mm 1.2mm;
+  line-height: 1.2;
+  white-space: nowrap;
+}
 
 .production-order-print-product-table td {
   vertical-align: top;
+  font-size: 10.5pt;
+  padding: 1.8mm 1.5mm;
 }
 
 .production-order-print-product-table tbody tr + tr td {
@@ -2443,15 +2596,16 @@ input[type="number"] {
   word-wrap: normal;
 }
 
-.machine-nvl-print-table th:nth-child(1) { width: 4.5%; }
-.machine-nvl-print-table th:nth-child(2) { width: 10.5%; }
-.machine-nvl-print-table th:nth-child(3) { width: 21%; }
-.machine-nvl-print-table th:nth-child(4) { width: 6%; }
-.machine-nvl-print-table th:nth-child(5) { width: 13%; }
-.machine-nvl-print-table th:nth-child(6) { width: 12%; }
-.machine-nvl-print-table th:nth-child(7) { width: 11%; }
-.machine-nvl-print-table th:nth-child(8) { width: 13%; }
+.machine-nvl-print-table th:nth-child(1) { width: 4%; }
+.machine-nvl-print-table th:nth-child(2) { width: 9.5%; }
+.machine-nvl-print-table th:nth-child(3) { width: 18%; }
+.machine-nvl-print-table th:nth-child(4) { width: 5.5%; }
+.machine-nvl-print-table th:nth-child(5) { width: 11.5%; }
+.machine-nvl-print-table th:nth-child(6) { width: 10.5%; }
+.machine-nvl-print-table th:nth-child(7) { width: 9.5%; }
+.machine-nvl-print-table th:nth-child(8) { width: 11.5%; }
 .machine-nvl-print-table th:nth-child(9) { width: 9%; }
+.machine-nvl-print-table th:nth-child(10) { width: 8%; }
 
 .machine-nvl-print-note {
   margin: 6mm 0 0;

@@ -1,6 +1,14 @@
 import React from 'react';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { formatNumber } from '../utils';
+import {
+  isKgUnit,
+  machineNvlQtyToKg,
+  sumMachineNvlCuoiCaLineTotal,
+  sumMachineNvlDauCaLineTotal,
+  type MachineNvlSavedReport
+} from '../utils/machineNvlReports';
+
 export type MachineNvlPrintKind = 'dau_ca' | 'cuoi_ca';
 
 export type MachineNvlPrintLine = {
@@ -8,6 +16,7 @@ export type MachineNvlPrintLine = {
   maNvl: string;
   tenNvl: string;
   donVi: string;
+  trongLuongQuyDoiKg: number | null;
   soLuongTonCaTruoc: number | null;
   soLuongTrongMay: number | null;
   soLuongTrongBonTron: number | null;
@@ -32,6 +41,7 @@ type FormLine = {
   code: string;
   name: string;
   unit: string;
+  unitWeightKg: string;
   previousQuantity: string;
   inMachineQuantity: string;
   inMixerQuantity: string;
@@ -62,6 +72,38 @@ function hasFormLineData(line: FormLine) {
   );
 }
 
+function formatMachineNvlPrintQty(
+  qty: number | null,
+  line: Pick<MachineNvlPrintLine, 'donVi' | 'trongLuongQuyDoiKg'>
+) {
+  if (qty === null || !Number.isFinite(qty)) return '';
+  if (isKgUnit(line.donVi)) return formatNumber(qty);
+  const kg = machineNvlQtyToKg(qty, line);
+  if (kg !== null) return `${formatNumber(qty)} (${formatNumber(kg)} kg)`;
+  return formatNumber(qty);
+}
+
+function resolveMachineNvlPrintLineKg(
+  line: MachineNvlPrintLine,
+  reportKind: MachineNvlPrintKind
+) {
+  if (reportKind === 'dau_ca') return sumMachineNvlDauCaLineTotal(line);
+  return sumMachineNvlCuoiCaLineTotal(line);
+}
+
+function sumMachineNvlPrintColumnKg(
+  lines: MachineNvlPrintLine[],
+  getQty: (line: MachineNvlPrintLine) => number | null
+) {
+  return lines.reduce((sum, line) => {
+    const qty = getQty(line);
+    const kg = machineNvlQtyToKg(qty, line);
+    if (kg !== null) return sum + kg;
+    if (isKgUnit(line.donVi) && qty !== null && Number.isFinite(qty)) return sum + qty;
+    return sum;
+  }, 0);
+}
+
 export function buildMachineNvlPrintReportFromForm(input: {
   reportKind: MachineNvlPrintKind;
   date: string;
@@ -78,19 +120,24 @@ export function buildMachineNvlPrintReportFromForm(input: {
       const inMachineQty = parseQty(line.inMachineQuantity);
       const inMixerQty = parseQty(line.inMixerQuantity);
       const unblendedQty = parseQty(line.unblendedQuantity);
-      const totalQty = (inMachineQty ?? 0) + (inMixerQty ?? 0) + (unblendedQty ?? 0);
+      const computedQty = (inMachineQty ?? 0) + (inMixerQty ?? 0) + (unblendedQty ?? 0);
+      const actualQty = parseQty(line.quantity);
+      const unitWeightParsed = parseQty(line.unitWeightKg);
 
       return {
         stt: index + 1,
         maNvl: line.code.trim(),
         tenNvl: line.name.trim(),
         donVi: line.unit.trim() || 'kg',
+        trongLuongQuyDoiKg:
+          unitWeightParsed !== null && unitWeightParsed > 0 ? unitWeightParsed : null,
         soLuongTonCaTruoc: parseQty(line.previousQuantity),
         soLuongTrongMay: inMachineQty,
         soLuongTrongBonTron: inMixerQty,
         soLuongNlChuaTron: unblendedQty,
         soLuongTonDinhMuc: parseQty(line.standardQuantity),
-        soLuongTon: totalQty,
+        soLuongTon:
+          actualQty !== null && actualQty >= 0 ? actualQty : computedQty,
         ghiChu: line.note.trim()
       };
     });
@@ -115,10 +162,13 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
       ? `${report.maMay} · ${report.tenMay}`
       : report.tenMay || report.maMay || '-';
   const lines = [...report.lines];
-  const totalInMachine = lines.reduce((sum, line) => sum + (line.soLuongTrongMay ?? 0), 0);
-  const totalInMixer = lines.reduce((sum, line) => sum + (line.soLuongTrongBonTron ?? 0), 0);
-  const totalUnblended = lines.reduce((sum, line) => sum + (line.soLuongNlChuaTron ?? 0), 0);
-  const totalActual = lines.reduce((sum, line) => sum + line.soLuongTon, 0);
+  const totalInMachineKg = sumMachineNvlPrintColumnKg(lines, line => line.soLuongTrongMay);
+  const totalInMixerKg = sumMachineNvlPrintColumnKg(lines, line => line.soLuongTrongBonTron);
+  const totalUnblendedKg = sumMachineNvlPrintColumnKg(lines, line => line.soLuongNlChuaTron);
+  const totalActualKg = lines.reduce(
+    (sum, line) => sum + resolveMachineNvlPrintLineKg(line, report.reportKind),
+    0
+  );
 
   return (
     <div className="production-order-print-sheet">
@@ -168,44 +218,56 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
               <th>Tồn bồn</th>
               <th>Chưa trộn</th>
               <th>{isDauCaReport ? 'Tổng tồn đầu ca' : 'Tổng tồn cuối ca'}</th>
+              <th>Kg quy đổi</th>
               <th>Ghi chú</th>
             </tr>
           </thead>
           <tbody>
-            {lines.map(line => (
-              <tr key={line.stt}>
-                <td className="production-order-print-center">{line.stt}</td>
-                <td>{line.maNvl || '-'}</td>
-                <td>{line.tenNvl || '-'}</td>
-                <td className="production-order-print-center">{line.donVi || '-'}</td>
-                <td className="production-order-print-right">
-                  {line.soLuongTrongMay !== null ? formatNumber(line.soLuongTrongMay) : ''}
-                </td>
-                <td className="production-order-print-right">
-                  {line.soLuongTrongBonTron !== null ? formatNumber(line.soLuongTrongBonTron) : ''}
-                </td>
-                <td className="production-order-print-right">
-                  {line.soLuongNlChuaTron !== null ? formatNumber(line.soLuongNlChuaTron) : ''}
-                </td>
-                <td className="production-order-print-right">{formatNumber(line.soLuongTon)}</td>
-                <td className="whitespace-pre-wrap">{line.ghiChu || ''}</td>
-              </tr>
-            ))}
+            {lines.map(line => {
+              const lineKg = resolveMachineNvlPrintLineKg(line, report.reportKind);
+              return (
+                <tr key={line.stt}>
+                  <td className="production-order-print-center">{line.stt}</td>
+                  <td>{line.maNvl || '-'}</td>
+                  <td>{line.tenNvl || '-'}</td>
+                  <td className="production-order-print-center">{line.donVi || '-'}</td>
+                  <td className="production-order-print-right">
+                    {formatMachineNvlPrintQty(line.soLuongTrongMay, line)}
+                  </td>
+                  <td className="production-order-print-right">
+                    {formatMachineNvlPrintQty(line.soLuongTrongBonTron, line)}
+                  </td>
+                  <td className="production-order-print-right">
+                    {formatMachineNvlPrintQty(line.soLuongNlChuaTron, line)}
+                  </td>
+                  <td className="production-order-print-right">
+                    {formatMachineNvlPrintQty(line.soLuongTon, line)}
+                  </td>
+                  <td className="production-order-print-right">
+                    {lineKg > 0 ? `${formatNumber(lineKg)} kg` : ''}
+                  </td>
+                  <td className="whitespace-pre-wrap">{line.ghiChu || ''}</td>
+                </tr>
+              );
+            })}
             <tr>
               <td colSpan={4} className="production-order-print-center" style={{ fontWeight: 700 }}>
                 TỔNG CỘNG
               </td>
               <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                {formatNumber(totalInMachine)}
+                {formatNumber(totalInMachineKg)} kg
               </td>
               <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                {formatNumber(totalInMixer)}
+                {formatNumber(totalInMixerKg)} kg
               </td>
               <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                {formatNumber(totalUnblended)}
+                {formatNumber(totalUnblendedKg)} kg
               </td>
               <td className="production-order-print-right" style={{ fontWeight: 700 }}>
-                {formatNumber(totalActual)}
+                {formatNumber(totalActualKg)} kg
+              </td>
+              <td className="production-order-print-right" style={{ fontWeight: 700 }}>
+                {formatNumber(totalActualKg)} kg
               </td>
               <td></td>
             </tr>
@@ -214,6 +276,9 @@ export function MachineNvlPrintSheet({ report }: { report: MachineNvlPrintReport
 
         <p className="machine-nvl-print-note">
           Ghi chú: Tổng tồn gồm nhựa tồn trong máy, trong bồn trộn và nguyên liệu chưa trộn.
+          {lines.some(line => !isKgUnit(line.donVi))
+            ? ' Với đơn vị khác kg, số lượng hiển thị kèm kg quy đổi trong ngoặc.'
+            : ''}
         </p>
 
         <div className="machine-nvl-print-signatures">
@@ -245,16 +310,7 @@ export function MachineNvlPrintBatch({ reports }: { reports: MachineNvlPrintRepo
   );
 }
 
-export function savedReportToMachineNvlPrintReport(report: {
-  ngay: string;
-  ca: string;
-  maMay: string;
-  tenMay: string;
-  nhanSu: string;
-  note: string;
-  reportKind: MachineNvlPrintKind;
-  lines: MachineNvlPrintLine[];
-}): MachineNvlPrintReport {
+export function savedReportToMachineNvlPrintReport(report: MachineNvlSavedReport): MachineNvlPrintReport {
   return {
     ngay: report.ngay,
     ca: report.ca,
@@ -263,6 +319,19 @@ export function savedReportToMachineNvlPrintReport(report: {
     nhanSu: report.nhanSu,
     note: report.note,
     reportKind: report.reportKind,
-    lines: report.lines
+    lines: report.lines.map(line => ({
+      stt: line.stt,
+      maNvl: line.maNvl,
+      tenNvl: line.tenNvl,
+      donVi: line.donVi,
+      trongLuongQuyDoiKg: line.trongLuongQuyDoiKg,
+      soLuongTonCaTruoc: line.soLuongTonCaTruoc,
+      soLuongTrongMay: line.soLuongTrongMay,
+      soLuongTrongBonTron: line.soLuongTrongBonTron,
+      soLuongNlChuaTron: line.soLuongNlChuaTron,
+      soLuongTonDinhMuc: line.soLuongTonDinhMuc,
+      soLuongTon: line.soLuongTon,
+      ghiChu: line.ghiChu
+    }))
   };
 }

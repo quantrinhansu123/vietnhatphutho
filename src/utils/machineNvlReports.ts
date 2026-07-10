@@ -126,7 +126,7 @@ export function normalizeMachineNvlReports(data: unknown): MachineNvlSavedReport
     .filter((report): report is MachineNvlSavedReport => Boolean(report));
 }
 
-function isKgUnit(unit: unknown) {
+export function isKgUnit(unit: unknown) {
   const normalized = String(unit ?? '')
     .trim()
     .toLowerCase()
@@ -135,12 +135,22 @@ function isKgUnit(unit: unknown) {
   return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
 }
 
-function resolveMachineNvlLineKgFactor(
+export function resolveMachineNvlLineKgFactor(
   line: Pick<MachineNvlSavedLine, 'donVi' | 'trongLuongQuyDoiKg'>
 ): number | null {
   if (isKgUnit(line.donVi)) return 1;
   const factor = line.trongLuongQuyDoiKg;
   return Number.isFinite(factor as number) && (factor as number) > 0 ? (factor as number) : null;
+}
+
+export function machineNvlQtyToKg(
+  qty: number | null | undefined,
+  line: Pick<MachineNvlSavedLine, 'donVi' | 'trongLuongQuyDoiKg'>
+): number | null {
+  if (qty === null || qty === undefined || !Number.isFinite(qty)) return null;
+  const factor = resolveMachineNvlLineKgFactor(line);
+  if (factor === null) return null;
+  return qty * factor;
 }
 
 /** Tổng tồn đầu ca 1 dòng NVL = tồn máy + bồn trộn + NL chưa trộn (hoặc soLuongTon đã lưu). */

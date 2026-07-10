@@ -13,8 +13,11 @@ import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/Repeat
 import {
   loadProductionPlanRelatedReports,
   ProductionPlanRelatedPrintContent,
+  collectProductionPlanOrderRefs,
+  resolveCustomerOrdersForPrint,
   type ProductionPlanRelatedReports
 } from './relatedReportsPrint';
+import OrderPrintSheet from '../../components/OrderPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, type ShiftOption } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
 import { STANDARD_SHIFTS } from '../../types';
@@ -55,7 +58,7 @@ import {
   type MachineRow
 } from '../danh-sach-may';
 import { normalizeOrders } from '../don-hang';
-import { parseProductionOrderFilterDate } from '../cai-dat-thoi-gian';
+import { parseProductionOrderFilterDate, splitProductionOrderStaffNames } from '../cai-dat-thoi-gian';
 import { orderFieldClass } from '../_shared/orderHelpers';
 import {
   ArrowDown,
@@ -316,19 +319,32 @@ export function buildProductionPlanPrintRows(lines: ProductionPlanLine[]): Produ
   return rows;
 }
 
+function formatProductionPlanPrintDate(value: string) {
+  if (!value) {
+    return new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
+}
+
 export function ProductionPlanPrintSheet({
   lines,
-  materialsByLine
+  materialsByLine,
+  planDate = '',
+  planNote = ''
 }: {
   lines: ProductionPlanLine[];
   materialsByLine: Record<string, ProductionOrderMaterialLine[]>;
+  planDate?: string;
+  planNote?: string;
 }) {
   const printRows = buildProductionPlanPrintRows(lines);
-  const printDate = new Date().toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
+  const printDate = formatProductionPlanPrintDate(planDate);
+  const machineCount = new Set(printRows.map(row => row.machine)).size;
+  const staffCount = new Set(
+    lines.flatMap(line => splitProductionOrderStaffNames(line.staff))
+  ).size;
 
   return (
     <div className="production-plan-print-sheet">
@@ -345,6 +361,29 @@ export function ProductionPlanPrintSheet({
           </div>
           <p className="production-plan-print-date">Ngày: {printDate}</p>
         </header>
+
+        <table className="production-plan-nvl-print-meta-table">
+          <tbody>
+            <tr>
+              <th>Ngày kế hoạch</th>
+              <td>{printDate}</td>
+              <th>Số máy</th>
+              <td>{machineCount}</td>
+            </tr>
+            <tr>
+              <th>Số lệnh SX</th>
+              <td>{printRows.length}</td>
+              <th>Số nhân sự</th>
+              <td>{staffCount}</td>
+            </tr>
+            {planNote.trim() ? (
+              <tr>
+                <th>Ghi chú</th>
+                <td colSpan={3}>{planNote.trim()}</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
 
         <table className="production-plan-print-table">
           <thead>
@@ -1943,6 +1982,7 @@ export function ProductionPlanModal({
   const [isLoadingRelatedPrint, setIsLoadingRelatedPrint] = useState(false);
   const [relatedPrintData, setRelatedPrintData] = useState<ProductionPlanRelatedReports | null>(null);
   const [relatedPrintOrders, setRelatedPrintOrders] = useState<PrintableProductionOrder[]>([]);
+  const [relatedPrintCustomerOrders, setRelatedPrintCustomerOrders] = useState<OrderRow[]>([]);
   const [relatedPrintCatalog, setRelatedPrintCatalog] = useState<ProductRow[]>([]);
   const [pendingRelatedPrint, setPendingRelatedPrint] = useState(false);
   const [relatedShiftOptions, setRelatedShiftOptions] = useState<ShiftOption[]>([]);
@@ -1985,6 +2025,7 @@ export function ProductionPlanModal({
     setIsLoadingRelatedPrint(false);
     setRelatedPrintData(null);
     setRelatedPrintOrders([]);
+    setRelatedPrintCustomerOrders([]);
     setRelatedPrintCatalog([]);
     setPendingRelatedPrint(false);
     setSelectedRelatedShifts([]);
@@ -2085,22 +2126,22 @@ export function ProductionPlanModal({
   }, [pendingStaffAssignmentPrint]);
 
   useEffect(() => {
-    if (!pendingRelatedPrint && relatedPrintOrders.length === 0 && !relatedPrintData) return;
+    if (!pendingRelatedPrint && relatedPrintOrders.length === 0 && relatedPrintCustomerOrders.length === 0 && !relatedPrintData) return;
     document.body.classList.add('production-plan-related-print-active');
     return () => {
       document.body.classList.remove('production-plan-related-print-active');
     };
-  }, [pendingRelatedPrint, relatedPrintOrders, relatedPrintData]);
+  }, [pendingRelatedPrint, relatedPrintOrders, relatedPrintCustomerOrders, relatedPrintData]);
 
   useEffect(() => {
     if (!pendingRelatedPrint) return;
-    if (!relatedPrintData && relatedPrintOrders.length === 0) return;
+    if (!relatedPrintData && relatedPrintOrders.length === 0 && relatedPrintCustomerOrders.length === 0) return;
     const timer = window.setTimeout(() => {
       window.print();
       setPendingRelatedPrint(false);
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [pendingRelatedPrint, relatedPrintData, relatedPrintOrders]);
+  }, [pendingRelatedPrint, relatedPrintData, relatedPrintOrders, relatedPrintCustomerOrders]);
 
   useEffect(() => {
     const handleAfterPrint = () => {
@@ -2113,6 +2154,7 @@ export function ProductionPlanModal({
       setPendingRelatedPrint(false);
       setRelatedPrintData(null);
       setRelatedPrintOrders([]);
+      setRelatedPrintCustomerOrders([]);
       setRelatedPrintCatalog([]);
     };
     window.addEventListener('afterprint', handleAfterPrint);
@@ -2222,7 +2264,34 @@ export function ProductionPlanModal({
         .filter((order): order is ProductionOrderRow => Boolean(order));
 
       const productCatalog = await loadProductionOrderProductCatalog();
-      const data = await loadProductionPlanRelatedReports(planDate, shifts, productCatalog);
+      const orderRefs = collectProductionPlanOrderRefs([
+        ...displayLines.map(line => line.orderRef),
+        ...ordersToPrint.map(order => order.orderRef)
+      ]);
+      const [data, orderRes] = await Promise.all([
+        loadProductionPlanRelatedReports(planDate, shifts, productCatalog),
+        fetch('/api/don-hang')
+      ]);
+
+      let customerOrders: OrderRow[] = [];
+      const orderData = await orderRes.json().catch(() => ({}));
+      const allOrders = orderRes.ok ? normalizeOrders(orderData) : [];
+      if (allOrders.length > 0) {
+        customerOrders = resolveCustomerOrdersForPrint(allOrders, orderRefs);
+        if (customerOrders.length === 0) {
+          const linkedCodes = new Set(
+            ordersToPrint.flatMap(order => splitProductionOrderRefs(order.orderRef))
+          );
+          if (linkedCodes.size > 0) {
+            customerOrders = allOrders.filter(order => {
+              const code = (order.orderCode || '').trim();
+              return linkedCodes.has(code) || linkedCodes.has(code.toUpperCase());
+            });
+          } else {
+            customerOrders = filterOrdersForProductionDate(allOrders, ordersToPrint, planDate);
+          }
+        }
+      }
 
       const printableOrders = (
         await Promise.allSettled(
@@ -2238,12 +2307,13 @@ export function ProductionPlanModal({
         .filter((result): result is PromiseFulfilledResult<PrintableProductionOrder> => result.status === 'fulfilled')
         .map(result => result.value);
 
-      if (data.isEmpty && printableOrders.length === 0) {
+      if (data.isEmpty && printableOrders.length === 0 && customerOrders.length === 0) {
         setFormError('Không tìm thấy lệnh sản xuất hay phiếu nào liên quan tới ngày/ca của kế hoạch để in.');
         return;
       }
 
       setRelatedPrintCatalog(productCatalog);
+      setRelatedPrintCustomerOrders(customerOrders);
       setRelatedPrintOrders(applyWarehouseActualQuantities(printableOrders, data.warehouseSlips));
       setRelatedPrintData(data);
 
@@ -2329,6 +2399,9 @@ export function ProductionPlanModal({
         .join(', ');
       if (foundSummary) {
         messages.push(`Đã tải: ${foundSummary}.`);
+      }
+      if (customerOrders.length > 0) {
+        messages.push(`Đơn hàng: ${customerOrders.length}.`);
       }
       if (messages.length > 0) {
         setFormError(messages.join(' '));
@@ -2663,7 +2736,7 @@ export function ProductionPlanModal({
               type="button"
               onClick={handlePrintRelated}
               disabled={displayLines.length === 0 || isLoadingRelatedPrint}
-              title="In gộp tất cả phiếu liên quan (lệnh SX, tồn NVL, trộn, cân, dừng máy, hàng hỏng, sản lượng, phiếu xuất vật tư) theo ngày + ca của kế hoạch"
+              title="In gộp tất cả phiếu liên quan (đơn hàng, lệnh SX, tồn NVL, trộn, cân, dừng máy, hàng hỏng, sản lượng, phiếu xuất vật tư) theo ngày + ca của kế hoạch"
               className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-4 text-sm font-extrabold text-teal-800 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoadingRelatedPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
@@ -2686,13 +2759,25 @@ export function ProductionPlanModal({
         <StaffAssignmentPrintSheet rows={staffAssignmentRows} planDate={planDate} planNote={planHeaderNote} />
       )}
 
-      {(relatedPrintOrders.length > 0 || relatedPrintData) &&
+      {(relatedPrintOrders.length > 0 || relatedPrintCustomerOrders.length > 0 || relatedPrintData) &&
         createPortal(
           <div className="production-order-print-batch">
+            {/* 1. Phiếu đơn hàng */}
+            {relatedPrintCustomerOrders.map(order => (
+              <div key={`customer-order-${order.id}`} className="production-order-print-page">
+                <OrderPrintSheet order={order} />
+              </div>
+            ))}
+
             {/* 2. Kế hoạch sản xuất */}
             {displayLines.length > 0 ? (
               <div className="production-order-print-page">
-                <ProductionPlanPrintSheet lines={displayLines} materialsByLine={printMaterialsByLine} />
+                <ProductionPlanPrintSheet
+                  lines={displayLines}
+                  materialsByLine={printMaterialsByLine}
+                  planDate={planDate}
+                  planNote={planHeaderNote}
+                />
               </div>
             ) : null}
 
@@ -2724,7 +2809,12 @@ export function ProductionPlanModal({
         )}
 
       {pendingPrint && displayLines.length > 0 && (
-        <ProductionPlanPrintSheet lines={displayLines} materialsByLine={printMaterialsByLine} />
+        <ProductionPlanPrintSheet
+          lines={displayLines}
+          materialsByLine={printMaterialsByLine}
+          planDate={planDate}
+          planNote={planHeaderNote}
+        />
       )}
 
       {showNvlPrintSheet && displayLines.length > 0 && (

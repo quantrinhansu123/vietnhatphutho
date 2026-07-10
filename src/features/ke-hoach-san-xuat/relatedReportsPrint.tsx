@@ -44,6 +44,49 @@ import {
   normalizeWarehouseMovements,
   type WarehouseMovementRow
 } from '../phieu-xuat-nhap-kho';
+import type { OrderRow } from '../_shared/orderRecordHelpers';
+
+function splitOrderRefCodes(value: string): string[] {
+  return String(value || '')
+    .split(/[,;+]/)
+    .map(part => part.trim())
+    .filter(part => part && part !== '-');
+}
+
+export function collectProductionPlanOrderRefs(orderRefs: Iterable<string>): string[] {
+  const seen = new Set<string>();
+  const refs: string[] = [];
+  for (const raw of orderRefs) {
+    for (const ref of splitOrderRefCodes(String(raw || ''))) {
+      const normalized = ref.trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      refs.push(normalized);
+    }
+  }
+  return refs;
+}
+
+export function resolveCustomerOrdersForPrint(allOrders: OrderRow[], orderRefs: string[]): OrderRow[] {
+  const byCode = new Map<string, OrderRow>();
+  for (const order of allOrders) {
+    const code = (order.orderCode || '').trim();
+    if (!code) continue;
+    byCode.set(code, order);
+    byCode.set(code.toUpperCase(), order);
+  }
+
+  const seen = new Set<string>();
+  const result: OrderRow[] = [];
+  for (const ref of orderRefs) {
+    const key = ref.trim();
+    const order = byCode.get(key) ?? byCode.get(key.toUpperCase());
+    if (!order || seen.has(order.id)) continue;
+    seen.add(order.id);
+    result.push(order);
+  }
+  return result;
+}
 
 export type ProductionPlanReportDiagnostic = {
   label: string;

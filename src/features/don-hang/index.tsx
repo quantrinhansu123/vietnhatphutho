@@ -27,7 +27,7 @@ import {
   type OrderProductLine
 } from '../_shared/orderRecordHelpers';
 import { normalizeDaNangBusinessStaffOptions, normalizeCustomerOptions } from '../khach-hang';
-import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
+import OrderPrintSheet from '../../components/OrderPrintSheet';
 
 export type { OrderProductLine, OrderRow };
 
@@ -828,121 +828,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       )}
 
       {printOrder
-        ? createPortal(
-            <div className="order-print-sheet">
-              <div className="order-print-page">
-                <div className="order-print-header">
-                  <div className="order-print-brand">
-                    <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="order-print-logo" />
-                    <div>
-                      <div className="order-print-company">{PRINT_COMPANY_NAME}</div>
-                      <div className="order-print-subtitle">Dự án Chuyển đổi số sản xuất</div>
-                    </div>
-                  </div>
-                  <div className="order-print-form-meta">
-                    <div className="order-print-form-code">BM-SX-01</div>
-                    <div className="order-print-form-version">Phiên bản 1.0</div>
-                  </div>
-                </div>
-
-                <div className="order-print-title">ĐƠN ĐẶT HÀNG SẢN XUẤT</div>
-
-                <div className="order-print-info-grid">
-                  <div className="order-print-info-row">
-                    <div className="order-print-info-label">Số đơn hàng:</div>
-                    <div className="order-print-info-value">{printOrder.orderCode || '-'}</div>
-                  </div>
-                  <div className="order-print-info-row">
-                    <div className="order-print-info-label">Ngày lập:</div>
-                    <div className="order-print-info-value">{formatOrderCreatedAt(printOrder.orderDate || printOrder.createdAt)}</div>
-                  </div>
-                  <div className="order-print-info-row">
-                    <div className="order-print-info-label">Khách hàng:</div>
-                    <div className="order-print-info-value">{printOrder.customer || '-'}</div>
-                  </div>
-                  <div className="order-print-info-row">
-                    <div className="order-print-info-label">Bộ phận lập:</div>
-                    <div className="order-print-info-value">{printOrder.staffName || '-'}</div>
-                  </div>
-                  <div className="order-print-info-row order-print-info-row--full">
-                    <div className="order-print-info-label">Địa chỉ khách hàng</div>
-                    <div className="order-print-info-value"> </div>
-                  </div>
-                  <div className="order-print-info-row">
-                    <div className="order-print-info-label">Thời hạn giao hàng:</div>
-                    <div className="order-print-info-value"> </div>
-                  </div>
-                </div>
-
-                <table className="order-print-table">
-                  <colgroup>
-                    <col style={{ width: '8mm' }} />
-                    <col style={{ width: '32mm' }} />
-                    <col style={{ width: '86mm' }} />
-                    <col style={{ width: '26mm' }} />
-                    <col style={{ width: '14mm' }} />
-                    <col style={{ width: '18mm' }} />
-                    <col style={{ width: '22mm' }} />
-                    <col style={{ width: '65mm' }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>STT</th>
-                      <th>Mã sản phẩm</th>
-                      <th>Tên sản phẩm</th>
-                      <th>Quy cách</th>
-                      <th>ĐVT</th>
-                      <th>Số lượng</th>
-                      <th>Hạn giao</th>
-                      <th>Ghi chú</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {getOrderProductLines(printOrder).map((line, idx) => (
-                      <tr key={`${line.productCode}-${idx}`}>
-                        <td className="center">{idx + 1}</td>
-                        <td>{line.productCode || ''}</td>
-                        <td>
-                          <div className="order-print-product-name">{line.productName || ''}</div>
-                        </td>
-                        <td>{''}</td>
-                        <td className="center">{line.unit && line.unit !== '-' ? line.unit : ''}</td>
-                        <td className="center">{line.quantity && line.quantity !== '-' ? line.quantity : ''}</td>
-                        <td className="center">{''}</td>
-                        <td>{printOrder.note || ''}</td>
-                      </tr>
-                    ))}
-                    <tr>
-                      <td colSpan={5} className="order-print-total-label">TỔNG CỘNG</td>
-                      <td className="center order-print-total-value">
-                        {formatNumber(
-                          getOrderProductLines(printOrder).reduce((sum, item) => sum + parsePercentInput(item.quantity), 0)
-                        )}
-                      </td>
-                      <td />
-                      <td />
-                    </tr>
-                  </tbody>
-                </table>
-
-                <div className="order-print-signatures">
-                  <div className="order-print-signature">
-                    <div className="order-print-signature-title">Người lập</div>
-                    <div className="order-print-signature-hint">(Ký, ghi rõ họ tên)</div>
-                  </div>
-                  <div className="order-print-signature">
-                    <div className="order-print-signature-title">Phụ trách bộ phận</div>
-                    <div className="order-print-signature-hint">(Ký, ghi rõ họ tên)</div>
-                  </div>
-                  <div className="order-print-signature">
-                    <div className="order-print-signature-title">Bộ phận kế hoạch (tiếp nhận)</div>
-                    <div className="order-print-signature-hint">(Ký, ghi rõ họ tên)</div>
-                  </div>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
+        ? createPortal(<OrderPrintSheet order={printOrder} />, document.body)
         : null}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
