@@ -14,6 +14,7 @@ import {
 } from './MachineRunLogPrintSheet';
 import { STANDARD_SHIFTS } from '../types';
 import { formatNumber } from '../utils';
+import { showAppToast } from '../lib/appToast';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 
 const fieldClass =
@@ -567,7 +568,9 @@ export default function MachineRunLogPanel({ onBack }: { onBack: () => void }) {
       if (!res.ok) throw new Error(data.error || 'Không thể lưu nhật ký chạy máy.');
 
       const slipCode = String(data.log?.so_phieu ?? '').trim();
-      setMessage(slipCode ? `Đã lưu nhật ký ${slipCode}.` : 'Đã lưu nhật ký chạy máy.');
+      const okMsg = slipCode ? `Đã lưu nhật ký ${slipCode}.` : 'Đã lưu nhật ký chạy máy.';
+      setMessage(okMsg);
+      showAppToast(okMsg);
       setLines([emptyLine()]);
       setNote('');
       await loadLogs();

@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react';
 import { formatNumber, parseMoneyInput } from '../utils';
+import { showAppToast } from '../lib/appToast';
 import MixingProductionOrderAutofillModal from './MixingProductionOrderAutofillModal';
 import SearchableMultiSelect from './SearchableMultiSelect';
 import {
@@ -1705,11 +1706,13 @@ export default function MixingReportForm({
 
       setActualWeightDrafts({});
       resetForm();
+      const okMsg = wasEditing ? 'Đã cập nhật báo cáo phối trộn.' : 'Đã lưu báo cáo phối trộn.';
+      showAppToast(okMsg);
       if (modalMode) {
         await onSaved?.();
         onClose?.();
       } else {
-        setMessage(wasEditing ? 'Đã cập nhật báo cáo phối trộn.' : 'Đã lưu báo cáo phối trộn.');
+        setMessage(okMsg);
       }
     } catch (err: any) {
       setError(err.message || 'Không thể lưu báo cáo phối trộn.');

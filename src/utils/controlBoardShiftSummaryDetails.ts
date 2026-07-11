@@ -5,6 +5,7 @@ import { roundNormWeight } from '../lib/mixingReportModel';
 import { getProductionShiftOptions, type ShiftSetting } from './shiftSettings';
 import {
   computeKhoiLuongNhuaTp,
+  computeMachineNvlLineKg,
   computeMaterialUsageKg,
   computeTlLoiTpNhapKhoFromShiftSummary,
   computeTlMangTpNhapKhoFromShiftSummary,
@@ -16,12 +17,11 @@ import {
   TL_TUI_BAO_BI_KG_PER_UNIT,
   matchesShiftSummaryBucket,
   resolveMachineNvlLineMaterialType,
-  resolveWarehouseSanPhamNhapSl,
   type ControlBoardShiftSummaryRow,
   type ShiftSummaryWarehouseMovement
 } from './controlBoardShiftSummary';
 import { formatNumber } from '../utils';
-import { sumMachineNvlCuoiCaLineTotal, sumMachineNvlDauCaLineTotal, type MachineNvlSavedReport } from './machineNvlReports';
+import { sumMachineNvlDauCaLineTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import { normalizeProductCodeKey } from '../features/san-pham/types';
 
 export type ShiftSummaryMetric =
@@ -82,14 +82,15 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
     source: '(KL hàng TT − KL lõi − KL bì) × 0,75'
   },
   hangHong: { label: 'Hàng hỏng', source: 'Báo cáo hàng hỏng' },
-  khoiLuongNpl: { label: 'Khối lượng nhựa xuất', source: 'Lịch sử xuất kho NVL (kg)' },
+  khoiLuongNpl: { label: 'Số lượng nhựa thực tế xuất dùng (kg)', source: 'Phiếu xuất kho NVL (kg)' },
   khoiLuongMangXuat: { label: 'KL màng xuất (kg)', source: 'Xuất kho NVL đơn vị m² → quy đổi kg' },
   khoiLuongLoi: { label: 'KL lõi', source: 'Báo cáo sản lượng (SL cuộn TT × 1kg)' },
   tonDauCa: { label: 'Tồn đầu ca nhựa', source: 'Bảng tồn NVL đầu ca (chỉ kg)' },
   tonCuoiCa: { label: 'Tồn cuối ca nhựa', source: 'Bảng tồn NVL cuối ca (chỉ kg)' },
   tongNhuaThucDung: {
-    label: 'Tổng nhựa thực dùng',
-    source: 'KL nhựa xuất + Tồn đầu ca nhựa − Tồn cuối ca nhựa'
+    label: 'Tổng Nhựa thực dùng',
+    source:
+      'Số lượng nhựa tồn đầu ca (kg) + Số lượng nhựa thực tế xuất dùng (kg) − Số lượng nhựa tồn cuối ca (kg)'
   },
   tongMangThucDung: {
     label: 'Tổng màng thực dùng',
@@ -97,11 +98,11 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   },
   loiThucDung: {
     label: 'Lõi thực dùng',
-    source: 'KL lõi xuất kho + Tồn đầu ca lõi − Tồn cuối ca lõi'
+    source: 'Số lượng đạt thực tế × 1'
   },
   tuiThucDung: {
     label: 'Túi thực dùng',
-    source: 'KL túi xuất kho + Tồn đầu ca túi − Tồn cuối ca túi'
+    source: 'TL túi bao bì nhập kho (kg) = 0,2 × Số lượng đạt thực tế'
   },
   tongThucDung: {
     label: 'Tổng thực dùng',
@@ -126,9 +127,15 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
     label: 'Trọng lượng lõi tồn cuối ca (kg)',
     source: 'Báo cáo kiểm tồn NVL cuối ca — các mã/tên có “lõi”'
   },
-  tonCuoiCaTui: { label: 'Trọng lượng túi tồn cuối ca (kg)', source: 'Bảng kiểm kê NVL tồn cuối ca (túi/bao bì)' },
+  tonCuoiCaTui: {
+    label: 'Trọng lượng túi tồn cuối ca (kg)',
+    source: 'Báo cáo tồn cuối ca — Loại vật tư = Bao bì'
+  },
   tongTrongLuongTonCuoiCa: { label: 'Tổng trọng lượng tồn cuối ca', source: 'Tổng nhựa + màng + lõi + túi tồn cuối ca' },
-  slDatThucTeNhapKho: { label: 'Số lượng đạt thực tế', source: 'Phiếu nhập kho thành phẩm (SL thực nhập)' },
+  slDatThucTeNhapKho: {
+    label: 'Số lượng đạt thực tế',
+    source: 'Phiếu báo cáo sản lượng (SL cuộn)'
+  },
   tlNhuaTpNhapKho: {
     label: 'TL nhựa thành phẩm (kg)',
     source:
@@ -575,7 +582,7 @@ export function getShiftSummaryDetail(input: {
 
       for (const line of report.lines) {
         if (resolveMachineNvlLineMaterialType(line) !== wanted) continue;
-        const lineTotal = sumMachineNvlCuoiCaLineTotal(line);
+        const lineTotal = computeMachineNvlLineKg(line, 'cuoi_ca', resolveLineKgFactor);
         if (lineTotal <= 0 && !line.maNvl && !line.tenNvl) continue;
 
         total += lineTotal;
@@ -863,59 +870,33 @@ export function getShiftSummaryDetail(input: {
     };
   }
 
-  if (
-    metric === 'tongNhuaThucDung' ||
-    metric === 'tongMangThucDung' ||
-    metric === 'loiThucDung' ||
-    metric === 'tuiThucDung'
-  ) {
+  if (metric === 'tongNhuaThucDung' || metric === 'tongMangThucDung') {
     const row = input.summaryRow;
     const parts =
       metric === 'tongNhuaThucDung'
         ? {
-            label: 'Tổng nhựa thực dùng',
-            xuatLabel: 'Nhựa xuất dùng',
-            dauLabel: 'Nhựa tồn đầu ca',
-            cuoiLabel: 'Nhựa tồn cuối ca',
+            label: 'Tổng Nhựa thực dùng',
+            xuatLabel: 'Số lượng nhựa thực tế xuất dùng (kg)',
+            dauLabel: 'Số lượng nhựa tồn đầu ca (kg)',
+            cuoiLabel: 'Số lượng nhựa tồn cuối ca (kg)',
             xuat: row?.khoiLuongNpl ?? 0,
             dau: row?.tonDauCaNhua ?? 0,
             cuoi: row?.tonCuoiCaNhua ?? 0,
             value: row?.tongNhuaThucDung ?? 0
           }
-        : metric === 'tongMangThucDung'
-          ? {
-              label: 'Tổng màng thực dùng',
-              xuatLabel: 'Màng xuất dùng',
-              dauLabel: 'Màng tồn đầu ca',
-              cuoiLabel: 'Màng tồn cuối ca',
-              xuat: row?.khoiLuongMangXuat ?? 0,
-              dau: row?.tonDauCaMang ?? 0,
-              cuoi: row?.tonCuoiCaMang ?? 0,
-              value: row?.tongMangThucDung ?? 0
-            }
-          : metric === 'loiThucDung'
-            ? {
-                label: 'Lõi thực dùng',
-                xuatLabel: 'Lõi xuất kho',
-                dauLabel: 'Lõi tồn đầu ca',
-                cuoiLabel: 'Lõi tồn cuối ca',
-                xuat: row?.khoiLuongLoiXuatKho ?? 0,
-                dau: row?.tonDauCaLoi ?? 0,
-                cuoi: row?.tonCuoiCaLoi ?? 0,
-                value: row?.loiThucDung ?? 0
-              }
-            : {
-                label: 'Túi thực dùng',
-                xuatLabel: 'Túi xuất kho',
-                dauLabel: 'Túi tồn đầu ca',
-                cuoiLabel: 'Túi tồn cuối ca',
-                xuat: row?.khoiLuongTuiXuatKho ?? 0,
-                dau: row?.tonDauCaTui ?? 0,
-                cuoi: row?.tonCuoiCaTui ?? 0,
-                value: row?.tuiThucDung ?? 0
-              };
+        : {
+            label: 'Tổng màng thực dùng',
+            xuatLabel: 'Màng xuất dùng',
+            dauLabel: 'Màng tồn đầu ca',
+            cuoiLabel: 'Màng tồn cuối ca',
+            xuat: row?.khoiLuongMangXuat ?? 0,
+            dau: row?.tonDauCaMang ?? 0,
+            cuoi: row?.tonCuoiCaMang ?? 0,
+            value: row?.tongMangThucDung ?? 0
+          };
 
     const computed = computeMaterialUsageKg(parts.xuat, parts.dau, parts.cuoi);
+    const isNhua = metric === 'tongNhuaThucDung';
 
     return {
       columns: [
@@ -923,14 +904,97 @@ export function getShiftSummaryDetail(input: {
         { key: 'congThuc', label: 'Công thức' },
         { key: 'giaTri', label: 'Giá trị', align: 'right', mono: true, accent: true }
       ],
-      rows: [
-        { thanhPhan: parts.xuatLabel, congThuc: '+', giaTri: formatDetailNumber(parts.xuat, 3) },
-        { thanhPhan: parts.dauLabel, congThuc: '+', giaTri: formatDetailNumber(parts.dau, 3) },
-        { thanhPhan: parts.cuoiLabel, congThuc: '−', giaTri: formatDetailNumber(parts.cuoi, 3) },
-        { thanhPhan: parts.label, congThuc: '=', giaTri: formatDetailNumber(computed, 3) }
-      ],
-      totalLabel: `${parts.label} = xuất + tồn đầu ca − tồn cuối ca`,
+      rows: isNhua
+        ? [
+            { thanhPhan: parts.dauLabel, congThuc: '', giaTri: formatDetailNumber(parts.dau, 3) },
+            { thanhPhan: parts.xuatLabel, congThuc: '+', giaTri: formatDetailNumber(parts.xuat, 3) },
+            { thanhPhan: parts.cuoiLabel, congThuc: '−', giaTri: formatDetailNumber(parts.cuoi, 3) },
+            { thanhPhan: parts.label, congThuc: '=', giaTri: formatDetailNumber(computed, 3) }
+          ]
+        : [
+            { thanhPhan: parts.xuatLabel, congThuc: '+', giaTri: formatDetailNumber(parts.xuat, 3) },
+            { thanhPhan: parts.dauLabel, congThuc: '+', giaTri: formatDetailNumber(parts.dau, 3) },
+            { thanhPhan: parts.cuoiLabel, congThuc: '−', giaTri: formatDetailNumber(parts.cuoi, 3) },
+            { thanhPhan: parts.label, congThuc: '=', giaTri: formatDetailNumber(computed, 3) }
+          ],
+      totalLabel: isNhua
+        ? 'Tổng Nhựa thực dùng = tồn đầu ca + xuất dùng − tồn cuối ca'
+        : `${parts.label} = xuất + tồn đầu ca − tồn cuối ca`,
       totalValue: formatShiftSummaryNumber(parts.value || computed, 3)
+    };
+  }
+
+  if (metric === 'tuiThucDung') {
+    const row = input.summaryRow;
+    const slDatThucTeNhapKho = row?.slDatThucTeNhapKho ?? 0;
+    const tong =
+      row?.tuiThucDung ??
+      row?.tlTuiBaoBiNhapKho ??
+      computeTlTuiBaoBiNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+
+    return {
+      columns: [
+        { key: 'thanhPhan', label: 'Thành phần' },
+        { key: 'dau', label: '' },
+        { key: 'giaTri', label: 'Giá trị', align: 'right', mono: true, accent: true }
+      ],
+      rows: [
+        {
+          thanhPhan: 'Số lượng đạt thực tế',
+          dau: '×',
+          giaTri: formatDetailNumber(slDatThucTeNhapKho, 0)
+        },
+        {
+          thanhPhan: `Hệ số túi bao bì (${TL_TUI_BAO_BI_KG_PER_UNIT} kg)`,
+          dau: '',
+          giaTri: formatDetailNumber(TL_TUI_BAO_BI_KG_PER_UNIT, 1)
+        },
+        {
+          thanhPhan: 'TL túi bao bì nhập kho (kg)',
+          dau: '=',
+          giaTri: formatDetailNumber(tong, 3)
+        },
+        {
+          thanhPhan: 'Túi thực dùng',
+          dau: '=',
+          giaTri: formatDetailNumber(tong, 3)
+        }
+      ],
+      totalLabel: 'Túi thực dùng = TL túi bao bì nhập kho (kg)',
+      totalValue: formatShiftSummaryNumber(tong, 3)
+    };
+  }
+
+  if (metric === 'loiThucDung') {
+    const row = input.summaryRow;
+    const slDatThucTeNhapKho = row?.slDatThucTeNhapKho ?? 0;
+    const tong = row?.loiThucDung ?? computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+
+    return {
+      columns: [
+        { key: 'thanhPhan', label: 'Thành phần' },
+        { key: 'dau', label: '' },
+        { key: 'giaTri', label: 'Giá trị', align: 'right', mono: true, accent: true }
+      ],
+      rows: [
+        {
+          thanhPhan: 'Số lượng đạt thực tế',
+          dau: '×',
+          giaTri: formatDetailNumber(slDatThucTeNhapKho, 0)
+        },
+        {
+          thanhPhan: `Hệ số lõi (${TL_LOI_TP_KG_PER_UNIT} kg)`,
+          dau: '',
+          giaTri: formatDetailNumber(TL_LOI_TP_KG_PER_UNIT, 0)
+        },
+        {
+          thanhPhan: 'Lõi thực dùng',
+          dau: '=',
+          giaTri: formatDetailNumber(tong, 3)
+        }
+      ],
+      totalLabel: 'Lõi thực dùng = Số lượng đạt thực tế × 1',
+      totalValue: formatShiftSummaryNumber(tong, 3)
     };
   }
 
@@ -1057,40 +1121,34 @@ export function getShiftSummaryDetail(input: {
     const rows: ShiftSummaryDetailRow[] = [];
     let total = 0;
 
-    for (const movement of input.warehouseMovements ?? []) {
-      if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
-      if (movement.warehouseKind !== 'san_pham' || movement.slipType !== 'nhap') continue;
-      if (!Number.isFinite(movement.quantity) || movement.quantity <= 0) continue;
+    for (const report of input.acceptanceReports ?? []) {
+      if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
+      if (report.so_luong === null || !Number.isFinite(report.so_luong) || report.so_luong <= 0) continue;
 
-      const lineValue = resolveWarehouseSanPhamNhapSl(movement);
-      if (lineValue <= 0 && !movement.itemCode && !movement.itemName) continue;
-
-      total += lineValue;
+      total += report.so_luong;
       rows.push({
-        rowKey: movement.id || `${movement.slipCode}|${movement.itemCode}`,
-        recordId: movement.slipCode || '',
-        soPhieu: movement.slipCode || '-',
-        maSp: movement.itemCode || '-',
-        tenSp: movement.itemName || '-',
-        soLuong: formatDetailNumber(movement.quantity, 3),
-        donVi: movement.unit || '-',
-        khoiLuong: formatDetailNumber(lineValue, 0)
+        rowKey: report.id || `${report.ngay}|${report.ca}|${report.mat_hang}`,
+        recordId: report.id || '',
+        may: report.ten_may || report.ma_may || '-',
+        matHang: report.mat_hang || '-',
+        soLuong: formatDetailNumber(report.so_luong, 0),
+        donVi: report.don_vi || 'cuộn',
+        gio: report.gio || '-'
       });
     }
 
     return {
       columns: [
-        { key: 'soPhieu', label: 'Mã phiếu' },
-        { key: 'maSp', label: 'Mã SP' },
-        { key: 'tenSp', label: 'Tên SP' },
-        { key: 'soLuong', label: 'SL thực nhập', align: 'right', mono: true },
+        { key: 'may', label: 'Máy' },
+        { key: 'matHang', label: 'Mặt hàng' },
+        { key: 'soLuong', label: 'SL (cuộn)', align: 'right', mono: true, accent: true },
         { key: 'donVi', label: 'ĐVT' },
-        { key: 'khoiLuong', label: 'SL đạt', align: 'right', mono: true, accent: true }
+        { key: 'gio', label: 'Giờ' }
       ],
       rows,
-      totalLabel: 'Tổng SL đạt thực tế (SL thực nhập phiếu nhập kho)',
+      totalLabel: 'Tổng SL đạt thực tế (báo cáo sản lượng)',
       totalValue: formatShiftSummaryNumber(roundNormWeight(total), 0),
-      showActions: true
+      showActions: false
     };
   }
 

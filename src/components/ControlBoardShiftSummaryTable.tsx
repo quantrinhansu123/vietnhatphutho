@@ -13,8 +13,11 @@ import {
   filterControlBoardShiftSummaryRows,
   formatShiftSummaryNumber,
   formatShiftSummaryKg,
+  formatShiftSummaryPercent,
+  computeShiftSummarySanLuongMetrics,
   resolveShiftSummaryTlDinhMucKgCuon,
   sumShiftSummaryColumn,
+  TI_LE_LOI_HONG_DINH_MUC_PERCENT,
   type ControlBoardShiftSummaryRow,
   type ShiftSummaryFilterSources
 } from '../utils/controlBoardShiftSummary';
@@ -26,6 +29,28 @@ import type { ShiftSetting } from '../utils/shiftSettings';
 
 const inputClass =
   'h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+
+const SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY = 'control-board-shift-summary-phan-tich-v1';
+
+function loadPhanTichDanhGiaMap(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function persistPhanTichDanhGiaMap(map: Record<string, string>) {
+  try {
+    localStorage.setItem(SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 type ShiftSummaryTabId =
   | 'lenh_sx'
@@ -154,6 +179,17 @@ export default function ControlBoardShiftSummaryTable({
     filters: ShiftSummaryPrintFilters;
   } | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [phanTichDanhGiaMap, setPhanTichDanhGiaMap] = useState<Record<string, string>>(() =>
+    typeof window !== 'undefined' ? loadPhanTichDanhGiaMap() : {}
+  );
+
+  const updatePhanTichDanhGia = (rowKey: string, value: string) => {
+    setPhanTichDanhGiaMap(prev => {
+      const next = { ...prev, [rowKey]: value };
+      persistPhanTichDanhGiaMap(next);
+      return next;
+    });
+  };
 
   const filteredRows = useMemo(
     () =>
@@ -215,8 +251,23 @@ export default function ControlBoardShiftSummaryTable({
     tuiThucDung: sumShiftSummaryColumn(filteredRows, 'tuiThucDung'),
     tongThucDung: sumShiftSummaryColumn(filteredRows, 'tongThucDung'),
     tongVatLieu: sumShiftSummaryColumn(filteredRows, 'tongVatLieu'),
-    chenhLech: sumShiftSummaryColumn(filteredRows, 'chenhLech')
+    chenhLech: sumShiftSummaryColumn(filteredRows, 'chenhLech'),
+    tongTrongLuongNhapKho: sumShiftSummaryColumn(filteredRows, 'tongTrongLuongNhapKho'),
+    chenhLechTrongLuongNhapXuat: sumShiftSummaryColumn(filteredRows, 'chenhLechTrongLuongNhapXuat'),
+    giaTriLoLaiNhua: sumShiftSummaryColumn(filteredRows, 'giaTriLoLaiNhua'),
+    giaTriLoLaiMang: sumShiftSummaryColumn(filteredRows, 'giaTriLoLaiMang')
   };
+
+  const sanLuongTotals = computeShiftSummarySanLuongMetrics({
+    tongTpNhapKho: totals.tongTrongLuongNhapKho || totals.tongTpNhapKho,
+    tongTrongLuongXuatKho: totals.tongTrongLuongXuatKho,
+    tongTrongLuongLoiHong: totals.tongTrongLuongLoiHong,
+    chenhLechNhua: totals.chenhLech,
+    tongMangThucDung: totals.tongMangThucDung,
+    tlMangTpNhapKho: totals.tlMangTpNhapKho,
+    hangHongMang: totals.hangHongMang,
+    tiLeLoiHongDinhMuc: TI_LE_LOI_HONG_DINH_MUC_PERCENT
+  });
 
   const shiftFilterLabel = shiftFilter === 'all' ? 'Tất cả ca' : shiftFilter;
   const machineFilterLabel = machineFilter === 'all' ? 'Tất cả máy' : machineFilter;
@@ -391,6 +442,11 @@ export default function ControlBoardShiftSummaryTable({
                         Tổng lỗi hỏng
                         <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryKg(row.tongTrongLuongLoiHong, 3)}</span>
                       </p>
+                    ) : activeTab === 'san_luong' ? (
+                      <p className="text-right text-[10px] font-black uppercase tracking-wider text-orange-800">
+                        CL nhập−xuất
+                        <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryKg(row.chenhLechTrongLuongNhapXuat, 3)}</span>
+                      </p>
                     ) : (
                       <div className="flex shrink-0 items-start gap-3">
                         <p className="text-right text-[10px] font-black uppercase tracking-wider text-teal-800">
@@ -544,56 +600,48 @@ export default function ControlBoardShiftSummaryTable({
                   ) : (
                   <dl className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px]">
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">SL đặt SX</dt>
-                      <dd className="font-mono font-bold text-zinc-800">{formatShiftSummaryNumber(row.slHang, 0)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tổng TL nhập kho</dt>
+                      <dd className="font-mono font-bold text-emerald-700">{formatShiftSummaryKg(row.tongTrongLuongNhapKho, 3)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">SL hàng TT</dt>
-                      <dd className="font-mono font-bold text-sky-700">{formatShiftSummaryNumber(row.slHangThucTe, 0)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">CL nhập − xuất</dt>
+                      <dd className="font-mono font-bold text-orange-700">{formatShiftSummaryKg(row.chenhLechTrongLuongNhapXuat, 3)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL hàng</dt>
-                      <dd className="font-mono font-bold text-emerald-700">{formatShiftSummaryNumber(row.khoiLuongHang, 3)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tỉ lệ CL TL</dt>
+                      <dd className="font-mono font-bold text-sky-700">{formatShiftSummaryPercent(row.tiLeChenhLechTrongLuong)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL TT</dt>
-                      <dd className="font-mono font-bold text-[#ef1b2d]">{formatShiftSummaryNumber(row.khoiLuongHangThucTe, 3)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tỉ lệ LH ĐM</dt>
+                      <dd className="font-mono font-bold text-zinc-700">{formatShiftSummaryPercent(row.tiLeLoiHongDinhMuc)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL nhựa TP</dt>
-                      <dd className="font-mono font-bold text-purple-700">{formatShiftSummaryNumber(row.khoiLuongNhuaTp, 3)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tỉ lệ lỗi hỏng</dt>
+                      <dd className="font-mono font-bold text-rose-700">{formatShiftSummaryPercent(row.tiLeLoiHong)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">HH nhựa</dt>
-                      <dd className="font-mono font-bold text-rose-700">{formatShiftSummaryNumber(row.hangHongNhua, 3)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Lệch LH vs ĐM</dt>
+                      <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryPercent(row.lechLoiHongVsDinhMuc)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">HH màng</dt>
-                      <dd className="font-mono font-bold text-rose-700">{formatShiftSummaryNumber(row.hangHongMang, 3)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Lỗ/lãi nhựa</dt>
+                      <dd className="font-mono font-bold text-amber-800">{formatShiftSummaryKg(row.giaTriLoLaiNhua, 3)}</dd>
                     </div>
                     <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL nhựa xuất</dt>
-                      <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryNumber(row.khoiLuongNpl, 3)}</dd>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Lỗ/lãi màng</dt>
+                      <dd className="font-mono font-bold text-fuchsia-800">{formatShiftSummaryKg(row.giaTriLoLaiMang, 3)}</dd>
                     </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL màng xuất (kg)</dt>
-                      <dd className="font-mono font-bold text-fuchsia-700">{formatShiftSummaryKg(row.khoiLuongMangXuat, 3)}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL lõi</dt>
-                      <dd className="font-mono font-bold text-stone-700">{formatShiftSummaryNumber(row.khoiLuongLoi, 3)}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">KL bì</dt>
-                      <dd className="font-mono font-bold text-cyan-700">{formatShiftSummaryNumber(row.khoiLuongMang, 3)}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn đầu ca nhựa</dt>
-                      <dd className="font-mono font-bold text-indigo-700">{formatShiftSummaryNumber(row.tonDauCa, 3)}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn cuối ca nhựa</dt>
-                      <dd className="font-mono font-bold text-violet-700">{formatShiftSummaryNumber(row.tonCuoiCa, 3)}</dd>
+                    <div className="col-span-2">
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Phân tích đánh giá</dt>
+                      <dd className="mt-0.5">
+                        <textarea
+                          value={phanTichDanhGiaMap[row.key] || ''}
+                          onChange={event => updatePhanTichDanhGia(row.key, event.target.value)}
+                          rows={2}
+                          placeholder="Gõ tay phân tích đánh giá..."
+                          className="w-full resize-y rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                        />
+                      </dd>
                     </div>
                   </dl>
                   )}
@@ -662,12 +710,12 @@ export default function ControlBoardShiftSummaryTable({
                   </div>
                 ) : (
                 <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                  <span>SL đặt SX: {formatShiftSummaryNumber(totals.slHang, 0)}</span>
-                  <span className="text-sky-700">SL TT: {formatShiftSummaryNumber(totals.slHangThucTe, 0)}</span>
-                  <span className="text-emerald-700">KL: {formatShiftSummaryNumber(totals.khoiLuongHang, 3)}</span>
-                  <span className="text-[#ef1b2d]">KL TT: {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}</span>
-                  <span className="text-teal-800">TN sử dụng: {formatShiftSummaryNumber(totals.tongVatLieu, 3)}</span>
-                  <span className="text-orange-700">CL nhựa: {formatShiftSummaryNumber(totals.chenhLech, 3)}</span>
+                  <span className="text-emerald-700">TL nhập kho: {formatShiftSummaryKg(sanLuongTotals.tongTrongLuongNhapKho, 3)}</span>
+                  <span className="text-orange-700">CL nhập−xuất: {formatShiftSummaryKg(sanLuongTotals.chenhLechTrongLuongNhapXuat, 3)}</span>
+                  <span className="text-sky-700">Tỉ lệ CL: {formatShiftSummaryPercent(sanLuongTotals.tiLeChenhLechTrongLuong)}</span>
+                  <span className="text-rose-700">Tỉ lệ LH: {formatShiftSummaryPercent(sanLuongTotals.tiLeLoiHong)}</span>
+                  <span className="text-amber-800">Lỗ/lãi nhựa: {formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiNhua, 3)}</span>
+                  <span className="text-fuchsia-800">Lỗ/lãi màng: {formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiMang, 3)}</span>
                 </div>
                 )}
               </div>
@@ -1058,40 +1106,34 @@ export default function ControlBoardShiftSummaryTable({
               </tfoot>
             )}
           </table>
-          ) : (
-          <table className="min-w-[1600px] w-full text-left text-xs">
+          ) : activeTab === 'san_luong' ? (
+          <table className="min-w-[1480px] w-full text-left text-xs">
             <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 text-right font-black">SL đặt SX</th>
-                <th className="px-3 py-2.5 text-right font-black">SL hàng TT</th>
-                <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng</th>
-                <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng TT</th>
-                <th className="px-3 py-2.5 text-right font-black">KL nhựa TP</th>
-                <th className="px-3 py-2.5 text-right font-black">HH nhựa</th>
-                <th className="px-3 py-2.5 text-right font-black">HH màng</th>
-                <th className="px-3 py-2.5 text-right font-black">Khối lượng nhựa xuất</th>
-                <th className="px-3 py-2.5 text-right font-black">KL màng xuất (kg)</th>
-                <th className="px-3 py-2.5 text-right font-black">KL lõi</th>
-                <th className="px-3 py-2.5 text-right font-black">KL bì</th>
-                <th className="px-3 py-2.5 text-right font-black">Tồn đầu ca nhựa</th>
-                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca nhựa</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng nhựa sử dụng</th>
-                <th className="px-3 py-2.5 text-right font-black">Chênh lệch nhựa</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng nhập kho</th>
+                <th className="px-3 py-2.5 text-right font-black">Chênh lệch TL nhập − xuất kho</th>
+                <th className="px-3 py-2.5 text-right font-black">Tỉ lệ chênh lệch trọng lượng</th>
+                <th className="px-3 py-2.5 text-right font-black">Tỉ lệ lỗi hỏng định mức</th>
+                <th className="px-3 py-2.5 text-right font-black">Tỉ lệ lỗi hỏng</th>
+                <th className="px-3 py-2.5 text-right font-black">Lệch lỗi hỏng so với định mức</th>
+                <th className="px-3 py-2.5 text-right font-black">Giá trị lỗ/lãi nhựa</th>
+                <th className="px-3 py-2.5 text-right font-black">Giá trị lỗ/lãi màng</th>
+                <th className="px-3 py-2.5 font-black">Phân tích đánh giá</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={17} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải dữ liệu tổng hợp...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={17} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có dữ liệu theo bộ lọc đã chọn.
                   </td>
                 </tr>
@@ -1100,107 +1142,23 @@ export default function ControlBoardShiftSummaryTable({
                   <tr key={row.key} className="hover:bg-indigo-50/40">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
-                    <SummaryValueCell
-                      row={row}
-                      metric="slHang"
-                      formatted={formatShiftSummaryNumber(row.slHang, 0)}
-                      className="px-3 py-2 text-right font-mono font-bold text-zinc-800"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="slHangThucTe"
-                      formatted={formatShiftSummaryNumber(row.slHangThucTe, 0)}
-                      className="px-3 py-2 text-right font-mono font-bold text-sky-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="khoiLuongHang"
-                      formatted={formatShiftSummaryNumber(row.khoiLuongHang, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-emerald-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="khoiLuongHangThucTe"
-                      formatted={formatShiftSummaryNumber(row.khoiLuongHangThucTe, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="khoiLuongNhuaTp"
-                      formatted={formatShiftSummaryNumber(row.khoiLuongNhuaTp, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-purple-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="hangHong"
-                      formatted={formatShiftSummaryNumber(row.hangHongNhua, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-rose-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="hangHong"
-                      formatted={formatShiftSummaryNumber(row.hangHongMang, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-rose-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="khoiLuongNpl"
-                      formatted={formatShiftSummaryNumber(row.khoiLuongNpl, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-amber-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="khoiLuongMangXuat"
-                      formatted={formatShiftSummaryKg(row.khoiLuongMangXuat, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-fuchsia-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="khoiLuongLoi"
-                      formatted={formatShiftSummaryNumber(row.khoiLuongLoi, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-stone-700"
-                      onOpen={openDetail}
-                    />
-                    <td className="px-3 py-2 text-right font-mono font-bold text-cyan-700">
-                      {formatShiftSummaryNumber(row.khoiLuongMang, 3)}
+                    <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{formatShiftSummaryKg(row.tongTrongLuongNhapKho, 3)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-orange-700">{formatShiftSummaryKg(row.chenhLechTrongLuongNhapXuat, 3)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-sky-700">{formatShiftSummaryPercent(row.tiLeChenhLechTrongLuong)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-zinc-700">{formatShiftSummaryPercent(row.tiLeLoiHongDinhMuc)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-rose-700">{formatShiftSummaryPercent(row.tiLeLoiHong)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">{formatShiftSummaryPercent(row.lechLoiHongVsDinhMuc)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">{formatShiftSummaryKg(row.giaTriLoLaiNhua, 3)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-fuchsia-800">{formatShiftSummaryKg(row.giaTriLoLaiMang, 3)}</td>
+                    <td className="px-3 py-2 min-w-[180px]">
+                      <textarea
+                        value={phanTichDanhGiaMap[row.key] || ''}
+                        onChange={event => updatePhanTichDanhGia(row.key, event.target.value)}
+                        rows={2}
+                        placeholder="Gõ tay phân tích đánh giá..."
+                        className="w-full min-w-[160px] resize-y rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                      />
                     </td>
-                    <SummaryValueCell
-                      row={row}
-                      metric="tonDauCa"
-                      formatted={formatShiftSummaryNumber(row.tonDauCa, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-indigo-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="tonCuoiCa"
-                      formatted={formatShiftSummaryNumber(row.tonCuoiCa, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-violet-700"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="tongVatLieu"
-                      formatted={formatShiftSummaryNumber(row.tongVatLieu, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-teal-800"
-                      onOpen={openDetail}
-                    />
-                    <SummaryValueCell
-                      row={row}
-                      metric="chenhLech"
-                      formatted={formatShiftSummaryNumber(row.chenhLech, 3)}
-                      className="px-3 py-2 text-right font-mono font-bold text-orange-700"
-                      onOpen={openDetail}
-                    />
                   </tr>
                 ))
               )}
@@ -1208,57 +1166,21 @@ export default function ControlBoardShiftSummaryTable({
             {!isLoading && filteredRows.length > 0 && (
               <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
                 <tr>
-                  <td colSpan={2} className="px-3 py-2.5 text-right uppercase tracking-wider">
-                    Tổng cộng
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{formatShiftSummaryNumber(totals.slHang, 0)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-sky-700">
-                    {formatShiftSummaryNumber(totals.slHangThucTe, 0)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-emerald-700">
-                    {formatShiftSummaryNumber(totals.khoiLuongHang, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-[#ef1b2d]">
-                    {formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-purple-700">
-                    {formatShiftSummaryNumber(totals.khoiLuongNhuaTp, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-rose-700">
-                    {formatShiftSummaryNumber(totals.hangHongNhua, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-rose-700">
-                    {formatShiftSummaryNumber(totals.hangHongMang, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">
-                    {formatShiftSummaryNumber(totals.khoiLuongNpl, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-fuchsia-700">
-                    {formatShiftSummaryKg(totals.khoiLuongMangXuat, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-stone-700">
-                    {formatShiftSummaryNumber(totals.khoiLuongLoi, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-cyan-700">
-                    {formatShiftSummaryNumber(totals.khoiLuongMang, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-indigo-700">
-                    {formatShiftSummaryNumber(totals.tonDauCa, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-violet-700">
-                    {formatShiftSummaryNumber(totals.tonCuoiCa, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-teal-800">
-                    {formatShiftSummaryNumber(totals.tongVatLieu, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-orange-700">
-                    {formatShiftSummaryNumber(totals.chenhLech, 3)}
-                  </td>
+                  <td colSpan={2} className="px-3 py-2.5 text-right uppercase tracking-wider">Tổng cộng</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-emerald-700">{formatShiftSummaryKg(sanLuongTotals.tongTrongLuongNhapKho, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-orange-700">{formatShiftSummaryKg(sanLuongTotals.chenhLechTrongLuongNhapXuat, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-sky-700">{formatShiftSummaryPercent(sanLuongTotals.tiLeChenhLechTrongLuong)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-zinc-700">{formatShiftSummaryPercent(sanLuongTotals.tiLeLoiHongDinhMuc)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-rose-700">{formatShiftSummaryPercent(sanLuongTotals.tiLeLoiHong)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">{formatShiftSummaryPercent(sanLuongTotals.lechLoiHongVsDinhMuc)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-800">{formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiNhua, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-fuchsia-800">{formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiMang, 3)}</td>
+                  <td className="px-3 py-2.5" />
                 </tr>
               </tfoot>
             )}
           </table>
-          )}
+          ) : null}
         </div>
       </section>
 

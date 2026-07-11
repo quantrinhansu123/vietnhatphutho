@@ -6,6 +6,7 @@ import {
   machineNvlQtyToKg,
   sumMachineNvlCuoiCaLineTotal,
   sumMachineNvlDauCaLineTotal,
+  type MachineNvlMaterialType,
   type MachineNvlSavedReport
 } from '../utils/machineNvlReports';
 
@@ -16,6 +17,7 @@ export type MachineNvlPrintLine = {
   maNvl: string;
   tenNvl: string;
   donVi: string;
+  loaiVatTu: MachineNvlMaterialType | null;
   trongLuongQuyDoiKg: number | null;
   soLuongTonCaTruoc: number | null;
   soLuongTrongMay: number | null;
@@ -42,6 +44,7 @@ type FormLine = {
   code: string;
   name: string;
   unit: string;
+  materialType: MachineNvlMaterialType | '';
   unitWeightKg: string;
   previousQuantity: string;
   inMachineQuantity: string;
@@ -133,6 +136,7 @@ export function buildMachineNvlPrintReportFromForm(input: {
         maNvl: line.code.trim(),
         tenNvl: line.name.trim(),
         donVi: line.unit.trim() || 'kg',
+        loaiVatTu: line.materialType || null,
         trongLuongQuyDoiKg:
           unitWeightParsed !== null && unitWeightParsed > 0 ? unitWeightParsed : null,
         soLuongTonCaTruoc: parseQty(line.previousQuantity),
@@ -337,6 +341,7 @@ export function savedReportToMachineNvlPrintReport(report: MachineNvlSavedReport
       maNvl: line.maNvl,
       tenNvl: line.tenNvl,
       donVi: line.donVi,
+      loaiVatTu: line.loaiVatTu,
       trongLuongQuyDoiKg: line.trongLuongQuyDoiKg,
       soLuongTonCaTruoc: line.soLuongTonCaTruoc,
       soLuongTrongMay: line.soLuongTrongMay,

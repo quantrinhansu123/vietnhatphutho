@@ -249,7 +249,14 @@ export function sumMachineNvlCuoiCaLineTotal(
     .replace(/[̀-ͯ]/g, '');
   const isLoi =
     line.loaiVatTu === 'loi' || hay.includes('loi') || /\bloi\b/.test(hay) || hay.startsWith('loi');
-  if ((factor === null || factor <= 0) && isLoi) factor = 1;
+  const isBaoBi =
+    line.loaiVatTu === 'bao_bi' ||
+    hay.includes('tui') ||
+    hay.includes('bao bi') ||
+    hay.includes('tai nilon') ||
+    hay.includes('bi nilon');
+  // Lõi / bao bì thiếu hệ số quy đổi → mặc định 1 kg/đơn vị (khối lượng = SL tồn)
+  if ((factor === null || factor <= 0) && (isLoi || isBaoBi)) factor = 1;
   if (factor === null || factor <= 0) return 0;
   const componentQty =
     (line.soLuongTrongMay ?? 0) + (line.soLuongTrongBonTron ?? 0) + (line.soLuongNlChuaTron ?? 0);

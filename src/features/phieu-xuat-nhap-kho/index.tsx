@@ -28,6 +28,7 @@ import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch } fr
 import { normalizeProducts } from '../san-pham';
 import { normalizeMaterialsInventory } from '../kho-nvl';
 import type { ShiftSummaryWarehouseMovement } from '../../utils/controlBoardShiftSummary';
+import { showAppToast } from '../../lib/appToast';
 import type { MaterialOption } from '../san-pham/types';
 import {
   convertWarehouseQuantityToKg,
@@ -783,11 +784,11 @@ export function WarehouseSlipPanel({
       );
       setPrintAutoTrigger(false);
       setPrintModalOpen(true);
-      setActionMessage(
-        isEditing
-          ? `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}). Xem tại Lịch sử xuất nhập kho.`
-          : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}) vào lịch sử.`
-      );
+      const okMsg = isEditing
+        ? `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}). Xem tại Lịch sử xuất nhập kho.`
+        : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}) vào lịch sử.`;
+      setActionMessage(okMsg);
+      showAppToast(okMsg);
       setEditSlipCode(null);
       setReason('');
       setNote('');

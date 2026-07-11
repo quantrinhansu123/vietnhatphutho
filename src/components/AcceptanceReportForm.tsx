@@ -15,6 +15,7 @@ import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 import { openCameraImagePicker } from '../utils/cameraCapture';
+import { showAppToast } from '../lib/appToast';
 
 const productLineGridClass =
   'grid-cols-2 sm:grid-cols-[2.25rem_minmax(0,1.1fr)_minmax(0,1.3fr)_4rem_6rem_2.5rem]';
@@ -817,7 +818,9 @@ export default function AcceptanceReportForm({
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo sản lượng.');
-        setMessage('Đã cập nhật báo cáo sản lượng.');
+        const okMsg = 'Đã cập nhật báo cáo sản lượng.';
+        setMessage(okMsg);
+        showAppToast(okMsg);
       } else {
         let savedCount = 0;
         for (const line of validLines) {
@@ -835,9 +838,10 @@ export default function AcceptanceReportForm({
           if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo sản lượng.');
           savedCount += 1;
         }
-        setMessage(
-          savedCount > 1 ? `Đã lưu ${savedCount} dòng sản lượng với ảnh chung.` : 'Đã lưu báo cáo sản lượng.'
-        );
+        const okMsg =
+          savedCount > 1 ? `Đã lưu ${savedCount} dòng sản lượng với ảnh chung.` : 'Đã lưu báo cáo sản lượng.';
+        setMessage(okMsg);
+        showAppToast(okMsg);
       }
 
       resetForm();

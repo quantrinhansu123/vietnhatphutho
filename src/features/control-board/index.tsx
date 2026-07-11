@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { formatNumber } from '../../utils';
 import type { AppTab } from '../../routes';
 import ControlBoardShiftSummaryTable from '../../components/ControlBoardShiftSummaryTable';
+import ControlBoardShiftSummaryChart from '../../components/ControlBoardShiftSummaryChart';
 import { ControlBoardCommonFilters } from '../../components/ControlBoardCommonFilters';
 import {
   buildControlBoardShiftSummary,
@@ -907,6 +908,8 @@ export function ControlBoardPanel({
         onClear={clearBoardFilters}
         isLoading={isLoading}
       />
+
+      <ControlBoardShiftSummaryChart rows={shiftSummaryRows} isLoading={isLoading} />
 
       <ControlBoardShiftSummaryTable
         rows={shiftSummaryRows}

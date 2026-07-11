@@ -14,6 +14,7 @@ import {
 } from './MachineDowntimePrintSheet';
 import { STANDARD_SHIFTS } from '../types';
 import { formatNumber } from '../utils';
+import { showAppToast } from '../lib/appToast';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 
 const fieldClass =
@@ -487,7 +488,9 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
       if (!res.ok) throw new Error(data.error || 'Không thể lưu phiếu báo dừng máy.');
 
       const slipCode = String(data.slip?.so_phieu ?? '').trim();
-      setMessage(slipCode ? `Đã lưu phiếu ${slipCode}.` : 'Đã lưu phiếu báo dừng máy.');
+      const okMsg = slipCode ? `Đã lưu phiếu ${slipCode}.` : 'Đã lưu phiếu báo dừng máy.';
+      setMessage(okMsg);
+      showAppToast(okMsg);
       setLines([emptyLine()]);
       setNote('');
       await loadSlips();

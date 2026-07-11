@@ -33,6 +33,7 @@ import { normalizeMixingReport } from './lib/mixingReportModel';
 import type { MixingReport } from './components/MixingReportForm';
 import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
 import MachineRunLogPanel from './components/MachineRunLogPanel';
+import AppToastHost from './components/AppToastHost';
 import { AppTab, pathFromTab, tabFromPath, isWeighingFormPath, isWeighingListPath } from './routes';
 import {
   FilePlus2, BarChart3, CheckCircle, Sparkles, Loader2, Menu, Search, Save, ChevronRight, ChevronLeft,
@@ -576,6 +577,7 @@ export default function App() {
             ))}
           </AnimatePresence>
         </div>
+        <AppToastHost />
 
         {/* Drawer 'Điều hướng nhanh' — mặc định ẩn */}
         <AnimatePresence>

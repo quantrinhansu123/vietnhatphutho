@@ -9,6 +9,7 @@ import WeighingImagePreviewModal, {
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../utils/cameraCapture';
+import { showAppToast } from '../lib/appToast';
 
 interface WeighingRow {
   id: number;
@@ -1277,15 +1278,19 @@ export default function WeighingReportForm({
         await updateRowOnServer(row);
       }
 
+      const successText =
+        unsavedRows.length > 0
+          ? getSaveSuccessMessage(mode, inserted, warning)
+          : rowsToSync.length > 0
+            ? 'Đã lưu phiếu thành công.'
+            : 'Không thể đồng bộ phiếu — vui lòng thêm lại dòng cân.';
       setSaveMessage({
         type: 'success',
-        text:
-          unsavedRows.length > 0
-            ? getSaveSuccessMessage(mode, inserted, warning)
-            : rowsToSync.length > 0
-              ? 'Đã lưu phiếu thành công.'
-              : 'Không thể đồng bộ phiếu — vui lòng thêm lại dòng cân.'
+        text: successText
       });
+      if (unsavedRows.length > 0 || rowsToSync.length > 0) {
+        showAppToast(successText);
+      }
     } catch (error: any) {
       setSaveMessage({ type: 'error', text: error.message || 'Không thể lưu phiếu cân.' });
     } finally {

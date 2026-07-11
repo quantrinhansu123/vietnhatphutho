@@ -103,6 +103,22 @@ export type ControlBoardShiftSummaryRow = {
   tlMangLoiHong: number;
   soCuonLoiDinhHangHong: number;
   tongTrongLuongLoiHong: number;
+  /** Tổng trọng lượng nhập kho = Tổng TP nhập kho */
+  tongTrongLuongNhapKho: number;
+  /** Chênh lệch = nhập kho − xuất kho */
+  chenhLechTrongLuongNhapXuat: number;
+  /** Tỉ lệ chênh lệch trọng lượng (%) = (nhập − xuất) / xuất × 100 */
+  tiLeChenhLechTrongLuong: number;
+  /** Tỉ lệ lỗi hỏng định mức (%) */
+  tiLeLoiHongDinhMuc: number;
+  /** Tỉ lệ lỗi hỏng thực tế (%) */
+  tiLeLoiHong: number;
+  /** Lệch lỗi hỏng so với định mức (điểm %) */
+  lechLoiHongVsDinhMuc: number;
+  /** Giá trị lỗ/lãi nhựa (kg chênh lệch nhựa) */
+  giaTriLoLaiNhua: number;
+  /** Giá trị lỗ/lãi màng (kg) */
+  giaTriLoLaiMang: number;
 };
 
 type ProductRef = {
@@ -168,6 +184,47 @@ export const TL_LOI_TP_KG_PER_UNIT = 1;
 
 /** KL nhựa TP (kg) = (KL hàng TT − KL lõi − KL bì) × 0,75 */
 export const KHOI_LUONG_NHUA_TP_FACTOR = 0.75;
+
+/** Tỉ lệ lỗi hỏng định mức mặc định (%) */
+export const TI_LE_LOI_HONG_DINH_MUC_PERCENT = 2;
+
+export function computePercentRatio(numerator: number, denominator: number) {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return 0;
+  return roundNormWeight((numerator / denominator) * 100);
+}
+
+export function computeShiftSummarySanLuongMetrics(input: {
+  tongTpNhapKho: number;
+  tongTrongLuongXuatKho: number;
+  tongTrongLuongLoiHong: number;
+  chenhLechNhua: number;
+  tongMangThucDung: number;
+  tlMangTpNhapKho: number;
+  hangHongMang: number;
+  tiLeLoiHongDinhMuc?: number;
+}) {
+  const tongTrongLuongNhapKho = roundNormWeight(input.tongTpNhapKho);
+  const tongTrongLuongXuatKho = roundNormWeight(input.tongTrongLuongXuatKho);
+  const chenhLechTrongLuongNhapXuat = roundNormWeight(tongTrongLuongNhapKho - tongTrongLuongXuatKho);
+  const tiLeChenhLechTrongLuong = computePercentRatio(chenhLechTrongLuongNhapXuat, tongTrongLuongXuatKho);
+  const tiLeLoiHongDinhMuc = input.tiLeLoiHongDinhMuc ?? TI_LE_LOI_HONG_DINH_MUC_PERCENT;
+  const tiLeLoiHong = computePercentRatio(input.tongTrongLuongLoiHong, tongTrongLuongNhapKho);
+  const lechLoiHongVsDinhMuc = roundNormWeight(tiLeLoiHong - tiLeLoiHongDinhMuc);
+  const giaTriLoLaiNhua = roundNormWeight(input.chenhLechNhua);
+  const giaTriLoLaiMang = roundNormWeight(
+    input.tongMangThucDung - input.tlMangTpNhapKho - input.hangHongMang
+  );
+  return {
+    tongTrongLuongNhapKho,
+    chenhLechTrongLuongNhapXuat,
+    tiLeChenhLechTrongLuong,
+    tiLeLoiHongDinhMuc,
+    tiLeLoiHong,
+    lechLoiHongVsDinhMuc,
+    giaTriLoLaiNhua,
+    giaTriLoLaiMang
+  };
+}
 
 export function computeKhoiLuongNhuaTp(
   khoiLuongHangThucTe: number,
@@ -305,6 +362,16 @@ function isKgUnit(unit: string) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
+}
+
+/** ĐVT cuộn trên phiếu báo cáo sản lượng (bao_cao_nghiem_thu). */
+export function isCuonUnit(unit: string) {
+  const normalized = unit
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return normalized === 'cuon' || normalized.startsWith('cuon ') || normalized.includes(' cuon');
 }
 
 function isM2Unit(unit: string) {
@@ -498,9 +565,9 @@ export function resolveMachineNvlLineMaterialType(line: MachineNvlSavedLine): Ma
  * ("Kg quy đổi" nhập tay khi kiểm kê); nếu dòng chưa nhập hệ số (thường gặp với NVL
  * đơn vị m2 như màng vì hay bị bỏ trống) thì rơi về hệ số "Tổng trọng lượng" khai báo
  * trong danh mục NVL — cùng cách quy đổi đã dùng cho phiếu xuất kho NVL.
- * Lõi không có hệ số → mặc định 1 kg/đơn vị (cùng quy ước SL lõi × 1kg).
+ * Lõi / bao bì không có hệ số → mặc định 1 kg/đơn vị (khối lượng = SL tồn).
  */
-function computeMachineNvlLineKg(
+export function computeMachineNvlLineKg(
   line: MachineNvlSavedLine,
   reportKind: 'dau_ca' | 'cuoi_ca',
   resolveKgFactor?: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
@@ -516,8 +583,8 @@ function computeMachineNvlLineKg(
     return sumMachineNvlCuoiCaLineTotal(line);
   }
 
-  // Lõi (cái/cuộn…): nếu thiếu hệ số quy đổi thì lấy 1 kg/đơn vị
-  if ((factor === null || factor <= 0) && materialType === 'loi') {
+  // Lõi / bao bì (cái/túi…): nếu thiếu hệ số quy đổi thì lấy 1 kg/đơn vị
+  if ((factor === null || factor <= 0) && (materialType === 'loi' || materialType === 'bao_bi')) {
     factor = TL_LOI_TP_KG_PER_UNIT;
   }
   if (factor === null || factor <= 0) return 0;
@@ -555,8 +622,9 @@ function splitMachineNvlLineByMaterial(
   return { ...zero, nhua: kg };
 }
 
+/** Tổng nhựa thực dùng = tồn đầu ca + xuất dùng − tồn cuối ca */
 export function computeMaterialUsageKg(xuat: number, tonDauCa: number, tonCuoiCa: number) {
-  return roundNormWeight(xuat + tonDauCa - tonCuoiCa);
+  return roundNormWeight(tonDauCa + xuat - tonCuoiCa);
 }
 
 /** TL nhựa TP = nhựa xuất dùng + tồn đầu ca nhựa − tồn cuối ca nhựa − 3 loại nhựa lỗi hỏng */
@@ -697,9 +765,10 @@ export function buildControlBoardShiftSummary(input: {
     const bucket = getOrCreateBucket(map, report.ngay, report.ca, shiftOptions);
     if (!bucket) continue;
     // Số lượng hàng TT — chỉ từ báo cáo sản lượng (bao_cao_nghiem_thu)
-    if (report.so_luong !== null && Number.isFinite(report.so_luong)) {
+    if (report.so_luong !== null && Number.isFinite(report.so_luong) && report.so_luong > 0) {
       bucket.slHangThucTe += report.so_luong;
-      // KL lõi = Số lượng cuộn thực tế × 1kg
+      // SL đạt thực tế / KL lõi = SL báo cáo sản lượng (đơn vị cuộn) × 1kg
+      bucket.slDatThucTeNhapKho += report.so_luong;
       bucket.khoiLuongLoi += report.so_luong;
     }
 
@@ -744,9 +813,6 @@ export function buildControlBoardShiftSummary(input: {
     bucket.khoiLuongMangXuat += sumWarehouseMovementMangKg(movement, resolveKgFactor);
     bucket.khoiLuongLoiXuatKho += sumWarehouseMovementLoiXuatKg(movement, resolveKgFactor);
     bucket.khoiLuongTuiXuatKho += sumWarehouseMovementTuiXuatKg(movement, resolveKgFactor);
-    if (movement.slipType === 'nhap' && movement.warehouseKind === 'san_pham') {
-      bucket.slDatThucTeNhapKho += resolveWarehouseSanPhamNhapSl(movement);
-    }
   }
 
   for (const report of input.machineNvlReports ?? []) {
@@ -803,8 +869,11 @@ export function buildControlBoardShiftSummary(input: {
       const khoiLuongNhuaTp = computeKhoiLuongNhuaTp(khoiLuongHangThucTe, khoiLuongLoi, khoiLuongMang);
       const tongNhuaThucDung = computeMaterialUsageKg(khoiLuongNpl, tonDauCaNhua, tonCuoiCaNhua);
       const tongMangThucDung = computeMaterialUsageKg(khoiLuongMangXuat, tonDauCaMang, tonCuoiCaMang);
-      const loiThucDung = computeMaterialUsageKg(khoiLuongLoiXuatKho, tonDauCaLoi, tonCuoiCaLoi);
-      const tuiThucDung = computeMaterialUsageKg(khoiLuongTuiXuatKho, tonDauCaTui, tonCuoiCaTui);
+      const slDatThucTeNhapKho = roundNormWeight(bucket.slDatThucTeNhapKho);
+      // Lõi thực dùng = Số lượng đạt thực tế × 1 (= KL lõi từ báo cáo sản lượng)
+      const loiThucDung = computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+      // Túi thực dùng = TL túi bao bì nhập kho = 0,2 × SL đạt thực tế
+      const tuiThucDung = computeTlTuiBaoBiNhapKhoFromShiftSummary(slDatThucTeNhapKho);
       const tongThucDung = roundNormWeight(tongNhuaThucDung + tongMangThucDung + loiThucDung + tuiThucDung);
       const tongVatLieu = tongNhuaThucDung;
       const tongTrongLuongXuatKho = roundNormWeight(
@@ -814,7 +883,6 @@ export function buildControlBoardShiftSummary(input: {
       const tongTrongLuongTonCuoiCa = roundNormWeight(
         tonCuoiCaNhua + tonCuoiCaMang + tonCuoiCaLoi + tonCuoiCaTui
       );
-      const slDatThucTeNhapKho = roundNormWeight(bucket.slDatThucTeNhapKho);
       const tlNhuaTpNhapKho = computeTlNhuaTpNhapKhoFromShiftSummary({
         khoiLuongNpl,
         tonDauCaNhua,
@@ -829,11 +897,21 @@ export function buildControlBoardShiftSummary(input: {
         tonCuoiCaMang,
         tlMangLoiHong
       });
-      const tlTuiBaoBiNhapKho = computeTlTuiBaoBiNhapKhoFromShiftSummary(slDatThucTeNhapKho);
-      const tlLoiTpNhapKho = computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+      const tlTuiBaoBiNhapKho = tuiThucDung;
+      const tlLoiTpNhapKho = loiThucDung;
       const tongTpNhapKho = roundNormWeight(
         tlNhuaTpNhapKho + tlMangTpNhapKho + tlTuiBaoBiNhapKho + tlLoiTpNhapKho
       );
+      const chenhLech = roundNormWeight(tongNhuaThucDung - khoiLuongNhuaTp - hangHongNhua);
+      const sanLuongMetrics = computeShiftSummarySanLuongMetrics({
+        tongTpNhapKho,
+        tongTrongLuongXuatKho,
+        tongTrongLuongLoiHong,
+        chenhLechNhua: chenhLech,
+        tongMangThucDung,
+        tlMangTpNhapKho,
+        hangHongMang
+      });
       return {
         key: `${bucket.ngay}|${bucket.ca}`,
         ngay: bucket.ngay,
@@ -868,7 +946,7 @@ export function buildControlBoardShiftSummary(input: {
         tuiThucDung,
         tongThucDung,
         tongVatLieu,
-        chenhLech: roundNormWeight(tongNhuaThucDung - khoiLuongNhuaTp - hangHongNhua),
+        chenhLech,
         tongTrongLuongXuatKho,
         tongTrongLuongTonDauCa,
         tongTrongLuongTonCuoiCa,
@@ -883,7 +961,8 @@ export function buildControlBoardShiftSummary(input: {
         tlNhuaDinhMangLoiHong,
         tlMangLoiHong,
         soCuonLoiDinhHangHong,
-        tongTrongLuongLoiHong
+        tongTrongLuongLoiHong,
+        ...sanLuongMetrics
       };
     })
     .sort((a, b) => compareSummaryRows(a, b, shiftOptions));
@@ -899,6 +978,11 @@ export function formatShiftSummaryNumber(value: number, fractionDigits = 2) {
 
 export function formatShiftSummaryKg(value: number, fractionDigits = 3) {
   return formatShiftSummaryNumber(value, fractionDigits);
+}
+
+export function formatShiftSummaryPercent(value: number, fractionDigits = 2) {
+  if (!Number.isFinite(value) || value === 0) return '-';
+  return `${formatShiftSummaryNumber(value, fractionDigits)}%`;
 }
 
 export function resolveShiftSummaryTlDinhMucKgCuon(
