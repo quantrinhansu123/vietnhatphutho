@@ -1002,19 +1002,25 @@ export default function WeighingReportForm({
         setAddFormError('Vui lòng nhập KL nhựa, KL màng hoặc ghi chú.');
         return;
       }
-    } else if (
-      !newRow.productCode.trim() &&
-      !newRow.productName.trim() &&
-      !newRow.coreWeight.trim() &&
-      !newRow.shellWeight.trim() &&
-      !newRow.weight.trim() &&
-      !newRow.acceptanceStatus.trim() &&
-      !newRow.note.trim() &&
-      !imageFile &&
-      !coreWeightImageFile
-    ) {
-      setAddFormError('Vui lòng nhập thông tin hoặc chụp ảnh trước khi thêm form.');
-      return;
+    } else {
+      if (!config.hideProductFields && !newRow.productCode.trim() && !newRow.productName.trim()) {
+        setAddFormError('Vui lòng chọn hoặc nhập Mã SP / Tên SP.');
+        return;
+      }
+      if (
+        !newRow.productCode.trim() &&
+        !newRow.productName.trim() &&
+        !newRow.coreWeight.trim() &&
+        !newRow.shellWeight.trim() &&
+        !newRow.weight.trim() &&
+        !newRow.acceptanceStatus.trim() &&
+        !newRow.note.trim() &&
+        !imageFile &&
+        !coreWeightImageFile
+      ) {
+        setAddFormError('Vui lòng nhập thông tin hoặc chụp ảnh trước khi thêm form.');
+        return;
+      }
     }
 
     setIsUploadingImage(true);

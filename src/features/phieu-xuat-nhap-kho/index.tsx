@@ -13,7 +13,6 @@ import {
   Pencil,
   Plus,
   Printer,
-  Replace,
   Save,
   Search,
   Trash2
@@ -1263,7 +1262,6 @@ export function WarehouseHistoryPanel({
   const [deletingSlipCode, setDeletingSlipCode] = useState<string | null>(null);
   const [selectedSlipCodes, setSelectedSlipCodes] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-  const [isRemappingShift, setIsRemappingShift] = useState(false);
   const [historyPrintSlip, setHistoryPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
   const [historyPrintOpen, setHistoryPrintOpen] = useState(false);
   const [historyPrintAutoTrigger, setHistoryPrintAutoTrigger] = useState(false);
@@ -1339,37 +1337,6 @@ export function WarehouseHistoryPanel({
     setSelectedSlipCodes(new Set());
     loadMovements();
   }, [warehouseTab, selectedType, fromDate, toDate]);
-
-  const handleRemapHc1To12C1 = async () => {
-    if (
-      !window.confirm(
-        'Đổi toàn bộ ca HC1 thành 12C1 trên tất cả lịch sử xuất nhập kho (không chỉ khoảng ngày đang lọc). Tiếp tục?'
-      )
-    ) {
-      return;
-    }
-
-    setError('');
-    setMessage('');
-    setIsRemappingShift(true);
-    try {
-      const res = await fetch('/api/phieu-xuat-nhap-kho/remap-shift', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'HC1', to: '12C1' })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể đổi ca HC1 → 12C1.');
-
-      const updated = Number(data.updated ?? 0);
-      setMessage(updated > 0 ? `Đã đổi ${updated} dòng từ HC1 thành 12C1.` : 'Không có dòng nào mang ca HC1.');
-      await loadMovements();
-    } catch (err: any) {
-      setError(err.message || 'Không thể đổi ca HC1 → 12C1.');
-    } finally {
-      setIsRemappingShift(false);
-    }
-  };
 
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredMovements = useMemo(() => {
@@ -1581,16 +1548,6 @@ export function WarehouseHistoryPanel({
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={handleRemapHc1To12C1}
-                disabled={isLoading || isRemappingShift || isBulkDeleting || Boolean(deletingSlipCode)}
-                title="Đổi toàn bộ ca HC1 thành 12C1"
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
-              >
-                {isRemappingShift ? <Loader2 className="h-4 w-4 animate-spin" /> : <Replace className="h-4 w-4" />}
-                Sửa hết HC1 → 12C1
-              </button>
               <button
                 type="button"
                 onClick={onOpenSlip}

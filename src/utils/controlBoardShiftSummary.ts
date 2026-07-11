@@ -490,7 +490,8 @@ export function resolveShiftSummarySanPhamNhapLineKg(
 
 function sumWarehouseMovementExportKg(
   movement: ShiftSummaryWarehouseMovement,
-  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null,
+  fallbackFactor?: number
 ) {
   if (movement.warehouseKind !== 'nvl') return 0;
   if (movement.slipType !== 'xuat') return 0;
@@ -498,11 +499,8 @@ function sumWarehouseMovementExportKg(
   if (!Number.isFinite(qty) || qty <= 0) return 0;
   const unit = movement.unit || '';
   if (isKgUnit(unit)) return qty;
-  if (isM2Unit(unit)) {
-    const factor = resolveKgFactor(unit, movement.itemCode || '', null);
-    return factor !== null && factor > 0 ? qty * factor : 0;
-  }
-  const factor = resolveKgFactor(unit, movement.itemCode || '', null);
+  const resolved = resolveKgFactor(unit, movement.itemCode || '', null);
+  const factor = resolved !== null && resolved > 0 ? resolved : fallbackFactor ?? null;
   return factor !== null && factor > 0 ? qty * factor : 0;
 }
 
@@ -541,7 +539,7 @@ function sumWarehouseMovementLoiXuatKg(
   resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
 ) {
   if (!isWarehouseCoreExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
-  return sumWarehouseMovementExportKg(movement, resolveKgFactor);
+  return sumWarehouseMovementExportKg(movement, resolveKgFactor, TL_LOI_TP_KG_PER_UNIT);
 }
 
 function sumWarehouseMovementTuiXuatKg(
@@ -549,7 +547,7 @@ function sumWarehouseMovementTuiXuatKg(
   resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
 ) {
   if (!isWarehouseBagExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
-  return sumWarehouseMovementExportKg(movement, resolveKgFactor);
+  return sumWarehouseMovementExportKg(movement, resolveKgFactor, TL_TUI_BAO_BI_KG_PER_UNIT);
 }
 
 type MachineNvlMaterialSplit = { nhua: number; mang: number; loi: number; tui: number };

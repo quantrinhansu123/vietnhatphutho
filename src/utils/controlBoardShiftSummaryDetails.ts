@@ -18,6 +18,8 @@ import {
   TI_LE_LOI_HONG_DINH_MUC_PERCENT,
   computeShiftSummarySanLuongMetrics,
   formatShiftSummaryPercent,
+  isWarehouseBagExportItem,
+  isWarehouseCoreExportItem,
   matchesShiftSummaryBucket,
   resolveMachineNvlLineMaterialType,
   type ControlBoardShiftSummaryRow,
@@ -846,6 +848,62 @@ export function getShiftSummaryDetail(input: {
       rows,
       totalLabel: 'Tổng KL màng xuất',
       totalValue: `${formatShiftSummaryNumber(roundNormWeight(total), 3)} kg`,
+      showActions: true
+    };
+  }
+
+  if (metric === 'khoiLuongLoiXuatKho' || metric === 'khoiLuongTuiXuatKho') {
+    const rows: ShiftSummaryDetailRow[] = [];
+    let total = 0;
+    const fallbackFactor = metric === 'khoiLuongLoiXuatKho' ? TL_LOI_TP_KG_PER_UNIT : TL_TUI_BAO_BI_KG_PER_UNIT;
+    const matchesItem = metric === 'khoiLuongLoiXuatKho' ? isWarehouseCoreExportItem : isWarehouseBagExportItem;
+
+    for (const movement of input.warehouseMovements ?? []) {
+      if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
+      if (movement.warehouseKind !== 'nvl') continue;
+      if (movement.slipType !== 'xuat') continue;
+      if (!Number.isFinite(movement.quantity) || movement.quantity <= 0) continue;
+      if (!matchesItem(movement.itemCode || '', movement.itemName || '')) continue;
+
+      const unit = movement.unit || '';
+      const resolved = isKgUnit(unit) ? 1 : resolveLineKgFactor(unit, movement.itemCode || '', null);
+      const usedFallback = !isKgUnit(unit) && (resolved === null || resolved <= 0);
+      const factor = usedFallback ? fallbackFactor : resolved;
+      const kg = factor !== null && factor > 0 ? movement.quantity * factor : 0;
+      if (kg <= 0) continue;
+
+      total += kg;
+      rows.push({
+        rowKey: movement.id || `${movement.slipCode}|${movement.itemCode}`,
+        recordId: movement.slipCode || '',
+        soPhieu: movement.slipCode || '-',
+        loaiPhieu: warehouseSlipTypeLabel(movement.slipType),
+        maNvl: movement.itemCode || '-',
+        tenNvl: movement.itemName || '-',
+        soLuong: formatDetailNumber(movement.quantity, 3),
+        donVi: movement.unit || '-',
+        heSo: factor !== null ? formatDetailNumberExact(factor) : '-',
+        heSoNguon: usedFallback ? 'Mặc định' : 'Danh mục NVL',
+        khoiLuong: formatDetailNumber(kg, 3)
+      });
+    }
+
+    return {
+      columns: [
+        { key: 'soPhieu', label: 'Mã phiếu' },
+        { key: 'loaiPhieu', label: 'Loại' },
+        { key: 'maNvl', label: 'Mã NVL' },
+        { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'soLuong', label: 'SL', align: 'right', mono: true },
+        { key: 'donVi', label: 'ĐVT' },
+        { key: 'heSo', label: 'Hệ số (kg/đv)', align: 'right', mono: true },
+        { key: 'heSoNguon', label: 'Nguồn hệ số' },
+        { key: 'khoiLuong', label: 'KL (kg)', align: 'right', mono: true, accent: true }
+      ],
+      rows,
+      totalLabel:
+        metric === 'khoiLuongLoiXuatKho' ? 'Tổng trọng lượng lõi xuất kho (kg)' : 'Tổng trọng lượng túi xuất kho (kg)',
+      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
       showActions: true
     };
   }

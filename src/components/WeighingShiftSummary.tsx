@@ -8,7 +8,6 @@ import {
   Plus,
   Printer,
   RefreshCw,
-  Replace,
   Trash2
 } from 'lucide-react';
 import WeighingReportForm from './WeighingReportForm';
@@ -262,7 +261,6 @@ export default function WeighingShiftSummary({
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [printSlip, setPrintSlip] = useState<WeighingSlipPrintData | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
-  const [isRemappingShift, setIsRemappingShift] = useState(false);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
@@ -517,42 +515,6 @@ export default function WeighingShiftSummary({
     }
   };
 
-  const handleRemapHc1To12C1 = async () => {
-    if (
-      !window.confirm(
-        'Đổi toàn bộ ca HC2 thành 12C1 trên tất cả phiếu cân (không chỉ ngày đang chọn). Tiếp tục?'
-      )
-    ) {
-      return;
-    }
-
-    setIsRemappingShift(true);
-    setActionMessage('');
-    try {
-      const res = await fetch(`${config.apiBasePath}/remap-shift`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'HC2', to: '12C1' })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể đổi ca HC2 → 12C1.');
-      }
-
-      const updated = Number(data.updated ?? 0);
-      setActionMessage(
-        updated > 0
-          ? `Đã đổi ${updated} dòng từ HC2 thành 12C1.`
-          : 'Không có dòng nào mang ca HC2.'
-      );
-      await loadReports();
-    } catch (err: any) {
-      setActionMessage(err.message || 'Không thể đổi ca HC2 → 12C1.');
-    } finally {
-      setIsRemappingShift(false);
-    }
-  };
-
   if (showReportForm) {
     return (
       <div className="relative space-y-3 pb-28">
@@ -605,22 +567,6 @@ export default function WeighingShiftSummary({
             </label>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {config.apiBasePath === DEFAULT_WEIGHING_SLIP_CONFIG.apiBasePath && (
-              <button
-                type="button"
-                onClick={handleRemapHc1To12C1}
-                disabled={isLoading || isRemappingShift}
-                title="Đổi toàn bộ ca HC2 thành 12C1"
-                className="flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
-              >
-                {isRemappingShift ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Replace className="h-4 w-4" />
-                )}
-                Sửa hết HC2 → 12C1
-              </button>
-            )}
             <button
               type="button"
               onClick={loadReports}
