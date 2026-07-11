@@ -24,6 +24,7 @@ import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
 import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';
 import { buildControlBoardShiftSummary, type ControlBoardShiftSummaryRow } from '../../utils/controlBoardShiftSummary';
+import { waitForPrintImagesReady } from '../../utils/printReady';
 import {
   normalizeProducts,
   findProductByCode,
@@ -1349,11 +1350,18 @@ export function ProductionPlanQrPrintModal({
 
   useEffect(() => {
     if (!pendingPrint || printLabels.length === 0) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 200);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printLabels, qrImages]);
 
   const handlePrint = async () => {
@@ -2100,29 +2108,50 @@ export function ProductionPlanModal({
 
   useEffect(() => {
     if (!pendingPrint || displayLines.length === 0) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, displayLines]);
 
   useEffect(() => {
     if (!pendingNvlPrint || displayLines.length === 0) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingNvlPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingNvlPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingNvlPrint, displayLines]);
 
   useEffect(() => {
     if (!pendingStaffAssignmentPrint) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingStaffAssignmentPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingStaffAssignmentPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingStaffAssignmentPrint]);
 
   useEffect(() => {
@@ -2136,11 +2165,18 @@ export function ProductionPlanModal({
   useEffect(() => {
     if (!pendingRelatedPrint) return;
     if (!relatedPrintData && relatedPrintOrders.length === 0 && relatedPrintCustomerOrders.length === 0) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingRelatedPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingRelatedPrint(false);
+      });
     }, 350);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingRelatedPrint, relatedPrintData, relatedPrintOrders, relatedPrintCustomerOrders]);
 
   useEffect(() => {
@@ -3434,12 +3470,19 @@ export function useProductionOrderPrint() {
   useEffect(() => {
     if (!pendingPrint || !printingOrder) return;
 
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 150);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printingOrder, printingMaterials, printingProduct, printingMachineLabel]);
 
   useEffect(() => {

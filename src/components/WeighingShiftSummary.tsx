@@ -18,6 +18,7 @@ import WeighingImagePreviewModal, {
 } from './WeighingImagePreviewModal';
 import { WeighingSlipPrintBatch, type WeighingSlipPrintData } from './WeighingSlipPrintSheet';
 import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/weighingSlipConfig';
+import { waitForPrintImagesReady } from '../utils/printReady';
 import {
   getProductionShiftOptions,
   normalizeShiftSettings,
@@ -392,11 +393,18 @@ export default function WeighingShiftSummary({
 
   useEffect(() => {
     if (!pendingPrint || !printSlip) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 120);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printSlip]);
 
   useEffect(() => {

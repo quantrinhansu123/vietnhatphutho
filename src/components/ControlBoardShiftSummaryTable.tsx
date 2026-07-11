@@ -26,6 +26,7 @@ import {
   type ShiftSummaryMetric
 } from '../utils/controlBoardShiftSummaryDetails';
 import type { ShiftSetting } from '../utils/shiftSettings';
+import { waitForPrintImagesReady } from '../utils/printReady';
 
 const inputClass =
   'h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
@@ -293,11 +294,18 @@ export default function ControlBoardShiftSummaryTable({
 
   useEffect(() => {
     if (!pendingPrint || !printPayload) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printPayload]);
 
   useEffect(() => {

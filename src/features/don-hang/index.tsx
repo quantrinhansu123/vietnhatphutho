@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Eye, Loader2, Pencil, Plus, Printer, Save, Search, Trash2 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { waitForPrintImagesReady } from '../../utils/printReady';
 import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
@@ -367,10 +368,17 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (!pendingPrint || !printOrder) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printOrder]);
 
   useEffect(() => {

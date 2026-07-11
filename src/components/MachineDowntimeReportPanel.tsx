@@ -16,6 +16,7 @@ import { STANDARD_SHIFTS } from '../types';
 import { formatNumber } from '../utils';
 import { showAppToast } from '../lib/appToast';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
+import { waitForPrintImagesReady } from '../utils/printReady';
 
 const fieldClass =
   'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
@@ -401,11 +402,18 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
 
   useEffect(() => {
     if (!pendingPrint || !printSlip) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printSlip]);
 
   useEffect(() => {

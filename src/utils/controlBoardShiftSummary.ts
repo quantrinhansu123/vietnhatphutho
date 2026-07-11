@@ -376,6 +376,14 @@ export function isCuonUnit(unit: string) {
   return normalized === 'cuon' || normalized.startsWith('cuon ') || normalized.includes(' cuon');
 }
 
+/** SL cuộn nguyên từ báo cáo sản lượng — bỏ ĐVT khác (vd kg); ĐVT trống coi như cuộn. */
+export function acceptanceRollQuantity(report: { so_luong: number | null; don_vi?: string | null }) {
+  if (report.so_luong === null || !Number.isFinite(report.so_luong) || report.so_luong <= 0) return 0;
+  const unit = String(report.don_vi ?? '').trim();
+  if (unit && !isCuonUnit(unit)) return 0;
+  return Math.round(report.so_luong);
+}
+
 function isM2Unit(unit: string) {
   const normalized = unit
     .trim()
@@ -764,24 +772,18 @@ export function buildControlBoardShiftSummary(input: {
     if (!inRange(report.ngay)) continue;
     const bucket = getOrCreateBucket(map, report.ngay, report.ca, shiftOptions);
     if (!bucket) continue;
-    // Số lượng hàng TT — chỉ từ báo cáo sản lượng (bao_cao_nghiem_thu)
-    if (report.so_luong !== null && Number.isFinite(report.so_luong) && report.so_luong > 0) {
-      bucket.slHangThucTe += report.so_luong;
-      // SL đạt thực tế / KL lõi = SL báo cáo sản lượng (đơn vị cuộn) × 1kg
-      bucket.slDatThucTeNhapKho += report.so_luong;
-      bucket.khoiLuongLoi += report.so_luong;
+    // Số lượng hàng TT / SL đạt / KL lõi — chỉ SL cuộn nguyên từ báo cáo sản lượng
+    const rollQty = acceptanceRollQuantity(report);
+    if (rollQty > 0) {
+      bucket.slHangThucTe += rollQty;
+      bucket.slDatThucTeNhapKho += rollQty;
+      bucket.khoiLuongLoi += rollQty;
     }
 
     // Khối lượng hàng TT — lấy từ báo cáo sản lượng: Số lượng * định mức kg của sản phẩm
     const unitWeight = findProductWeight(input.products, report.mat_hang);
-    if (
-      unitWeight !== null &&
-      unitWeight > 0 &&
-      report.so_luong !== null &&
-      Number.isFinite(report.so_luong) &&
-      report.so_luong > 0
-    ) {
-      bucket.khoiLuongHangThucTe += unitWeight * report.so_luong;
+    if (unitWeight !== null && unitWeight > 0 && rollQty > 0) {
+      bucket.khoiLuongHangThucTe += unitWeight * rollQty;
     }
   }
 
@@ -869,7 +871,7 @@ export function buildControlBoardShiftSummary(input: {
       const khoiLuongNhuaTp = computeKhoiLuongNhuaTp(khoiLuongHangThucTe, khoiLuongLoi, khoiLuongMang);
       const tongNhuaThucDung = computeMaterialUsageKg(khoiLuongNpl, tonDauCaNhua, tonCuoiCaNhua);
       const tongMangThucDung = computeMaterialUsageKg(khoiLuongMangXuat, tonDauCaMang, tonCuoiCaMang);
-      const slDatThucTeNhapKho = roundNormWeight(bucket.slDatThucTeNhapKho);
+      const slDatThucTeNhapKho = Math.round(bucket.slDatThucTeNhapKho);
       // Lõi thực dùng = Số lượng đạt thực tế × 1 (= KL lõi từ báo cáo sản lượng)
       const loiThucDung = computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho);
       // Túi thực dùng = TL túi bao bì nhập kho = 0,2 × SL đạt thực tế

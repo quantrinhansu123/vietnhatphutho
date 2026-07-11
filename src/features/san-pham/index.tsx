@@ -12,6 +12,7 @@ import { productFieldClass } from './productFieldClass';
 import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType } from './types';
 import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber } from './types';
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseBulkProductNplComponentsExcel, parseProductNplComponentsExcel } from '../../utils/productNplComponentsExcel';
+import { waitForPrintImagesReady } from '../../utils/printReady';
 import { vietNhatLogoUrl } from '../../components/layout/constants';
 
 export type ProductViewTab = 'info' | 'components';
@@ -1585,7 +1586,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
   const handlePrintSelectedQr = () => {
     if (selectedProducts.length === 0) return;
-    window.print();
+    waitForPrintImagesReady().then(() => window.print());
   };
 
   const handleBulkDeleteProducts = async () => {

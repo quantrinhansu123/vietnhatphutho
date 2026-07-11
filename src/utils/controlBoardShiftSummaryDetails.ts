@@ -22,6 +22,7 @@ import {
   isWarehouseCoreExportItem,
   matchesShiftSummaryBucket,
   resolveMachineNvlLineMaterialType,
+  acceptanceRollQuantity,
   type ControlBoardShiftSummaryRow,
   type ShiftSummaryWarehouseMovement
 } from './controlBoardShiftSummary';
@@ -111,11 +112,11 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   },
   loiThucDung: {
     label: 'Lõi thực dùng',
-    source: 'Số lượng đạt thực tế × 1'
+    source: 'Số lượng đạt thực tế (cuộn nguyên) × 1'
   },
   tuiThucDung: {
     label: 'Túi thực dùng',
-    source: 'TL túi bao bì nhập kho (kg) = 0,2 × Số lượng đạt thực tế'
+    source: 'TL túi bao bì nhập kho (kg) = 0,2 × Số lượng đạt thực tế (cuộn nguyên)'
   },
   tongThucDung: {
     label: 'Tổng thực dùng',
@@ -914,17 +915,18 @@ export function getShiftSummaryDetail(input: {
 
     for (const report of input.acceptanceReports) {
       if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
-      if (report.so_luong === null || !Number.isFinite(report.so_luong) || report.so_luong <= 0) continue;
+      const rollQty = acceptanceRollQuantity(report);
+      if (rollQty <= 0) continue;
 
       // KL lõi = Số lượng cuộn thực tế × 1kg
-      total += report.so_luong;
+      total += rollQty;
       rows.push({
         gio: report.gio || '-',
         may: report.ten_may || report.ma_may || '-',
         lan: report.lan || '-',
         matHang: report.mat_hang || '-',
-        donVi: report.don_vi || '-',
-        khoiLuong: formatDetailNumber(report.so_luong, 3)
+        donVi: report.don_vi || 'cuộn',
+        khoiLuong: formatDetailNumber(rollQty, 0)
       });
     }
 
@@ -939,7 +941,7 @@ export function getShiftSummaryDetail(input: {
       ],
       rows,
       totalLabel: 'Tổng KL lõi (SL cuộn × 1kg)',
-      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3)
+      totalValue: formatShiftSummaryNumber(total, 0)
     };
   }
 
@@ -1089,8 +1091,8 @@ export function getShiftSummaryDetail(input: {
 
   if (metric === 'loiThucDung') {
     const row = input.summaryRow;
-    const slDatThucTeNhapKho = row?.slDatThucTeNhapKho ?? 0;
-    const tong = row?.loiThucDung ?? computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+    const slDatThucTeNhapKho = Math.round(row?.slDatThucTeNhapKho ?? 0);
+    const tong = Math.round(row?.loiThucDung ?? computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho));
 
     return {
       columns: [
@@ -1100,7 +1102,7 @@ export function getShiftSummaryDetail(input: {
       ],
       rows: [
         {
-          thanhPhan: 'Số lượng đạt thực tế',
+          thanhPhan: 'Số lượng đạt thực tế (cuộn)',
           dau: '×',
           giaTri: formatDetailNumber(slDatThucTeNhapKho, 0)
         },
@@ -1112,11 +1114,11 @@ export function getShiftSummaryDetail(input: {
         {
           thanhPhan: 'Lõi thực dùng',
           dau: '=',
-          giaTri: formatDetailNumber(tong, 3)
+          giaTri: formatDetailNumber(tong, 0)
         }
       ],
-      totalLabel: 'Lõi thực dùng = Số lượng đạt thực tế × 1',
-      totalValue: formatShiftSummaryNumber(tong, 3)
+      totalLabel: 'Lõi thực dùng = Số lượng đạt thực tế (cuộn nguyên) × 1',
+      totalValue: formatShiftSummaryNumber(tong, 0)
     };
   }
 
@@ -1245,15 +1247,16 @@ export function getShiftSummaryDetail(input: {
 
     for (const report of input.acceptanceReports ?? []) {
       if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
-      if (report.so_luong === null || !Number.isFinite(report.so_luong) || report.so_luong <= 0) continue;
+      const rollQty = acceptanceRollQuantity(report);
+      if (rollQty <= 0) continue;
 
-      total += report.so_luong;
+      total += rollQty;
       rows.push({
         rowKey: report.id || `${report.ngay}|${report.ca}|${report.mat_hang}`,
         recordId: report.id || '',
         may: report.ten_may || report.ma_may || '-',
         matHang: report.mat_hang || '-',
-        soLuong: formatDetailNumber(report.so_luong, 0),
+        soLuong: formatDetailNumber(rollQty, 0),
         donVi: report.don_vi || 'cuộn',
         gio: report.gio || '-'
       });
@@ -1268,16 +1271,16 @@ export function getShiftSummaryDetail(input: {
         { key: 'gio', label: 'Giờ' }
       ],
       rows,
-      totalLabel: 'Tổng SL đạt thực tế (báo cáo sản lượng)',
-      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 0),
+      totalLabel: 'Tổng SL đạt thực tế (báo cáo sản lượng — đơn vị cuộn)',
+      totalValue: formatShiftSummaryNumber(total, 0),
       showActions: false
     };
   }
 
   if (metric === 'tlLoiTpNhapKho') {
     const row = input.summaryRow;
-    const slDatThucTeNhapKho = row?.slDatThucTeNhapKho ?? 0;
-    const tong = row?.tlLoiTpNhapKho ?? computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho);
+    const slDatThucTeNhapKho = Math.round(row?.slDatThucTeNhapKho ?? 0);
+    const tong = Math.round(row?.tlLoiTpNhapKho ?? computeTlLoiTpNhapKhoFromShiftSummary(slDatThucTeNhapKho));
 
     return {
       columns: [
@@ -1287,7 +1290,7 @@ export function getShiftSummaryDetail(input: {
       ],
       rows: [
         {
-          thanhPhan: 'Số lượng đạt thực tế',
+          thanhPhan: 'Số lượng đạt thực tế (cuộn)',
           dau: '×',
           giaTri: formatDetailNumber(slDatThucTeNhapKho, 0)
         },
@@ -1299,11 +1302,11 @@ export function getShiftSummaryDetail(input: {
         {
           thanhPhan: 'TL lõi thành phẩm (kg)',
           dau: '=',
-          giaTri: formatDetailNumber(tong, 3)
+          giaTri: formatDetailNumber(tong, 0)
         }
       ],
-      totalLabel: 'TL lõi thành phẩm = 1 × SL đạt thực tế',
-      totalValue: formatShiftSummaryNumber(tong, 3)
+      totalLabel: 'TL lõi thành phẩm = 1 × SL đạt thực tế (cuộn nguyên)',
+      totalValue: formatShiftSummaryNumber(tong, 0)
     };
   }
 

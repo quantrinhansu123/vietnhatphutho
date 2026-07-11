@@ -27,6 +27,7 @@ import {
   normalizeMixingReport
 } from '../lib/mixingReportModel';
 import type { MixingRoundPhoto } from './MixingReportForm';
+import { waitForPrintImagesReady } from '../utils/printReady';
 import type { MixingReport } from './MixingReportForm';
 import MixingReportForm from './MixingReportForm';
 import {
@@ -338,11 +339,18 @@ export default function MixingReportListView({
 
   useEffect(() => {
     if (!pendingPrint || printReports.length === 0) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 120);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printReports]);
 
   useEffect(() => {

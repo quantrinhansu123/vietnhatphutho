@@ -4,6 +4,7 @@ import { Loader2, Printer, X } from 'lucide-react';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { formatMoney, formatNumber } from '../utils';
 import { formatVietnameseMoneyWords } from '../utils/vietnameseMoneyWords';
+import { waitForPrintImagesReady } from '../utils/printReady';
 export type WarehouseSlipPrintLine = {
   code: string;
   name: string;
@@ -543,12 +544,17 @@ export default function WarehouseSlipPrintModal({
   useEffect(() => {
     if (!pendingPrint || !data) return;
     document.body.classList.add('warehouse-slip-print-active');
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
-      document.body.classList.remove('warehouse-slip-print-active');
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+        document.body.classList.remove('warehouse-slip-print-active');
+      });
     }, 200);
     return () => {
+      cancelled = true;
       window.clearTimeout(timer);
       document.body.classList.remove('warehouse-slip-print-active');
     };

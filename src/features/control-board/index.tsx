@@ -11,6 +11,7 @@ import {
   matchesControlBoardDateRange,
   machineValueMatchesFilter
 } from '../../utils/controlBoardShiftSummary';
+import { waitForPrintImagesReady } from '../../utils/printReady';
 import { shiftNamesMatch } from '../../utils/shiftSettings';
 import { normalizeAcceptanceReports, type AcceptanceReport } from '../../components/AcceptanceReportForm';
 import { normalizeMixingReport } from '../../lib/mixingReportModel';
@@ -867,12 +868,19 @@ export function ControlBoardPanel({
   useEffect(() => {
     if (!pendingBatchPrint || printingBatchOrders.length === 0) return;
 
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingBatchPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingBatchPrint(false);
+      });
     }, 150);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingBatchPrint, printingBatchOrders]);
 
   useEffect(() => {

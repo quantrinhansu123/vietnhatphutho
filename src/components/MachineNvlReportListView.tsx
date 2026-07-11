@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Boxes, ChevronLeft, Eye, Loader2, PackageX, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { formatNumber } from '../utils';
+import { waitForPrintImagesReady } from '../utils/printReady';
 import {
   buildMachineNvlReportGroups,
   MACHINE_NVL_MATERIAL_TYPE_OPTIONS,
@@ -737,11 +738,18 @@ export default function MachineNvlReportListView({
 
   useEffect(() => {
     if (!pendingPrint || !printReport) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printReport]);
 
   useEffect(() => {

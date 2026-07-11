@@ -22,6 +22,7 @@ import {
 } from '../../utils/machineNvlReports';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeProductCodeKey } from '../san-pham/types';
+import { waitForPrintImagesReady } from '../../utils/printReady';
 import {
   findMachineByRef,
   machineSelectValue,
@@ -781,11 +782,18 @@ export function MachineNvlReportPanel({
 
   useEffect(() => {
     if (!pendingPrint || !printReport) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, printReport]);
 
   useEffect(() => {

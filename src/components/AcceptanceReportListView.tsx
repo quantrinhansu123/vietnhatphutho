@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ClipboardList, Loader2, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
+import { ChevronLeft, ClipboardList, Eye, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { vietNhatLogoUrl } from './layout/constants';
 import { formatNumber } from '../utils';
+import { waitForPrintImagesReady } from '../utils/printReady';
 import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips, sumByUnit } from './AcceptanceReportPrintSheet';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import { normalizeReportFromApi } from './AcceptanceReportForm';
@@ -23,6 +24,146 @@ type ProductNameOption = {
   code: string;
   name: string;
 };
+
+function formatPrintDate(iso: string) {
+  if (!iso) return '-';
+  const [year, month, day] = iso.split('-');
+  if (!year || !month || !day) return iso;
+  return `${day}/${month}/${year}`;
+}
+
+function AcceptanceReportDetailModal({
+  report,
+  productName,
+  onClose,
+  onEdit,
+  onViewImage
+}: {
+  report: AcceptanceReport;
+  productName: string;
+  onClose: () => void;
+  onEdit: (report: AcceptanceReport) => void;
+  onViewImage: (url: string) => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const machineLabel =
+    report.ten_may && report.ma_may && report.ten_may !== report.ma_may
+      ? `${report.ma_may} · ${report.ten_may}`
+      : report.ten_may || report.ma_may || '—';
+
+  const modal = (
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/45 p-0 sm:items-center sm:p-4">
+      <button type="button" className="absolute inset-0 cursor-default" aria-label="Đóng" onClick={onClose} />
+      <div className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-200 bg-gradient-to-r from-zinc-50 to-white px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#ef1b2d]">Chi tiết báo cáo sản lượng</p>
+            <h3 className="mt-0.5 truncate text-base font-black text-zinc-900 sm:text-lg">
+              {report.mat_hang || 'Mặt hàng'} · {report.ca || '—'}
+            </h3>
+            <p className="mt-1 font-mono text-[11px] font-semibold text-zinc-500">
+              {formatPrintDate(report.ngay)}
+              {report.gio ? ` · ${report.gio}` : ''}
+              {report.lan ? ` · Lần ${report.lan}` : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-800"
+            title="Đóng"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ngày</p>
+              <p className="mt-0.5 font-mono text-sm font-bold text-zinc-800">{formatPrintDate(report.ngay)}</p>
+            </div>
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ca</p>
+              <p className="mt-0.5 text-sm font-bold text-zinc-800">{report.ca || '—'}</p>
+            </div>
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Lần</p>
+              <p className="mt-0.5 text-sm font-bold text-zinc-800">{report.lan || '—'}</p>
+            </div>
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Giờ</p>
+              <p className="mt-0.5 font-mono text-sm font-bold text-zinc-800">{report.gio || '—'}</p>
+            </div>
+            <div className="col-span-2 rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2 sm:col-span-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Tổ / Máy</p>
+              <p className="mt-0.5 text-sm font-bold text-zinc-800">{machineLabel}</p>
+            </div>
+            <div className="col-span-2 rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2 sm:col-span-3">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Mặt hàng</p>
+              <p className="mt-0.5 text-sm font-bold text-zinc-800">{report.mat_hang || '—'}</p>
+              {productName ? <p className="mt-0.5 text-xs font-semibold text-zinc-500">{productName}</p> : null}
+            </div>
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">ĐVT</p>
+              <p className="mt-0.5 text-sm font-bold text-zinc-800">{report.don_vi || '—'}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Số lượng</p>
+              <p className="mt-0.5 font-mono text-sm font-black text-emerald-800">
+                {report.so_luong === null ? '—' : formatNumber(report.so_luong, 2)}
+              </p>
+            </div>
+          </div>
+
+          {report.hinh_anh ? (
+            <div className="mt-4">
+              <p className="mb-2 text-[9px] font-black uppercase tracking-wider text-zinc-400">Ảnh sản lượng</p>
+              <button
+                type="button"
+                onClick={() => onViewImage(report.hinh_anh)}
+                className="block overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 transition hover:border-[#ef1b2d]"
+                title="Xem ảnh lớn"
+              >
+                <img src={report.hinh_anh} alt="Ảnh sản lượng" className="max-h-64 w-full object-contain" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3 sm:px-5">
+          <button
+            type="button"
+            onClick={() => {
+              onEdit(report);
+              onClose();
+            }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 transition hover:bg-amber-100"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Sửa
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-zinc-300 bg-zinc-900 px-3 text-xs font-bold text-white transition hover:bg-zinc-800"
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : null;
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -111,6 +252,7 @@ export default function AcceptanceReportListView({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [productNameByCode, setProductNameByCode] = useState<Map<string, string>>(() => new Map());
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
+  const [viewingReport, setViewingReport] = useState<AcceptanceReport | null>(null);
 
   const dateGroups = useMemo(() => buildDateGroups(reports), [reports]);
   const allReportIds = useMemo(() => reports.map(report => report.id).filter(Boolean), [reports]);
@@ -125,11 +267,18 @@ export default function AcceptanceReportListView({
 
   useEffect(() => {
     if (!pendingPrint || activePrintSlips.length === 0) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingPrint(false);
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+      });
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingPrint, activePrintSlips]);
 
   useEffect(() => {
@@ -275,6 +424,17 @@ export default function AcceptanceReportListView({
 
   const renderReportActions = (report: AcceptanceReport) => (
     <div className="flex items-center justify-center gap-1">
+      <button
+        type="button"
+        onClick={() => setViewingReport(report)}
+        className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-black text-sky-700 transition hover:bg-sky-100"
+        title="Xem chi tiết"
+      >
+        <span className="inline-flex items-center gap-1">
+          <Eye className="h-3.5 w-3.5" />
+          Xem
+        </span>
+      </button>
       <button
         type="button"
         onClick={() => onEdit(report)}
@@ -518,6 +678,15 @@ export default function AcceptanceReportListView({
         activePrintSlips.length > 0 &&
         createPortal(<AcceptanceReportPrintBatch slips={activePrintSlips} />, document.body)}
       <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
+      {viewingReport ? (
+        <AcceptanceReportDetailModal
+          report={viewingReport}
+          productName={productNameByCode.get(normalizeProductKey(viewingReport.mat_hang)) || ''}
+          onClose={() => setViewingReport(null)}
+          onEdit={onEdit}
+          onViewImage={url => setViewingImage({ url, title: 'Ảnh báo cáo sản lượng' })}
+        />
+      ) : null}
     </div>
   );
 }
