@@ -136,7 +136,7 @@ export function parseMixingProductBom(raw: unknown): MixingBomItem[] {
       }
 
       const percent = parsePercentInput(String(record.phan_tram ?? record.percent ?? record.ty_le ?? ''));
-      if (!Number.isFinite(percent)) return null;
+      if (!Number.isFinite(percent) || percent <= 0) return null;
       return {
         code,
         name,

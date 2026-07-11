@@ -5,6 +5,11 @@ export type WeighingPreviewImage = {
   title: string;
 };
 
+function imageCrossOrigin(url: string): 'anonymous' | undefined {
+  // data:/blob: + crossOrigin có thể làm ảnh không hiện trên một số trình duyệt.
+  return /^https?:\/\//i.test(url) ? 'anonymous' : undefined;
+}
+
 export function WeighingImageThumbnail({
   url,
   alt,
@@ -25,7 +30,12 @@ export function WeighingImageThumbnail({
       title={title}
       className={className}
     >
-      <img src={url} alt={alt} crossOrigin="anonymous" className="h-full w-full object-cover" />
+      <img
+        src={url}
+        alt={alt}
+        crossOrigin={imageCrossOrigin(url)}
+        className="h-full w-full object-cover"
+      />
     </button>
   );
 }
@@ -59,7 +69,7 @@ export default function WeighingImagePreviewModal({
           <img
             src={image.url}
             alt={image.title}
-            crossOrigin="anonymous"
+            crossOrigin={imageCrossOrigin(image.url)}
             className="max-h-[calc(90vh-82px)] max-w-full rounded-lg object-contain"
           />
         </div>

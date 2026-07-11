@@ -47,7 +47,10 @@ alter table public.phieu_can_dinh_ki
   add column if not exists anh_url text,
   add column if not exists anh_public_id text,
   add column if not exists nghiem_thu text,
-  add column if not exists ghi_chu text;
+  add column if not exists ghi_chu text,
+  add column if not exists trong_luong_nhua_khong_mang text,
+  add column if not exists trong_luong_nhua_dau_nong text,
+  add column if not exists trong_luong_nhua_dinh_mang text;
 
 alter table public.phieu_can_dinh_ki enable row level security;
 
@@ -86,3 +89,6 @@ comment on column public.phieu_can_dinh_ki.anh_trong_luong_loi_url is 'Cloudinar
 comment on column public.phieu_can_dinh_ki.anh_url is 'Cloudinary secure URL cua anh can.';
 comment on column public.phieu_can_dinh_ki.nghiem_thu is 'Ket qua nghiem thu: Dat hoac Khong dat.';
 comment on column public.phieu_can_dinh_ki.ghi_chu is 'Ghi chu tung lan can.';
+comment on column public.phieu_can_dinh_ki.trong_luong_nhua_khong_mang is 'TL nhua khong mang (kg).';
+comment on column public.phieu_can_dinh_ki.trong_luong_nhua_dau_nong is 'TL nhua cuc dau nong (kg).';
+comment on column public.phieu_can_dinh_ki.trong_luong_nhua_dinh_mang is 'TL nhua dinh mang (kg).';

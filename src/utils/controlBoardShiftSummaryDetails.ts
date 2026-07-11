@@ -15,6 +15,9 @@ import {
   KHOI_LUONG_NHUA_TP_FACTOR,
   TL_LOI_TP_KG_PER_UNIT,
   TL_TUI_BAO_BI_KG_PER_UNIT,
+  TI_LE_LOI_HONG_DINH_MUC_PERCENT,
+  computeShiftSummarySanLuongMetrics,
+  formatShiftSummaryPercent,
   matchesShiftSummaryBucket,
   resolveMachineNvlLineMaterialType,
   type ControlBoardShiftSummaryRow,
@@ -67,7 +70,15 @@ export type ShiftSummaryMetric =
   | 'tlNhuaDinhMangLoiHong'
   | 'tlMangLoiHong'
   | 'soCuonLoiDinhHangHong'
-  | 'tongTrongLuongLoiHong';
+  | 'tongTrongLuongLoiHong'
+  | 'tongTrongLuongNhapKho'
+  | 'chenhLechTrongLuongNhapXuat'
+  | 'tiLeChenhLechTrongLuong'
+  | 'tiLeLoiHongDinhMuc'
+  | 'tiLeLoiHong'
+  | 'lechLoiHongVsDinhMuc'
+  | 'giaTriLoLaiNhua'
+  | 'giaTriLoLaiMang';
 
 export const SHIFT_SUMMARY_METRIC_META: Record<
   ShiftSummaryMetric,
@@ -159,7 +170,39 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   tlNhuaDinhMangLoiHong: { label: 'TL Nhựa lỗi dính màng lỗi hỏng (Kg)', source: 'Báo cáo lỗi hỏng' },
   tlMangLoiHong: { label: 'TL Màng lỗi hỏng (kg)', source: 'Báo cáo lỗi hỏng' },
   soCuonLoiDinhHangHong: { label: 'Số cuộn lõi dính trong hàng hỏng (Kg)', source: 'Báo cáo lỗi hỏng' },
-  tongTrongLuongLoiHong: { label: 'Tổng trọng lượng lỗi hỏng', source: 'Báo cáo lỗi hỏng' }
+  tongTrongLuongLoiHong: { label: 'Tổng trọng lượng lỗi hỏng', source: 'Báo cáo lỗi hỏng' },
+  tongTrongLuongNhapKho: {
+    label: 'Tổng trọng lượng nhập kho',
+    source: 'Tổng TP nhập kho = TL nhựa TP + TL màng TP + TL túi bao bì + TL lõi TP'
+  },
+  chenhLechTrongLuongNhapXuat: {
+    label: 'Chênh lệch TL nhập − xuất kho',
+    source: 'Tổng trọng lượng nhập kho − Tổng trọng lượng xuất kho'
+  },
+  tiLeChenhLechTrongLuong: {
+    label: 'Tỉ lệ chênh lệch trọng lượng',
+    source: '(Chênh lệch TL nhập − xuất / Tổng trọng lượng xuất kho) × 100%'
+  },
+  tiLeLoiHongDinhMuc: {
+    label: 'Tỉ lệ lỗi hỏng định mức',
+    source: `Định mức cố định = ${TI_LE_LOI_HONG_DINH_MUC_PERCENT}%`
+  },
+  tiLeLoiHong: {
+    label: 'Tỉ lệ lỗi hỏng',
+    source: '(Tổng trọng lượng lỗi hỏng / Tổng trọng lượng nhập kho) × 100%'
+  },
+  lechLoiHongVsDinhMuc: {
+    label: 'Lệch lỗi hỏng so với định mức',
+    source: 'Tỉ lệ lỗi hỏng − Tỉ lệ lỗi hỏng định mức'
+  },
+  giaTriLoLaiNhua: {
+    label: 'Giá trị lỗ/lãi nhựa',
+    source: 'Chênh lệch nhựa = Tổng nhựa thực dùng − KL nhựa TP − HH nhựa'
+  },
+  giaTriLoLaiMang: {
+    label: 'Giá trị lỗ/lãi màng',
+    source: 'Tổng màng thực dùng − TL màng thành phẩm − HH màng'
+  }
 };
 
 export type ShiftSummaryDetailColumn = {
@@ -269,6 +312,12 @@ function warehouseSlipTypeLabel(type: 'nhap' | 'xuat') {
 function formatDetailNumber(value: number | null | undefined, fractionDigits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '-';
   return formatNumber(value, fractionDigits);
+}
+
+// Không làm tròn: luôn hiện tối thiểu 4 số thập phân, giữ thêm nếu hệ số gốc có nhiều số hơn.
+function formatDetailNumberExact(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+  return new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 4, maximumFractionDigits: 20 }).format(value);
 }
 
 export function getShiftSummaryDetail(input: {
@@ -585,6 +634,16 @@ export function getShiftSummaryDetail(input: {
         const lineTotal = computeMachineNvlLineKg(line, 'cuoi_ca', resolveLineKgFactor);
         if (lineTotal <= 0 && !line.maNvl && !line.tenNvl) continue;
 
+        const isKg = isKgUnit(line.donVi || '');
+        const hasManualFactor =
+          line.trongLuongQuyDoiKg !== null && line.trongLuongQuyDoiKg !== undefined && line.trongLuongQuyDoiKg > 0;
+        let heSo = isKg ? 1 : resolveLineKgFactor(line.donVi || '', line.maNvl || '', line.trongLuongQuyDoiKg);
+        let heSoNguon = isKg ? 'Đơn vị kg' : hasManualFactor ? 'Nhập tay (kiểm kê)' : heSo !== null ? 'Danh mục NVL' : '';
+        if ((heSo === null || heSo <= 0) && (wanted === 'loi' || wanted === 'bao_bi')) {
+          heSo = TL_LOI_TP_KG_PER_UNIT;
+          heSoNguon = 'Mặc định 1kg/đv';
+        }
+
         total += lineTotal;
         rows.push({
           rowKey: `${report.id}|${line.stt}|${line.maNvl}`,
@@ -603,6 +662,8 @@ export function getShiftSummaryDetail(input: {
                 (line.soLuongTonNgoai ?? 0),
             3
           ),
+          heSo: heSo !== null ? formatDetailNumberExact(heSo) : '-',
+          heSoNguon: heSoNguon || '-',
           tongTon: formatDetailNumber(lineTotal, 3)
         });
       }
@@ -623,6 +684,8 @@ export function getShiftSummaryDetail(input: {
         { key: 'loaiVatTu', label: 'Loại' },
         { key: 'donVi', label: 'ĐVT' },
         { key: 'soLuongTon', label: 'SL tồn', align: 'right', mono: true },
+        { key: 'heSo', label: 'Hệ số (kg/đv)', align: 'right', mono: true },
+        { key: 'heSoNguon', label: 'Nguồn hệ số' },
         { key: 'tongTon', label: 'Tổng (kg)', align: 'right', mono: true, accent: true }
       ],
       rows,
@@ -1331,6 +1394,193 @@ export function getShiftSummaryDetail(input: {
     };
   }
 
+  if (
+    metric === 'tongTrongLuongNhapKho' ||
+    metric === 'chenhLechTrongLuongNhapXuat' ||
+    metric === 'tiLeChenhLechTrongLuong' ||
+    metric === 'tiLeLoiHongDinhMuc' ||
+    metric === 'tiLeLoiHong' ||
+    metric === 'lechLoiHongVsDinhMuc' ||
+    metric === 'giaTriLoLaiNhua' ||
+    metric === 'giaTriLoLaiMang'
+  ) {
+    const row = input.summaryRow;
+    const metrics = computeShiftSummarySanLuongMetrics({
+      tongTpNhapKho: row?.tongTrongLuongNhapKho ?? row?.tongTpNhapKho ?? 0,
+      tongTrongLuongXuatKho: row?.tongTrongLuongXuatKho ?? 0,
+      tongTrongLuongLoiHong: row?.tongTrongLuongLoiHong ?? 0,
+      chenhLechNhua: row?.chenhLech ?? row?.giaTriLoLaiNhua ?? 0,
+      tongMangThucDung: row?.tongMangThucDung ?? 0,
+      tlMangTpNhapKho: row?.tlMangTpNhapKho ?? 0,
+      hangHongMang: row?.hangHongMang ?? 0,
+      tiLeLoiHongDinhMuc: row?.tiLeLoiHongDinhMuc ?? TI_LE_LOI_HONG_DINH_MUC_PERCENT
+    });
+    const tongNhap = metrics.tongTrongLuongNhapKho;
+    const tongXuat = roundNormWeight(row?.tongTrongLuongXuatKho ?? 0);
+    const tongLoiHong = roundNormWeight(row?.tongTrongLuongLoiHong ?? 0);
+    const tlNhuaTp = roundNormWeight(row?.tlNhuaTpNhapKho ?? 0);
+    const tlMangTp = roundNormWeight(row?.tlMangTpNhapKho ?? 0);
+    const tlTui = roundNormWeight(row?.tlTuiBaoBiNhapKho ?? 0);
+    const tlLoi = roundNormWeight(row?.tlLoiTpNhapKho ?? 0);
+    const tongNhuaThucDung = roundNormWeight(row?.tongNhuaThucDung ?? 0);
+    const khoiLuongNhuaTp = roundNormWeight(row?.khoiLuongNhuaTp ?? 0);
+    const hangHongNhua = roundNormWeight(row?.hangHongNhua ?? 0);
+    const tongMangThucDung = roundNormWeight(row?.tongMangThucDung ?? 0);
+    const hangHongMang = roundNormWeight(row?.hangHongMang ?? 0);
+
+    const formulaColumns = [
+      { key: 'thanhPhan', label: 'Thành phần' },
+      { key: 'dau', label: '' },
+      { key: 'giaTri', label: 'Giá trị', align: 'right' as const, mono: true, accent: true }
+    ];
+
+    if (metric === 'tongTrongLuongNhapKho') {
+      return {
+        columns: formulaColumns,
+        rows: [
+          { thanhPhan: 'TL nhựa thành phẩm (kg)', dau: '', giaTri: formatDetailNumber(tlNhuaTp, 3) },
+          { thanhPhan: 'TL màng thành phẩm (kg)', dau: '+', giaTri: formatDetailNumber(tlMangTp, 3) },
+          { thanhPhan: 'TL túi bao bì (kg)', dau: '+', giaTri: formatDetailNumber(tlTui, 3) },
+          { thanhPhan: 'TL lõi thành phẩm (kg)', dau: '+', giaTri: formatDetailNumber(tlLoi, 3) },
+          { thanhPhan: 'Tổng trọng lượng nhập kho', dau: '=', giaTri: formatDetailNumber(tongNhap, 3) }
+        ],
+        totalLabel: 'Tổng TL nhập kho = TL nhựa TP + TL màng TP + TL túi + TL lõi TP',
+        totalValue: formatShiftSummaryNumber(tongNhap, 3)
+      };
+    }
+
+    if (metric === 'chenhLechTrongLuongNhapXuat') {
+      return {
+        columns: formulaColumns,
+        rows: [
+          { thanhPhan: 'Tổng trọng lượng nhập kho', dau: '', giaTri: formatDetailNumber(tongNhap, 3) },
+          { thanhPhan: 'Tổng trọng lượng xuất kho', dau: '−', giaTri: formatDetailNumber(tongXuat, 3) },
+          {
+            thanhPhan: 'Chênh lệch TL nhập − xuất',
+            dau: '=',
+            giaTri: formatDetailNumber(metrics.chenhLechTrongLuongNhapXuat, 3)
+          }
+        ],
+        totalLabel: 'Chênh lệch = Tổng TL nhập kho − Tổng TL xuất kho',
+        totalValue: formatShiftSummaryNumber(metrics.chenhLechTrongLuongNhapXuat, 3)
+      };
+    }
+
+    if (metric === 'tiLeChenhLechTrongLuong') {
+      return {
+        columns: formulaColumns,
+        rows: [
+          {
+            thanhPhan: 'Chênh lệch TL nhập − xuất',
+            dau: '',
+            giaTri: formatDetailNumber(metrics.chenhLechTrongLuongNhapXuat, 3)
+          },
+          { thanhPhan: 'Tổng trọng lượng xuất kho', dau: '÷', giaTri: formatDetailNumber(tongXuat, 3) },
+          { thanhPhan: '× 100%', dau: '', giaTri: '100%' },
+          {
+            thanhPhan: 'Tỉ lệ chênh lệch trọng lượng',
+            dau: '=',
+            giaTri: formatShiftSummaryPercent(metrics.tiLeChenhLechTrongLuong)
+          }
+        ],
+        totalLabel: 'Tỉ lệ CL = (Chênh lệch TL nhập − xuất / Tổng TL xuất kho) × 100%',
+        totalValue: formatShiftSummaryPercent(metrics.tiLeChenhLechTrongLuong)
+      };
+    }
+
+    if (metric === 'tiLeLoiHongDinhMuc') {
+      return {
+        columns: formulaColumns,
+        rows: [
+          {
+            thanhPhan: 'Tỉ lệ lỗi hỏng định mức',
+            dau: '=',
+            giaTri: formatShiftSummaryPercent(metrics.tiLeLoiHongDinhMuc)
+          }
+        ],
+        totalLabel: `Định mức cố định = ${TI_LE_LOI_HONG_DINH_MUC_PERCENT}%`,
+        totalValue: formatShiftSummaryPercent(metrics.tiLeLoiHongDinhMuc)
+      };
+    }
+
+    if (metric === 'tiLeLoiHong') {
+      return {
+        columns: formulaColumns,
+        rows: [
+          { thanhPhan: 'Tổng trọng lượng lỗi hỏng', dau: '', giaTri: formatDetailNumber(tongLoiHong, 3) },
+          { thanhPhan: 'Tổng trọng lượng nhập kho', dau: '÷', giaTri: formatDetailNumber(tongNhap, 3) },
+          { thanhPhan: '× 100%', dau: '', giaTri: '100%' },
+          {
+            thanhPhan: 'Tỉ lệ lỗi hỏng',
+            dau: '=',
+            giaTri: formatShiftSummaryPercent(metrics.tiLeLoiHong)
+          }
+        ],
+        totalLabel: 'Tỉ lệ lỗi hỏng = (Tổng TL lỗi hỏng / Tổng TL nhập kho) × 100%',
+        totalValue: formatShiftSummaryPercent(metrics.tiLeLoiHong)
+      };
+    }
+
+    if (metric === 'lechLoiHongVsDinhMuc') {
+      return {
+        columns: formulaColumns,
+        rows: [
+          {
+            thanhPhan: 'Tỉ lệ lỗi hỏng',
+            dau: '',
+            giaTri: formatShiftSummaryPercent(metrics.tiLeLoiHong)
+          },
+          {
+            thanhPhan: 'Tỉ lệ lỗi hỏng định mức',
+            dau: '−',
+            giaTri: formatShiftSummaryPercent(metrics.tiLeLoiHongDinhMuc)
+          },
+          {
+            thanhPhan: 'Lệch so với định mức',
+            dau: '=',
+            giaTri: formatShiftSummaryPercent(metrics.lechLoiHongVsDinhMuc)
+          }
+        ],
+        totalLabel: 'Lệch LH = Tỉ lệ lỗi hỏng − Tỉ lệ lỗi hỏng định mức',
+        totalValue: formatShiftSummaryPercent(metrics.lechLoiHongVsDinhMuc)
+      };
+    }
+
+    if (metric === 'giaTriLoLaiNhua') {
+      return {
+        columns: formulaColumns,
+        rows: [
+          { thanhPhan: 'Tổng nhựa thực dùng', dau: '', giaTri: formatDetailNumber(tongNhuaThucDung, 3) },
+          { thanhPhan: 'KL nhựa TP', dau: '−', giaTri: formatDetailNumber(khoiLuongNhuaTp, 3) },
+          { thanhPhan: 'HH nhựa', dau: '−', giaTri: formatDetailNumber(hangHongNhua, 3) },
+          {
+            thanhPhan: 'Giá trị lỗ/lãi nhựa',
+            dau: '=',
+            giaTri: formatDetailNumber(metrics.giaTriLoLaiNhua, 3)
+          }
+        ],
+        totalLabel: 'Lỗ/lãi nhựa = Tổng nhựa thực dùng − KL nhựa TP − HH nhựa',
+        totalValue: formatShiftSummaryNumber(metrics.giaTriLoLaiNhua, 3)
+      };
+    }
+
+    return {
+      columns: formulaColumns,
+      rows: [
+        { thanhPhan: 'Tổng màng thực dùng', dau: '', giaTri: formatDetailNumber(tongMangThucDung, 3) },
+        { thanhPhan: 'TL màng thành phẩm', dau: '−', giaTri: formatDetailNumber(tlMangTp, 3) },
+        { thanhPhan: 'HH màng', dau: '−', giaTri: formatDetailNumber(hangHongMang, 3) },
+        {
+          thanhPhan: 'Giá trị lỗ/lãi màng',
+          dau: '=',
+          giaTri: formatDetailNumber(metrics.giaTriLoLaiMang, 3)
+        }
+      ],
+      totalLabel: 'Lỗ/lãi màng = Tổng màng thực dùng − TL màng TP − HH màng',
+      totalValue: formatShiftSummaryNumber(metrics.giaTriLoLaiMang, 3)
+    };
+  }
+
   return {
     columns: [],
     rows: [],
@@ -1362,9 +1612,18 @@ export function isShiftSummaryMetricClickable(
     metric === 'tlTuiBaoBiNhapKho' ||
     metric === 'tlLoiTpNhapKho' ||
     metric === 'tongTpNhapKho' ||
-    metric === 'tongTrongLuongLoiHong'
+    metric === 'tongTrongLuongLoiHong' ||
+    metric === 'tongTrongLuongNhapKho' ||
+    metric === 'chenhLechTrongLuongNhapXuat' ||
+    metric === 'tiLeChenhLechTrongLuong' ||
+    metric === 'tiLeLoiHongDinhMuc' ||
+    metric === 'tiLeLoiHong' ||
+    metric === 'lechLoiHongVsDinhMuc' ||
+    metric === 'giaTriLoLaiNhua' ||
+    metric === 'giaTriLoLaiMang'
   ) {
-    return value !== 0;
+    // Cho phép số âm / 0 (vd chênh lệch, tỉ lệ) vẫn bấm xem công thức.
+    return true;
   }
   return value > 0;
 }

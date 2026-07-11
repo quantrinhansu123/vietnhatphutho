@@ -14,7 +14,11 @@ import {
 import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
-import { openCameraImagePicker } from '../utils/cameraCapture';
+import WeighingImagePreviewModal, {
+  WeighingImageThumbnail,
+  type WeighingPreviewImage
+} from './WeighingImagePreviewModal';
+import { CAMERA_IMAGE_INPUT_PROPS, compressImageDataUrl } from '../utils/cameraCapture';
 import { showAppToast } from '../lib/appToast';
 
 const productLineGridClass =
@@ -312,6 +316,8 @@ export default function AcceptanceReportForm({
   const [message, setMessage] = useState('');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [highlightLineId, setHighlightLineId] = useState('');
+  const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -649,7 +655,13 @@ export default function AcceptanceReportForm({
     setMessage('');
     setIsUploading(true);
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const rawDataUrl = await fileToDataUrl(file);
+      let dataUrl = rawDataUrl;
+      try {
+        dataUrl = await compressImageDataUrl(rawDataUrl);
+      } catch {
+        dataUrl = rawDataUrl;
+      }
       setForm(prev => ({ ...prev, imagePreview: dataUrl, hinh_anh: dataUrl, hinh_anh_public_id: '' }));
       try {
         const uploaded = await uploadImage(dataUrl);
@@ -673,9 +685,7 @@ export default function AcceptanceReportForm({
 
   const pickImage = () => {
     if (isUploading) return;
-    openCameraImagePicker(file => {
-      void handleImagePick(file);
-    });
+    cameraInputRef.current?.click();
   };
 
   const resolveImageForSave = async () => {
@@ -684,7 +694,13 @@ export default function AcceptanceReportForm({
     if (!source.startsWith('data:')) {
       return { hinh_anh: source, hinh_anh_public_id: form.hinh_anh_public_id || '' };
     }
-    const uploaded = await uploadImage(source);
+    let dataUrl = source;
+    try {
+      dataUrl = await compressImageDataUrl(source);
+    } catch {
+      dataUrl = source;
+    }
+    const uploaded = await uploadImage(dataUrl);
     return { hinh_anh: uploaded.imageUrl, hinh_anh_public_id: uploaded.imagePublicId };
   };
 
@@ -1067,6 +1083,16 @@ export default function AcceptanceReportForm({
           <div className="mt-4 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ảnh chung *</span>
             <div className="flex items-center gap-2">
+              <input
+                ref={cameraInputRef}
+                {...CAMERA_IMAGE_INPUT_PROPS}
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0] || null;
+                  e.target.value = '';
+                  void handleImagePick(file);
+                }}
+              />
               <button
                 type="button"
                 onClick={pickImage}
@@ -1080,17 +1106,15 @@ export default function AcceptanceReportForm({
                 {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                 {isUploading ? 'Đang xử lý ảnh...' : form.imagePreview ? 'Chụp lại ảnh' : 'Chụp ảnh'}
               </button>
-              {form.imagePreview && (
-                <a
-                  href={form.imagePreview}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-emerald-200 ring-2 ring-emerald-100"
+              {form.imagePreview ? (
+                <WeighingImageThumbnail
+                  url={form.imagePreview}
+                  alt="Ảnh chung"
                   title="Ảnh đã chụp — bấm để xem"
-                >
-                  <img src={form.imagePreview} alt="Ảnh chung" className="h-full w-full object-cover" />
-                </a>
-              )}
+                  onView={() => setViewingImage({ url: form.imagePreview, title: 'Ảnh báo cáo sản lượng' })}
+                  className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-emerald-200 ring-2 ring-emerald-100"
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -1128,6 +1152,7 @@ export default function AcceptanceReportForm({
         onScan={handleQrScan}
         getConfirmMessage={getQrConfirmMessage}
       />
+      <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
     </div>
   );
 }

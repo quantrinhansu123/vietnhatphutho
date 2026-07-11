@@ -6,6 +6,10 @@ import { formatNumber } from '../utils';
 import { AcceptanceReportPrintBatch, buildAcceptancePrintSlips, sumByUnit } from './AcceptanceReportPrintSheet';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import { normalizeReportFromApi } from './AcceptanceReportForm';
+import WeighingImagePreviewModal, {
+  WeighingImageThumbnail,
+  type WeighingPreviewImage
+} from './WeighingImagePreviewModal';
 
 const inputClass =
   'h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
@@ -107,6 +111,7 @@ export default function AcceptanceReportListView({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [isRemappingShift, setIsRemappingShift] = useState(false);
   const [productNameByCode, setProductNameByCode] = useState<Map<string, string>>(() => new Map());
+  const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
 
   const dateGroups = useMemo(() => buildDateGroups(reports), [reports]);
   const allReportIds = useMemo(() => reports.map(report => report.id).filter(Boolean), [reports]);
@@ -501,14 +506,15 @@ export default function AcceptanceReportListView({
                             </td>
                             <td className="px-3 py-2">
                               {report.hinh_anh ? (
-                                <a
-                                  href={report.hinh_anh}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="block h-10 w-10 overflow-hidden rounded-lg border border-zinc-200"
-                                >
-                                  <img src={report.hinh_anh} alt="Sản lượng" className="h-full w-full object-cover" />
-                                </a>
+                                <WeighingImageThumbnail
+                                  url={report.hinh_anh}
+                                  alt="Sản lượng"
+                                  title="Xem ảnh sản lượng"
+                                  onView={() =>
+                                    setViewingImage({ url: report.hinh_anh, title: 'Ảnh báo cáo sản lượng' })
+                                  }
+                                  className="block h-10 w-10 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50"
+                                />
                               ) : (
                                 '-'
                               )}
@@ -561,6 +567,7 @@ export default function AcceptanceReportListView({
       {pendingPrint &&
         activePrintSlips.length > 0 &&
         createPortal(<AcceptanceReportPrintBatch slips={activePrintSlips} />, document.body)}
+      <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
     </div>
   );
 }

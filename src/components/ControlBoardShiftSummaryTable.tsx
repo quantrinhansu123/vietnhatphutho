@@ -1142,14 +1142,14 @@ export default function ControlBoardShiftSummaryTable({
                   <tr key={row.key} className="hover:bg-indigo-50/40">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{formatShiftSummaryKg(row.tongTrongLuongNhapKho, 3)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-orange-700">{formatShiftSummaryKg(row.chenhLechTrongLuongNhapXuat, 3)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-sky-700">{formatShiftSummaryPercent(row.tiLeChenhLechTrongLuong)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-zinc-700">{formatShiftSummaryPercent(row.tiLeLoiHongDinhMuc)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-rose-700">{formatShiftSummaryPercent(row.tiLeLoiHong)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">{formatShiftSummaryPercent(row.lechLoiHongVsDinhMuc)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">{formatShiftSummaryKg(row.giaTriLoLaiNhua, 3)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-fuchsia-800">{formatShiftSummaryKg(row.giaTriLoLaiMang, 3)}</td>
+                    <SummaryValueCell row={row} metric="tongTrongLuongNhapKho" formatted={formatShiftSummaryKg(row.tongTrongLuongNhapKho, 3)} className="px-3 py-2 text-right font-mono font-bold text-emerald-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="chenhLechTrongLuongNhapXuat" formatted={formatShiftSummaryKg(row.chenhLechTrongLuongNhapXuat, 3)} className="px-3 py-2 text-right font-mono font-bold text-orange-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tiLeChenhLechTrongLuong" formatted={formatShiftSummaryPercent(row.tiLeChenhLechTrongLuong)} className="px-3 py-2 text-right font-mono font-bold text-sky-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tiLeLoiHongDinhMuc" formatted={formatShiftSummaryPercent(row.tiLeLoiHongDinhMuc)} className="px-3 py-2 text-right font-mono font-bold text-zinc-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tiLeLoiHong" formatted={formatShiftSummaryPercent(row.tiLeLoiHong)} className="px-3 py-2 text-right font-mono font-bold text-rose-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="lechLoiHongVsDinhMuc" formatted={formatShiftSummaryPercent(row.lechLoiHongVsDinhMuc)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="giaTriLoLaiNhua" formatted={formatShiftSummaryKg(row.giaTriLoLaiNhua, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-800" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="giaTriLoLaiMang" formatted={formatShiftSummaryKg(row.giaTriLoLaiMang, 3)} className="px-3 py-2 text-right font-mono font-bold text-fuchsia-800" onOpen={openDetail} />
                     <td className="px-3 py-2 min-w-[180px]">
                       <textarea
                         value={phanTichDanhGiaMap[row.key] || ''}
