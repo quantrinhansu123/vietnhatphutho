@@ -259,9 +259,9 @@ export default function ControlBoardShiftSummaryTable({
   };
 
   const sanLuongTotals = computeShiftSummarySanLuongMetrics({
-    tongTpNhapKho: totals.tongTrongLuongNhapKho || totals.tongTpNhapKho,
-    tongTrongLuongXuatKho: totals.tongTrongLuongXuatKho,
+    tongTpNhapKho: totals.tongTpNhapKho,
     tongTrongLuongLoiHong: totals.tongTrongLuongLoiHong,
+    tongThucDung: totals.tongThucDung,
     chenhLechNhua: totals.chenhLech,
     tongMangThucDung: totals.tongMangThucDung,
     tlMangTpNhapKho: totals.tlMangTpNhapKho,

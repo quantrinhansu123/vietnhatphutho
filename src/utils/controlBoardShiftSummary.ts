@@ -103,15 +103,15 @@ export type ControlBoardShiftSummaryRow = {
   tlMangLoiHong: number;
   soCuonLoiDinhHangHong: number;
   tongTrongLuongLoiHong: number;
-  /** Tổng trọng lượng nhập kho = Tổng TP nhập kho */
+  /** Tổng trọng lượng nhập kho = Tổng TP nhập kho + Tổng trọng lượng lỗi hỏng */
   tongTrongLuongNhapKho: number;
-  /** Chênh lệch = nhập kho − xuất kho */
+  /** Chênh lệch = Tổng trọng lượng nhập kho − Tổng thực dùng */
   chenhLechTrongLuongNhapXuat: number;
-  /** Tỉ lệ chênh lệch trọng lượng (%) = (nhập − xuất) / xuất × 100 */
+  /** Tỉ lệ chênh lệch trọng lượng (%) = Chênh lệch / Tổng trọng lượng nhập kho × 100 */
   tiLeChenhLechTrongLuong: number;
   /** Tỉ lệ lỗi hỏng định mức (%) */
   tiLeLoiHongDinhMuc: number;
-  /** Tỉ lệ lỗi hỏng thực tế (%) */
+  /** Tỉ lệ lỗi hỏng thực tế (%) = TL lỗi hỏng / (Tổng TP nhập kho + TL lỗi hỏng) × 100 */
   tiLeLoiHong: number;
   /** Lệch lỗi hỏng so với định mức (điểm %) */
   lechLoiHongVsDinhMuc: number;
@@ -195,20 +195,22 @@ export function computePercentRatio(numerator: number, denominator: number) {
 
 export function computeShiftSummarySanLuongMetrics(input: {
   tongTpNhapKho: number;
-  tongTrongLuongXuatKho: number;
   tongTrongLuongLoiHong: number;
+  tongThucDung: number;
   chenhLechNhua: number;
   tongMangThucDung: number;
   tlMangTpNhapKho: number;
   hangHongMang: number;
   tiLeLoiHongDinhMuc?: number;
 }) {
-  const tongTrongLuongNhapKho = roundNormWeight(input.tongTpNhapKho);
-  const tongTrongLuongXuatKho = roundNormWeight(input.tongTrongLuongXuatKho);
-  const chenhLechTrongLuongNhapXuat = roundNormWeight(tongTrongLuongNhapKho - tongTrongLuongXuatKho);
-  const tiLeChenhLechTrongLuong = computePercentRatio(chenhLechTrongLuongNhapXuat, tongTrongLuongXuatKho);
+  const tongTpNhapKho = roundNormWeight(input.tongTpNhapKho);
+  const tongTrongLuongLoiHong = roundNormWeight(input.tongTrongLuongLoiHong);
+  const tongTrongLuongNhapKho = roundNormWeight(tongTpNhapKho + tongTrongLuongLoiHong);
+  const tongThucDung = roundNormWeight(input.tongThucDung);
+  const chenhLechTrongLuongNhapXuat = roundNormWeight(tongTrongLuongNhapKho - tongThucDung);
+  const tiLeChenhLechTrongLuong = computePercentRatio(chenhLechTrongLuongNhapXuat, tongTrongLuongNhapKho);
   const tiLeLoiHongDinhMuc = input.tiLeLoiHongDinhMuc ?? TI_LE_LOI_HONG_DINH_MUC_PERCENT;
-  const tiLeLoiHong = computePercentRatio(input.tongTrongLuongLoiHong, tongTrongLuongNhapKho);
+  const tiLeLoiHong = computePercentRatio(tongTrongLuongLoiHong, tongTrongLuongNhapKho);
   const lechLoiHongVsDinhMuc = roundNormWeight(tiLeLoiHong - tiLeLoiHongDinhMuc);
   const giaTriLoLaiNhua = roundNormWeight(input.chenhLechNhua);
   const giaTriLoLaiMang = roundNormWeight(
@@ -905,8 +907,8 @@ export function buildControlBoardShiftSummary(input: {
       const chenhLech = roundNormWeight(tongNhuaThucDung - khoiLuongNhuaTp - hangHongNhua);
       const sanLuongMetrics = computeShiftSummarySanLuongMetrics({
         tongTpNhapKho,
-        tongTrongLuongXuatKho,
         tongTrongLuongLoiHong,
+        tongThucDung,
         chenhLechNhua: chenhLech,
         tongMangThucDung,
         tlMangTpNhapKho,

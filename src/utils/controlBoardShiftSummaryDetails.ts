@@ -173,15 +173,15 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   tongTrongLuongLoiHong: { label: 'Tổng trọng lượng lỗi hỏng', source: 'Báo cáo lỗi hỏng' },
   tongTrongLuongNhapKho: {
     label: 'Tổng trọng lượng nhập kho',
-    source: 'Tổng TP nhập kho = TL nhựa TP + TL màng TP + TL túi bao bì + TL lõi TP'
+    source: 'Tổng TP nhập kho + Tổng trọng lượng lỗi hỏng'
   },
   chenhLechTrongLuongNhapXuat: {
     label: 'Chênh lệch TL nhập − xuất kho',
-    source: 'Tổng trọng lượng nhập kho − Tổng trọng lượng xuất kho'
+    source: 'Tổng trọng lượng nhập kho − Tổng thực dùng'
   },
   tiLeChenhLechTrongLuong: {
     label: 'Tỉ lệ chênh lệch trọng lượng',
-    source: '(Chênh lệch TL nhập − xuất / Tổng trọng lượng xuất kho) × 100%'
+    source: 'Chênh lệch TL nhập − xuất / Tổng trọng lượng nhập kho × 100%'
   },
   tiLeLoiHongDinhMuc: {
     label: 'Tỉ lệ lỗi hỏng định mức',
@@ -189,7 +189,8 @@ export const SHIFT_SUMMARY_METRIC_META: Record<
   },
   tiLeLoiHong: {
     label: 'Tỉ lệ lỗi hỏng',
-    source: '(Tổng trọng lượng lỗi hỏng / Tổng trọng lượng nhập kho) × 100%'
+    source:
+      'Tổng trọng lượng lỗi hỏng / (Tổng TP nhập kho + Tổng trọng lượng lỗi hỏng) × 100%'
   },
   lechLoiHongVsDinhMuc: {
     label: 'Lệch lỗi hỏng so với định mức',
@@ -1405,10 +1406,11 @@ export function getShiftSummaryDetail(input: {
     metric === 'giaTriLoLaiMang'
   ) {
     const row = input.summaryRow;
+    const tongTpNhapKho = roundNormWeight(row?.tongTpNhapKho ?? 0);
     const metrics = computeShiftSummarySanLuongMetrics({
-      tongTpNhapKho: row?.tongTrongLuongNhapKho ?? row?.tongTpNhapKho ?? 0,
-      tongTrongLuongXuatKho: row?.tongTrongLuongXuatKho ?? 0,
+      tongTpNhapKho,
       tongTrongLuongLoiHong: row?.tongTrongLuongLoiHong ?? 0,
+      tongThucDung: row?.tongThucDung ?? 0,
       chenhLechNhua: row?.chenhLech ?? row?.giaTriLoLaiNhua ?? 0,
       tongMangThucDung: row?.tongMangThucDung ?? 0,
       tlMangTpNhapKho: row?.tlMangTpNhapKho ?? 0,
@@ -1416,17 +1418,14 @@ export function getShiftSummaryDetail(input: {
       tiLeLoiHongDinhMuc: row?.tiLeLoiHongDinhMuc ?? TI_LE_LOI_HONG_DINH_MUC_PERCENT
     });
     const tongNhap = metrics.tongTrongLuongNhapKho;
-    const tongXuat = roundNormWeight(row?.tongTrongLuongXuatKho ?? 0);
+    const tongThucDung = roundNormWeight(row?.tongThucDung ?? 0);
     const tongLoiHong = roundNormWeight(row?.tongTrongLuongLoiHong ?? 0);
-    const tlNhuaTp = roundNormWeight(row?.tlNhuaTpNhapKho ?? 0);
-    const tlMangTp = roundNormWeight(row?.tlMangTpNhapKho ?? 0);
-    const tlTui = roundNormWeight(row?.tlTuiBaoBiNhapKho ?? 0);
-    const tlLoi = roundNormWeight(row?.tlLoiTpNhapKho ?? 0);
     const tongNhuaThucDung = roundNormWeight(row?.tongNhuaThucDung ?? 0);
     const khoiLuongNhuaTp = roundNormWeight(row?.khoiLuongNhuaTp ?? 0);
     const hangHongNhua = roundNormWeight(row?.hangHongNhua ?? 0);
     const tongMangThucDung = roundNormWeight(row?.tongMangThucDung ?? 0);
     const hangHongMang = roundNormWeight(row?.hangHongMang ?? 0);
+    const tlMangTp = roundNormWeight(row?.tlMangTpNhapKho ?? 0);
 
     const formulaColumns = [
       { key: 'thanhPhan', label: 'Thành phần' },
@@ -1438,13 +1437,11 @@ export function getShiftSummaryDetail(input: {
       return {
         columns: formulaColumns,
         rows: [
-          { thanhPhan: 'TL nhựa thành phẩm (kg)', dau: '', giaTri: formatDetailNumber(tlNhuaTp, 3) },
-          { thanhPhan: 'TL màng thành phẩm (kg)', dau: '+', giaTri: formatDetailNumber(tlMangTp, 3) },
-          { thanhPhan: 'TL túi bao bì (kg)', dau: '+', giaTri: formatDetailNumber(tlTui, 3) },
-          { thanhPhan: 'TL lõi thành phẩm (kg)', dau: '+', giaTri: formatDetailNumber(tlLoi, 3) },
+          { thanhPhan: 'Tổng TP nhập kho', dau: '', giaTri: formatDetailNumber(tongTpNhapKho, 3) },
+          { thanhPhan: 'Tổng trọng lượng lỗi hỏng', dau: '+', giaTri: formatDetailNumber(tongLoiHong, 3) },
           { thanhPhan: 'Tổng trọng lượng nhập kho', dau: '=', giaTri: formatDetailNumber(tongNhap, 3) }
         ],
-        totalLabel: 'Tổng TL nhập kho = TL nhựa TP + TL màng TP + TL túi + TL lõi TP',
+        totalLabel: 'Tổng TL nhập kho = Tổng TP nhập kho + Tổng trọng lượng lỗi hỏng',
         totalValue: formatShiftSummaryNumber(tongNhap, 3)
       };
     }
@@ -1454,14 +1451,14 @@ export function getShiftSummaryDetail(input: {
         columns: formulaColumns,
         rows: [
           { thanhPhan: 'Tổng trọng lượng nhập kho', dau: '', giaTri: formatDetailNumber(tongNhap, 3) },
-          { thanhPhan: 'Tổng trọng lượng xuất kho', dau: '−', giaTri: formatDetailNumber(tongXuat, 3) },
+          { thanhPhan: 'Tổng thực dùng', dau: '−', giaTri: formatDetailNumber(tongThucDung, 3) },
           {
             thanhPhan: 'Chênh lệch TL nhập − xuất',
             dau: '=',
             giaTri: formatDetailNumber(metrics.chenhLechTrongLuongNhapXuat, 3)
           }
         ],
-        totalLabel: 'Chênh lệch = Tổng TL nhập kho − Tổng TL xuất kho',
+        totalLabel: 'Chênh lệch = Tổng TL nhập kho − Tổng thực dùng',
         totalValue: formatShiftSummaryNumber(metrics.chenhLechTrongLuongNhapXuat, 3)
       };
     }
@@ -1475,7 +1472,7 @@ export function getShiftSummaryDetail(input: {
             dau: '',
             giaTri: formatDetailNumber(metrics.chenhLechTrongLuongNhapXuat, 3)
           },
-          { thanhPhan: 'Tổng trọng lượng xuất kho', dau: '÷', giaTri: formatDetailNumber(tongXuat, 3) },
+          { thanhPhan: 'Tổng trọng lượng nhập kho', dau: '÷', giaTri: formatDetailNumber(tongNhap, 3) },
           { thanhPhan: '× 100%', dau: '', giaTri: '100%' },
           {
             thanhPhan: 'Tỉ lệ chênh lệch trọng lượng',
@@ -1483,7 +1480,7 @@ export function getShiftSummaryDetail(input: {
             giaTri: formatShiftSummaryPercent(metrics.tiLeChenhLechTrongLuong)
           }
         ],
-        totalLabel: 'Tỉ lệ CL = (Chênh lệch TL nhập − xuất / Tổng TL xuất kho) × 100%',
+        totalLabel: 'Tỉ lệ CL = Chênh lệch TL nhập − xuất / Tổng TL nhập kho × 100%',
         totalValue: formatShiftSummaryPercent(metrics.tiLeChenhLechTrongLuong)
       };
     }
@@ -1507,16 +1504,22 @@ export function getShiftSummaryDetail(input: {
       return {
         columns: formulaColumns,
         rows: [
-          { thanhPhan: 'Tổng trọng lượng lỗi hỏng', dau: '', giaTri: formatDetailNumber(tongLoiHong, 3) },
-          { thanhPhan: 'Tổng trọng lượng nhập kho', dau: '÷', giaTri: formatDetailNumber(tongNhap, 3) },
-          { thanhPhan: '× 100%', dau: '', giaTri: '100%' },
+          {
+            thanhPhan: 'Tổng trọng lượng lỗi hỏng (tử số)',
+            dau: '',
+            giaTri: formatDetailNumber(tongLoiHong, 3)
+          },
+          { thanhPhan: 'Tổng TP nhập kho', dau: '', giaTri: formatDetailNumber(tongTpNhapKho, 3) },
+          { thanhPhan: 'Tổng trọng lượng lỗi hỏng', dau: '+', giaTri: formatDetailNumber(tongLoiHong, 3) },
+          { thanhPhan: 'Mẫu số', dau: '=', giaTri: formatDetailNumber(tongNhap, 3) },
           {
             thanhPhan: 'Tỉ lệ lỗi hỏng',
             dau: '=',
             giaTri: formatShiftSummaryPercent(metrics.tiLeLoiHong)
           }
         ],
-        totalLabel: 'Tỉ lệ lỗi hỏng = (Tổng TL lỗi hỏng / Tổng TL nhập kho) × 100%',
+        totalLabel:
+          'Tỉ lệ lỗi hỏng = Tổng TL lỗi hỏng / (Tổng TP nhập kho + Tổng TL lỗi hỏng) × 100%',
         totalValue: formatShiftSummaryPercent(metrics.tiLeLoiHong)
       };
     }
