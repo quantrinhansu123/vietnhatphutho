@@ -16,6 +16,7 @@ export type WarehouseSlipPrintLine = {
   quotaQuantity?: number | null;
   suggestedQuantity?: number | null;
   lineNote?: string;
+  sourceInboundSlipCode?: string;
 };
 
 export type WarehouseSlipPrintData = {
@@ -342,8 +343,10 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
             <th>Mã vật tư</th>
             <th>Tên vật tư</th>
             <th>ĐVT</th>
+            <th>PN nhập / giá</th>
             <th>SL định mức xuất</th>
             <th>SL thực xuất</th>
+            <th>Thành tiền</th>
             <th>Ghi chú</th>
           </tr>
         </thead>
@@ -354,15 +357,23 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
               <td>{line.code || ''}</td>
               <td>{line.name || ''}</td>
               <td className="warehouse-slip-print-center">{line.unit || ''}</td>
+              <td className="warehouse-slip-print-center">
+                {[line.sourceInboundSlipCode, line.unitPrice > 0 ? `${formatMoney(line.unitPrice, 0)} đ` : '']
+                  .filter(Boolean)
+                  .join(' · ')}
+              </td>
               <td className="warehouse-slip-print-right">{formatPrintQty(line.quotaQuantity)}</td>
               <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity)}</td>
+              <td className="warehouse-slip-print-right">
+                {line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}
+              </td>
               <td>{line.lineNote || ''}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={4} className="warehouse-slip-print-total-label">
+            <td colSpan={5} className="warehouse-slip-print-total-label">
               TỔNG CỘNG
             </td>
             <td className="warehouse-slip-print-right warehouse-slip-print-total-value">
@@ -370,6 +381,9 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
             </td>
             <td className="warehouse-slip-print-right warehouse-slip-print-total-value">
               {totalActual > 0 ? formatNumber(totalActual, 3) : '0'}
+            </td>
+            <td className="warehouse-slip-print-right warehouse-slip-print-total-value">
+              {data.totalAmount > 0 ? formatMoney(data.totalAmount, 0) : '0'}
             </td>
             <td />
           </tr>

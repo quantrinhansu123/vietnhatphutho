@@ -2751,10 +2751,151 @@ type WarehouseSlipLineInput = {
   documentQuantity?: number;
   unitPrice: number;
   lineAmount: number;
+  sourceInboundLineId?: string;
+  sourceInboundSlipCode?: string;
+};
+
+type NvlInboundLot = {
+  id: string;
+  ma_phieu: string;
+  ngay_phieu: string;
+  ma_npl: string;
+  ten_npl: string;
+  don_vi: string;
+  don_gia: number;
+  so_luong_nhap: number;
+  so_luong_da_xuat: number;
+  so_luong_con: number;
 };
 
 function roundWarehouseMoney(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function roundWarehouseQty(value: number) {
+  return Math.round(value * 1000) / 1000;
+}
+
+async function buildNvlInboundLots(
+  maNpl: string,
+  excludeSlipCode?: string
+): Promise<{ error?: string; lots: NvlInboundLot[] }> {
+  if (!supabase) return { lots: [] };
+  const code = String(maNpl || '').trim();
+  if (!code) return { lots: [] };
+
+  const { data: inboundRows, error: inboundError } = await supabase
+    .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+    .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, loai_phieu, loai_kho')
+    .eq('ma_npl', code)
+    .eq('loai_phieu', 'nhap')
+    .or('loai_kho.eq.nvl,loai_kho.is.null')
+    .order('ngay_phieu', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (inboundError) {
+    console.error('Supabase lo-ton inbound query error:', inboundError);
+    return { error: `Không thể tải lô nhập. ${inboundError.message}`, lots: [] };
+  }
+
+  const { data: outboundRows, error: outboundError } = await supabase
+    .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+    .select('id, ma_phieu, so_luong, id_dong_nhap_nguon, loai_phieu, loai_kho')
+    .eq('ma_npl', code)
+    .eq('loai_phieu', 'xuat')
+    .or('loai_kho.eq.nvl,loai_kho.is.null')
+    .not('id_dong_nhap_nguon', 'is', null);
+
+  if (outboundError) {
+    if (isMissingColumnError(outboundError)) {
+      return {
+        error:
+          'Thiếu cột id_dong_nhap_nguon. Hãy chạy supabase-phieu-xuat-nhap-kho-lo-ton.sql trong Supabase SQL Editor.',
+        lots: []
+      };
+    }
+    console.error('Supabase lo-ton outbound query error:', outboundError);
+    return { error: `Không thể tải xuất theo lô. ${outboundError.message}`, lots: [] };
+  }
+
+  const exclude = String(excludeSlipCode || '').trim();
+  const consumedByLot = new Map<string, number>();
+  for (const row of outboundRows || []) {
+    if (exclude && String(row.ma_phieu || '').trim() === exclude) continue;
+    const lotId = String(row.id_dong_nhap_nguon || '').trim();
+    if (!lotId) continue;
+    const qty = Number(row.so_luong);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    consumedByLot.set(lotId, roundWarehouseQty((consumedByLot.get(lotId) || 0) + qty));
+  }
+
+  const lots: NvlInboundLot[] = [];
+  for (const row of inboundRows || []) {
+    const id = String(row.id || '').trim();
+    if (!id) continue;
+    const so_luong_nhap = roundWarehouseQty(Number(row.so_luong) || 0);
+    if (so_luong_nhap <= 0) continue;
+    const so_luong_da_xuat = roundWarehouseQty(consumedByLot.get(id) || 0);
+    const so_luong_con = roundWarehouseQty(so_luong_nhap - so_luong_da_xuat);
+    if (so_luong_con <= 0) continue;
+    lots.push({
+      id,
+      ma_phieu: String(row.ma_phieu || '').trim(),
+      ngay_phieu: String(row.ngay_phieu || '').trim(),
+      ma_npl: String(row.ma_npl || '').trim() || code,
+      ten_npl: String(row.ten_npl || '').trim(),
+      don_vi: String(row.don_vi || '').trim(),
+      don_gia: roundWarehouseMoney(Number(row.don_gia) || 0),
+      so_luong_nhap,
+      so_luong_da_xuat,
+      so_luong_con
+    });
+  }
+
+  return { lots };
+}
+
+async function validateNvlExportLots(
+  items: WarehouseSlipLineInput[],
+  excludeSlipCode?: string
+): Promise<{ error: string } | null> {
+  const requestedByLot = new Map<string, { qty: number; code: string; price: number; slipCode?: string }>();
+
+  for (const item of items) {
+    const lotId = String(item.sourceInboundLineId || '').trim();
+    if (!lotId) {
+      return { error: `Dòng ${item.code} cần chọn lô nhập (giá) khi xuất NVL.` };
+    }
+    const current = requestedByLot.get(lotId) || {
+      qty: 0,
+      code: item.code,
+      price: item.unitPrice,
+      slipCode: item.sourceInboundSlipCode
+    };
+    current.qty = roundWarehouseQty(current.qty + item.quantity);
+    requestedByLot.set(lotId, current);
+  }
+
+  for (const [lotId, request] of requestedByLot) {
+    const built = await buildNvlInboundLots(request.code, excludeSlipCode);
+    if (built.error) return { error: built.error };
+    const lot = built.lots.find(item => item.id === lotId);
+    if (!lot) {
+      return { error: `Lô nhập của ${request.code} không còn tồn hoặc không hợp lệ.` };
+    }
+    if (Math.abs(lot.don_gia - request.price) > 0.009) {
+      return {
+        error: `Giá xuất ${request.code} (${request.price}) không khớp giá lô nhập ${lot.ma_phieu} (${lot.don_gia}).`
+      };
+    }
+    if (request.qty > lot.so_luong_con + 0.0005) {
+      return {
+        error: `Xuất ${request.qty} vượt tồn lô ${lot.ma_phieu} còn ${lot.so_luong_con} (${request.code}).`
+      };
+    }
+  }
+
+  return null;
 }
 
 function parseWarehouseSlipType(value: unknown): 'nhap' | 'xuat' | null {
@@ -2810,6 +2951,12 @@ function parseWarehouseSlipLines(
     );
     const unitPriceRaw = record.unitPrice ?? record.don_gia ?? record.price ?? record.gia;
     const unitPrice = parseOptionalMaterialNumber(unitPriceRaw) ?? 0;
+    const sourceInboundLineId = String(
+      record.sourceInboundLineId ?? record.id_dong_nhap_nguon ?? record.inboundLineId ?? ''
+    ).trim();
+    const sourceInboundSlipCode = String(
+      record.sourceInboundSlipCode ?? record.ma_phieu_nhap_nguon ?? record.inboundSlipCode ?? ''
+    ).trim();
 
     if (!code) {
       return { error: loaiKho === 'san_pham' ? 'Mỗi dòng cần có mã sản phẩm.' : 'Mỗi dòng cần có mã NPL.' };
@@ -2831,7 +2978,9 @@ function parseWarehouseSlipLines(
           ? roundWarehouseMoney(documentQuantity)
           : undefined,
       unitPrice: roundWarehouseMoney(unitPrice),
-      lineAmount: roundWarehouseMoney(quantity * unitPrice)
+      lineAmount: roundWarehouseMoney(quantity * unitPrice),
+      ...(sourceInboundLineId ? { sourceInboundLineId } : {}),
+      ...(sourceInboundSlipCode ? { sourceInboundSlipCode } : {})
     });
   }
 
@@ -2880,6 +3029,66 @@ function parseWarehouseSlipBody(body: unknown): {
     ca: String(source.ca ?? source.shift ?? source.ca_san_xuat ?? '').trim() || null,
     items: parsedItems.items
   };
+}
+
+function buildWarehouseSlipInsertRecords(
+  parsed: {
+    loaiPhieu: 'nhap' | 'xuat';
+    loaiKho: 'nvl' | 'san_pham';
+    ngayPhieu: string;
+    lyDo: string | null;
+    ghiChu: string | null;
+    nguoiLap: string | null;
+    ca: string | null;
+    items: WarehouseSlipLineInput[];
+  },
+  maPhieu: string
+) {
+  const nhanSu = parsed.nguoiLap || 'Hệ thống';
+  return parsed.items.map(item => {
+    const base: Record<string, unknown> = {
+      ma_phieu: maPhieu,
+      loai_phieu: parsed.loaiPhieu,
+      loai_kho: parsed.loaiKho,
+      ngay_phieu: parsed.ngayPhieu,
+      don_vi: item.unit || '',
+      so_luong: item.quantity,
+      so_luong_chung_tu: item.documentQuantity ?? null,
+      don_gia: item.unitPrice,
+      thanh_tien: item.lineAmount,
+      ly_do: parsed.lyDo || '',
+      ghi_chu: parsed.ghiChu || '',
+      nguoi_lap: parsed.nguoiLap || nhanSu,
+      nhan_su: nhanSu,
+      ca: parsed.ca || '',
+      id_dong_nhap_nguon:
+        parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl' && item.sourceInboundLineId
+          ? item.sourceInboundLineId
+          : null,
+      ma_phieu_nhap_nguon:
+        parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl' && item.sourceInboundSlipCode
+          ? item.sourceInboundSlipCode
+          : null
+    };
+
+    if (parsed.loaiKho === 'san_pham') {
+      return {
+        ...base,
+        ma_sp: item.code,
+        ten_sp: item.name || '',
+        ma_npl: '',
+        ten_npl: ''
+      };
+    }
+
+    return {
+      ...base,
+      ma_npl: item.code,
+      ten_npl: item.name || '',
+      ma_sp: '',
+      ten_sp: ''
+    };
+  });
 }
 
 function generateWarehouseSlipCode(loaiPhieu: 'nhap' | 'xuat') {
@@ -5209,6 +5418,35 @@ export function createApp() {
     }
   });
 
+  app.get('/api/phieu-xuat-nhap-kho/lo-ton', async (req, res) => {
+    if (!supabase) {
+      return res.json({ lots: [], total: 0, source: 'local' });
+    }
+
+    try {
+      const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? req.query.code ?? '').trim();
+      const excludeSlipCode = String(
+        req.query.exclude_ma_phieu ?? req.query.excludeSlipCode ?? ''
+      ).trim();
+      if (!maNpl) {
+        return res.status(400).json({ error: 'Thiếu mã NPL (ma_npl).' });
+      }
+
+      const built = await buildNvlInboundLots(maNpl, excludeSlipCode || undefined);
+      if (built.error) {
+        return res.status(500).json({ error: built.error });
+      }
+
+      return res.json({
+        lots: built.lots,
+        total: built.lots.length,
+        source: 'supabase'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải lô tồn NVL.' });
+    }
+  });
+
   app.get('/api/phieu-xuat-nhap-kho', async (req, res) => {
     if (!supabase) {
       return res.json({ movements: [], total: 0, source: 'local' });
@@ -5271,44 +5509,15 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
-      const maPhieu = generateWarehouseSlipCode(parsed.loaiPhieu);
-      const nhanSu = parsed.nguoiLap || 'Hệ thống';
-      const records = parsed.items.map(item => {
-        const base = {
-          ma_phieu: maPhieu,
-          loai_phieu: parsed.loaiPhieu,
-          loai_kho: parsed.loaiKho,
-          ngay_phieu: parsed.ngayPhieu,
-          don_vi: item.unit || '',
-          so_luong: item.quantity,
-          so_luong_chung_tu: item.documentQuantity ?? null,
-          don_gia: item.unitPrice,
-          thanh_tien: item.lineAmount,
-          ly_do: parsed.lyDo || '',
-          ghi_chu: parsed.ghiChu || '',
-          nguoi_lap: parsed.nguoiLap || nhanSu,
-          nhan_su: nhanSu,
-          ca: parsed.ca || ''
-        };
-
-        if (parsed.loaiKho === 'san_pham') {
-          return {
-            ...base,
-            ma_sp: item.code,
-            ten_sp: item.name || '',
-            ma_npl: '',
-            ten_npl: ''
-          };
+      if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
+        const lotError = await validateNvlExportLots(parsed.items);
+        if (lotError) {
+          return res.status(400).json(lotError);
         }
+      }
 
-        return {
-          ...base,
-          ma_npl: item.code,
-          ten_npl: item.name || '',
-          ma_sp: '',
-          ten_sp: ''
-        };
-      });
+      const maPhieu = generateWarehouseSlipCode(parsed.loaiPhieu);
+      const records = buildWarehouseSlipInsertRecords(parsed, maPhieu);
 
       const { data, error } = await supabase
         .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
@@ -5390,6 +5599,13 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
+      if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
+        const lotError = await validateNvlExportLots(parsed.items, slipCode);
+        if (lotError) {
+          return res.status(400).json(lotError);
+        }
+      }
+
       const { data: existing, error: fetchError } = await supabase
         .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
         .select('ma_npl, loai_kho')
@@ -5430,43 +5646,7 @@ export function createApp() {
         return res.status(500).json({ error: `Không thể xóa dữ liệu phiếu cũ. ${deleteError.message}` });
       }
 
-      const nhanSu = parsed.nguoiLap || 'Hệ thống';
-      const records = parsed.items.map(item => {
-        const base = {
-          ma_phieu: slipCode,
-          loai_phieu: parsed.loaiPhieu,
-          loai_kho: parsed.loaiKho,
-          ngay_phieu: parsed.ngayPhieu,
-          don_vi: item.unit || '',
-          so_luong: item.quantity,
-          so_luong_chung_tu: item.documentQuantity ?? null,
-          don_gia: item.unitPrice,
-          thanh_tien: item.lineAmount,
-          ly_do: parsed.lyDo || '',
-          ghi_chu: parsed.ghiChu || '',
-          nguoi_lap: parsed.nguoiLap || nhanSu,
-          nhan_su: nhanSu,
-          ca: parsed.ca || ''
-        };
-
-        if (parsed.loaiKho === 'san_pham') {
-          return {
-            ...base,
-            ma_sp: item.code,
-            ten_sp: item.name || '',
-            ma_npl: '',
-            ten_npl: ''
-          };
-        }
-
-        return {
-          ...base,
-          ma_npl: item.code,
-          ten_npl: item.name || '',
-          ma_sp: '',
-          ten_sp: ''
-        };
-      });
+      const records = buildWarehouseSlipInsertRecords(parsed, slipCode);
 
       const { data, error } = await supabase
         .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)

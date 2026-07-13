@@ -6,6 +6,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Boxes,
+  ChevronDown,
   Eye,
   History,
   Loader2,
@@ -58,6 +59,8 @@ export interface WarehouseMovementRow {
   note: string;
   createdBy: string;
   createdAt: string;
+  sourceInboundLineId?: string;
+  sourceInboundSlipCode?: string;
 }
 
 export interface WarehouseSlipLineDraft {
@@ -71,7 +74,22 @@ export interface WarehouseSlipLineDraft {
   quotaQuantity?: string;
   suggestedQuantity?: string;
   lineNote?: string;
+  sourceInboundLineId?: string;
+  sourceInboundSlipCode?: string;
 }
+
+export type NvlInboundLotOption = {
+  id: string;
+  ma_phieu: string;
+  ngay_phieu: string;
+  ma_npl: string;
+  ten_npl: string;
+  don_vi: string;
+  don_gia: number;
+  so_luong_nhap: number;
+  so_luong_da_xuat: number;
+  so_luong_con: number;
+};
 
 export type WarehouseSlipPrefillDraft = {
   slipType: WarehouseSlipType;
@@ -87,13 +105,28 @@ export type WarehouseSlipPrefillDraft = {
   deliverer?: string;
   warehouseLocation?: string;
   editSlipCode?: string;
+  /** Thời điểm tạo draft (Date.now()) — dùng để bỏ qua draft cũ còn sót lại trong localStorage. */
+  createdAt?: number;
   lines: Array<
     Pick<
       WarehouseSlipLineDraft,
-      'code' | 'name' | 'unit' | 'quantity' | 'documentQuantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
+      | 'code'
+      | 'name'
+      | 'unit'
+      | 'quantity'
+      | 'documentQuantity'
+      | 'unitPrice'
+      | 'quotaQuantity'
+      | 'suggestedQuantity'
+      | 'lineNote'
+      | 'sourceInboundLineId'
+      | 'sourceInboundSlipCode'
     >
   >;
 };
+
+/** Draft quá thời gian này (ms) coi như đã cũ/bỏ dở, không tự điền vào phiếu mới nữa. */
+const WAREHOUSE_SLIP_DRAFT_MAX_AGE_MS = 5 * 60 * 1000;
 
 export function buildWarehouseSlipDraftFromHistoryRows(
   rows: WarehouseMovementRow[],
@@ -120,7 +153,9 @@ export function buildWarehouseSlipDraftFromHistoryRows(
         row.documentQuantity != null && Number.isFinite(row.documentQuantity)
           ? formatNumber(row.documentQuantity, 2)
           : '',
-      unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : ''
+      unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : '',
+      sourceInboundLineId: row.sourceInboundLineId || '',
+      sourceInboundSlipCode: row.sourceInboundSlipCode || ''
     }))
   };
 }
@@ -146,6 +181,23 @@ export function toggleWarehouseShiftSelection(current: string[], shiftValue: str
   return current.includes(shiftValue)
     ? current.filter(item => item !== shiftValue)
     : [...current, shiftValue];
+}
+
+export function parseWarehouseProductionOrderSelection(value: string | undefined | null): string[] {
+  return String(value || '')
+    .split(/[,;|/]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+export function formatWarehouseProductionOrderSelection(codes: string[]): string {
+  return codes.join(', ');
+}
+
+export function toggleWarehouseProductionOrderSelection(current: string[], orderCode: string): string[] {
+  return current.includes(orderCode)
+    ? current.filter(item => item !== orderCode)
+    : [...current, orderCode];
 }
 
 export function warehouseSlipTypeLabel(type: WarehouseSlipType) {
@@ -189,16 +241,19 @@ export type WarehouseSlipPayloadItem = {
   quotaQuantity?: number;
   suggestedQuantity?: number;
   lineNote?: string;
+  sourceInboundLineId?: string;
+  sourceInboundSlipCode?: string;
 };
 
 export function parseWarehouseSlipPayloadItems(
   lines: WarehouseSlipLineDraft[],
   warehouseKind: WarehouseKind,
-  options?: { allowMissingUnitPrice?: boolean }
+  options?: { allowMissingUnitPrice?: boolean; requireInboundLot?: boolean }
 ): { error: string } | { items: WarehouseSlipPayloadItem[] } {
   const itemLabel = warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL';
   const codeLabel = warehouseItemCodeLabel(warehouseKind);
   const allowMissingUnitPrice = options?.allowMissingUnitPrice ?? false;
+  const requireInboundLot = options?.requireInboundLot ?? false;
 
   const payloadItems = lines
     .map(line => {
@@ -207,6 +262,8 @@ export function parseWarehouseSlipPayloadItems(
       const unitPrice = parseMoneyInput(line.unitPrice);
       const quotaQuantity = parsePercentInput(line.quotaQuantity ?? '');
       const suggestedQuantity = parsePercentInput(line.suggestedQuantity ?? '');
+      const sourceInboundLineId = String(line.sourceInboundLineId || '').trim();
+      const sourceInboundSlipCode = String(line.sourceInboundSlipCode || '').trim();
       return {
         code: line.code.trim(),
         name: line.name.trim(),
@@ -218,7 +275,9 @@ export function parseWarehouseSlipPayloadItems(
         quotaQuantity: Number.isFinite(quotaQuantity) && quotaQuantity > 0 ? quotaQuantity : undefined,
         suggestedQuantity:
           Number.isFinite(suggestedQuantity) && suggestedQuantity > 0 ? suggestedQuantity : undefined,
-        lineNote: line.lineNote?.trim() || undefined
+        lineNote: line.lineNote?.trim() || undefined,
+        sourceInboundLineId: sourceInboundLineId || undefined,
+        sourceInboundSlipCode: sourceInboundSlipCode || undefined
       };
     })
     .filter(line => line.code || line.quantity);
@@ -236,6 +295,9 @@ export function parseWarehouseSlipPayloadItems(
     }
     if (!allowMissingUnitPrice && (!Number.isFinite(item.unitPrice) || item.unitPrice < 0)) {
       return { error: `Giá của ${item.code} không hợp lệ.` };
+    }
+    if (requireInboundLot && !item.sourceInboundLineId) {
+      return { error: `Dòng ${item.code} cần chọn lô nhập (giá) khi xuất NVL.` };
     }
   }
 
@@ -270,7 +332,8 @@ export function buildWarehouseSlipPrintData(
     lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100,
     quotaQuantity: item.quotaQuantity ?? null,
     suggestedQuantity: item.suggestedQuantity ?? null,
-    lineNote: item.lineNote
+    lineNote: item.lineNote,
+    sourceInboundSlipCode: item.sourceInboundSlipCode
   }));
 
   return {
@@ -304,14 +367,26 @@ export function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     unit: '',
     quantity: '',
     documentQuantity: '',
-    unitPrice: ''
+    unitPrice: '',
+    sourceInboundLineId: '',
+    sourceInboundSlipCode: ''
   };
 }
 
 export function createWarehouseLineDraftFromPrefill(
   line: Pick<
     WarehouseSlipLineDraft,
-    'code' | 'name' | 'unit' | 'quantity' | 'documentQuantity' | 'unitPrice' | 'quotaQuantity' | 'suggestedQuantity' | 'lineNote'
+    | 'code'
+    | 'name'
+    | 'unit'
+    | 'quantity'
+    | 'documentQuantity'
+    | 'unitPrice'
+    | 'quotaQuantity'
+    | 'suggestedQuantity'
+    | 'lineNote'
+    | 'sourceInboundLineId'
+    | 'sourceInboundSlipCode'
   >
 ): WarehouseSlipLineDraft {
   return {
@@ -324,7 +399,9 @@ export function createWarehouseLineDraftFromPrefill(
     unitPrice: line.unitPrice || '',
     quotaQuantity: line.quotaQuantity || '',
     suggestedQuantity: line.suggestedQuantity || '',
-    lineNote: line.lineNote || ''
+    lineNote: line.lineNote || '',
+    sourceInboundLineId: line.sourceInboundLineId || '',
+    sourceInboundSlipCode: line.sourceInboundSlipCode || ''
   };
 }
 
@@ -384,7 +461,10 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         reason: String(record.ly_do ?? record.reason ?? '').trim(),
         note: String(record.ghi_chu ?? record.note ?? '').trim(),
         createdBy: String(record.nguoi_lap ?? record.nhan_su ?? record.createdBy ?? '').trim(),
-        createdAt: String(record.created_at ?? record.createdAt ?? '').trim()
+        createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
+        sourceInboundLineId: String(record.id_dong_nhap_nguon ?? record.sourceInboundLineId ?? '').trim() || undefined,
+        sourceInboundSlipCode:
+          String(record.ma_phieu_nhap_nguon ?? record.sourceInboundSlipCode ?? '').trim() || undefined
       };
     })
     .filter((row): row is WarehouseMovementRow => Boolean(row.id || row.slipCode));
@@ -499,7 +579,12 @@ export function WarehouseSlipPanel({
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [createdBy, setCreatedBy] = useState('');
-  const [productionOrderRef, setProductionOrderRef] = useState('');
+  const [productionOrderCodes, setProductionOrderCodes] = useState<string[]>([]);
+  const [productionOrderSearch, setProductionOrderSearch] = useState('');
+  const [productionOrderPickerOpen, setProductionOrderPickerOpen] = useState(false);
+  const [productionOrderMenuStyle, setProductionOrderMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
+  const productionOrderTriggerRef = useRef<HTMLButtonElement>(null);
+  const productionOrderPanelRef = useRef<HTMLDivElement>(null);
   const [machine, setMachine] = useState('');
   const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
   const [recipient, setRecipient] = useState('');
@@ -508,6 +593,8 @@ export function WarehouseSlipPanel({
   const [lines, setLines] = useState<WarehouseSlipLineDraft[]>(() => [createWarehouseLineDraft()]);
   const [itemOptions, setItemOptions] = useState<MaterialOption[]>([]);
   const [weightCatalog, setWeightCatalog] = useState<WarehouseWeightCatalogItem[]>([]);
+  const [lotsByCode, setLotsByCode] = useState<Record<string, NvlInboundLotOption[]>>({});
+  const [lotsLoadingCode, setLotsLoadingCode] = useState<string | null>(null);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -561,6 +648,7 @@ export function WarehouseSlipPanel({
     try {
       const draft = JSON.parse(rawDraft) as Partial<WarehouseSlipPrefillDraft>;
       if (!draft || !Array.isArray(draft.lines) || draft.lines.length === 0) return;
+      if (!draft.createdAt || Date.now() - draft.createdAt > WAREHOUSE_SLIP_DRAFT_MAX_AGE_MS) return;
 
       setWarehouseKind(draft.warehouseKind === 'san_pham' ? 'san_pham' : 'nvl');
       setSlipType(draft.slipType === 'nhap' ? 'nhap' : 'xuat');
@@ -568,7 +656,8 @@ export function WarehouseSlipPanel({
       setReason(draft.reason || '');
       setNote(draft.note || '');
       setCreatedBy(draft.createdBy || '');
-      setProductionOrderRef(draft.productionOrderRef || '');
+      setProductionOrderCodes(parseWarehouseProductionOrderSelection(draft.productionOrderRef));
+      setProductionOrderSearch('');
       setMachine(draft.machine || '');
       setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
       setRecipient(draft.recipient || '');
@@ -635,6 +724,7 @@ export function WarehouseSlipPanel({
   const handleWarehouseKindChange = (kind: WarehouseKind) => {
     setWarehouseKind(kind);
     setLines([createWarehouseLineDraft()]);
+    setLotsByCode({});
     setFormError('');
     setActionMessage('');
   };
@@ -643,42 +733,154 @@ export function WarehouseSlipPanel({
     setLines(current => current.map(line => (line.key === key ? { ...line, ...patch } : line)));
   };
 
+  const loadNvlLots = async (code: string) => {
+    const materialCode = code.trim();
+    if (!materialCode) return;
+    setLotsLoadingCode(materialCode);
+    try {
+      const params = new URLSearchParams({ ma_npl: materialCode });
+      if (editSlipCode) params.set('exclude_ma_phieu', editSlipCode);
+      const res = await fetch(`/api/phieu-xuat-nhap-kho/lo-ton?${params.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể tải lô tồn.');
+      const lots = Array.isArray(data.lots) ? (data.lots as NvlInboundLotOption[]) : [];
+      setLotsByCode(current => ({ ...current, [materialCode]: lots }));
+    } catch (error: any) {
+      setLotsByCode(current => ({ ...current, [materialCode]: [] }));
+      setFormError(error.message || 'Không thể tải lô tồn NVL.');
+    } finally {
+      setLotsLoadingCode(current => (current === materialCode ? null : current));
+    }
+  };
+
   const pickItem = (key: string, code: string) => {
     const item = itemOptions.find(option => option.code === code);
     updateLine(key, {
       code,
       name: item?.name || '',
-      unit: item?.unit || ''
+      unit: item?.unit || '',
+      ...(warehouseKind === 'nvl' && slipType === 'xuat'
+        ? { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' }
+        : {})
+    });
+    if (warehouseKind === 'nvl' && slipType === 'xuat' && code.trim()) {
+      void loadNvlLots(code);
+    }
+  };
+
+  const pickInboundLot = (key: string, lotId: string) => {
+    const line = lines.find(item => item.key === key);
+    if (!line?.code) return;
+    const lots = lotsByCode[line.code] || [];
+    const lot = lots.find(item => item.id === lotId);
+    if (!lot) {
+      updateLine(key, { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' });
+      return;
+    }
+    updateLine(key, {
+      sourceInboundLineId: lot.id,
+      sourceInboundSlipCode: lot.ma_phieu,
+      unitPrice: String(lot.don_gia || 0),
+      unit: line.unit || lot.don_vi || '',
+      name: line.name || lot.ten_npl || ''
     });
   };
 
-  const applyProductionOrder = (orderCode: string) => {
-    setProductionOrderRef(orderCode);
-    const order = productionOrders.find(item => item.orderCode === orderCode);
-    if (!order) return;
+  const isNvlExport = warehouseKind === 'nvl' && slipType === 'xuat';
 
-    if (order.machine) setMachine(order.machine);
-    if (order.shift) {
-      const matchedShifts = shiftOptions
+  useEffect(() => {
+    if (!isNvlExport) return;
+    const codes = [...new Set(lines.map(line => line.code.trim()).filter(Boolean))];
+    for (const code of codes) {
+      if (!lotsByCode[code]) void loadNvlLots(code);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNvlExport, editSlipCode, lines.map(line => line.code).join('|')]);
+
+  const applyProductionOrderSelection = (orderCodes: string[]) => {
+    setProductionOrderCodes(orderCodes);
+    const selectedOrders = productionOrders.filter(item => orderCodes.includes(item.orderCode));
+    if (selectedOrders.length === 0) return;
+
+    const machines = [...new Set(selectedOrders.map(order => order.machine).filter(Boolean))];
+    if (machines.length > 0) setMachine(machines.join(', '));
+
+    const matchedShifts = new Set<string>();
+    for (const order of selectedOrders) {
+      if (!order.shift) continue;
+      const matched = shiftOptions
         .filter(option => shiftNamesMatch(option.value, order.shift) || shiftNamesMatch(option.label, order.shift))
         .map(option => option.value);
-      setSelectedShifts(matchedShifts.length > 0 ? matchedShifts : [order.shift]);
+      if (matched.length > 0) matched.forEach(value => matchedShifts.add(value));
+      else matchedShifts.add(order.shift);
     }
-    if (warehouseKind === 'san_pham' && order.lines.length > 0) {
-      setLines(
-        order.lines.map(line =>
-          createWarehouseLineDraftFromPrefill({
-            code: line.code,
-            name: line.name,
-            unit: line.unit,
-            quantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
-            documentQuantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
-            unitPrice: ''
-          })
-        )
-      );
+    if (matchedShifts.size > 0) setSelectedShifts([...matchedShifts]);
+
+    if (warehouseKind === 'san_pham') {
+      const mergedLines = selectedOrders.flatMap(order => order.lines);
+      if (mergedLines.length > 0) {
+        setLines(
+          mergedLines.map(line =>
+            createWarehouseLineDraftFromPrefill({
+              code: line.code,
+              name: line.name,
+              unit: line.unit,
+              quantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
+              documentQuantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
+              unitPrice: ''
+            })
+          )
+        );
+      }
     }
   };
+
+  const toggleProductionOrder = (orderCode: string) => {
+    applyProductionOrderSelection(toggleWarehouseProductionOrderSelection(productionOrderCodes, orderCode));
+  };
+
+  const filteredProductionOrders = useMemo(() => {
+    const query = productionOrderSearch.trim().toLowerCase();
+    if (!query) return productionOrders;
+    return productionOrders.filter(order => {
+      const hay = `${order.orderCode} ${order.shift} ${order.machine} ${order.startDate}`.toLowerCase();
+      return hay.includes(query);
+    });
+  }, [productionOrders, productionOrderSearch]);
+
+  const productionOrderLabel = formatWarehouseProductionOrderSelection(productionOrderCodes);
+
+  useEffect(() => {
+    if (!productionOrderPickerOpen) {
+      setProductionOrderMenuStyle(null);
+      return;
+    }
+    const updatePosition = () => {
+      const el = productionOrderTriggerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setProductionOrderMenuStyle({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [productionOrderPickerOpen]);
+
+  useEffect(() => {
+    if (!productionOrderPickerOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (productionOrderTriggerRef.current?.contains(target)) return;
+      if (productionOrderPanelRef.current?.contains(target)) return;
+      setProductionOrderPickerOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [productionOrderPickerOpen]);
 
   const slipTotal = useMemo(
     () => lines.reduce((sum, line) => sum + computeWarehouseLineAmount(line.quantity, line.unitPrice), 0),
@@ -716,6 +918,7 @@ export function WarehouseSlipPanel({
   }, [lines, warehouseKind, weightCatalog]);
 
   const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
+  const isNvlInbound = warehouseKind === 'nvl' && slipType === 'nhap';
 
   const handlePrintPreview = () => {
     void handleSave();
@@ -723,7 +926,8 @@ export function WarehouseSlipPanel({
 
   const handleSave = async () => {
     const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind, {
-      allowMissingUnitPrice: warehouseKind === 'nvl' && slipType === 'xuat'
+      allowMissingUnitPrice: false,
+      requireInboundLot: isNvlExport
     });
     if ('error' in parsed) {
       setFormError(parsed.error);
@@ -773,7 +977,7 @@ export function WarehouseSlipPanel({
           reason: reason.trim(),
           note: note.trim(),
           createdBy: createdBy.trim(),
-          productionOrderRef: productionOrderRef.trim(),
+          productionOrderRef: productionOrderLabel,
           machine: machine.trim(),
           shift: shiftLabel,
           recipient: recipient.trim(),
@@ -792,7 +996,8 @@ export function WarehouseSlipPanel({
       setReason('');
       setNote('');
       setDeliverer('');
-      setProductionOrderRef('');
+      setProductionOrderCodes([]);
+      setProductionOrderSearch('');
       setLines([createWarehouseLineDraft()]);
     } catch (error: any) {
       setFormError(error.message || 'Không thể lưu phiếu xuất nhập kho.');
@@ -926,7 +1131,7 @@ export function WarehouseSlipPanel({
           ))}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày phiếu *</span>
             <input type="date" value={slipDate} onChange={event => setSlipDate(event.target.value)} className={warehouseFieldClass} />
@@ -935,75 +1140,7 @@ export function WarehouseSlipPanel({
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người lập</span>
             <input value={createdBy} onChange={event => setCreatedBy(event.target.value)} className={warehouseFieldClass} placeholder="Tên người lập phiếu" />
           </label>
-          <div className="block space-y-1.5 sm:col-span-2">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-              {shiftOptions.length === 0 ? (
-                <p className="text-xs font-semibold text-zinc-400">Chưa có ca trong cài đặt.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {shiftOptions.map(option => {
-                    const checked = selectedShifts.includes(option.value);
-                    return (
-                      <label
-                        key={option.value}
-                        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
-                          checked
-                            ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
-                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            setSelectedShifts(current => toggleWarehouseShiftSelection(current, option.value))
-                          }
-                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                        />
-                        {option.label}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-              {selectedShifts.length > 0 ? (
-                <p className="mt-2 text-[11px] font-semibold text-zinc-500">
-                  Đã chọn: {shiftLabel}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <label className="block space-y-1.5 sm:col-span-2">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
-            <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Nhập mua ngoài, xuất sản xuất..." />
-          </label>
-          <label className="block space-y-1.5 sm:col-span-2">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-            <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder={slipType === 'nhap' ? 'Số chứng từ gốc kèm theo...' : 'Ghi chú thêm (tuỳ chọn)'} />
-          </label>
-          <div className="block space-y-1.5 sm:col-span-2">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn hàng / Lệnh SX</span>
-            <SearchableSelect
-              value={productionOrderRef}
-              onChange={applyProductionOrder}
-              options={productionOrders}
-              placeholder="Gõ để tìm mã lệnh SX..."
-              isLoading={isLoadingProductionOrders}
-              inputClassName={warehouseFieldClass}
-              getLabel={item => {
-                const order = item as WarehouseProductionOrderOption;
-                const extras = [order.startDate, order.shift, order.machine].filter(Boolean).join(' · ');
-                return extras ? `${order.orderCode} · ${extras}` : order.orderCode;
-              }}
-              getValue={item => (item as WarehouseProductionOrderOption).orderCode}
-              displaySelectedAsValue
-            />
-            <p className="text-[11px] font-semibold text-zinc-400">
-              Chọn lệnh SX để tự điền ca, máy{warehouseKind === 'san_pham' ? ' và dòng sản phẩm' : ''}.
-            </p>
-          </div>
-          {slipType === 'nhap' && (
+          {slipType === 'nhap' ? (
             <>
               <label className="block space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người giao hàng</span>
@@ -1024,7 +1161,185 @@ export function WarehouseSlipPanel({
                 />
               </label>
             </>
+          ) : (
+            <>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
+                <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Xuất sản xuất..." />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+                <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder="Ghi chú thêm (tuỳ chọn)" />
+              </label>
+            </>
           )}
+          <div className="block space-y-1.5 sm:col-span-2 lg:col-span-4">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+              {isNvlInbound ? (
+                <>
+                  Ca{' '}
+                  <span className="font-semibold normal-case tracking-normal text-zinc-400">
+                    (không bắt buộc)
+                  </span>
+                </>
+              ) : (
+                'Ca'
+              )}
+            </span>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5">
+              {shiftOptions.length === 0 ? (
+                <p className="text-xs font-semibold text-zinc-400">Chưa có ca trong cài đặt.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {shiftOptions.map(option => {
+                    const checked = selectedShifts.includes(option.value);
+                    return (
+                      <label
+                        key={option.value}
+                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                          checked
+                            ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
+                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setSelectedShifts(current => toggleWarehouseShiftSelection(current, option.value))
+                          }
+                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                        />
+                        {option.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedShifts.length > 0 ? (
+                <p className="mt-1.5 text-[11px] font-semibold text-zinc-500">
+                  Đã chọn: {shiftLabel}
+                </p>
+              ) : isNvlInbound ? (
+                <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
+                  Có thể bỏ trống ca khi nhập kho NVL.
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {slipType === 'nhap' ? (
+            <>
+              <label className="block space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
+                <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Nhập mua ngoài, xuất sản xuất..." />
+              </label>
+              <label className="block space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+                <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder="Số chứng từ gốc kèm theo..." />
+              </label>
+            </>
+          ) : null}
+          <div className="relative block space-y-1.5 sm:col-span-2 lg:col-span-4">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+              Mã đơn hàng / Lệnh SX{' '}
+              <span className="font-semibold normal-case tracking-normal text-zinc-400">
+                (chọn nhiều)
+              </span>
+            </span>
+            <button
+              type="button"
+              ref={productionOrderTriggerRef}
+              onClick={() => setProductionOrderPickerOpen(prev => !prev)}
+              className={`${warehouseFieldClass} flex items-center justify-between gap-2 text-left`}
+            >
+              <span className={`truncate ${productionOrderCodes.length > 0 ? 'text-zinc-800' : 'text-zinc-400'}`}>
+                {productionOrderCodes.length > 0
+                  ? `Đã chọn (${productionOrderCodes.length}): ${productionOrderLabel}`
+                  : 'Chọn mã lệnh SX...'}
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${
+                  productionOrderPickerOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+            {productionOrderPickerOpen && productionOrderMenuStyle
+              ? createPortal(
+                  <div
+                    ref={productionOrderPanelRef}
+                    className="fixed z-[200] space-y-2 rounded-lg border border-zinc-200 bg-white p-2.5 shadow-lg"
+                    style={productionOrderMenuStyle}
+                  >
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+                      <input
+                        autoFocus
+                        value={productionOrderSearch}
+                        onChange={event => setProductionOrderSearch(event.target.value)}
+                        className={`${warehouseFieldClass} pl-8`}
+                        placeholder="Gõ để lọc mã lệnh SX..."
+                      />
+                    </div>
+                    {isLoadingProductionOrders ? (
+                      <p className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Đang tải lệnh SX...
+                      </p>
+                    ) : filteredProductionOrders.length === 0 ? (
+                      <p className="text-xs font-semibold text-zinc-400">
+                        {productionOrders.length === 0 ? 'Chưa có lệnh SX.' : 'Không khớp bộ lọc.'}
+                      </p>
+                    ) : (
+                      <div className="max-h-52 overflow-y-auto">
+                        <div className="flex flex-wrap gap-1.5">
+                          {filteredProductionOrders.map(order => {
+                            const checked = productionOrderCodes.includes(order.orderCode);
+                            const extras = [order.startDate, order.shift, order.machine].filter(Boolean).join(' · ');
+                            return (
+                              <label
+                                key={order.id || order.orderCode}
+                                className={`inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                                  checked
+                                    ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
+                                    : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                                }`}
+                                title={extras || order.orderCode}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleProductionOrder(order.orderCode)}
+                                  className="h-3.5 w-3.5 shrink-0 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                                />
+                                <span className="truncate">
+                                  {order.orderCode}
+                                  {extras ? <span className="font-semibold text-zinc-400"> · {extras}</span> : null}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2 border-t border-zinc-100 pt-2">
+                      <p className="text-[11px] font-semibold text-zinc-500">
+                        {productionOrderCodes.length > 0
+                          ? `Đã chọn ${productionOrderCodes.length} lệnh SX`
+                          : `Tick nhiều mã lệnh SX${warehouseKind === 'san_pham' ? ' — sẽ gộp dòng sản phẩm' : ''}.`}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setProductionOrderPickerOpen(false)}
+                        className="h-7 shrink-0 rounded-lg border border-zinc-200 px-2.5 text-[11px] font-bold text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        Xong
+                      </button>
+                    </div>
+                  </div>,
+                  document.body
+                )
+              : null}
+          </div>
         </div>
       </section>
 
@@ -1036,7 +1351,9 @@ export function WarehouseSlipPanel({
                 Chi tiết {warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL'}
               </p>
               <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
-                Mỗi dòng là một {warehouseKind === 'san_pham' ? 'mã SP' : 'mã NPL'} trong phiếu
+                {isNvlExport
+                  ? 'Mỗi dòng xuất gắn 1 lô nhập (giá). Cùng mã NPL có thể thêm nhiều dòng / nhiều lô.'
+                  : `Mỗi dòng là một ${warehouseKind === 'san_pham' ? 'mã SP' : 'mã NPL'} trong phiếu`}
               </p>
             </div>
             <button
@@ -1053,7 +1370,9 @@ export function WarehouseSlipPanel({
             className={
               slipType === 'nhap'
                 ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                : isNvlExport
+                  ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.4fr)_5.5rem_5rem_5.5rem_5.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                  : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
             }
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
@@ -1069,7 +1388,12 @@ export function WarehouseSlipPanel({
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thực nhập *</span>
               </>
             ) : (
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
+              <>
+                {isNvlExport ? (
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lô nhập / giá *</span>
+                ) : null}
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
+              </>
             )}
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Quy đổi kg</span>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>
@@ -1078,13 +1402,18 @@ export function WarehouseSlipPanel({
           </div>
 
           <div className="divide-y divide-zinc-200/80">
-            {lines.map(line => (
+            {lines.map(line => {
+              const lineLots = line.code ? lotsByCode[line.code] || [] : [];
+              const selectedLot = lineLots.find(lot => lot.id === line.sourceInboundLineId);
+              return (
               <div
                 key={line.key}
                 className={
                   slipType === 'nhap'
                     ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:items-end xl:gap-3'
-                    : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3'
+                    : isNvlExport
+                      ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.4fr)_5.5rem_5rem_5.5rem_5.5rem_2.5rem] xl:items-end xl:gap-3'
+                      : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3'
                 }
               >
                 <div className="sm:col-span-2 xl:col-span-1">
@@ -1147,16 +1476,52 @@ export function WarehouseSlipPanel({
                     </div>
                   </>
                 ) : (
-                  <div>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={line.quantity}
-                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                      className={warehouseFieldClass}
-                      placeholder="VD: 100,00"
-                    />
-                  </div>
+                  <>
+                    {isNvlExport ? (
+                      <div className="sm:col-span-2 xl:col-span-1">
+                        <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                          Lô nhập / giá *
+                        </span>
+                        <select
+                          value={line.sourceInboundLineId || ''}
+                          onChange={event => pickInboundLot(line.key, event.target.value)}
+                          disabled={!line.code || lotsLoadingCode === line.code}
+                          className={warehouseFieldClass}
+                        >
+                          <option value="">
+                            {!line.code
+                              ? 'Chọn mã NPL trước'
+                              : lotsLoadingCode === line.code
+                                ? 'Đang tải lô...'
+                                : lineLots.length === 0
+                                  ? 'Không còn lô tồn'
+                                  : 'Chọn lô nhập còn tồn'}
+                          </option>
+                          {lineLots.map(lot => (
+                            <option key={lot.id} value={lot.id}>
+                              {lot.ngay_phieu || '—'} · {lot.ma_phieu || 'PN'} ·{' '}
+                              {formatWarehouseMoney(lot.don_gia)} đ · còn {formatNumber(lot.so_luong_con, 3)}
+                            </option>
+                          ))}
+                        </select>
+                        {selectedLot ? (
+                          <p className="mt-1 text-[10px] font-semibold text-zinc-400">
+                            Nhập tối đa {formatNumber(selectedLot.so_luong_con, 3)} {line.unit || selectedLot.don_vi}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={line.quantity}
+                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                        className={warehouseFieldClass}
+                        placeholder="VD: 100,00"
+                      />
+                    </div>
+                  </>
                 )}
                 <div>
                   <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
@@ -1167,15 +1532,21 @@ export function WarehouseSlipPanel({
                   </div>
                 </div>
                 <div>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={line.unitPrice}
-                    onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                    onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                    className={warehouseFieldClass}
-                    placeholder="VD: 25.000"
-                  />
+                  {isNvlExport ? (
+                    <div className={`${warehouseFieldClass} flex items-center bg-zinc-100 font-mono font-bold text-zinc-800`}>
+                      {line.unitPrice ? `${formatWarehouseMoney(parseMoneyInput(line.unitPrice) || 0)} đ` : '—'}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={line.unitPrice}
+                      onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                      onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                      className={warehouseFieldClass}
+                      placeholder="VD: 25.000"
+                    />
+                  )}
                 </div>
                 <div>
                   <div className={`${warehouseFieldClass} flex items-center bg-white font-mono font-bold text-zinc-900`}>
@@ -1193,7 +1564,8 @@ export function WarehouseSlipPanel({
                   </button>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -1461,7 +1833,8 @@ export function WarehouseHistoryPanel({
         quantity: row.quantity,
         documentQuantity: row.documentQuantity ?? null,
         unitPrice: row.unitPrice,
-        lineAmount: row.lineAmount
+        lineAmount: row.lineAmount,
+        sourceInboundSlipCode: row.sourceInboundSlipCode
       }))
     });
     setHistoryPrintAutoTrigger(autoPrint);
@@ -1478,7 +1851,7 @@ export function WarehouseHistoryPanel({
     const draft = buildWarehouseSlipDraftFromHistoryRows(rows, slipCode);
     if (!draft) return;
 
-    localStorage.setItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY, JSON.stringify(draft));
+    localStorage.setItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY, JSON.stringify({ ...draft, createdAt: Date.now() }));
     setViewingSlipCode(null);
     onOpenSlip();
   };
@@ -1920,6 +2293,9 @@ export function WarehouseHistoryPanel({
                     <th className="py-2 pr-3 font-black">SL</th>
                     <th className="py-2 pr-3 font-black">ĐVT</th>
                     <th className="py-2 pr-3 text-right font-black">Trọng lượng</th>
+                    {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+                      <th className="py-2 pr-3 font-black">PN nhập</th>
+                    ) : null}
                     <th className="py-2 pr-3 font-black">Giá</th>
                     <th className="py-2 font-black">Thành tiền</th>
                   </tr>
@@ -1934,6 +2310,11 @@ export function WarehouseHistoryPanel({
                       <td className="py-2 pr-3 text-right font-mono font-bold text-emerald-800">
                         {formatWarehouseWeightKg(resolveWarehouseRowWeightKg(row))}
                       </td>
+                      {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+                        <td className="py-2 pr-3 font-mono text-xs font-bold text-indigo-700">
+                          {row.sourceInboundSlipCode || '—'}
+                        </td>
+                      ) : null}
                       <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatWarehouseMoney(row.unitPrice)} đ</td>
                       <td className="py-2 font-mono font-bold text-zinc-900">{formatWarehouseMoney(row.lineAmount)} đ</td>
                     </tr>

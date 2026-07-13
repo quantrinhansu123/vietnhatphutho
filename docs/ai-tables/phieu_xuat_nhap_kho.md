@@ -4,16 +4,17 @@
 |---|---|
 | **Bảng** | `phieu_xuat_nhap_kho` |
 | **Tab** | `warehouse-slip`, `warehouse-history` |
-| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + các file migrate `supabase-phieu-xuat-nhap-kho-*.sql` |
+| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`) |
 
 ## API (`server.ts`)
 
 | Method | Path | Dòng |
 |--------|------|------|
-| GET | `/api/phieu-xuat-nhap-kho` | 4786 |
-| POST | `/api/phieu-xuat-nhap-kho` | 4837 |
-| PUT | `/api/phieu-xuat-nhap-kho/:slipCode` | 4912 |
-| DELETE | slip / id | 5030–5118 |
+| GET | `/api/phieu-xuat-nhap-kho` | ~5212 |
+| GET | `/api/phieu-xuat-nhap-kho/lo-ton` | (lô tồn theo `ma_npl`) |
+| POST | `/api/phieu-xuat-nhap-kho` | ~5263 |
+| PUT | `/api/phieu-xuat-nhap-kho/:slipCode` | ~5377 |
+| DELETE | slip / id | ~5495+ |
 
 ## Frontend
 

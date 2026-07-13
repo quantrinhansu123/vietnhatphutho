@@ -56,6 +56,7 @@ export function SearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
   const selectedItem = useMemo(() => {
+    if (!value) return null;
     if (resolveSelectedItem) {
       return resolveSelectedItem(options, value);
     }

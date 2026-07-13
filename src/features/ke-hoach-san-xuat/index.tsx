@@ -2511,6 +2511,7 @@ export function ProductionPlanModal({
       slipType: 'xuat',
       warehouseKind: 'nvl',
       slipDate: planDate,
+      createdAt: Date.now(),
       reason: resolvedShift ? `Xuất NVL theo kế hoạch sản xuất - ${resolvedShift}` : 'Xuất NVL theo kế hoạch sản xuất',
       note: resolvedShift
         ? `Tạo từ hạch toán định mức NVL (${resolvedShift}, ${shiftOrderCount} lệnh SX).`
