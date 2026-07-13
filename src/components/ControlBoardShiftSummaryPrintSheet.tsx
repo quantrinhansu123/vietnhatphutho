@@ -2,6 +2,7 @@ import React from 'react';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import {
   computeShiftSummarySanLuongMetrics,
+  computeSoTienLoLaiNhua,
   formatShiftSummaryNumber,
   formatShiftSummaryKg,
   formatShiftSummaryPercent,
@@ -10,6 +11,7 @@ import {
   TI_LE_LOI_HONG_DINH_MUC_PERCENT,
   type ControlBoardShiftSummaryRow
 } from '../utils/controlBoardShiftSummary';
+import { formatMoney, parseMoneyInput } from '../utils';
 
 export type ShiftSummaryPrintFilters = {
   dateFrom: string;
@@ -35,6 +37,11 @@ function formatPrintRange(dateFrom: string, dateTo: string) {
   return '-';
 }
 
+function resolvePrintGiaNhua(map: Record<string, string> | undefined, rowKey: string) {
+  const parsed = parseMoneyInput(map?.[rowKey] || '');
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
 function EmptyRows({ colSpan }: { colSpan: number }) {
   return (
     <tr>
@@ -48,11 +55,13 @@ function EmptyRows({ colSpan }: { colSpan: number }) {
 function ControlBoardShiftSummaryPrintSheet({
   rows,
   filters,
-  phanTichDanhGiaMap = {}
+  phanTichDanhGiaMap = {},
+  giaNhuaMap = {}
 }: {
   rows: ControlBoardShiftSummaryRow[];
   filters: ShiftSummaryPrintFilters;
   phanTichDanhGiaMap?: Record<string, string>;
+  giaNhuaMap?: Record<string, string>;
 }) {
   const totals = {
     slHang: sumShiftSummaryColumn(rows, 'slHang'),
@@ -152,15 +161,20 @@ function ControlBoardShiftSummaryPrintSheet({
                 <th className="shift-summary-print-num">Tỉ lệ LH</th>
                 <th className="shift-summary-print-num">Lệch LH vs ĐM</th>
                 <th className="shift-summary-print-num">Lỗ/lãi nhựa</th>
+                <th className="shift-summary-print-num">Giá</th>
+                <th className="shift-summary-print-num">Số tiền lỗ lãi nhựa</th>
                 <th className="shift-summary-print-num">Lỗ/lãi màng</th>
                 <th>Phân tích đánh giá</th>
               </tr>
             </thead>
             <tbody>
               {!hasRows ? (
-                <EmptyRows colSpan={11} />
+                <EmptyRows colSpan={13} />
               ) : (
-                rows.map(row => (
+                rows.map(row => {
+                  const giaNhua = resolvePrintGiaNhua(giaNhuaMap, row.key);
+                  const soTienLoLaiNhua = computeSoTienLoLaiNhua(row.giaTriLoLaiNhua, giaNhua);
+                  return (
                   <tr key={`san-luong-${row.key}`}>
                     <td className="shift-summary-print-center">{formatPrintDate(row.ngay)}</td>
                     <td className="shift-summary-print-center">{row.ca}</td>
@@ -184,11 +198,18 @@ function ControlBoardShiftSummaryPrintSheet({
                       {formatShiftSummaryKg(row.giaTriLoLaiNhua, 3)}
                     </td>
                     <td className="shift-summary-print-num">
+                      {giaNhua > 0 ? formatMoney(giaNhua, 0) : ''}
+                    </td>
+                    <td className="shift-summary-print-num">
+                      {formatMoney(soTienLoLaiNhua, 0)}
+                    </td>
+                    <td className="shift-summary-print-num">
                       {formatShiftSummaryKg(row.giaTriLoLaiMang, 3)}
                     </td>
                     <td>{phanTichDanhGiaMap[row.key] || ''}</td>
                   </tr>
-                ))
+                  );
+                })
               )}
               {hasRows ? (
                 <tr className="shift-summary-print-total-row">
@@ -215,6 +236,21 @@ function ControlBoardShiftSummaryPrintSheet({
                   </td>
                   <td className="shift-summary-print-num">
                     {formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiNhua, 3)}
+                  </td>
+                  <td className="shift-summary-print-num" />
+                  <td className="shift-summary-print-num">
+                    {formatMoney(
+                      rows.reduce(
+                        (sum, row) =>
+                          sum +
+                          computeSoTienLoLaiNhua(
+                            row.giaTriLoLaiNhua,
+                            resolvePrintGiaNhua(giaNhuaMap, row.key)
+                          ),
+                        0
+                      ),
+                      0
+                    )}
                   </td>
                   <td className="shift-summary-print-num">
                     {formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiMang, 3)}
@@ -642,11 +678,13 @@ function ControlBoardShiftSummaryPrintSheet({
 export function ControlBoardShiftSummaryPrintBatch({
   rows,
   filters,
-  phanTichDanhGiaMap
+  phanTichDanhGiaMap,
+  giaNhuaMap
 }: {
   rows: ControlBoardShiftSummaryRow[];
   filters: ShiftSummaryPrintFilters;
   phanTichDanhGiaMap?: Record<string, string>;
+  giaNhuaMap?: Record<string, string>;
 }) {
   return (
     <div className="production-order-print-batch shift-summary-print-batch">
@@ -654,6 +692,7 @@ export function ControlBoardShiftSummaryPrintBatch({
         rows={rows}
         filters={filters}
         phanTichDanhGiaMap={phanTichDanhGiaMap}
+        giaNhuaMap={giaNhuaMap}
       />
     </div>
   );

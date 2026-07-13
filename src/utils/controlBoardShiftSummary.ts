@@ -987,6 +987,12 @@ export function formatShiftSummaryPercent(value: number, fractionDigits = 2) {
   return `${formatShiftSummaryNumber(value, fractionDigits)}%`;
 }
 
+/** Số tiền lỗ lãi nhựa (đ) = Giá trị lỗ/lãi nhựa (kg) × Giá (đ/kg) */
+export function computeSoTienLoLaiNhua(giaTriLoLaiNhua: number, gia: number) {
+  if (!Number.isFinite(giaTriLoLaiNhua) || !Number.isFinite(gia) || gia === 0) return 0;
+  return Math.round(giaTriLoLaiNhua * gia);
+}
+
 export function resolveShiftSummaryTlDinhMucKgCuon(
   row: Pick<ControlBoardShiftSummaryRow, 'slHang' | 'khoiLuongHang'>
 ) {

@@ -15,6 +15,7 @@ import {
   formatShiftSummaryKg,
   formatShiftSummaryPercent,
   computeShiftSummarySanLuongMetrics,
+  computeSoTienLoLaiNhua,
   resolveShiftSummaryTlDinhMucKgCuon,
   sumShiftSummaryColumn,
   TI_LE_LOI_HONG_DINH_MUC_PERCENT,
@@ -27,15 +28,17 @@ import {
 } from '../utils/controlBoardShiftSummaryDetails';
 import type { ShiftSetting } from '../utils/shiftSettings';
 import { waitForPrintImagesReady } from '../utils/printReady';
+import { formatMoney, parseMoneyInput, sanitizeMoneyInput } from '../utils';
 
 const inputClass =
   'h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 const SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY = 'control-board-shift-summary-phan-tich-v1';
+const SHIFT_SUMMARY_GIA_NHUA_STORAGE_KEY = 'control-board-shift-summary-gia-nhua-v1';
 
-function loadPhanTichDanhGiaMap(): Record<string, string> {
+function loadStringMap(storageKey: string): Record<string, string> {
   try {
-    const raw = localStorage.getItem(SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object') return {};
@@ -45,12 +48,33 @@ function loadPhanTichDanhGiaMap(): Record<string, string> {
   }
 }
 
-function persistPhanTichDanhGiaMap(map: Record<string, string>) {
+function persistStringMap(storageKey: string, map: Record<string, string>) {
   try {
-    localStorage.setItem(SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY, JSON.stringify(map));
+    localStorage.setItem(storageKey, JSON.stringify(map));
   } catch {
     // ignore quota / private mode
   }
+}
+
+function loadPhanTichDanhGiaMap(): Record<string, string> {
+  return loadStringMap(SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY);
+}
+
+function persistPhanTichDanhGiaMap(map: Record<string, string>) {
+  persistStringMap(SHIFT_SUMMARY_PHAN_TICH_STORAGE_KEY, map);
+}
+
+function loadGiaNhuaMap(): Record<string, string> {
+  return loadStringMap(SHIFT_SUMMARY_GIA_NHUA_STORAGE_KEY);
+}
+
+function persistGiaNhuaMap(map: Record<string, string>) {
+  persistStringMap(SHIFT_SUMMARY_GIA_NHUA_STORAGE_KEY, map);
+}
+
+function resolveGiaNhua(map: Record<string, string>, rowKey: string) {
+  const parsed = parseMoneyInput(map[rowKey] || '');
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 type ShiftSummaryTabId =
@@ -179,16 +203,28 @@ export default function ControlBoardShiftSummaryTable({
     rows: ControlBoardShiftSummaryRow[];
     filters: ShiftSummaryPrintFilters;
     phanTichDanhGiaMap: Record<string, string>;
+    giaNhuaMap: Record<string, string>;
   } | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [phanTichDanhGiaMap, setPhanTichDanhGiaMap] = useState<Record<string, string>>(() =>
     typeof window !== 'undefined' ? loadPhanTichDanhGiaMap() : {}
+  );
+  const [giaNhuaMap, setGiaNhuaMap] = useState<Record<string, string>>(() =>
+    typeof window !== 'undefined' ? loadGiaNhuaMap() : {}
   );
 
   const updatePhanTichDanhGia = (rowKey: string, value: string) => {
     setPhanTichDanhGiaMap(prev => {
       const next = { ...prev, [rowKey]: value };
       persistPhanTichDanhGiaMap(next);
+      return next;
+    });
+  };
+
+  const updateGiaNhua = (rowKey: string, value: string) => {
+    setGiaNhuaMap(prev => {
+      const next = { ...prev, [rowKey]: value };
+      persistGiaNhuaMap(next);
       return next;
     });
   };
@@ -271,6 +307,12 @@ export default function ControlBoardShiftSummaryTable({
     tiLeLoiHongDinhMuc: TI_LE_LOI_HONG_DINH_MUC_PERCENT
   });
 
+  const tongSoTienLoLaiNhua = filteredRows.reduce(
+    (sum, row) =>
+      sum + computeSoTienLoLaiNhua(row.giaTriLoLaiNhua, resolveGiaNhua(giaNhuaMap, row.key)),
+    0
+  );
+
   const shiftFilterLabel = shiftFilter === 'all' ? 'Tất cả ca' : shiftFilter;
   const machineFilterLabel = machineFilter === 'all' ? 'Tất cả máy' : machineFilter;
   const staffFilterLabel = staffFilter === 'all' ? 'Tất cả nhân viên' : staffFilter;
@@ -289,7 +331,8 @@ export default function ControlBoardShiftSummaryTable({
         staffLabel: staffFilterLabel,
         machineLabel: machineFilterLabel
       },
-      phanTichDanhGiaMap
+      phanTichDanhGiaMap,
+      giaNhuaMap
     });
     setPendingPrint(true);
   };
@@ -641,6 +684,29 @@ export default function ControlBoardShiftSummaryTable({
                       <dd className="font-mono font-bold text-amber-800">{formatShiftSummaryKg(row.giaTriLoLaiNhua, 3)}</dd>
                     </div>
                     <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Giá (đ/kg)</dt>
+                      <dd className="mt-0.5">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={giaNhuaMap[row.key] || ''}
+                          onChange={event => updateGiaNhua(row.key, sanitizeMoneyInput(event.target.value))}
+                          placeholder="VD: 25.000"
+                          className="h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                        />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Số tiền lỗ lãi nhựa</dt>
+                      <dd className="font-mono font-bold text-emerald-800">
+                        {formatMoney(
+                          computeSoTienLoLaiNhua(row.giaTriLoLaiNhua, resolveGiaNhua(giaNhuaMap, row.key)),
+                          0
+                        )}{' '}
+                        đ
+                      </dd>
+                    </div>
+                    <div>
                       <dt className="font-bold uppercase tracking-wider text-zinc-400">Lỗ/lãi màng</dt>
                       <dd className="font-mono font-bold text-fuchsia-800">{formatShiftSummaryKg(row.giaTriLoLaiMang, 3)}</dd>
                     </div>
@@ -728,6 +794,7 @@ export default function ControlBoardShiftSummaryTable({
                   <span className="text-sky-700">Tỉ lệ CL: {formatShiftSummaryPercent(sanLuongTotals.tiLeChenhLechTrongLuong)}</span>
                   <span className="text-rose-700">Tỉ lệ LH: {formatShiftSummaryPercent(sanLuongTotals.tiLeLoiHong)}</span>
                   <span className="text-amber-800">Lỗ/lãi nhựa: {formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiNhua, 3)}</span>
+                  <span className="text-emerald-800">Số tiền LL nhựa: {formatMoney(tongSoTienLoLaiNhua, 0)} đ</span>
                   <span className="text-fuchsia-800">Lỗ/lãi màng: {formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiMang, 3)}</span>
                 </div>
                 )}
@@ -1120,7 +1187,7 @@ export default function ControlBoardShiftSummaryTable({
             )}
           </table>
           ) : activeTab === 'san_luong' ? (
-          <table className="min-w-[1480px] w-full text-left text-xs">
+          <table className="min-w-[1680px] w-full text-left text-xs">
             <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -1132,6 +1199,8 @@ export default function ControlBoardShiftSummaryTable({
                 <th className="px-3 py-2.5 text-right font-black">Tỉ lệ lỗi hỏng</th>
                 <th className="px-3 py-2.5 text-right font-black">Lệch lỗi hỏng so với định mức</th>
                 <th className="px-3 py-2.5 text-right font-black">Giá trị lỗ/lãi nhựa</th>
+                <th className="px-3 py-2.5 text-right font-black">Giá</th>
+                <th className="px-3 py-2.5 text-right font-black">Số tiền lỗ lãi nhựa</th>
                 <th className="px-3 py-2.5 text-right font-black">Giá trị lỗ/lãi màng</th>
                 <th className="px-3 py-2.5 font-black">Phân tích đánh giá</th>
               </tr>
@@ -1139,19 +1208,22 @@ export default function ControlBoardShiftSummaryTable({
             <tbody className="divide-y divide-zinc-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={13} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải dữ liệu tổng hợp...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={13} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có dữ liệu theo bộ lọc đã chọn.
                   </td>
                 </tr>
               ) : (
-                filteredRows.map(row => (
+                filteredRows.map(row => {
+                  const giaNhua = resolveGiaNhua(giaNhuaMap, row.key);
+                  const soTienLoLaiNhua = computeSoTienLoLaiNhua(row.giaTriLoLaiNhua, giaNhua);
+                  return (
                   <tr key={row.key} className="hover:bg-indigo-50/40">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
@@ -1162,6 +1234,19 @@ export default function ControlBoardShiftSummaryTable({
                     <SummaryValueCell row={row} metric="tiLeLoiHong" formatted={formatShiftSummaryPercent(row.tiLeLoiHong)} className="px-3 py-2 text-right font-mono font-bold text-rose-700" onOpen={openDetail} />
                     <SummaryValueCell row={row} metric="lechLoiHongVsDinhMuc" formatted={formatShiftSummaryPercent(row.lechLoiHongVsDinhMuc)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
                     <SummaryValueCell row={row} metric="giaTriLoLaiNhua" formatted={formatShiftSummaryKg(row.giaTriLoLaiNhua, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-800" onOpen={openDetail} />
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={giaNhuaMap[row.key] || ''}
+                        onChange={event => updateGiaNhua(row.key, sanitizeMoneyInput(event.target.value))}
+                        placeholder="VD: 25.000"
+                        className="h-8 w-[7.5rem] rounded-lg border border-zinc-200 bg-white px-2 text-right text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800">
+                      {formatMoney(soTienLoLaiNhua, 0)} đ
+                    </td>
                     <SummaryValueCell row={row} metric="giaTriLoLaiMang" formatted={formatShiftSummaryKg(row.giaTriLoLaiMang, 3)} className="px-3 py-2 text-right font-mono font-bold text-fuchsia-800" onOpen={openDetail} />
                     <td className="px-3 py-2 min-w-[180px]">
                       <textarea
@@ -1173,7 +1258,8 @@ export default function ControlBoardShiftSummaryTable({
                       />
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
             {!isLoading && filteredRows.length > 0 && (
@@ -1187,6 +1273,8 @@ export default function ControlBoardShiftSummaryTable({
                   <td className="px-3 py-2.5 text-right font-mono text-rose-700">{formatShiftSummaryPercent(sanLuongTotals.tiLeLoiHong)}</td>
                   <td className="px-3 py-2.5 text-right font-mono text-amber-700">{formatShiftSummaryPercent(sanLuongTotals.lechLoiHongVsDinhMuc)}</td>
                   <td className="px-3 py-2.5 text-right font-mono text-amber-800">{formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiNhua, 3)}</td>
+                  <td className="px-3 py-2.5" />
+                  <td className="px-3 py-2.5 text-right font-mono text-emerald-800">{formatMoney(tongSoTienLoLaiNhua, 0)} đ</td>
                   <td className="px-3 py-2.5 text-right font-mono text-fuchsia-800">{formatShiftSummaryKg(sanLuongTotals.giaTriLoLaiMang, 3)}</td>
                   <td className="px-3 py-2.5" />
                 </tr>
@@ -1204,6 +1292,7 @@ export default function ControlBoardShiftSummaryTable({
               rows={printPayload.rows}
               filters={printPayload.filters}
               phanTichDanhGiaMap={printPayload.phanTichDanhGiaMap}
+              giaNhuaMap={printPayload.giaNhuaMap}
             />,
             document.body
           )
