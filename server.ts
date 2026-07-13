@@ -2863,9 +2863,8 @@ async function validateNvlExportLots(
 
   for (const item of items) {
     const lotId = String(item.sourceInboundLineId || '').trim();
-    if (!lotId) {
-      return { error: `Dòng ${item.code} cần chọn lô nhập (giá) khi xuất NVL.` };
-    }
+    // Lô nhập / giá không bắt buộc — chỉ validate khi đã chọn lô.
+    if (!lotId) continue;
     const current = requestedByLot.get(lotId) || {
       qty: 0,
       code: item.code,

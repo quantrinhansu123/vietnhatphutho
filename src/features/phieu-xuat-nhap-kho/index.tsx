@@ -927,7 +927,7 @@ export function WarehouseSlipPanel({
   const handleSave = async () => {
     const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind, {
       allowMissingUnitPrice: false,
-      requireInboundLot: isNvlExport
+      requireInboundLot: false
     });
     if ('error' in parsed) {
       setFormError(parsed.error);
@@ -1352,7 +1352,7 @@ export function WarehouseSlipPanel({
               </p>
               <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
                 {isNvlExport
-                  ? 'Mỗi dòng xuất gắn 1 lô nhập (giá). Cùng mã NPL có thể thêm nhiều dòng / nhiều lô.'
+                  ? 'Có thể chọn lô nhập (giá) theo từng dòng — không bắt buộc. Cùng mã NPL có thể thêm nhiều dòng / nhiều lô.'
                   : `Mỗi dòng là một ${warehouseKind === 'san_pham' ? 'mã SP' : 'mã NPL'} trong phiếu`}
               </p>
             </div>
@@ -1390,7 +1390,7 @@ export function WarehouseSlipPanel({
             ) : (
               <>
                 {isNvlExport ? (
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lô nhập / giá *</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lô nhập / giá</span>
                 ) : null}
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
               </>
@@ -1480,7 +1480,7 @@ export function WarehouseSlipPanel({
                     {isNvlExport ? (
                       <div className="sm:col-span-2 xl:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                          Lô nhập / giá *
+                          Lô nhập / giá
                         </span>
                         <select
                           value={line.sourceInboundLineId || ''}
@@ -1493,9 +1493,7 @@ export function WarehouseSlipPanel({
                               ? 'Chọn mã NPL trước'
                               : lotsLoadingCode === line.code
                                 ? 'Đang tải lô...'
-                                : lineLots.length === 0
-                                  ? 'Không còn lô tồn'
-                                  : 'Chọn lô nhập còn tồn'}
+                                : 'Không chọn lô (không bắt buộc)'}
                           </option>
                           {lineLots.map(lot => (
                             <option key={lot.id} value={lot.id}>
@@ -1532,7 +1530,7 @@ export function WarehouseSlipPanel({
                   </div>
                 </div>
                 <div>
-                  {isNvlExport ? (
+                  {isNvlExport && line.sourceInboundLineId ? (
                     <div className={`${warehouseFieldClass} flex items-center bg-zinc-100 font-mono font-bold text-zinc-800`}>
                       {line.unitPrice ? `${formatWarehouseMoney(parseMoneyInput(line.unitPrice) || 0)} đ` : '—'}
                     </div>
