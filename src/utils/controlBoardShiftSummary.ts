@@ -971,7 +971,7 @@ export function buildControlBoardShiftSummary(input: {
 }
 
 export function formatShiftSummaryNumber(value: number, fractionDigits = 2) {
-  if (!Number.isFinite(value) || value === 0) return '-';
+  if (!Number.isFinite(value)) return '-';
   return new Intl.NumberFormat('vi-VN', {
     minimumFractionDigits: 0,
     maximumFractionDigits: fractionDigits
@@ -983,7 +983,7 @@ export function formatShiftSummaryKg(value: number, fractionDigits = 3) {
 }
 
 export function formatShiftSummaryPercent(value: number, fractionDigits = 2) {
-  if (!Number.isFinite(value) || value === 0) return '-';
+  if (!Number.isFinite(value)) return '-';
   return `${formatShiftSummaryNumber(value, fractionDigits)}%`;
 }
 

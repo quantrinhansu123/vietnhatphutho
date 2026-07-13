@@ -576,6 +576,11 @@ input[type="number"] {
     margin: 8mm;
   }
 
+  @page shift-summary-page {
+    size: A4;
+    margin: 5mm;
+  }
+
   @page mixing-report-page {
     size: A4;
     margin: 0;
@@ -1053,31 +1058,53 @@ input[type="number"] {
 
   .shift-summary-print-batch {
     display: block !important;
-    position: absolute;
-    inset: 0;
-    left: 0;
-    top: 0;
-    width: 100%;
-    z-index: 9999;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    z-index: auto !important;
     background: #ffffff;
     color: #111111;
-    padding: 0;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    page: shift-summary-page;
   }
 
-  .shift-summary-print-batch .shift-summary-print-sheet {
-    position: relative;
-    inset: auto;
-    left: auto;
-    top: auto;
-    width: auto;
+  .shift-summary-print-batch .shift-summary-print-sheet,
+  .shift-summary-print-batch .production-order-print-sheet {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    page: shift-summary-page;
+  }
+
+  body.shift-summary-print-active #root {
+    display: none !important;
+  }
+
+  body.shift-summary-print-active .shift-summary-print-batch {
+    display: block !important;
   }
 
   .shift-summary-print-doc {
-    width: 190mm !important;
-    max-width: 190mm !important;
-    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
     padding: 0 !important;
     box-sizing: border-box !important;
+  }
+
+  .shift-summary-print-doc .production-order-print-logo {
+    max-height: 10mm !important;
+    width: auto !important;
   }
 
   .shift-summary-print-table {
@@ -1085,6 +1112,32 @@ input[type="number"] {
     max-width: 100% !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
+    margin-bottom: 1mm !important;
+  }
+
+  .shift-summary-print-section {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    page-break-before: auto !important;
+    break-before: auto !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+    margin-bottom: 1.5mm !important;
+  }
+
+  .shift-summary-print-page {
+    page-break-after: auto !important;
+    break-after: auto !important;
+    page-break-before: auto !important;
+    break-before: auto !important;
+  }
+
+  .shift-summary-print-signatures {
+    margin-top: 3mm !important;
+  }
+
+  .shift-summary-print-signatures span {
+    margin-top: 6mm !important;
   }
 }
 
@@ -2485,7 +2538,32 @@ input[type="number"] {
 }
 
 .shift-summary-print-filter-table {
-  margin-bottom: 4mm;
+  margin-bottom: 2mm;
+}
+
+.shift-summary-print-page {
+  page-break-after: auto;
+  break-after: auto;
+}
+
+.shift-summary-print-section {
+  margin-bottom: 2mm;
+  page-break-inside: auto;
+  break-inside: auto;
+}
+
+.shift-summary-print-doc .production-order-print-letterhead {
+  margin-bottom: 1.5mm;
+}
+
+.shift-summary-print-doc .production-order-print-title {
+  margin: 0.5mm 0 1.5mm;
+  font-size: 12pt;
+}
+
+.shift-summary-print-doc .production-order-print-section-title {
+  margin: 0 0 1mm;
+  font-size: 9.5pt;
 }
 
 .shift-summary-print-table {
@@ -2493,17 +2571,23 @@ input[type="number"] {
   max-width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  margin-bottom: 5mm;
+  margin-bottom: 1mm;
   box-sizing: border-box;
+}
+
+.shift-summary-print-table-wide th,
+.shift-summary-print-table-wide td {
+  font-size: 7.5pt;
+  padding: 0.6mm 0.5mm;
 }
 
 .shift-summary-print-table th,
 .shift-summary-print-table td {
   border: 1px solid #222222;
-  padding: 1.6mm 1.4mm;
+  padding: 0.7mm 0.6mm;
   font-family: 'Times New Roman', Times, serif;
-  font-size: 10pt;
-  line-height: 1.25;
+  font-size: 8pt;
+  line-height: 1.15;
   text-align: left;
   vertical-align: middle;
   word-wrap: break-word;
@@ -2514,6 +2598,13 @@ input[type="number"] {
 .shift-summary-print-table th {
   font-weight: 700;
   background: #ffffff;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.2;
+  text-align: center;
+  vertical-align: middle;
+  hyphens: manual;
 }
 
 .shift-summary-print-col-date { width: 12%; }
@@ -2524,9 +2615,14 @@ input[type="number"] {
   text-align: center;
 }
 
-.shift-summary-print-num {
+.shift-summary-print-table td.shift-summary-print-num {
   text-align: right;
   white-space: nowrap;
+}
+
+.shift-summary-print-table th.shift-summary-print-num {
+  text-align: center;
+  white-space: normal;
 }
 
 .shift-summary-print-total-row td {
@@ -2542,10 +2638,10 @@ input[type="number"] {
 .shift-summary-print-signatures {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12mm;
-  margin-top: 10mm;
+  gap: 8mm;
+  margin-top: 4mm;
   text-align: center;
-  font-size: 10.5pt;
+  font-size: 9pt;
 }
 
 .shift-summary-print-signatures p {
@@ -2555,7 +2651,7 @@ input[type="number"] {
 
 .shift-summary-print-signatures span {
   display: block;
-  margin-top: 16mm;
+  margin-top: 8mm;
   font-style: italic;
   font-weight: 400;
   color: #444444;

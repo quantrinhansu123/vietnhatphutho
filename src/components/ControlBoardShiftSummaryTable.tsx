@@ -178,6 +178,7 @@ export default function ControlBoardShiftSummaryTable({
   const [printPayload, setPrintPayload] = useState<{
     rows: ControlBoardShiftSummaryRow[];
     filters: ShiftSummaryPrintFilters;
+    phanTichDanhGiaMap: Record<string, string>;
   } | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [phanTichDanhGiaMap, setPhanTichDanhGiaMap] = useState<Record<string, string>>(() =>
@@ -287,7 +288,8 @@ export default function ControlBoardShiftSummaryTable({
         shiftLabel: shiftFilterLabel,
         staffLabel: staffFilterLabel,
         machineLabel: machineFilterLabel
-      }
+      },
+      phanTichDanhGiaMap
     });
     setPendingPrint(true);
   };
@@ -295,6 +297,7 @@ export default function ControlBoardShiftSummaryTable({
   useEffect(() => {
     if (!pendingPrint || !printPayload) return;
     let cancelled = false;
+    document.body.classList.add('shift-summary-print-active');
     const timer = window.setTimeout(() => {
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
@@ -305,11 +308,13 @@ export default function ControlBoardShiftSummaryTable({
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      document.body.classList.remove('shift-summary-print-active');
     };
   }, [pendingPrint, printPayload]);
 
   useEffect(() => {
     const handleAfterPrint = () => {
+      document.body.classList.remove('shift-summary-print-active');
       setPrintPayload(null);
       setPendingPrint(false);
     };
@@ -1195,7 +1200,11 @@ export default function ControlBoardShiftSummaryTable({
       {detailModal}
       {printPayload
         ? createPortal(
-            <ControlBoardShiftSummaryPrintBatch rows={printPayload.rows} filters={printPayload.filters} />,
+            <ControlBoardShiftSummaryPrintBatch
+              rows={printPayload.rows}
+              filters={printPayload.filters}
+              phanTichDanhGiaMap={printPayload.phanTichDanhGiaMap}
+            />,
             document.body
           )
         : null}
