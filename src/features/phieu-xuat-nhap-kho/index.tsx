@@ -594,8 +594,6 @@ export function WarehouseSlipPanel({
   const [lines, setLines] = useState<WarehouseSlipLineDraft[]>(() => [createWarehouseLineDraft()]);
   const [itemOptions, setItemOptions] = useState<MaterialOption[]>([]);
   const [weightCatalog, setWeightCatalog] = useState<WarehouseWeightCatalogItem[]>([]);
-  const [lotsByCode, setLotsByCode] = useState<Record<string, NvlInboundLotOption[]>>({});
-  const [lotsLoadingCode, setLotsLoadingCode] = useState<string | null>(null);
   const [avgInboundPriceByKey, setAvgInboundPriceByKey] = useState<Record<string, number>>({});
   const [avgPriceLoadingCode, setAvgPriceLoadingCode] = useState<string | null>(null);
 
@@ -741,7 +739,6 @@ export function WarehouseSlipPanel({
   const handleWarehouseKindChange = (kind: WarehouseKind) => {
     setWarehouseKind(kind);
     setLines([createWarehouseLineDraft()]);
-    setLotsByCode({});
     setAvgInboundPriceByKey({});
     setFormError('');
     setActionMessage('');
@@ -749,26 +746,6 @@ export function WarehouseSlipPanel({
 
   const updateLine = (key: string, patch: Partial<WarehouseSlipLineDraft>) => {
     setLines(current => current.map(line => (line.key === key ? { ...line, ...patch } : line)));
-  };
-
-  const loadNvlLots = async (code: string) => {
-    const materialCode = code.trim();
-    if (!materialCode) return;
-    setLotsLoadingCode(materialCode);
-    try {
-      const params = new URLSearchParams({ ma_npl: materialCode });
-      if (editSlipCode) params.set('exclude_ma_phieu', editSlipCode);
-      const res = await fetch(`/api/phieu-xuat-nhap-kho/lo-ton?${params.toString()}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể tải lô tồn.');
-      const lots = Array.isArray(data.lots) ? (data.lots as NvlInboundLotOption[]) : [];
-      setLotsByCode(current => ({ ...current, [materialCode]: lots }));
-    } catch (error: any) {
-      setLotsByCode(current => ({ ...current, [materialCode]: [] }));
-      setFormError(error.message || 'Không thể tải lô tồn NVL.');
-    } finally {
-      setLotsLoadingCode(current => (current === materialCode ? null : current));
-    }
   };
 
   const loadNvlAvgInboundPrice = async (
@@ -797,7 +774,6 @@ export function WarehouseSlipPanel({
         setLines(current =>
           current.map(line => {
             if (line.key !== lineKey) return line;
-            if (line.sourceInboundLineId) return line;
             return { ...line, unitPrice: avg > 0 ? String(avg) : line.unitPrice };
           })
         );
@@ -822,28 +798,8 @@ export function WarehouseSlipPanel({
       ...(isExportNvl ? { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' } : {})
     });
     if (isExportNvl && code.trim()) {
-      void loadNvlLots(code);
       void loadNvlAvgInboundPrice(code, slipDate, { lineKey: key, applySuggestion: true });
     }
-  };
-
-  const pickInboundLot = (key: string, lotId: string) => {
-    const line = lines.find(item => item.key === key);
-    if (!line?.code) return;
-    const lots = lotsByCode[line.code] || [];
-    const lot = lots.find(item => item.id === lotId);
-    if (!lot) {
-      updateLine(key, { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' });
-      void loadNvlAvgInboundPrice(line.code, slipDate, { lineKey: key, applySuggestion: true });
-      return;
-    }
-    updateLine(key, {
-      sourceInboundLineId: lot.id,
-      sourceInboundSlipCode: lot.ma_phieu,
-      unitPrice: String(lot.don_gia || 0),
-      unit: line.unit || lot.don_vi || '',
-      name: line.name || lot.ten_npl || ''
-    });
   };
 
   const isNvlExport = warehouseKind === 'nvl' && slipType === 'xuat';
@@ -852,7 +808,6 @@ export function WarehouseSlipPanel({
     if (!isNvlExport) return;
     const codes = [...new Set(lines.map(line => line.code.trim()).filter(Boolean))];
     for (const code of codes) {
-      if (!lotsByCode[code]) void loadNvlLots(code);
       const cacheKey = avgPriceCacheKey(code, slipDate);
       if (avgInboundPriceByKey[cacheKey] === undefined) {
         void loadNvlAvgInboundPrice(code, slipDate, { applySuggestion: false });
@@ -860,6 +815,20 @@ export function WarehouseSlipPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNvlExport, editSlipCode, slipDate, lines.map(line => line.code).join('|')]);
+
+  // When month/date changes and a line still has empty price, fill BQ suggestion once.
+  useEffect(() => {
+    if (!isNvlExport) return;
+    setLines(current =>
+      current.map(line => {
+        if (!line.code.trim() || line.unitPrice.trim()) return line;
+        const cached = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
+        if (!cached || cached <= 0) return line;
+        return { ...line, unitPrice: String(cached) };
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNvlExport, slipDate, avgInboundPriceByKey]);
 
   const applyProductionOrderSelection = (orderCodes: string[]) => {
     setProductionOrderCodes(orderCodes);
@@ -989,7 +958,10 @@ export function WarehouseSlipPanel({
   };
 
   const handleSave = async () => {
-    const parsed = parseWarehouseSlipPayloadItems(lines, warehouseKind, {
+    const linesForSave = isNvlExport
+      ? lines.map(line => ({ ...line, sourceInboundLineId: '', sourceInboundSlipCode: '' }))
+      : lines;
+    const parsed = parseWarehouseSlipPayloadItems(linesForSave, warehouseKind, {
       allowMissingUnitPrice: false,
       requireInboundLot: false
     });
@@ -1416,7 +1388,7 @@ export function WarehouseSlipPanel({
               </p>
               <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
                 {isNvlExport
-                  ? 'Có thể chọn lô nhập (giá) theo từng dòng — không bắt buộc. Cùng mã NPL có thể thêm nhiều dòng / nhiều lô.'
+                  ? 'Giá tự gợi ý theo BQ nhập trong tháng của ngày phiếu — có thể sửa tay.'
                   : `Mỗi dòng là một ${warehouseKind === 'san_pham' ? 'mã SP' : 'mã NPL'} trong phiếu`}
               </p>
             </div>
@@ -1434,9 +1406,7 @@ export function WarehouseSlipPanel({
             className={
               slipType === 'nhap'
                 ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                : isNvlExport
-                  ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.5fr)_5.5rem_5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                  : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
             }
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
@@ -1452,12 +1422,7 @@ export function WarehouseSlipPanel({
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thực nhập *</span>
               </>
             ) : (
-              <>
-                {isNvlExport ? (
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lô nhập / giá</span>
-                ) : null}
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
-              </>
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
             )}
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Quy đổi kg</span>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>
@@ -1466,18 +1431,13 @@ export function WarehouseSlipPanel({
           </div>
 
           <div className="divide-y divide-zinc-200/80">
-            {lines.map(line => {
-              const lineLots = line.code ? lotsByCode[line.code] || [] : [];
-              const selectedLot = lineLots.find(lot => lot.id === line.sourceInboundLineId);
-              return (
+            {lines.map(line => (
               <div
                 key={line.key}
                 className={
                   slipType === 'nhap'
                     ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
-                    : isNvlExport
-                      ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.5fr)_5.5rem_5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
-                      : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
+                    : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                 }
               >
                 <div className="sm:col-span-2 xl:col-span-1">
@@ -1540,50 +1500,16 @@ export function WarehouseSlipPanel({
                     </div>
                   </>
                 ) : (
-                  <>
-                    {isNvlExport ? (
-                      <div className="sm:col-span-2 xl:col-span-1">
-                        <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                          Lô nhập / giá
-                        </span>
-                        <select
-                          value={line.sourceInboundLineId || ''}
-                          onChange={event => pickInboundLot(line.key, event.target.value)}
-                          disabled={!line.code || lotsLoadingCode === line.code}
-                          className={warehouseFieldClass}
-                          title={
-                            selectedLot
-                              ? `Nhập tối đa ${formatNumber(selectedLot.so_luong_con, 3)} ${line.unit || selectedLot.don_vi}`
-                              : undefined
-                          }
-                        >
-                          <option value="">
-                            {!line.code
-                              ? 'Chọn mã NPL trước'
-                              : lotsLoadingCode === line.code
-                                ? 'Đang tải lô...'
-                                : 'Không chọn lô (không bắt buộc)'}
-                          </option>
-                          {lineLots.map(lot => (
-                            <option key={lot.id} value={lot.id}>
-                              {lot.ngay_phieu || '—'} · {lot.ma_phieu || 'PN'} ·{' '}
-                              {formatWarehouseMoney(lot.don_gia)} · còn {formatNumber(lot.so_luong_con, 3)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
-                    <div>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={line.quantity}
-                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                        className={warehouseFieldClass}
-                        placeholder="VD: 100,00"
-                      />
-                    </div>
-                  </>
+                  <div>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={line.quantity}
+                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                      className={warehouseFieldClass}
+                      placeholder="VD: 100,00"
+                    />
+                  </div>
                 )}
                 <div>
                   <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
@@ -1603,9 +1529,7 @@ export function WarehouseSlipPanel({
                     className={warehouseFieldClass}
                     title={
                       isNvlExport
-                        ? line.sourceInboundLineId
-                          ? 'Gợi ý theo lô nhập — có thể sửa'
-                          : `Gợi ý BQ nhập tháng ${formatAvgPriceMonthLabel(slipDate)} — có thể sửa`
+                        ? `Gợi ý BQ nhập tháng ${formatAvgPriceMonthLabel(slipDate)} — có thể sửa`
                         : undefined
                     }
                     placeholder={
@@ -1640,8 +1564,7 @@ export function WarehouseSlipPanel({
                   </button>
                 )}
               </div>
-              );
-            })}
+            ))}
           </div>
         </div>
 
