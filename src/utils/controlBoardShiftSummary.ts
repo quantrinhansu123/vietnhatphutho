@@ -843,6 +843,7 @@ export function buildControlBoardShiftSummary(input: {
   }
 
   return [...map.values()]
+    .filter(bucket => bucket.ca !== 'Chưa phân ca')
     .map(bucket => {
       const khoiLuongNpl = roundNormWeight(bucket.khoiLuongNpl);
       const khoiLuongMangXuat = roundNormWeight(bucket.khoiLuongMangXuat);
@@ -1008,8 +1009,8 @@ export function isWarehousePlasticNvlLine(
 }
 
 /**
- * Giá nhựa (đ/kg) từ phiếu xuất/nhập kho cùng ngày + ca.
- * Ưu tiên xuất NVL nhựa có giá; nếu không có thì lấy nhập NVL nhựa.
+ * Giá nhựa (đ/kg) từ phiếu xuất kho cùng ngày + ca.
+ * Chỉ lấy từ phiếu xuất NVL nhựa — không được phép tính từ phiếu nhập kho.
  * Nhiều dòng → bình quân gia quyền theo số lượng.
  */
 export function resolveShiftSummaryGiaNhuaFromWarehouse(
@@ -1021,27 +1022,21 @@ export function resolveShiftSummaryGiaNhuaFromWarehouse(
   if (!movements || movements.length === 0) return 0;
   const shiftOptions = getProductionShiftOptions(shiftSettings);
 
-  const collectWeighted = (slipType: 'xuat' | 'nhap') => {
-    let amount = 0;
-    let qty = 0;
-    for (const movement of movements) {
-      if (movement.slipType !== slipType) continue;
-      if (!isWarehousePlasticNvlLine(movement)) continue;
-      if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
-      const unitPrice = Number(movement.unitPrice);
-      const quantity = Number(movement.quantity);
-      if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
-      if (!Number.isFinite(quantity) || quantity <= 0) continue;
-      amount += quantity * unitPrice;
-      qty += quantity;
-    }
-    if (qty <= 0) return 0;
-    return Math.round(amount / qty);
-  };
-
-  const fromExport = collectWeighted('xuat');
-  if (fromExport > 0) return fromExport;
-  return collectWeighted('nhap');
+  let amount = 0;
+  let qty = 0;
+  for (const movement of movements) {
+    if (movement.slipType !== 'xuat') continue;
+    if (!isWarehousePlasticNvlLine(movement)) continue;
+    if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
+    const unitPrice = Number(movement.unitPrice);
+    const quantity = Number(movement.quantity);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    amount += quantity * unitPrice;
+    qty += quantity;
+  }
+  if (qty <= 0) return 0;
+  return Math.round(amount / qty);
 }
 
 export function resolveShiftSummaryTlDinhMucKgCuon(

@@ -2803,24 +2803,52 @@ function resolveWarehouseMonthRange(thangOrNgay: string): { from: string; to: st
   };
 }
 
-/** Giá TB nhập NVL trong tháng = tổng (SL × đơn giá) / tổng SL (chỉ dòng có giá > 0). */
+/** Tính BQ gia quyền từ các dòng nhập đã có đơn giá. */
+function aggregateInboundAvgPrice(rows: any[]): { don_gia: number; so_dong: number; tong_sl: number } {
+  let amount = 0;
+  let qty = 0;
+  let soDong = 0;
+  for (const row of rows || []) {
+    const donGia = Number(row.don_gia);
+    const soLuong = Number(row.so_luong);
+    if (!Number.isFinite(donGia) || donGia <= 0) continue;
+    if (!Number.isFinite(soLuong) || soLuong <= 0) continue;
+    amount += soLuong * donGia;
+    qty += soLuong;
+    soDong += 1;
+  }
+  return {
+    don_gia: qty > 0 ? roundWarehouseMoney(amount / qty) : 0,
+    so_dong: soDong,
+    tong_sl: roundWarehouseQty(qty)
+  };
+}
+
+/** Giá TB nhập NVL: ưu tiên trong tháng phiếu; không có thì lấy toàn bộ lịch sử nhập. */
 async function buildNvlInboundAvgPriceForMonth(
   maNpl: string,
   thangOrNgay?: string
-): Promise<{ error?: string; don_gia: number; thang: string; so_dong: number; tong_sl: number }> {
+): Promise<{
+  error?: string;
+  don_gia: number;
+  thang: string;
+  so_dong: number;
+  tong_sl: number;
+  price_source: 'month' | 'all' | 'none';
+}> {
   const code = String(maNpl || '').trim();
   const range = resolveWarehouseMonthRange(thangOrNgay || '');
   if (!code || !range) {
-    return { don_gia: 0, thang: range?.thang || '', so_dong: 0, tong_sl: 0 };
+    return { don_gia: 0, thang: range?.thang || '', so_dong: 0, tong_sl: 0, price_source: 'none' };
   }
   if (!supabase) {
-    return { don_gia: 0, thang: range.thang, so_dong: 0, tong_sl: 0 };
+    return { don_gia: 0, thang: range.thang, so_dong: 0, tong_sl: 0, price_source: 'none' };
   }
 
   const { data, error } = await supabase
     .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
     .select('don_gia, so_luong, ngay_phieu, loai_phieu, loai_kho, ma_npl')
-    .eq('ma_npl', code)
+    .ilike('ma_npl', code)
     .eq('loai_phieu', 'nhap')
     .or('loai_kho.eq.nvl,loai_kho.is.null')
     .gte('ngay_phieu', range.from)
@@ -2833,28 +2861,36 @@ async function buildNvlInboundAvgPriceForMonth(
       don_gia: 0,
       thang: range.thang,
       so_dong: 0,
-      tong_sl: 0
+      tong_sl: 0,
+      price_source: 'none'
     };
   }
 
-  let amount = 0;
-  let qty = 0;
-  let soDong = 0;
-  for (const row of data || []) {
-    const donGia = Number(row.don_gia);
-    const soLuong = Number(row.so_luong);
-    if (!Number.isFinite(donGia) || donGia <= 0) continue;
-    if (!Number.isFinite(soLuong) || soLuong <= 0) continue;
-    amount += soLuong * donGia;
-    qty += soLuong;
-    soDong += 1;
+  let agg = aggregateInboundAvgPrice(data || []);
+  let priceSource: 'month' | 'all' | 'none' = agg.don_gia > 0 ? 'month' : 'none';
+
+  if (agg.don_gia <= 0) {
+    const { data: allData, error: allError } = await supabase
+      .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+      .select('don_gia, so_luong, ngay_phieu, loai_phieu, loai_kho, ma_npl')
+      .ilike('ma_npl', code)
+      .eq('loai_phieu', 'nhap')
+      .or('loai_kho.eq.nvl,loai_kho.is.null');
+
+    if (allError) {
+      console.error('Supabase gia-tb-nhap fallback query error:', allError);
+    } else {
+      agg = aggregateInboundAvgPrice(allData || []);
+      if (agg.don_gia > 0) priceSource = 'all';
+    }
   }
 
   return {
-    don_gia: qty > 0 ? roundWarehouseMoney(amount / qty) : 0,
+    don_gia: agg.don_gia,
     thang: range.thang,
-    so_dong: soDong,
-    tong_sl: roundWarehouseQty(qty)
+    so_dong: agg.so_dong,
+    tong_sl: agg.tong_sl,
+    price_source: priceSource
   };
 }
 
@@ -5519,6 +5555,7 @@ export function createApp() {
         thang: built.thang,
         so_dong: built.so_dong,
         tong_sl: built.tong_sl,
+        price_source: built.price_source || 'none',
         source: 'supabase'
       });
     } catch (err: any) {

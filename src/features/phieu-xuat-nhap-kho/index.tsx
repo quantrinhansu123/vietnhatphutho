@@ -596,6 +596,8 @@ export function WarehouseSlipPanel({
   const [weightCatalog, setWeightCatalog] = useState<WarehouseWeightCatalogItem[]>([]);
   const [avgInboundPriceByKey, setAvgInboundPriceByKey] = useState<Record<string, number>>({});
   const [avgPriceLoadingCode, setAvgPriceLoadingCode] = useState<string | null>(null);
+  const avgPriceRequestSeqRef = useRef(0);
+  const avgPriceAbortRef = useRef<AbortController | null>(null);
 
   const resolveAvgPriceMonthKey = (dateIso: string) => {
     const match = String(dateIso || '').trim().match(/^(\d{4})-(\d{2})/);
@@ -748,40 +750,63 @@ export function WarehouseSlipPanel({
     setLines(current => current.map(line => (line.key === key ? { ...line, ...patch } : line)));
   };
 
+  const formatSuggestedUnitPrice = (avg: number) =>
+    avg > 0 ? sanitizeMoneyInput(String(Math.round(avg))) : '';
+
   const loadNvlAvgInboundPrice = async (
     code: string,
     dateIso: string,
-    options?: { lineKey?: string; applySuggestion?: boolean }
+    options?: { lineKey?: string; applySuggestion?: boolean; forceOverwrite?: boolean }
   ) => {
     const materialCode = code.trim();
     if (!materialCode) return 0;
     const cacheKey = avgPriceCacheKey(materialCode, dateIso);
     const lineKey = options?.lineKey;
     const applySuggestion = options?.applySuggestion ?? Boolean(lineKey);
+    const forceOverwrite = options?.forceOverwrite ?? Boolean(lineKey);
+    const requestSeq = ++avgPriceRequestSeqRef.current;
+
+    avgPriceAbortRef.current?.abort();
+    const abortController = new AbortController();
+    avgPriceAbortRef.current = abortController;
+
     setAvgPriceLoadingCode(materialCode);
     try {
       const params = new URLSearchParams({
         ma_npl: materialCode,
         ngay: String(dateIso || new Date().toISOString().slice(0, 10)).slice(0, 10)
       });
-      const res = await fetch(`/api/phieu-xuat-nhap-kho/gia-tb-nhap?${params.toString()}`);
+      const res = await fetch(`/api/phieu-xuat-nhap-kho/gia-tb-nhap?${params.toString()}`, {
+        signal: abortController.signal
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Không thể tải giá nhập trung bình.');
+      if (requestSeq !== avgPriceRequestSeqRef.current) return 0;
+
       const donGia = Number(data.don_gia);
       const avg = Number.isFinite(donGia) && donGia > 0 ? donGia : 0;
+      const priceText = formatSuggestedUnitPrice(avg);
       setAvgInboundPriceByKey(current => ({ ...current, [cacheKey]: avg }));
-      if (applySuggestion && lineKey) {
+      if (applySuggestion && priceText) {
         setLines(current =>
           current.map(line => {
-            if (line.key !== lineKey) return line;
-            return { ...line, unitPrice: avg > 0 ? String(avg) : line.unitPrice };
+            if (lineKey) {
+              if (line.key !== lineKey) return line;
+              if (!forceOverwrite && line.unitPrice.trim()) return line;
+              return { ...line, unitPrice: priceText };
+            }
+            if (line.code.trim() !== materialCode) return line;
+            if (!forceOverwrite && line.unitPrice.trim()) return line;
+            return { ...line, unitPrice: priceText };
           })
         );
       }
       return avg;
     } catch (error: any) {
+      if (error?.name === 'AbortError') return 0;
       setAvgInboundPriceByKey(current => ({ ...current, [cacheKey]: 0 }));
-      setFormError(error.message || 'Không thể tải giá nhập trung bình.');
+      // Không chặn form bằng lỗi gợi ý giá — chỉ báo nhẹ qua console.
+      console.warn('[gia-tb-nhap]', error?.message || error);
       return 0;
     } finally {
       setAvgPriceLoadingCode(current => (current === materialCode ? null : current));
@@ -791,14 +816,33 @@ export function WarehouseSlipPanel({
   const pickItem = (key: string, code: string) => {
     const item = itemOptions.find(option => option.code === code);
     const isExportNvl = warehouseKind === 'nvl' && slipType === 'xuat';
+    const materialCode = code.trim();
+    const cachedAvg =
+      isExportNvl && materialCode
+        ? avgInboundPriceByKey[avgPriceCacheKey(materialCode, slipDate)]
+        : undefined;
+    const immediatePrice =
+      typeof cachedAvg === 'number' && cachedAvg > 0 ? formatSuggestedUnitPrice(cachedAvg) : '';
+
     updateLine(key, {
       code,
       name: item?.name || '',
       unit: item?.unit || '',
-      ...(isExportNvl ? { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' } : {})
+      ...(isExportNvl
+        ? {
+            sourceInboundLineId: '',
+            sourceInboundSlipCode: '',
+            // Điền cache ngay (nếu có); trống thì chờ API — không để trống sau khi đã có BQ.
+            unitPrice: immediatePrice
+          }
+        : {})
     });
-    if (isExportNvl && code.trim()) {
-      void loadNvlAvgInboundPrice(code, slipDate, { lineKey: key, applySuggestion: true });
+    if (isExportNvl && materialCode) {
+      void loadNvlAvgInboundPrice(materialCode, slipDate, {
+        lineKey: key,
+        applySuggestion: true,
+        forceOverwrite: true
+      });
     }
   };
 
@@ -810,23 +854,27 @@ export function WarehouseSlipPanel({
     for (const code of codes) {
       const cacheKey = avgPriceCacheKey(code, slipDate);
       if (avgInboundPriceByKey[cacheKey] === undefined) {
-        void loadNvlAvgInboundPrice(code, slipDate, { applySuggestion: false });
+        // Tự điền dòng đang trống giá khi vừa chọn mã / đổi tháng.
+        void loadNvlAvgInboundPrice(code, slipDate, { applySuggestion: true });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNvlExport, editSlipCode, slipDate, lines.map(line => line.code).join('|')]);
 
-  // When month/date changes and a line still has empty price, fill BQ suggestion once.
+  // Khi đã có BQ trong cache mà ô Giá còn trống → điền luôn.
   useEffect(() => {
     if (!isNvlExport) return;
-    setLines(current =>
-      current.map(line => {
+    setLines(current => {
+      let changed = false;
+      const next = current.map(line => {
         if (!line.code.trim() || line.unitPrice.trim()) return line;
         const cached = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
         if (!cached || cached <= 0) return line;
-        return { ...line, unitPrice: String(cached) };
-      })
-    );
+        changed = true;
+        return { ...line, unitPrice: formatSuggestedUnitPrice(cached) };
+      });
+      return changed ? next : current;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNvlExport, slipDate, avgInboundPriceByKey]);
 
@@ -1520,31 +1568,45 @@ export function WarehouseSlipPanel({
                   </div>
                 </div>
                 <div>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={line.unitPrice}
-                    onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                    onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                    className={warehouseFieldClass}
-                    title={
-                      isNvlExport
-                        ? `Gợi ý BQ nhập tháng ${formatAvgPriceMonthLabel(slipDate)} — có thể sửa`
-                        : undefined
-                    }
-                    placeholder={
-                      isNvlExport
-                        ? avgPriceLoadingCode === line.code
-                          ? 'Đang gợi ý BQ...'
-                          : (() => {
-                              const avg = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
-                              return avg && avg > 0
-                                ? `Gợi ý BQ: ${formatWarehouseMoney(avg)}`
-                                : 'VD: 25.000';
-                            })()
-                        : 'VD: 25.000'
-                    }
-                  />
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                    Giá
+                  </span>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={line.unitPrice}
+                      onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                      onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                      className={`${warehouseFieldClass} ${
+                        isNvlExport && avgPriceLoadingCode === line.code.trim()
+                          ? 'border-amber-300 bg-amber-50/70'
+                          : isNvlExport && line.unitPrice.trim()
+                            ? 'border-emerald-200 bg-emerald-50/40'
+                            : ''
+                      }`}
+                      title={
+                        isNvlExport
+                          ? `Gợi ý BQ nhập tháng ${formatAvgPriceMonthLabel(slipDate)} — có thể sửa`
+                          : undefined
+                      }
+                      placeholder={
+                        isNvlExport
+                          ? avgPriceLoadingCode === line.code.trim()
+                            ? 'Đang lấy giá BQ...'
+                            : (() => {
+                                const avg = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
+                                return avg && avg > 0
+                                  ? `Gợi ý BQ: ${formatWarehouseMoney(avg)}`
+                                  : 'VD: 25.000';
+                              })()
+                          : 'VD: 25.000'
+                      }
+                    />
+                    {isNvlExport && avgPriceLoadingCode === line.code.trim() ? (
+                      <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-amber-600" />
+                    ) : null}
+                  </div>
                 </div>
                 <div>
                   <div
