@@ -917,7 +917,12 @@ export function ControlBoardPanel({
         isLoading={isLoading}
       />
 
-      <ControlBoardShiftSummaryChart rows={shiftSummaryRows} isLoading={isLoading} />
+      <ControlBoardShiftSummaryChart
+        rows={shiftSummaryRows}
+        isLoading={isLoading}
+        warehouseMovements={shiftSummaryDetailSources.warehouseMovements}
+        shiftSettings={shiftSummaryDetailSources.shiftSettings}
+      />
 
       <ControlBoardShiftSummaryTable
         rows={shiftSummaryRows}
