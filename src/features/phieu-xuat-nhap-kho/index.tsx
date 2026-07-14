@@ -771,10 +771,16 @@ export function WarehouseSlipPanel({
     }
   };
 
-  const loadNvlAvgInboundPrice = async (code: string, dateIso: string, lineKey?: string) => {
+  const loadNvlAvgInboundPrice = async (
+    code: string,
+    dateIso: string,
+    options?: { lineKey?: string; applySuggestion?: boolean }
+  ) => {
     const materialCode = code.trim();
     if (!materialCode) return 0;
     const cacheKey = avgPriceCacheKey(materialCode, dateIso);
+    const lineKey = options?.lineKey;
+    const applySuggestion = options?.applySuggestion ?? Boolean(lineKey);
     setAvgPriceLoadingCode(materialCode);
     try {
       const params = new URLSearchParams({
@@ -787,12 +793,12 @@ export function WarehouseSlipPanel({
       const donGia = Number(data.don_gia);
       const avg = Number.isFinite(donGia) && donGia > 0 ? donGia : 0;
       setAvgInboundPriceByKey(current => ({ ...current, [cacheKey]: avg }));
-      if (lineKey) {
+      if (applySuggestion && lineKey) {
         setLines(current =>
           current.map(line => {
             if (line.key !== lineKey) return line;
             if (line.sourceInboundLineId) return line;
-            return { ...line, unitPrice: avg > 0 ? String(avg) : '' };
+            return { ...line, unitPrice: avg > 0 ? String(avg) : line.unitPrice };
           })
         );
       }
@@ -817,7 +823,7 @@ export function WarehouseSlipPanel({
     });
     if (isExportNvl && code.trim()) {
       void loadNvlLots(code);
-      void loadNvlAvgInboundPrice(code, slipDate, key);
+      void loadNvlAvgInboundPrice(code, slipDate, { lineKey: key, applySuggestion: true });
     }
   };
 
@@ -828,7 +834,7 @@ export function WarehouseSlipPanel({
     const lot = lots.find(item => item.id === lotId);
     if (!lot) {
       updateLine(key, { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' });
-      void loadNvlAvgInboundPrice(line.code, slipDate, key);
+      void loadNvlAvgInboundPrice(line.code, slipDate, { lineKey: key, applySuggestion: true });
       return;
     }
     updateLine(key, {
@@ -849,26 +855,11 @@ export function WarehouseSlipPanel({
       if (!lotsByCode[code]) void loadNvlLots(code);
       const cacheKey = avgPriceCacheKey(code, slipDate);
       if (avgInboundPriceByKey[cacheKey] === undefined) {
-        void loadNvlAvgInboundPrice(code, slipDate);
+        void loadNvlAvgInboundPrice(code, slipDate, { applySuggestion: false });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNvlExport, editSlipCode, slipDate, lines.map(line => line.code).join('|')]);
-
-  useEffect(() => {
-    if (!isNvlExport) return;
-    setLines(current =>
-      current.map(line => {
-        if (!line.code.trim() || line.sourceInboundLineId) return line;
-        const cached = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
-        if (cached === undefined) return line;
-        const nextPrice = cached > 0 ? String(cached) : '';
-        if (line.unitPrice === nextPrice) return line;
-        return { ...line, unitPrice: nextPrice };
-      })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNvlExport, slipDate, avgInboundPriceByKey]);
 
   const applyProductionOrderSelection = (orderCodes: string[]) => {
     setProductionOrderCodes(orderCodes);
@@ -1080,7 +1071,7 @@ export function WarehouseSlipPanel({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4">
+    <div className="w-full min-w-0 max-w-none space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
           <div className="flex items-start justify-end gap-3">
@@ -1442,10 +1433,10 @@ export function WarehouseSlipPanel({
           <div
             className={
               slipType === 'nhap'
-                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
                 : isNvlExport
-                  ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.4fr)_5.5rem_5rem_5.5rem_5.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                  : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                  ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.5fr)_5.5rem_5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                  : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
             }
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
@@ -1483,10 +1474,10 @@ export function WarehouseSlipPanel({
                 key={line.key}
                 className={
                   slipType === 'nhap'
-                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_5.5rem_2.5rem] xl:items-end xl:gap-3'
+                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                     : isNvlExport
-                      ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.4fr)_5.5rem_5rem_5.5rem_5.5rem_2.5rem] xl:items-end xl:gap-3'
-                      : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6rem_6rem_2.5rem] xl:items-end xl:gap-3'
+                      ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_4.5rem_minmax(0,1.5fr)_5.5rem_5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
+                      : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                 }
               >
                 <div className="sm:col-span-2 xl:col-span-1">
@@ -1560,6 +1551,11 @@ export function WarehouseSlipPanel({
                           onChange={event => pickInboundLot(line.key, event.target.value)}
                           disabled={!line.code || lotsLoadingCode === line.code}
                           className={warehouseFieldClass}
+                          title={
+                            selectedLot
+                              ? `Nhập tối đa ${formatNumber(selectedLot.so_luong_con, 3)} ${line.unit || selectedLot.don_vi}`
+                              : undefined
+                          }
                         >
                           <option value="">
                             {!line.code
@@ -1571,15 +1567,10 @@ export function WarehouseSlipPanel({
                           {lineLots.map(lot => (
                             <option key={lot.id} value={lot.id}>
                               {lot.ngay_phieu || '—'} · {lot.ma_phieu || 'PN'} ·{' '}
-                              {formatWarehouseMoney(lot.don_gia)} đ · còn {formatNumber(lot.so_luong_con, 3)}
+                              {formatWarehouseMoney(lot.don_gia)} · còn {formatNumber(lot.so_luong_con, 3)}
                             </option>
                           ))}
                         </select>
-                        {selectedLot ? (
-                          <p className="mt-1 text-[10px] font-semibold text-zinc-400">
-                            Nhập tối đa {formatNumber(selectedLot.so_luong_con, 3)} {line.unit || selectedLot.don_vi}
-                          </p>
-                        ) : null}
                       </div>
                     ) : null}
                     <div>
@@ -1598,48 +1589,51 @@ export function WarehouseSlipPanel({
                   <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
                     Quy đổi kg
                   </span>
-                  <div className={`${warehouseFieldClass} flex items-center bg-emerald-50/60 font-mono font-bold text-emerald-800`}>
+                  <div className={`${warehouseFieldClass} flex items-center whitespace-nowrap bg-emerald-50/60 font-mono font-bold text-emerald-800`}>
                     {formatWarehouseWeightKg(resolveLineWeightKg(line))}
                   </div>
                 </div>
                 <div>
-                  {isNvlExport ? (
-                    <div className="space-y-1">
-                      <div className={`${warehouseFieldClass} flex items-center bg-zinc-100 font-mono font-bold text-zinc-800`}>
-                        {avgPriceLoadingCode === line.code
-                          ? '...'
-                          : line.unitPrice
-                            ? `${formatWarehouseMoney(parseMoneyInput(line.unitPrice) || 0)} đ`
-                            : '—'}
-                      </div>
-                      <p className="text-[10px] font-semibold text-zinc-400">
-                        {line.sourceInboundLineId
-                          ? 'Giá theo lô nhập đã chọn'
-                          : `BQ giá nhập tháng ${formatAvgPriceMonthLabel(slipDate)}`}
-                      </p>
-                    </div>
-                  ) : (
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={line.unitPrice}
-                      onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                      onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                      className={warehouseFieldClass}
-                      placeholder="VD: 25.000"
-                    />
-                  )}
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={line.unitPrice}
+                    onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                    onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                    className={warehouseFieldClass}
+                    title={
+                      isNvlExport
+                        ? line.sourceInboundLineId
+                          ? 'Gợi ý theo lô nhập — có thể sửa'
+                          : `Gợi ý BQ nhập tháng ${formatAvgPriceMonthLabel(slipDate)} — có thể sửa`
+                        : undefined
+                    }
+                    placeholder={
+                      isNvlExport
+                        ? avgPriceLoadingCode === line.code
+                          ? 'Đang gợi ý BQ...'
+                          : (() => {
+                              const avg = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
+                              return avg && avg > 0
+                                ? `Gợi ý BQ: ${formatWarehouseMoney(avg)}`
+                                : 'VD: 25.000';
+                            })()
+                        : 'VD: 25.000'
+                    }
+                  />
                 </div>
                 <div>
-                  <div className={`${warehouseFieldClass} flex items-center bg-white font-mono font-bold text-zinc-900`}>
-                    {formatWarehouseMoney(computeWarehouseLineAmount(line.quantity, line.unitPrice))} đ
+                  <div
+                    className={`${warehouseFieldClass} flex items-center justify-end whitespace-nowrap bg-white font-mono font-bold tabular-nums text-zinc-900`}
+                  >
+                    {formatWarehouseMoney(computeWarehouseLineAmount(line.quantity, line.unitPrice))}
                   </div>
                 </div>
                 {lines.length > 1 && (
                   <button
                     type="button"
                     onClick={() => setLines(current => current.filter(item => item.key !== line.key))}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 xl:mb-0.5"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                     title="Xóa dòng"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1991,7 +1985,7 @@ export function WarehouseHistoryPanel({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1680px] space-y-4">
+    <div className="w-full min-w-0 max-w-none space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
           <div className="flex items-start justify-end gap-3">

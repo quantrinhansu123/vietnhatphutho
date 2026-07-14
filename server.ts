@@ -2964,11 +2964,7 @@ async function validateNvlExportLots(
     if (!lot) {
       return { error: `Lô nhập của ${request.code} không còn tồn hoặc không hợp lệ.` };
     }
-    if (Math.abs(lot.don_gia - request.price) > 0.009) {
-      return {
-        error: `Giá xuất ${request.code} (${request.price}) không khớp giá lô nhập ${lot.ma_phieu} (${lot.don_gia}).`
-      };
-    }
+    // Giá xuất có thể sửa tay (BQ nhập chỉ là gợi ý) — không bắt khớp giá lô.
     if (request.qty > lot.so_luong_con + 0.0005) {
       return {
         error: `Xuất ${request.qty} vượt tồn lô ${lot.ma_phieu} còn ${lot.so_luong_con} (${request.code}).`

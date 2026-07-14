@@ -32,6 +32,7 @@ import { getProductionShiftOptions, normalizeShiftSettings } from './utils/shift
 import { normalizeMixingReport } from './lib/mixingReportModel';
 import type { MixingReport } from './components/MixingReportForm';
 import MachineDowntimeReportPanel from './components/MachineDowntimeReportPanel';
+import MachineDowntimeReportListView from './components/MachineDowntimeReportListView';
 import MachineRunLogPanel from './components/MachineRunLogPanel';
 import AppToastHost from './components/AppToastHost';
 import { AppTab, pathFromTab, tabFromPath, isWeighingFormPath, isWeighingListPath } from './routes';
@@ -647,14 +648,18 @@ export default function App() {
             ? 'p-2 md:p-4'
             : activeTab === 'machine-nvl-report' || activeTab === 'orders'
               ? 'overflow-hidden p-0'
-              : 'p-4 md:p-6 pb-4'
+              : activeTab === 'warehouse-slip' || activeTab === 'warehouse-history'
+                ? 'p-2 md:p-3 pb-4'
+                : 'p-4 md:p-6 pb-4'
         }`} id="applet-viewport">
           <div
             className={
               activeTab === 'machine-nvl-report' || activeTab === 'orders'
                 ? 'w-full'
-                : activeTab === 'control-board'
-                  ? 'mx-auto w-full min-w-0 max-w-[1880px]'
+                : activeTab === 'control-board' ||
+                    activeTab === 'warehouse-slip' ||
+                    activeTab === 'warehouse-history'
+                  ? 'mx-auto w-full min-w-0 max-w-none'
                   : 'mx-auto w-full min-w-0 max-w-[1280px]'
             }
           >
@@ -1051,7 +1056,10 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachineDowntimeReportPanel onBack={() => navigateToTab('report-lists')} />
+                <MachineDowntimeReportListView
+                  onBack={() => navigateToTab('report-lists')}
+                  onCreate={() => navigateToTab('machine-downtime-report')}
+                />
               </motion.div>
             ) : activeTab === 'machine-run-log' ? (
               <motion.div

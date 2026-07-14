@@ -220,7 +220,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '5602–5689',
     appTab: 'machine-downtime-report | machine-downtime-list',
     appLines: 'src/components/MachineDowntimeReportPanel.tsx',
-    components: ['src/components/MachineDowntimeReportPanel.tsx', 'src/components/MachineDowntimePrintSheet.tsx', 'src/components/icons/MachineDowntimeIcon.tsx'],
+    components: ['src/components/MachineDowntimeReportPanel.tsx', 'src/components/MachineDowntimeReportListView.tsx', 'src/components/MachineDowntimePrintSheet.tsx', 'src/components/icons/MachineDowntimeIcon.tsx'],
     utils: []
   },
   nhat_ky_chay_may: {
