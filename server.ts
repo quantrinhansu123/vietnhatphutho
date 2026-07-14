@@ -2776,6 +2776,88 @@ function roundWarehouseQty(value: number) {
   return Math.round(value * 1000) / 1000;
 }
 
+function resolveWarehouseMonthRange(thangOrNgay: string): { from: string; to: string; thang: string } | null {
+  const raw = String(thangOrNgay || '').trim();
+  let year = 0;
+  let month = 0;
+  const monthMatch = raw.match(/^(\d{4})-(\d{2})$/);
+  const dateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (monthMatch) {
+    year = Number(monthMatch[1]);
+    month = Number(monthMatch[2]);
+  } else if (dateMatch) {
+    year = Number(dateMatch[1]);
+    month = Number(dateMatch[2]);
+  } else {
+    const now = new Date();
+    year = now.getFullYear();
+    month = now.getMonth() + 1;
+  }
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  const thang = `${year}-${String(month).padStart(2, '0')}`;
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    thang,
+    from: `${thang}-01`,
+    to: `${thang}-${String(lastDay).padStart(2, '0')}`
+  };
+}
+
+/** Giá TB nhập NVL trong tháng = tổng (SL × đơn giá) / tổng SL (chỉ dòng có giá > 0). */
+async function buildNvlInboundAvgPriceForMonth(
+  maNpl: string,
+  thangOrNgay?: string
+): Promise<{ error?: string; don_gia: number; thang: string; so_dong: number; tong_sl: number }> {
+  const code = String(maNpl || '').trim();
+  const range = resolveWarehouseMonthRange(thangOrNgay || '');
+  if (!code || !range) {
+    return { don_gia: 0, thang: range?.thang || '', so_dong: 0, tong_sl: 0 };
+  }
+  if (!supabase) {
+    return { don_gia: 0, thang: range.thang, so_dong: 0, tong_sl: 0 };
+  }
+
+  const { data, error } = await supabase
+    .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+    .select('don_gia, so_luong, ngay_phieu, loai_phieu, loai_kho, ma_npl')
+    .eq('ma_npl', code)
+    .eq('loai_phieu', 'nhap')
+    .or('loai_kho.eq.nvl,loai_kho.is.null')
+    .gte('ngay_phieu', range.from)
+    .lte('ngay_phieu', range.to);
+
+  if (error) {
+    console.error('Supabase gia-tb-nhap query error:', error);
+    return {
+      error: `Không thể tải giá nhập trung bình. ${error.message}`,
+      don_gia: 0,
+      thang: range.thang,
+      so_dong: 0,
+      tong_sl: 0
+    };
+  }
+
+  let amount = 0;
+  let qty = 0;
+  let soDong = 0;
+  for (const row of data || []) {
+    const donGia = Number(row.don_gia);
+    const soLuong = Number(row.so_luong);
+    if (!Number.isFinite(donGia) || donGia <= 0) continue;
+    if (!Number.isFinite(soLuong) || soLuong <= 0) continue;
+    amount += soLuong * donGia;
+    qty += soLuong;
+    soDong += 1;
+  }
+
+  return {
+    don_gia: qty > 0 ? roundWarehouseMoney(amount / qty) : 0,
+    thang: range.thang,
+    so_dong: soDong,
+    tong_sl: roundWarehouseQty(qty)
+  };
+}
+
 async function buildNvlInboundLots(
   maNpl: string,
   excludeSlipCode?: string
@@ -5414,6 +5496,37 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa nguyên phụ liệu.' });
+    }
+  });
+
+  app.get('/api/phieu-xuat-nhap-kho/gia-tb-nhap', async (req, res) => {
+    if (!supabase) {
+      return res.json({ don_gia: 0, thang: '', so_dong: 0, tong_sl: 0, source: 'local' });
+    }
+
+    try {
+      const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? req.query.code ?? '').trim();
+      const thangOrNgay = String(
+        req.query.thang ?? req.query.month ?? req.query.ngay ?? req.query.date ?? ''
+      ).trim();
+      if (!maNpl) {
+        return res.status(400).json({ error: 'Thiếu mã NPL (ma_npl).' });
+      }
+
+      const built = await buildNvlInboundAvgPriceForMonth(maNpl, thangOrNgay);
+      if (built.error) {
+        return res.status(500).json({ error: built.error });
+      }
+
+      return res.json({
+        don_gia: built.don_gia,
+        thang: built.thang,
+        so_dong: built.so_dong,
+        tong_sl: built.tong_sl,
+        source: 'supabase'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải giá nhập trung bình.' });
     }
   });
 

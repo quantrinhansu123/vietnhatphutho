@@ -482,6 +482,7 @@ export function mapWarehouseMovementsForShiftSummary(rows: WarehouseMovementRow[
     itemName: row.itemName,
     unit: row.unit,
     quantity: row.quantity,
+    unitPrice: Number.isFinite(row.unitPrice) ? row.unitPrice : 0,
     createdBy: row.createdBy
   }));
 }
@@ -595,6 +596,22 @@ export function WarehouseSlipPanel({
   const [weightCatalog, setWeightCatalog] = useState<WarehouseWeightCatalogItem[]>([]);
   const [lotsByCode, setLotsByCode] = useState<Record<string, NvlInboundLotOption[]>>({});
   const [lotsLoadingCode, setLotsLoadingCode] = useState<string | null>(null);
+  const [avgInboundPriceByKey, setAvgInboundPriceByKey] = useState<Record<string, number>>({});
+  const [avgPriceLoadingCode, setAvgPriceLoadingCode] = useState<string | null>(null);
+
+  const resolveAvgPriceMonthKey = (dateIso: string) => {
+    const match = String(dateIso || '').trim().match(/^(\d{4})-(\d{2})/);
+    if (match) return `${match[1]}-${match[2]}`;
+    return new Date().toISOString().slice(0, 7);
+  };
+
+  const avgPriceCacheKey = (code: string, dateIso: string) =>
+    `${code.trim()}|${resolveAvgPriceMonthKey(dateIso)}`;
+
+  const formatAvgPriceMonthLabel = (dateIso: string) => {
+    const [year, month] = resolveAvgPriceMonthKey(dateIso).split('-');
+    return `${month}/${year}`;
+  };
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -725,6 +742,7 @@ export function WarehouseSlipPanel({
     setWarehouseKind(kind);
     setLines([createWarehouseLineDraft()]);
     setLotsByCode({});
+    setAvgInboundPriceByKey({});
     setFormError('');
     setActionMessage('');
   };
@@ -753,18 +771,53 @@ export function WarehouseSlipPanel({
     }
   };
 
+  const loadNvlAvgInboundPrice = async (code: string, dateIso: string, lineKey?: string) => {
+    const materialCode = code.trim();
+    if (!materialCode) return 0;
+    const cacheKey = avgPriceCacheKey(materialCode, dateIso);
+    setAvgPriceLoadingCode(materialCode);
+    try {
+      const params = new URLSearchParams({
+        ma_npl: materialCode,
+        ngay: String(dateIso || new Date().toISOString().slice(0, 10)).slice(0, 10)
+      });
+      const res = await fetch(`/api/phieu-xuat-nhap-kho/gia-tb-nhap?${params.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể tải giá nhập trung bình.');
+      const donGia = Number(data.don_gia);
+      const avg = Number.isFinite(donGia) && donGia > 0 ? donGia : 0;
+      setAvgInboundPriceByKey(current => ({ ...current, [cacheKey]: avg }));
+      if (lineKey) {
+        setLines(current =>
+          current.map(line => {
+            if (line.key !== lineKey) return line;
+            if (line.sourceInboundLineId) return line;
+            return { ...line, unitPrice: avg > 0 ? String(avg) : '' };
+          })
+        );
+      }
+      return avg;
+    } catch (error: any) {
+      setAvgInboundPriceByKey(current => ({ ...current, [cacheKey]: 0 }));
+      setFormError(error.message || 'Không thể tải giá nhập trung bình.');
+      return 0;
+    } finally {
+      setAvgPriceLoadingCode(current => (current === materialCode ? null : current));
+    }
+  };
+
   const pickItem = (key: string, code: string) => {
     const item = itemOptions.find(option => option.code === code);
+    const isExportNvl = warehouseKind === 'nvl' && slipType === 'xuat';
     updateLine(key, {
       code,
       name: item?.name || '',
       unit: item?.unit || '',
-      ...(warehouseKind === 'nvl' && slipType === 'xuat'
-        ? { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' }
-        : {})
+      ...(isExportNvl ? { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' } : {})
     });
-    if (warehouseKind === 'nvl' && slipType === 'xuat' && code.trim()) {
+    if (isExportNvl && code.trim()) {
       void loadNvlLots(code);
+      void loadNvlAvgInboundPrice(code, slipDate, key);
     }
   };
 
@@ -775,6 +828,7 @@ export function WarehouseSlipPanel({
     const lot = lots.find(item => item.id === lotId);
     if (!lot) {
       updateLine(key, { sourceInboundLineId: '', sourceInboundSlipCode: '', unitPrice: '' });
+      void loadNvlAvgInboundPrice(line.code, slipDate, key);
       return;
     }
     updateLine(key, {
@@ -793,9 +847,28 @@ export function WarehouseSlipPanel({
     const codes = [...new Set(lines.map(line => line.code.trim()).filter(Boolean))];
     for (const code of codes) {
       if (!lotsByCode[code]) void loadNvlLots(code);
+      const cacheKey = avgPriceCacheKey(code, slipDate);
+      if (avgInboundPriceByKey[cacheKey] === undefined) {
+        void loadNvlAvgInboundPrice(code, slipDate);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNvlExport, editSlipCode, lines.map(line => line.code).join('|')]);
+  }, [isNvlExport, editSlipCode, slipDate, lines.map(line => line.code).join('|')]);
+
+  useEffect(() => {
+    if (!isNvlExport) return;
+    setLines(current =>
+      current.map(line => {
+        if (!line.code.trim() || line.sourceInboundLineId) return line;
+        const cached = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
+        if (cached === undefined) return line;
+        const nextPrice = cached > 0 ? String(cached) : '';
+        if (line.unitPrice === nextPrice) return line;
+        return { ...line, unitPrice: nextPrice };
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNvlExport, slipDate, avgInboundPriceByKey]);
 
   const applyProductionOrderSelection = (orderCodes: string[]) => {
     setProductionOrderCodes(orderCodes);
@@ -1530,9 +1603,20 @@ export function WarehouseSlipPanel({
                   </div>
                 </div>
                 <div>
-                  {isNvlExport && line.sourceInboundLineId ? (
-                    <div className={`${warehouseFieldClass} flex items-center bg-zinc-100 font-mono font-bold text-zinc-800`}>
-                      {line.unitPrice ? `${formatWarehouseMoney(parseMoneyInput(line.unitPrice) || 0)} đ` : '—'}
+                  {isNvlExport ? (
+                    <div className="space-y-1">
+                      <div className={`${warehouseFieldClass} flex items-center bg-zinc-100 font-mono font-bold text-zinc-800`}>
+                        {avgPriceLoadingCode === line.code
+                          ? '...'
+                          : line.unitPrice
+                            ? `${formatWarehouseMoney(parseMoneyInput(line.unitPrice) || 0)} đ`
+                            : '—'}
+                      </div>
+                      <p className="text-[10px] font-semibold text-zinc-400">
+                        {line.sourceInboundLineId
+                          ? 'Giá theo lô nhập đã chọn'
+                          : `BQ giá nhập tháng ${formatAvgPriceMonthLabel(slipDate)}`}
+                      </p>
                     </div>
                   ) : (
                     <input

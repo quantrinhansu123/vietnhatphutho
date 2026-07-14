@@ -12,6 +12,7 @@
 |--------|------|------|
 | GET | `/api/phieu-xuat-nhap-kho` | ~5212 |
 | GET | `/api/phieu-xuat-nhap-kho/lo-ton` | (lô tồn theo `ma_npl`) |
+| GET | `/api/phieu-xuat-nhap-kho/gia-tb-nhap` | (giá BQ nhập theo mã NVL + tháng) |
 | POST | `/api/phieu-xuat-nhap-kho` | ~5263 |
 | PUT | `/api/phieu-xuat-nhap-kho/:slipCode` | ~5377 |
 | DELETE | slip / id | ~5495+ |

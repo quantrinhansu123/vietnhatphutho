@@ -6,12 +6,15 @@ import {
   formatShiftSummaryNumber,
   formatShiftSummaryKg,
   formatShiftSummaryPercent,
+  resolveShiftSummaryGiaNhuaFromWarehouse,
   resolveShiftSummaryTlDinhMucKgCuon,
   sumShiftSummaryColumn,
   TI_LE_LOI_HONG_DINH_MUC_PERCENT,
-  type ControlBoardShiftSummaryRow
+  type ControlBoardShiftSummaryRow,
+  type ShiftSummaryWarehouseMovement
 } from '../utils/controlBoardShiftSummary';
-import { formatMoney, parseMoneyInput } from '../utils';
+import { formatMoney } from '../utils';
+import type { ShiftSetting } from '../utils/shiftSettings';
 
 export type ShiftSummaryPrintFilters = {
   dateFrom: string;
@@ -37,11 +40,6 @@ function formatPrintRange(dateFrom: string, dateTo: string) {
   return '-';
 }
 
-function resolvePrintGiaNhua(map: Record<string, string> | undefined, rowKey: string) {
-  const parsed = parseMoneyInput(map?.[rowKey] || '');
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-}
-
 function EmptyRows({ colSpan }: { colSpan: number }) {
   return (
     <tr>
@@ -56,12 +54,14 @@ function ControlBoardShiftSummaryPrintSheet({
   rows,
   filters,
   phanTichDanhGiaMap = {},
-  giaNhuaMap = {}
+  warehouseMovements,
+  shiftSettings = []
 }: {
   rows: ControlBoardShiftSummaryRow[];
   filters: ShiftSummaryPrintFilters;
   phanTichDanhGiaMap?: Record<string, string>;
-  giaNhuaMap?: Record<string, string>;
+  warehouseMovements?: ShiftSummaryWarehouseMovement[];
+  shiftSettings?: ShiftSetting[];
 }) {
   const totals = {
     slHang: sumShiftSummaryColumn(rows, 'slHang'),
@@ -161,7 +161,7 @@ function ControlBoardShiftSummaryPrintSheet({
                 <th className="shift-summary-print-num">Tỉ lệ LH</th>
                 <th className="shift-summary-print-num">Lệch LH vs ĐM</th>
                 <th className="shift-summary-print-num">Lỗ/lãi nhựa</th>
-                <th className="shift-summary-print-num">Giá</th>
+                <th className="shift-summary-print-num">Giá (phiếu kho)</th>
                 <th className="shift-summary-print-num">Số tiền lỗ lãi nhựa</th>
                 <th className="shift-summary-print-num">Lỗ/lãi màng</th>
                 <th>Phân tích đánh giá</th>
@@ -172,7 +172,12 @@ function ControlBoardShiftSummaryPrintSheet({
                 <EmptyRows colSpan={13} />
               ) : (
                 rows.map(row => {
-                  const giaNhua = resolvePrintGiaNhua(giaNhuaMap, row.key);
+                  const giaNhua = resolveShiftSummaryGiaNhuaFromWarehouse(
+                    row.ngay,
+                    row.ca,
+                    warehouseMovements,
+                    shiftSettings
+                  );
                   const soTienLoLaiNhua = computeSoTienLoLaiNhua(row.giaTriLoLaiNhua, giaNhua);
                   return (
                   <tr key={`san-luong-${row.key}`}>
@@ -245,7 +250,12 @@ function ControlBoardShiftSummaryPrintSheet({
                           sum +
                           computeSoTienLoLaiNhua(
                             row.giaTriLoLaiNhua,
-                            resolvePrintGiaNhua(giaNhuaMap, row.key)
+                            resolveShiftSummaryGiaNhuaFromWarehouse(
+                              row.ngay,
+                              row.ca,
+                              warehouseMovements,
+                              shiftSettings
+                            )
                           ),
                         0
                       ),
@@ -679,12 +689,14 @@ export function ControlBoardShiftSummaryPrintBatch({
   rows,
   filters,
   phanTichDanhGiaMap,
-  giaNhuaMap
+  warehouseMovements,
+  shiftSettings
 }: {
   rows: ControlBoardShiftSummaryRow[];
   filters: ShiftSummaryPrintFilters;
   phanTichDanhGiaMap?: Record<string, string>;
-  giaNhuaMap?: Record<string, string>;
+  warehouseMovements?: ShiftSummaryWarehouseMovement[];
+  shiftSettings?: ShiftSetting[];
 }) {
   return (
     <div className="production-order-print-batch shift-summary-print-batch">
@@ -692,7 +704,8 @@ export function ControlBoardShiftSummaryPrintBatch({
         rows={rows}
         filters={filters}
         phanTichDanhGiaMap={phanTichDanhGiaMap}
-        giaNhuaMap={giaNhuaMap}
+        warehouseMovements={warehouseMovements}
+        shiftSettings={shiftSettings}
       />
     </div>
   );

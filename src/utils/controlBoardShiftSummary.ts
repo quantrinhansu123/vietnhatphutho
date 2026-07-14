@@ -33,6 +33,8 @@ export type ShiftSummaryWarehouseMovement = {
   itemName: string;
   unit: string;
   quantity: number;
+  /** Đơn giá từ phiếu xuất/nhập kho (đ/đơn vị) */
+  unitPrice?: number;
   createdBy: string;
 };
 
@@ -991,6 +993,55 @@ export function formatShiftSummaryPercent(value: number, fractionDigits = 2) {
 export function computeSoTienLoLaiNhua(giaTriLoLaiNhua: number, gia: number) {
   if (!Number.isFinite(giaTriLoLaiNhua) || !Number.isFinite(gia) || gia === 0) return 0;
   return Math.round(giaTriLoLaiNhua * gia);
+}
+
+/** Dòng NVL nhựa (kg): không phải lõi/túi/màng m2 — cùng quy tắc xuất NPL trong tổng hợp ca. */
+export function isWarehousePlasticNvlLine(
+  movement: Pick<ShiftSummaryWarehouseMovement, 'warehouseKind' | 'itemCode' | 'itemName' | 'unit'>
+) {
+  if (movement.warehouseKind !== 'nvl') return false;
+  if (isWarehouseCoreExportItem(movement.itemCode || '', movement.itemName || '')) return false;
+  if (isWarehouseBagExportItem(movement.itemCode || '', movement.itemName || '')) return false;
+  const unit = movement.unit || '';
+  if (isM2Unit(unit)) return false;
+  return isKgUnit(unit) || !unit.trim();
+}
+
+/**
+ * Giá nhựa (đ/kg) từ phiếu xuất/nhập kho cùng ngày + ca.
+ * Ưu tiên xuất NVL nhựa có giá; nếu không có thì lấy nhập NVL nhựa.
+ * Nhiều dòng → bình quân gia quyền theo số lượng.
+ */
+export function resolveShiftSummaryGiaNhuaFromWarehouse(
+  ngay: string,
+  ca: string,
+  movements: ShiftSummaryWarehouseMovement[] | undefined,
+  shiftSettings: ShiftSetting[]
+): number {
+  if (!movements || movements.length === 0) return 0;
+  const shiftOptions = getProductionShiftOptions(shiftSettings);
+
+  const collectWeighted = (slipType: 'xuat' | 'nhap') => {
+    let amount = 0;
+    let qty = 0;
+    for (const movement of movements) {
+      if (movement.slipType !== slipType) continue;
+      if (!isWarehousePlasticNvlLine(movement)) continue;
+      if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
+      const unitPrice = Number(movement.unitPrice);
+      const quantity = Number(movement.quantity);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
+      if (!Number.isFinite(quantity) || quantity <= 0) continue;
+      amount += quantity * unitPrice;
+      qty += quantity;
+    }
+    if (qty <= 0) return 0;
+    return Math.round(amount / qty);
+  };
+
+  const fromExport = collectWeighted('xuat');
+  if (fromExport > 0) return fromExport;
+  return collectWeighted('nhap');
 }
 
 export function resolveShiftSummaryTlDinhMucKgCuon(
