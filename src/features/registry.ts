@@ -242,8 +242,14 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '—',
     appTab: 'control-board',
     appLines: 'src/features/control-board/index.tsx, src/features/dashboard/index.tsx',
-    components: ['src/components/ControlBoardShiftSummaryTable.tsx', 'src/components/ControlBoardShiftDetailModal.tsx', 'src/components/ControlBoardShiftSummaryPrintSheet.tsx'],
-    utils: ['src/utils/controlBoardShiftSummary.ts']
+    components: [
+      'src/components/ControlBoardShiftSummaryTable.tsx',
+      'src/components/ControlBoardBbMachineReportTable.tsx',
+      'src/components/ControlBoardShiftDetailModal.tsx',
+      'src/components/ControlBoardShiftSummaryPrintSheet.tsx',
+      'src/components/ControlBoardShiftSummaryChart.tsx'
+    ],
+    utils: ['src/utils/controlBoardShiftSummary.ts', 'src/utils/controlBoardBbMachineReport.ts']
   }
 };
 

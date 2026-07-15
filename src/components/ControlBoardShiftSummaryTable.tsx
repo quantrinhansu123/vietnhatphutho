@@ -363,7 +363,7 @@ export default function ControlBoardShiftSummaryTable({
           <div className="flex flex-col gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-wider text-indigo-200 sm:text-xs">Tổng hợp sản xuất</p>
-              <h3 className="text-base font-black sm:text-lg">Bảng tổng hợp theo ca</h3>
+              <h3 className="text-base font-black sm:text-lg">Tổng hợp máy cách nhiệt</h3>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
               <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">

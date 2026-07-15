@@ -3,6 +3,7 @@ import { formatNumber } from '../../utils';
 import type { AppTab } from '../../routes';
 import ControlBoardShiftSummaryTable from '../../components/ControlBoardShiftSummaryTable';
 import ControlBoardShiftSummaryChart from '../../components/ControlBoardShiftSummaryChart';
+import ControlBoardBbMachineReportTable from '../../components/ControlBoardBbMachineReportTable';
 import { ControlBoardCommonFilters } from '../../components/ControlBoardCommonFilters';
 import {
   buildControlBoardShiftSummary,
@@ -924,25 +925,46 @@ export function ControlBoardPanel({
         shiftSettings={shiftSummaryDetailSources.shiftSettings}
       />
 
-      <ControlBoardShiftSummaryTable
-        rows={shiftSummaryRows}
-        isLoading={isLoading}
-        dateFrom={shiftSummaryDateFrom}
-        dateTo={shiftSummaryDateTo}
-        shiftFilter={boardFilterShift}
-        machineFilter={boardFilterMachine}
-        detailSources={shiftSummaryDetailSources}
-        filterSources={shiftSummaryFilterSources}
-        staffOptions={shiftSummaryStaffOptions}
-        selectedMachine={selectedBoardMachine}
-        onEditWeighingRecord={onEditWeighing ? handleEditWeighingRecord : undefined}
-        onDeleteWeighingRecord={handleDeleteWeighingRecord}
-        onDeleteWeighingRecords={handleDeleteWeighingRecords}
-        onDeleteWarehouseSlip={handleDeleteWarehouseSlip}
-        onDeleteWarehouseSlips={handleDeleteWarehouseSlips}
-        onDeleteMachineNvlReport={handleDeleteMachineNvlReport}
-        onDeleteMachineNvlReports={handleDeleteMachineNvlReports}
-      />
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 xl:grid-cols-2 xl:items-start">
+        <ControlBoardShiftSummaryTable
+          rows={shiftSummaryRows}
+          isLoading={isLoading}
+          dateFrom={shiftSummaryDateFrom}
+          dateTo={shiftSummaryDateTo}
+          shiftFilter={boardFilterShift}
+          machineFilter={boardFilterMachine}
+          detailSources={shiftSummaryDetailSources}
+          filterSources={shiftSummaryFilterSources}
+          staffOptions={shiftSummaryStaffOptions}
+          selectedMachine={selectedBoardMachine}
+          onEditWeighingRecord={onEditWeighing ? handleEditWeighingRecord : undefined}
+          onDeleteWeighingRecord={handleDeleteWeighingRecord}
+          onDeleteWeighingRecords={handleDeleteWeighingRecords}
+          onDeleteWarehouseSlip={handleDeleteWarehouseSlip}
+          onDeleteWarehouseSlips={handleDeleteWarehouseSlips}
+          onDeleteMachineNvlReport={handleDeleteMachineNvlReport}
+          onDeleteMachineNvlReports={handleDeleteMachineNvlReports}
+        />
+
+        <ControlBoardBbMachineReportTable
+          productionOrders={productionOrders}
+          products={products}
+          materials={materials}
+          machines={machines}
+          warehouseMovements={shiftSummaryWarehouseMovementRefs}
+          damagedRecords={damagedRecords}
+          machineNvlReports={machineNvlReports}
+          mixingReports={mixingReports}
+          acceptanceReports={shiftSummaryAcceptanceReports}
+          shiftSettings={productionOrderSettings}
+          isLoading={isLoading}
+          dateFrom={shiftSummaryDateFrom}
+          dateTo={shiftSummaryDateTo}
+          shiftFilter={boardFilterShift}
+          machineFilter={boardFilterMachine}
+          selectedMachine={selectedBoardMachine}
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-4">
         <DashboardWindow
