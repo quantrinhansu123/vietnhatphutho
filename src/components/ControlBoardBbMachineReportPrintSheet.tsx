@@ -1,10 +1,16 @@
 import React from 'react';
 import { formatMoney, formatNumber } from '../utils';
 import { normalizeProductCodeKey, type ProductRow } from '../features/san-pham/types';
+import type { MaterialRow } from '../features/kho-nvl';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { parseProductionOrderFilterDate } from '../features/cai-dat-thoi-gian';
 import { shiftNamesMatch } from '../utils/shiftSettings';
+import {
+  convertWarehouseQuantityToKg,
+  isWarehouseKgUnit,
+  mapMaterialToWeightCatalogItem
+} from '../utils/warehouseWeight';
 import type {
   BbCuoiCaGroup,
   BbDamagedGoodsGroup,
@@ -27,6 +33,8 @@ type PrintProps = {
   inboundRows: BbInboundReportRow[];
   acceptanceReports: AcceptanceReport[];
   products: ProductRow[];
+  materials: MaterialRow[];
+  phanTichMap: Record<string, string>;
 };
 
 type MaterialPrintRow = {
@@ -99,7 +107,7 @@ function acceptanceQuantityForProduct(
 
 function buildMaterialRows(
   order: BbProductionOrderGroup,
-  props: Omit<PrintProps, 'orderGroups' | 'inboundRows' | 'acceptanceReports'>
+  props: PrintProps
 ) {
   const rows = new Map<string, MaterialPrintRow>();
   const ensure = (code: string, name: string, unit = 'kg') => {
@@ -125,11 +133,41 @@ function buildMaterialRows(
     return row;
   };
 
+  const materialsCatalog = props.materials.map(mapMaterialToWeightCatalogItem);
   for (const productLine of order.lines) {
     const product = findProduct(props.products, productLine.productCode);
+    const actualProductQuantity = acceptanceQuantityForProduct(
+      order,
+      productLine.productCode,
+      productLine.productName,
+      props.acceptanceReports
+    );
     for (const item of product?.nplItems || []) {
       const row = ensure(item.code, item.name, item.amountType === 'percent' ? 'kg' : item.unit);
       if (item.amountType === 'percent' && item.percent !== null) row.normPercents.push(item.percent);
+      if (item.amountType === 'percent') {
+        const unitNormKg = productLine.normKgPerUnit;
+        if (unitNormKg !== null && unitNormKg > 0 && actualProductQuantity > 0) {
+          row.finishedKg += unitNormKg * actualProductQuantity * (Math.max(0, item.percent ?? 0) / 100);
+        }
+      } else {
+        const rawQuantity = Math.max(0, item.quantity ?? 0) * actualProductQuantity;
+        const unit = String(item.unit || '').trim();
+        if (rawQuantity > 0) {
+          if (!unit || unit === '-' || isWarehouseKgUnit(unit)) {
+            row.finishedKg += rawQuantity;
+          } else {
+            const converted = convertWarehouseQuantityToKg({
+              quantity: rawQuantity,
+              unit,
+              itemCode: item.code,
+              warehouseKind: 'nvl',
+              materials: materialsCatalog
+            });
+            if (converted !== null && Number.isFinite(converted)) row.finishedKg += converted;
+          }
+        }
+      }
     }
   }
 
@@ -163,6 +201,7 @@ function buildMaterialRows(
 function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGroup; props: PrintProps }) {
   const inbound = findOrderGroup(props.inboundRows, order.orderCode);
   const evaluation = findOrderGroup(props.danhGiaGroups, order.orderCode);
+  const analysisNote = props.phanTichMap[order.groupKey] || '';
   const materialRows = buildMaterialRows(order, props);
   const productRows = order.lines.map(line => {
     const actualQuantity = acceptanceQuantityForProduct(
@@ -179,6 +218,16 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
   const requiredWeightTotal = productRows.reduce((sum, row) => sum + (row.requiredWeight || 0), 0);
   const actualQtyTotal = productRows.reduce((sum, row) => sum + row.actualQuantity, 0) || inbound?.acceptedRolls || 0;
   const actualWeightTotal = productRows.reduce((sum, row) => sum + (row.actualWeight || 0), 0);
+  const damagedQuantity = evaluation
+    ? evaluation.soLuongNhuaLoiHong + evaluation.soLuongMangLoiHong + evaluation.soLuongLoiLoiHong
+    : 0;
+  const damagedMoney = evaluation
+    ? evaluation.giaTriNhuaLoiHong + evaluation.giaTriMangLoiHong + evaluation.giaTriLoiLoiHong
+    : 0;
+  const unitPrice = (money: number | undefined, quantity: number | undefined) =>
+    money !== undefined && quantity !== undefined && quantity !== 0
+      ? Math.abs(money / quantity)
+      : null;
 
   return (
     <div className="production-order-print-sheet shift-summary-print-sheet bb-machine-report-print-sheet">
@@ -216,7 +265,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
 
         <section className="shift-summary-print-section">
           <h2 className="production-order-print-section-title">2. BÁO CÁO THÀNH PHẨM ĐẠT NHẬP KHO</h2>
-          <table className="shift-summary-print-table shift-summary-print-table-wide">
+          <table className="shift-summary-print-table shift-summary-print-table-wide bb-machine-report-print-product-table">
             <thead><tr>
               <th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>ĐVT</th><th>SL yêu cầu</th>
               <th>TL yêu cầu</th><th>SL đạt</th><th>TL đạt</th><th>Tỉ lệ đạt</th><th>Máy SX</th><th>Lý do phát sinh</th>
@@ -231,7 +280,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
                   <td className="shift-summary-print-num">{printNumber(row.actualQuantity, 2)}</td>
                   <td className="shift-summary-print-num">{printNumber(row.actualWeight, 3)}</td>
                   <td className="shift-summary-print-num">{printPercent(row.quantity > 0 ? (row.actualQuantity / row.quantity) * 100 : null)}</td>
-                  <td>{row.machine || order.machine || '-'}</td><td>-</td>
+                  <td>{row.machine || order.machine || '-'}</td><td>{analysisNote || '-'}</td>
                 </tr>
               ))}
               <tr className="shift-summary-print-total-row">
@@ -264,7 +313,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
                 return <tr key={row.key}>
                   <td>{row.code || '-'}</td><td>{row.name || '-'}</td><td className="shift-summary-print-center">{row.unit || 'kg'}</td>
                   <td className="shift-summary-print-num">{printPercent(norm)}</td>
-                  <td className="shift-summary-print-num">{row.actualMixedKg > 0 ? printNumber(row.actualMixedKg, 3) : printPercent(row.actualPercent)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.actualMixedKg, 3)}</td>
                   <td className="shift-summary-print-num">{printNumber(row.openingKg, 3)}</td>
                   <td className="shift-summary-print-num">{printNumber(row.exportKg, 3)}</td>
                   <td className="shift-summary-print-num">{printNumber(row.finishedKg, 3)}</td>
@@ -283,14 +332,21 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
             <tbody>
               <tr><td className="shift-summary-print-center">1</td><td>Tỉ lệ hàng lỗi / thành phẩm</td>
                 <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeLoiHongDinhMuc)}</td>
-                <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeLoiHong)}</td><td colSpan={3}>-</td></tr>
-              <tr><td className="shift-summary-print-center">2</td><td>Hao hụt nhựa</td><td>-</td>
+                <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeLoiHong)}</td>
+                <td className="shift-summary-print-num">{printNumber(damagedQuantity, 3)} kg</td>
+                <td className="shift-summary-print-num">{printNumber(unitPrice(damagedMoney, damagedQuantity), 0)} đ/kg</td>
+                <td className="shift-summary-print-num">{evaluation ? `${formatMoney(damagedMoney, 0)} đ` : '-'}</td></tr>
+              <tr><td className="shift-summary-print-center">2</td><td>Hao hụt nhựa</td>
+                <td className="shift-summary-print-num">100%</td>
                 <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeNhuaThucXuatVsDinhMuc)}</td>
-                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutNhuaKg, 3)}</td><td>-</td>
+                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutNhuaKg, 3)} kg</td>
+                <td className="shift-summary-print-num">{printNumber(unitPrice(evaluation?.giaTriHaoHutNhua, evaluation?.giaTriHaoHutNhuaKg), 0)} đ/kg</td>
                 <td className="shift-summary-print-num">{evaluation ? `${formatMoney(evaluation.giaTriHaoHutNhua, 0)} đ` : '-'}</td></tr>
-              <tr><td className="shift-summary-print-center">3</td><td>Hao hụt màng</td><td>-</td>
+              <tr><td className="shift-summary-print-center">3</td><td>Hao hụt màng</td>
+                <td className="shift-summary-print-num">100%</td>
                 <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeMangThucXuatVsDinhMuc)}</td>
-                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutMangKg, 3)}</td><td>-</td>
+                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutMangKg, 3)} kg</td>
+                <td className="shift-summary-print-num">{printNumber(unitPrice(evaluation?.giaTriHaoHutMang, evaluation?.giaTriHaoHutMangKg), 0)} đ/kg</td>
                 <td className="shift-summary-print-num">{evaluation ? `${formatMoney(evaluation.giaTriHaoHutMang, 0)} đ` : '-'}</td></tr>
               <tr className="shift-summary-print-total-row"><td colSpan={6} className="shift-summary-print-total-label">Tổng giá trị hao hụt &amp; lỗi hỏng</td>
                 <td className="shift-summary-print-num">{evaluation ? `${formatMoney(evaluation.tongGiaTriHaoHutLoiHong, 0)} đ` : '-'}</td></tr>

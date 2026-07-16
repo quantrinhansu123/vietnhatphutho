@@ -2030,6 +2030,8 @@ export default function ControlBoardBbMachineReportTable({
             inboundRows={inboundRows}
             acceptanceReports={acceptanceReports}
             products={products}
+            materials={materials}
+            phanTichMap={phanTichMap}
           />,
           document.body
         )

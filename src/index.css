@@ -582,8 +582,8 @@ input[type="number"] {
   }
 
   @page bb-machine-report-page {
-    size: A4 landscape;
-    margin: 5mm;
+    size: A4 portrait;
+    margin: 1.5mm;
   }
 
   @page mixing-report-page {
@@ -2729,27 +2729,101 @@ input[type="number"] {
   .bb-machine-report-print-doc {
     width: 100% !important;
     max-width: 100% !important;
+    margin: 0 !important;
+    zoom: 1;
+    font-size: 14px !important;
+    line-height: 1 !important;
   }
 
   .bb-machine-report-print-doc .production-order-print-logo {
-    max-height: 12mm !important;
+    max-height: 9mm !important;
   }
 
   .bb-machine-report-print-doc .production-order-print-title {
-    font-size: 12pt;
-    margin-bottom: 1.5mm;
+    margin: 0 0 0.6mm !important;
+    font-size: 16px !important;
+    line-height: 1.05 !important;
+  }
+
+  .bb-machine-report-print-doc .production-order-print-letterhead {
+    gap: 3mm !important;
+    margin-bottom: 0.6mm !important;
+    padding-bottom: 0.6mm !important;
+  }
+
+  .bb-machine-report-print-doc .production-order-print-company-name {
+    font-size: 14px !important;
+    line-height: 1 !important;
+  }
+
+  .bb-machine-report-print-doc .bb-machine-report-print-subtitle {
+    margin: 0 0 0.7mm !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+  }
+
+  .bb-machine-report-print-doc .production-order-print-section-title {
+    margin: 0 0 0.4mm !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
   }
 
   .bb-machine-report-print-doc .shift-summary-print-section {
-    margin-bottom: 2mm;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    margin-bottom: 0.7mm !important;
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   .bb-machine-report-print-doc .shift-summary-print-table th,
   .bb-machine-report-print-doc .shift-summary-print-table td {
-    font-size: 7.5pt;
-    padding: 0.65mm 0.55mm;
+    padding: 0.15mm 0.2mm !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    letter-spacing: -0.02em;
+  }
+
+  .bb-machine-report-print-product-table th:nth-child(1),
+  .bb-machine-report-print-product-table td:nth-child(1) { width: 13%; }
+  .bb-machine-report-print-product-table th:nth-child(2),
+  .bb-machine-report-print-product-table td:nth-child(2) { width: 28%; }
+  .bb-machine-report-print-product-table th:nth-child(3),
+  .bb-machine-report-print-product-table td:nth-child(3) { width: 4.5%; }
+  .bb-machine-report-print-product-table th:nth-child(4),
+  .bb-machine-report-print-product-table td:nth-child(4) { width: 5%; }
+  .bb-machine-report-print-product-table th:nth-child(5),
+  .bb-machine-report-print-product-table td:nth-child(5) { width: 6.5%; }
+  .bb-machine-report-print-product-table th:nth-child(6),
+  .bb-machine-report-print-product-table td:nth-child(6) { width: 5%; }
+  .bb-machine-report-print-product-table th:nth-child(7),
+  .bb-machine-report-print-product-table td:nth-child(7) { width: 6.5%; }
+  .bb-machine-report-print-product-table th:nth-child(8),
+  .bb-machine-report-print-product-table td:nth-child(8) { width: 6%; }
+  .bb-machine-report-print-product-table th:nth-child(9),
+  .bb-machine-report-print-product-table td:nth-child(9) { width: 10%; }
+  .bb-machine-report-print-product-table th:nth-child(10),
+  .bb-machine-report-print-product-table td:nth-child(10) { width: 15.5%; }
+
+  .bb-machine-report-print-product-table th:nth-child(n+3):nth-child(-n+8),
+  .bb-machine-report-print-product-table td:nth-child(n+3):nth-child(-n+8) {
+    padding-left: 0.08mm !important;
+    padding-right: 0.08mm !important;
+  }
+
+  .bb-machine-report-print-doc .bb-machine-report-print-info th,
+  .bb-machine-report-print-doc .bb-machine-report-print-info td {
+    padding-top: 0.35mm !important;
+    padding-bottom: 0.35mm !important;
+  }
+
+  .bb-machine-report-print-signatures {
+    gap: 4mm !important;
+    margin-top: 1.2mm !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+  }
+
+  .bb-machine-report-print-signatures span {
+    margin-top: 4mm !important;
   }
 }
 
