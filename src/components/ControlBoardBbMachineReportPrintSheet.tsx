@@ -298,7 +298,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
 
         <section className="shift-summary-print-section">
           <h2 className="production-order-print-section-title">3. BÁO CÁO TIÊU HAO NGUYÊN VẬT LIỆU</h2>
-          <table className="shift-summary-print-table shift-summary-print-table-wide">
+          <table className="shift-summary-print-table shift-summary-print-table-wide bb-machine-report-print-material-table">
             <thead><tr>
               <th>Mã NVL</th><th>Tên NVL</th><th>ĐVT</th><th>Tỉ lệ ĐM</th><th>TL TT</th>
               <th>TL đầu ca</th><th>TL xuất kho</th><th>TL TP</th><th>TL lỗi</th><th>TL cuối ca</th>

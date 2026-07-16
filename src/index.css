@@ -2809,6 +2809,25 @@ input[type="number"] {
     padding-right: 0.08mm !important;
   }
 
+  .bb-machine-report-print-material-table th:nth-child(1),
+  .bb-machine-report-print-material-table td:nth-child(1) { width: 14%; }
+  .bb-machine-report-print-material-table th:nth-child(2),
+  .bb-machine-report-print-material-table td:nth-child(2) { width: 34%; }
+  .bb-machine-report-print-material-table th:nth-child(3),
+  .bb-machine-report-print-material-table td:nth-child(3) { width: 4%; }
+  .bb-machine-report-print-material-table th:nth-child(4),
+  .bb-machine-report-print-material-table td:nth-child(4) { width: 6%; }
+  .bb-machine-report-print-material-table th:nth-child(n+5):nth-child(-n+10),
+  .bb-machine-report-print-material-table td:nth-child(n+5):nth-child(-n+10) { width: 7%; }
+
+  .bb-machine-report-print-material-table th:nth-child(n+3),
+  .bb-machine-report-print-material-table td:nth-child(n+3) {
+    padding-left: 0.05mm !important;
+    padding-right: 0.05mm !important;
+    text-align: center !important;
+    white-space: nowrap;
+  }
+
   .bb-machine-report-print-doc .bb-machine-report-print-info th,
   .bb-machine-report-print-doc .bb-machine-report-print-info td {
     padding-top: 0.35mm !important;
