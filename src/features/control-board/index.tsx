@@ -895,28 +895,30 @@ export function ControlBoardPanel({
   }, []);
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-[1880px] space-y-3 sm:space-y-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-[1880px] flex-col gap-3 sm:gap-4">
       {loadError && (
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+        <p className="order-[-40] rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
           {loadError}
         </p>
       )}
 
-      <ControlBoardCommonFilters
-        dateFrom={shiftSummaryDateFrom}
-        dateTo={shiftSummaryDateTo}
-        onDateFromChange={setShiftSummaryDateFrom}
-        onDateToChange={setShiftSummaryDateTo}
-        shift={boardFilterShift}
-        onShiftChange={setBoardFilterShift}
-        shiftOptions={panelShiftOptions}
-        formatShiftLabel={formatPanelShiftLabel}
-        machine={boardFilterMachine}
-        onMachineChange={setBoardFilterMachine}
-        machines={machines}
-        onClear={clearBoardFilters}
-        isLoading={isLoading}
-      />
+      <div className="order-[-30]">
+        <ControlBoardCommonFilters
+          dateFrom={shiftSummaryDateFrom}
+          dateTo={shiftSummaryDateTo}
+          onDateFromChange={setShiftSummaryDateFrom}
+          onDateToChange={setShiftSummaryDateTo}
+          shift={boardFilterShift}
+          onShiftChange={setBoardFilterShift}
+          shiftOptions={panelShiftOptions}
+          formatShiftLabel={formatPanelShiftLabel}
+          machine={boardFilterMachine}
+          onMachineChange={setBoardFilterMachine}
+          machines={machines}
+          onClear={clearBoardFilters}
+          isLoading={isLoading}
+        />
+      </div>
 
       <ControlBoardShiftSummaryChart
         rows={shiftSummaryRows}
@@ -964,7 +966,7 @@ export function ControlBoardPanel({
         selectedMachine={selectedBoardMachine}
       />
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="order-[-20] grid grid-cols-1 gap-4">
         <DashboardWindow
           title="Lệnh sản xuất"
           subtitle="Các dòng lệnh mới nhất từ bảng lenh_sx"
