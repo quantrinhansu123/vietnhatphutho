@@ -581,6 +581,11 @@ input[type="number"] {
     margin: 5mm;
   }
 
+  @page bb-machine-report-page {
+    size: A4 landscape;
+    margin: 5mm;
+  }
+
   @page mixing-report-page {
     size: A4;
     margin: 0;
@@ -2655,6 +2660,97 @@ input[type="number"] {
   font-style: italic;
   font-weight: 400;
   color: #444444;
+}
+
+.bb-machine-report-print-doc {
+  width: 277mm;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.bb-machine-report-print-subtitle {
+  margin: -1mm 0 2mm;
+  text-align: center;
+  font-size: 8.5pt;
+  font-style: italic;
+}
+
+.bb-machine-report-print-info th {
+  width: 11%;
+  background: #f7f7f7;
+}
+
+.bb-machine-report-print-info td {
+  width: 22%;
+  font-weight: 600;
+}
+
+.bb-machine-report-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8mm;
+  margin-top: 5mm;
+  text-align: center;
+  font-size: 9pt;
+}
+
+.bb-machine-report-print-signatures p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.bb-machine-report-print-signatures span {
+  display: block;
+  margin-top: 9mm;
+  color: #444444;
+  font-style: italic;
+}
+
+@media print {
+  .bb-machine-report-print-batch,
+  .bb-machine-report-print-batch .shift-summary-print-sheet,
+  .bb-machine-report-print-batch .production-order-print-sheet {
+    page: bb-machine-report-page !important;
+  }
+
+  .bb-machine-report-print-page {
+    display: block !important;
+    width: 100% !important;
+    page: bb-machine-report-page;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .bb-machine-report-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .bb-machine-report-print-doc {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .bb-machine-report-print-doc .production-order-print-logo {
+    max-height: 12mm !important;
+  }
+
+  .bb-machine-report-print-doc .production-order-print-title {
+    font-size: 12pt;
+    margin-bottom: 1.5mm;
+  }
+
+  .bb-machine-report-print-doc .shift-summary-print-section {
+    margin-bottom: 2mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .bb-machine-report-print-doc .shift-summary-print-table th,
+  .bb-machine-report-print-doc .shift-summary-print-table td {
+    font-size: 7.5pt;
+    padding: 0.65mm 0.55mm;
+  }
 }
 
 .acceptance-report-print-signatures {

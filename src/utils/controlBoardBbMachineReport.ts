@@ -1,5 +1,5 @@
 import { findProductByCode } from '../features/san-pham';
-import type { ProductRow } from '../features/san-pham/types';
+import { normalizeProductCodeKey, type ProductRow, type ProductNplItem } from '../features/san-pham/types';
 import type { MachineRow } from '../features/danh-sach-may';
 import type { MaterialRow } from '../features/kho-nvl';
 import {
@@ -44,7 +44,12 @@ import {
 } from '../lib/mixingReportModel';
 import type { ShiftSetting } from './shiftSettings';
 import { getProductionShiftOptions, shiftNamesMatch } from './shiftSettings';
-import { convertWarehouseQuantityToKg, mapMaterialToWeightCatalogItem } from './warehouseWeight';
+import {
+  convertWarehouseQuantityToKg,
+  isWarehouseKgUnit,
+  mapMaterialToWeightCatalogItem,
+  type WarehouseWeightCatalogItem
+} from './warehouseWeight';
 import {
   getWeighingDataRows,
   splitDamagedGoodsDefectWeights,
@@ -112,8 +117,29 @@ export type BbWarehouseExportLineRow = {
   itemName: string;
   unit: string;
   quantity: number;
+  /** KL định mức = SL SP × Giá trị Thành phần (phan_tram/so_luong). */
+  normWeightKg: number | null;
+  materialNorm: BbMaterialNormFormula | null;
   weightKg: number | null;
   matchedByOrder: boolean;
+};
+
+export type BbMaterialNormFormula = {
+  productCode: string;
+  productName: string;
+  productQuantity: number;
+  productUnit: string;
+  productNormKgPerUnit: number | null;
+  materialCode: string;
+  materialName: string;
+  amountType: 'percent' | 'quantity';
+  rate: number;
+  rateUnit: string;
+  rawExpectedQuantity: number;
+  rawExpectedUnit: string;
+  totalNormKg: number;
+  allocationRatio: number;
+  allocatedNormKg: number;
 };
 
 function roundQty(value: number, digits = 3) {
@@ -365,6 +391,8 @@ export function buildBbWarehouseExportLineRows(input: {
       itemName: movement.itemName,
       unit: movement.unit,
       quantity: Number.isFinite(movement.quantity) ? movement.quantity : 0,
+      normWeightKg: null,
+      materialNorm: null,
       weightKg: resolveExportWeightKg(movement, input.materials),
       matchedByOrder
     });
@@ -420,8 +448,25 @@ export type BbWarehouseExportGroup = {
   machine: string;
   lineCount: number;
   quantity: number;
+  totalNormWeightKg: number;
   totalWeightKg: number;
   unmatchedCount: number;
+  lines: BbWarehouseExportLineRow[];
+  productGroups: BbWarehouseExportProductGroup[];
+};
+
+export type BbWarehouseExportProductGroup = {
+  productKey: string;
+  productCode: string;
+  productName: string;
+  unit: string;
+  orderQuantity: number;
+  normKgPerUnit: number | null;
+  normWeightKg: number;
+  lineCount: number;
+  quantity: number;
+  totalWeightKg: number;
+  allocationMode: 'direct' | 'quota' | 'unassigned';
   lines: BbWarehouseExportLineRow[];
 };
 
@@ -464,8 +509,42 @@ export function groupBbProductionOrderLines(rows: BbProductionOrderLineRow[]): B
   });
 }
 
+/** SL SP × Giá trị Thành phần → kg (ĐVT ≠ kg thì lấy Tổng TL từ kho NVL). */
+function resolveBomExpectedKg(
+  item: ProductNplItem,
+  orderQuantity: number,
+  unitWeightKg: number | null,
+  materialsCatalog: WarehouseWeightCatalogItem[]
+): number | null {
+  if (item.amountType === 'percent') {
+    if (unitWeightKg === null || unitWeightKg <= 0) return null;
+    const kg = unitWeightKg * orderQuantity * (Math.max(0, item.percent ?? 0) / 100);
+    return kg > 0 ? kg : null;
+  }
+
+  const qty = Math.max(0, item.quantity ?? 0) * orderQuantity;
+  if (qty <= 0) return null;
+
+  const unit = String(item.unit || '').trim();
+  if (!unit || unit === '-' || isWarehouseKgUnit(unit)) return qty;
+
+  const converted = convertWarehouseQuantityToKg({
+    quantity: qty,
+    unit,
+    itemCode: item.code,
+    warehouseKind: 'nvl',
+    materials: materialsCatalog
+  });
+  return converted !== null && Number.isFinite(converted) && converted > 0 ? converted : null;
+}
+
 /** Gom dòng xuất kho theo số lệnh SX (nhiều lệnh ghép → tách theo chuỗi orderCode). */
-export function groupBbWarehouseExportLines(rows: BbWarehouseExportLineRow[]): BbWarehouseExportGroup[] {
+export function groupBbWarehouseExportLines(
+  rows: BbWarehouseExportLineRow[],
+  productionOrders: ProductionOrderRow[] = [],
+  products: ProductRow[] = [],
+  materials: MaterialRow[] = []
+): BbWarehouseExportGroup[] {
   const map = new Map<string, BbWarehouseExportGroup>();
 
   for (const row of rows) {
@@ -481,9 +560,11 @@ export function groupBbWarehouseExportLines(rows: BbWarehouseExportLineRow[]): B
         machine: row.machine,
         lineCount: 1,
         quantity: row.quantity > 0 ? row.quantity : 0,
+        totalNormWeightKg: 0,
         totalWeightKg: row.weightKg && row.weightKg > 0 ? row.weightKg : 0,
         unmatchedCount: row.matchedByOrder ? 0 : 1,
-        lines: [row]
+        lines: [row],
+        productGroups: []
       });
       continue;
     }
@@ -494,11 +575,278 @@ export function groupBbWarehouseExportLines(rows: BbWarehouseExportLineRow[]): B
     existing.lines.push(row);
   }
 
-  return [...map.values()].sort((a, b) => {
+  const groups = [...map.values()];
+  groups.forEach(group => {
+    group.productGroups = buildBbWarehouseExportProductGroups(group, productionOrders, products, materials);
+    group.totalNormWeightKg = group.productGroups.reduce(
+      (sum, productGroup) => sum + productGroup.normWeightKg,
+      0
+    );
+  });
+
+  return groups.sort((a, b) => {
     const dateCmp = b.ngay.localeCompare(a.ngay);
     if (dateCmp !== 0) return dateCmp;
     return a.orderCode.localeCompare(b.orderCode, 'vi');
   });
+}
+
+type WarehouseProductAllocation = BbWarehouseExportProductGroup & {
+  /** KL định mức (kg) theo mã NVL — đã quy đổi từ kho NVL nếu ĐVT ≠ kg. */
+  materialWeights: Map<string, number>;
+  /** Chi tiết phép tính định mức để hiển thị khi người dùng bấm vào số. */
+  materialFormulas: Map<string, BbMaterialNormFormula>;
+  /** Mã NVL có trong Thành phần (kể cả khi chưa quy đổi được kg). */
+  materialKeys: Set<string>;
+  usedQuotaAllocation: boolean;
+};
+
+/**
+ * Chia dòng NVL xuất kho về từng sản phẩm trong lệnh.
+ * Phiếu kho không lưu mã SP, vì vậy NVL chung được phân bổ theo định mức thành phần;
+ * mọi dòng không đủ dữ liệu đối chiếu được giữ riêng để tổng không bị sai lệch.
+ */
+function buildBbWarehouseExportProductGroups(
+  group: BbWarehouseExportGroup,
+  productionOrders: ProductionOrderRow[],
+  products: ProductRow[],
+  materials: MaterialRow[] = []
+): BbWarehouseExportProductGroup[] {
+  const materialsCatalog = materials.map(mapMaterialToWeightCatalogItem);
+  const orderCodes = group.orderCode
+    .split(',')
+    .map(code => code.trim())
+    .filter(Boolean);
+  const codeSet = new Set(orderCodes.map(code => code.toUpperCase()));
+  const relatedOrders = productionOrders.filter(order => {
+    if (codeSet.size > 0 && !codeSet.has(String(order.code || '').trim().toUpperCase())) return false;
+    const ngay = parseProductionOrderFilterDate(order.startDate) || order.startDate;
+    if (group.ngay && ngay && ngay !== group.ngay) return false;
+    return shiftNamesMatch(order.shift, group.shift);
+  });
+
+  const productMap = new Map<string, WarehouseProductAllocation>();
+  relatedOrders.forEach(order => {
+    getProductionOrderProductLines(order).forEach((line, lineIndex) => {
+      const productCode = String(line.productCode || '').trim();
+      const productName = String(line.productName || '').trim();
+      const productKey = normalizeProductCodeKey(productCode) || `__product_${lineIndex}`;
+      const orderQuantity = Math.max(0, parseProductionOrderQuantity(line.quantity));
+      const catalogProduct = findProductByCode(products, productCode);
+      let productGroup = productMap.get(productKey);
+      if (!productGroup) {
+        productGroup = {
+          productKey,
+          productCode,
+          productName: productName || catalogProduct?.name || productCode,
+          unit: String(line.unit || catalogProduct?.unit || '').trim(),
+          orderQuantity: 0,
+          normKgPerUnit: resolveProductUnitNormKg(catalogProduct),
+          normWeightKg: 0,
+          lineCount: 0,
+          quantity: 0,
+          totalWeightKg: 0,
+          allocationMode: 'direct',
+          lines: [],
+          materialWeights: new Map<string, number>(),
+          materialFormulas: new Map<string, BbMaterialNormFormula>(),
+          materialKeys: new Set<string>(),
+          usedQuotaAllocation: false
+        };
+        productMap.set(productKey, productGroup);
+      }
+      productGroup.orderQuantity += orderQuantity;
+
+      const resolvedNormKg = resolveProductUnitNormKg(catalogProduct);
+      if (resolvedNormKg !== null && resolvedNormKg > 0) {
+        productGroup.normKgPerUnit = resolvedNormKg;
+        productGroup.normWeightKg += resolvedNormKg * orderQuantity;
+      }
+      for (const item of catalogProduct?.nplItems || []) {
+        const materialKey = normalizeProductCodeKey(item.code);
+        if (!materialKey) continue;
+        productGroup.materialKeys.add(materialKey);
+        const expectedKg = resolveBomExpectedKg(item, orderQuantity, resolvedNormKg, materialsCatalog);
+        if (expectedKg === null) continue;
+        productGroup.materialWeights.set(
+          materialKey,
+          (productGroup.materialWeights.get(materialKey) ?? 0) + expectedKg
+        );
+        const existingFormula = productGroup.materialFormulas.get(materialKey);
+        const rate =
+          item.amountType === 'quantity'
+            ? Math.max(0, item.quantity ?? 0)
+            : Math.max(0, item.percent ?? 0);
+        const rawExpectedQuantity =
+          item.amountType === 'quantity' ? rate * orderQuantity : expectedKg;
+        productGroup.materialFormulas.set(materialKey, {
+          productCode,
+          productName: productName || catalogProduct?.name || productCode,
+          productQuantity: (existingFormula?.productQuantity ?? 0) + orderQuantity,
+          productUnit: String(line.unit || catalogProduct?.unit || '').trim() || 'SP',
+          productNormKgPerUnit: resolvedNormKg,
+          materialCode: item.code,
+          materialName: item.name || item.code,
+          amountType: item.amountType,
+          rate,
+          rateUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : '%',
+          rawExpectedQuantity: (existingFormula?.rawExpectedQuantity ?? 0) + rawExpectedQuantity,
+          rawExpectedUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : 'kg',
+          totalNormKg: (existingFormula?.totalNormKg ?? 0) + expectedKg,
+          allocationRatio: 1,
+          allocatedNormKg: (existingFormula?.allocatedNormKg ?? 0) + expectedKg
+        });
+      }
+    });
+  });
+
+  const productGroups = [...productMap.values()];
+  const unassigned: WarehouseProductAllocation = {
+    productKey: '__unassigned__',
+    productCode: '',
+    productName: 'Chưa xác định sản phẩm',
+    unit: '',
+    orderQuantity: 0,
+    normKgPerUnit: null,
+    normWeightKg: 0,
+    lineCount: 0,
+    quantity: 0,
+    totalWeightKg: 0,
+    allocationMode: 'unassigned',
+    lines: [],
+    materialWeights: new Map<string, number>(),
+    materialFormulas: new Map<string, BbMaterialNormFormula>(),
+    materialKeys: new Set<string>(),
+    usedQuotaAllocation: false
+  };
+
+  const addAllocatedLine = (
+    target: WarehouseProductAllocation,
+    row: BbWarehouseExportLineRow,
+    ratio: number,
+    suffix: string
+  ) => {
+    const quantity = row.quantity * ratio;
+    const weightKg = row.weightKg === null ? null : row.weightKg * ratio;
+    target.lines.push({
+      ...row,
+      key: `${row.key}|${suffix}`,
+      quantity,
+      weightKg,
+      normWeightKg: null,
+      materialNorm: null
+    });
+    target.quantity += quantity > 0 ? quantity : 0;
+    target.totalWeightKg += weightKg && weightKg > 0 ? weightKg : 0;
+    target.lineCount += 1;
+  };
+
+  for (const row of group.lines) {
+    if (productGroups.length === 1) {
+      addAllocatedLine(productGroups[0], row, 1, productGroups[0].productKey);
+      continue;
+    }
+
+    const materialKey = normalizeProductCodeKey(row.itemCode);
+    const matchedProducts = productGroups.filter(product => product.materialKeys.has(materialKey));
+    if (matchedProducts.length === 0) {
+      addAllocatedLine(unassigned, row, 1, 'unassigned');
+      continue;
+    }
+    if (matchedProducts.length === 1) {
+      addAllocatedLine(matchedProducts[0], row, 1, matchedProducts[0].productKey);
+      continue;
+    }
+
+    const totalExpected = matchedProducts.reduce(
+      (sum, product) => sum + Math.max(0, product.materialWeights.get(materialKey) ?? 0),
+      0
+    );
+    matchedProducts.forEach((product, index) => {
+      const ratio =
+        index === matchedProducts.length - 1
+          ? 1 - matchedProducts.slice(0, index).reduce((sum, previous) => {
+              const expected = Math.max(0, previous.materialWeights.get(materialKey) ?? 0);
+              return sum + (totalExpected > 0 ? expected / totalExpected : 1 / matchedProducts.length);
+            }, 0)
+          : totalExpected > 0
+            ? Math.max(0, product.materialWeights.get(materialKey) ?? 0) / totalExpected
+            : 1 / matchedProducts.length;
+      product.usedQuotaAllocation = true;
+      addAllocatedLine(product, row, ratio, product.productKey);
+    });
+  }
+
+  /** Gán KL định mức (kg) từng dòng NVL từ Thành phần (đã quy đổi ĐVT qua kho NVL). */
+  const applyLineNormWeights = (target: WarehouseProductAllocation) => {
+    const linesByMaterial = new Map<string, BbWarehouseExportLineRow[]>();
+    for (const line of target.lines) {
+      const materialKey = normalizeProductCodeKey(line.itemCode);
+      if (!materialKey || !target.materialKeys.has(materialKey)) {
+        line.normWeightKg = null;
+        line.materialNorm = null;
+        continue;
+      }
+      const bucket = linesByMaterial.get(materialKey);
+      if (bucket) bucket.push(line);
+      else linesByMaterial.set(materialKey, [line]);
+    }
+
+    for (const [materialKey, lines] of linesByMaterial) {
+      const expected = Math.max(0, target.materialWeights.get(materialKey) ?? 0);
+      const baseFormula = target.materialFormulas.get(materialKey) ?? null;
+      const assignNorm = (line: BbWarehouseExportLineRow, value: number | null, ratio: number) => {
+        line.normWeightKg = value;
+        line.materialNorm =
+          baseFormula && value !== null
+            ? { ...baseFormula, allocationRatio: ratio, allocatedNormKg: value }
+            : null;
+      };
+      if (expected <= 0) {
+        lines.forEach(line => {
+          assignNorm(line, null, 0);
+        });
+        continue;
+      }
+      const totalQty = lines.reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
+      if (totalQty <= 0) {
+        assignNorm(lines[0], roundQty(expected), 1);
+        lines.slice(1).forEach(line => {
+          assignNorm(line, null, 0);
+        });
+        continue;
+      }
+      let assigned = 0;
+      lines.forEach((line, index) => {
+        const ratio = Math.max(0, line.quantity) / totalQty;
+        if (index === lines.length - 1) {
+          assignNorm(line, roundQty(expected - assigned), ratio);
+          return;
+        }
+        const share = roundQty(expected * ratio);
+        assignNorm(line, share, ratio);
+        assigned += share;
+      });
+    }
+  };
+
+  applyLineNormWeights(unassigned);
+  productGroups.forEach(applyLineNormWeights);
+
+  if (unassigned.lines.length > 0) productGroups.push(unassigned);
+  return productGroups.map(
+    ({
+      materialWeights: _materialWeights,
+      materialFormulas: _materialFormulas,
+      materialKeys: _materialKeys,
+      usedQuotaAllocation,
+      ...product
+    }) => ({
+      ...product,
+      allocationMode:
+        product.allocationMode === 'unassigned' ? 'unassigned' : usedQuotaAllocation ? 'quota' : 'direct'
+    })
+  );
 }
 
 export type BbDamagedGoodsLineRow = {
