@@ -582,6 +582,68 @@ function collectBbOrderHeaders(input: {
   return headers;
 }
 
+export type BbOrderCodeOption = {
+  code: string;
+  ngay: string;
+  shiftLabel: string;
+  machine: string;
+  label: string;
+};
+
+/** DS số lệnh SX máy BB (theo bộ lọc ngày/ca/máy hiện tại) để chọn tickbox nhiều lệnh. */
+export function buildBbOrderCodeOptions(input: {
+  productionOrders: ProductionOrderRow[];
+  machines: MachineRow[];
+  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  dateFrom: string;
+  dateTo: string;
+  shiftFilter?: string;
+  machineFilter?: string;
+  selectedMachine?: { code?: string; name?: string } | null;
+}): BbOrderCodeOption[] {
+  const lookupSettings = (input.shiftSettings || []) as ProductionOrderLookupSetting[];
+  const seen = new Set<string>();
+  const options: BbOrderCodeOption[] = [];
+
+  for (const order of input.productionOrders) {
+    if (!isBbProductionOrder(order, input.machines)) continue;
+    const code = String(order.code || '').trim();
+    if (!code || seen.has(code)) continue;
+    const ngay = parseProductionOrderFilterDate(order.startDate);
+    if (!matchesControlBoardDateRange(ngay || order.startDate, input.dateFrom, input.dateTo)) continue;
+    const machineLabel = resolveProductionOrderMachine(order, input.machines);
+    if (
+      !machineValueMatchesFilter(
+        input.machineFilter || 'all',
+        input.selectedMachine ?? null,
+        order.machine,
+        order.position,
+        machineLabel
+      )
+    ) {
+      continue;
+    }
+    if (input.shiftFilter && input.shiftFilter !== 'all' && !shiftNamesMatch(order.shift, input.shiftFilter)) {
+      continue;
+    }
+    seen.add(code);
+    const shiftLabel = formatProductionOrderShiftLabel(order.shift, lookupSettings);
+    options.push({
+      code,
+      ngay: ngay || '',
+      shiftLabel,
+      machine: machineLabel,
+      label: ngay ? `${code} · ${ngay}` : code
+    });
+  }
+
+  return options.sort((a, b) => {
+    const dateCmp = b.ngay.localeCompare(a.ngay);
+    if (dateCmp !== 0) return dateCmp;
+    return a.code.localeCompare(b.code, 'vi');
+  });
+}
+
 /** Dòng NVL từ báo cáo lỗi hỏng gắn lệnh BB (ngày + ca + máy BB). */
 export function buildBbDamagedGoodsLineRows(input: {
   productionOrders: ProductionOrderRow[];

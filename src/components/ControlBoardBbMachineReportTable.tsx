@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { formatMoney, formatNumber } from '../utils';
 import type { ProductRow } from '../features/san-pham/types';
@@ -19,6 +19,7 @@ import {
   buildBbDauCaLineRows,
   buildBbInboundReportRows,
   buildBbMixingRatioGroups,
+  buildBbOrderCodeOptions,
   buildBbProductionOrderLineRows,
   buildBbThucDungLineRows,
   buildBbTongGroups,
@@ -118,11 +119,47 @@ export default function ControlBoardBbMachineReportTable({
   const [phanTichMap, setPhanTichMap] = useState<Record<string, string>>(() =>
     typeof window !== 'undefined' ? loadBbPhanTichMap() : {}
   );
+  const [orderCodeFilter, setOrderCodeFilter] = useState<string[]>([]);
+
+  const orderOptions = useMemo(
+    () =>
+      buildBbOrderCodeOptions({
+        productionOrders,
+        machines,
+        shiftSettings,
+        dateFrom,
+        dateTo,
+        shiftFilter,
+        machineFilter,
+        selectedMachine
+      }),
+    [productionOrders, machines, shiftSettings, dateFrom, dateTo, shiftFilter, machineFilter, selectedMachine]
+  );
+
+  const orderOptionCodes = useMemo(() => new Set(orderOptions.map(option => option.code)), [orderOptions]);
+
+  const toggleOrderCodeFilter = (code: string) => {
+    setOrderCodeFilter(prev => (prev.includes(code) ? prev.filter(value => value !== code) : [...prev, code]));
+  };
+
+  const clearOrderCodeFilter = () => setOrderCodeFilter([]);
+
+  useEffect(() => {
+    setOrderCodeFilter(prev => prev.filter(code => orderOptionCodes.has(code)));
+  }, [orderOptionCodes]);
+
+  const scopedProductionOrders = useMemo(
+    () =>
+      orderCodeFilter.length === 0
+        ? productionOrders
+        : productionOrders.filter(order => orderCodeFilter.includes(order.code)),
+    [productionOrders, orderCodeFilter]
+  );
 
   const orderRows = useMemo(
     () =>
       buildBbProductionOrderLineRows({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         products,
         machines,
         shiftSettings,
@@ -133,7 +170,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       products,
       machines,
       shiftSettings,
@@ -148,7 +185,7 @@ export default function ControlBoardBbMachineReportTable({
   const exportRows = useMemo(
     () =>
       buildBbWarehouseExportLineRows({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         warehouseMovements,
         materials,
         machines,
@@ -160,7 +197,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       warehouseMovements,
       materials,
       machines,
@@ -178,7 +215,7 @@ export default function ControlBoardBbMachineReportTable({
   const damagedRows = useMemo(
     () =>
       buildBbDamagedGoodsLineRows({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         damagedRecords,
         machines,
         shiftSettings,
@@ -189,7 +226,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       damagedRecords,
       machines,
       shiftSettings,
@@ -204,7 +241,7 @@ export default function ControlBoardBbMachineReportTable({
   const cuoiCaRows = useMemo(
     () =>
       buildBbCuoiCaLineRows({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         machineNvlReports,
         machines,
         shiftSettings,
@@ -215,7 +252,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       machineNvlReports,
       machines,
       shiftSettings,
@@ -230,7 +267,7 @@ export default function ControlBoardBbMachineReportTable({
   const dauCaRows = useMemo(
     () =>
       buildBbDauCaLineRows({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         machineNvlReports,
         machines,
         shiftSettings,
@@ -241,7 +278,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       machineNvlReports,
       machines,
       shiftSettings,
@@ -256,7 +293,7 @@ export default function ControlBoardBbMachineReportTable({
   const inboundRows = useMemo(
     () =>
       buildBbInboundReportRows({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         warehouseMovements,
         machineNvlReports,
         damagedRecords,
@@ -272,7 +309,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       warehouseMovements,
       machineNvlReports,
       damagedRecords,
@@ -291,7 +328,7 @@ export default function ControlBoardBbMachineReportTable({
   const thucDungRows = useMemo(
     () =>
       buildBbThucDungLineRows({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         warehouseMovements,
         machineNvlReports,
         materials,
@@ -304,7 +341,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       warehouseMovements,
       machineNvlReports,
       materials,
@@ -321,7 +358,7 @@ export default function ControlBoardBbMachineReportTable({
   const tongGroups = useMemo(
     () =>
       buildBbTongGroups({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         warehouseMovements,
         machineNvlReports,
         damagedRecords,
@@ -335,7 +372,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       warehouseMovements,
       machineNvlReports,
       damagedRecords,
@@ -365,7 +402,7 @@ export default function ControlBoardBbMachineReportTable({
   const mixingGroups = useMemo(
     () =>
       buildBbMixingRatioGroups({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         mixingReports,
         machines,
         shiftSettings,
@@ -376,7 +413,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       mixingReports,
       machines,
       shiftSettings,
@@ -390,7 +427,7 @@ export default function ControlBoardBbMachineReportTable({
   const danhGiaGroups = useMemo(
     () =>
       buildBbDanhGiaHaoHutGroups({
-        productionOrders,
+        productionOrders: scopedProductionOrders,
         products,
         warehouseMovements,
         machineNvlReports,
@@ -405,7 +442,7 @@ export default function ControlBoardBbMachineReportTable({
         selectedMachine
       }),
     [
-      productionOrders,
+      scopedProductionOrders,
       products,
       warehouseMovements,
       machineNvlReports,
@@ -463,6 +500,59 @@ export default function ControlBoardBbMachineReportTable({
             {tab.label}
           </button>
         ))}
+      </div>
+
+      <div className="border-b border-zinc-100 bg-white px-3 py-2.5">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+            Lọc theo lệnh SX (máy BB)
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-zinc-400">
+              {orderCodeFilter.length > 0
+                ? `Đã chọn ${orderCodeFilter.length}/${orderOptions.length} lệnh`
+                : `${orderOptions.length} lệnh`}
+            </span>
+            {orderCodeFilter.length > 0 ? (
+              <button
+                type="button"
+                onClick={clearOrderCodeFilter}
+                className="h-6 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100"
+              >
+                Xóa lọc
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {orderOptions.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-400">
+            Chưa có lệnh SX máy BB theo bộ lọc ngày/ca/máy hiện tại.
+          </p>
+        ) : (
+          <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+            {orderOptions.map(option => {
+              const checked = orderCodeFilter.includes(option.code);
+              return (
+                <label
+                  key={option.code}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                    checked
+                      ? 'border-sky-300 bg-sky-50 text-sky-800'
+                      : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleOrderCodeFilter(option.code)}
+                    className="h-3.5 w-3.5 rounded border-zinc-300 text-sky-700 focus:ring-sky-700/20"
+                  />
+                  {option.label}
+                </label>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto">
