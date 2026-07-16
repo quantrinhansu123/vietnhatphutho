@@ -1,0 +1,82 @@
+LINE 504
+
+          ) : (
+            <>
+              {filteredRows.map(row => (
+                <article key={row.key} className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2 border-b border-zinc-200/80 pb-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[11px] font-bold text-zinc-700">{row.ngay}</p>
+                      <p className="truncate text-xs font-black text-zinc-900">{row.ca}</p>
+                    </div>
+                    {activeTab === 'tong_vat_tu_thuc_dung' ? (
+                      <p className="text-right text-[10px] font-black uppercase tracking-wider text-teal-800">
+                        Tổng thực dùng
+                        <span className="mt-0.5 block font-mono text-sm">
+                          {formatShiftSummaryNumber(row.tongThucDung, 3)}
+                        </span>
+                      </p>
+                    ) : (
+                      <div className="flex shrink-0 items-start gap-3">
+                        <p className="text-right text-[10px] font-black uppercase tracking-wider text-teal-800">
+                          TN sử dụng
+                          <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryNumber(row.tongVatLieu, 3)}</span>
+                        </p>
+                        <p className="text-right text-[10px] font-black uppercase tracking-wider text-orange-700">
+                          CL nhựa
+                          <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryNumber(row.chenhLech, 3)}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {activeTab === 'tong_vat_tu_thuc_dung' ? (
+                    <dl className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px]">
+                      <div>
+                        <dt className="font-bold uppercase tracking-wider text-zinc-400">Nhựa thực dùng</dt>
+                        <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryKg(row.tongNhuaThucDung, 3)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase tracking-wider text-zinc-400">Màng thực dùng</dt>
+                        <dd className="font-mono font-bold text-fuchsia-700">{formatShiftSummaryKg(row.tongMangThucDung, 3)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase tracking-wider text-zinc-400">Lõi thực dùng</dt>
+                        <dd className="font-mono font-bold text-stone-700">{formatShiftSummaryKg(row.loiThucDung, 3)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase tracking-wider text-zinc-400">Túi thực dùng</dt>
+                        <dd className="font-mono font-bold text-cyan-700">{formatShiftSummaryKg(row.tuiThucDung, 3)}</dd>
+                      </div>
+                    </dl>
+                  ) : (
+                  <dl className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px]">
+
+---EDIT---
+
+                    <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn cuối ca nhựa</dt>
+                      <dd className="font-mono font-bold text-violet-700">{formatShiftSummaryNumber(row.tonCuoiCa, 3)}</dd>
+                    </div>
+                  </dl>
+                  )}
+                </article>
+              ))}
+              <div className="rounded-lg border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-[10px] font-black text-zinc-800">
+                <p className="mb-1 uppercase tracking-wider text-zinc-500">Tổng cộng</p>
+                {activeTab === 'tong_vat_tu_thuc_dung' ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    <span className="text-amber-700">Nhựa: {formatShiftSummaryKg(totals.tongNhuaThucDung, 3)}</span>
+                    <span className="text-fuchsia-700">Màng: {formatShiftSummaryKg(totals.tongMangThucDung, 3)}</span>
+                    <span className="text-stone-700">Lõi: {formatShiftSummaryKg(totals.loiThucDung, 3)}</span>
+                    <span className="text-cyan-700">Túi: {formatShiftSummaryKg(totals.tuiThucDung, 3)}</span>
+                    <span className="col-span-2 text-teal-800">Tổng: {formatShiftSummaryKg(totals.tongThucDung, 3)}</span>
+                  </div>
+                ) : (
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+
+---EDIT---
+
+                  <span className="text-orange-700">CL nhựa: {formatShiftSummaryNumber(totals.chenhLech, 3)}</span>
+                </div>
+                )}
+              </div>

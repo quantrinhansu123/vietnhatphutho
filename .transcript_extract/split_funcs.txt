@@ -1,0 +1,210 @@
+
+
+===== splitDamagedGoodsDefectWeights line 427 =====
+FILE: e:\chuyendoicongtyvietnhatipt\src\utils\weighingRecords.ts
+
+export function formatDamagedGoodsRowTotalWeight(
+  row: Pick<
+    WeighingRecord,
+    | 'weight'
+    | 'shellWeight'
+    | 'coreWeight'
+    | 'note'
+    | 'plasticNoFilmWeight'
+    | 'plasticNozzleWeight'
+    | 'plasticFilmAdhesionWeight'
+  >
+): string {
+  const total = splitDamagedGoodsDefectWeights(row).tong;
+  if (total <= 0) return '—';
+  return formatWeighingWeightNumber(total);
+}
+
+===== splitMachineNvlCuoiCaLineKg line 448 =====
+FILE: e:\chuyendoicongtyvietnhatipt\src\utils\controlBoardShiftSummaryDetails.ts
+
+  if (
+    metric === 'tonCuoiCa' ||
+    metric === 'tonCuoiCaNhua' ||
+    metric === 'tonCuoiCaMang' ||
+    metric === 'tonCuoiCaLoi' ||
+    metric === 'tonCuoiCaTui'
+  ) {
+    const rows: ShiftSummaryDetailRow[] = [];
+    let total = 0;
+
+    for (const report of input.machineNvlReports ?? []) {
+      if (report.reportKind !== 'cuoi_ca') continue;
+      if (!matchesShiftSummaryBucket(ngay, ca, report.ngay, report.ca, shiftOptions)) continue;
+
+      const machineLabel = report.tenMay || report.maMay || '-';
+
+      for (const line of report.lines) {
+        const split = splitMachineNvlCuoiCaLineKg(line);
+        const lineTotal =
+          metric === 'tonCuoiCaNhua'
+            ? split.nhua
+            : metric === 'tonCuoiCaMang'
+              ? split.mang
+              : metric === 'tonCuoiCaLoi'
+                ? split.loi
+                : metric === 'tonCuoiCaTui'
+                  ? split.tui
+                  : sumMachineNvlCuoiCaLineTotal(line);
+        if (lineTotal <= 0 && !line.maNvl && !line.tenNvl) continue;
+
+        total += lineTotal;
+
+        rows.push({
+          rowKey: `${report.id}|${line.stt}|${line.maNvl}`,
+          recordId: report.id || '',
+          may: machineLabel,
+          maNvl: line.maNvl || '-',
+          tenNvl: line.tenNvl || '-',
+          donVi: line.donVi || '-',
+          soLuongTon: formatDetailNumber(line.soLuongTon, 3),
+          tongTon: formatDetailNumber(lineTotal, 3)
+        });
+      }
+    }
+
+    const totalLabels: Partial<Record<ShiftSummaryMetric, string>> = {
+      tonCuoiCa: 'Tổng tồn cuối ca (kg)',
+      tonCuoiCaNhua: 'Tổng nhựa tồn cuối ca (kg)',
+      tonCuoiCaMang: 'Tổng màng tồn cuối ca (kg)',
+      tonCuoiCaLoi: 'Tổng lõi tồn cuối ca (kg)',
+      tonCuoiCaTui: 'Tổng túi tồn cuối ca (kg)'
+    };
+
+    return {
+      columns: [
+        { key: 'may', label: 'Máy' },
+        { key: 'maNvl', label: 'Mã NVL' },
+        { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'donVi', label: 'ĐVT' },
+        { key: 'soLuongTon', label: 'SL tồn', align: 'right', mono: true },
+        { key: 'tongTon', label: 'Tổng tồn (kg)', align: 'right', mono: true, accent: true }
+      ],
+      rows,
+      totalLabel: totalLabels[metric] ?? 'Tổng tồn cuối ca (kg)',
+      totalValue: formatShiftSummaryNumber(roundNormWeight(total), 3),
+      showActions: true
+    };
+  }
+
+  if (metric === 'tonCuoiCa') {
+
+===== splitMachineNvlDauCaLineKg line 448 =====
+FILE: e:\chuyendoicongtyvietnhatipt\src\utils\controlBoardShiftSummaryDetails.ts
+
+  splitMachineNvlCuoiCaLineKg,
+  splitMachineNvlDauCaLineKg,
+
+===== splitWarehouseSanPhamNhapLine line 359 =====
+FILE: e:\chuyendoicongtyvietnhatipt\src\utils\controlBoardShiftSummaryDetails.ts
+
+      totalValue: formatShiftSummaryNumber(tong, 3)
+    };
+  }
+
+  if (
+    metric === 'slDatThucTeNhapKho' ||
+    metric === 'tlNhuaTpNhapKho' ||
+    metric === 'tlMangTpNhapKho' ||
+    metric === 'tlTuiBaoBiNhapKho' ||
+    metric === 'tlLoiTpNhapKho'
+  ) {
+    const rows: ShiftSummaryDetailRow[] = [];
+    let total = 0;
+
+    for (const movement of input.warehouseMovements ?? []) {
+      if (!matchesShiftSummaryBucket(ngay, ca, movement.slipDate, movement.shift, shiftOptions)) continue;
+      if (movement.warehouseKind !== 'san_pham' || movement.slipType !== 'nhap') continue;
+      if (!Number.isFinite(movement.quantity) || movement.quantity <= 0) continue;
+
+      const kg = resolveSanPhamNhapLineKg(movement);
+      const split = splitWarehouseSanPhamNhapLine(movement, kg);
+      const lineValue =
+        metric === 'slDatThucTeNhapKho'
+          ? split.sl
+          : metric === 'tlNhuaTpNhapKho'
+            ? split.nhua
+            : metric === 'tlMangTpNhapKho'
+              ? split.mang
+              : metric === 'tlLoiTpNhapKho'
+                ? split.loi
+                : split.tui;
+      if (lineValue <= 0 && !movement.itemCode && !movement.itemName) continue;
+
+      total += lineValue;
+      rows.push({
+        rowKey: movement.id || `${movement.slipCode}|${movement.itemCode}`,
+        recordId: movement.slipCode || '',
+        soPhieu: movement.slipCode || '-',
+        loaiPhieu: warehouseSlipTypeLabel(movement.slipType),
+        maSp: movement.itemCode || '-',
+        tenSp: movement.itemName || '-',
+        soLuong: formatDetailNumber(movement.quantity, 3),
+        donVi: movement.unit || '-',
+        khoiLuong: formatDetailNumber(lineValue, metric === 'slDatThucTeNhapKho' ? 0 : 3)
+      });
+    }
+
+    const totalLabels: Partial<Record<ShiftSummaryMetric, string>> = {
+      slDatThucTeNhapKho: 'Tổng SL đạt thực tế',
+      tlNhuaTpNhapKho: 'Tổng TL nhựa TP nhập kho (kg)',
+      tlMangTpNhapKho: 'Tổng TL màng TP nhập kho (kg)',
+      tlTuiBaoBiNhapKho: 'Tổng TL túi bao bì nhập kho (kg)',
+      tlLoiTpNhapKho: 'Tổng TL lõi TP nhập kho (kg)'
+    };
+
+    return {
+      columns: [
+        { key: 'soPhieu', label: 'Mã phiếu' },
+        { key: 'loaiPhieu', label: 'Loại' },
+        { key: 'maSp', label: 'Mã SP' },
+        { key: 'tenSp', label: 'Tên SP' },
+        { key: 'soLuong', label: 'SL thực nhập', align: 'right', mono: true },
+        { key: 'donVi', label: 'ĐVT' },
+        {
+          key: 'khoiLuong',
+          label: metric === 'slDatThucTeNhapKho' ? 'SL đạt' : 'KL (kg)',
+          align: 'right',
+          mono: true,
+          accent: true
+        }
+      ],
+      rows,
+      totalLabel: totalLabels[metric] ?? 'Tổng',
+      totalValue: formatShiftSummaryNumber(roundNormWeight(total), metric === 'slDatThucTeNhapKho' ? 0 : 3),
+      showActions: true
+    };
+  }
+
+  if (metric === 'tongTpNhapKho') {
+    const row = input.summaryRow as ControlBoardShiftSummaryRow | null | undefined;
+    const tlNhuaTpNhapKho = row?.tlNhuaTpNhapKho ?? 0;
+    const tlMangTpNhapKho = row?.tlMangTpNhapKho ?? 0;
+    const tlTuiBaoBiNhapKho = row?.tlTuiBaoBiNhapKho ?? 0;
+    const tlLoiTpNhapKho = row?.tlLoiTpNhapKho ?? 0;
+    const tong =
+      row?.tongTpNhapKho ??
+      roundNormWeight(tlNhuaTpNhapKho + tlMangTpNhapKho + tlTuiBaoBiNhapKho + tlLoiTpNhapKho);
+
+    return {
+      columns: [
+        { key: 'thanhPhan', label: 'Thành phần' },
+        { key: 'giaTri', label: 'Giá trị (kg)', align: 'right', mono: true, accent: true }
+      ],
+      rows: [
+        { thanhPhan: 'Nhựa TP', giaTri: formatDetailNumber(tlNhuaTpNhapKho, 3) },
+        { thanhPhan: 'Màng TP', giaTri: formatDetailNumber(tlMangTpNhapKho, 3) },
+        { thanhPhan: 'Túi bao bì', giaTri: formatDetailNumber(tlTuiBaoBiNhapKho, 3) },
+        { thanhPhan: 'Lõi TP', giaTri: formatDetailNumber(tlLoiTpNhapKho, 3) }
+      ],
+      totalLabel: 'Tổng TP nhập kho',
+      totalValue: formatShiftSummaryNumber(tong, 3)
+    };
+  }
+
+  if (metric === 'khoiLuongMangXuat') {

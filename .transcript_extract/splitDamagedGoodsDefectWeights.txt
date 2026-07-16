@@ -1,0 +1,90 @@
+LINE 405
+
+export interface WeighingRecord {
+  id?: string | number;
+  documentNo: string;
+  reportDate: string;
+  productionDate: string;
+  shiftName: string;
+  worker1: string;
+  worker2: string;
+  weigherName: string;
+  productCode: string;
+  productName: string;
+  machineName: string;
+  weighNo: string;
+  weighTime: string;
+  coreWeight: string;
+  shellWeight: string;
+  weight: string;
+  /** TL nhựa không mảng lỗi hỏng (kg) — báo cáo hàng hỏng */
+  plasticNoFilmWeight?: string;
+  /** TL nhựa cục đầu nòng lỗi hỏng (kg) */
+  plasticNozzleWeight?: string;
+  /** TL nhựa lỗi dính màng (kg) */
+  plasticFilmAdhesionWeight?: string;
+  acceptanceStatus: string;
+  note: string;
+  imageUrl?: string;
+  coreWeightImageUrl?: string;
+  createdAt?: string;
+}
+
+export type DamagedGoodsDefectSplit = {
+  nhuaKhongMang: number;
+  nhuaCucDauNong: number;
+  nhuaDinhMang: number;
+  mang: number;
+  loi: number;
+  tong: number;
+};
+
+function isDamagedGoodsNozzleNote(note: string) {
+  const normalized = note.toLowerCase();
+  return /đầu\s*n[oô]ng|cục\s*đầu|dau\s*nong|cuc\s*dau/.test(normalized);
+}
+
+/** Phân tách trọng lượng lỗi hỏng theo loại vật liệu */
+export function splitDamagedGoodsDefectWeights(
+  row: Pick<
+    WeighingRecord,
+    | 'weight'
+    | 'shellWeight'
+    | 'coreWeight'
+    | 'note'
+    | 'plasticNoFilmWeight'
+    | 'plasticNozzleWeight'
+    | 'plasticFilmAdhesionWeight'
+  >
+): DamagedGoodsDefectSplit {
+  const mang = parseWeighingWeight(row.shellWeight) ?? 0;
+  const loi = parseWeighingWeight(row.coreWeight) ?? 0;
+
+  const explicitKhongMang = parseWeighingWeight(row.plasticNoFilmWeight ?? '') ?? 0;
+  const explicitDauNong = parseWeighingWeight(row.plasticNozzleWeight ?? '') ?? 0;
+  const explicitDinhMang = parseWeighingWeight(row.plasticFilmAdhesionWeight ?? '') ?? 0;
+  const hasExplicitPlastic =
+    explicitKhongMang > 0 || explicitDauNong > 0 || explicitDinhMang > 0;
+
+  let nhuaKhongMang = 0;
+  let nhuaCucDauNong = 0;
+  let nhuaDinhMang = 0;
+
+  if (hasExplicitPlastic) {
+    nhuaKhongMang = explicitKhongMang;
+    nhuaCucDauNong = explicitDauNong;
+    nhuaDinhMang = explicitDinhMang;
+  } else {
+    const plastic = parseWeighingWeight(row.weight) ?? 0;
+    if (isDamagedGoodsNozzleNote(row.note || '')) {
+      nhuaCucDauNong = plastic;
+    } else if (mang > 0) {
+      nhuaDinhMang = plastic;
+    } else {
+      nhuaKhongMang = plastic;
+    }
+  }
+
+  const tong = nhuaKhongMang + nhuaCucDauNong + nhuaDinhMang + mang + loi;
+  return { nhuaKhongMang, nhuaCucDauNong, nhuaDinhMang, mang, loi, tong };
+}

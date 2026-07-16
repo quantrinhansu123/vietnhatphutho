@@ -1,0 +1,128 @@
+LINE 414
+
+          </table>
+          ) : null}
+
+          {activeTab === 'bao_cao_loi_hong' ? (
+          <table className="min-w-[1280px] w-full text-left text-xs">
+            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2.5 font-black">Ngày</th>
+                <th className="px-3 py-2.5 font-black">Ca</th>
+                <th className="px-3 py-2.5 text-right font-black">TL Nhựa không mảng lỗi hỏng (Kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">TL Nhựa cục đầu nòng lỗi hỏng (Kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">TL Nhựa lỗi dính màng lỗi hỏng (Kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">TL Màng lỗi hỏng (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Số cuộn lõi dính trong hàng hỏng (Kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng lỗi hỏng</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải dữ liệu tổng hợp...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có dữ liệu theo bộ lọc đã chọn.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map(row => (
+                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                    <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
+                    <SummaryValueCell row={row} metric="tlNhuaKhongMangLoiHong" formatted={formatShiftSummaryKg(row.tlNhuaKhongMangLoiHong, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tlNhuaCucDauNongLoiHong" formatted={formatShiftSummaryKg(row.tlNhuaCucDauNongLoiHong, 3)} className="px-3 py-2 text-right font-mono font-bold text-orange-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tlNhuaDinhMangLoiHong" formatted={formatShiftSummaryKg(row.tlNhuaDinhMangLoiHong, 3)} className="px-3 py-2 text-right font-mono font-bold text-rose-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tlMangLoiHong" formatted={formatShiftSummaryKg(row.tlMangLoiHong, 3)} className="px-3 py-2 text-right font-mono font-bold text-fuchsia-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="soCuonLoiDinhHangHong" formatted={formatShiftSummaryKg(row.soCuonLoiDinhHangHong, 3)} className="px-3 py-2 text-right font-mono font-bold text-stone-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tongTrongLuongLoiHong" formatted={formatShiftSummaryKg(row.tongTrongLuongLoiHong, 3)} className="px-3 py-2 text-right font-mono font-bold text-zinc-900" onOpen={openDetail} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {!isLoading && filteredRows.length > 0 && (
+              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+                <tr>
+                  <td colSpan={2} className="px-3 py-2.5 text-right uppercase tracking-wider">Tổng cộng</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">{formatShiftSummaryKg(totals.tlNhuaKhongMangLoiHong, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-orange-700">{formatShiftSummaryKg(totals.tlNhuaCucDauNongLoiHong, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-rose-700">{formatShiftSummaryKg(totals.tlNhuaDinhMangLoiHong, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-fuchsia-700">{formatShiftSummaryKg(totals.tlMangLoiHong, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-stone-700">{formatShiftSummaryKg(totals.soCuonLoiDinhHangHong, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{formatShiftSummaryKg(totals.tongTrongLuongLoiHong, 3)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          ) : null}
+
+          {activeTab === 'san_luong' ? (
+          <table className="min-w-[1080px] w-full text-left text-xs">
+            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2.5 font-black">Ngày</th>
+                <th className="px-3 py-2.5 font-black">Ca</th>
+                <th className="px-3 py-2.5 text-right font-black">SL hàng TT</th>
+                <th className="px-3 py-2.5 text-right font-black">Khối lượng hàng TT</th>
+                <th className="px-3 py-2.5 text-right font-black">KL nhựa TP</th>
+                <th className="px-3 py-2.5 text-right font-black">KL lõi</th>
+                <th className="px-3 py-2.5 text-right font-black">KL bì</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca nhựa</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng nhựa sử dụng</th>
+                <th className="px-3 py-2.5 text-right font-black">Chênh lệch nhựa</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải dữ liệu tổng hợp...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có dữ liệu theo bộ lọc đã chọn.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map(row => (
+                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                    <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
+                    <SummaryValueCell row={row} metric="slHangThucTe" formatted={formatShiftSummaryNumber(row.slHangThucTe, 0)} className="px-3 py-2 text-right font-mono font-bold text-sky-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="khoiLuongHangThucTe" formatted={formatShiftSummaryNumber(row.khoiLuongHangThucTe, 3)} className="px-3 py-2 text-right font-mono font-bold text-[#ef1b2d]" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="khoiLuongNhuaTp" formatted={formatShiftSummaryNumber(row.khoiLuongNhuaTp, 3)} className="px-3 py-2 text-right font-mono font-bold text-purple-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="khoiLuongLoi" formatted={formatShiftSummaryNumber(row.khoiLuongLoi, 3)} className="px-3 py-2 text-right font-mono font-bold text-stone-700" onOpen={openDetail} />
+                    <td className="px-3 py-2 text-right font-mono font-bold text-cyan-700">{formatShiftSummaryNumber(row.khoiLuongMang, 3)}</td>
+                    <SummaryValueCell row={row} metric="tonCuoiCa" formatted={formatShiftSummaryNumber(row.tonCuoiCa, 3)} className="px-3 py-2 text-right font-mono font-bold text-violet-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tongVatLieu" formatted={formatShiftSummaryNumber(row.tongVatLieu, 3)} className="px-3 py-2 text-right font-mono font-bold text-teal-800" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="chenhLech" formatted={formatShiftSummaryNumber(row.chenhLech, 3)} className="px-3 py-2 text-right font-mono font-bold text-orange-700" onOpen={openDetail} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {!isLoading && filteredRows.length > 0 && (
+              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+                <tr>
+                  <td colSpan={2} className="px-3 py-2.5 text-right uppercase tracking-wider">Tổng cộng</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-sky-700">{formatShiftSummaryNumber(totals.slHangThucTe, 0)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-[#ef1b2d]">{formatShiftSummaryNumber(totals.khoiLuongHangThucTe, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-purple-700">{formatShiftSummaryNumber(totals.khoiLuongNhuaTp, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-stone-700">{formatShiftSummaryNumber(totals.khoiLuongLoi, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-cyan-700">{formatShiftSummaryNumber(totals.khoiLuongMang, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-violet-700">{formatShiftSummaryNumber(totals.tonCuoiCa, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-teal-800">{formatShiftSummaryNumber(totals.tongVatLieu, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-orange-700">{formatShiftSummaryNumber(totals.chenhLech, 3)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          ) : null}

@@ -1,0 +1,70 @@
+  hangHong: number;
+  hangHongNhua: number;
+  hangHongMang: number;
+  tlNhuaKhongMangLoiHong: number;
+  tlNhuaCucDauNongLoiHong: number;
+  tlNhuaDinhMangLoiHong: number;
+  tlMangLoiHong: number;
+  soCuonLoiDinhHangHong: number;
+  tongTrongLuongLoiHong: number;
+  khoiLuongNpl: number;
+
+---
+
+  sumDamagedGoodsRowFilmWeight,
+  sumDamagedGoodsRowPlasticWeight,
+  sumDamagedGoodsRowWeight,
+  splitDamagedGoodsDefectWeights,
+  sumWeighingRowTotalWeight
+
+---
+
+    hangHong: 0,
+    hangHongNhua: 0,
+    hangHongMang: 0,
+    tlNhuaKhongMangLoiHong: 0,
+    tlNhuaCucDauNongLoiHong: 0,
+    tlNhuaDinhMangLoiHong: 0,
+    tlMangLoiHong: 0,
+    soCuonLoiDinhHangHong: 0,
+    tongTrongLuongLoiHong: 0,
+    khoiLuongNpl: 0,
+
+---
+
+    // Hàng hỏng — tổng trọng lượng từ báo cáo hàng hỏng (bao_cao_hang_hong)
+    const defectSplit = splitDamagedGoodsDefectWeights(record);
+    bucket.hangHong += defectSplit.tong;
+    bucket.hangHongNhua += defectSplit.nhuaKhongMang + defectSplit.nhuaCucDauNong + defectSplit.nhuaDinhMang;
+    bucket.hangHongMang += defectSplit.mang;
+    bucket.tlNhuaKhongMangLoiHong += defectSplit.nhuaKhongMang;
+    bucket.tlNhuaCucDauNongLoiHong += defectSplit.nhuaCucDauNong;
+    bucket.tlNhuaDinhMangLoiHong += defectSplit.nhuaDinhMang;
+    bucket.tlMangLoiHong += defectSplit.mang;
+    bucket.soCuonLoiDinhHangHong += defectSplit.loi;
+    bucket.tongTrongLuongLoiHong += defectSplit.tong;
+
+---
+
+      const hangHong = roundNormWeight(bucket.hangHong);
+      const hangHongNhua = roundNormWeight(bucket.hangHongNhua);
+      const hangHongMang = roundNormWeight(bucket.hangHongMang);
+      const tlNhuaKhongMangLoiHong = roundNormWeight(bucket.tlNhuaKhongMangLoiHong);
+      const tlNhuaCucDauNongLoiHong = roundNormWeight(bucket.tlNhuaCucDauNongLoiHong);
+      const tlNhuaDinhMangLoiHong = roundNormWeight(bucket.tlNhuaDinhMangLoiHong);
+      const tlMangLoiHong = roundNormWeight(bucket.tlMangLoiHong);
+      const soCuonLoiDinhHangHong = roundNormWeight(bucket.soCuonLoiDinhHangHong);
+      const tongTrongLuongLoiHong = roundNormWeight(bucket.tongTrongLuongLoiHong);
+
+---
+
+        hangHong,
+        hangHongNhua,
+        hangHongMang,
+        tlNhuaKhongMangLoiHong,
+        tlNhuaCucDauNongLoiHong,
+        tlNhuaDinhMangLoiHong,
+        tlMangLoiHong,
+        soCuonLoiDinhHangHong,
+        tongTrongLuongLoiHong,
+        khoiLuongNpl,

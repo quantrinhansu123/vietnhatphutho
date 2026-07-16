@@ -10,10 +10,11 @@ import {
   defaultShiftSummaryDateRange,
   collectShiftSummaryStaffOptions,
   matchesControlBoardDateRange,
+  matchesShiftSummaryBucket,
   machineValueMatchesFilter
 } from '../../utils/controlBoardShiftSummary';
+import { getProductionShiftOptions, shiftNamesMatch } from '../../utils/shiftSettings';
 import { waitForPrintImagesReady } from '../../utils/printReady';
-import { shiftNamesMatch } from '../../utils/shiftSettings';
 import { normalizeAcceptanceReports, type AcceptanceReport } from '../../components/AcceptanceReportForm';
 import { normalizeMixingReport } from '../../lib/mixingReportModel';
 import type { MixingReport } from '../../components/MixingReportForm';
@@ -134,6 +135,8 @@ export function ControlBoardPanel({
   const [acceptanceReportSearch, setAcceptanceReportSearch] = useState('');
   const [boardFilterShift, setBoardFilterShift] = useState('all');
   const [boardFilterMachine, setBoardFilterMachine] = useState('all');
+  const [boardFilterProductionOrder, setBoardFilterProductionOrder] = useState('all');
+  const [boardFilterProductionOrderQuery, setBoardFilterProductionOrderQuery] = useState('');
   const [showAddProductionOrder, setShowAddProductionOrder] = useState(false);
   const [showProductionPlan, setShowProductionPlan] = useState(false);
   const [viewingProductionOrder, setViewingProductionOrder] = useState<ProductionOrderRow | null>(null);
@@ -292,31 +295,197 @@ export function ControlBoardPanel({
     [shiftSummaryWarehouseMovements]
   );
 
+  const selectedBoardMachine = useMemo(() => {
+    if (!boardFilterMachine || boardFilterMachine === 'all') return null;
+    return machines.find(machine => machine.code === boardFilterMachine) ?? { code: boardFilterMachine };
+  }, [boardFilterMachine, machines]);
+
+  const boardShiftOptions = useMemo(
+    () => getProductionShiftOptions(productionOrderSettings),
+    [productionOrderSettings]
+  );
+
+  const matchesBoardDateRange = (value?: string) =>
+    matchesControlBoardDateRange(value, shiftSummaryDateFrom, shiftSummaryDateTo);
+
+  const matchesBoardShift = (value?: string) => {
+    if (!boardFilterShift || boardFilterShift === 'all') return true;
+    const shift = String(value ?? '').trim();
+    if (!shift) return false;
+    return shiftNamesMatch(shift, boardFilterShift);
+  };
+
+  const matchesBoardMachine = (...candidates: Array<string | undefined | null>) =>
+    machineValueMatchesFilter(boardFilterMachine, selectedBoardMachine, ...candidates);
+
+  /** Lệnh SX khớp bộ lọc: chọn đúng mã, hoặc gõ tìm (vd 0086 / LSX) — tìm trên mọi lệnh đã tải. */
+  const boardMatchedProductionOrders = useMemo(() => {
+    const exactCode =
+      boardFilterProductionOrder && boardFilterProductionOrder !== 'all'
+        ? boardFilterProductionOrder
+        : '';
+    const query = boardFilterProductionOrderQuery.trim().toLowerCase();
+
+    if (exactCode) {
+      return productionOrders.filter(order => order.code === exactCode);
+    }
+    if (!query) return null;
+
+    const compactQuery = query.replace(/[^a-z0-9]/g, '');
+
+    return productionOrders.filter(order => {
+      const ngay = parseProductionOrderFilterDate(order.startDate);
+      const machineLabel = resolveProductionOrderMachine(order, machines);
+      const shiftLabel = formatProductionOrderShiftLabel(order.shift, productionOrderSettings);
+      const haystack = `${order.code} ${order.name} ${order.id} ${ngay} ${order.shift} ${shiftLabel} ${order.machine} ${order.position} ${machineLabel} ${order.orderRef} ${order.productCode}`
+        .toLowerCase();
+      if (haystack.includes(query)) return true;
+      if (!compactQuery) return false;
+      const compactHaystack = haystack.replace(/[^a-z0-9]/g, '');
+      return compactHaystack.includes(compactQuery);
+    });
+  }, [
+    productionOrders,
+    boardFilterProductionOrder,
+    boardFilterProductionOrderQuery,
+    machines,
+    productionOrderSettings
+  ]);
+
+  const hasBoardProductionOrderFilter = boardMatchedProductionOrders !== null;
+
+  const orderMatchesBucket = (
+    order: ProductionOrderRow,
+    ngay?: string,
+    ca?: string,
+    ...machineCandidates: Array<string | undefined | null>
+  ) => {
+    const orderNgay = parseProductionOrderFilterDate(order.startDate) || order.startDate;
+    if (!matchesShiftSummaryBucket(orderNgay, order.shift, ngay || '', ca || '', boardShiftOptions)) {
+      return false;
+    }
+    const hasMachineHint = machineCandidates.some(value => {
+      const raw = String(value || '').trim();
+      return Boolean(raw && raw !== '-');
+    });
+    if (!hasMachineHint) return true;
+    return machineValueMatchesFilter(
+      order.machine || 'all',
+      {
+        code: order.machine,
+        name: resolveProductionOrderMachine(order, machines)
+      },
+      ...machineCandidates,
+      order.machine,
+      order.position,
+      resolveProductionOrderMachine(order, machines)
+    );
+  };
+
+  /** Khi lọc lệnh SX: khớp ngày + ca (+ máy) của một trong các lệnh đang khớp. */
+  const matchesBoardProductionOrderBucket = (
+    ngay?: string,
+    ca?: string,
+    ...machineCandidates: Array<string | undefined | null>
+  ) => {
+    if (!hasBoardProductionOrderFilter || !boardMatchedProductionOrders) return true;
+    if (boardMatchedProductionOrders.length === 0) return false;
+    return boardMatchedProductionOrders.some(order =>
+      orderMatchesBucket(order, ngay, ca, ...machineCandidates)
+    );
+  };
+
+  const boardScopedProductionOrders = useMemo(() => {
+    if (!hasBoardProductionOrderFilter || !boardMatchedProductionOrders) return productionOrders;
+    return boardMatchedProductionOrders;
+  }, [productionOrders, hasBoardProductionOrderFilter, boardMatchedProductionOrders]);
+
+  const boardScopedAcceptanceReports = useMemo(() => {
+    if (!hasBoardProductionOrderFilter) return shiftSummaryAcceptanceReports;
+    return shiftSummaryAcceptanceReports.filter(report =>
+      matchesBoardProductionOrderBucket(report.ngay, report.ca, report.ma_may, report.ten_may)
+    );
+  }, [
+    shiftSummaryAcceptanceReports,
+    hasBoardProductionOrderFilter,
+    boardMatchedProductionOrders,
+    boardShiftOptions,
+    machines
+  ]);
+
+  const boardScopedWarehouseMovements = useMemo(() => {
+    if (!hasBoardProductionOrderFilter) return shiftSummaryWarehouseMovementRefs;
+    return shiftSummaryWarehouseMovementRefs.filter(movement =>
+      matchesBoardProductionOrderBucket(movement.slipDate, movement.shift)
+    );
+  }, [
+    shiftSummaryWarehouseMovementRefs,
+    hasBoardProductionOrderFilter,
+    boardMatchedProductionOrders,
+    boardShiftOptions
+  ]);
+
+  const boardScopedWeighingRecords = useMemo(() => {
+    if (!hasBoardProductionOrderFilter) return weighingRecords;
+    return weighingRecords.filter(record =>
+      matchesBoardProductionOrderBucket(
+        record.productionDate || record.reportDate,
+        record.shiftName,
+        record.machineName
+      )
+    );
+  }, [weighingRecords, hasBoardProductionOrderFilter, boardMatchedProductionOrders, boardShiftOptions, machines]);
+
+  const boardScopedDamagedRecords = useMemo(() => {
+    if (!hasBoardProductionOrderFilter) return damagedRecords;
+    return damagedRecords.filter(record =>
+      matchesBoardProductionOrderBucket(
+        record.productionDate || record.reportDate,
+        record.shiftName,
+        record.machineName
+      )
+    );
+  }, [damagedRecords, hasBoardProductionOrderFilter, boardMatchedProductionOrders, boardShiftOptions, machines]);
+
+  const boardScopedMachineNvlReports = useMemo(() => {
+    if (!hasBoardProductionOrderFilter) return machineNvlReports;
+    return machineNvlReports.filter(report =>
+      matchesBoardProductionOrderBucket(report.ngay, report.ca, report.maMay, report.tenMay)
+    );
+  }, [machineNvlReports, hasBoardProductionOrderFilter, boardMatchedProductionOrders, boardShiftOptions, machines]);
+
+  const boardScopedMixingReports = useMemo(() => {
+    if (!hasBoardProductionOrderFilter) return mixingReports;
+    return mixingReports.filter(report =>
+      matchesBoardProductionOrderBucket(report.ngay, report.ca, report.ma_may, report.ten_may)
+    );
+  }, [mixingReports, hasBoardProductionOrderFilter, boardMatchedProductionOrders, boardShiftOptions, machines]);
+
   const shiftSummaryRows = useMemo(
     () =>
       buildControlBoardShiftSummary({
         shiftSettings: productionOrderSettings,
-        productionOrders,
+        productionOrders: boardScopedProductionOrders,
         products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
         materials: materials.map(material => ({ code: material.code, totalWeight: material.totalWeight })),
-        acceptanceReports: shiftSummaryAcceptanceReports,
-        warehouseMovements: shiftSummaryWarehouseMovementRefs,
-        weighingRecords,
-        damagedRecords,
-        machineNvlReports,
+        acceptanceReports: boardScopedAcceptanceReports,
+        warehouseMovements: boardScopedWarehouseMovements,
+        weighingRecords: boardScopedWeighingRecords,
+        damagedRecords: boardScopedDamagedRecords,
+        machineNvlReports: boardScopedMachineNvlReports,
         dateFrom: shiftSummaryDateFrom,
         dateTo: shiftSummaryDateTo
       }),
     [
       productionOrderSettings,
-      productionOrders,
+      boardScopedProductionOrders,
       products,
       materials,
-      shiftSummaryAcceptanceReports,
-      shiftSummaryWarehouseMovementRefs,
-      weighingRecords,
-      damagedRecords,
-      machineNvlReports,
+      boardScopedAcceptanceReports,
+      boardScopedWarehouseMovements,
+      boardScopedWeighingRecords,
+      boardScopedDamagedRecords,
+      boardScopedMachineNvlReports,
       shiftSummaryDateFrom,
       shiftSummaryDateTo
     ]
@@ -402,32 +571,55 @@ export function ControlBoardPanel({
 
   const formatPanelShiftLabel = (shift: string) => formatProductionOrderShiftLabel(shift, productionOrderSettings);
 
-  const selectedBoardMachine = useMemo(() => {
-    if (!boardFilterMachine || boardFilterMachine === 'all') return null;
-    return machines.find(machine => machine.code === boardFilterMachine) ?? { code: boardFilterMachine };
-  }, [boardFilterMachine, machines]);
-
-  const matchesBoardDateRange = (value?: string) =>
-    matchesControlBoardDateRange(value, shiftSummaryDateFrom, shiftSummaryDateTo);
-
-  const matchesBoardShift = (value?: string) => {
-    if (!boardFilterShift || boardFilterShift === 'all') return true;
-    const shift = String(value ?? '').trim();
-    if (!shift) return false;
-    return shiftNamesMatch(shift, boardFilterShift);
-  };
-
-  const matchesBoardMachine = (...candidates: Array<string | undefined | null>) =>
-    machineValueMatchesFilter(boardFilterMachine, selectedBoardMachine, ...candidates);
-
   const clearBoardFilters = () => {
     const defaultRange = defaultShiftSummaryDateRange(14);
     setShiftSummaryDateFrom(defaultRange.from);
     setShiftSummaryDateTo(defaultRange.to);
     setBoardFilterShift('all');
     setBoardFilterMachine('all');
+    setBoardFilterProductionOrder('all');
+    setBoardFilterProductionOrderQuery('');
     setProductionOrderStaffFilters(new Set());
   };
+
+  const panelProductionOrderOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: Array<{ code: string; label: string; ngay: string; inRange: boolean }> = [];
+
+    for (const order of productionOrders) {
+      const code = String(order.code || '').trim();
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      const ngay = parseProductionOrderFilterDate(order.startDate);
+      const shiftLabel = formatProductionOrderShiftLabel(order.shift, productionOrderSettings);
+      const machineLabel = resolveProductionOrderMachine(order, machines);
+      const parts = [code];
+      if (ngay) parts.push(ngay);
+      else if (order.startDate && order.startDate !== '-') parts.push(String(order.startDate));
+      if (shiftLabel && shiftLabel !== '-') parts.push(shiftLabel);
+      if (machineLabel && machineLabel !== '-') parts.push(machineLabel);
+      options.push({
+        code,
+        label: parts.join(' · '),
+        ngay: ngay || '',
+        inRange: matchesBoardDateRange(ngay || order.startDate)
+      });
+    }
+
+    return options.sort((a, b) => {
+      if (a.inRange !== b.inRange) return a.inRange ? -1 : 1;
+      const dateCmp = (b.ngay || '').localeCompare(a.ngay || '');
+      if (dateCmp !== 0) return dateCmp;
+      return a.code.localeCompare(b.code, 'vi', { numeric: true });
+    });
+  }, [productionOrders, machines, productionOrderSettings, shiftSummaryDateFrom, shiftSummaryDateTo]);
+
+  useEffect(() => {
+    if (boardFilterProductionOrder === 'all') return;
+    if (!productionOrders.some(order => order.code === boardFilterProductionOrder)) {
+      setBoardFilterProductionOrder('all');
+    }
+  }, [boardFilterProductionOrder, productionOrders]);
 
   const handleDeleteWeighingRecord = async (recordId: string | number) => {
     const res = await fetch(`/api/phieu-can-dinh-ki/${recordId}`, { method: 'DELETE' });
@@ -521,7 +713,7 @@ export function ControlBoardPanel({
   const shiftSummaryDetailSources = useMemo(
     () => ({
       shiftSettings: productionOrderSettings,
-      productionOrders: productionOrders.map(order => ({
+      productionOrders: boardScopedProductionOrders.map(order => ({
         code: order.code,
         startDate: order.startDate,
         shift: order.shift,
@@ -533,22 +725,22 @@ export function ControlBoardPanel({
       })),
       products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
       materials: materials.map(material => ({ code: material.code, totalWeight: material.totalWeight })),
-      acceptanceReports: shiftSummaryAcceptanceReports,
-      warehouseMovements: shiftSummaryWarehouseMovementRefs,
-      weighingRecords,
-      damagedRecords,
-      machineNvlReports
+      acceptanceReports: boardScopedAcceptanceReports,
+      warehouseMovements: boardScopedWarehouseMovements,
+      weighingRecords: boardScopedWeighingRecords,
+      damagedRecords: boardScopedDamagedRecords,
+      machineNvlReports: boardScopedMachineNvlReports
     }),
     [
       productionOrderSettings,
-      productionOrders,
+      boardScopedProductionOrders,
       products,
       materials,
-      shiftSummaryAcceptanceReports,
-      shiftSummaryWarehouseMovementRefs,
-      weighingRecords,
-      damagedRecords,
-      machineNvlReports
+      boardScopedAcceptanceReports,
+      boardScopedWarehouseMovements,
+      boardScopedWeighingRecords,
+      boardScopedDamagedRecords,
+      boardScopedMachineNvlReports
     ]
   );
 
@@ -561,9 +753,18 @@ export function ControlBoardPanel({
           .toLowerCase();
         if (!haystack.includes(weighingQuery)) return false;
       }
-      return matchesBoardDateRange(row.productionDate || row.reportDate) && matchesBoardShift(row.shiftName) && matchesBoardMachine(row.machineName);
+      return (
+        matchesBoardDateRange(row.productionDate || row.reportDate) &&
+        matchesBoardShift(row.shiftName) &&
+        matchesBoardMachine(row.machineName) &&
+        matchesBoardProductionOrderBucket(
+          row.productionDate || row.reportDate,
+          row.shiftName,
+          row.machineName
+        )
+      );
     });
-  }, [weighingDataRows, weighingQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine]);
+  }, [weighingDataRows, weighingQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine, hasBoardProductionOrderFilter, boardMatchedProductionOrders]);
   const recentWeighingRows = useMemo(
     () =>
       [...filteredWeighingRows].sort((a, b) => {
@@ -587,7 +788,12 @@ export function ControlBoardPanel({
       return (
         matchesBoardDateRange(row.productionDate || row.reportDate) &&
         matchesBoardShift(row.shiftName) &&
-        matchesBoardMachine(row.machineName)
+        matchesBoardMachine(row.machineName) &&
+        matchesBoardProductionOrderBucket(
+          row.productionDate || row.reportDate,
+          row.shiftName,
+          row.machineName
+        )
       );
     });
   }, [
@@ -597,7 +803,9 @@ export function ControlBoardPanel({
     shiftSummaryDateTo,
     boardFilterShift,
     boardFilterMachine,
-    selectedBoardMachine
+    selectedBoardMachine,
+    hasBoardProductionOrderFilter,
+    boardMatchedProductionOrders
   ]);
   const recentDamagedRows = useMemo(
     () =>
@@ -624,9 +832,14 @@ export function ControlBoardPanel({
         const haystack = `${report.maMay} ${report.tenMay} ${report.ca} ${report.ngay} ${report.nhanSu} ${report.note}`.toLowerCase();
         if (!haystack.includes(machineNvlReportQuery)) return false;
       }
-      return matchesBoardDateRange(report.ngay) && matchesBoardShift(report.ca) && matchesBoardMachine(report.maMay, report.tenMay);
+      return (
+        matchesBoardDateRange(report.ngay) &&
+        matchesBoardShift(report.ca) &&
+        matchesBoardMachine(report.maMay, report.tenMay) &&
+        matchesBoardProductionOrderBucket(report.ngay, report.ca, report.maMay, report.tenMay)
+      );
     });
-  }, [machineNvlReports, machineNvlReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine]);
+  }, [machineNvlReports, machineNvlReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine, hasBoardProductionOrderFilter, boardMatchedProductionOrders]);
   const machineNvlBoardRows = useMemo(() => {
     const groups = buildMachineNvlReportGroups(filteredMachineNvlReports);
     const rows: Array<{
@@ -689,10 +902,17 @@ export function ControlBoardPanel({
         const rowShift = row.shift && row.shift !== '-' ? row.shift : 'Chưa phân ca';
         const matchesShift = matchesBoardShift(rowShift === 'Chưa phân ca' ? '' : rowShift);
         const matchesMachine = matchesBoardMachine(row.machine, row.position, resolveProductionOrderMachine(row, machines));
+        const matchesProductionOrder =
+          !hasBoardProductionOrderFilter ||
+          Boolean(boardMatchedProductionOrders?.some(order => order.code === row.code));
         const rowStaff = splitProductionOrderStaffNames(row.staff);
         const matchesStaff =
           productionOrderStaffFilters.size === 0 ||
           rowStaff.some(name => productionOrderStaffFilters.has(name));
+
+        if (hasBoardProductionOrderFilter) {
+          return matchesSearch && matchesProductionOrder && matchesStaff;
+        }
 
         return matchesSearch && matchesDate && matchesShift && matchesMachine && matchesStaff;
       }
@@ -706,7 +926,9 @@ export function ControlBoardPanel({
     boardFilterMachine,
     productionOrderStaffFilters,
     machines,
-    selectedBoardMachine
+    selectedBoardMachine,
+    hasBoardProductionOrderFilter,
+    boardMatchedProductionOrders
   ]);
 
   const acceptanceReportQuery = acceptanceReportSearch.trim().toLowerCase();
@@ -717,9 +939,14 @@ export function ControlBoardPanel({
           .toLowerCase();
         if (!haystack.includes(acceptanceReportQuery)) return false;
       }
-      return matchesBoardDateRange(report.ngay) && matchesBoardShift(report.ca) && matchesBoardMachine(report.ma_may, report.ten_may);
+      return (
+        matchesBoardDateRange(report.ngay) &&
+        matchesBoardShift(report.ca) &&
+        matchesBoardMachine(report.ma_may, report.ten_may) &&
+        matchesBoardProductionOrderBucket(report.ngay, report.ca, report.ma_may, report.ten_may)
+      );
     });
-  }, [acceptanceReports, acceptanceReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine]);
+  }, [acceptanceReports, acceptanceReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine, hasBoardProductionOrderFilter, boardMatchedProductionOrders]);
   const totalAcceptanceRolls = useMemo(
     () =>
       filteredAcceptanceReports.reduce((sum, report) => {
@@ -915,6 +1142,11 @@ export function ControlBoardPanel({
           machine={boardFilterMachine}
           onMachineChange={setBoardFilterMachine}
           machines={machines}
+          productionOrder={boardFilterProductionOrder}
+          productionOrderQuery={boardFilterProductionOrderQuery}
+          onProductionOrderChange={setBoardFilterProductionOrder}
+          onProductionOrderQueryChange={setBoardFilterProductionOrderQuery}
+          productionOrderOptions={panelProductionOrderOptions}
           onClear={clearBoardFilters}
           isLoading={isLoading}
         />
@@ -923,7 +1155,7 @@ export function ControlBoardPanel({
       <ControlBoardShiftSummaryChart
         rows={shiftSummaryRows}
         isLoading={isLoading}
-        warehouseMovements={shiftSummaryDetailSources.warehouseMovements}
+        warehouseMovements={boardScopedWarehouseMovements}
         shiftSettings={shiftSummaryDetailSources.shiftSettings}
       />
 
@@ -948,15 +1180,15 @@ export function ControlBoardPanel({
       />
 
       <ControlBoardBbMachineReportTable
-        productionOrders={productionOrders}
+        productionOrders={boardScopedProductionOrders}
         products={products}
         materials={materials}
         machines={machines}
-        warehouseMovements={shiftSummaryWarehouseMovementRefs}
-        damagedRecords={damagedRecords}
-        machineNvlReports={machineNvlReports}
-        mixingReports={mixingReports}
-        acceptanceReports={shiftSummaryAcceptanceReports}
+        warehouseMovements={boardScopedWarehouseMovements}
+        damagedRecords={boardScopedDamagedRecords}
+        machineNvlReports={boardScopedMachineNvlReports}
+        mixingReports={boardScopedMixingReports}
+        acceptanceReports={boardScopedAcceptanceReports}
         shiftSettings={productionOrderSettings}
         isLoading={isLoading}
         dateFrom={shiftSummaryDateFrom}

@@ -1,0 +1,62 @@
+LINE 340
+
+          </table>
+          ) : null}
+
+          {activeTab === 'ton_dau_ca' ? (
+          <table className="min-w-[960px] w-full text-left text-xs">
+            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2.5 font-black">Ngày</th>
+                <th className="px-3 py-2.5 font-black">Ca</th>
+                <th className="px-3 py-2.5 text-right font-black">Số lượng nhựa tồn đầu ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Số lượng màng tồn đầu ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Trọng lượng lõi tồn đầu ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Trọng lượng túi tồn đầu ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng tồn đầu ca</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải dữ liệu tổng hợp...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có dữ liệu theo bộ lọc đã chọn.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map(row => (
+                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                    <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
+                    <SummaryValueCell row={row} metric="tonDauCaNhua" formatted={formatShiftSummaryKg(row.tonDauCaNhua, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tonDauCaMang" formatted={formatShiftSummaryKg(row.tonDauCaMang, 3)} className="px-3 py-2 text-right font-mono font-bold text-fuchsia-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tonDauCaLoi" formatted={formatShiftSummaryKg(row.tonDauCaLoi, 3)} className="px-3 py-2 text-right font-mono font-bold text-stone-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tonDauCaTui" formatted={formatShiftSummaryKg(row.tonDauCaTui, 3)} className="px-3 py-2 text-right font-mono font-bold text-cyan-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tongTrongLuongTonDauCa" formatted={formatShiftSummaryKg(row.tongTrongLuongTonDauCa, 3)} className="px-3 py-2 text-right font-mono font-bold text-indigo-900" onOpen={openDetail} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {!isLoading && filteredRows.length > 0 && (
+              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+                <tr>
+                  <td colSpan={2} className="px-3 py-2.5 text-right uppercase tracking-wider">Tổng cộng</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">{formatShiftSummaryKg(totals.tonDauCaNhua, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-fuchsia-700">{formatShiftSummaryKg(totals.tonDauCaMang, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-stone-700">{formatShiftSummaryKg(totals.tonDauCaLoi, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-cyan-700">{formatShiftSummaryKg(totals.tonDauCaTui, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-indigo-900">{formatShiftSummaryKg(totals.tongTrongLuongTonDauCa, 3)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          ) : null}
+
+          {activeTab === 'san_luong' ? (

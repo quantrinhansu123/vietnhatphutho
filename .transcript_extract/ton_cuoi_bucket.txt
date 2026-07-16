@@ -1,0 +1,11 @@
+LINE 447
+
+    } else if (report.reportKind === 'cuoi_ca') {
+      for (const line of report.lines) {
+        const split = splitMachineNvlCuoiCaLineKg(line);
+        bucket.tonCuoiCaNhua += split.nhua;
+        bucket.tonCuoiCaMang += split.mang;
+        bucket.tonCuoiCaLoi += split.loi;
+        bucket.tonCuoiCaTui += split.tui;
+      }
+    }

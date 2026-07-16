@@ -1,0 +1,80 @@
+LINE 498
+
+    bucket.khoiLuongNpl += sumWarehouseMovementNplKg(movement, resolveKgFactor);
+    bucket.khoiLuongMangXuat += sumWarehouseMovementMangKg(movement, resolveKgFactor);
+    bucket.khoiLuongLoiXuatKho += sumWarehouseMovementLoiXuatKg(movement, resolveKgFactor);
+    bucket.khoiLuongTuiXuatKho += sumWarehouseMovementTuiXuatKg(movement, resolveKgFactor);
+
+---EDIT---
+
+    if (report.reportKind === 'dau_ca') {
+      for (const line of report.lines) {
+        const split = splitMachineNvlLineByMaterial(line, 'dau_ca');
+        bucket.tonDauCaNhua += split.nhua;
+        bucket.tonDauCaMang += split.mang;
+        bucket.tonDauCaLoi += split.loi;
+        bucket.tonDauCaTui += split.tui;
+      }
+    } else if (report.reportKind === 'cuoi_ca') {
+      for (const line of report.lines) {
+        const split = splitMachineNvlLineByMaterial(line, 'cuoi_ca');
+        bucket.tonCuoiCaNhua += split.nhua;
+        bucket.tonCuoiCaMang += split.mang;
+        bucket.tonCuoiCaLoi += split.loi;
+        bucket.tonCuoiCaTui += split.tui;
+      }
+    }
+
+---EDIT---
+
+      const khoiLuongNpl = roundNormWeight(bucket.khoiLuongNpl);
+      const khoiLuongMangXuat = roundNormWeight(bucket.khoiLuongMangXuat);
+      const khoiLuongLoiXuatKho = roundNormWeight(bucket.khoiLuongLoiXuatKho);
+      const khoiLuongTuiXuatKho = roundNormWeight(bucket.khoiLuongTuiXuatKho);
+      const tonDauCaNhua = roundNormWeight(bucket.tonDauCaNhua);
+      const tonDauCaMang = roundNormWeight(bucket.tonDauCaMang);
+      const tonDauCaLoi = roundNormWeight(bucket.tonDauCaLoi);
+      const tonDauCaTui = roundNormWeight(bucket.tonDauCaTui);
+      const tonCuoiCaNhua = roundNormWeight(bucket.tonCuoiCaNhua);
+      const tonCuoiCaMang = roundNormWeight(bucket.tonCuoiCaMang);
+      const tonCuoiCaLoi = roundNormWeight(bucket.tonCuoiCaLoi);
+      const tonCuoiCaTui = roundNormWeight(bucket.tonCuoiCaTui);
+      const tonDauCa = tonDauCaNhua;
+      const tonCuoiCa = tonCuoiCaNhua;
+
+---EDIT---
+
+      const khoiLuongNhuaTp = computeKhoiLuongNhuaTp(khoiLuongHangThucTe, khoiLuongLoi, khoiLuongMang);
+      const tongNhuaThucDung = computeMaterialUsageKg(khoiLuongNpl, tonDauCaNhua, tonCuoiCaNhua);
+      const tongMangThucDung = computeMaterialUsageKg(khoiLuongMangXuat, tonDauCaMang, tonCuoiCaMang);
+      const loiThucDung = computeMaterialUsageKg(khoiLuongLoiXuatKho, tonDauCaLoi, tonCuoiCaLoi);
+      const tuiThucDung = computeMaterialUsageKg(khoiLuongTuiXuatKho, tonDauCaTui, tonCuoiCaTui);
+      const tongThucDung = roundNormWeight(tongNhuaThucDung + tongMangThucDung + loiThucDung + tuiThucDung);
+      const tongVatLieu = tongNhuaThucDung;
+      return {
+
+---EDIT---
+
+        khoiLuongNpl,
+        khoiLuongMangXuat,
+        khoiLuongLoiXuatKho,
+        khoiLuongTuiXuatKho,
+        khoiLuongLoi,
+        khoiLuongMang,
+        tonDauCa,
+        tonDauCaNhua,
+        tonDauCaMang,
+        tonDauCaLoi,
+        tonDauCaTui,
+        tonCuoiCa,
+        tonCuoiCaNhua,
+        tonCuoiCaMang,
+        tonCuoiCaLoi,
+        tonCuoiCaTui,
+        tongNhuaThucDung,
+        tongMangThucDung,
+        loiThucDung,
+        tuiThucDung,
+        tongThucDung,
+        tongVatLieu,
+        chenhLech: roundNormWeight(tongNhuaThucDung - khoiLuongNhuaTp - hangHongNhua)

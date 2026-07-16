@@ -1,0 +1,18 @@
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {SHIFT_SUMMARY_TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`inline-flex h-8 items-center rounded-lg px-2.5 text-[10px] font-extrabold transition sm:text-xs ${
+                    activeTab === tab.id
+                      ? 'bg-white text-indigo-900 shadow-sm'
+                      : 'border border-white/25 bg-white/10 text-white hover:bg-white/20'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">

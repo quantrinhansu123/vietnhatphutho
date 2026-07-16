@@ -1,0 +1,16 @@
+LINE 353
+
+    bucket.khoiLuongNpl += sumWarehouseMovementNplKg(movement, resolveKgFactor);
+    bucket.khoiLuongMangXuat += sumWarehouseMovementMangKg(movement, resolveKgFactor);
+    bucket.khoiLuongLoiXuatKho += sumWarehouseMovementLoiXuatKg(movement, resolveKgFactor);
+    bucket.khoiLuongTuiXuatKho += sumWarehouseMovementTuiXuatKg(movement, resolveKgFactor);
+    if (movement.slipType === 'nhap' && movement.warehouseKind === 'san_pham') {
+      const kg = sumWarehouseSanPhamNhapLineKg(movement, resolveProductKgFactor);
+      const split = splitWarehouseSanPhamNhapLine(movement, kg);
+      bucket.slDatThucTeNhapKho += split.sl;
+      bucket.tlNhuaTpNhapKho += split.nhua;
+      bucket.tlMangTpNhapKho += split.mang;
+      bucket.tlLoiTpNhapKho += split.loi;
+      bucket.tlTuiBaoBiNhapKho += split.tui;
+    }
+  }

@@ -1,0 +1,146 @@
+LINE 453
+
+                    ) : activeTab === 'ton_dau_ca' ? (
+                      <p className="text-right text-[10px] font-black uppercase tracking-wider text-indigo-800">
+                        Tổng tồn đầu ca
+                        <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryKg(row.tongTrongLuongTonDauCa, 3)}</span>
+                      </p>
+                    ) : activeTab === 'ton_cuoi_ca' ? (
+                      <p className="text-right text-[10px] font-black uppercase tracking-wider text-violet-800">
+                        Tổng tồn cuối ca
+                        <span className="mt-0.5 block font-mono text-sm">{formatShiftSummaryKg(row.tongTrongLuongTonCuoiCa, 3)}</span>
+                      </p>
+                    ) : activeTab === 'phieu_nhap_kho' ? (
+
+---EDIT---
+
+                    {activeTab === 'ton_dau_ca' ? (
+                      <>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Nhựa tồn đầu ca</dt>
+                          <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryKg(row.tonDauCaNhua, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Màng tồn đầu ca</dt>
+                          <dd className="font-mono font-bold text-fuchsia-700">{formatShiftSummaryKg(row.tonDauCaMang, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Lõi tồn đầu ca</dt>
+                          <dd className="font-mono font-bold text-stone-700">{formatShiftSummaryKg(row.tonDauCaLoi, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Túi tồn đầu ca</dt>
+                          <dd className="font-mono font-bold text-cyan-700">{formatShiftSummaryKg(row.tonDauCaTui, 3)}</dd>
+                        </div>
+                      </>
+                    ) : null}
+                    {activeTab === 'ton_cuoi_ca' ? (
+                      <>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Nhựa tồn cuối ca</dt>
+                          <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryKg(row.tonCuoiCaNhua, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Màng tồn cuối ca</dt>
+                          <dd className="font-mono font-bold text-fuchsia-700">{formatShiftSummaryKg(row.tonCuoiCaMang, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Lõi tồn cuối ca</dt>
+                          <dd className="font-mono font-bold text-stone-700">{formatShiftSummaryKg(row.tonCuoiCaLoi, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Túi tồn cuối ca</dt>
+                          <dd className="font-mono font-bold text-cyan-700">{formatShiftSummaryKg(row.tonCuoiCaTui, 3)}</dd>
+                        </div>
+                      </>
+                    ) : null}
+                    {activeTab === 'phieu_nhap_kho' ? (
+
+---EDIT---
+
+                {activeTab === 'ton_dau_ca' ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    <span className="text-amber-700">Nhựa: {formatShiftSummaryKg(totals.tonDauCaNhua, 3)}</span>
+                    <span className="text-fuchsia-700">Màng: {formatShiftSummaryKg(totals.tonDauCaMang, 3)}</span>
+                    <span className="text-stone-700">Lõi: {formatShiftSummaryKg(totals.tonDauCaLoi, 3)}</span>
+                    <span className="text-cyan-700">Túi: {formatShiftSummaryKg(totals.tonDauCaTui, 3)}</span>
+                    <span className="col-span-2">Tổng tồn đầu ca: {formatShiftSummaryKg(totals.tongTrongLuongTonDauCa, 3)}</span>
+                  </div>
+                ) : null}
+                {activeTab === 'ton_cuoi_ca' ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    <span className="text-amber-700">Nhựa: {formatShiftSummaryKg(totals.tonCuoiCaNhua, 3)}</span>
+                    <span className="text-fuchsia-700">Màng: {formatShiftSummaryKg(totals.tonCuoiCaMang, 3)}</span>
+                    <span className="text-stone-700">Lõi: {formatShiftSummaryKg(totals.tonCuoiCaLoi, 3)}</span>
+                    <span className="text-cyan-700">Túi: {formatShiftSummaryKg(totals.tonCuoiCaTui, 3)}</span>
+                    <span className="col-span-2">Tổng tồn cuối ca: {formatShiftSummaryKg(totals.tongTrongLuongTonCuoiCa, 3)}</span>
+                  </div>
+                ) : null}
+                {activeTab === 'phieu_nhap_kho' ? (
+
+---EDIT---
+
+          </table>
+          ) : null}
+
+          {activeTab === 'ton_cuoi_ca' ? (
+          <table className="min-w-[960px] w-full text-left text-xs">
+            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2.5 font-black">Ngày</th>
+                <th className="px-3 py-2.5 font-black">Ca</th>
+                <th className="px-3 py-2.5 text-right font-black">Số lượng nhựa tồn cuối ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Số lượng màng tồn cuối ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Trọng lượng lõi tồn cuối ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Trọng lượng túi tồn cuối ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng tồn cuối ca</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải dữ liệu tổng hợp...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có dữ liệu theo bộ lọc đã chọn.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map(row => (
+                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                    <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
+                    <SummaryValueCell row={row} metric="tonCuoiCaNhua" formatted={formatShiftSummaryKg(row.tonCuoiCaNhua, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tonCuoiCaMang" formatted={formatShiftSummaryKg(row.tonCuoiCaMang, 3)} className="px-3 py-2 text-right font-mono font-bold text-fuchsia-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tonCuoiCaLoi" formatted={formatShiftSummaryKg(row.tonCuoiCaLoi, 3)} className="px-3 py-2 text-right font-mono font-bold text-stone-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tonCuoiCaTui" formatted={formatShiftSummaryKg(row.tonCuoiCaTui, 3)} className="px-3 py-2 text-right font-mono font-bold text-cyan-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tongTrongLuongTonCuoiCa" formatted={formatShiftSummaryKg(row.tongTrongLuongTonCuoiCa, 3)} className="px-3 py-2 text-right font-mono font-bold text-violet-900" onOpen={openDetail} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {!isLoading && filteredRows.length > 0 && (
+              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+                <tr>
+                  <td colSpan={2} className="px-3 py-2.5 text-right uppercase tracking-wider">Tổng cộng</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">{formatShiftSummaryKg(totals.tonCuoiCaNhua, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-fuchsia-700">{formatShiftSummaryKg(totals.tonCuoiCaMang, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-stone-700">{formatShiftSummaryKg(totals.tonCuoiCaLoi, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-cyan-700">{formatShiftSummaryKg(totals.tonCuoiCaTui, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-violet-900">{formatShiftSummaryKg(totals.tongTrongLuongTonCuoiCa, 3)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          ) : null}
+
+          {activeTab === 'phieu_nhap_kho' ? (
+
+---EDIT---
+
+                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca</th>

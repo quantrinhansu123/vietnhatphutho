@@ -1,0 +1,13 @@
+From line 452
+
+type ShiftSummaryTabId = 'lenh_sx' | 'phieu_xuat_kho' | 'ton_dau_ca' | 'ton_cuoi_ca' | 'phieu_nhap_kho' | 'bao_cao_loi_hong' | 'san_luong';
+
+const SHIFT_SUMMARY_TABS: Array<{ id: ShiftSummaryTabId; label: string }> = [
+  { id: 'lenh_sx', label: 'Lệnh sản xuất' },
+  { id: 'phieu_xuat_kho', label: 'Phiếu xuất kho' },
+  { id: 'ton_dau_ca', label: 'Báo cáo dữ liệu tồn đầu ca' },
+  { id: 'ton_cuoi_ca', label: 'Báo cáo kiểm tồn cuối ca' },
+  { id: 'phieu_nhap_kho', label: 'Phiếu nhập kho' },
+  { id: 'bao_cao_loi_hong', label: 'Báo cáo lỗi hỏng' },
+  { id: 'san_luong', label: 'Sản lượng & chênh lệch' }
+];

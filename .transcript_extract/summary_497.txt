@@ -1,0 +1,177 @@
+LINE 497
+
+import type { MachineNvlSavedLine, MachineNvlSavedReport } from './machineNvlReports';
+import { sumMachineNvlCuoiCaLineTotal, sumMachineNvlDauCaLineTotal } from './machineNvlReports';
+
+---EDIT---
+
+  khoiLuongNpl: number;
+  khoiLuongMangXuat: number;
+  khoiLuongLoiXuatKho: number;
+  khoiLuongTuiXuatKho: number;
+  khoiLuongLoi: number;
+  khoiLuongMang: number;
+  tonDauCa: number;
+  tonDauCaNhua: number;
+  tonDauCaMang: number;
+  tonDauCaLoi: number;
+  tonDauCaTui: number;
+  tonCuoiCa: number;
+  tonCuoiCaNhua: number;
+  tonCuoiCaMang: number;
+  tonCuoiCaLoi: number;
+  tonCuoiCaTui: number;
+  tongNhuaThucDung: number;
+  tongMangThucDung: number;
+  loiThucDung: number;
+  tuiThucDung: number;
+  tongThucDung: number;
+  tongVatLieu: number;
+  chenhLech: number;
+};
+
+---EDIT---
+
+  khoiLuongNpl: number;
+  khoiLuongMangXuat: number;
+  khoiLuongLoiXuatKho: number;
+  khoiLuongTuiXuatKho: number;
+  khoiLuongLoi: number;
+  tonDauCaNhua: number;
+  tonDauCaMang: number;
+  tonDauCaLoi: number;
+  tonDauCaTui: number;
+  tonCuoiCaNhua: number;
+  tonCuoiCaMang: number;
+  tonCuoiCaLoi: number;
+  tonCuoiCaTui: number;
+};
+
+---EDIT---
+
+    khoiLuongNpl: 0,
+    khoiLuongMangXuat: 0,
+    khoiLuongLoiXuatKho: 0,
+    khoiLuongTuiXuatKho: 0,
+    khoiLuongLoi: 0,
+    tonDauCaNhua: 0,
+    tonDauCaMang: 0,
+    tonDauCaLoi: 0,
+    tonDauCaTui: 0,
+    tonCuoiCaNhua: 0,
+    tonCuoiCaMang: 0,
+    tonCuoiCaLoi: 0,
+    tonCuoiCaTui: 0
+  };
+
+---EDIT---
+
+function normalizeWarehouseItemHay(code: string, name: string) {
+  return `${code} ${name}`
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function isWarehouseCoreExportItem(code: string, name: string) {
+  const hay = normalizeWarehouseItemHay(code, name);
+  return /\bloi\b/.test(hay) || hay.includes(' loi ') || hay.startsWith('loi ');
+}
+
+export function isWarehouseBagExportItem(code: string, name: string) {
+  const hay = normalizeWarehouseItemHay(code, name);
+  return (
+    hay.includes('tui') ||
+    hay.includes('bao bi') ||
+    hay.includes('tai nilon') ||
+    hay.includes('bi nilon')
+  );
+}
+
+function sumWarehouseMovementExportKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (movement.warehouseKind !== 'nvl') return 0;
+  if (movement.slipType !== 'xuat') return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  const unit = movement.unit || '';
+  if (isKgUnit(unit)) return qty;
+  if (isM2Unit(unit)) {
+    const factor = resolveKgFactor(unit, movement.itemCode || '', null);
+    return factor !== null && factor > 0 ? qty * factor : 0;
+  }
+  const factor = resolveKgFactor(unit, movement.itemCode || '', null);
+  return factor !== null && factor > 0 ? qty * factor : 0;
+}
+
+function sumWarehouseMovementNplKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (movement.warehouseKind !== 'nvl') return 0;
+  if (movement.slipType !== 'xuat') return 0;
+  if (isWarehouseCoreExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  if (isWarehouseBagExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  const unit = movement.unit || '';
+  if (isM2Unit(unit)) return 0;
+  if (!isKgUnit(unit)) return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  return qty;
+}
+
+function sumWarehouseMovementMangKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (movement.warehouseKind !== 'nvl') return 0;
+  if (movement.slipType !== 'xuat') return 0;
+  const unit = movement.unit || '';
+  if (!isM2Unit(unit)) return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  const factor = resolveKgFactor(unit, movement.itemCode || '', null);
+  return factor !== null && factor > 0 ? qty * factor : 0;
+}
+
+function sumWarehouseMovementLoiXuatKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (!isWarehouseCoreExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  return sumWarehouseMovementExportKg(movement, resolveKgFactor);
+}
+
+function sumWarehouseMovementTuiXuatKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveKgFactor: (unit: string, code: string, lineFactor: number | null | undefined) => number | null
+) {
+  if (!isWarehouseBagExportItem(movement.itemCode || '', movement.itemName || '')) return 0;
+  return sumWarehouseMovementExportKg(movement, resolveKgFactor);
+}
+
+type MachineNvlMaterialSplit = { nhua: number; mang: number; loi: number; tui: number };
+
+function splitMachineNvlLineByMaterial(
+  line: MachineNvlSavedLine,
+  reportKind: 'dau_ca' | 'cuoi_ca'
+): MachineNvlMaterialSplit {
+  const zero: MachineNvlMaterialSplit = { nhua: 0, mang: 0, loi: 0, tui: 0 };
+  const kg =
+    reportKind === 'dau_ca' ? sumMachineNvlDauCaLineTotal(line) : sumMachineNvlCuoiCaLineTotal(line);
+  if (kg <= 0) return zero;
+
+  const code = line.maNvl || '';
+  const name = line.tenNvl || '';
+  if (isWarehouseCoreExportItem(code, name)) return { ...zero, loi: kg };
+  if (isWarehouseBagExportItem(code, name)) return { ...zero, tui: kg };
+  if (isM2Unit(line.donVi || '')) return { ...zero, mang: kg };
+  return { ...zero, nhua: kg };
+}
+
+export function computeMaterialUsageKg(xuat: number, tonDauCa: number, tonCuoiCa: number) {
+  return roundNormWeight(xuat + tonDauCa - tonCuoiCa);
+}

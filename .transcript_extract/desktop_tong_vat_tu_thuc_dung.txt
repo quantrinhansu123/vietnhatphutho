@@ -1,0 +1,59 @@
+LINE 505
+
+        <div className="hidden overflow-x-auto md:block">
+          {activeTab === 'tong_vat_tu_thuc_dung' ? (
+          <table className="min-w-[900px] w-full text-left text-xs">
+            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr>
+                <th className="px-3 py-2.5 font-black">Ngày</th>
+                <th className="px-3 py-2.5 font-black">Ca</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng Nhựa thực dùng</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng Màng thực dùng</th>
+                <th className="px-3 py-2.5 text-right font-black">Lõi thực dùng</th>
+                <th className="px-3 py-2.5 text-right font-black">Túi thực dùng</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng thực dùng</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải dữ liệu tổng hợp...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có dữ liệu theo bộ lọc đã chọn.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map(row => (
+                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                    <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
+                    <SummaryValueCell row={row} metric="tongNhuaThucDung" formatted={formatShiftSummaryKg(row.tongNhuaThucDung, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tongMangThucDung" formatted={formatShiftSummaryKg(row.tongMangThucDung, 3)} className="px-3 py-2 text-right font-mono font-bold text-fuchsia-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="loiThucDung" formatted={formatShiftSummaryKg(row.loiThucDung, 3)} className="px-3 py-2 text-right font-mono font-bold text-stone-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tuiThucDung" formatted={formatShiftSummaryKg(row.tuiThucDung, 3)} className="px-3 py-2 text-right font-mono font-bold text-cyan-700" onOpen={openDetail} />
+                    <SummaryValueCell row={row} metric="tongThucDung" formatted={formatShiftSummaryKg(row.tongThucDung, 3)} className="px-3 py-2 text-right font-mono font-bold text-teal-800" onOpen={openDetail} />
+                  </tr>
+                ))
+              )}
+            </tbody>
+            {!isLoading && filteredRows.length > 0 && (
+              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+                <tr>
+                  <td colSpan={2} className="px-3 py-2.5 text-right uppercase tracking-wider">Tổng cộng</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">{formatShiftSummaryKg(totals.tongNhuaThucDung, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-fuchsia-700">{formatShiftSummaryKg(totals.tongMangThucDung, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-stone-700">{formatShiftSummaryKg(totals.loiThucDung, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-cyan-700">{formatShiftSummaryKg(totals.tuiThucDung, 3)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-teal-800">{formatShiftSummaryKg(totals.tongThucDung, 3)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          ) : (
+          <table className="min-w-[1600px] w-full text-left text-xs">

@@ -1,0 +1,119 @@
+Total table edits: 88
+
+LINE 452
+OLD head:     tongTrongLuongTonDauCa: sumShiftSummaryColumn(filteredRows, 'tongTrongLuongTonDauCa'),
+    slDatThucTeNhapKho: sumShiftSummaryColumn(filteredRows,
+NEW head:     tongTrongLuongTonDauCa: sumShiftSummaryColumn(filteredRows, 'tongTrongLuongTonDauCa'),
+    tonCuoiCaNhua: sumShiftSummaryColumn(filteredRows, 'ton
+
+LINE 453
+OLD head:                     ) : activeTab === 'ton_dau_ca' ? (
+                      <p className="text-right text-[10px] font-black uppercase tracking-wider 
+NEW head:                     ) : activeTab === 'ton_dau_ca' ? (
+                      <p className="text-right text-[10px] font-black uppercase tracking-wider 
+
+LINE 453
+OLD head:                     {activeTab === 'ton_dau_ca' ? (
+                      <>
+                        <div>
+                          <dt className="fo
+NEW head:                     {activeTab === 'ton_dau_ca' ? (
+                      <>
+                        <div>
+                          <dt className="fo
+
+LINE 453
+OLD head:                 {activeTab === 'ton_dau_ca' ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    <span classNa
+NEW head:                 {activeTab === 'ton_dau_ca' ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    <span classNa
+
+LINE 453
+OLD head:           </table>
+          ) : null}
+
+          {activeTab === 'phieu_nhap_kho' ? (
+NEW head:           </table>
+          ) : null}
+
+          {activeTab === 'ton_cuoi_ca' ? (
+          <table className="min-w-[960px] w-full text-left text-xs"
+
+LINE 453
+OLD head:                 <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca nhựa</th>
+NEW head:                 <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca</th>
+
+LINE 503
+OLD head: const inputClass =
+  'h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focu
+NEW head: const inputClass =
+  'h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focu
+
+LINE 503
+OLD head:   const [staffFilter, setStaffFilter] = useState('all');
+NEW head:   const [staffFilter, setStaffFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState<ShiftSummaryTabId>('tat_ca');
+
+LINE 503
+OLD head:     tonDauCa: sumShiftSummaryColumn(filteredRows, 'tonDauCa'),
+    tonCuoiCa: sumShiftSummaryColumn(filteredRows, 'tonCuoiCa'),
+    tongVatLieu: sumSh
+NEW head:     tonDauCa: sumShiftSummaryColumn(filteredRows, 'tonDauCa'),
+    tonCuoiCa: sumShiftSummaryColumn(filteredRows, 'tonCuoiCa'),
+    tongNhuaThucDung: 
+
+LINE 503
+OLD head:             </div>
+          </div>
+        </div>
+
+        {/* Mobile: thẻ gọn theo từng ca */}
+NEW head:             </div>
+          </div>
+        </div>
+
+        <div className="flex gap-1 overflow-x-auto border-b border-zinc-100 bg-zinc-50/80 px-2 py-
+
+LINE 504
+OLD head:           ) : (
+            <>
+              {filteredRows.map(row => (
+                <article key={row.key} className="rounded-lg border border-zin
+NEW head:           ) : (
+            <>
+              {filteredRows.map(row => (
+                <article key={row.key} className="rounded-lg border border-zin
+
+LINE 504
+OLD head:                     <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn cuối ca nhựa</dt>
+               
+NEW head:                     <div>
+                      <dt className="font-bold uppercase tracking-wider text-zinc-400">Tồn cuối ca nhựa</dt>
+               
+
+LINE 504
+OLD head:                   <span className="text-orange-700">CL nhựa: {formatShiftSummaryNumber(totals.chenhLech, 3)}</span>
+                </div>
+           
+NEW head:                   <span className="text-orange-700">CL nhựa: {formatShiftSummaryNumber(totals.chenhLech, 3)}</span>
+                </div>
+           
+
+LINE 505
+OLD head:         <div className="hidden overflow-x-auto md:block">
+          <table className="min-w-[1600px] w-full text-left text-xs">
+NEW head:         <div className="hidden overflow-x-auto md:block">
+          {activeTab === 'tong_vat_tu_thuc_dung' ? (
+          <table className="min-w-[900p
+
+LINE 505
+OLD head:             )}
+          </table>
+        </div>
+NEW head:             )}
+          </table>
+          )}
+        </div>

@@ -1,0 +1,55 @@
+LINE 353
+
+export function splitMachineNvlDauCaLineKg(line: MachineNvlSavedLine) {
+  const kg = sumMachineNvlDauCaLineTotal(line);
+  if (kg <= 0) return { nhua: 0, mang: 0, loi: 0, tui: 0 };
+  if (isWarehouseCoreExportItem(line.maNvl, line.tenNvl)) {
+    return { nhua: 0, mang: 0, loi: kg, tui: 0 };
+  }
+  if (isWarehouseBagExportItem(line.maNvl, line.tenNvl)) {
+    return { nhua: 0, mang: 0, loi: 0, tui: kg };
+  }
+  if (isM2Unit(line.donVi || '')) {
+    return { nhua: 0, mang: kg, loi: 0, tui: 0 };
+  }
+  return { nhua: kg, mang: 0, loi: 0, tui: 0 };
+}
+
+export function isWarehouseFilmItem(code: string, name: string, unit: string) {
+  if (isM2Unit(unit)) return true;
+  const hay = normalizeWarehouseItemHay(code, name);
+  return hay.includes('mang') || hay.includes('film');
+}
+
+function sumWarehouseSanPhamNhapLineKg(
+  movement: ShiftSummaryWarehouseMovement,
+  resolveProductKgFactor: (unit: string, code: string) => number | null
+) {
+  if (movement.warehouseKind !== 'san_pham' || movement.slipType !== 'nhap') return 0;
+  const qty = movement.quantity;
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  const unit = movement.unit || '';
+  if (isKgUnit(unit)) return qty;
+  const factor = resolveProductKgFactor(unit, movement.itemCode || '');
+  return factor !== null && factor > 0 ? qty * factor : 0;
+}
+
+export function splitWarehouseSanPhamNhapLine(
+  movement: Pick<ShiftSummaryWarehouseMovement, 'itemCode' | 'itemName' | 'unit' | 'quantity'>,
+  kg: number
+) {
+  const code = movement.itemCode || '';
+  const name = movement.itemName || '';
+  const unit = movement.unit || '';
+  if (isWarehouseCoreExportItem(code, name)) {
+    return { sl: 0, nhua: 0, mang: 0, loi: kg, tui: 0 };
+  }
+  if (isWarehouseBagExportItem(code, name)) {
+    return { sl: 0, nhua: 0, mang: 0, loi: 0, tui: kg };
+  }
+  if (isWarehouseFilmItem(code, name, unit)) {
+    return { sl: 0, nhua: 0, mang: kg, loi: 0, tui: 0 };
+  }
+  const qty = Number.isFinite(movement.quantity) && movement.quantity > 0 ? movement.quantity : 0;
+  return { sl: qty, nhua: kg, mang: 0, loi: 0, tui: 0 };
+}

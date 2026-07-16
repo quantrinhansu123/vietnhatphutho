@@ -120,6 +120,20 @@ export default function ControlBoardBbMachineReportTable({
     typeof window !== 'undefined' ? loadBbPhanTichMap() : {}
   );
   const [orderCodeFilter, setOrderCodeFilter] = useState<string[]>([]);
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
+
+  const scopedGroupKey = (tabId: BbMachineReportTabId, groupKey: string) => `${tabId}:${groupKey}`;
+  const isGroupExpanded = (tabId: BbMachineReportTabId, groupKey: string) =>
+    !collapsedGroupKeys.has(scopedGroupKey(tabId, groupKey));
+  const toggleGroup = (tabId: BbMachineReportTabId, groupKey: string) => {
+    const key = scopedGroupKey(tabId, groupKey);
+    setCollapsedGroupKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const orderOptions = useMemo(
     () =>
@@ -143,6 +157,7 @@ export default function ControlBoardBbMachineReportTable({
   };
 
   const clearOrderCodeFilter = () => setOrderCodeFilter([]);
+  const selectAllOrderCodes = () => setOrderCodeFilter(orderOptions.map(option => option.code));
 
   useEffect(() => {
     setOrderCodeFilter(prev => prev.filter(code => orderOptionCodes.has(code)));
@@ -466,6 +481,53 @@ export default function ControlBoardBbMachineReportTable({
     [exportRows]
   );
 
+  const activeGroupKeys = useMemo(() => {
+    switch (activeTab) {
+      case 'lenh_sx':
+        return orderGroups.map(group => group.groupKey);
+      case 'phieu_xuat_kho':
+        return exportGroups.map(group => group.groupKey);
+      case 'ton_dau_ca':
+        return dauCaGroups.map(group => group.groupKey);
+      case 'bao_cao_loi_hong':
+        return damagedGroups.map(group => group.groupKey);
+      case 'kiem_ton_cuoi_ca':
+        return cuoiCaGroups.map(group => group.groupKey);
+      case 'tong_vat_tu_thuc_dung':
+        return thucDungGroups.map(group => group.groupKey);
+      case 'tong':
+        return tongGroups.map(group => group.groupKey);
+      case 'ti_le_tron':
+        return mixingGroups.map(group => group.groupKey);
+      default:
+        return [];
+    }
+  }, [
+    activeTab,
+    orderGroups,
+    exportGroups,
+    dauCaGroups,
+    damagedGroups,
+    cuoiCaGroups,
+    thucDungGroups,
+    tongGroups,
+    mixingGroups
+  ]);
+
+  const allActiveGroupsExpanded =
+    activeGroupKeys.length > 0 && activeGroupKeys.every(groupKey => isGroupExpanded(activeTab, groupKey));
+  const setAllActiveGroupsExpanded = (expanded: boolean) => {
+    setCollapsedGroupKeys(prev => {
+      const next = new Set(prev);
+      activeGroupKeys.forEach(groupKey => {
+        const key = scopedGroupKey(activeTab, groupKey);
+        if (expanded) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  };
+
   const updatePhanTich = (rowKey: string, value: string) => {
     setPhanTichMap(prev => {
       const next = { ...prev, [rowKey]: value };
@@ -503,23 +565,33 @@ export default function ControlBoardBbMachineReportTable({
       </div>
 
       <div className="border-b border-zinc-100 bg-white px-3 py-2.5">
-        <div className="mb-1.5 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-            Lọc theo lệnh SX (máy BB)
-          </span>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wider text-slate-700">Lọc theo lệnh sản xuất</p>
+            <p className="mt-0.5 text-xs font-bold text-sky-700">Tick để chọn một hoặc nhiều lệnh SX máy BB</p>
+          </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-zinc-400">
+            <span className="text-xs font-extrabold text-slate-500">
               {orderCodeFilter.length > 0
                 ? `Đã chọn ${orderCodeFilter.length}/${orderOptions.length} lệnh`
-                : `${orderOptions.length} lệnh`}
+                : `Tất cả ${orderOptions.length} lệnh`}
             </span>
+            {orderOptions.length > 0 && orderCodeFilter.length < orderOptions.length ? (
+              <button
+                type="button"
+                onClick={selectAllOrderCodes}
+                className="h-8 rounded-lg border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-800 transition hover:bg-sky-100"
+              >
+                Chọn tất cả
+              </button>
+            ) : null}
             {orderCodeFilter.length > 0 ? (
               <button
                 type="button"
                 onClick={clearOrderCodeFilter}
-                className="h-6 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100"
+                className="h-8 rounded-lg border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 transition hover:bg-slate-100"
               >
-                Xóa lọc
+                Bỏ chọn
               </button>
             ) : null}
           </div>
@@ -529,23 +601,23 @@ export default function ControlBoardBbMachineReportTable({
             Chưa có lệnh SX máy BB theo bộ lọc ngày/ca/máy hiện tại.
           </p>
         ) : (
-          <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+          <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto rounded-xl border border-sky-200 bg-sky-50/40 p-2.5">
             {orderOptions.map(option => {
               const checked = orderCodeFilter.includes(option.code);
               return (
                 <label
                   key={option.code}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-extrabold shadow-sm transition ${
                     checked
-                      ? 'border-sky-300 bg-sky-50 text-sky-800'
-                      : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                      ? 'border-sky-500 bg-sky-100 text-sky-900 ring-1 ring-sky-300'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleOrderCodeFilter(option.code)}
-                    className="h-3.5 w-3.5 rounded border-zinc-300 text-sky-700 focus:ring-sky-700/20"
+                    className="h-4 w-4 rounded border-slate-400 text-sky-700 focus:ring-sky-700/20"
                   />
                   {option.label}
                 </label>
@@ -555,10 +627,36 @@ export default function ControlBoardBbMachineReportTable({
         )}
       </div>
 
+      {activeGroupKeys.length > 0 ? (
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-sm font-extrabold text-slate-700">
+            Bấm mũi tên ở dòng cha để đóng/mở các dòng con
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => setAllActiveGroupsExpanded(true)}
+              disabled={allActiveGroupsExpanded}
+              className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-black text-sky-800 shadow-sm transition hover:bg-sky-50 disabled:cursor-default disabled:opacity-40"
+            >
+              Mở tất cả
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllActiveGroupsExpanded(false)}
+              disabled={!allActiveGroupsExpanded && activeGroupKeys.every(groupKey => !isGroupExpanded(activeTab, groupKey))}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+            >
+              Đóng tất cả
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="overflow-x-auto">
         {activeTab === 'lenh_sx' ? (
-          <table className="min-w-[1280px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1280px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -588,18 +686,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 orderGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('lenh_sx', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-sky-50/40 hover:bg-sky-50/80">
+                      <tr className="border-y border-sky-200 bg-sky-100/80 font-bold hover:bg-sky-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-200 bg-white text-sky-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('lenh_sx', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-300 bg-white text-sky-800 shadow-sm transition hover:bg-sky-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
@@ -619,7 +719,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-sky-100 bg-sky-50 text-xs font-black uppercase tracking-wider text-sky-900">
                             <td />
                             <td className="px-3 py-1.5 font-black">Mã hàng</td>
                             <td colSpan={2} className="px-3 py-1.5 font-black">
@@ -636,7 +736,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td />
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-sky-50/60">
                               <td className="px-2 py-1.5" />
                               <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">{row.productCode || '—'}</td>
                               <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
@@ -677,8 +777,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'phieu_xuat_kho' ? (
-          <table className="min-w-[1100px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -706,18 +806,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 exportGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('phieu_xuat_kho', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-amber-50/40 hover:bg-amber-50/80">
+                      <tr className="border-y border-amber-200 bg-amber-100/80 font-bold hover:bg-amber-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-amber-200 bg-white text-amber-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('phieu_xuat_kho', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-300 bg-white text-amber-800 shadow-sm transition hover:bg-amber-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-800">
@@ -735,7 +837,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-amber-100 bg-amber-50 text-xs font-black uppercase tracking-wider text-amber-900">
                             <td />
                             <td className="px-3 py-1.5 font-black">Mã phiếu</td>
                             <td className="px-3 py-1.5 font-black">Mã NPL</td>
@@ -747,7 +849,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 text-right font-black">TL (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-amber-50/60">
                               <td className="px-2 py-1.5" />
                               <td className="px-3 py-1.5 font-mono text-zinc-700">{row.slipCode || '—'}</td>
                               <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
@@ -782,8 +884,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'ton_dau_ca' ? (
-          <table className="min-w-[1100px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -810,18 +912,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 dauCaGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('ton_dau_ca', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-indigo-50/40 hover:bg-indigo-50/80">
+                      <tr className="border-y border-indigo-200 bg-indigo-100/80 font-bold hover:bg-indigo-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-indigo-200 bg-white text-indigo-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('ton_dau_ca', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-300 bg-white text-indigo-800 shadow-sm transition hover:bg-indigo-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-800">
@@ -836,7 +940,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-indigo-100 bg-indigo-50 text-xs font-black uppercase tracking-wider text-indigo-900">
                             <td />
                             <td className="px-3 py-1.5 font-black">Mã NVL</td>
                             <td colSpan={2} className="px-3 py-1.5 font-black">
@@ -847,7 +951,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 text-right font-black">Trọng lượng (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-indigo-50/60">
                               <td className="px-2 py-1.5" />
                               <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
                               <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
@@ -881,8 +985,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'bao_cao_loi_hong' ? (
-          <table className="min-w-[1100px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -909,18 +1013,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 damagedGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('bao_cao_loi_hong', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-rose-50/40 hover:bg-rose-50/80">
+                      <tr className="border-y border-rose-200 bg-rose-100/80 font-bold hover:bg-rose-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('bao_cao_loi_hong', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-300 bg-white text-rose-800 shadow-sm transition hover:bg-rose-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-800">
@@ -935,7 +1041,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-rose-100 bg-rose-50 text-xs font-black uppercase tracking-wider text-rose-900">
                             <td />
                             <td className="px-3 py-1.5 font-black">Số phiếu</td>
                             <td className="px-3 py-1.5 font-black">Mã NVL</td>
@@ -946,7 +1052,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 text-right font-black">Trọng lượng (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-rose-50/60">
                               <td className="px-2 py-1.5" />
                               <td className="px-3 py-1.5 font-mono text-zinc-700">{row.documentNo || '—'}</td>
                               <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
@@ -985,8 +1091,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'kiem_ton_cuoi_ca' ? (
-          <table className="min-w-[1100px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -1013,18 +1119,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 cuoiCaGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('kiem_ton_cuoi_ca', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-violet-50/40 hover:bg-violet-50/80">
+                      <tr className="border-y border-violet-200 bg-violet-100/80 font-bold hover:bg-violet-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('kiem_ton_cuoi_ca', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-violet-300 bg-white text-violet-800 shadow-sm transition hover:bg-violet-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-800">
@@ -1039,7 +1147,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-violet-100 bg-violet-50 text-xs font-black uppercase tracking-wider text-violet-900">
                             <td />
                             <td className="px-3 py-1.5 font-black">Mã NVL</td>
                             <td colSpan={2} className="px-3 py-1.5 font-black">
@@ -1050,7 +1158,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 text-right font-black">Trọng lượng (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-violet-50/60">
                               <td className="px-2 py-1.5" />
                               <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
                               <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
@@ -1084,8 +1192,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'phieu_nhap_kho' ? (
-          <table className="min-w-[1100px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -1150,8 +1258,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'tong_vat_tu_thuc_dung' ? (
-          <table className="min-w-[1200px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1200px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -1178,18 +1286,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 thucDungGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('tong_vat_tu_thuc_dung', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-teal-50/40 hover:bg-teal-50/80">
+                      <tr className="border-y border-teal-200 bg-teal-100/80 font-bold hover:bg-teal-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-teal-200 bg-white text-teal-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('tong_vat_tu_thuc_dung', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-teal-300 bg-white text-teal-800 shadow-sm transition hover:bg-teal-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-800">
@@ -1204,7 +1314,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-teal-100 bg-teal-50 text-xs font-black uppercase tracking-wider text-teal-900">
                             <td />
                             <td className="px-3 py-1.5 font-black">Mã NVL</td>
                             <td colSpan={2} className="px-3 py-1.5 font-black">
@@ -1215,7 +1325,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 text-right font-black">Thực dùng (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-teal-50/60">
                               <td className="px-2 py-1.5" />
                               <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
                                 {row.materialCode || '—'}
@@ -1253,8 +1363,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'tong' ? (
-          <table className="min-w-[1100px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -1284,18 +1394,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 tongGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('tong', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-emerald-50/40 hover:bg-emerald-50/80">
+                      <tr className="border-y border-emerald-200 bg-emerald-100/80 font-bold hover:bg-emerald-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('tong', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-300 bg-white text-emerald-800 shadow-sm transition hover:bg-emerald-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-800">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-700">{group.shiftLabel || group.shift || '—'}</td>
@@ -1317,7 +1429,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-emerald-100 bg-emerald-50 text-xs font-black uppercase tracking-wider text-emerald-900">
                             <td className="px-2 py-1.5" />
                             <td colSpan={5} className="px-3 py-1.5 font-black">
                               Thành phần
@@ -1326,7 +1438,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5" />
                           </tr>
                           {group.lines.map(line => (
-                            <tr key={line.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={line.key} className="bg-white font-semibold hover:bg-emerald-50/60">
                               <td className="px-2 py-1.5" />
                               <td colSpan={5} className="px-3 py-1.5 text-zinc-700">
                                 {line.label}
@@ -1368,8 +1480,8 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'ti_le_tron' ? (
-          <table className="min-w-[1100px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
                 <th className="px-3 py-2.5 font-black">Ngày</th>
@@ -1396,18 +1508,20 @@ export default function ControlBoardBbMachineReportTable({
                 </tr>
               ) : (
                 mixingGroups.map(group => {
-                  const expanded = true;
+                  const expanded = isGroupExpanded('ti_le_tron', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="bg-orange-50/40 hover:bg-orange-50/80">
+                      <tr className="border-y border-orange-200 bg-orange-100/80 font-bold hover:bg-orange-100">
                         <td className="px-2 py-2">
-                          <span
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-orange-200 bg-white text-orange-800"
-                            title="Chi tiết hiển thị bên dưới"
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('ti_le_tron', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-orange-300 bg-white text-orange-800 shadow-sm transition hover:bg-orange-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
-                            <ChevronDown className="h-4 w-4" />
-                          </span>
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-zinc-800">{group.ngay || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-700">{group.shiftLabel || group.shift || '—'}</td>
@@ -1422,7 +1536,7 @@ export default function ControlBoardBbMachineReportTable({
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                          <tr className="border-y border-orange-100 bg-orange-50 text-xs font-black uppercase tracking-wider text-orange-900">
                             <td className="px-2 py-1.5" />
                             <td className="px-3 py-1.5 font-black">Mã NVL</td>
                             <td colSpan={2} className="px-3 py-1.5 font-black">
@@ -1433,7 +1547,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 text-right font-black">Số mẻ có KL TT</td>
                           </tr>
                           {group.lines.map(line => (
-                            <tr key={line.key} className="bg-white hover:bg-zinc-50/80">
+                            <tr key={line.key} className="bg-white font-semibold hover:bg-orange-50/60">
                               <td className="px-2 py-1.5" />
                               <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
                                 {line.materialCode || '—'}
@@ -1462,8 +1576,8 @@ export default function ControlBoardBbMachineReportTable({
           </table>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[2200px] w-full text-left text-xs">
-              <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <table className="min-w-[2200px] w-full text-left text-sm font-semibold">
+              <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
                 <tr>
                   <th className="px-3 py-2.5 font-black">Ngày</th>
                   <th className="px-3 py-2.5 font-black">Ca</th>

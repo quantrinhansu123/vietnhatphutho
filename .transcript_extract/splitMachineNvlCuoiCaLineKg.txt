@@ -1,0 +1,26 @@
+LINE 447
+
+function splitMachineNvlLineKgByMaterial(
+  line: Pick<MachineNvlSavedLine, 'maNvl' | 'tenNvl' | 'donVi'>,
+  kg: number
+) {
+  if (kg <= 0) return { nhua: 0, mang: 0, loi: 0, tui: 0 };
+  if (isWarehouseCoreExportItem(line.maNvl, line.tenNvl)) {
+    return { nhua: 0, mang: 0, loi: kg, tui: 0 };
+  }
+  if (isWarehouseBagExportItem(line.maNvl, line.tenNvl)) {
+    return { nhua: 0, mang: 0, loi: 0, tui: kg };
+  }
+  if (isM2Unit(line.donVi || '')) {
+    return { nhua: 0, mang: kg, loi: 0, tui: 0 };
+  }
+  return { nhua: kg, mang: 0, loi: 0, tui: 0 };
+}
+
+export function splitMachineNvlDauCaLineKg(line: MachineNvlSavedLine) {
+  return splitMachineNvlLineKgByMaterial(line, sumMachineNvlDauCaLineTotal(line));
+}
+
+export function splitMachineNvlCuoiCaLineKg(line: MachineNvlSavedLine) {
+  return splitMachineNvlLineKgByMaterial(line, sumMachineNvlCuoiCaLineTotal(line));
+}

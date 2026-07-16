@@ -1,8 +1,160 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
 import type { MachineRow } from '../features/danh-sach-may';
 
 const inputClass =
   'h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+
+export type ControlBoardProductionOrderOption = {
+  code: string;
+  label: string;
+};
+
+function ProductionOrderSearchFilter({
+  value,
+  query,
+  onValueChange,
+  onQueryChange,
+  options,
+  disabled
+}: {
+  value: string;
+  query: string;
+  onValueChange: (value: string) => void;
+  onQueryChange: (query: string) => void;
+  options: ControlBoardProductionOrderOption[];
+  disabled?: boolean;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+
+  const selected = useMemo(
+    () => (value && value !== 'all' ? options.find(option => option.code === value) ?? null : null),
+    [options, value]
+  );
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!normalizedQuery) return options;
+    const compactQuery = normalizedQuery.replace(/[^a-z0-9]/g, '');
+    return options.filter(option => {
+      const haystack = `${option.code} ${option.label}`.toLowerCase();
+      if (haystack.includes(normalizedQuery)) return true;
+      if (!compactQuery) return false;
+      return haystack.replace(/[^a-z0-9]/g, '').includes(compactQuery);
+    });
+  }, [options, normalizedQuery]);
+
+  const clearSelection = () => {
+    onQueryChange('');
+    onValueChange('all');
+    setOpen(false);
+  };
+
+  const pickOption = (code: string, label: string) => {
+    onQueryChange(label);
+    onValueChange(code);
+    setOpen(false);
+  };
+
+  const displayValue = selected && !open ? selected.label : query;
+
+  return (
+    <div ref={rootRef} className="relative">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+        <input
+          type="text"
+          value={displayValue}
+          disabled={disabled}
+          placeholder="Gõ mã / tìm lệnh SX..."
+          autoComplete="off"
+          spellCheck={false}
+          onFocus={() => {
+            setOpen(true);
+            if (selected) onQueryChange(selected.code);
+          }}
+          onChange={event => {
+            const next = event.target.value;
+            onQueryChange(next);
+            setOpen(true);
+            if (!next.trim()) {
+              onValueChange('all');
+              return;
+            }
+            const exact = options.find(option => option.code.toLowerCase() === next.trim().toLowerCase());
+            onValueChange(exact ? exact.code : 'all');
+          }}
+          onKeyDown={event => {
+            if (event.key === 'Escape') {
+              setOpen(false);
+              return;
+            }
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              const first = filtered[0];
+              if (first) pickOption(first.code, first.label);
+            }
+          }}
+          className={`${inputClass} w-full pl-7 pr-8`}
+        />
+        {query || (value && value !== 'all') ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={clearSelection}
+            className="absolute right-1.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50"
+            title="Xóa lọc lệnh SX"
+            aria-label="Xóa lọc lệnh SX"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
+
+      {open && !disabled ? (
+        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg">
+          <button
+            type="button"
+            onClick={clearSelection}
+            className={`flex w-full px-3 py-2 text-left text-xs font-bold transition hover:bg-zinc-50 ${
+              value === 'all' && !query.trim() ? 'bg-sky-50 text-sky-800' : 'text-zinc-600'
+            }`}
+          >
+            Tất cả lệnh SX
+            {filtered.length > 0 && query.trim() ? (
+              <span className="ml-auto font-semibold text-zinc-400">{filtered.length} kết quả</span>
+            ) : null}
+          </button>
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-xs font-semibold text-zinc-400">Không tìm thấy lệnh SX.</p>
+          ) : (
+            filtered.map(option => (
+              <button
+                key={option.code}
+                type="button"
+                onClick={() => pickOption(option.code, option.label)}
+                className={`flex w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-sky-50 ${
+                  value === option.code ? 'bg-sky-50 font-black text-sky-900' : 'text-zinc-800'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function ControlBoardCommonFilters({
   dateFrom,
@@ -16,6 +168,11 @@ export function ControlBoardCommonFilters({
   machine,
   onMachineChange,
   machines,
+  productionOrder,
+  productionOrderQuery,
+  onProductionOrderChange,
+  onProductionOrderQueryChange,
+  productionOrderOptions,
   onClear,
   isLoading
 }: {
@@ -30,6 +187,11 @@ export function ControlBoardCommonFilters({
   machine: string;
   onMachineChange: (value: string) => void;
   machines: MachineRow[];
+  productionOrder: string;
+  productionOrderQuery: string;
+  onProductionOrderChange: (value: string) => void;
+  onProductionOrderQueryChange: (value: string) => void;
+  productionOrderOptions: ControlBoardProductionOrderOption[];
   onClear: () => void;
   isLoading?: boolean;
 }) {
@@ -38,7 +200,7 @@ export function ControlBoardCommonFilters({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Bộ lọc chung</p>
-          <p className="mt-0.5 text-sm font-black text-zinc-950">Từ ngày · Đến ngày · Ca · Máy</p>
+          <p className="mt-0.5 text-sm font-black text-zinc-950">Từ ngày · Đến ngày · Ca · Máy · Lệnh SX</p>
         </div>
         <button
           type="button"
@@ -50,7 +212,7 @@ export function ControlBoardCommonFilters({
         </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
         <label className="space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
           <input
@@ -107,6 +269,17 @@ export function ControlBoardCommonFilters({
               ))}
           </select>
         </label>
+        <div className="col-span-2 space-y-1 lg:col-span-1 xl:col-span-1">
+          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lệnh sản xuất</span>
+          <ProductionOrderSearchFilter
+            value={productionOrder}
+            query={productionOrderQuery}
+            onValueChange={onProductionOrderChange}
+            onQueryChange={onProductionOrderQueryChange}
+            options={productionOrderOptions}
+            disabled={isLoading}
+          />
+        </div>
       </div>
     </section>
   );

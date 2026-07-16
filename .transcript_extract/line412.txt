@@ -1,0 +1,112 @@
+LINE 412
+
+type ShiftSummaryTabId = 'lenh_sx' | 'phieu_xuat_kho' | 'ton_dau_ca' | 'phieu_nhap_kho' | 'bao_cao_loi_hong' | 'san_luong';
+
+const SHIFT_SUMMARY_TABS: Array<{ id: ShiftSummaryTabId; label: string }> = [
+  { id: 'lenh_sx', label: 'Lệnh sản xuất' },
+  { id: 'phieu_xuat_kho', label: 'Phiếu xuất kho' },
+  { id: 'ton_dau_ca', label: 'Báo cáo dữ liệu tồn đầu ca' },
+  { id: 'phieu_nhap_kho', label: 'Phiếu nhập kho' },
+  { id: 'bao_cao_loi_hong', label: 'Báo cáo lỗi hỏng' },
+  { id: 'san_luong', label: 'Sản lượng & chênh lệch' }
+];
+
+---
+
+    tongTpNhapKho: sumShiftSummaryColumn(filteredRows, 'tongTpNhapKho'),
+    tlNhuaKhongMangLoiHong: sumShiftSummaryColumn(filteredRows, 'tlNhuaKhongMangLoiHong'),
+    tlNhuaCucDauNongLoiHong: sumShiftSummaryColumn(filteredRows, 'tlNhuaCucDauNongLoiHong'),
+    tlNhuaDinhMangLoiHong: sumShiftSummaryColumn(filteredRows, 'tlNhuaDinhMangLoiHong'),
+    tlMangLoiHong: sumShiftSummaryColumn(filteredRows, 'tlMangLoiHong'),
+    soCuonLoiDinhHangHong: sumShiftSummaryColumn(filteredRows, 'soCuonLoiDinhHangHong'),
+    tongTrongLuongLoiHong: sumShiftSummaryColumn(filteredRows, 'tongTrongLuongLoiHong'),
+    khoiLuongLoi: sumShiftSummaryColumn(filteredRows, 'khoiLuongLoi'),
+
+---
+
+                    {activeTab === 'phieu_nhap_kho' ? (
+                      <>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">SL đạt thực tế</dt>
+                          <dd className="font-mono font-bold text-sky-700">{formatShiftSummaryNumber(row.slDatThucTeNhapKho, 0)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">TL nhựa TP</dt>
+                          <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryKg(row.tlNhuaTpNhapKho, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">TL màng TP</dt>
+                          <dd className="font-mono font-bold text-fuchsia-700">{formatShiftSummaryKg(row.tlMangTpNhapKho, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">TL túi bao bì</dt>
+                          <dd className="font-mono font-bold text-cyan-700">{formatShiftSummaryKg(row.tlTuiBaoBiNhapKho, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">TL lõi TP</dt>
+                          <dd className="font-mono font-bold text-stone-700">{formatShiftSummaryKg(row.tlLoiTpNhapKho, 3)}</dd>
+                        </div>
+                      </>
+                    ) : null}
+                    {activeTab === 'bao_cao_loi_hong' ? (
+                      <>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Nhựa không mảng</dt>
+                          <dd className="font-mono font-bold text-amber-700">{formatShiftSummaryKg(row.tlNhuaKhongMangLoiHong, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Nhựa đầu nòng</dt>
+                          <dd className="font-mono font-bold text-orange-700">{formatShiftSummaryKg(row.tlNhuaCucDauNongLoiHong, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Nhựa dính màng</dt>
+                          <dd className="font-mono font-bold text-rose-700">{formatShiftSummaryKg(row.tlNhuaDinhMangLoiHong, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Màng lỗi hỏng</dt>
+                          <dd className="font-mono font-bold text-fuchsia-700">{formatShiftSummaryKg(row.tlMangLoiHong, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">Lõi dính HH</dt>
+                          <dd className="font-mono font-bold text-stone-700">{formatShiftSummaryKg(row.soCuonLoiDinhHangHong, 3)}</dd>
+                        </div>
+                      </>
+                    ) : null}
+                    {activeTab === 'san_luong' ? (
+                      <>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">SL hàng TT</dt>
+                          <dd className="font-mono font-bold text-sky-700">{formatShiftSummaryNumber(row.slHangThucTe, 0)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">KL hàng TT</dt>
+                          <dd className="font-mono font-bold text-[#ef1b2d]">{formatShiftSummaryNumber(row.khoiLuongHangThucTe, 3)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase tracking-wider text-zinc-400">KL nhựa TP</dt>
+                          <dd className="font-mono font-bold text-purple-700">{formatShiftSummaryNumber(row.khoiLuongNhuaTp, 3)}</dd>
+                        </div>
+
+---
+
+                {activeTab === 'phieu_nhap_kho' ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    <span className="text-sky-700">SL đạt: {formatShiftSummaryNumber(totals.slDatThucTeNhapKho, 0)}</span>
+                    <span className="text-amber-700">Nhựa TP: {formatShiftSummaryKg(totals.tlNhuaTpNhapKho, 3)}</span>
+                    <span className="text-fuchsia-700">Màng TP: {formatShiftSummaryKg(totals.tlMangTpNhapKho, 3)}</span>
+                    <span className="text-cyan-700">Túi: {formatShiftSummaryKg(totals.tlTuiBaoBiNhapKho, 3)}</span>
+                    <span className="text-stone-700">Lõi: {formatShiftSummaryKg(totals.tlLoiTpNhapKho, 3)}</span>
+                    <span className="col-span-2">Tổng TP nhập: {formatShiftSummaryKg(totals.tongTpNhapKho, 3)}</span>
+                  </div>
+                ) : null}
+                {activeTab === 'bao_cao_loi_hong' ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    <span className="text-amber-700">Nhựa KM: {formatShiftSummaryKg(totals.tlNhuaKhongMangLoiHong, 3)}</span>
+                    <span className="text-orange-700">Nhựa ĐN: {formatShiftSummaryKg(totals.tlNhuaCucDauNongLoiHong, 3)}</span>
+                    <span className="text-rose-700">Nhựa DM: {formatShiftSummaryKg(totals.tlNhuaDinhMangLoiHong, 3)}</span>
+                    <span className="text-fuchsia-700">Màng: {formatShiftSummaryKg(totals.tlMangLoiHong, 3)}</span>
+                    <span className="text-stone-700">Lõi: {formatShiftSummaryKg(totals.soCuonLoiDinhHangHong, 3)}</span>
+                    <span className="col-span-2">Tổng lỗi hỏng: {formatShiftSummaryKg(totals.tongTrongLuongLoiHong, 3)}</span>
+                  </div>
+                ) : null}
+                {activeTab === 'san_luong' ? (
