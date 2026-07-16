@@ -121,12 +121,18 @@ function roundQty(value: number, digits = 3) {
   return Math.round(value * factor) / factor;
 }
 
-/** Máy BB khi mã hoặc tên chứa "BB" (không phân biệt hoa thường). */
+/** Máy BB: mã/tên có "BB" hoặc "bao bì" (không phân biệt hoa thường / dấu). */
 export function isBbMachineText(...candidates: Array<string | undefined | null>) {
   return candidates.some(value => {
     const raw = String(value || '').trim();
     if (!raw || raw === '-') return false;
-    return /bb/i.test(raw);
+    if (/bb/i.test(raw)) return true;
+    const compact = raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+    return compact.includes('baobi');
   });
 }
 
@@ -532,6 +538,31 @@ const DAMAGED_NVL_LABELS = [
   { code: 'LOI-LH', name: 'Lõi dính trong hàng hỏng', field: 'loi' as const }
 ];
 
+function matchBbNvlReportToOrderHeaders(
+  report: Pick<MachineNvlSavedReport, 'ngay' | 'ca' | 'maMay' | 'tenMay'>,
+  headers: Array<{ ngay: string; shift: string; orderCode: string; machine: string }>,
+  shiftOptions: ReturnType<typeof getProductionShiftOptions>
+) {
+  const ngay = parseProductionOrderFilterDate(report.ngay);
+  const relatedOrders = headers.filter(order =>
+    matchesShiftSummaryBucket(order.ngay, order.shift, ngay || report.ngay, report.ca, shiftOptions)
+  );
+  if (relatedOrders.length === 0) return [];
+
+  const machineMatched = relatedOrders.filter(
+    order =>
+      machineValueMatchesFilter(order.machine, null, report.maMay, report.tenMay) ||
+      (isBbMachineText(report.maMay, report.tenMay) && isBbMachineText(order.machine))
+  );
+  if (machineMatched.length > 0) return machineMatched;
+
+  // Phiếu tồn ca thường ghi "Máy Bao Bì" — vẫn gắn theo ngày + ca lệnh BB.
+  if (isBbMachineText(report.maMay, report.tenMay) || relatedOrders.some(order => isBbMachineText(order.machine))) {
+    return relatedOrders;
+  }
+  return relatedOrders;
+}
+
 function collectBbOrderHeaders(input: {
   productionOrders: ProductionOrderRow[];
   machines: MachineRow[];
@@ -836,19 +867,10 @@ export function buildBbCuoiCaLineRows(input: {
     ) {
       continue;
     }
-    if (!isBbMachineText(report.maMay, report.tenMay)) continue;
 
-    const relatedOrders = headers.filter(order =>
-      matchesShiftSummaryBucket(order.ngay, order.shift, ngay || report.ngay, report.ca, shiftOptions)
-    );
-    if (relatedOrders.length === 0) continue;
+    const matchedOrders = matchBbNvlReportToOrderHeaders(report, headers, shiftOptions);
+    if (matchedOrders.length === 0) continue;
 
-    const machineMatched = relatedOrders.filter(
-      order =>
-        machineValueMatchesFilter(order.machine, null, report.maMay, report.tenMay) ||
-        (isBbMachineText(report.maMay, report.tenMay) && isBbMachineText(order.machine))
-    );
-    const matchedOrders = machineMatched.length > 0 ? machineMatched : relatedOrders;
     const orderCode = [...new Set(matchedOrders.map(order => order.orderCode).filter(Boolean))].join(', ');
     const machine =
       String(report.tenMay || report.maMay || '').trim() ||
@@ -993,19 +1015,10 @@ export function buildBbDauCaLineRows(input: {
     ) {
       continue;
     }
-    if (!isBbMachineText(report.maMay, report.tenMay)) continue;
 
-    const relatedOrders = headers.filter(order =>
-      matchesShiftSummaryBucket(order.ngay, order.shift, ngay || report.ngay, report.ca, shiftOptions)
-    );
-    if (relatedOrders.length === 0) continue;
+    const matchedOrders = matchBbNvlReportToOrderHeaders(report, headers, shiftOptions);
+    if (matchedOrders.length === 0) continue;
 
-    const machineMatched = relatedOrders.filter(
-      order =>
-        machineValueMatchesFilter(order.machine, null, report.maMay, report.tenMay) ||
-        (isBbMachineText(report.maMay, report.tenMay) && isBbMachineText(order.machine))
-    );
-    const matchedOrders = machineMatched.length > 0 ? machineMatched : relatedOrders;
     const orderCode = [...new Set(matchedOrders.map(order => order.orderCode).filter(Boolean))].join(', ');
     const machine =
       String(report.tenMay || report.maMay || '').trim() ||

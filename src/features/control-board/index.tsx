@@ -450,7 +450,8 @@ export function ControlBoardPanel({
   const boardScopedMachineNvlReports = useMemo(() => {
     if (!hasBoardProductionOrderFilter) return machineNvlReports;
     return machineNvlReports.filter(report =>
-      matchesBoardProductionOrderBucket(report.ngay, report.ca, report.maMay, report.tenMay)
+      // Phiếu tồn ca: khớp ngày + ca lệnh; máy có thể ghi "Bao Bì" khác mã máy lệnh
+      matchesBoardProductionOrderBucket(report.ngay, report.ca)
     );
   }, [machineNvlReports, hasBoardProductionOrderFilter, boardMatchedProductionOrders, boardShiftOptions, machines]);
 

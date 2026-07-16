@@ -208,14 +208,41 @@ export function sumMachineNvlDauCaLineTotal(
     | 'donVi'
     | 'trongLuongQuyDoiKg'
     | 'soLuongTon'
+    | 'loaiVatTu'
+    | 'maNvl'
+    | 'tenNvl'
     | 'soLuongTrongMay'
     | 'soLuongTrongBonTron'
     | 'soLuongNlChuaTron'
     | 'soLuongTonNgoai'
   >
 ) {
-  const factor = resolveMachineNvlLineKgFactor(line);
-  if (factor === null) return 0;
+  let factor = resolveMachineNvlLineKgFactor(line);
+  const hay = `${line.maNvl || ''} ${line.tenNvl || ''}`
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const isLoi =
+    line.loaiVatTu === 'loi' || hay.includes('loi') || /\bloi\b/.test(hay) || hay.startsWith('loi');
+  const isBaoBi =
+    line.loaiVatTu === 'bao_bi' ||
+    hay.includes('tui') ||
+    hay.includes('bao bi') ||
+    hay.includes('tai nilon') ||
+    hay.includes('bi nilon');
+  if ((factor === null || factor <= 0) && (isLoi || isBaoBi)) factor = 1;
+  if (factor === null || factor <= 0) {
+    // Vẫn lấy SL thô khi chưa có hệ số quy đổi — hiển thị trên báo cáo BB
+    const rawQty =
+      line.soLuongTon > 0
+        ? line.soLuongTon
+        : (line.soLuongTrongMay ?? 0) +
+          (line.soLuongTrongBonTron ?? 0) +
+          (line.soLuongNlChuaTron ?? 0) +
+          (line.soLuongTonNgoai ?? 0);
+    return rawQty > 0 ? rawQty : 0;
+  }
   const base =
     line.soLuongTon > 0
       ? line.soLuongTon
