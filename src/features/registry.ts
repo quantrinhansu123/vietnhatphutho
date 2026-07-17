@@ -17,6 +17,8 @@ export type TableId =
   | 'nhan_su'
   | 'danh_sach_xe'
   | 'doi_chieu_lai_xe'
+  | 'chi_phi_xe'
+  | 'nhat_ky_xe'
   | 'cai_dat_thoi_gian'
   | 'bao_cao_phoi_tron'
   | 'bao_cao_nghiem_thu'
@@ -189,6 +191,28 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: 'API /api/doi-chieu-lai-xe',
     appTab: 'vehicles',
     appLines: 'src/features/danh-sach-xe/index.tsx',
+    components: [],
+    utils: []
+  },
+  chi_phi_xe: {
+    table: 'chi_phi_xe',
+    label: 'Chi phí xe',
+    sql: ['supabase-danh-sach-xe.sql'],
+    apiPrefix: '/api/chi-phi-xe',
+    serverLines: 'API /api/chi-phi-xe',
+    appTab: 'vehicles',
+    appLines: 'src/features/danh-sach-xe/VehicleOperations.tsx',
+    components: [],
+    utils: ['src/features/_shared/recordHelpers.ts']
+  },
+  nhat_ky_xe: {
+    table: 'nhat_ky_xe',
+    label: 'Nhật ký xe',
+    sql: ['supabase-danh-sach-xe.sql'],
+    apiPrefix: '/api/nhat-ky-xe',
+    serverLines: 'API /api/nhat-ky-xe',
+    appTab: 'vehicles',
+    appLines: 'src/features/danh-sach-xe/VehicleOperations.tsx',
     components: [],
     utils: []
   },

@@ -3547,7 +3547,7 @@ input[type="number"] {
   .qr-scanner-region,
   .qr-scanner-region > div,
   .qr-scanner-region video {
-    max-height: 38dvh !important;
+    max-height: 32dvh !important;
   }
 
   .qr-scanner-region video {

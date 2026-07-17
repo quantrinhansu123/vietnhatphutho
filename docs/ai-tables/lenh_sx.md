@@ -27,3 +27,8 @@
 ## Liên kết
 
 `ke_hoach_san_xuat`, `don_hang`, `san_pham`
+
+## Nhân sự theo vai trò
+
+Các cột `truong_ca`, `nhan_su_chinh`, `tho_phu`, `hoc_viec` được nhập trong form thêm/sửa lệnh.
+Cột `nhan_su` vẫn giữ chuỗi tổng hợp để tương thích báo cáo và dữ liệu cũ.

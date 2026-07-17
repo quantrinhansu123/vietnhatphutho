@@ -1066,9 +1066,9 @@ export function ProductEditModal({
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
               {mode === 'add' ? 'Thêm sản phẩm mới' : 'Sửa sản phẩm'}
             </h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              {mode === 'add' ? 'Ghi vào bảng san_pham trên Supabase' : product?.code || '-'}
-            </p>
+            {mode !== 'add' && (
+              <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product?.code || '-'}</p>
+            )}
           </div>
           <BackButton onClick={onClose} />
         </div>

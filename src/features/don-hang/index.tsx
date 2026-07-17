@@ -539,7 +539,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
                   {formMode === 'edit' ? 'Sửa đơn hàng' : 'Thêm đơn hàng mới'}
                 </h3>
-                <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi vào bảng don_hang trên Supabase</p>
               </div>
               <button
                 type="button"

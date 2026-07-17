@@ -1557,7 +1557,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
                   {formMode === 'edit' ? 'Sửa nguyên phụ liệu' : 'Thêm nguyên phụ liệu'}
                 </h3>
-                <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi vào bảng kho_nvl trên Supabase</p>
               </div>
               <button type="button" onClick={closeForm} className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50">
                 Đóng

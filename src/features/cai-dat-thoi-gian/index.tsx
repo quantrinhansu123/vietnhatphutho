@@ -337,7 +337,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
                   {formMode === 'edit' ? 'Sửa cài đặt' : 'Thêm cài đặt mới'}
                 </h3>
-                <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi vào bảng cai_dat_thoi_gian trên Supabase</p>
               </div>
               <button
                 type="button"

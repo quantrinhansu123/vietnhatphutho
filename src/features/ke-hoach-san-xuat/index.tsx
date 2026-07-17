@@ -104,6 +104,10 @@ export interface ProductionOrderRow {
   machine: string;
   shift: string;
   staff: string;
+  shiftLead: string;
+  mainStaff: string;
+  assistantStaff: string;
+  traineeStaff: string;
   note: string;
   position: string;
   priority: number;
@@ -2923,6 +2927,10 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         machine: pickText(record, ['may', 'ten_may', 'ma_may', 'machine'], '-'),
         shift: pickText(record, ['ca', 'shift'], '-'),
         staff: pickText(record, ['nhan_su', 'staff', 'nhan_vien'], '-'),
+        shiftLead: pickText(record, ['truong_ca', 'shiftLead'], '-'),
+        mainStaff: pickText(record, ['nhan_su_chinh', 'mainStaff'], '-'),
+        assistantStaff: pickText(record, ['tho_phu', 'assistantStaff'], '-'),
+        traineeStaff: pickText(record, ['hoc_viec', 'traineeStaff'], '-'),
         note: pickText(record, ['ghi_chu', 'note', 'mo_ta'], ''),
         position: pickText(record, ['vi_tri', 'position'], '-'),
         priority: Number(record.thu_tu_uu_tien ?? record.priority ?? 0) || 0
@@ -3790,6 +3798,10 @@ export type ProductionOrderFormState = {
   status: string;
   shift: string;
   selectedStaffIds: string[];
+  shiftLeadId: string;
+  mainStaffId: string;
+  assistantStaffId: string;
+  traineeStaffId: string;
   startDate: string;
   startDateTime: string;
   endDateTime: string;
@@ -3817,6 +3829,10 @@ export function emptyProductionOrderForm(): ProductionOrderFormState {
     status: 'Chờ sx',
     shift: '',
     selectedStaffIds: [],
+    shiftLeadId: '',
+    mainStaffId: '',
+    assistantStaffId: '',
+    traineeStaffId: '',
     startDate: extractProductionOrderDate(startDateTime),
     startDateTime,
     endDateTime: '',
@@ -3828,7 +3844,13 @@ export function emptyProductionOrderForm(): ProductionOrderFormState {
 export function productionOrderFormToCreatePayload(
   form: ProductionOrderFormState,
   lines: ProductionOrderEntryLine[],
-  staffText = ''
+  staffText = '',
+  staffRoles?: {
+    shiftLead?: string;
+    mainStaff?: string;
+    assistantStaff?: string;
+    traineeStaff?: string;
+  }
 ) {
   const staff = staffText || form.selectedStaffIds.join(', ');
   const products = lines.map(line => ({
@@ -3868,6 +3890,10 @@ export function productionOrderFormToCreatePayload(
     ma_don_hang: orderRefs.join(', ') || primaryLine.orderRef.trim(),
     ca: form.shift.trim(),
     nhan_su: staff,
+    truong_ca: staffRoles?.shiftLead?.trim() || '',
+    nhan_su_chinh: staffRoles?.mainStaff?.trim() || '',
+    tho_phu: staffRoles?.assistantStaff?.trim() || '',
+    hoc_viec: staffRoles?.traineeStaff?.trim() || '',
     ngay_gio_bat_dau: mergeProductionOrderDateTime(form.startDate, form.startDateTime) || null,
     ngay_gio_ket_thuc: form.endDateTime.trim() || null,
     may: form.machine.trim(),
@@ -4048,12 +4074,20 @@ export function AddProductionOrderModal({
     return filtered.length > 0 ? filtered : allMembers;
   }, [selectedShifts, staffBranches]);
 
-  const selectedStaffNames = useMemo(() => {
-    return staffOptions
-      .filter(member => form.selectedStaffIds.includes(member.id))
-      .map(member => member.name)
-      .join(', ');
-  }, [form.selectedStaffIds, staffOptions]);
+  const selectedStaffRoles = useMemo(() => {
+    const nameById = (id: string) => staffOptions.find(member => member.id === id)?.name || '';
+    return {
+      shiftLead: nameById(form.shiftLeadId),
+      mainStaff: nameById(form.mainStaffId),
+      assistantStaff: nameById(form.assistantStaffId),
+      traineeStaff: nameById(form.traineeStaffId)
+    };
+  }, [form.assistantStaffId, form.mainStaffId, form.shiftLeadId, form.traineeStaffId, staffOptions]);
+
+  const selectedStaffNames = useMemo(
+    () => [...new Set(Object.values(selectedStaffRoles).filter(Boolean))].join(', '),
+    [selectedStaffRoles]
+  );
 
   const autofillOrderOptions = useMemo(() => {
     const normalized = autofillSearch.trim().toLowerCase();
@@ -4282,15 +4316,6 @@ export function AddProductionOrderModal({
     updateEntryLine(key, built);
   };
 
-  const toggleStaffId = (staffId: string) => {
-    setForm(prev => ({
-      ...prev,
-      selectedStaffIds: prev.selectedStaffIds.includes(staffId)
-        ? prev.selectedStaffIds.filter(id => id !== staffId)
-        : [...prev.selectedStaffIds, staffId]
-    }));
-  };
-
   const toggleShift = (shift: string) => {
     setSelectedShifts(prev =>
       prev.includes(shift) ? prev.filter(item => item !== shift) : [...prev, shift]
@@ -4366,7 +4391,9 @@ export function AddProductionOrderModal({
         const res = await fetch('/api/lenh-sx', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(productionOrderFormToCreatePayload(shiftForm, filledLines, selectedStaffNames))
+          body: JSON.stringify(
+            productionOrderFormToCreatePayload(shiftForm, filledLines, selectedStaffNames, selectedStaffRoles)
+          )
         });
         const data = await res.json().catch(() => ({}));
 
@@ -4390,7 +4417,6 @@ export function AddProductionOrderModal({
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm lệnh sản xuất mới</h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi vào bảng lenh_sx trên Supabase</p>
           </div>
           <button
             type="button"
@@ -4643,33 +4669,45 @@ export function AddProductionOrderModal({
             )}
           </label>
 
-          <div className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân sự (chọn nhiều)</span>
-            <div className="max-h-40 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
-              {staffOptions.length === 0 && (
-                <p className="px-2 py-3 text-xs font-semibold text-zinc-400">Chưa có nhân sự Sản xuất · Đà Nẵng.</p>
-              )}
-              {staffOptions.map(member => {
-                const checked = form.selectedStaffIds.includes(member.id);
-                return (
-                  <label
-                    key={member.id}
-                    className={`mb-1 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition last:mb-0 ${
-                      checked ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]' : 'border-zinc-200 bg-white text-zinc-700'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleStaffId(member.id)}
-                      className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                    />
-                    <span className="font-black">{member.name}</span>
-                    <span className="text-zinc-500">{member.role} · {member.shift}</span>
-                  </label>
-                );
-              })}
+          <div className="col-span-2 space-y-2">
+            <div>
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Phân công nhân sự</span>
+              <p className="mt-1 text-[11px] font-semibold text-zinc-400">
+                Chọn riêng từng vai trò để lưu đúng cột trong lệnh sản xuất.
+              </p>
             </div>
+            {staffOptions.length === 0 ? (
+              <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs font-semibold text-zinc-400">
+                Chưa có nhân sự phù hợp ca đã chọn.
+              </p>
+            ) : (
+              <div className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
+                {([
+                  { key: 'shiftLeadId', label: 'Trưởng ca' },
+                  { key: 'mainStaffId', label: 'Nhân sự chính' },
+                  { key: 'assistantStaffId', label: 'Thợ phụ' },
+                  { key: 'traineeStaffId', label: 'Học việc' }
+                ] as const).map(field => (
+                  <label key={field.key} className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{field.label}</span>
+                    <select
+                      value={form[field.key]}
+                      onChange={event =>
+                        setForm(prev => ({ ...prev, [field.key]: event.target.value }))
+                      }
+                      className={orderFieldClass}
+                    >
+                      <option value="">Chưa phân công</option>
+                      {staffOptions.map(member => (
+                        <option key={`${field.key}-${member.id}`} value={member.id}>
+                          {member.name} · {member.role} · {member.shift}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <label className="space-y-1.5">
@@ -5067,7 +5105,11 @@ export function ProductionOrderViewModal({
             ['Khách hàng', row.customer],
             ['Đơn hàng', row.orderRef],
             ['Ca', row.shift],
-            ['Nhân sự', row.staff],
+            ['Trưởng ca', row.shiftLead],
+            ['Nhân sự chính', row.mainStaff],
+            ['Thợ phụ', row.assistantStaff],
+            ['Học việc', row.traineeStaff],
+            ['Tổng nhân sự', row.staff],
             ['Bắt đầu', row.startDate],
             ['Kết thúc', row.endDate],
             ['Máy', row.machine],
@@ -5139,6 +5181,12 @@ export function EditProductionOrderModal({
 }) {
   const [form, setForm] = useState<ProductionOrderFormState>(emptyProductionOrderForm);
   const [staffText, setStaffText] = useState('');
+  const [staffRoles, setStaffRoles] = useState({
+    shiftLead: '',
+    mainStaff: '',
+    assistantStaff: '',
+    traineeStaff: ''
+  });
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -5163,6 +5211,10 @@ export function EditProductionOrderModal({
       status: row.status === '-' ? 'Chờ sx' : row.status,
       shift: row.shift === '-' ? '' : row.shift,
       selectedStaffIds: [],
+      shiftLeadId: '',
+      mainStaffId: '',
+      assistantStaffId: '',
+      traineeStaffId: '',
       startDate: extractProductionOrderDate(startDateTime),
       startDateTime,
       endDateTime: toDatetimeLocalInputValue(row.endDate),
@@ -5170,6 +5222,12 @@ export function EditProductionOrderModal({
       note: row.note === '-' ? '' : row.note || ''
     });
     setStaffText(row.staff === '-' ? '' : row.staff);
+    setStaffRoles({
+      shiftLead: row.shiftLead === '-' ? '' : row.shiftLead,
+      mainStaff: row.mainStaff === '-' ? '' : row.mainStaff,
+      assistantStaff: row.assistantStaff === '-' ? '' : row.assistantStaff,
+      traineeStaff: row.traineeStaff === '-' ? '' : row.traineeStaff
+    });
     setFormError('');
   }, [open, row]);
 
@@ -5260,7 +5318,7 @@ export function EditProductionOrderModal({
       const res = await fetch(`/api/lenh-sx/${row.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines, staffText))
+        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines, staffText, staffRoles))
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -5450,6 +5508,22 @@ export function EditProductionOrderModal({
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân sự</span>
               <input value={staffText} onChange={e => setStaffText(e.target.value)} className={orderFieldClass} />
             </label>
+
+            {([
+              { key: 'shiftLead', label: 'Trưởng ca' },
+              { key: 'mainStaff', label: 'Nhân sự chính' },
+              { key: 'assistantStaff', label: 'Thợ phụ' },
+              { key: 'traineeStaff', label: 'Học việc' }
+            ] as const).map(field => (
+              <label key={field.key} className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">{field.label}</span>
+                <input
+                  value={staffRoles[field.key]}
+                  onChange={event => setStaffRoles(prev => ({ ...prev, [field.key]: event.target.value }))}
+                  className={orderFieldClass}
+                />
+              </label>
+            ))}
 
             <label className="space-y-1.5">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>

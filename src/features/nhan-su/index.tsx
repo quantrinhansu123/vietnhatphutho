@@ -4,7 +4,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
-import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
+import {
+  cloudinaryPreviewUrl,
+  fileToOptimizedImageDataUrl,
+  uploadImage
+} from '../_shared/recordHelpers';
 import type { HrBranch, HrMember } from '../_shared/hr';
 import { normalizeHrBranches } from '../_shared/hr';
 import { STANDARD_SHIFTS } from '../../types';
@@ -500,7 +504,13 @@ function StaffDetailModal({
             {member.signatureUrl ? (
               <div className="mt-2 flex items-center gap-3">
                 <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded-lg border border-zinc-200 bg-white p-1">
-                  <img src={member.signatureUrl} alt={`Chữ ký ${member.name}`} className="max-h-full max-w-full object-contain" />
+                  <img
+                    src={cloudinaryPreviewUrl(member.signatureUrl, 320)}
+                    alt={`Chữ ký ${member.name}`}
+                    loading="lazy"
+                    decoding="async"
+                    className="max-h-full max-w-full object-contain"
+                  />
                 </div>
                 <a
                   href={member.signatureUrl}
@@ -784,7 +794,7 @@ export function AddStaffModal({
     setIsUploadingSignature(true);
     setFormError('');
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const dataUrl = await fileToOptimizedImageDataUrl(file, { maxEdge: 1200, quality: 0.82 });
       const uploaded = await uploadImage(dataUrl, 'nhan_su/chu_ky');
       if (!uploaded.imageUrl) throw new Error('Cloudinary không trả về URL ảnh.');
       setForm(prev => ({ ...prev, signatureUrl: uploaded.imageUrl }));
@@ -860,9 +870,6 @@ export function AddStaffModal({
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
               {isEditing ? 'Sửa nhân sự' : 'Thêm nhân sự mới'}
             </h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              {isEditing ? 'Cập nhật bảng nhan_su trên Supabase' : 'Ghi vào bảng nhan_su trên Supabase'}
-            </p>
           </div>
           <button
             type="button"
@@ -1016,7 +1023,13 @@ export function AddStaffModal({
             {form.signatureUrl && (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
                 <div className="flex h-16 w-36 items-center justify-center overflow-hidden rounded-lg border border-zinc-200 bg-white p-1">
-                  <img src={form.signatureUrl} alt="Xem trước chữ ký" className="max-h-full max-w-full object-contain" />
+                  <img
+                    src={cloudinaryPreviewUrl(form.signatureUrl, 360)}
+                    alt="Xem trước chữ ký"
+                    loading="lazy"
+                    decoding="async"
+                    className="max-h-full max-w-full object-contain"
+                  />
                 </div>
                 <button
                   type="button"

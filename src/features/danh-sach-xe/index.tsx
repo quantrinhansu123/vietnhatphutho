@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  BookOpen,
   ClipboardCheck,
   Loader2,
   Pencil,
   Plus,
+  ReceiptText,
   Save,
   Search,
   Trash2,
@@ -12,6 +14,7 @@ import {
 } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { normalizeHrBranches } from '../_shared/hr';
+import { VehicleExpensesView, VehicleLogsView } from './VehicleOperations';
 
 type Vehicle = {
   id: string;
@@ -150,10 +153,11 @@ async function readJsonResponse(response: Response) {
 }
 
 export function VehiclesPanel({ onBack }: { onBack: () => void }) {
-  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation'>('vehicles');
+  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'expenses' | 'logs'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rows, setRows] = useState<DriverReconciliation[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
+  const [staff, setStaff] = useState<DriverOption[]>([]);
   const [search, setSearch] = useState('');
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
@@ -201,12 +205,18 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
     void (async () => {
       try {
         const data = await readJsonResponse(await fetch('/api/nhan-su?format=groups&scope=all'));
-        const options = normalizeHrBranches(data)
+        const people = normalizeHrBranches(data)
           .flatMap(branch =>
             branch.departments.flatMap(department =>
               department.members.map(member => ({ member, departmentName: department.name }))
             )
-          )
+          );
+        const allOptions = people.map(({ member }) => ({ code: member.code || '', name: member.name }));
+        setStaff(
+          [...new Map(allOptions.map(person => [`${person.code}|${person.name}`, person])).values()]
+            .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+        );
+        const options = people
           .filter(({ member, departmentName }) =>
             /lái xe|tài xế|lai xe|tai xe/i.test(`${departmentName} ${member.role} ${member.position || ''}`)
           )
@@ -217,6 +227,7 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
         );
       } catch {
         setDrivers([]);
+        setStaff([]);
       }
     })();
   }, [loadVehicles]);
@@ -288,23 +299,25 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
             <BackButton onClick={onBack} />
             <div className="min-w-0">
               <h2 className="truncate font-display text-base font-bold text-slate-900">Quản lý xe & lái xe</h2>
-              <p className="text-[11px] font-medium text-slate-500">Danh mục xe và đối chiếu chỉ tiêu theo tháng</p>
+              <p className="text-[11px] font-medium text-slate-500">Danh mục, chi phí, nhật ký và đối chiếu lái xe</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              activeView === 'vehicles'
-                ? setVehicleModal({ mode: 'create' })
-                : setRowModal({ mode: 'create' })
-            }
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-xs font-extrabold text-white transition hover:bg-brand-600"
-          >
-            <Plus className="h-4 w-4" />
-            {activeView === 'vehicles' ? 'Thêm xe' : 'Thêm đối chiếu'}
-          </button>
+          {(activeView === 'vehicles' || activeView === 'reconciliation') && (
+            <button
+              type="button"
+              onClick={() =>
+                activeView === 'vehicles'
+                  ? setVehicleModal({ mode: 'create' })
+                  : setRowModal({ mode: 'create' })
+              }
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-xs font-extrabold text-white transition hover:bg-brand-600"
+            >
+              <Plus className="h-4 w-4" />
+              {activeView === 'vehicles' ? 'Thêm xe' : 'Thêm đối chiếu'}
+            </button>
+          )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:w-[420px]">
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-4 sm:w-[760px]">
           <button
             type="button"
             onClick={() => setActiveView('vehicles')}
@@ -325,11 +338,31 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
             <ClipboardCheck className="h-4 w-4" />
             Đối chiếu lái xe
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('expenses')}
+            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
+              activeView === 'expenses' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ReceiptText className="h-4 w-4" />
+            Chi phí xe
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('logs')}
+            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
+              activeView === 'logs' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <BookOpen className="h-4 w-4" />
+            Nhật ký xe
+          </button>
         </div>
       </section>
 
       {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
-      {(activeView === 'vehicles' ? vehicleWarning : rowWarning) && (
+      {(activeView === 'vehicles' ? vehicleWarning : activeView === 'reconciliation' ? rowWarning : '') && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
           {activeView === 'vehicles' ? vehicleWarning : rowWarning}
         </p>
@@ -427,7 +460,7 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
             {isLoadingVehicles && <LoadingState text="Đang tải danh sách xe..." />}
           </section>
         </>
-      ) : (
+      ) : activeView === 'reconciliation' ? (
         <>
           <section className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3">
             <label className="space-y-1">
@@ -532,6 +565,10 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
             {isLoadingRows && <LoadingState text="Đang tải bảng đối chiếu..." />}
           </section>
         </>
+      ) : activeView === 'expenses' ? (
+        <VehicleExpensesView vehicles={vehicles} staff={staff} />
+      ) : (
+        <VehicleLogsView vehicles={vehicles} staff={staff} />
       )}
 
       {vehicleModal && (

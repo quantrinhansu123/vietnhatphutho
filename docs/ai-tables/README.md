@@ -34,6 +34,8 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `nhan_su` | `/nhan-su` | [nhan_su.md](./nhan_su.md) |
 | `danh_sach_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
 | `doi_chieu_lai_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
+| `chi_phi_xe` | `/danh-sach-xe` | [chi_phi_xe.md](./chi_phi_xe.md) |
+| `nhat_ky_xe` | `/danh-sach-xe` | [nhat_ky_xe.md](./nhat_ky_xe.md) |
 | `cai_dat_thoi_gian` | `/cai-dat` | [cai_dat_thoi_gian.md](./cai_dat_thoi_gian.md) |
 | `bao_cao_phoi_tron` | `/bao-cao-phoi-tron` | [bao_cao_phoi_tron.md](./bao_cao_phoi_tron.md) |
 | `bao_cao_nghiem_thu` | `/bao-cao-san-luong` | [bao_cao_nghiem_thu.md](./bao_cao_nghiem_thu.md) |

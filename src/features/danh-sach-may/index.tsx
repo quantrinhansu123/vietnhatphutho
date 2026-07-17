@@ -5,7 +5,12 @@ import QRCode from 'qrcode';
 import { Cpu, ImagePlus, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
-import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
+import {
+  cloudinaryPreviewUrl,
+  fileToOptimizedImageDataUrl,
+  pickText,
+  uploadImage
+} from '../_shared/recordHelpers';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { sanitizeDecimalTyping } from '../../lib/mixingReportModel';
@@ -211,7 +216,10 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
   };
 
   const saveMachineImage = async (machineId: string, file: File) => {
-    const uploaded = await uploadImage(await fileToDataUrl(file));
+    const uploaded = await uploadImage(
+      await fileToOptimizedImageDataUrl(file, { maxEdge: 1400, quality: 0.76 }),
+      'danh_sach_may'
+    );
     const res = await fetch(`/api/danh-sach-may/${encodeURIComponent(machineId)}/image`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -473,7 +481,6 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
                   {formMode === 'edit' ? 'Sửa máy' : 'Thêm máy mới'}
                 </h3>
-                <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi vào bảng danh_sach_may trên Supabase</p>
               </div>
               <button
                 type="button"
@@ -574,8 +581,10 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                       className="block h-24 w-36 overflow-hidden rounded-lg border border-zinc-200 bg-white"
                     >
                       <img
-                        src={formImagePreview}
+                        src={cloudinaryPreviewUrl(formImagePreview, 480)}
                         alt="Xem trước ảnh máy"
+                        loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover"
                       />
                     </a>
@@ -720,7 +729,13 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                             rel="noreferrer"
                             className="block h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50"
                           >
-                            <img src={machine.imageUrl} alt={`Ảnh ${machine.name || machine.code}`} className="h-full w-full object-cover" />
+                            <img
+                              src={cloudinaryPreviewUrl(machine.imageUrl, 240)}
+                              alt={`Ảnh ${machine.name || machine.code}`}
+                              loading="lazy"
+                              decoding="async"
+                              className="h-full w-full object-cover"
+                            />
                           </a>
                         ) : (
                           <div className="flex h-14 w-20 shrink-0 items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-[10px] font-bold uppercase tracking-wider text-zinc-400">

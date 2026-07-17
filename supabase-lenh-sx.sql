@@ -21,6 +21,10 @@ alter table public.lenh_sx
   add column if not exists ngay_gio_ket_thuc timestamptz,
   add column if not exists ca text,
   add column if not exists nhan_su text,
+  add column if not exists truong_ca text,
+  add column if not exists nhan_su_chinh text,
+  add column if not exists tho_phu text,
+  add column if not exists hoc_viec text,
   add column if not exists may text,
   add column if not exists ghi_chu text,
   add column if not exists cong_nhan text,
@@ -58,3 +62,7 @@ create policy "lenh_sx_delete_all"
 comment on table public.lenh_sx is 'Lenh san xuat.';
 comment on column public.lenh_sx.ma_lenh_sx is 'Ma lenh san xuat.';
 comment on column public.lenh_sx.trang_thai is 'Trang thai: Cho sx, Dang sx, Hoan thanh, Huy.';
+comment on column public.lenh_sx.truong_ca is 'Truong ca phu trach lenh san xuat.';
+comment on column public.lenh_sx.nhan_su_chinh is 'Nhan su chinh thuc hien lenh san xuat.';
+comment on column public.lenh_sx.tho_phu is 'Tho phu cua lenh san xuat.';
+comment on column public.lenh_sx.hoc_viec is 'Nhan su hoc viec cua lenh san xuat.';
