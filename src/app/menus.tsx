@@ -2,7 +2,7 @@
 import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Settings, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale,
-  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity
+  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { pathFromTab } from '../routes';
@@ -227,6 +227,12 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'hr'
   },
   {
+    title: 'Danh sách xe',
+    desc: 'Quản lý xe, tài xế phụ trách và bảng đối chiếu công, chuyến, km.',
+    icon: Truck,
+    tab: 'vehicles'
+  },
+  {
     title: 'Cài đặt',
     desc: 'Xem tham số cấu hình và giá trị mặc định của hệ thống.',
     icon: Settings,
@@ -329,6 +335,7 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'hcns',
     children: [
       { label: 'Nhân sự', tab: 'hr' },
+      { label: 'Danh sách xe', tab: 'vehicles' },
       { label: 'Cài đặt', tab: 'settings' }
     ]
   },
@@ -390,6 +397,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'warehouse-history': { group: 'CSVC & Kho', sub: 'Lịch sử XNK' },
   'settings': { group: 'HCNS', sub: 'Cài đặt' },
   'hr': { group: 'HCNS', sub: 'Nhân sự' },
+  'vehicles': { group: 'HCNS', sub: 'Danh sách xe' },
   'orders': { group: 'Đơn hàng', sub: 'Quản lý đơn' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
   'production-orders': { group: 'Nhà máy', sub: 'Lệnh sản xuất' },

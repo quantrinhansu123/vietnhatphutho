@@ -11,6 +11,7 @@ export interface HrMember {
   status: string;
   username?: string;
   password?: string;
+  signatureUrl?: string;
   viewPermissions: StaffViewPermissions;
 }
 
@@ -65,6 +66,12 @@ export function normalizeHrBranches(data: unknown): HrBranch[] {
                   status: String(memberRecord.status ?? 'Đang làm'),
                   username: String(memberRecord.username ?? '').trim() || undefined,
                   password: String(memberRecord.password ?? '').trim() || undefined,
+                  signatureUrl: String(
+                    memberRecord.signatureUrl ??
+                    memberRecord.link_chu_ky ??
+                    memberRecord.chu_ky_url ??
+                    ''
+                  ).trim() || undefined,
                   viewPermissions: normalizeStaffViewPermissions(
                     memberRecord.viewPermissions ?? memberRecord.quyen_xem
                   )

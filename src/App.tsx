@@ -64,6 +64,7 @@ import { SettingsPanel } from './features/cai-dat-thoi-gian';
 import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
+import { VehiclesPanel } from './features/danh-sach-xe';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -1090,6 +1091,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <HumanResourcesPanel onBack={() => navigateToTab('hcns')} />
+              </motion.div>
+            ) : activeTab === 'vehicles' ? (
+              <motion.div
+                key="vehicles"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <VehiclesPanel onBack={() => navigateToTab('hcns')} />
               </motion.div>
             ) : activeTab === 'products' ? (
               <motion.div

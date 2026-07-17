@@ -28,6 +28,9 @@ const SUPABASE_PRODUCTS_TABLE = process.env.SUPABASE_PRODUCTS_TABLE || 'san_pham
 const SUPABASE_MACHINES_TABLE = process.env.SUPABASE_MACHINES_TABLE || 'danh_sach_may';
 const SUPABASE_MATERIALS_TABLE = process.env.SUPABASE_MATERIALS_TABLE || 'kho_nvl';
 const SUPABASE_STAFF_TABLE = process.env.SUPABASE_STAFF_TABLE || 'nhan_su';
+const SUPABASE_VEHICLES_TABLE = process.env.SUPABASE_VEHICLES_TABLE || 'danh_sach_xe';
+const SUPABASE_DRIVER_RECONCILIATION_TABLE =
+  process.env.SUPABASE_DRIVER_RECONCILIATION_TABLE || 'doi_chieu_lai_xe';
 const SUPABASE_ORDERS_TABLE = process.env.SUPABASE_ORDERS_TABLE || 'don_hang';
 const SUPABASE_CUSTOMERS_TABLE = process.env.SUPABASE_CUSTOMERS_TABLE || 'khach_hang';
 const SUPABASE_SETTINGS_TABLE = process.env.SUPABASE_SETTINGS_TABLE || 'cai_dat_thoi_gian';
@@ -988,6 +991,7 @@ function mapStaffRecord(row: Record<string, unknown>) {
   const code = pickStaffField(row, ['ma_nhan_su', 'ma_nv', 'id'], name);
   const username = pickStaffField(row, ['ten_dang_nhap', 'username', 'login'], '');
   const password = pickStaffField(row, ['mat_khau', 'password'], '');
+  const signatureUrl = pickStaffField(row, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '');
 
   return {
     id: code || name,
@@ -1001,6 +1005,8 @@ function mapStaffRecord(row: Record<string, unknown>) {
     status,
     username,
     password,
+    signatureUrl,
+    link_chu_ky: signatureUrl,
     viewPermissions: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions)
   };
@@ -1110,7 +1116,90 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
       ma_nhan_su: code || null,
       ten_dang_nhap: pickRowField(source, ['ten_dang_nhap', 'username', 'login'], '') || null,
       mat_khau: pickRowField(source, ['mat_khau', 'password'], '') || null,
+      link_chu_ky: pickRowField(source, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '') || null,
       quyen_xem: parseStaffQuyenXem(source)
+    }
+  };
+}
+
+function vehicleWriteError(error: { code?: string; message?: string }, table: string) {
+  if (isMissingTableError(error)) {
+    return `Bảng ${table} chưa tồn tại. Hãy chạy file supabase-danh-sach-xe.sql trong Supabase SQL Editor.`;
+  }
+  if (isMissingColumnError(error)) {
+    return `Bảng ${table} đang thiếu cột. Hãy chạy lại file supabase-danh-sach-xe.sql.`;
+  }
+  if (error.code === '23505') {
+    return 'Biển số xe đã tồn tại trong danh sách.';
+  }
+  return `Không thể lưu dữ liệu vào ${table}. ${error.message || ''}`.trim();
+}
+
+function parseVehicleBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const vehicleType = pickRowField(source, ['loai_xe', 'vehicleType'], '');
+  const plateNumber = pickRowField(source, ['bien_so_xe', 'bsx', 'plateNumber'], '')
+    .toUpperCase()
+    .replace(/\s+/g, '');
+
+  if (!vehicleType) return { error: 'Vui lòng nhập loại xe.' };
+  if (!plateNumber) return { error: 'Vui lòng nhập biển số xe.' };
+
+  return {
+    record: {
+      loai_xe: vehicleType,
+      bien_so_xe: plateNumber,
+      ma_tai_xe: pickRowField(source, ['ma_tai_xe', 'driverCode'], '') || null,
+      tai_xe_phu_trach: pickRowField(source, ['tai_xe_phu_trach', 'driverName'], '') || null,
+      ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null,
+      trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang sử dụng')
+    }
+  };
+}
+
+function parseDriverReconciliationNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') return 0;
+  const normalized = typeof value === 'number'
+    ? value
+    : Number(String(value).trim().replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(normalized) ? Math.round(normalized * 100) / 100 : 0;
+}
+
+function parseDriverReconciliationBody(
+  body: unknown
+): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const year = Math.trunc(Number(source.nam ?? source.year));
+  const month = Math.trunc(Number(source.thang ?? source.month));
+  const driverName = pickRowField(source, ['ten_tai_xe', 'ten_nv', 'driverName'], '');
+
+  if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+    return { error: 'Năm đối chiếu không hợp lệ.' };
+  }
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    return { error: 'Tháng đối chiếu phải từ 1 đến 12.' };
+  }
+  if (!driverName) return { error: 'Vui lòng chọn tài xế.' };
+
+  return {
+    record: {
+      nam: year,
+      thang: month,
+      ma_nhan_su: pickRowField(source, ['ma_nhan_su', 'ma_tai_xe', 'driverCode'], '') || null,
+      ten_tai_xe: driverName,
+      xe_id: source.xe_id === null || source.xe_id === undefined || source.xe_id === ''
+        ? null
+        : source.xe_id,
+      loai_xe_di: pickRowField(source, ['loai_xe_di', 'vehicleType'], '') || null,
+      bien_so_xe: pickRowField(source, ['bien_so_xe', 'bsx', 'plateNumber'], '') || null,
+      tong_cong_quy_doi: parseDriverReconciliationNumber(source.tong_cong_quy_doi),
+      so_chuyen_di: parseDriverReconciliationNumber(source.so_chuyen_di),
+      tong_km_thuc_te: parseDriverReconciliationNumber(source.tong_km_thuc_te),
+      tien_thuong_luat: parseDriverReconciliationNumber(source.tien_thuong_luat),
+      tien_thuong_chuyen: parseDriverReconciliationNumber(source.tien_thuong_chuyen),
+      thuong_doanh_so: parseDriverReconciliationNumber(source.thuong_doanh_so),
+      doanh_so: parseDriverReconciliationNumber(source.doanh_so),
+      ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
     }
   };
 }
@@ -6126,6 +6215,170 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhân sự.' });
+    }
+  });
+
+  app.get('/api/danh-sach-xe', async (_req, res) => {
+    if (!supabase) {
+      return res.json({ vehicles: [], total: 0, source: 'local', warning: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_VEHICLES_TABLE)
+        .select('*')
+        .order('bien_so_xe', { ascending: true });
+
+      if (error) {
+        return respondSupabaseReadError(res, error, SUPABASE_VEHICLES_TABLE, { vehicles: [], total: 0 });
+      }
+      return res.json({ vehicles: data || [], total: data?.length || 0, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách xe.' });
+    }
+  });
+
+  app.post('/api/danh-sach-xe', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const parsed = parseVehicleBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_VEHICLES_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_VEHICLES_TABLE) });
+      return res.status(201).json({ success: true, vehicle: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thêm xe.' });
+    }
+  });
+
+  app.put('/api/danh-sach-xe/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID xe.' });
+
+    try {
+      const parsed = parseVehicleBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_VEHICLES_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_VEHICLES_TABLE) });
+      return res.json({ success: true, vehicle: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật xe.' });
+    }
+  });
+
+  app.delete('/api/danh-sach-xe/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID xe.' });
+
+    try {
+      const { error } = await supabase.from(SUPABASE_VEHICLES_TABLE).delete().eq('id', id);
+      if (error) return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_VEHICLES_TABLE) });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa xe.' });
+    }
+  });
+
+  app.get('/api/doi-chieu-lai-xe', async (req, res) => {
+    if (!supabase) {
+      return res.json({ rows: [], total: 0, source: 'local', warning: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const year = Number(req.query.nam ?? req.query.year);
+      const month = Number(req.query.thang ?? req.query.month);
+      const driverCode = typeof req.query.ma_nhan_su === 'string' ? req.query.ma_nhan_su.trim() : '';
+      let query = supabase
+        .from(SUPABASE_DRIVER_RECONCILIATION_TABLE)
+        .select('*')
+        .order('nam', { ascending: false })
+        .order('thang', { ascending: false })
+        .order('ten_tai_xe', { ascending: true });
+
+      if (Number.isFinite(year) && year > 0) query = query.eq('nam', Math.trunc(year));
+      if (Number.isFinite(month) && month >= 1 && month <= 12) query = query.eq('thang', Math.trunc(month));
+      if (driverCode) query = query.eq('ma_nhan_su', driverCode);
+
+      const { data, error } = await query;
+      if (error) {
+        return respondSupabaseReadError(res, error, SUPABASE_DRIVER_RECONCILIATION_TABLE, { rows: [], total: 0 });
+      }
+      return res.json({ rows: data || [], total: data?.length || 0, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải bảng đối chiếu lái xe.' });
+    }
+  });
+
+  app.post('/api/doi-chieu-lai-xe', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const parsed = parseDriverReconciliationBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { data, error } = await supabase
+        .from(SUPABASE_DRIVER_RECONCILIATION_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_DRIVER_RECONCILIATION_TABLE) });
+      }
+      return res.status(201).json({ success: true, row: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thêm dòng đối chiếu.' });
+    }
+  });
+
+  app.put('/api/doi-chieu-lai-xe/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID dòng đối chiếu.' });
+
+    try {
+      const parsed = parseDriverReconciliationBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { data, error } = await supabase
+        .from(SUPABASE_DRIVER_RECONCILIATION_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_DRIVER_RECONCILIATION_TABLE) });
+      }
+      return res.json({ success: true, row: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật dòng đối chiếu.' });
+    }
+  });
+
+  app.delete('/api/doi-chieu-lai-xe/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID dòng đối chiếu.' });
+
+    try {
+      const { error } = await supabase.from(SUPABASE_DRIVER_RECONCILIATION_TABLE).delete().eq('id', id);
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_DRIVER_RECONCILIATION_TABLE) });
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa dòng đối chiếu.' });
     }
   });
 

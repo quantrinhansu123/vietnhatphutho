@@ -3542,3 +3542,16 @@ input[type="number"] {
 .line-added-flash {
   animation: line-added-flash 0.45s ease-in-out 5;
 }
+
+@media (max-width: 640px) {
+  .qr-scanner-region,
+  .qr-scanner-region > div,
+  .qr-scanner-region video {
+    max-height: 38dvh !important;
+  }
+
+  .qr-scanner-region video {
+    width: 100% !important;
+    object-fit: cover;
+  }
+}

@@ -15,6 +15,8 @@ export type TableId =
   | 'lenh_sx'
   | 'ke_hoach_san_xuat'
   | 'nhan_su'
+  | 'danh_sach_xe'
+  | 'doi_chieu_lai_xe'
   | 'cai_dat_thoi_gian'
   | 'bao_cao_phoi_tron'
   | 'bao_cao_nghiem_thu'
@@ -167,6 +169,28 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/nhan-su/index.tsx',
     components: ['src/components/ShiftInfoForm.tsx'],
     utils: ['src/utils/shiftSettings.ts']
+  },
+  danh_sach_xe: {
+    table: 'danh_sach_xe',
+    label: 'Danh sách xe',
+    sql: ['supabase-danh-sach-xe.sql'],
+    apiPrefix: '/api/danh-sach-xe',
+    serverLines: 'API /api/danh-sach-xe',
+    appTab: 'vehicles',
+    appLines: 'src/features/danh-sach-xe/index.tsx',
+    components: [],
+    utils: []
+  },
+  doi_chieu_lai_xe: {
+    table: 'doi_chieu_lai_xe',
+    label: 'Đối chiếu lái xe',
+    sql: ['supabase-danh-sach-xe.sql'],
+    apiPrefix: '/api/doi-chieu-lai-xe',
+    serverLines: 'API /api/doi-chieu-lai-xe',
+    appTab: 'vehicles',
+    appLines: 'src/features/danh-sach-xe/index.tsx',
+    components: [],
+    utils: []
   },
   cai_dat_thoi_gian: {
     table: 'cai_dat_thoi_gian',

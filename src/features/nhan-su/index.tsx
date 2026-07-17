@@ -20,6 +20,8 @@ import {
 } from './menuViews';
 import {
   Eye,
+  ExternalLink,
+  ImageUp,
   Loader2,
   Pencil,
   Plus,
@@ -280,6 +282,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                   <th className="px-3 py-2.5 font-black">Ca</th>
                   <th className="px-3 py-2.5 font-black">Tên đăng nhập</th>
                   <th className="px-3 py-2.5 font-black">Mật khẩu</th>
+                  <th className="px-3 py-2.5 font-black">Chữ ký</th>
                   <th className="min-w-[220px] px-3 py-2.5 font-black">Quyền xem (JSON)</th>
                   <th className="px-3 py-2.5 font-black">Trạng thái</th>
                   <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
@@ -300,6 +303,21 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                     </td>
                     <td className="max-w-[140px] truncate px-3 py-2.5 font-mono text-zinc-700" title={member.password}>
                       {member.password || '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      {member.signatureUrl ? (
+                        <a
+                          href={member.signatureUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:underline"
+                        >
+                          <ImageUp className="h-3.5 w-3.5" />
+                          Xem chữ ký
+                        </a>
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       <button
@@ -368,7 +386,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 ))}
                 {tableRows.length === 0 && !isLoadingStaff && (
                   <tr>
-                    <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
+                    <td colSpan={11} className="px-3 py-8 text-center font-bold text-zinc-400">
                       Không có nhân sự phù hợp bộ lọc.
                     </td>
                   </tr>
@@ -477,6 +495,27 @@ function StaffDetailModal({
               </div>
             ))}
           </dl>
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
+            <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Chữ ký</p>
+            {member.signatureUrl ? (
+              <div className="mt-2 flex items-center gap-3">
+                <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded-lg border border-zinc-200 bg-white p-1">
+                  <img src={member.signatureUrl} alt={`Chữ ký ${member.name}`} className="max-h-full max-w-full object-contain" />
+                </div>
+                <a
+                  href={member.signatureUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-bold text-sky-700 hover:underline"
+                >
+                  Mở ảnh gốc
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            ) : (
+              <p className="mt-1 text-sm font-semibold text-zinc-500">Chưa có chữ ký.</p>
+            )}
+          </div>
           <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
             <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Quyền xem menu</p>
             <p className="mt-1 text-sm font-semibold text-zinc-800">
@@ -647,6 +686,7 @@ export type StaffFormState = {
   status: string;
   username: string;
   password: string;
+  signatureUrl: string;
   viewPermissions: StaffViewPermissions;
 };
 
@@ -661,6 +701,7 @@ export function emptyStaffForm(defaults?: { branch?: string; department?: string
     status: 'Đang làm',
     username: '',
     password: '',
+    signatureUrl: '',
     viewPermissions: []
   };
 }
@@ -687,6 +728,7 @@ export function AddStaffModal({
   const [form, setForm] = useState<StaffFormState>(emptyStaffForm());
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingSignature, setIsUploadingSignature] = useState(false);
 
   const isEditing = Boolean(editTarget);
 
@@ -710,6 +752,7 @@ export function AddStaffModal({
         status: member.status || 'Đang làm',
         username: member.username || '',
         password: member.password || '',
+        signatureUrl: member.signatureUrl || '',
         viewPermissions: member.viewPermissions || []
       });
       setFormError('');
@@ -726,6 +769,31 @@ export function AddStaffModal({
   }, [open, editTarget, defaultBranchId, defaultDepartment, branches, branchOptions, departmentOptions]);
 
   if (!open) return null;
+
+  const handleSignatureFile = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setFormError('Chữ ký phải là file ảnh JPG, PNG hoặc WEBP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFormError('Ảnh chữ ký không được vượt quá 5 MB.');
+      return;
+    }
+
+    setIsUploadingSignature(true);
+    setFormError('');
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const uploaded = await uploadImage(dataUrl, 'nhan_su/chu_ky');
+      if (!uploaded.imageUrl) throw new Error('Cloudinary không trả về URL ảnh.');
+      setForm(prev => ({ ...prev, signatureUrl: uploaded.imageUrl }));
+    } catch (error: any) {
+      setFormError(error.message || 'Không thể upload chữ ký lên Cloudinary.');
+    } finally {
+      setIsUploadingSignature(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!form.name.trim()) {
@@ -755,6 +823,7 @@ export function AddStaffModal({
         trang_thai: form.status.trim(),
         ten_dang_nhap: form.username.trim(),
         mat_khau: form.password.trim(),
+        link_chu_ky: form.signatureUrl.trim(),
         quyen_xem: form.viewPermissions
       };
 
@@ -916,6 +985,50 @@ export function AddStaffModal({
             </select>
           </label>
 
+          <div className="col-span-2 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Link chữ ký</span>
+              <span className="text-[10px] font-semibold text-zinc-400">Lưu ảnh trên Cloudinary</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+              <input
+                type="url"
+                value={form.signatureUrl}
+                onChange={event => setForm(prev => ({ ...prev, signatureUrl: event.target.value }))}
+                className="h-10 min-w-0 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                placeholder="https://res.cloudinary.com/..."
+              />
+              <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-extrabold text-sky-700 transition hover:bg-sky-100 ${isUploadingSignature ? 'pointer-events-none opacity-60' : ''}`}>
+                {isUploadingSignature ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
+                {isUploadingSignature ? 'Đang tải...' : 'Chọn ảnh'}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  disabled={isUploadingSignature}
+                  onChange={event => {
+                    void handleSignatureFile(event.target.files?.[0]);
+                    event.currentTarget.value = '';
+                  }}
+                />
+              </label>
+            </div>
+            {form.signatureUrl && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+                <div className="flex h-16 w-36 items-center justify-center overflow-hidden rounded-lg border border-zinc-200 bg-white p-1">
+                  <img src={form.signatureUrl} alt="Xem trước chữ ký" className="max-h-full max-w-full object-contain" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm(prev => ({ ...prev, signatureUrl: '' }))}
+                  className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                >
+                  Xóa ảnh
+                </button>
+              </div>
+            )}
+          </div>
+
           <StaffViewPermissionsPicker
             value={form.viewPermissions}
             onChange={viewPermissions => setForm(prev => ({ ...prev, viewPermissions }))}
@@ -926,7 +1039,7 @@ export function AddStaffModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={isSaving}
+            disabled={isSaving || isUploadingSignature}
             className="h-10 rounded-xl border border-zinc-200 px-4 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
           >
             Huỷ
@@ -934,7 +1047,7 @@ export function AddStaffModal({
           <button
             type="button"
             onClick={() => void handleSubmit()}
-            disabled={isSaving}
+            disabled={isSaving || isUploadingSignature}
             className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

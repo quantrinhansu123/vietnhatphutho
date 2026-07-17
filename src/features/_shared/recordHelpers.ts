@@ -30,11 +30,11 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export async function uploadImage(imageDataUrl: string) {
+export async function uploadImage(imageDataUrl: string, folder?: string) {
   const res = await fetch('/api/cloudinary/upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageDataUrl })
+    body: JSON.stringify({ imageDataUrl, folder })
   });
   const data = await res.json().catch(() => ({}));
 

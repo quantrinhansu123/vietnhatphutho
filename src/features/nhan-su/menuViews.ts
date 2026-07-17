@@ -42,6 +42,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     label: 'HCNS',
     children: [
       { tab: 'hr', label: 'Nhân sự' },
+      { tab: 'vehicles', label: 'Danh sách xe' },
       { tab: 'settings', label: 'Cài đặt' }
     ]
   },

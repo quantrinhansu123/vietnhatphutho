@@ -58,6 +58,15 @@ const scannerConfig = {
   }
 };
 
+async function stopScannerSafely(scanner: Html5Qrcode | null) {
+  if (!scanner) return;
+  try {
+    await scanner.stop();
+  } catch {
+    // Scanner có thể chưa khởi động xong hoặc đã dừng.
+  }
+}
+
 export default function ProductQrScanner({
   open,
   onClose,
@@ -111,7 +120,7 @@ export default function ProductQrScanner({
     if (scanResult === 'incremented') {
       setFeedback({ type: 'success', text: `Đã tăng SL mã ${code}` });
       if (closeAfterScan) {
-        void scannerRef.current?.stop().catch(() => {});
+        void stopScannerSafely(scannerRef.current);
         onCloseRef.current();
       }
       return true;
@@ -119,7 +128,7 @@ export default function ProductQrScanner({
 
     setFeedback({ type: 'success', text: `Đã thêm mã SP: ${code}` });
     if (closeAfterScan) {
-      void scannerRef.current?.stop().catch(() => {});
+      void stopScannerSafely(scannerRef.current);
       onCloseRef.current();
     }
     return true;
@@ -213,7 +222,7 @@ export default function ProductQrScanner({
           return;
         } catch (err) {
           lastError = err instanceof Error ? err.message : lastError;
-          await scanner.stop().catch(() => {});
+          await stopScannerSafely(scanner);
         }
       }
 
@@ -231,9 +240,7 @@ export default function ProductQrScanner({
       const scanner = scannerRef.current;
       scannerRef.current = null;
       if (!scanner) return;
-      void scanner
-        .stop()
-        .catch(() => {})
+      void stopScannerSafely(scanner)
         .finally(() => {
           try {
             scanner.clear();
@@ -272,9 +279,9 @@ export default function ProductQrScanner({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-4 sm:items-center">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-2 sm:items-center sm:p-4">
+      <div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl sm:max-h-[92dvh]">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="flex items-center gap-2">
             <ScanBarcode className="h-5 w-5 text-[#ef1b2d]" />
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">Quét mã QR sản phẩm</h3>
@@ -287,8 +294,8 @@ export default function ProductQrScanner({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-4">
-          <div id={regionId} className="min-h-[240px] overflow-hidden rounded-xl bg-zinc-950" />
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+          <div id={regionId} className="qr-scanner-region min-h-[168px] overflow-hidden rounded-xl bg-zinc-950 sm:min-h-[240px]" />
           {isStarting && (
             <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Đang mở camera...</p>
           )}
@@ -327,30 +334,34 @@ export default function ProductQrScanner({
             </div>
           )}
           {error && <p className="mt-3 text-xs font-bold text-rose-600">{error}</p>}
-          <p className="mt-3 text-center text-xs font-semibold text-zinc-500">
-            Đưa mã QR vào khung hình hoặc nhập mã SP thủ công.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <input
-              value={manualCode}
-              onChange={e => setManualCode(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  submitManualCode();
-                }
-              }}
-              placeholder="Nhập mã SP"
-              className="h-10 min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
-            />
-            <button
-              type="button"
-              onClick={submitManualCode}
-              className="h-10 shrink-0 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-            >
-              {requireConfirm ? 'Kiểm tra' : 'Thêm'}
-            </button>
-          </div>
+          {!pendingScan && (
+            <>
+              <p className="mt-2.5 text-center text-xs font-semibold text-zinc-500 sm:mt-3">
+                Đưa mã QR vào khung hình hoặc nhập mã SP thủ công.
+              </p>
+              <div className="mt-2.5 flex gap-2 sm:mt-3">
+                <input
+                  value={manualCode}
+                  onChange={e => setManualCode(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      submitManualCode();
+                    }
+                  }}
+                  placeholder="Nhập mã SP"
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                />
+                <button
+                  type="button"
+                  onClick={submitManualCode}
+                  className="h-10 shrink-0 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  {requireConfirm ? 'Kiểm tra' : 'Thêm'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>,
