@@ -560,6 +560,7 @@ export default function ControlBoardBbMachineReportTable({
     if (!pendingPrint || !showPrintSheet) return;
     let cancelled = false;
     document.body.classList.add('shift-summary-print-active');
+    document.body.classList.add('bb-machine-report-print-active');
     const timer = window.setTimeout(() => {
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
@@ -571,12 +572,14 @@ export default function ControlBoardBbMachineReportTable({
       cancelled = true;
       window.clearTimeout(timer);
       document.body.classList.remove('shift-summary-print-active');
+      document.body.classList.remove('bb-machine-report-print-active');
     };
   }, [pendingPrint, showPrintSheet]);
 
   useEffect(() => {
     const handleAfterPrint = () => {
       document.body.classList.remove('shift-summary-print-active');
+      document.body.classList.remove('bb-machine-report-print-active');
       setPendingPrint(false);
       setShowPrintSheet(false);
     };
@@ -587,7 +590,7 @@ export default function ControlBoardBbMachineReportTable({
   return (
     <>
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-sky-950 to-sky-800 px-3 py-2 text-white">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-sky-950 to-sky-800 px-3 py-2 text-white">
         <div>
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-200/90">Báo cáo máy BB</p>
           <h3 className="text-sm font-black sm:text-base">Báo cáo tổng hợp máy BB</h3>
@@ -598,13 +601,14 @@ export default function ControlBoardBbMachineReportTable({
         </div>
         <button
           type="button"
+          id="bb-machine-report-print-btn"
           onClick={handlePrint}
           disabled={isLoading || orderGroups.length === 0 || pendingPrint}
-          className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/80 bg-white px-3 text-xs font-black text-sky-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
           title="In báo cáo tổng hợp máy BB theo từng lệnh sản xuất"
         >
           {pendingPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-          In báo cáo
+          {pendingPrint ? 'Đang chuẩn bị...' : 'In báo cáo'}
         </button>
       </div>
 

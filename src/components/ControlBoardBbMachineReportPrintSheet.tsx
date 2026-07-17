@@ -237,6 +237,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
           <div className="production-order-print-company">
             <p className="production-order-print-company-name">{PRINT_COMPANY_NAME}</p>
           </div>
+          <span className="bb-machine-report-print-header-spacer" aria-hidden="true" />
         </header>
 
         <h1 className="production-order-print-title">BÁO CÁO KẾT QUẢ THEO TỪNG LỆNH SẢN XUẤT</h1>

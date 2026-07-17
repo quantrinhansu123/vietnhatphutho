@@ -582,8 +582,8 @@ input[type="number"] {
   }
 
   @page bb-machine-report-page {
-    size: A4 portrait;
-    margin: 1.5mm;
+    size: A4 landscape;
+    margin: 7mm;
   }
 
   @page mixing-report-page {
@@ -2668,20 +2668,39 @@ input[type="number"] {
   margin: 0 auto;
 }
 
-.bb-machine-report-print-subtitle {
-  margin: -1mm 0 2mm;
+.bb-machine-report-print-doc .production-order-print-letterhead {
+  display: grid;
+  grid-template-columns: 34mm minmax(0, 1fr) 34mm;
+  align-items: center;
+}
+
+.bb-machine-report-print-doc .production-order-print-logo {
+  justify-self: start;
+}
+
+.bb-machine-report-print-doc .production-order-print-company {
   text-align: center;
-  font-size: 8.5pt;
+}
+
+.bb-machine-report-print-header-spacer {
+  display: block;
+  width: 34mm;
+}
+
+.bb-machine-report-print-subtitle {
+  margin: -1mm 0 2.5mm;
+  text-align: center;
+  font-size: 9pt;
   font-style: italic;
 }
 
 .bb-machine-report-print-info th {
-  width: 11%;
-  background: #f7f7f7;
+  width: 10%;
+  background: #f1f5f9;
 }
 
 .bb-machine-report-print-info td {
-  width: 22%;
+  width: 23.333%;
   font-weight: 600;
 }
 
@@ -2689,7 +2708,7 @@ input[type="number"] {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8mm;
-  margin-top: 5mm;
+  margin-top: 6mm;
   text-align: center;
   font-size: 9pt;
 }
@@ -2701,12 +2720,16 @@ input[type="number"] {
 
 .bb-machine-report-print-signatures span {
   display: block;
-  margin-top: 9mm;
+  margin-top: 12mm;
   color: #444444;
   font-style: italic;
 }
 
 @media print {
+  body.bb-machine-report-print-active {
+    page: bb-machine-report-page !important;
+  }
+
   .bb-machine-report-print-batch,
   .bb-machine-report-print-batch .shift-summary-print-sheet,
   .bb-machine-report-print-batch .production-order-print-sheet {
@@ -2730,119 +2753,138 @@ input[type="number"] {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    zoom: 1;
-    font-size: 14px !important;
-    line-height: 1 !important;
+    padding: 0 !important;
+    font-size: 9pt !important;
+    line-height: 1.15 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   .bb-machine-report-print-doc .production-order-print-logo {
-    max-height: 9mm !important;
+    height: 11mm !important;
+    max-height: 11mm !important;
+    max-width: 34mm !important;
   }
 
   .bb-machine-report-print-doc .production-order-print-title {
-    margin: 0 0 0.6mm !important;
-    font-size: 16px !important;
-    line-height: 1.05 !important;
+    margin: 1.2mm 0 0.4mm !important;
+    font-size: 13pt !important;
+    line-height: 1.12 !important;
+    letter-spacing: 0.025em !important;
   }
 
   .bb-machine-report-print-doc .production-order-print-letterhead {
+    grid-template-columns: 34mm minmax(0, 1fr) 34mm !important;
     gap: 3mm !important;
-    margin-bottom: 0.6mm !important;
-    padding-bottom: 0.6mm !important;
+    margin-bottom: 1mm !important;
+    padding-bottom: 1.2mm !important;
+    border-bottom-width: 1px !important;
   }
 
   .bb-machine-report-print-doc .production-order-print-company-name {
-    font-size: 14px !important;
-    line-height: 1 !important;
+    font-size: 12pt !important;
+    line-height: 1.15 !important;
+    letter-spacing: 0.025em !important;
+    text-align: center !important;
   }
 
   .bb-machine-report-print-doc .bb-machine-report-print-subtitle {
-    margin: 0 0 0.7mm !important;
-    font-size: 14px !important;
-    line-height: 1 !important;
+    margin: 0 0 1.5mm !important;
+    font-size: 8.5pt !important;
+    line-height: 1.1 !important;
   }
 
   .bb-machine-report-print-doc .production-order-print-section-title {
-    margin: 0 0 0.4mm !important;
-    font-size: 14px !important;
-    line-height: 1 !important;
+    margin: 0 0 0.7mm !important;
+    font-size: 9pt !important;
+    line-height: 1.1 !important;
+    letter-spacing: 0.015em !important;
   }
 
   .bb-machine-report-print-doc .shift-summary-print-section {
-    margin-bottom: 0.7mm !important;
+    margin-bottom: 1mm !important;
     break-inside: auto;
     page-break-inside: auto;
   }
 
   .bb-machine-report-print-doc .shift-summary-print-table th,
   .bb-machine-report-print-doc .shift-summary-print-table td {
-    padding: 0.15mm 0.2mm !important;
-    font-size: 14px !important;
-    line-height: 1 !important;
-    letter-spacing: -0.02em;
+    padding: 0.5mm 0.7mm !important;
+    font-size: 8pt !important;
+    line-height: 1.12 !important;
+    letter-spacing: 0 !important;
+    overflow-wrap: break-word !important;
+  }
+
+  .bb-machine-report-print-doc .shift-summary-print-table th {
+    background: #eef2f7 !important;
+    font-weight: 700 !important;
+  }
+
+  .bb-machine-report-print-doc .shift-summary-print-total-row td {
+    background: #eef2f7 !important;
+  }
+
+  .bb-machine-report-print-doc .shift-summary-print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .bb-machine-report-print-product-table th:nth-child(1),
-  .bb-machine-report-print-product-table td:nth-child(1) { width: 13%; }
+  .bb-machine-report-print-product-table td:nth-child(1) { width: 12%; }
   .bb-machine-report-print-product-table th:nth-child(2),
-  .bb-machine-report-print-product-table td:nth-child(2) { width: 28%; }
+  .bb-machine-report-print-product-table td:nth-child(2) { width: 26%; }
   .bb-machine-report-print-product-table th:nth-child(3),
-  .bb-machine-report-print-product-table td:nth-child(3) { width: 4.5%; }
+  .bb-machine-report-print-product-table td:nth-child(3) { width: 5%; }
   .bb-machine-report-print-product-table th:nth-child(4),
-  .bb-machine-report-print-product-table td:nth-child(4) { width: 5%; }
+  .bb-machine-report-print-product-table td:nth-child(4) { width: 7%; }
   .bb-machine-report-print-product-table th:nth-child(5),
-  .bb-machine-report-print-product-table td:nth-child(5) { width: 6.5%; }
+  .bb-machine-report-print-product-table td:nth-child(5) { width: 8%; }
   .bb-machine-report-print-product-table th:nth-child(6),
-  .bb-machine-report-print-product-table td:nth-child(6) { width: 5%; }
+  .bb-machine-report-print-product-table td:nth-child(6) { width: 7%; }
   .bb-machine-report-print-product-table th:nth-child(7),
-  .bb-machine-report-print-product-table td:nth-child(7) { width: 6.5%; }
+  .bb-machine-report-print-product-table td:nth-child(7) { width: 8%; }
   .bb-machine-report-print-product-table th:nth-child(8),
-  .bb-machine-report-print-product-table td:nth-child(8) { width: 6%; }
+  .bb-machine-report-print-product-table td:nth-child(8) { width: 7%; }
   .bb-machine-report-print-product-table th:nth-child(9),
-  .bb-machine-report-print-product-table td:nth-child(9) { width: 10%; }
+  .bb-machine-report-print-product-table td:nth-child(9) { width: 8%; }
   .bb-machine-report-print-product-table th:nth-child(10),
-  .bb-machine-report-print-product-table td:nth-child(10) { width: 15.5%; }
-
-  .bb-machine-report-print-product-table th:nth-child(n+3):nth-child(-n+8),
-  .bb-machine-report-print-product-table td:nth-child(n+3):nth-child(-n+8) {
-    padding-left: 0.08mm !important;
-    padding-right: 0.08mm !important;
-  }
+  .bb-machine-report-print-product-table td:nth-child(10) { width: 12%; }
 
   .bb-machine-report-print-material-table th:nth-child(1),
-  .bb-machine-report-print-material-table td:nth-child(1) { width: 14%; }
+  .bb-machine-report-print-material-table td:nth-child(1) { width: 12%; }
   .bb-machine-report-print-material-table th:nth-child(2),
-  .bb-machine-report-print-material-table td:nth-child(2) { width: 34%; }
+  .bb-machine-report-print-material-table td:nth-child(2) { width: 27%; }
   .bb-machine-report-print-material-table th:nth-child(3),
-  .bb-machine-report-print-material-table td:nth-child(3) { width: 4%; }
+  .bb-machine-report-print-material-table td:nth-child(3) { width: 5%; }
   .bb-machine-report-print-material-table th:nth-child(4),
-  .bb-machine-report-print-material-table td:nth-child(4) { width: 6%; }
-  .bb-machine-report-print-material-table th:nth-child(n+5):nth-child(-n+10),
-  .bb-machine-report-print-material-table td:nth-child(n+5):nth-child(-n+10) { width: 7%; }
+  .bb-machine-report-print-material-table td:nth-child(4) { width: 7%; }
+  .bb-machine-report-print-material-table th:nth-child(5),
+  .bb-machine-report-print-material-table td:nth-child(5) { width: 9%; }
+  .bb-machine-report-print-material-table th:nth-child(n+6):nth-child(-n+10),
+  .bb-machine-report-print-material-table td:nth-child(n+6):nth-child(-n+10) { width: 8%; }
 
   .bb-machine-report-print-material-table th:nth-child(n+3),
   .bb-machine-report-print-material-table td:nth-child(n+3) {
-    padding-left: 0.05mm !important;
-    padding-right: 0.05mm !important;
     text-align: center !important;
     white-space: nowrap;
   }
 
   .bb-machine-report-print-doc .bb-machine-report-print-info th,
   .bb-machine-report-print-doc .bb-machine-report-print-info td {
-    padding-top: 0.35mm !important;
-    padding-bottom: 0.35mm !important;
+    padding-top: 0.6mm !important;
+    padding-bottom: 0.6mm !important;
   }
 
   .bb-machine-report-print-signatures {
-    gap: 4mm !important;
-    margin-top: 1.2mm !important;
-    font-size: 14px !important;
-    line-height: 1 !important;
+    gap: 8mm !important;
+    margin-top: 2mm !important;
+    font-size: 9pt !important;
+    line-height: 1.1 !important;
   }
 
   .bb-machine-report-print-signatures span {
-    margin-top: 4mm !important;
+    margin-top: 5mm !important;
   }
 }
 
