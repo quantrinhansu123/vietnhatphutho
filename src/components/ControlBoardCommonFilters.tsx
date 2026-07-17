@@ -3,7 +3,7 @@ import { Search, X } from 'lucide-react';
 import type { MachineRow } from '../features/danh-sach-may';
 
 const inputClass =
-  'h-9 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-semibold text-zinc-800 outline-none transition focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:text-xs';
 
 export type ControlBoardProductionOrderOption = {
   code: string;
@@ -196,25 +196,26 @@ export function ControlBoardCommonFilters({
   isLoading?: boolean;
 }) {
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm sm:rounded-2xl sm:border-2 sm:border-zinc-900/10 sm:p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Bộ lọc chung</p>
-          <p className="mt-0.5 text-sm font-black text-zinc-950">Từ ngày · Đến ngày · Ca · Máy · Lệnh SX</p>
+    <section className="rounded-xl border border-zinc-200 bg-white p-2.5 shadow-sm sm:p-3">
+      <div className="flex flex-col gap-2.5 xl:flex-row xl:items-end">
+        <div className="flex min-w-0 items-center justify-between gap-3 xl:w-44 xl:shrink-0 xl:items-end">
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-[0.14em] text-zinc-400">Phạm vi dữ liệu</p>
+            <p className="truncate text-sm font-black text-zinc-950">Bộ lọc chung</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={isLoading}
+            className="h-8 shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-black text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Xóa lọc
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onClear}
-          disabled={isLoading}
-          className="h-9 shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Xóa lọc
-        </button>
-      </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
-        <label className="space-y-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
+        <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5 lg:grid-cols-3 xl:grid-cols-[minmax(126px,0.8fr)_minmax(126px,0.8fr)_minmax(110px,0.7fr)_minmax(150px,1fr)_minmax(230px,1.35fr)]">
+        <label className="space-y-0.5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
           <input
             type="date"
             value={dateFrom}
@@ -223,8 +224,8 @@ export function ControlBoardCommonFilters({
             className={`${inputClass} w-full`}
           />
         </label>
-        <label className="space-y-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Đến ngày</span>
+        <label className="space-y-0.5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Đến ngày</span>
           <input
             type="date"
             value={dateTo}
@@ -233,8 +234,8 @@ export function ControlBoardCommonFilters({
             className={`${inputClass} w-full`}
           />
         </label>
-        <label className="space-y-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
+        <label className="space-y-0.5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
           <select
             value={shift}
             onChange={event => onShiftChange(event.target.value)}
@@ -249,8 +250,8 @@ export function ControlBoardCommonFilters({
             ))}
           </select>
         </label>
-        <label className="space-y-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Máy</span>
+        <label className="space-y-0.5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Máy</span>
           <select
             value={machine}
             onChange={event => onMachineChange(event.target.value)}
@@ -269,8 +270,8 @@ export function ControlBoardCommonFilters({
               ))}
           </select>
         </label>
-        <div className="col-span-2 space-y-1 lg:col-span-1 xl:col-span-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lệnh sản xuất</span>
+        <div className="col-span-2 space-y-0.5 lg:col-span-1 xl:col-span-1">
+          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Lệnh sản xuất</span>
           <ProductionOrderSearchFilter
             value={productionOrder}
             query={productionOrderQuery}
@@ -279,6 +280,7 @@ export function ControlBoardCommonFilters({
             options={productionOrderOptions}
             disabled={isLoading}
           />
+        </div>
         </div>
       </div>
     </section>

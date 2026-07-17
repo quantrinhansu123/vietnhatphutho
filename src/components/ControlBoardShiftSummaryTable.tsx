@@ -358,12 +358,12 @@ export default function ControlBoardShiftSummaryTable({
 
   return (
     <>
-      <section className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm sm:rounded-2xl sm:border-2 sm:border-zinc-900/10">
-        <div className="border-b border-zinc-100 bg-gradient-to-r from-indigo-950 to-indigo-800 px-3 py-2.5 text-white sm:px-4 sm:py-3">
-          <div className="flex flex-col gap-3">
+      <section className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+        <div className="border-b border-zinc-100 bg-gradient-to-r from-indigo-950 to-indigo-800 px-3 py-2 text-white">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-wider text-indigo-200 sm:text-xs">Tổng hợp sản xuất</p>
-              <h3 className="text-base font-black sm:text-lg">Tổng hợp máy cách nhiệt</h3>
+              <p className="text-[9px] font-black uppercase tracking-wider text-indigo-200">Tổng hợp sản xuất</p>
+              <h3 className="text-sm font-black sm:text-base">Tổng hợp máy cách nhiệt</h3>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
               <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
@@ -388,7 +388,7 @@ export default function ControlBoardShiftSummaryTable({
                 type="button"
                 onClick={handlePrint}
                 disabled={isLoading}
-                className="col-span-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-xs font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1 sm:w-auto"
+                className="col-span-2 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1 sm:w-auto"
               >
                 <Printer className="h-4 w-4" />
                 In
@@ -397,13 +397,13 @@ export default function ControlBoardShiftSummaryTable({
           </div>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-b border-zinc-100 bg-zinc-50/80 px-2 py-1.5 sm:px-3">
+        <div className="flex gap-1 overflow-x-auto border-b border-zinc-100 bg-zinc-50/80 px-2 py-1">
           {SHIFT_SUMMARY_TABS.map(tab => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide transition sm:px-3 sm:text-xs ${
+              className={`shrink-0 rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition ${
                 activeTab === tab.id
                   ? 'bg-indigo-900 text-white shadow-sm'
                   : 'text-zinc-600 hover:bg-white hover:text-indigo-900'

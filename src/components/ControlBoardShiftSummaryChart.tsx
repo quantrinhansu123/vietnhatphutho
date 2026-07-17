@@ -105,7 +105,7 @@ function ChartCardHeader({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 pb-3">
+    <div className="flex items-center justify-between gap-2 pb-2">
       <div className="flex items-center gap-2">
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100">{icon}</span>
         <h4 className="text-xs font-bold text-slate-700">{title}</h4>
@@ -115,7 +115,7 @@ function ChartCardHeader({
   );
 }
 
-const cardClass = 'rounded-2xl bg-white p-4 transition-shadow hover:shadow-sm';
+const cardClass = 'rounded-xl bg-white p-3 transition-shadow hover:shadow-sm';
 const cardStyle: React.CSSProperties = { border: `1px solid ${BORDER_COLOR}` };
 
 export default function ControlBoardShiftSummaryChart({
@@ -162,7 +162,7 @@ export default function ControlBoardShiftSummaryChart({
 
   if (isLoading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-400 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 text-center text-xs font-semibold text-slate-400 shadow-sm">
         Đang tải dữ liệu để vẽ biểu đồ...
       </div>
     );
@@ -170,7 +170,7 @@ export default function ControlBoardShiftSummaryChart({
 
   if (!hasData) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-400">
+      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-xs font-semibold text-slate-400">
         Chưa có dữ liệu trong khoảng thời gian đã chọn để vẽ biểu đồ trực quan.
       </div>
     );
@@ -212,7 +212,7 @@ export default function ControlBoardShiftSummaryChart({
   };
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm space-y-4" style={{ border: `1px solid ${BORDER_COLOR}` }}>
+    <div className="space-y-3 rounded-xl bg-white p-3 shadow-sm" style={{ border: `1px solid ${BORDER_COLOR}` }}>
       <div>
         <h3 className="text-sm font-extrabold text-slate-800">Biểu đồ trực quan — Bảng tổng hợp theo ca</h3>
         <p className="text-xs text-slate-500 mt-0.5">
@@ -220,14 +220,14 @@ export default function ControlBoardShiftSummaryChart({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* Chart 1: Sản lượng & vật tư nhập kho theo ca */}
         <div className={cardClass} style={cardStyle}>
           <ChartCardHeader
             icon={<BarChart3 className="w-3.5 h-3.5 text-slate-500" />}
             title="Sản lượng & vật tư nhập kho theo ca (kg)"
           />
-          <div className="h-64 w-full">
+          <div className="h-52 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 8, left: 0, bottom: 0 }} barGap={2} barCategoryGap="20%">
                 <CartesianGrid stroke={GRID_COLOR} strokeWidth={1} vertical={false} />
@@ -299,7 +299,7 @@ export default function ControlBoardShiftSummaryChart({
               </div>
             }
           />
-          <div className="h-64 w-full">
+          <div className="h-52 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke={GRID_COLOR} strokeWidth={1} vertical={false} />
@@ -355,7 +355,7 @@ export default function ControlBoardShiftSummaryChart({
             icon={<BarChart3 className="w-3.5 h-3.5 text-slate-500" />}
             title="Vật tư thực dùng theo ca (kg)"
           />
-          <div className="h-64 w-full">
+          <div className="h-52 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
                 <CartesianGrid stroke={GRID_COLOR} strokeWidth={1} vertical={false} />
@@ -387,7 +387,7 @@ export default function ControlBoardShiftSummaryChart({
             icon={<Wallet className="w-3.5 h-3.5 text-slate-500" />}
             title="Tiền chênh lệch lãi lỗ (đ)"
           />
-          <div className="h-64 w-full">
+          <div className="h-52 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
                 <CartesianGrid stroke={GRID_COLOR} strokeWidth={1} vertical={false} />

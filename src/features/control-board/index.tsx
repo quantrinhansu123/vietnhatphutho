@@ -1123,7 +1123,7 @@ export function ControlBoardPanel({
   }, []);
 
   return (
-    <div className="mx-auto flex w-full min-w-0 max-w-[1880px] flex-col gap-3 sm:gap-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-[1880px] flex-col gap-2.5 sm:gap-3">
       {loadError && (
         <p className="order-[-40] rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
           {loadError}
@@ -1199,7 +1199,7 @@ export function ControlBoardPanel({
         selectedMachine={selectedBoardMachine}
       />
 
-      <div className="order-[-20] grid grid-cols-1 gap-4">
+      <div className="order-[-20] grid grid-cols-1 gap-3">
         <DashboardWindow
           title="Lệnh sản xuất"
           subtitle="Các dòng lệnh mới nhất từ bảng lenh_sx"
@@ -1229,18 +1229,18 @@ export function ControlBoardPanel({
             loading: isBatchPrinting
           }}
         >
-          <div className="border-b border-zinc-100 bg-white p-3">
+          <div className="border-b border-zinc-100 bg-white p-2">
             <div className="flex items-center justify-end">
               <button
                 type="button"
                 onClick={clearProductionOrderFilters}
-                className="h-8 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-700 transition hover:bg-zinc-100"
+                className="h-7 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-black text-zinc-700 transition hover:bg-zinc-100"
               >
                 Xóa lọc
               </button>
             </div>
 
-            <div className="mt-3">
+            <div className="mt-2">
               <div className="mb-1 flex items-center justify-between gap-2">
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Nhân sự</span>
                 <span className="text-[10px] font-bold text-zinc-400">
@@ -1252,13 +1252,13 @@ export function ControlBoardPanel({
                   Chưa có nhân sự trong lệnh SX.
                 </p>
               ) : (
-                <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+                <div className="flex max-h-20 flex-wrap gap-1 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 p-1.5">
                   {productionOrderStaffOptions.map(staffName => {
                     const checked = productionOrderStaffFilters.has(staffName);
                     return (
                       <label
                         key={staffName}
-                        className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                        className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold transition ${
                           checked
                             ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
                             : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
@@ -1279,10 +1279,10 @@ export function ControlBoardPanel({
             </div>
           </div>
           <div className="min-w-0 overflow-x-auto">
-          <table className="w-full min-w-[880px] text-left text-xs">
+          <table className="w-full min-w-[880px] text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
-                <th className="px-3 py-2 text-center font-black">
+                <th className="px-2 py-1.5 text-center font-black">
                   <input
                     type="checkbox"
                     checked={allVisibleProductionOrdersSelected}
@@ -1291,22 +1291,22 @@ export function ControlBoardPanel({
                     className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
                   />
                 </th>
-                <th className="px-3 py-2 font-black">Ngày</th>
-                <th className="px-3 py-2 font-black">Ưu tiên</th>
-                <th className="px-3 py-2 font-black">Mã lệnh</th>
-                <th className="px-3 py-2 font-black">Mã hàng</th>
-                <th className="px-3 py-2 font-black">SL</th>
-                <th className="px-3 py-2 font-black">Trạng thái</th>
-                <th className="px-3 py-2 font-black">Máy</th>
-                <th className="px-3 py-2 font-black">Đơn hàng</th>
-                <th className="min-w-[120px] px-3 py-2 font-black">Ghi chú</th>
-                <th className="px-3 py-2 text-center font-black">Thao tác</th>
+                <th className="px-2 py-1.5 font-black">Ngày</th>
+                <th className="px-2 py-1.5 font-black">Ưu tiên</th>
+                <th className="px-2 py-1.5 font-black">Mã lệnh</th>
+                <th className="px-2 py-1.5 font-black">Mã hàng</th>
+                <th className="px-2 py-1.5 font-black">SL</th>
+                <th className="px-2 py-1.5 font-black">Trạng thái</th>
+                <th className="px-2 py-1.5 font-black">Máy</th>
+                <th className="px-2 py-1.5 font-black">Đơn hàng</th>
+                <th className="min-w-[120px] px-2 py-1.5 font-black">Ghi chú</th>
+                <th className="px-2 py-1.5 text-center font-black">Thao tác</th>
               </tr>
             </thead>
               <tbody className="divide-y divide-zinc-100">
                 {visibleProductionOrders.map(row => (
                   <tr key={row.id} className="hover:bg-emerald-50/50">
-                  <td className="px-3 py-2 text-center">
+                  <td className="px-2 py-1.5 text-center">
                     <input
                       type="checkbox"
                       checked={selectedProductionOrderIds.includes(row.id)}
@@ -1315,33 +1315,33 @@ export function ControlBoardPanel({
                       className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
                     />
                   </td>
-                  <td className="px-3 py-2 font-mono text-[11px] font-bold text-zinc-700">
+                  <td className="px-2 py-1.5 font-mono text-[10px] font-bold text-zinc-700">
                     {formatProductionOrderPanelDate(row.startDate)}
                   </td>
-                  <td className="px-3 py-2 font-black text-emerald-700">{row.priority > 0 ? row.priority : '-'}</td>
-                  <td className="px-3 py-2 font-black text-zinc-950">{row.code || '-'}</td>
-                  <td className="px-3 py-2 font-semibold text-zinc-700">{row.productCode || '-'}</td>
-                  <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.quantity}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5 font-black text-emerald-700">{row.priority > 0 ? row.priority : '-'}</td>
+                  <td className="px-2 py-1.5 font-black text-zinc-950">{row.code || '-'}</td>
+                  <td className="px-2 py-1.5 font-semibold text-zinc-700">{row.productCode || '-'}</td>
+                  <td className="px-2 py-1.5 font-mono font-bold text-zinc-700">{row.quantity}</td>
+                  <td className="px-2 py-1.5">
                     <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
                       {row.status}
                     </span>
                   </td>
-                  <td className="px-3 py-2 font-semibold text-zinc-700">{resolveProductionOrderMachine(row, machines)}</td>
-                  <td className="px-3 py-2 font-semibold text-zinc-600">{row.orderRef}</td>
+                  <td className="px-2 py-1.5 font-semibold text-zinc-700">{resolveProductionOrderMachine(row, machines)}</td>
+                  <td className="px-2 py-1.5 font-semibold text-zinc-600">{row.orderRef}</td>
                   <td
-                    className="max-w-[180px] truncate px-3 py-2 text-zinc-600"
+                    className="max-w-[180px] truncate px-2 py-1.5 text-zinc-600"
                     title={row.note && row.note !== '-' ? row.note : undefined}
                   >
                     {row.note && row.note !== '-' ? row.note : '-'}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={() => setViewingProductionOrder(row)}
                           title="Xem chi tiết"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
@@ -1349,7 +1349,7 @@ export function ControlBoardPanel({
                           type="button"
                           onClick={() => setEditingProductionOrder(row)}
                           title="Sửa lệnh SX"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -1358,7 +1358,7 @@ export function ControlBoardPanel({
                           onClick={() => handleDeleteProductionOrder(row)}
                           disabled={deletingProductionOrderId === row.id}
                           title="Xóa lệnh SX"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {deletingProductionOrderId === row.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -1371,7 +1371,7 @@ export function ControlBoardPanel({
                           onClick={() => printProductionOrder(row)}
                           disabled={isLoadingPrint}
                         title="In lệnh SX"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Printer className="h-4 w-4" />
                       </button>
@@ -1392,7 +1392,7 @@ export function ControlBoardPanel({
         </DashboardWindow>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="order-[-10] columns-1 gap-2.5 md:columns-2">
         <DashboardWindow
           title="Báo cáo sản lượng"
           subtitle="Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca"
@@ -1484,42 +1484,48 @@ export function ControlBoardPanel({
         </DashboardWindow>
 
         <DashboardWindow
-          title="Bảng báo cáo Cân"
-          subtitle="Phiếu cân ca, khối lượng theo ngày và ca SX"
-          icon={Scale}
-          accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
-          count={recentWeighingRows.length}
-          countLabel="Dòng"
-          search={weighingSearch}
-          onSearchChange={setWeighingSearch}
+          title="Báo cáo tồn máy"
+          subtitle="NVL tồn theo máy, ca và ngày sản xuất"
+          icon={Boxes}
+          accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
+          count={machineNvlBoardRows.length}
+          countLabel="BC"
+          search={machineNvlReportSearch}
+          onSearchChange={setMachineNvlReportSearch}
           isLoading={isLoading}
           error=""
-          onOpen={() => onNavigate('weighing-summary')}
+          onOpen={() => onNavigate('machine-nvl-report-list')}
           openLabel="Mở"
           compact
         >
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
               <tr>
+                <th className="px-2 py-1.5 font-black">Máy</th>
                 <th className="px-2 py-1.5 font-black">Ca</th>
-                <th className="px-2 py-1.5 font-black">SP</th>
-                <th className="px-2 py-1.5 text-right font-black">Tổng KL</th>
+                <th className="px-2 py-1.5 font-black">Ngày</th>
+                <th className="px-2 py-1.5 text-right font-black">Tồn đầu ca</th>
+                <th className="px-2 py-1.5 text-right font-black">Tồn cuối ca</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {recentWeighingRows.slice(0, sidePreviewLimit).map((row, index) => (
-                <tr key={`${row.id ?? row.documentNo}-${index}`} className="hover:bg-red-50/50">
-                  <td className="px-2 py-1.5 text-zinc-600">{row.shiftName || '—'}</td>
-                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.productName || row.productCode || '—'}</td>
+              {machineNvlBoardRows.slice(0, sidePreviewLimit).map(row => (
+                <tr key={row.key} className="hover:bg-red-50/50">
+                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.tenMay || row.maMay || '—'}</td>
+                  <td className="px-2 py-1.5 text-zinc-600">{row.ca || '—'}</td>
+                  <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-700">{row.ngay || '—'}</td>
                   <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
-                    {formatWeighingRowTotalWeight(row)}
+                    {row.tonDauCa > 0 ? formatNumber(row.tonDauCa, 2) : '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
+                    {row.tonCuoiCa > 0 ? formatNumber(row.tonCuoiCa, 2) : '—'}
                   </td>
                 </tr>
               ))}
-              {!isLoading && recentWeighingRows.length === 0 && (
+              {!isLoading && machineNvlBoardRows.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
-                    Chưa có báo cáo cân.
+                  <td colSpan={5} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
+                    Chưa có báo cáo tồn máy.
                   </td>
                 </tr>
               )}
@@ -1580,48 +1586,42 @@ export function ControlBoardPanel({
         </DashboardWindow>
 
         <DashboardWindow
-          title="Báo cáo tồn máy"
-          subtitle="NVL tồn theo máy, ca và ngày sản xuất"
-          icon={Boxes}
-          accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
-          count={machineNvlBoardRows.length}
-          countLabel="BC"
-          search={machineNvlReportSearch}
-          onSearchChange={setMachineNvlReportSearch}
+          title="Bảng báo cáo Cân"
+          subtitle="Phiếu cân ca, khối lượng theo ngày và ca SX"
+          icon={Scale}
+          accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
+          count={recentWeighingRows.length}
+          countLabel="Dòng"
+          search={weighingSearch}
+          onSearchChange={setWeighingSearch}
           isLoading={isLoading}
           error=""
-          onOpen={() => onNavigate('machine-nvl-report-list')}
+          onOpen={() => onNavigate('weighing-summary')}
           openLabel="Mở"
           compact
         >
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
               <tr>
-                <th className="px-2 py-1.5 font-black">Máy</th>
                 <th className="px-2 py-1.5 font-black">Ca</th>
-                <th className="px-2 py-1.5 font-black">Ngày</th>
-                <th className="px-2 py-1.5 text-right font-black">Tồn đầu ca</th>
-                <th className="px-2 py-1.5 text-right font-black">Tồn cuối ca</th>
+                <th className="px-2 py-1.5 font-black">SP</th>
+                <th className="px-2 py-1.5 text-right font-black">Tổng KL</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {machineNvlBoardRows.slice(0, sidePreviewLimit).map(row => (
-                <tr key={row.key} className="hover:bg-red-50/50">
-                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.tenMay || row.maMay || '—'}</td>
-                  <td className="px-2 py-1.5 text-zinc-600">{row.ca || '—'}</td>
-                  <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-700">{row.ngay || '—'}</td>
+              {recentWeighingRows.slice(0, sidePreviewLimit).map((row, index) => (
+                <tr key={`${row.id ?? row.documentNo}-${index}`} className="hover:bg-red-50/50">
+                  <td className="px-2 py-1.5 text-zinc-600">{row.shiftName || '—'}</td>
+                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.productName || row.productCode || '—'}</td>
                   <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
-                    {row.tonDauCa > 0 ? formatNumber(row.tonDauCa, 2) : '—'}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
-                    {row.tonCuoiCa > 0 ? formatNumber(row.tonCuoiCa, 2) : '—'}
+                    {formatWeighingRowTotalWeight(row)}
                   </td>
                 </tr>
               ))}
-              {!isLoading && machineNvlBoardRows.length === 0 && (
+              {!isLoading && recentWeighingRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
-                    Chưa có báo cáo tồn máy.
+                  <td colSpan={3} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
+                    Chưa có báo cáo cân.
                   </td>
                 </tr>
               )}
