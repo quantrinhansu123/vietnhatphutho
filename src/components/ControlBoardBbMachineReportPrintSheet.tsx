@@ -301,8 +301,9 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
           <h2 className="production-order-print-section-title">3. BÁO CÁO TIÊU HAO NGUYÊN VẬT LIỆU</h2>
           <table className="shift-summary-print-table shift-summary-print-table-wide bb-machine-report-print-material-table">
             <thead><tr>
-              <th>Mã NVL</th><th>Tên NVL</th><th>ĐVT</th><th>Tỉ lệ ĐM</th><th>TL TT</th>
-              <th>TL đầu ca</th><th>TL xuất kho</th><th>TL TP</th><th>TL lỗi</th><th>TL cuối ca</th>
+              <th>Mã NVL</th><th>Tên NVL</th><th>ĐVT</th>
+              <th>Tỉ lệ<br />ĐM</th><th>TL<br />TT</th><th>TL đầu<br />ca</th>
+              <th>TL xuất<br />kho</th><th>TL<br />TP</th><th>TL<br />lỗi</th><th>TL cuối<br />ca</th>
             </tr></thead>
             <tbody>
               {materialRows.length === 0 ? (
@@ -328,7 +329,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
 
         <section className="shift-summary-print-section">
           <h2 className="production-order-print-section-title">4. ĐÁNH GIÁ HIỆU QUẢ CA SẢN XUẤT</h2>
-          <table className="shift-summary-print-table">
+          <table className="shift-summary-print-table bb-machine-report-print-evaluation-table">
             <thead><tr><th>STT</th><th>Giá trị phân tích</th><th>Tỉ lệ ĐM</th><th>Tỉ lệ TT</th><th>SL thực tế</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
             <tbody>
               <tr><td className="shift-summary-print-center">1</td><td>Tỉ lệ hàng lỗi / thành phẩm</td>

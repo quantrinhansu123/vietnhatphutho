@@ -39,6 +39,7 @@ import {
   MIXING_ROUND_KEYS,
   getRoundBatchWeight,
   getRoundItems,
+  resolveLineKlThucTe,
   roundNormWeight,
   sumReportNormTotal
 } from '../lib/mixingReportModel';
@@ -69,8 +70,8 @@ export type BbMachineReportTabId =
   | 'kiem_ton_cuoi_ca'
   | 'phieu_nhap_kho'
   | 'tong_vat_tu_thuc_dung'
+  | 'tong_dinh_muc_nvl_nhap_kho'
   | 'tong'
-  | 'ti_le_tron'
   | 'danh_gia_hao_hut';
 
 export const BB_MACHINE_REPORT_TABS: Array<{ id: BbMachineReportTabId; label: string }> = [
@@ -80,9 +81,9 @@ export const BB_MACHINE_REPORT_TABS: Array<{ id: BbMachineReportTabId; label: st
   { id: 'bao_cao_loi_hong', label: 'Dữ liệu trong báo cáo lỗi hỏng' },
   { id: 'kiem_ton_cuoi_ca', label: 'Dữ liệu trong báo cáo kiểm tồn cuối ca' },
   { id: 'phieu_nhap_kho', label: 'Dữ liệu trong báo cáo phiếu nhập kho' },
-  { id: 'tong_vat_tu_thuc_dung', label: 'Tổng vật tư thực xuất dùng' },
+  { id: 'tong_vat_tu_thuc_dung', label: 'Tổng vật tư thực xuất dùng & tỉ lệ trộn' },
+  { id: 'tong_dinh_muc_nvl_nhap_kho', label: 'Tổng định mức vật tư của thành phẩm nhập kho' },
   { id: 'tong', label: 'Tổng' },
-  { id: 'ti_le_tron', label: 'Tỉ lệ trộn NL thực tế (TB mẻ)' },
   { id: 'danh_gia_hao_hut', label: 'Đánh giá hiệu quả lỗi hỏng & hao hụt NVL' }
 ];
 
@@ -107,6 +108,8 @@ export type BbProductionOrderLineRow = {
 
 export type BbWarehouseExportLineRow = {
   key: string;
+  /** Khóa dòng phiếu gốc — dùng để không cộng trùng SL khi phân bổ nhiều SP. */
+  slipLineKey: string;
   ngay: string;
   shift: string;
   shiftLabel: string;
@@ -116,6 +119,7 @@ export type BbWarehouseExportLineRow = {
   itemCode: string;
   itemName: string;
   unit: string;
+  /** Đúng cột SL trên phiếu xuất kho (`so_luong`) — không nhân tỉ lệ phân bổ. */
   quantity: number;
   /** KL định mức = SL SP × Giá trị Thành phần (phan_tram/so_luong). */
   normWeightKg: number | null;
@@ -379,8 +383,10 @@ export function buildBbWarehouseExportLineRows(input: {
     const orderCode = [...new Set(matchedOrders.map(order => order.orderCode).filter(Boolean))].join(', ');
     const machine = [...new Set(matchedOrders.map(order => order.machine).filter(Boolean))].join(', ');
 
+    const slipLineKey = `${movement.id || movement.slipCode}|${movement.itemCode}|${movement.slipDate}`;
     rows.push({
-      key: `${movement.id || movement.slipCode}|${movement.itemCode}|${movement.slipDate}`,
+      key: slipLineKey,
+      slipLineKey,
       ngay: parseProductionOrderFilterDate(movement.slipDate) || movement.slipDate,
       shift: movement.shift,
       shiftLabel: formatProductionOrderShiftLabel(movement.shift, lookupSettings),
@@ -420,6 +426,19 @@ export function sumBbProductionOrderTotals(rows: BbProductionOrderLineRow[]) {
 
 export function sumBbWarehouseExportWeightKg(rows: BbWarehouseExportLineRow[]) {
   return rows.reduce((sum, row) => sum + (row.weightKg && row.weightKg > 0 ? row.weightKg : 0), 0);
+}
+
+/** Tổng SL đúng cột phiếu xuất kho — mỗi dòng phiếu chỉ cộng một lần. */
+export function sumBbWarehouseExportSlipQuantity(rows: BbWarehouseExportLineRow[]) {
+  const seen = new Set<string>();
+  let sum = 0;
+  for (const row of rows) {
+    const id = row.slipLineKey || row.key;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (row.quantity > 0) sum += row.quantity;
+  }
+  return sum;
 }
 
 export type BbProductionOrderGroup = {
@@ -538,6 +557,41 @@ function resolveBomExpectedKg(
   return converted !== null && Number.isFinite(converted) && converted > 0 ? converted : null;
 }
 
+/**
+ * SL sản phẩm theo ngày/ca/máy BB từ báo cáo nghiệm thu (dùng khi cần đối chiếu sản lượng).
+ */
+export function acceptanceQuantityForBbProduct(input: {
+  ngay: string;
+  shift: string;
+  machine: string;
+  productCode: string;
+  productName: string;
+  reports: AcceptanceReport[];
+}): number {
+  const codeKey = normalizeProductCodeKey(input.productCode);
+  const nameKey = normalizeProductCodeKey(input.productName);
+  if (!codeKey && !nameKey) return 0;
+
+  return input.reports.reduce((sum, report) => {
+    if (!isBbMachineText(report.ma_may, report.ten_may)) return sum;
+    const reportDate = parseProductionOrderFilterDate(report.ngay) || report.ngay;
+    if (reportDate !== input.ngay || !shiftNamesMatch(report.ca, input.shift)) return sum;
+    if (
+      !machineValueMatchesFilter(input.machine, null, report.ma_may, report.ten_may) &&
+      !(isBbMachineText(input.machine) && isBbMachineText(report.ma_may, report.ten_may))
+    ) {
+      return sum;
+    }
+    const itemKey = normalizeProductCodeKey(report.mat_hang);
+    const productMatched =
+      (codeKey && (itemKey === codeKey || itemKey.includes(codeKey) || codeKey.includes(itemKey))) ||
+      (nameKey && (itemKey === nameKey || itemKey.includes(nameKey) || nameKey.includes(itemKey)));
+    if (!productMatched) return sum;
+    const qty = Number(report.so_luong);
+    return sum + (Number.isFinite(qty) ? qty : 0);
+  }, 0);
+}
+
 /** Gom dòng xuất kho theo số lệnh SX (nhiều lệnh ghép → tách theo chuỗi orderCode). */
 export function groupBbWarehouseExportLines(
   rows: BbWarehouseExportLineRow[],
@@ -605,6 +659,9 @@ type WarehouseProductAllocation = BbWarehouseExportProductGroup & {
  * Chia dòng NVL xuất kho về từng sản phẩm trong lệnh.
  * Phiếu kho không lưu mã SP, vì vậy NVL chung được phân bổ theo định mức thành phần;
  * mọi dòng không đủ dữ liệu đối chiếu được giữ riêng để tổng không bị sai lệch.
+ *
+ * orderQuantity (SL lệnh SX) chỉ dùng để tính KL định mức;
+ * cột Số lượng trên UI lấy quantity từ phiếu xuất kho (productGroup.quantity / line.quantity).
  */
 function buildBbWarehouseExportProductGroups(
   group: BbWarehouseExportGroup,
@@ -625,7 +682,10 @@ function buildBbWarehouseExportProductGroups(
     return shiftNamesMatch(order.shift, group.shift);
   });
 
-  const productMap = new Map<string, WarehouseProductAllocation>();
+  type ProductDraft = WarehouseProductAllocation & {
+    catalogProduct: ProductRow | null | undefined;
+  };
+  const productMap = new Map<string, ProductDraft>();
   relatedOrders.forEach(order => {
     getProductionOrderProductLines(order).forEach((line, lineIndex) => {
       const productCode = String(line.productCode || '').trim();
@@ -641,6 +701,7 @@ function buildBbWarehouseExportProductGroups(
           productName: productName || catalogProduct?.name || productCode,
           unit: String(line.unit || catalogProduct?.unit || '').trim(),
           orderQuantity: 0,
+          catalogProduct,
           normKgPerUnit: resolveProductUnitNormKg(catalogProduct),
           normWeightKg: 0,
           lineCount: 0,
@@ -656,49 +717,56 @@ function buildBbWarehouseExportProductGroups(
         productMap.set(productKey, productGroup);
       }
       productGroup.orderQuantity += orderQuantity;
-
-      const resolvedNormKg = resolveProductUnitNormKg(catalogProduct);
-      if (resolvedNormKg !== null && resolvedNormKg > 0) {
-        productGroup.normKgPerUnit = resolvedNormKg;
-        productGroup.normWeightKg += resolvedNormKg * orderQuantity;
+      if (!productGroup.unit) {
+        productGroup.unit = String(line.unit || catalogProduct?.unit || '').trim();
       }
-      for (const item of catalogProduct?.nplItems || []) {
-        const materialKey = normalizeProductCodeKey(item.code);
-        if (!materialKey) continue;
-        productGroup.materialKeys.add(materialKey);
-        const expectedKg = resolveBomExpectedKg(item, orderQuantity, resolvedNormKg, materialsCatalog);
-        if (expectedKg === null) continue;
-        productGroup.materialWeights.set(
-          materialKey,
-          (productGroup.materialWeights.get(materialKey) ?? 0) + expectedKg
-        );
-        const existingFormula = productGroup.materialFormulas.get(materialKey);
-        const rate =
-          item.amountType === 'quantity'
-            ? Math.max(0, item.quantity ?? 0)
-            : Math.max(0, item.percent ?? 0);
-        const rawExpectedQuantity =
-          item.amountType === 'quantity' ? rate * orderQuantity : expectedKg;
-        productGroup.materialFormulas.set(materialKey, {
-          productCode,
-          productName: productName || catalogProduct?.name || productCode,
-          productQuantity: (existingFormula?.productQuantity ?? 0) + orderQuantity,
-          productUnit: String(line.unit || catalogProduct?.unit || '').trim() || 'SP',
-          productNormKgPerUnit: resolvedNormKg,
-          materialCode: item.code,
-          materialName: item.name || item.code,
-          amountType: item.amountType,
-          rate,
-          rateUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : '%',
-          rawExpectedQuantity: (existingFormula?.rawExpectedQuantity ?? 0) + rawExpectedQuantity,
-          rawExpectedUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : 'kg',
-          totalNormKg: (existingFormula?.totalNormKg ?? 0) + expectedKg,
-          allocationRatio: 1,
-          allocatedNormKg: (existingFormula?.allocatedNormKg ?? 0) + expectedKg
-        });
-      }
+      if (catalogProduct) productGroup.catalogProduct = catalogProduct;
     });
   });
+
+  for (const productGroup of productMap.values()) {
+    const orderQuantity = Math.max(0, productGroup.orderQuantity);
+    const catalogProduct = productGroup.catalogProduct;
+    const resolvedNormKg = resolveProductUnitNormKg(catalogProduct);
+    if (resolvedNormKg !== null && resolvedNormKg > 0) {
+      productGroup.normKgPerUnit = resolvedNormKg;
+      productGroup.normWeightKg = resolvedNormKg * orderQuantity;
+    }
+    for (const item of catalogProduct?.nplItems || []) {
+      const materialKey = normalizeProductCodeKey(item.code);
+      if (!materialKey) continue;
+      productGroup.materialKeys.add(materialKey);
+      const expectedKg = resolveBomExpectedKg(item, orderQuantity, resolvedNormKg, materialsCatalog);
+      if (expectedKg === null) continue;
+      productGroup.materialWeights.set(
+        materialKey,
+        (productGroup.materialWeights.get(materialKey) ?? 0) + expectedKg
+      );
+      const rate =
+        item.amountType === 'quantity'
+          ? Math.max(0, item.quantity ?? 0)
+          : Math.max(0, item.percent ?? 0);
+      const rawExpectedQuantity =
+        item.amountType === 'quantity' ? rate * orderQuantity : expectedKg;
+      productGroup.materialFormulas.set(materialKey, {
+        productCode: productGroup.productCode,
+        productName: productGroup.productName,
+        productQuantity: orderQuantity,
+        productUnit: productGroup.unit || 'SP',
+        productNormKgPerUnit: resolvedNormKg,
+        materialCode: item.code,
+        materialName: item.name || item.code,
+        amountType: item.amountType,
+        rate,
+        rateUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : '%',
+        rawExpectedQuantity,
+        rawExpectedUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : 'kg',
+        totalNormKg: expectedKg,
+        allocationRatio: 1,
+        allocatedNormKg: expectedKg
+      });
+    }
+  }
 
   const productGroups = [...productMap.values()];
   const unassigned: WarehouseProductAllocation = {
@@ -726,17 +794,19 @@ function buildBbWarehouseExportProductGroups(
     ratio: number,
     suffix: string
   ) => {
-    const quantity = row.quantity * ratio;
+    const allocatedQuantity = row.quantity * ratio;
     const weightKg = row.weightKg === null ? null : row.weightKg * ratio;
     target.lines.push({
       ...row,
-      key: `${row.key}|${suffix}`,
-      quantity,
+      key: `${row.slipLineKey}|${suffix}`,
+      slipLineKey: row.slipLineKey,
+      // Giữ nguyên cột SL phiếu xuất kho — không nhân tỉ lệ phân bổ SP.
+      quantity: row.quantity,
       weightKg,
       normWeightKg: null,
       materialNorm: null
     });
-    target.quantity += quantity > 0 ? quantity : 0;
+    target.quantity += allocatedQuantity > 0 ? allocatedQuantity : 0;
     target.totalWeightKg += weightKg && weightKg > 0 ? weightKg : 0;
     target.lineCount += 1;
   };
@@ -833,20 +903,27 @@ function buildBbWarehouseExportProductGroups(
   applyLineNormWeights(unassigned);
   productGroups.forEach(applyLineNormWeights);
 
-  if (unassigned.lines.length > 0) productGroups.push(unassigned);
-  return productGroups.map(
-    ({
+  if (unassigned.lines.length > 0) {
+    productGroups.push({
+      ...unassigned,
+      catalogProduct: null
+    });
+  }
+  return productGroups.map(product => {
+    const {
       materialWeights: _materialWeights,
       materialFormulas: _materialFormulas,
       materialKeys: _materialKeys,
       usedQuotaAllocation,
-      ...product
-    }) => ({
-      ...product,
+      catalogProduct: _catalogProduct,
+      ...rest
+    } = product;
+    return {
+      ...rest,
       allocationMode:
-        product.allocationMode === 'unassigned' ? 'unassigned' : usedQuotaAllocation ? 'quota' : 'direct'
-    })
-  );
+        rest.allocationMode === 'unassigned' ? 'unassigned' : usedQuotaAllocation ? 'quota' : 'direct'
+    };
+  });
 }
 
 export type BbDamagedGoodsLineRow = {
@@ -1457,7 +1534,12 @@ export type BbThucDungLineRow = {
   materialCode: string;
   materialName: string;
   unit: string;
-  xuatKg: number;
+  tiLeDinhMucPercent: number | null;
+  tiLeThucTeTbPercent: number | null;
+  batchCount: number;
+  /** Tổng xuất kho NVL trong ca (cùng lệnh) — dùng để tính TL đã trộn. */
+  xuatTrongCaKg: number;
+  trongLuongDaTronKg: number;
   tonDauKg: number;
   tonCuoiKg: number;
   weightKg: number;
@@ -1472,6 +1554,9 @@ export type BbThucDungGroup = {
   machine: string;
   lineCount: number;
   totalWeightKg: number;
+  tonDauCaTotal: number;
+  tonCuoiCaTotal: number;
+  xuatCaTotal: number;
   lines: BbThucDungLineRow[];
 };
 
@@ -1548,16 +1633,82 @@ function classifyMachineNvlLineKg(
   return { ...zero, nhua: kg };
 }
 
-const THUC_DUNG_NVL_LABELS = [
-  { code: 'NHUA-TD', name: 'Nhựa thực dùng', field: 'nhua' as const },
-  { code: 'MANG-TD', name: 'Màng thực dùng', field: 'mang' as const },
-  { code: 'LOI-TD', name: 'Lõi thực dùng', field: 'loi' as const },
-  { code: 'TUI-TD', name: 'Túi thực dùng', field: 'tui' as const }
-];
+function materialIdentityKey(code: string, name: string) {
+  return (String(code || '').trim() || String(name || '').trim()).toUpperCase();
+}
 
-/** Thực dùng = tồn đầu + xuất kho − tồn cuối, theo lệnh SX máy BB. */
+function normalizeMaterialCodeKey(code: string) {
+  return String(code || '').trim().toUpperCase();
+}
+
+/**
+ * Gom kg tồn đầu/cuối theo mã NVL — cùng cách gắn phiếu tồn với lệnh như tab Tồn đầu ca.
+ * Ưu tiên index theo maNvl; dòng không có mã thì fallback theo tên.
+ */
+function sumMachineNvlKgByCodeForHeader(
+  reports: MachineNvlSavedReport[],
+  header: { ngay: string; shift: string; orderCode: string; machine: string },
+  shiftOptions: ReturnType<typeof getProductionShiftOptions>,
+  reportKind: 'dau_ca' | 'cuoi_ca'
+) {
+  const byCode = new Map<string, number>();
+  const byName = new Map<string, number>();
+
+  for (const report of reports) {
+    if (report.reportKind !== reportKind) continue;
+    const matched = matchBbNvlReportToOrderHeaders(report, [header], shiftOptions);
+    if (matched.length === 0) continue;
+
+    for (const line of report.lines) {
+      const code = normalizeMaterialCodeKey(line.maNvl || '');
+      const name = String(line.tenNvl || '')
+        .trim()
+        .toUpperCase();
+      const kg =
+        reportKind === 'dau_ca' ? sumMachineNvlDauCaLineTotal(line) : sumMachineNvlCuoiCaLineTotal(line);
+      if (!Number.isFinite(kg) || kg <= 0) continue;
+      if (code) {
+        byCode.set(code, (byCode.get(code) || 0) + kg);
+      } else if (name) {
+        byName.set(name, (byName.get(name) || 0) + kg);
+      }
+    }
+  }
+
+  return { byCode, byName };
+}
+
+function lookupMachineNvlKgByMaterial(
+  maps: { byCode: Map<string, number>; byName: Map<string, number> },
+  materialCode: string,
+  materialName: string
+) {
+  const code = normalizeMaterialCodeKey(materialCode);
+  if (code && maps.byCode.has(code)) return maps.byCode.get(code) || 0;
+  const name = String(materialName || '')
+    .trim()
+    .toUpperCase();
+  if (name && maps.byName.has(name)) return maps.byName.get(name) || 0;
+  return 0;
+}
+
+type MixingThucDungAgg = {
+  materialCode: string;
+  materialName: string;
+  unit: string;
+  tiLeDinhMucSum: number;
+  tiLeDinhMucCount: number;
+  tiLeThucTeSum: number;
+  tiLeThucTeCount: number;
+  totalKlThucTe: number;
+};
+
+/** Thực dùng theo từng NVL từ báo cáo trộn: TL đã trộn + tồn đầu − tồn cuối.
+ * TL đã trộn = Tổng xuất trong ca × Tỉ lệ TB thực tế (%).
+ */
 export function buildBbThucDungLineRows(input: {
   productionOrders: ProductionOrderRow[];
+  mixingReports: MixingReport[];
   warehouseMovements: ShiftSummaryWarehouseMovement[];
   machineNvlReports: MachineNvlSavedReport[];
   materials: MaterialRow[];
@@ -1578,11 +1729,23 @@ export function buildBbThucDungLineRows(input: {
   const rows: BbThucDungLineRow[] = [];
 
   for (const header of headers) {
-    const xuat = emptyMaterialBucket();
-    const tonDau = emptyMaterialBucket();
-    const tonCuoi = emptyMaterialBucket();
+    const byMaterial = new Map<string, MixingThucDungAgg>();
+    const tonDauMaps = sumMachineNvlKgByCodeForHeader(
+      input.machineNvlReports,
+      header,
+      shiftOptions,
+      'dau_ca'
+    );
+    const tonCuoiMaps = sumMachineNvlKgByCodeForHeader(
+      input.machineNvlReports,
+      header,
+      shiftOptions,
+      'cuoi_ca'
+    );
 
+    let tongXuatTrongCaKg = 0;
     for (const movement of input.warehouseMovements) {
+      if (movement.slipType !== 'xuat' || movement.warehouseKind !== 'nvl') continue;
       if (
         !matchesShiftSummaryBucket(
           header.ngay,
@@ -1594,57 +1757,149 @@ export function buildBbThucDungLineRows(input: {
       ) {
         continue;
       }
-      addMaterialBucket(xuat, classifyExportMovementKg(movement, input.materials));
+      tongXuatTrongCaKg += resolveMovementExportKg(movement, input.materials);
     }
+    tongXuatTrongCaKg = roundQty(tongXuatTrongCaKg, 3);
 
-    for (const report of input.machineNvlReports) {
+    for (const report of input.mixingReports) {
       if (
         !matchesShiftSummaryBucket(header.ngay, header.shift, report.ngay, report.ca, shiftOptions)
       ) {
         continue;
       }
-      if (!isBbMachineText(report.maMay, report.tenMay)) continue;
+      if (!isBbMachineText(report.ma_may, report.ten_may)) continue;
       if (
-        !machineValueMatchesFilter(header.machine, null, report.maMay, report.tenMay) &&
-        !(isBbMachineText(header.machine) && isBbMachineText(report.maMay, report.tenMay))
+        !machineValueMatchesFilter(header.machine, null, report.ma_may, report.ten_may) &&
+        !(isBbMachineText(header.machine) && isBbMachineText(report.ma_may, report.ten_may))
       ) {
         continue;
       }
-      for (const line of report.lines) {
-        const split = classifyMachineNvlLineKg(report, line);
-        if (report.reportKind === 'dau_ca') addMaterialBucket(tonDau, split);
-        else if (report.reportKind === 'cuoi_ca') addMaterialBucket(tonCuoi, split);
+
+      for (const line of report.chi_tiet || []) {
+        const lineCode = String(line.ma_nvl || '').trim();
+        const lineName = String(line.ten_vat_tu || '').trim();
+        let countedItemWeight = false;
+
+        for (const roundKey of MIXING_ROUND_KEYS) {
+          const items = getRoundItems(line.lan_su_dung, roundKey);
+          if (items.length === 0) continue;
+          const batchWeight =
+            getRoundBatchWeight(line.lan_su_dung, roundKey) ??
+            roundNormWeight(items.reduce((sum, item) => sum + (item.so_luong ?? item.kl_thuc_te ?? 0), 0));
+          if (!batchWeight || batchWeight <= 0) continue;
+
+          for (const item of items) {
+            const code = String(item.ma_nvl || lineCode || '').trim();
+            const name = String(item.ten_vat_tu || lineName || '').trim();
+            const key = materialIdentityKey(code, name);
+            if (!key) continue;
+
+            let agg = byMaterial.get(key);
+            if (!agg) {
+              agg = {
+                materialCode: code,
+                materialName: name,
+                unit: String(item.don_vi || line.don_vi || 'kg').trim() || 'kg',
+                tiLeDinhMucSum: 0,
+                tiLeDinhMucCount: 0,
+                tiLeThucTeSum: 0,
+                tiLeThucTeCount: 0,
+                totalKlThucTe: 0
+              };
+              byMaterial.set(key, agg);
+            } else {
+              if (!agg.materialCode && code) agg.materialCode = code;
+              if (!agg.materialName && name) agg.materialName = name;
+            }
+
+            const dinhMuc = item.ti_le_phan_tram;
+            if (dinhMuc !== null && dinhMuc !== undefined && Number.isFinite(dinhMuc)) {
+              agg.tiLeDinhMucSum += dinhMuc;
+              agg.tiLeDinhMucCount += 1;
+            }
+
+            const klThucTe = item.kl_thuc_te;
+            if (klThucTe !== null && klThucTe !== undefined && Number.isFinite(klThucTe) && klThucTe > 0) {
+              countedItemWeight = true;
+              const tiLeThucTe = (klThucTe / batchWeight) * 100;
+              agg.tiLeThucTeSum += tiLeThucTe;
+              agg.tiLeThucTeCount += 1;
+              agg.totalKlThucTe += klThucTe;
+            }
+          }
+        }
+
+        if (countedItemWeight) continue;
+        const lineKl = resolveLineKlThucTe(line);
+        if (lineKl === null || lineKl <= 0) continue;
+        const key = materialIdentityKey(lineCode, lineName);
+        if (!key) continue;
+        let agg = byMaterial.get(key);
+        if (!agg) {
+          agg = {
+            materialCode: lineCode,
+            materialName: lineName,
+            unit: String(line.don_vi || 'kg').trim() || 'kg',
+            tiLeDinhMucSum: 0,
+            tiLeDinhMucCount: 0,
+            tiLeThucTeSum: 0,
+            tiLeThucTeCount: 0,
+            totalKlThucTe: 0
+          };
+          byMaterial.set(key, agg);
+        }
+        agg.totalKlThucTe += lineKl;
       }
     }
 
+    if (byMaterial.size === 0) continue;
+
     const shiftLabel = formatProductionOrderShiftLabel(header.shift, lookupSettings);
-    for (const item of THUC_DUNG_NVL_LABELS) {
-      const field = item.field;
-      const xuatKg = xuat[field];
-      const tonDauKg = tonDau[field];
-      const tonCuoiKg = tonCuoi[field];
-      const weightKg = computeMaterialUsageKg(xuatKg, tonDauKg, tonCuoiKg);
+    for (const [materialKey, agg] of byMaterial.entries()) {
+      const tiLeThucTeTbPercent =
+        agg.tiLeThucTeCount > 0 ? roundQty(agg.tiLeThucTeSum / agg.tiLeThucTeCount, 2) : null;
+      // Trọng lượng đã trộn = Tổng xuất trong ca × Tỉ lệ TB thực tế (%)
+      const trongLuongDaTronKg =
+        tiLeThucTeTbPercent !== null && Number.isFinite(tiLeThucTeTbPercent)
+          ? roundQty(tongXuatTrongCaKg * (tiLeThucTeTbPercent / 100), 3)
+          : 0;
+      const tonDauKg = roundQty(
+        lookupMachineNvlKgByMaterial(tonDauMaps, agg.materialCode, agg.materialName),
+        3
+      );
+      const tonCuoiKg = roundQty(
+        lookupMachineNvlKgByMaterial(tonCuoiMaps, agg.materialCode, agg.materialName),
+        3
+      );
+      // Thực dùng (kg) = Trọng lượng đã trộn + Tồn đầu − Tồn cuối
+      const weightKg = computeMaterialUsageKg(trongLuongDaTronKg, tonDauKg, tonCuoiKg);
       if (
         (!Number.isFinite(weightKg) || weightKg === 0) &&
-        xuatKg <= 0 &&
+        trongLuongDaTronKg <= 0 &&
         tonDauKg <= 0 &&
-        tonCuoiKg <= 0
+        tonCuoiKg <= 0 &&
+        tongXuatTrongCaKg <= 0
       ) {
         continue;
       }
       rows.push({
-        key: `${header.orderCode}|${header.ngay}|${header.shift}|${item.code}`,
+        key: `${header.orderCode}|${header.ngay}|${header.shift}|${materialKey}`,
         ngay: header.ngay,
         shift: header.shift,
         shiftLabel,
         orderCode: header.orderCode,
         machine: header.machine,
-        materialCode: item.code,
-        materialName: item.name,
-        unit: 'kg',
-        xuatKg: roundQty(xuatKg, 3),
-        tonDauKg: roundQty(tonDauKg, 3),
-        tonCuoiKg: roundQty(tonCuoiKg, 3),
+        materialCode: agg.materialCode,
+        materialName: agg.materialName,
+        unit: agg.unit,
+        tiLeDinhMucPercent:
+          agg.tiLeDinhMucCount > 0 ? roundQty(agg.tiLeDinhMucSum / agg.tiLeDinhMucCount, 2) : null,
+        tiLeThucTeTbPercent,
+        batchCount: agg.tiLeThucTeCount,
+        xuatTrongCaKg: tongXuatTrongCaKg,
+        trongLuongDaTronKg,
+        tonDauKg,
+        tonCuoiKg,
         weightKg: roundQty(weightKg, 3)
       });
     }
@@ -1663,6 +1918,318 @@ export function sumBbThucDungWeightKg(rows: BbThucDungLineRow[]) {
   return rows.reduce((sum, row) => sum + (Number.isFinite(row.weightKg) ? row.weightKg : 0), 0);
 }
 
+export type BbThucDungDetailMetric =
+  | 'ti_le_dinh_muc'
+  | 'ti_le_thuc_te'
+  | 'trong_luong_da_tron'
+  | 'ton_dau'
+  | 'ton_cuoi'
+  | 'thuc_dung'
+  | 'so_me';
+
+export const BB_THUC_DUNG_DETAIL_METRIC_LABEL: Record<BbThucDungDetailMetric, string> = {
+  ti_le_dinh_muc: 'Tỉ lệ định mức (%)',
+  ti_le_thuc_te: 'Tỉ lệ TB thực tế (%)',
+  trong_luong_da_tron: 'Trọng lượng đã trộn (kg)',
+  ton_dau: 'Tồn đầu (kg)',
+  ton_cuoi: 'Tồn cuối (kg)',
+  thuc_dung: 'Thực dùng (kg)',
+  so_me: 'Số mẻ có KL thực tế'
+};
+
+export type BbThucDungDetailColumn = { key: string; label: string; align?: 'left' | 'right' };
+export type BbThucDungDetailRow = {
+  metric: BbThucDungDetailMetric;
+  title: string;
+  subtitle: string;
+  valueLabel: string;
+  valueText: string;
+  formula?: string;
+  columns: BbThucDungDetailColumn[];
+  rows: Array<Record<string, string | number | null | undefined>>;
+};
+
+function materialCodeMatches(left: string, right: string) {
+  const a = normalizeMaterialCodeKey(left);
+  const b = normalizeMaterialCodeKey(right);
+  return Boolean(a && b && a === b);
+}
+
+function materialNameMatches(left: string, right: string) {
+  const a = String(left || '')
+    .trim()
+    .toUpperCase();
+  const b = String(right || '')
+    .trim()
+    .toUpperCase();
+  return Boolean(a && b && a === b);
+}
+
+function materialMatchesLine(
+  code: string,
+  name: string,
+  target: Pick<BbThucDungLineRow, 'materialCode' | 'materialName'>
+) {
+  if (target.materialCode && code) return materialCodeMatches(code, target.materialCode);
+  if (target.materialCode && !code) return materialNameMatches(name, target.materialName);
+  if (!target.materialCode) return materialNameMatches(name, target.materialName) || materialCodeMatches(code, name);
+  return materialCodeMatches(code, target.materialCode) || materialNameMatches(name, target.materialName);
+}
+
+/** Chi tiết nguồn số liệu khi bấm vào ô số tab thực xuất dùng & tỉ lệ trộn. */
+export function buildBbThucDungMetricDetail(input: {
+  line: BbThucDungLineRow;
+  metric: BbThucDungDetailMetric;
+  mixingReports: MixingReport[];
+  machineNvlReports: MachineNvlSavedReport[];
+  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+}): BbThucDungDetailBag {
+  const shiftOptions = getProductionShiftOptions((input.shiftSettings || []) as ShiftSetting[]);
+  const header = {
+    ngay: input.line.ngay,
+    shift: input.line.shift,
+    orderCode: input.line.orderCode,
+    machine: input.line.machine
+  };
+  const valueLabel = BB_THUC_DUNG_DETAIL_METRIC_LABEL[input.metric];
+  const subtitle = `${input.line.orderCode || '—'} · ${input.line.ngay || '—'} · ${
+    input.line.shiftLabel || input.line.shift || '—'
+  } · ${input.line.machine || '—'}`;
+  const title = `${input.line.materialCode || '—'} · ${input.line.materialName || '—'}`;
+
+  const formatValue = () => {
+    switch (input.metric) {
+      case 'ti_le_dinh_muc':
+        return input.line.tiLeDinhMucPercent === null || input.line.tiLeDinhMucPercent === undefined
+          ? '—'
+          : `${roundQty(input.line.tiLeDinhMucPercent, 2)}%`;
+      case 'ti_le_thuc_te':
+        return input.line.tiLeThucTeTbPercent === null || input.line.tiLeThucTeTbPercent === undefined
+          ? '—'
+          : `${roundQty(input.line.tiLeThucTeTbPercent, 2)}%`;
+      case 'so_me':
+        return String(input.line.batchCount || 0);
+      case 'trong_luong_da_tron':
+        return `${roundQty(input.line.trongLuongDaTronKg, 3)} kg`;
+      case 'ton_dau':
+        return `${roundQty(input.line.tonDauKg, 3)} kg`;
+      case 'ton_cuoi':
+        return `${roundQty(input.line.tonCuoiKg, 3)} kg`;
+      case 'thuc_dung':
+        return `${roundQty(input.line.weightKg, 3)} kg`;
+      default:
+        return '—';
+    }
+  };
+
+  const mixingFormula =
+    input.line.tiLeThucTeTbPercent !== null && input.line.tiLeThucTeTbPercent !== undefined
+      ? `Trọng lượng đã trộn = Tổng xuất trong ca (${roundQty(input.line.xuatTrongCaKg, 3)}) × Tỉ lệ TB thực tế (${roundQty(
+          input.line.tiLeThucTeTbPercent,
+          2
+        )}%) = ${roundQty(input.line.trongLuongDaTronKg, 3)} kg`
+      : `Trọng lượng đã trộn = Tổng xuất trong ca (${roundQty(input.line.xuatTrongCaKg, 3)}) × Tỉ lệ TB thực tế (—) = ${roundQty(
+          input.line.trongLuongDaTronKg,
+          3
+        )} kg`;
+
+  const isMixingMetric =
+    input.metric === 'ti_le_dinh_muc' ||
+    input.metric === 'ti_le_thuc_te' ||
+    input.metric === 'trong_luong_da_tron' ||
+    input.metric === 'so_me' ||
+    input.metric === 'thuc_dung';
+  const isTonDauMetric = input.metric === 'ton_dau' || input.metric === 'thuc_dung';
+  const isTonCuoiMetric = input.metric === 'ton_cuoi' || input.metric === 'thuc_dung';
+
+  const mixingRows: Array<Record<string, string | number | null | undefined>> = [];
+  if (isMixingMetric) {
+    for (const report of input.mixingReports) {
+      if (
+        !matchesShiftSummaryBucket(header.ngay, header.shift, report.ngay, report.ca, shiftOptions)
+      ) {
+        continue;
+      }
+      if (!isBbMachineText(report.ma_may, report.ten_may)) continue;
+      if (
+        !machineValueMatchesFilter(header.machine, null, report.ma_may, report.ten_may) &&
+        !(isBbMachineText(header.machine) && isBbMachineText(report.ma_may, report.ten_may))
+      ) {
+        continue;
+      }
+
+      for (const line of report.chi_tiet || []) {
+        for (const roundKey of MIXING_ROUND_KEYS) {
+          const items = getRoundItems(line.lan_su_dung, roundKey);
+          if (items.length === 0) continue;
+          const batchWeight =
+            getRoundBatchWeight(line.lan_su_dung, roundKey) ??
+            roundNormWeight(items.reduce((sum, item) => sum + (item.so_luong ?? item.kl_thuc_te ?? 0), 0));
+          const roundLabel = roundKey.replace('lan_', 'Lần ');
+
+          for (const item of items) {
+            const code = String(item.ma_nvl || line.ma_nvl || '').trim();
+            const name = String(item.ten_vat_tu || line.ten_vat_tu || '').trim();
+            if (!materialMatchesLine(code, name, input.line)) continue;
+            const kl = item.kl_thuc_te;
+            const tiLeTt =
+              kl !== null &&
+              kl !== undefined &&
+              Number.isFinite(kl) &&
+              batchWeight &&
+              batchWeight > 0
+                ? roundQty((kl / batchWeight) * 100, 2)
+                : null;
+            mixingRows.push({
+              ngay: report.ngay,
+              ca: report.ca,
+              may: report.ten_may || report.ma_may || '',
+              lan: roundLabel,
+              maNvl: code,
+              tenNvl: name,
+              tiLeDm: item.ti_le_phan_tram,
+              klThucTe: kl,
+              tiLeTt,
+              batchWeight: batchWeight ?? null
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const tonRows: Array<Record<string, string | number | null | undefined>> = [];
+  const pushTonRows = (reportKind: 'dau_ca' | 'cuoi_ca') => {
+    for (const report of input.machineNvlReports) {
+      if (report.reportKind !== reportKind) continue;
+      const matched = matchBbNvlReportToOrderHeaders(report, [header], shiftOptions);
+      if (matched.length === 0) continue;
+      report.lines.forEach((line, index) => {
+        const code = String(line.maNvl || '').trim();
+        const name = String(line.tenNvl || '').trim();
+        if (!materialMatchesLine(code, name, input.line)) return;
+        const kg =
+          reportKind === 'dau_ca'
+            ? sumMachineNvlDauCaLineTotal(line)
+            : sumMachineNvlCuoiCaLineTotal(line);
+        tonRows.push({
+          loai: reportKind === 'dau_ca' ? 'Tồn đầu ca' : 'Tồn cuối ca',
+          ngay: report.ngay,
+          ca: report.ca,
+          may: report.tenMay || report.maMay || '',
+          maNvl: code,
+          tenNvl: name,
+          donVi: line.donVi || '',
+          soLuongTon: line.soLuongTon,
+          trongMay: line.soLuongTrongMay,
+          bonTron: line.soLuongTrongBonTron,
+          chuaTron: line.soLuongNlChuaTron,
+          tonNgoai: line.soLuongTonNgoai,
+          weightKg: Number.isFinite(kg) ? roundQty(kg, 3) : 0,
+          reportId: report.id || `${reportKind}-${index}`
+        });
+      });
+    }
+  };
+  if (isTonDauMetric) pushTonRows('dau_ca');
+  if (isTonCuoiMetric) pushTonRows('cuoi_ca');
+
+  if (input.metric === 'ton_dau' || input.metric === 'ton_cuoi') {
+    return {
+      metric: input.metric,
+      title,
+      subtitle,
+      valueLabel,
+      valueText: formatValue(),
+      columns: [
+        { key: 'ngay', label: 'Ngày' },
+        { key: 'ca', label: 'Ca' },
+        { key: 'may', label: 'Máy' },
+        { key: 'maNvl', label: 'Mã NVL' },
+        { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'donVi', label: 'ĐVT' },
+        { key: 'soLuongTon', label: 'SL tồn', align: 'right' },
+        { key: 'weightKg', label: 'TL (kg)', align: 'right' }
+      ],
+      rows: tonRows
+    };
+  }
+
+  if (input.metric === 'thuc_dung') {
+    return {
+      metric: input.metric,
+      title,
+      subtitle,
+      valueLabel,
+      valueText: formatValue(),
+      formula: `${mixingFormula}. Thực dùng (kg) = Trọng lượng đã trộn (${roundQty(
+        input.line.trongLuongDaTronKg,
+        3
+      )}) + Tồn đầu (${roundQty(input.line.tonDauKg, 3)}) − Tồn cuối (${roundQty(
+        input.line.tonCuoiKg,
+        3
+      )}) = ${roundQty(input.line.weightKg, 3)} kg`,
+      columns: [
+        { key: 'nguon', label: 'Nguồn' },
+        { key: 'ngay', label: 'Ngày' },
+        { key: 'ca', label: 'Ca' },
+        { key: 'may', label: 'Máy' },
+        { key: 'maNvl', label: 'Mã NVL' },
+        { key: 'tenNvl', label: 'Tên NVL' },
+        { key: 'chiTiet', label: 'Chi tiết' },
+        { key: 'weightKg', label: 'TL (kg)', align: 'right' }
+      ],
+      rows: [
+        ...mixingRows.map(row => ({
+          nguon: 'Báo cáo trộn',
+          ngay: row.ngay,
+          ca: row.ca,
+          may: row.may,
+          maNvl: row.maNvl,
+          tenNvl: row.tenNvl,
+          chiTiet: `${row.lan || ''}${row.tiLeTt != null ? ` · TL TT ${row.tiLeTt}%` : ''}`,
+          weightKg: row.klThucTe
+        })),
+        ...tonRows.map(row => ({
+          nguon: row.loai,
+          ngay: row.ngay,
+          ca: row.ca,
+          may: row.may,
+          maNvl: row.maNvl,
+          tenNvl: row.tenNvl,
+          chiTiet: row.donVi || '',
+          weightKg: row.weightKg
+        }))
+      ]
+    };
+  }
+
+  return {
+    metric: input.metric,
+    title,
+    subtitle,
+    valueLabel,
+    valueText: formatValue(),
+    formula:
+      input.metric === 'trong_luong_da_tron' || input.metric === 'ti_le_thuc_te'
+        ? mixingFormula
+        : undefined,
+    columns: [
+      { key: 'ngay', label: 'Ngày' },
+      { key: 'ca', label: 'Ca' },
+      { key: 'may', label: 'Máy' },
+      { key: 'lan', label: 'Mẻ/Lần' },
+      { key: 'maNvl', label: 'Mã NVL' },
+      { key: 'tenNvl', label: 'Tên NVL' },
+      { key: 'tiLeDm', label: 'Tỉ lệ ĐM (%)', align: 'right' },
+      { key: 'klThucTe', label: 'KL thực tế (kg)', align: 'right' },
+      { key: 'tiLeTt', label: 'Tỉ lệ TT (%)', align: 'right' },
+      { key: 'batchWeight', label: 'KL mẻ (kg)', align: 'right' }
+    ],
+    rows: mixingRows
+  };
+}
+
 export function groupBbThucDungLines(rows: BbThucDungLineRow[]): BbThucDungGroup[] {
   const map = new Map<string, BbThucDungGroup>();
 
@@ -1679,12 +2246,21 @@ export function groupBbThucDungLines(rows: BbThucDungLineRow[]): BbThucDungGroup
         machine: row.machine,
         lineCount: 1,
         totalWeightKg: Number.isFinite(row.weightKg) ? row.weightKg : 0,
+        tonDauCaTotal: Number.isFinite(row.tonDauKg) ? row.tonDauKg : 0,
+        tonCuoiCaTotal: Number.isFinite(row.tonCuoiKg) ? row.tonCuoiKg : 0,
+        xuatCaTotal: Number.isFinite(row.xuatTrongCaKg) ? row.xuatTrongCaKg : 0,
         lines: [row]
       });
       continue;
     }
     existing.lineCount += 1;
     existing.totalWeightKg += Number.isFinite(row.weightKg) ? row.weightKg : 0;
+    existing.tonDauCaTotal += Number.isFinite(row.tonDauKg) ? row.tonDauKg : 0;
+    existing.tonCuoiCaTotal += Number.isFinite(row.tonCuoiKg) ? row.tonCuoiKg : 0;
+    // Tổng xuất trong ca là tổng phiếu xuất của lệnh/ca — không cộng theo từng dòng NVL.
+    if (!existing.xuatCaTotal && Number.isFinite(row.xuatTrongCaKg) && row.xuatTrongCaKg > 0) {
+      existing.xuatCaTotal = row.xuatTrongCaKg;
+    }
     existing.lines.push(row);
   }
 

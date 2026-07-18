@@ -19,7 +19,7 @@ import {
 } from './relatedReportsPrint';
 import OrderPrintSheet from '../../components/OrderPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, type ShiftOption } from '../../utils/shiftSettings';
-import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storage';
+import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storageKeys';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
 import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';

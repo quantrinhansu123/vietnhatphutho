@@ -25,6 +25,7 @@ import {
   buildBbOrderCodeOptions,
   buildBbProductionOrderLineRows,
   buildBbThucDungLineRows,
+  buildBbThucDungMetricDetail,
   buildBbTongGroups,
   buildBbWarehouseExportLineRows,
   groupBbCuoiCaLines,
@@ -42,9 +43,13 @@ import {
   sumBbThucDungWeightKg,
   sumBbTongChenhLech,
   sumBbTongTrongLuongNhapKho,
+  sumBbWarehouseExportSlipQuantity,
   sumBbWarehouseExportWeightKg,
   type BbMaterialNormFormula,
-  type BbMachineReportTabId
+  type BbMachineReportTabId,
+  type BbThucDungDetailMetric,
+  type BbThucDungDetailBag,
+  type BbThucDungLineRow
 } from '../utils/controlBoardBbMachineReport';
 import { computePercentRatio } from '../utils/controlBoardShiftSummary';
 
@@ -82,6 +87,33 @@ function formatPercent(value: number | null | undefined, digits = 2) {
 function formatVnd(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value) || value === 0) return '—';
   return `${formatMoney(value, 0)} đ`;
+}
+
+function formatThucDungDetailCell(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'number') return formatNumber(value, Number.isInteger(value) ? 0 : 3);
+  return String(value);
+}
+
+function ThucDungMetricButton({
+  label,
+  className,
+  onOpen
+}: {
+  label: string;
+  className: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`rounded-md px-1 py-0.5 underline decoration-dotted underline-offset-2 transition hover:bg-teal-100 ${className}`}
+      title="Bấm để xem dữ liệu nguồn"
+    >
+      {label}
+    </button>
+  );
 }
 
 export default function ControlBoardBbMachineReportTable({
@@ -128,6 +160,10 @@ export default function ControlBoardBbMachineReportTable({
   const [showPrintSheet, setShowPrintSheet] = useState(false);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [selectedMaterialNorm, setSelectedMaterialNorm] = useState<BbMaterialNormFormula | null>(null);
+  const [thucDungDetail, setThucDungDetail] = useState<{
+    line: BbThucDungLineRow;
+    metric: BbThucDungDetailMetric;
+  } | null>(null);
 
   const scopedGroupKey = (tabId: BbMachineReportTabId, groupKey: string) => `${tabId}:${groupKey}`;
   const isGroupExpanded = (tabId: BbMachineReportTabId, groupKey: string) =>
@@ -158,13 +194,6 @@ export default function ControlBoardBbMachineReportTable({
   );
 
   const orderOptionCodes = useMemo(() => new Set(orderOptions.map(option => option.code)), [orderOptions]);
-
-  const toggleOrderCodeFilter = (code: string) => {
-    setOrderCodeFilter(prev => (prev.includes(code) ? prev.filter(value => value !== code) : [...prev, code]));
-  };
-
-  const clearOrderCodeFilter = () => setOrderCodeFilter([]);
-  const selectAllOrderCodes = () => setOrderCodeFilter(orderOptions.map(option => option.code));
 
   useEffect(() => {
     setOrderCodeFilter(prev => prev.filter(code => orderOptionCodes.has(code)));
@@ -354,6 +383,7 @@ export default function ControlBoardBbMachineReportTable({
     () =>
       buildBbThucDungLineRows({
         productionOrders: scopedProductionOrders,
+        mixingReports,
         warehouseMovements,
         machineNvlReports,
         materials,
@@ -367,6 +397,7 @@ export default function ControlBoardBbMachineReportTable({
       }),
     [
       scopedProductionOrders,
+      mixingReports,
       warehouseMovements,
       machineNvlReports,
       materials,
@@ -380,6 +411,17 @@ export default function ControlBoardBbMachineReportTable({
     ]
   );
   const thucDungGroups = useMemo(() => groupBbThucDungLines(thucDungRows), [thucDungRows]);
+  // Tab thực xuất dùng: dòng NVL lấy từ báo cáo trộn (đã gộp tỉ lệ).
+  const thucDungDetailView = useMemo<BbThucDungDetailBag | null>(() => {
+    if (!thucDungDetail) return null;
+    return buildBbThucDungMetricDetail({
+      line: thucDungDetail.line,
+      metric: thucDungDetail.metric,
+      mixingReports,
+      machineNvlReports,
+      shiftSettings
+    });
+  }, [thucDungDetail, mixingReports, machineNvlReports, shiftSettings]);
   const tongGroups = useMemo(
     () =>
       buildBbTongGroups({
@@ -511,8 +553,6 @@ export default function ControlBoardBbMachineReportTable({
         return thucDungGroups.map(group => group.groupKey);
       case 'tong':
         return tongGroups.map(group => group.groupKey);
-      case 'ti_le_tron':
-        return mixingGroups.map(group => group.groupKey);
       default:
         return [];
     }
@@ -524,8 +564,7 @@ export default function ControlBoardBbMachineReportTable({
     damagedGroups,
     cuoiCaGroups,
     thucDungGroups,
-    tongGroups,
-    mixingGroups
+    tongGroups
   ]);
 
   const allActiveGroupsExpanded =
@@ -629,69 +668,6 @@ export default function ControlBoardBbMachineReportTable({
         ))}
       </div>
 
-      <div className="border-b border-zinc-100 bg-white px-2.5 py-2">
-        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-black uppercase tracking-wider text-slate-700">Lọc theo lệnh sản xuất</p>
-            <p className="text-[10px] font-bold text-sky-700">Chọn một hoặc nhiều lệnh SX máy BB</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-extrabold text-slate-500">
-              {orderCodeFilter.length > 0
-                ? `Đã chọn ${orderCodeFilter.length}/${orderOptions.length} lệnh`
-                : `Tất cả ${orderOptions.length} lệnh`}
-            </span>
-            {orderOptions.length > 0 && orderCodeFilter.length < orderOptions.length ? (
-              <button
-                type="button"
-                onClick={selectAllOrderCodes}
-                className="h-8 rounded-lg border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-800 transition hover:bg-sky-100"
-              >
-                Chọn tất cả
-              </button>
-            ) : null}
-            {orderCodeFilter.length > 0 ? (
-              <button
-                type="button"
-                onClick={clearOrderCodeFilter}
-                className="h-8 rounded-lg border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 transition hover:bg-slate-100"
-              >
-                Bỏ chọn
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {orderOptions.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-400">
-            Chưa có lệnh SX máy BB theo bộ lọc ngày/ca/máy hiện tại.
-          </p>
-        ) : (
-          <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-sky-200 bg-sky-50/40 p-2">
-            {orderOptions.map(option => {
-              const checked = orderCodeFilter.includes(option.code);
-              return (
-                <label
-                  key={option.code}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-extrabold shadow-sm transition ${
-                    checked
-                      ? 'border-sky-500 bg-sky-100 text-sky-900 ring-1 ring-sky-300'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleOrderCodeFilter(option.code)}
-                    className="h-4 w-4 rounded border-slate-400 text-sky-700 focus:ring-sky-700/20"
-                  />
-                  {option.label}
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
       {activeGroupKeys.length > 0 ? (
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
           <p className="text-sm font-extrabold text-slate-700">
@@ -721,21 +697,21 @@ export default function ControlBoardBbMachineReportTable({
       <div className="overflow-x-auto">
         {activeTab === 'lenh_sx' ? (
           <table className="min-w-[1280px] w-full text-left text-sm font-semibold">
-            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
+            <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
-                <th className="w-10 px-2 py-2.5 font-black" />
-                <th className="px-3 py-2.5 font-black">Ngày</th>
-                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
-                <th className="px-3 py-2.5 font-black">Ca SX</th>
-                <th className="px-3 py-2.5 font-black">Công nhân Thợ chính</th>
-                <th className="px-3 py-2.5 font-black">Công nhân sx phụ máy</th>
-                <th className="px-3 py-2.5 font-black">Công nhân Hỗ trợ, học việc</th>
-                <th className="px-3 py-2.5 text-right font-black">Số dòng SP</th>
-                <th className="px-3 py-2.5 text-right font-black">SL Đặt SX</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng TL đặt SX (kg)</th>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Thợ chính</th>
+                <th className="px-4 py-3.5 font-black">Phụ máy</th>
+                <th className="px-4 py-3.5 font-black">Hỗ trợ</th>
+                <th className="px-4 py-3.5 text-right font-black">Dòng</th>
+                <th className="px-4 py-3.5 text-right font-black">SL</th>
+                <th className="px-4 py-3.5 text-right font-black">Tổng TL (kg)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
@@ -754,67 +730,67 @@ export default function ControlBoardBbMachineReportTable({
                   const expanded = isGroupExpanded('lenh_sx', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="border-y border-sky-200 bg-sky-100/80 font-bold hover:bg-sky-100">
-                        <td className="px-2 py-2">
+                      <tr className="border-y border-sky-200 bg-sky-50/60 font-bold hover:bg-sky-100/50 transition">
+                        <td className="px-3 py-2.5">
                           <button
                             type="button"
                             onClick={() => toggleGroup('lenh_sx', group.groupKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-300 bg-white text-sky-800 shadow-sm transition hover:bg-sky-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-300 bg-white text-sky-800 shadow-sm transition hover:bg-sky-50"
                             title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
                             <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
                           </button>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
-                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">
+                        <td className="px-4 py-2.5 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">
                           {group.shiftLabel || group.shift || '—'}
                         </td>
-                        <td className="px-3 py-2 text-zinc-700">{group.staffMain || '—'}</td>
-                        <td className="px-3 py-2 text-zinc-700">{group.staffAssistant || '—'}</td>
-                        <td className="px-3 py-2 text-zinc-700">{group.staffSupport || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-800">
+                        <td className="px-4 py-2.5 text-zinc-700 text-sm">{group.staffMain || '—'}</td>
+                        <td className="px-4 py-2.5 text-zinc-700 text-sm">{group.staffAssistant || '—'}</td>
+                        <td className="px-4 py-2.5 text-zinc-700 text-sm">{group.staffSupport || '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-800">
                           {formatNumber(group.quantity, 2)}
                         </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-700">
                           {formatKg(group.totalNormKg, 3)}
                         </td>
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="border-y border-sky-100 bg-sky-50 text-xs font-black uppercase tracking-wider text-sky-900">
+                          <tr className="border-y border-sky-100 bg-sky-100/40 text-xs font-black uppercase tracking-wider text-sky-900">
                             <td />
-                            <td className="px-3 py-1.5 font-black">Mã hàng</td>
-                            <td colSpan={2} className="px-3 py-1.5 font-black">
+                            <td className="px-4 py-2 font-black">Mã hàng</td>
+                            <td colSpan={2} className="px-4 py-2 font-black">
                               Tên hàng
                             </td>
-                            <td className="px-3 py-1.5 font-black">ĐVT</td>
-                            <td className="px-3 py-1.5 text-right font-black">
-                              TL định mức kg/cuộn
+                            <td className="px-4 py-2 font-black">ĐVT</td>
+                            <td className="px-4 py-2 text-right font-black">
+                              Định mức (kg)
                             </td>
-                            <td className="px-3 py-1.5 text-right font-black">SL Đặt SX</td>
-                            <td colSpan={2} className="px-3 py-1.5 text-right font-black">
-                              Tổng TL đặt SX (kg)
+                            <td className="px-4 py-2 text-right font-black">SL</td>
+                            <td colSpan={2} className="px-4 py-2 text-right font-black">
+                              Tổng (kg)
                             </td>
                             <td />
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white font-semibold hover:bg-sky-50/60">
-                              <td className="px-2 py-1.5" />
-                              <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">{row.productCode || '—'}</td>
-                              <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-sky-50/40 border-b border-slate-50">
+                              <td className="px-3 py-2" />
+                              <td className="px-4 py-2 font-mono font-bold text-zinc-800">{row.productCode || '—'}</td>
+                              <td colSpan={2} className="px-4 py-2 text-zinc-700">
                                 {row.productName || '—'}
                               </td>
-                              <td className="px-3 py-1.5 text-zinc-600">{row.unit || '—'}</td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-indigo-700">
+                              <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
+                              <td className="px-4 py-2 text-right font-mono font-bold text-indigo-700">
                                 {formatKg(row.normKgPerUnit, 3)}
                               </td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-zinc-800">
+                              <td className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
                                 {formatNumber(row.quantity, 2)}
                               </td>
-                              <td colSpan={2} className="px-3 py-1.5 text-right font-mono font-bold text-emerald-700">
+                              <td colSpan={2} className="px-4 py-2 text-right font-mono font-bold text-emerald-700">
                                 {formatKg(row.totalNormKg, 3)}
                               </td>
                               <td />
@@ -828,13 +804,13 @@ export default function ControlBoardBbMachineReportTable({
               )}
             </tbody>
             {!isLoading && orderGroups.length > 0 ? (
-              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
-                  <td colSpan={8} className="px-3 py-2.5 text-right uppercase tracking-wider">
+                  <td colSpan={8} className="px-4 py-3.5 text-right uppercase tracking-wider">
                     Tổng cộng ({orderGroups.length} lệnh)
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{formatNumber(orderTotals.quantity, 2)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-emerald-700">
+                  <td className="px-4 py-3.5 text-right font-mono">{formatNumber(orderTotals.quantity, 2)}</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-emerald-700">
                     {formatKg(orderTotals.totalNormKg, 3)}
                   </td>
                 </tr>
@@ -843,17 +819,17 @@ export default function ControlBoardBbMachineReportTable({
           </table>
         ) : activeTab === 'phieu_xuat_kho' ? (
           <table className="min-w-[1280px] w-full text-left text-sm font-semibold">
-            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
+            <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
-                <th className="w-10 px-2 py-2.5 font-black" />
-                <th className="px-3 py-2.5 font-black">Ngày</th>
-                <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
-                <th className="px-3 py-2.5 font-black">Máy</th>
-                <th className="px-3 py-2.5 text-right font-black">Số dòng NVL</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng SL</th>
-                <th className="px-3 py-2.5 text-right font-black">Khối lượng định mức (kg)</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng vật tư xuất kho (kg)</th>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Máy</th>
+                <th className="px-4 py-3.5 text-right font-black">Dòng NVL</th>
+                <th className="px-4 py-3.5 text-right font-black">SL</th>
+                <th className="px-4 py-3.5 text-right font-black">Định mức (kg)</th>
+                <th className="px-4 py-3.5 text-right font-black">Tổng (kg)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -875,35 +851,35 @@ export default function ControlBoardBbMachineReportTable({
                   const expanded = isGroupExpanded('phieu_xuat_kho', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="border-y border-amber-200 bg-amber-100/80 font-bold hover:bg-amber-100">
-                        <td className="px-2 py-2">
+                      <tr className="border-y border-amber-200 bg-amber-50/60 font-bold hover:bg-amber-100/50 transition">
+                        <td className="px-3 py-2.5">
                           <button
                             type="button"
                             onClick={() => toggleGroup('phieu_xuat_kho', group.groupKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-300 bg-white text-amber-800 shadow-sm transition hover:bg-amber-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-300 bg-white text-amber-800 shadow-sm transition hover:bg-amber-50"
                             title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
                             <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
                           </button>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">
+                        <td className="px-4 py-2.5 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">
                           {group.shiftLabel || group.shift || '—'}
                         </td>
-                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-800">
+                        <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">{group.machine || '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-800">
                           {formatNumber(group.quantity, 3)}
                         </td>
                         <td
-                          className="px-3 py-2 text-right font-mono font-black text-emerald-700"
+                          className="px-4 py-2.5 text-right font-mono font-black text-emerald-700"
                           title="Tổng số lượng sản phẩm × định mức kg/đơn vị trong bảng Sản phẩm"
                         >
                           {formatKg(group.totalNormWeightKg, 3)}
                         </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
                       </tr>
@@ -943,9 +919,14 @@ export default function ControlBoardBbMachineReportTable({
                                         <span className="font-mono font-black text-sky-900">{productGroup.productCode}</span>
                                       ) : null}
                                       <span className="font-black text-zinc-900">{productGroup.productName || '—'}</span>
-                                      {productGroup.orderQuantity > 0 ? (
+                                      {productGroup.quantity > 0 ? (
                                         <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-600 ring-1 ring-sky-200">
-                                          SL thực tế: {formatNumber(productGroup.orderQuantity, 2)} {productGroup.unit}
+                                          SL xuất kho: {formatNumber(productGroup.quantity, 3)}
+                                        </span>
+                                      ) : null}
+                                      {productGroup.orderQuantity > 0 ? (
+                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-500 ring-1 ring-zinc-200">
+                                          SL lệnh: {formatNumber(productGroup.orderQuantity, 2)} {productGroup.unit}
                                         </span>
                                       ) : null}
                                       {productGroup.normKgPerUnit !== null ? (
@@ -992,7 +973,7 @@ export default function ControlBoardBbMachineReportTable({
                                         Tên NPL
                                       </td>
                                       <td className="px-3 py-1.5 font-black">ĐVT</td>
-                                      <td className="px-3 py-1.5 text-right font-black">Số lượng</td>
+                                      <td className="px-3 py-1.5 text-right font-black">SL</td>
                                       <td className="px-3 py-1.5 text-right font-black">KL định mức</td>
                                       <td className="px-3 py-1.5 text-right font-black">TL (kg)</td>
                                     </tr>
@@ -1053,33 +1034,33 @@ export default function ControlBoardBbMachineReportTable({
               )}
             </tbody>
             {!isLoading && exportGroups.length > 0 ? (
-              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
-                  <td colSpan={7} className="px-3 py-2.5 text-right uppercase tracking-wider">
+                  <td colSpan={7} className="px-4 py-3.5 text-right uppercase tracking-wider">
                     Tổng cộng
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-emerald-700">
+                  <td className="px-4 py-3.5 text-right font-mono text-emerald-700">
                     {formatKg(exportTotalNormKg, 3)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-amber-800">{formatKg(exportTotalKg, 3)}</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-amber-800">{formatKg(exportTotalKg, 3)}</td>
                 </tr>
               </tfoot>
             ) : null}
           </table>
         ) : activeTab === 'ton_dau_ca' ? (
           <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
-            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
+            <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
-                <th className="w-10 px-2 py-2.5 font-black" />
-                <th className="px-3 py-2.5 font-black">Ngày</th>
-                <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
-                <th className="px-3 py-2.5 font-black">Máy</th>
-                <th className="px-3 py-2.5 text-right font-black">Số dòng NVL</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng tồn đầu ca (kg)</th>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Máy</th>
+                <th className="px-4 py-3.5 text-right font-black">Dòng NVL</th>
+                <th className="px-4 py-3.5 text-right font-black">Tồn đầu ca (kg)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
@@ -1098,53 +1079,53 @@ export default function ControlBoardBbMachineReportTable({
                   const expanded = isGroupExpanded('ton_dau_ca', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="border-y border-indigo-200 bg-indigo-100/80 font-bold hover:bg-indigo-100">
-                        <td className="px-2 py-2">
+                      <tr className="border-y border-indigo-200 bg-indigo-50/60 font-bold hover:bg-indigo-100/50 transition">
+                        <td className="px-3 py-2.5">
                           <button
                             type="button"
                             onClick={() => toggleGroup('ton_dau_ca', group.groupKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-300 bg-white text-indigo-800 shadow-sm transition hover:bg-indigo-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-indigo-300 bg-white text-indigo-800 shadow-sm transition hover:bg-indigo-50"
                             title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
                             <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
                           </button>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">
+                        <td className="px-4 py-2.5 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">
                           {group.shiftLabel || group.shift || '—'}
                         </td>
-                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-indigo-800">
+                        <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">{group.machine || '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="border-y border-indigo-100 bg-indigo-50 text-xs font-black uppercase tracking-wider text-indigo-900">
+                          <tr className="border-y border-indigo-100 bg-indigo-100/40 text-xs font-black uppercase tracking-wider text-indigo-900">
                             <td />
-                            <td className="px-3 py-1.5 font-black">Mã NVL</td>
-                            <td colSpan={2} className="px-3 py-1.5 font-black">
+                            <td className="px-4 py-2 font-black">Mã NVL</td>
+                            <td colSpan={2} className="px-4 py-2 font-black">
                               Tên NVL
                             </td>
-                            <td className="px-3 py-1.5 font-black">ĐVT</td>
-                            <td className="px-3 py-1.5 text-right font-black">SL tồn</td>
-                            <td className="px-3 py-1.5 text-right font-black">Trọng lượng (kg)</td>
+                            <td className="px-4 py-2 font-black">ĐVT</td>
+                            <td className="px-4 py-2 text-right font-black">SL</td>
+                            <td className="px-4 py-2 text-right font-black">Tổng (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white font-semibold hover:bg-indigo-50/60">
-                              <td className="px-2 py-1.5" />
-                              <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
-                              <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-indigo-50/40 border-b border-slate-50">
+                              <td className="px-3 py-2" />
+                              <td className="px-4 py-2 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
+                              <td colSpan={2} className="px-4 py-2 text-zinc-700">
                                 {row.itemName || '—'}
                               </td>
-                              <td className="px-3 py-1.5 text-zinc-600">{row.unit || '—'}</td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-zinc-800">
+                              <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
+                              <td className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
                                 {formatNumber(row.quantity, 3)}
                               </td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-indigo-700">
+                              <td className="px-4 py-2 text-right font-mono font-bold text-indigo-700">
                                 {formatKg(row.weightKg, 3)}
                               </td>
                             </tr>
@@ -1157,30 +1138,58 @@ export default function ControlBoardBbMachineReportTable({
               )}
             </tbody>
             {!isLoading && dauCaGroups.length > 0 ? (
-              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
-                  <td colSpan={6} className="px-3 py-2.5 text-right uppercase tracking-wider">
-                    Tổng trọng lượng tồn đầu ca (kg)
+                  <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
+                    Tổng tồn đầu ca
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-indigo-800">{formatKg(dauCaTotalKg, 3)}</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-indigo-800">{formatKg(dauCaTotalKg, 3)}</td>
                 </tr>
               </tfoot>
             ) : null}
           </table>
         ) : activeTab === 'bao_cao_loi_hong' ? (
+          <>
+            {damagedGroups.length > 0 ? (
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
+                <p className="text-sm font-extrabold text-slate-700">
+                  Bấm mũi tên ở dòng cha để đóng/mở các dòng con
+                </p>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAllActiveGroupsExpanded(true)}
+                    disabled={damagedGroups.every(g => isGroupExpanded('bao_cao_loi_hong', g.groupKey))}
+                    className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-black text-rose-800 shadow-sm transition hover:bg-rose-50 disabled:cursor-default disabled:opacity-40"
+                  >
+                    Mở tất cả
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllActiveGroupsExpanded(false)}
+                    disabled={damagedGroups.every(g => !isGroupExpanded('bao_cao_loi_hong', g.groupKey))}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+                  >
+                    Đóng tất cả
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="overflow-x-auto">
           <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
-            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
+            <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
-                <th className="w-10 px-2 py-2.5 font-black" />
-                <th className="px-3 py-2.5 font-black">Ngày</th>
-                <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
-                <th className="px-3 py-2.5 font-black">Máy</th>
-                <th className="px-3 py-2.5 text-right font-black">Số dòng NVL</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng hàng lỗi hỏng (kg)</th>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Máy</th>
+                <th className="px-4 py-3.5 text-right font-black">Dòng NVL</th>
+                <th className="px-4 py-3.5 text-right font-black">Lỗi hỏng (kg)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
@@ -1199,49 +1208,49 @@ export default function ControlBoardBbMachineReportTable({
                   const expanded = isGroupExpanded('bao_cao_loi_hong', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="border-y border-rose-200 bg-rose-100/80 font-bold hover:bg-rose-100">
-                        <td className="px-2 py-2">
+                      <tr className="border-y border-rose-200 bg-rose-50/60 font-bold hover:bg-rose-100/50 transition">
+                        <td className="px-3 py-3">
                           <button
                             type="button"
                             onClick={() => toggleGroup('bao_cao_loi_hong', group.groupKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-300 bg-white text-rose-800 shadow-sm transition hover:bg-rose-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300 bg-white text-rose-800 shadow-sm transition hover:bg-rose-50"
                             title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
                             <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
                           </button>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">
+                        <td className="px-4 py-3 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-800">
                           {group.shiftLabel || group.shift || '—'}
                         </td>
-                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-rose-800">
+                        <td className="px-4 py-3 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-800">{group.machine || '—'}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-rose-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="border-y border-rose-100 bg-rose-50 text-xs font-black uppercase tracking-wider text-rose-900">
+                          <tr className="border-y border-rose-100 bg-rose-100/40 text-xs font-black uppercase tracking-wider text-rose-900">
                             <td />
-                            <td className="px-3 py-1.5 font-black">Số phiếu</td>
-                            <td className="px-3 py-1.5 font-black">Mã NVL</td>
-                            <td colSpan={2} className="px-3 py-1.5 font-black">
-                              Tên NVL lỗi hỏng
+                            <td className="px-4 py-2.5 font-black">Phiếu</td>
+                            <td className="px-4 py-2.5 font-black">Mã NVL</td>
+                            <td colSpan={2} className="px-4 py-2.5 font-black">
+                              Tên NVL
                             </td>
-                            <td className="px-3 py-1.5 font-black">ĐVT</td>
-                            <td className="px-3 py-1.5 text-right font-black">Trọng lượng (kg)</td>
+                            <td className="px-4 py-2.5 font-black">ĐVT</td>
+                            <td className="px-4 py-2.5 text-right font-black">Tổng (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white font-semibold hover:bg-rose-50/60">
-                              <td className="px-2 py-1.5" />
-                              <td className="px-3 py-1.5 font-mono text-zinc-700">{row.documentNo || '—'}</td>
-                              <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-rose-50/40 border-b border-slate-50">
+                              <td className="px-3 py-2.5" />
+                              <td className="px-4 py-2.5 font-mono text-zinc-700">{row.documentNo || '—'}</td>
+                              <td className="px-4 py-2.5 font-mono font-bold text-zinc-800">
                                 {row.materialCode || '—'}
                               </td>
-                              <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
+                              <td colSpan={2} className="px-4 py-2.5 text-zinc-700">
                                 {row.materialName || '—'}
                                 {row.productCode ? (
                                   <span className="ml-2 text-[10px] font-semibold text-zinc-400">
@@ -1249,8 +1258,8 @@ export default function ControlBoardBbMachineReportTable({
                                   </span>
                                 ) : null}
                               </td>
-                              <td className="px-3 py-1.5 text-zinc-600">{row.unit || 'kg'}</td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-rose-700">
+                              <td className="px-4 py-2.5 text-zinc-600">{row.unit || 'kg'}</td>
+                              <td className="px-4 py-2.5 text-right font-mono font-bold text-rose-700">
                                 {formatKg(row.weightKg, 3)}
                               </td>
                             </tr>
@@ -1263,30 +1272,32 @@ export default function ControlBoardBbMachineReportTable({
               )}
             </tbody>
             {!isLoading && damagedGroups.length > 0 ? (
-              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
-                  <td colSpan={6} className="px-3 py-2.5 text-right uppercase tracking-wider">
-                    Tổng trọng lượng hàng lỗi hỏng (kg)
+                  <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
+                    Tổng lỗi hỏng
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-rose-800">{formatKg(damagedTotalKg, 3)}</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-rose-800">{formatKg(damagedTotalKg, 3)}</td>
                 </tr>
               </tfoot>
             ) : null}
           </table>
+            </div>
+          </>
         ) : activeTab === 'kiem_ton_cuoi_ca' ? (
           <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
-            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
+            <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
-                <th className="w-10 px-2 py-2.5 font-black" />
-                <th className="px-3 py-2.5 font-black">Ngày</th>
-                <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
-                <th className="px-3 py-2.5 font-black">Máy</th>
-                <th className="px-3 py-2.5 text-right font-black">Số dòng NVL</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng tồn cuối ca (kg)</th>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Máy</th>
+                <th className="px-4 py-3.5 text-right font-black">Dòng NVL</th>
+                <th className="px-4 py-3.5 text-right font-black">Tồn cuối ca (kg)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
@@ -1305,53 +1316,53 @@ export default function ControlBoardBbMachineReportTable({
                   const expanded = isGroupExpanded('kiem_ton_cuoi_ca', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="border-y border-violet-200 bg-violet-100/80 font-bold hover:bg-violet-100">
-                        <td className="px-2 py-2">
+                      <tr className="border-y border-violet-200 bg-violet-50/60 font-bold hover:bg-violet-100/50 transition">
+                        <td className="px-3 py-2.5">
                           <button
                             type="button"
                             onClick={() => toggleGroup('kiem_ton_cuoi_ca', group.groupKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-violet-300 bg-white text-violet-800 shadow-sm transition hover:bg-violet-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-300 bg-white text-violet-800 shadow-sm transition hover:bg-violet-50"
                             title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
                             <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
                           </button>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">
+                        <td className="px-4 py-2.5 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">
                           {group.shiftLabel || group.shift || '—'}
                         </td>
-                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-violet-800">
+                        <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">{group.machine || '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-violet-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="border-y border-violet-100 bg-violet-50 text-xs font-black uppercase tracking-wider text-violet-900">
+                          <tr className="border-y border-violet-100 bg-violet-100/40 text-xs font-black uppercase tracking-wider text-violet-900">
                             <td />
-                            <td className="px-3 py-1.5 font-black">Mã NVL</td>
-                            <td colSpan={2} className="px-3 py-1.5 font-black">
+                            <td className="px-4 py-2 font-black">Mã NVL</td>
+                            <td colSpan={2} className="px-4 py-2 font-black">
                               Tên NVL
                             </td>
-                            <td className="px-3 py-1.5 font-black">ĐVT</td>
-                            <td className="px-3 py-1.5 text-right font-black">SL tồn</td>
-                            <td className="px-3 py-1.5 text-right font-black">Trọng lượng (kg)</td>
+                            <td className="px-4 py-2 font-black">ĐVT</td>
+                            <td className="px-4 py-2 text-right font-black">SL</td>
+                            <td className="px-4 py-2 text-right font-black">Tổng (kg)</td>
                           </tr>
                           {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white font-semibold hover:bg-violet-50/60">
-                              <td className="px-2 py-1.5" />
-                              <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
-                              <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
+                            <tr key={row.key} className="bg-white font-semibold hover:bg-violet-50/40 border-b border-slate-50">
+                              <td className="px-3 py-2" />
+                              <td className="px-4 py-2 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
+                              <td colSpan={2} className="px-4 py-2 text-zinc-700">
                                 {row.itemName || '—'}
                               </td>
-                              <td className="px-3 py-1.5 text-zinc-600">{row.unit || '—'}</td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-zinc-800">
+                              <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
+                              <td className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
                                 {formatNumber(row.quantity, 3)}
                               </td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-violet-700">
+                              <td className="px-4 py-2 text-right font-mono font-bold text-violet-700">
                                 {formatKg(row.weightKg, 3)}
                               </td>
                             </tr>
@@ -1364,12 +1375,12 @@ export default function ControlBoardBbMachineReportTable({
               )}
             </tbody>
             {!isLoading && cuoiCaGroups.length > 0 ? (
-              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
-                  <td colSpan={6} className="px-3 py-2.5 text-right uppercase tracking-wider">
-                    Tổng trọng lượng tồn cuối ca (kg)
+                  <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
+                    Tổng tồn cuối ca
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-violet-800">{formatKg(cuoiCaTotalKg, 3)}</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-violet-800">{formatKg(cuoiCaTotalKg, 3)}</td>
                 </tr>
               </tfoot>
             ) : null}
@@ -1441,7 +1452,18 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'tong_vat_tu_thuc_dung' ? (
-          <table className="min-w-[1200px] w-full text-left text-sm font-semibold">
+          <table className="min-w-[1700px] w-full whitespace-nowrap text-left text-sm font-semibold">
+            <colgroup>
+              <col className="w-14" />
+              <col className="w-[130px]" />
+              <col className="w-[320px]" />
+              <col className="w-[150px]" />
+              <col className="w-[180px]" />
+              <col className="w-[210px]" />
+              <col className="w-[170px]" />
+              <col className="w-[170px]" />
+              <col className="w-[260px]" />
+            </colgroup>
             <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-2 py-2.5 font-black" />
@@ -1449,22 +1471,24 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-3 py-2.5 font-black">Ca</th>
                 <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
                 <th className="px-3 py-2.5 font-black">Máy</th>
-                <th className="px-3 py-2.5 text-right font-black">Số dòng NVL</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng xuất trong ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn đầu ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca (kg)</th>
                 <th className="px-3 py-2.5 text-right font-black">Tổng vật tư thực xuất dùng (kg)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải vật tư thực dùng...
+                    Đang tải vật tư thực dùng &amp; tỉ lệ trộn...
                   </td>
                 </tr>
               ) : thucDungGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
-                    Chưa có dữ liệu vật tư thực dùng gắn ca/ngày lệnh máy BB.
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có dữ liệu thực xuất dùng / tỉ lệ trộn gắn ca/ngày lệnh máy BB.
                   </td>
                 </tr>
               ) : (
@@ -1490,7 +1514,15 @@ export default function ControlBoardBbMachineReportTable({
                         </td>
                         <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
                         <td className="px-3 py-2 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.xuatCaTotal, 3)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.tonDauCaTotal, 3)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.tonCuoiCaTotal, 3)}
+                        </td>
                         <td className="px-3 py-2 text-right font-mono font-bold text-teal-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
@@ -1500,33 +1532,89 @@ export default function ControlBoardBbMachineReportTable({
                           <tr className="border-y border-teal-100 bg-teal-50 text-xs font-black uppercase tracking-wider text-teal-900">
                             <td />
                             <td className="px-3 py-1.5 font-black">Mã NVL</td>
-                            <td colSpan={2} className="px-3 py-1.5 font-black">
-                              Tên NVL
+                            <td className="px-3 py-1.5 font-black">Tên NVL</td>
+                            <td className="px-3 py-1.5 text-right font-black">Tỉ lệ ĐM (%)</td>
+                            <td className="px-3 py-1.5 text-right font-black">Tỉ lệ TB thực tế (%)</td>
+                            <td
+                              className="px-3 py-1.5 text-right font-black"
+                              title="Tổng xuất trong ca × Tỉ lệ TB thực tế (%)"
+                            >
+                              Trọng lượng đã trộn
                             </td>
-                            <td className="px-3 py-1.5 text-right font-black">Xuất (kg)</td>
-                            <td className="px-3 py-1.5 text-right font-black">Tồn đầu − cuối</td>
-                            <td className="px-3 py-1.5 text-right font-black">Thực dùng (kg)</td>
+                            <td className="px-3 py-1.5 text-right font-black">Tồn đầu</td>
+                            <td className="px-3 py-1.5 text-right font-black">Tồn cuối</td>
+                            <td className="px-3 py-1.5 text-right font-black" title="Trọng lượng đã trộn + Tồn đầu − Tồn cuối">
+                              Thực dùng (kg)
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-black">Số mẻ có KL TT</td>
                           </tr>
-                          {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white font-semibold hover:bg-teal-50/60">
-                              <td className="px-2 py-1.5" />
-                              <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
-                                {row.materialCode || '—'}
-                              </td>
-                              <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
-                                {row.materialName || '—'}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono text-amber-700">
-                                {formatKg(row.xuatKg, 3)}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono text-zinc-600">
-                                {formatKg(row.tonDauKg, 3)} − {formatKg(row.tonCuoiKg, 3)}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-teal-700">
-                                {formatKg(row.weightKg, 3)}
+                          {group.lines.length === 0 ? (
+                            <tr className="bg-white">
+                              <td />
+                              <td colSpan={9} className="px-3 py-2 text-sm font-semibold text-zinc-400">
+                                Chưa có dòng NVL từ báo cáo trộn.
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            group.lines.map(row => (
+                              <tr key={row.key} className="bg-white font-semibold hover:bg-teal-50/60">
+                                <td className="px-2 py-1.5" />
+                                <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
+                                  {row.materialCode || '—'}
+                                </td>
+                                <td className="px-3 py-1.5 text-zinc-700">{row.materialName || '—'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono text-zinc-600">
+                                  <ThucDungMetricButton
+                                    label={formatPercent(row.tiLeDinhMucPercent, 2)}
+                                    className="font-mono text-zinc-600"
+                                    onOpen={() => setThucDungDetail({ line: row, metric: 'ti_le_dinh_muc' })}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono font-bold text-orange-800">
+                                  <ThucDungMetricButton
+                                    label={formatPercent(row.tiLeThucTeTbPercent, 2)}
+                                    className="font-mono font-bold text-orange-800"
+                                    onOpen={() => setThucDungDetail({ line: row, metric: 'ti_le_thuc_te' })}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono text-amber-700">
+                                  <ThucDungMetricButton
+                                    label={formatKg(row.trongLuongDaTronKg, 3)}
+                                    className="font-mono text-amber-700"
+                                    onOpen={() => setThucDungDetail({ line: row, metric: 'trong_luong_da_tron' })}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono text-zinc-600">
+                                  <ThucDungMetricButton
+                                    label={formatKg(row.tonDauKg, 3)}
+                                    className="font-mono text-zinc-600"
+                                    onOpen={() => setThucDungDetail({ line: row, metric: 'ton_dau' })}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono text-zinc-600">
+                                  <ThucDungMetricButton
+                                    label={formatKg(row.tonCuoiKg, 3)}
+                                    className="font-mono text-zinc-600"
+                                    onOpen={() => setThucDungDetail({ line: row, metric: 'ton_cuoi' })}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono font-bold text-teal-700">
+                                  <ThucDungMetricButton
+                                    label={formatKg(row.weightKg, 3)}
+                                    className="font-mono font-bold text-teal-700"
+                                    onOpen={() => setThucDungDetail({ line: row, metric: 'thuc_dung' })}
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono text-zinc-700">
+                                  <ThucDungMetricButton
+                                    label={formatNumber(row.batchCount, 0)}
+                                    className="font-mono text-zinc-700"
+                                    onOpen={() => setThucDungDetail({ line: row, metric: 'so_me' })}
+                                  />
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </>
                       ) : null}
                     </React.Fragment>
@@ -1537,28 +1625,229 @@ export default function ControlBoardBbMachineReportTable({
             {!isLoading && thucDungGroups.length > 0 ? (
               <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
                 <tr>
-                  <td colSpan={6} className="px-3 py-2.5 text-right uppercase tracking-wider">
-                    Tổng vật tư thực xuất dùng (kg)
+                  <td colSpan={5} className="px-3 py-2.5 text-right uppercase tracking-wider">
+                    Tổng cộng
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">
+                    {formatKg(thucDungGroups.reduce((sum, g) => sum + (g.xuatCaTotal || 0), 0), 3)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">
+                    {formatKg(thucDungGroups.reduce((sum, g) => sum + (g.tonDauCaTotal || 0), 0), 3)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-amber-700">
+                    {formatKg(thucDungGroups.reduce((sum, g) => sum + (g.tonCuoiCaTotal || 0), 0), 3)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-teal-800">{formatKg(thucDungTotalKg, 3)}</td>
                 </tr>
               </tfoot>
             ) : null}
           </table>
-        ) : activeTab === 'tong' ? (
-          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
-            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
+        ) : activeTab === 'tong_dinh_muc_nvl_nhap_kho' ? (
+          <>
+            {exportGroups.length > 0 ? (
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
+                <p className="text-sm font-extrabold text-slate-700">
+                  Bấm mũi tên ở dòng cha để đóng/mở các dòng con
+                </p>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAllActiveGroupsExpanded(true)}
+                    disabled={exportGroups.every(g => isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', g.groupKey))}
+                    className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-black text-amber-800 shadow-sm transition hover:bg-amber-50 disabled:cursor-default disabled:opacity-40"
+                  >
+                    Mở tất cả
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllActiveGroupsExpanded(false)}
+                    disabled={exportGroups.every(g => !isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', g.groupKey))}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
+                  >
+                    Đóng tất cả
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="overflow-x-auto">
+          <table className="min-w-[1200px] w-full text-left text-sm font-semibold">
+            <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
-                <th className="w-10 px-2 py-2.5 font-black" />
-                <th className="px-3 py-2.5 font-black">Ngày</th>
-                <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
-                <th className="px-3 py-2.5 font-black">Máy</th>
-                <th className="px-3 py-2.5 text-right font-black">Tổng trọng lượng nhập kho</th>
-                <th className="px-3 py-2.5 text-right font-black">
-                  Chênh lệch Trọng lượng nhập kho − Trọng lượng Thực dùng
-                </th>
-                <th className="px-3 py-2.5 text-right font-black">Tỉ lệ chênh lệch trọng lượng</th>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Máy</th>
+                <th className="px-4 py-3.5 text-right font-black">Dòng SP</th>
+                <th className="px-4 py-3.5 text-right font-black">Tổng định mức (kg)</th>
+                <th className="px-4 py-3.5 text-right font-black">SL</th>
+                <th className="px-4 py-3.5 text-right font-black">Tổng TL (kg)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải định mức vật tư nhập kho...
+                  </td>
+                </tr>
+              ) : exportGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có phiếu xuất kho theo bộ lọc đã chọn.
+                  </td>
+                </tr>
+              ) : (
+                exportGroups.map(group => {
+                  const expanded = isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', group.groupKey);
+                  return (
+                    <React.Fragment key={group.groupKey}>
+                      <tr className="border-y border-amber-200 bg-amber-50/60 font-bold hover:bg-amber-100/50 transition">
+                        <td className="px-3 py-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('tong_dinh_muc_nvl_nhap_kho', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-300 bg-white text-amber-800 shadow-sm transition hover:bg-amber-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
+                            aria-expanded={expanded}
+                          >
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-800">
+                          {group.shiftLabel || group.shift || '—'}
+                        </td>
+                        <td className="px-4 py-3 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-800">{group.machine || '—'}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-zinc-600">{group.productGroups.length}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-amber-800">
+                          {formatKg(group.totalNormWeightKg, 3)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-zinc-600">
+                          {formatNumber(group.quantity, 3)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.totalWeightKg, 3)}
+                        </td>
+                      </tr>
+                      {expanded ? (
+                        <>
+                          <tr className="border-y border-amber-100 bg-amber-100/40 text-xs font-black uppercase tracking-wider text-amber-900">
+                            <td />
+                            <td className="px-4 py-2.5 font-black">Mã NVL</td>
+                            <td colSpan={3} className="px-4 py-2.5 font-black">
+                              Tên NVL
+                            </td>
+                            <td className="px-4 py-2.5 font-black">ĐVT</td>
+                            <td className="px-4 py-2.5 text-right font-black">Định mức (kg)</td>
+                            <td className="px-4 py-2.5 text-right font-black">SL</td>
+                            <td className="px-4 py-2.5 text-right font-black">Tổng TL (kg)</td>
+                          </tr>
+                          {(() => {
+                            const allLines = group.productGroups.flatMap(productGroup =>
+                              (productGroup.lines || []).map(row => ({ ...row }))
+                            );
+                            const groupedByCode = new Map<
+                              string,
+                              {
+                                itemCode: string;
+                                itemName: string;
+                                unit: string;
+                                totalNormWeight: number;
+                                totalExportQty: number;
+                                totalExportKg: number;
+                                seenSlipKeys: Set<string>;
+                              }
+                            >();
+                            allLines.forEach(row => {
+                              const key = row.itemCode || '—';
+                              if (!groupedByCode.has(key)) {
+                                groupedByCode.set(key, {
+                                  itemCode: row.itemCode,
+                                  itemName: row.itemName,
+                                  unit: row.unit,
+                                  totalNormWeight: 0,
+                                  totalExportQty: 0,
+                                  totalExportKg: 0,
+                                  seenSlipKeys: new Set<string>()
+                                });
+                              }
+                              const existing = groupedByCode.get(key)!;
+                              existing.totalNormWeight += row.normWeightKg || 0;
+                              existing.totalExportKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
+                              const slipKey = row.slipLineKey || row.key;
+                              if (!existing.seenSlipKeys.has(slipKey)) {
+                                existing.seenSlipKeys.add(slipKey);
+                                existing.totalExportQty += row.quantity > 0 ? row.quantity : 0;
+                              }
+                            });
+                            return Array.from(groupedByCode.values()).map((row, idx) => (
+                              <tr key={`${group.groupKey}-nvl-${idx}`} className="bg-white font-semibold hover:bg-amber-50/40 border-b border-slate-50">
+                                <td className="px-3 py-2.5" />
+                                <td className="px-4 py-2.5 font-mono font-bold text-zinc-800">
+                                  {row.itemCode || '—'}
+                                </td>
+                                <td colSpan={3} className="px-4 py-2.5 text-zinc-700">
+                                  {row.itemName || '—'}
+                                </td>
+                                <td className="px-4 py-2.5 text-zinc-600">{row.unit || '—'}</td>
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
+                                  {formatKg(row.totalNormWeight, 3)}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-700">
+                                  {formatNumber(row.totalExportQty, 3)}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
+                                  {formatKg(row.totalExportKg, 3)}
+                                </td>
+                              </tr>
+                            ));
+                          })()}
+                        </>
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+            {!isLoading && exportGroups.length > 0 ? (
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
+                <tr>
+                  <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
+                    Tổng định mức
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-amber-800">
+                    {formatKg(exportTotalNormKg, 3)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-zinc-700">
+                    {formatNumber(exportGroups.reduce((sum, g) => sum + (g.quantity || 0), 0), 3)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-amber-800">
+                    {formatKg(exportGroups.reduce((sum, g) => sum + (g.totalWeightKg || 0), 0), 3)}
+                  </td>
+                </tr>
+              </tfoot>
+            ) : null}
+          </table>
+            </div>
+          </>
+        ) : activeTab === 'tong' ? (
+          <table className="min-w-[1400px] w-full text-left text-sm font-semibold">
+            <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
+              <tr>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Máy</th>
+                <th className="px-4 py-3.5 text-right font-black">Tồn đầu ca (kg)</th>
+                <th className="px-4 py-3.5 text-right font-black">Xuất trong ca (kg)</th>
+                <th className="px-4 py-3.5 text-right font-black">Tồn cuối ca (kg)</th>
+                <th className="px-4 py-3.5 text-right font-black">Thực dùng (kg)</th>
+                <th className="px-4 py-3.5 text-right font-black">Nhập kho (kg)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -1578,58 +1867,62 @@ export default function ControlBoardBbMachineReportTable({
               ) : (
                 tongGroups.map(group => {
                   const expanded = isGroupExpanded('tong', group.groupKey);
+                  // Lấy dữ liệu tồn từ các group khác dựa trên groupKey
+                  const dauCaGroup = dauCaGroups.find(g => g.groupKey === group.groupKey);
+                  const cuoiCaGroup = cuoiCaGroups.find(g => g.groupKey === group.groupKey);
+                  const thucDungGroup = thucDungGroups.find(g => g.groupKey === group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
-                      <tr className="border-y border-emerald-200 bg-emerald-100/80 font-bold hover:bg-emerald-100">
-                        <td className="px-2 py-2">
+                      <tr className="border-y border-emerald-200 bg-emerald-50/60 font-bold hover:bg-emerald-100/50 transition">
+                        <td className="px-3 py-2.5">
                           <button
                             type="button"
                             onClick={() => toggleGroup('tong', group.groupKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-300 bg-white text-emerald-800 shadow-sm transition hover:bg-emerald-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-300 bg-white text-emerald-800 shadow-sm transition hover:bg-emerald-50"
                             title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
                             aria-expanded={expanded}
                           >
                             <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
                           </button>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-800">{group.ngay || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-700">{group.shiftLabel || group.shift || '—'}</td>
-                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-700">{group.machine || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
+                        <td className="px-4 py-2.5 font-mono font-bold text-zinc-800">{group.ngay || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-700">{group.shiftLabel || group.shift || '—'}</td>
+                        <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-700">{group.machine || '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-700">
+                          {formatKg(dauCaGroup?.totalWeightKg || 0, 3)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.tongTrongLuongXuatRa, 3)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-violet-700">
+                          {formatKg(cuoiCaGroup?.totalWeightKg || 0, 3)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-cyan-700">
+                          {formatKg(thucDungGroup?.totalWeightKg || 0, 3)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-700">
                           {formatKg(group.tongTrongLuongNhapKho, 3)}
-                        </td>
-                        <td
-                          className={`px-3 py-2 text-right font-mono font-bold ${
-                            group.chenhLechTrongLuongNhapXuat < 0 ? 'text-rose-700' : 'text-sky-800'
-                          }`}
-                        >
-                          {formatKg(group.chenhLechTrongLuongNhapXuat, 3)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-800">
-                          {formatPercent(group.tiLeChenhLechTrongLuong, 2)}
                         </td>
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="border-y border-emerald-100 bg-emerald-50 text-xs font-black uppercase tracking-wider text-emerald-900">
-                            <td className="px-2 py-1.5" />
-                            <td colSpan={5} className="px-3 py-1.5 font-black">
+                          <tr className="border-y border-emerald-100 bg-emerald-100/40 text-xs font-black uppercase tracking-wider text-emerald-900">
+                            <td className="px-3 py-2" />
+                            <td colSpan={5} className="px-4 py-2 font-black">
                               Thành phần
                             </td>
-                            <td className="px-3 py-1.5 text-right font-black">Giá trị (kg)</td>
-                            <td className="px-3 py-1.5" />
+                            <td colSpan={4} className="px-4 py-2 text-right font-black">Giá trị (kg)</td>
                           </tr>
                           {group.lines.map(line => (
-                            <tr key={line.key} className="bg-white font-semibold hover:bg-emerald-50/60">
-                              <td className="px-2 py-1.5" />
-                              <td colSpan={5} className="px-3 py-1.5 text-zinc-700">
+                            <tr key={line.key} className="bg-white font-semibold hover:bg-emerald-50/40 border-b border-slate-50">
+                              <td className="px-3 py-2" />
+                              <td colSpan={5} className="px-4 py-2 text-zinc-700">
                                 {line.label}
                               </td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-zinc-800">
+                              <td colSpan={4} className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
                                 {formatKg(line.valueKg, 3)}
                               </td>
-                              <td className="px-3 py-1.5" />
                             </tr>
                           ))}
                         </>
@@ -1640,122 +1933,29 @@ export default function ControlBoardBbMachineReportTable({
               )}
             </tbody>
             {!isLoading && tongGroups.length > 0 ? (
-              <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
-                  <td colSpan={5} className="px-3 py-2.5 text-right uppercase tracking-wider">
-                    Tổng
+                  <td colSpan={5} className="px-4 py-3.5 text-right uppercase tracking-wider">
+                    Tổng cộng
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-emerald-800">
+                  <td className="px-4 py-3.5 text-right font-mono text-indigo-700">
+                    {formatKg(dauCaTotalKg, 3)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-amber-700">
+                    {formatKg(exportTotalKg, 3)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-violet-700">
+                    {formatKg(cuoiCaTotalKg, 3)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-cyan-700">
+                    {formatKg(thucDungTotalKg, 3)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-emerald-700">
                     {formatKg(tongNhapKhoTotalKg, 3)}
-                  </td>
-                  <td
-                    className={`px-3 py-2.5 text-right font-mono ${
-                      tongChenhLechTotalKg < 0 ? 'text-rose-700' : 'text-sky-800'
-                    }`}
-                  >
-                    {formatKg(tongChenhLechTotalKg, 3)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-zinc-800">
-                    {formatPercent(tongTiLeChenhLech, 2)}
                   </td>
                 </tr>
               </tfoot>
             ) : null}
-          </table>
-        ) : activeTab === 'ti_le_tron' ? (
-          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
-            <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
-              <tr>
-                <th className="w-10 px-2 py-2.5 font-black" />
-                <th className="px-3 py-2.5 font-black">Ngày</th>
-                <th className="px-3 py-2.5 font-black">Ca</th>
-                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
-                <th className="px-3 py-2.5 font-black">Máy</th>
-                <th className="px-3 py-2.5 text-right font-black">Số NVL</th>
-                <th className="px-3 py-2.5 text-right font-black">Ghi chú</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải tỉ lệ trộn...
-                  </td>
-                </tr>
-              ) : mixingGroups.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
-                    Chưa có phiếu trộn nguyên liệu gắn ca/ngày lệnh máy BB.
-                  </td>
-                </tr>
-              ) : (
-                mixingGroups.map(group => {
-                  const expanded = isGroupExpanded('ti_le_tron', group.groupKey);
-                  return (
-                    <React.Fragment key={group.groupKey}>
-                      <tr className="border-y border-orange-200 bg-orange-100/80 font-bold hover:bg-orange-100">
-                        <td className="px-2 py-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleGroup('ti_le_tron', group.groupKey)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-orange-300 bg-white text-orange-800 shadow-sm transition hover:bg-orange-50"
-                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
-                            aria-expanded={expanded}
-                          >
-                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
-                          </button>
-                        </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-800">{group.ngay || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-700">{group.shiftLabel || group.shift || '—'}</td>
-                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-700">{group.machine || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-orange-800">
-                          {formatNumber(group.lineCount, 0)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-[11px] font-semibold text-zinc-500">
-                          TB thực tế giữa các mẻ
-                        </td>
-                      </tr>
-                      {expanded ? (
-                        <>
-                          <tr className="border-y border-orange-100 bg-orange-50 text-xs font-black uppercase tracking-wider text-orange-900">
-                            <td className="px-2 py-1.5" />
-                            <td className="px-3 py-1.5 font-black">Mã NVL</td>
-                            <td colSpan={2} className="px-3 py-1.5 font-black">
-                              Tên vật tư
-                            </td>
-                            <td className="px-3 py-1.5 text-right font-black">Tỉ lệ ĐM (%)</td>
-                            <td className="px-3 py-1.5 text-right font-black">Tỉ lệ TB thực tế (%)</td>
-                            <td className="px-3 py-1.5 text-right font-black">Số mẻ có KL TT</td>
-                          </tr>
-                          {group.lines.map(line => (
-                            <tr key={line.key} className="bg-white font-semibold hover:bg-orange-50/60">
-                              <td className="px-2 py-1.5" />
-                              <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
-                                {line.materialCode || '—'}
-                              </td>
-                              <td colSpan={2} className="px-3 py-1.5 text-zinc-700">
-                                {line.materialName || '—'}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono text-zinc-600">
-                                {formatPercent(line.tiLeDinhMucPercent, 2)}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono font-bold text-orange-800">
-                                {formatPercent(line.tiLeThucTeTbPercent, 2)}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono text-zinc-700">
-                                {formatNumber(line.batchCount, 0)}
-                              </td>
-                            </tr>
-                          ))}
-                        </>
-                      ) : null}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
           </table>
         ) : (
           <div className="overflow-x-auto">
@@ -1938,7 +2138,7 @@ export default function ControlBoardBbMachineReportTable({
           <div className="space-y-4 p-5">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL sản phẩm</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL lệnh SX</p>
                 <p className="mt-1 font-mono text-lg font-black text-zinc-900">
                   {formatNumber(selectedMaterialNorm.productQuantity, 3)}
                 </p>
@@ -2015,7 +2215,92 @@ export default function ControlBoardBbMachineReportTable({
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
-              Nguồn: Số lượng sản phẩm trong lệnh SX + TL định mức và Thành phần NVL trong bảng Sản phẩm.
+              Nguồn định mức: SL lệnh SX × TL định mức và Thành phần NVL trong bảng Sản phẩm. Cột SL trên bảng = đúng cột SL phiếu xuất kho (`so_luong`), không nhân tỉ lệ phân bổ.
+            </p>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    {thucDungDetailView ? (
+      <div
+        className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chi tiết dữ liệu thực xuất dùng"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) setThucDungDetail(null);
+        }}
+      >
+        <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-teal-200 bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-teal-800 to-teal-600 px-5 py-4 text-white">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-100">
+                {thucDungDetailView.valueLabel}
+              </p>
+              <h4 className="mt-1 text-base font-black">{thucDungDetailView.title}</h4>
+              <p className="mt-1 text-xs font-semibold text-teal-50">{thucDungDetailView.subtitle}</p>
+              <p className="mt-2 font-mono text-lg font-black text-white">{thucDungDetailView.valueText}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setThucDungDetail(null)}
+              className="rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-black hover:bg-white/20"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="space-y-3 overflow-auto p-5">
+            {thucDungDetailView.formula ? (
+              <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-bold text-teal-900">
+                {thucDungDetailView.formula}
+              </div>
+            ) : null}
+            <div className="overflow-x-auto rounded-xl border border-zinc-200">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-zinc-100 text-[11px] uppercase tracking-wider text-zinc-600">
+                  <tr>
+                    {thucDungDetailView.columns.map(column => (
+                      <th
+                        key={column.key}
+                        className={`px-3 py-2.5 font-black ${column.align === 'right' ? 'text-right' : ''}`}
+                      >
+                        {column.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {thucDungDetailView.rows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={thucDungDetailView.columns.length}
+                        className="px-3 py-8 text-center font-bold text-zinc-400"
+                      >
+                        Không tìm thấy dòng nguồn tương ứng.
+                      </td>
+                    </tr>
+                  ) : (
+                    thucDungDetailView.rows.map((row, index) => (
+                      <tr key={`${String(row.reportId || row.lan || row.ngay || 'row')}-${index}`} className="hover:bg-teal-50/50">
+                        {thucDungDetailView.columns.map(column => (
+                          <td
+                            key={column.key}
+                            className={`px-3 py-2 font-semibold text-zinc-800 ${
+                              column.align === 'right' ? 'text-right font-mono' : ''
+                            }`}
+                          >
+                            {formatThucDungDetailCell(row[column.key])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs font-semibold text-zinc-500">
+              Nguồn: Báo cáo phối trộn và/hoặc báo cáo tồn đầu/cuối ca theo đúng mã NVL của dòng đang xem.
             </p>
           </div>
         </div>

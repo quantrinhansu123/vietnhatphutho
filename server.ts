@@ -4167,6 +4167,28 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== 'production') {
     const publicPath = path.join(process.cwd(), 'public');
+
+    // Dev: no-op SW that clears caches — production sw.js cache-first breaks Vite /src modules.
+    app.get('/sw.js', (_req, res) => {
+      res.set('Cache-Control', 'no-store');
+      res.type('application/javascript').send(
+        "self.addEventListener('install',(e)=>e.waitUntil(self.skipWaiting()));" +
+        "self.addEventListener('activate',(e)=>e.waitUntil((async()=>{" +
+        "const keys=await caches.keys();" +
+        "await Promise.all(keys.map((k)=>caches.delete(k)));" +
+        "await self.clients.claim();" +
+        "})()));"
+      );
+    });
+
+    app.use((req, res, next) => {
+      const urlPath = (req.url || '/').split('?')[0] || '/';
+      if (urlPath.startsWith('/src/') || urlPath.startsWith('/@')) {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      }
+      next();
+    });
+
     if (fs.existsSync(publicPath)) {
       app.use(express.static(publicPath));
     }
@@ -4193,7 +4215,7 @@ async function startServer() {
       configFile: path.join(process.cwd(), 'vite.config.ts'),
       server: {
         middlewareMode: true,
-        hmr: process.env.DISABLE_HMR === 'true' ? false : { server },
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server, host: '127.0.0.1', port: PORT },
       },
       appType: 'spa',
     });

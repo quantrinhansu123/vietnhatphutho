@@ -1,5 +1,5 @@
 /* Viet Nhat IPT service worker */
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.0.1';
 const SHELL_CACHE = `vnipt-shell-${VERSION}`;
 const RUNTIME_CACHE = `vnipt-runtime-${VERSION}`;
 
@@ -9,6 +9,15 @@ const SHELL_ASSETS = [
   '/icon-192.png',
   '/icon-512.png'
 ];
+
+function isViteDevAsset(pathname) {
+  return (
+    pathname.startsWith('/src/') ||
+    pathname.startsWith('/@vite/') ||
+    pathname.startsWith('/@fs/') ||
+    pathname.startsWith('/@id/')
+  );
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -44,6 +53,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  // Never cache Vite dev source modules (stale modules cause missing export errors).
+  if (isViteDevAsset(url.pathname)) return;
 
   // Network-first cho API: luôn thử server, fallback cache khi offline.
   if (url.pathname.startsWith('/api/')) {

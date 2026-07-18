@@ -2870,6 +2870,21 @@ input[type="number"] {
     white-space: nowrap;
   }
 
+  .bb-machine-report-print-material-table th:nth-child(n+3) {
+    white-space: normal;
+    line-height: 1.05 !important;
+    vertical-align: middle;
+  }
+
+  .bb-machine-report-print-evaluation-table th:first-child,
+  .bb-machine-report-print-evaluation-table td:first-child {
+    width: 4.5%;
+    padding-left: 0.05mm !important;
+    padding-right: 0.05mm !important;
+    text-align: center !important;
+    white-space: nowrap;
+  }
+
   .bb-machine-report-print-doc .bb-machine-report-print-info th,
   .bb-machine-report-print-doc .bb-machine-report-print-info td {
     padding-top: 0.6mm !important;
