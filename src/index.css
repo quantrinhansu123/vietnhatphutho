@@ -199,6 +199,11 @@
     margin-top: auto;
   }
 
+  /* Nhãn ô nhập trong lưới dòng NVL tồn máy (layout mobile) */
+  .machine-nvl-line-mobile-label {
+    @apply block min-w-0 truncate text-[9px] font-black uppercase tracking-wide text-zinc-500;
+  }
+
   .field-helper {
     @apply text-[10px] italic text-slate-500 mt-0.5;
   }
@@ -351,6 +356,12 @@ button:not(:disabled):active {
 #main-root-container .page-title {
   font-family: var(--font-display);
   letter-spacing: -0.012em;
+}
+
+/* Tiêu đề phiếu / trang luôn in đậm (bỏ qua các bản in — giữ nguyên kiểu chữ văn bản) */
+#root :is(h1, h2, h3):not([class*='print-'] *),
+#main-root-container :is(h1, h2, h3, .form-header, .page-title):not([class*='print-'] *) {
+  font-weight: 900;
 }
 
 #main-root-container .brand-logo {

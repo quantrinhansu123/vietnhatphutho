@@ -10,11 +10,14 @@ export default function SearchableSelect({
   disabled,
   getLabel,
   getValue,
+  getDisplayLabel,
+  getSearchText,
   inputClassName,
   maxResults = 50,
   allowEmpty = true,
   onSelectOption,
-  resolveSelectedItem
+  resolveSelectedItem,
+  renderOption
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -24,17 +27,26 @@ export default function SearchableSelect({
   disabled?: boolean;
   getLabel: (item: unknown) => string;
   getValue: (item: unknown) => string;
+  /** Nhãn hiển thị trong ô nhập (mặc định = getLabel). */
+  getDisplayLabel?: (item: unknown) => string;
+  /** Chuỗi dùng khi lọc gõ tìm (mặc định = getLabel). */
+  getSearchText?: (item: unknown) => string;
   inputClassName?: string;
   maxResults?: number;
   allowEmpty?: boolean;
   onSelectOption?: (item: unknown | null) => void;
   resolveSelectedItem?: (options: unknown[], value: string) => unknown | null;
+  /** Tùy biến cách hiển thị 1 dòng trong menu (mặc định dùng getLabel). */
+  renderOption?: (item: unknown) => React.ReactNode;
 }) {
   const fieldClass =
     inputClassName ||
     'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
   const inputRef = useRef<HTMLInputElement>(null);
   const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
+  const displayLabel = getDisplayLabel ?? getLabel;
+  const searchText = getSearchText ?? getLabel;
+
   const selectedItem = useMemo(() => {
     if (!value) return null;
     if (resolveSelectedItem) {
@@ -42,7 +54,7 @@ export default function SearchableSelect({
     }
     return options.find(item => getValue(item) === value) ?? null;
   }, [options, value, getValue, resolveSelectedItem]);
-  const selectedLabel = selectedItem ? getLabel(selectedItem) : value;
+  const selectedLabel = selectedItem ? displayLabel(selectedItem) : value;
 
   const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
@@ -57,23 +69,23 @@ export default function SearchableSelect({
     const normalized = query.trim().toLowerCase();
     const list = normalized
       ? options.filter(item => {
-          const label = getLabel(item).toLowerCase();
+          const label = searchText(item).toLowerCase();
           const optionValue = getValue(item).toLowerCase();
           return label.includes(normalized) || optionValue.includes(normalized);
         })
       : options;
     return list.slice(0, maxResults);
-  }, [options, query, getLabel, getValue, maxResults]);
+  }, [options, query, searchText, getValue, maxResults]);
 
   const commitValue = (nextValue: string, item: unknown | null = null) => {
     const trimmed = nextValue.trim();
     onChange(trimmed);
     onSelectOption?.(item);
     if (item) {
-      setQuery(getLabel(item));
+      setQuery(displayLabel(item));
     } else if (trimmed) {
       const match = options.find(opt => getValue(opt) === trimmed);
-      setQuery(match ? getLabel(match) : trimmed);
+      setQuery(match ? displayLabel(match) : trimmed);
     } else {
       setQuery('');
     }
@@ -99,7 +111,7 @@ export default function SearchableSelect({
         return;
       }
 
-      const exactLabel = options.find(item => getLabel(item).toLowerCase() === normalized);
+      const exactLabel = options.find(item => searchText(item).toLowerCase() === normalized);
       if (exactLabel) {
         commitValue(getValue(exactLabel), exactLabel);
         return;
@@ -185,11 +197,11 @@ export default function SearchableSelect({
                 type="button"
                 onMouseDown={event => event.preventDefault()}
                 onClick={() => commitValue(optionValue, item)}
-                className={`block w-full px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
+                className={`block w-full border-b border-zinc-100 px-3 py-2 text-left text-sm leading-snug transition last:border-b-0 hover:bg-red-50 ${
                   optionValue === value ? 'bg-red-50 font-black text-[#ef1b2d]' : 'font-semibold text-zinc-800'
                 }`}
               >
-                {optionLabel}
+                {renderOption ? renderOption(item) : optionLabel}
               </button>
             );
           })}

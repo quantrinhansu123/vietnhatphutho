@@ -652,6 +652,8 @@ export default function App() {
               ? 'overflow-hidden p-0'
               : activeTab === 'warehouse-slip' || activeTab === 'warehouse-history'
                 ? 'p-2 md:p-3 pb-4'
+                : activeTab === 'acceptance-report' || activeTab === 'acceptance-report-list'
+                  ? 'p-2 md:p-4 pb-4'
                 : 'p-4 md:p-6 pb-4'
         }`} id="applet-viewport">
           <div

@@ -994,7 +994,7 @@ export function MachineNvlReportPanel({
                       </button>
                     </div>
                     <div className="machine-nvl-line-mobile-grid grid grid-cols-4 gap-0.5 md:hidden">
-                      <label className="col-span-3 block min-w-0 space-y-0.5">
+                      <label className="field-cell col-span-3">
                         <span className="machine-nvl-line-mobile-label">Mã NVL</span>
                         <div className="min-w-0 max-w-full">
                         <SearchableSelect
@@ -1026,11 +1026,11 @@ export function MachineNvlReportPanel({
                         />
                         </div>
                       </label>
-                      <label className="col-span-1 block min-w-0 space-y-0.5">
+                      <label className="field-cell col-span-1">
                         <span className="machine-nvl-line-mobile-label">ĐVT</span>
                         <input value={line.unit} readOnly className="machine-nvl-line-mobile-input h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-0.5 text-center text-[10px] font-semibold text-zinc-700 outline-none" />
                       </label>
-                      <label className="col-span-4 block min-w-0 space-y-0.5">
+                      <label className="field-cell col-span-4">
                         <span className="machine-nvl-line-mobile-label">Loại vật tư</span>
                         <select
                           value={line.materialType}
@@ -1045,23 +1045,23 @@ export function MachineNvlReportPanel({
                           ))}
                         </select>
                       </label>
-                      <label className="block min-w-0 space-y-0.5">
+                      <label className="field-cell">
                         <span className="machine-nvl-line-mobile-label">Tồn máy</span>
                         <input type="number" min="0" step="0.01" value={line.inMachineQuantity} onChange={event => updateLine(line.key, { inMachineQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                       </label>
-                      <label className="block min-w-0 space-y-0.5">
+                      <label className="field-cell">
                         <span className="machine-nvl-line-mobile-label">Tồn bồn</span>
                         <input type="number" min="0" step="0.01" value={line.inMixerQuantity} onChange={event => updateLine(line.key, { inMixerQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                       </label>
-                      <label className="block min-w-0 space-y-0.5">
+                      <label className="field-cell">
                         <span className="machine-nvl-line-mobile-label">Chưa trộn</span>
                         <input type="number" min="0" step="0.01" value={line.unblendedQuantity} onChange={event => updateLine(line.key, { unblendedQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                       </label>
-                      <label className="block min-w-0 space-y-0.5">
+                      <label className="field-cell">
                         <span className="machine-nvl-line-mobile-label">Tồn ngoài</span>
                         <input type="number" min="0" step="0.01" value={line.outsideQuantity} onChange={event => updateLine(line.key, { outsideQuantity: event.target.value })} className={machineNvlLineMobileQtyClass} />
                       </label>
-                      <label className="block min-w-0 space-y-0.5">
+                      <label className="field-cell">
                         <span className="machine-nvl-line-mobile-label">Tổng</span>
                         <input
                           value={formatMachineNvlQuantityValue(resolveMachineNvlLineQty(line))}
@@ -1069,7 +1069,7 @@ export function MachineNvlReportPanel({
                           className={machineNvlLineMobileQtyReadonlyClass}
                         />
                       </label>
-                      <label className="block min-w-0 space-y-0.5">
+                      <label className="field-cell">
                         <span className="machine-nvl-line-mobile-label">KL định mức</span>
                         <input
                           value={
@@ -1082,8 +1082,8 @@ export function MachineNvlReportPanel({
                           className={machineNvlLineMobileQtyReadonlyClass}
                         />
                       </label>
-                      <label className="block min-w-0 space-y-0.5">
-                        <span className="machine-nvl-line-mobile-label">SL tồn thực tế (kg)</span>
+                      <label className="field-cell">
+                        <span className="machine-nvl-line-mobile-label">SL thực tế</span>
                         <input
                           value={formatMachineNvlQuantityValue(resolveMachineNvlLineActualKg(line, materials))}
                           readOnly
@@ -1091,7 +1091,7 @@ export function MachineNvlReportPanel({
                           className={machineNvlLineMobileQtyReadonlyClass}
                         />
                       </label>
-                      <label className="col-span-4 block min-w-0 space-y-0.5">
+                      <label className="field-cell col-span-4">
                         <span className="machine-nvl-line-mobile-label">Ghi chú</span>
                         <textarea
                           value={line.note}

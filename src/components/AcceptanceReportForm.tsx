@@ -22,7 +22,7 @@ import { CAMERA_IMAGE_INPUT_PROPS, compressImageDataUrl } from '../utils/cameraC
 import { showAppToast } from '../lib/appToast';
 
 const productLineGridClass =
-  'grid-cols-2 sm:grid-cols-[2.25rem_minmax(0,1.1fr)_minmax(0,1.3fr)_4rem_6rem_2.5rem]';
+  'grid-cols-1 sm:grid-cols-[2.25rem_minmax(0,1.1fr)_minmax(0,1.3fr)_4rem_6rem_2.5rem]';
 
 const mobileFieldLabelClass =
   'mb-0.5 block text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:hidden';
@@ -66,6 +66,37 @@ interface ProductSelectOption {
 
 const inputClass =
   'h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+
+/**
+ * Một dòng danh mục có thể gộp nhiều mã (VD "MT- MN001, MT- MN008") kèm chuỗi tên tương ứng.
+ * Tách ra thành từng cặp mã — tên để menu chọn dễ đọc thay vì một khối chữ dài.
+ */
+function renderProductOption(product: ProductSelectOption) {
+  const codes = product.code.split(/,\s+/).map(part => part.trim()).filter(Boolean);
+  const names = (product.name || '').split(/,\s+/).map(part => part.trim()).filter(Boolean);
+
+  if (codes.length > 1 && codes.length === names.length) {
+    return (
+      <span className="block space-y-1">
+        {codes.map((code, index) => (
+          <span key={`${code}-${index}`} className="block">
+            <span className="block font-black">{code}</span>
+            <span className="block text-[12px] font-semibold text-zinc-500">{names[index]}</span>
+          </span>
+        ))}
+      </span>
+    );
+  }
+
+  return (
+    <span className="block">
+      <span className="block font-black">{product.code}</span>
+      {product.name ? (
+        <span className="block text-[12px] font-semibold text-zinc-500">{product.name}</span>
+      ) : null}
+    </span>
+  );
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -875,33 +906,34 @@ export default function AcceptanceReportForm({
     '';
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-3 pb-24 sm:space-y-4">
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
-          <h2 className="text-base font-black text-zinc-950">Phiếu báo cáo sản lượng</h2>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2.5 sm:px-4 sm:py-3">
+          <h2 className="min-w-0 flex-1 text-sm font-black text-zinc-950 sm:text-base">Phiếu báo cáo sản lượng</h2>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {onOpenList && (
               <button
                 type="button"
                 onClick={onOpenList}
-                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-[11px] font-bold text-zinc-700 transition hover:bg-zinc-50 sm:h-10 sm:gap-1.5 sm:px-3 sm:text-xs"
               >
                 <List className="h-4 w-4" />
-                Danh sách
+                <span className="hidden min-[380px]:inline">Danh sách</span>
               </button>
             )}
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+              className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 text-[11px] font-bold text-zinc-700 transition hover:bg-zinc-50 sm:h-10 sm:gap-1.5 sm:px-3 sm:text-xs"
+              aria-label="Quay lại"
             >
               <ChevronLeft className="h-4 w-4" />
-              Quay lại
+              <span className="hidden min-[380px]:inline">Quay lại</span>
             </button>
           </div>
         </div>
 
-        <div className="space-y-3 bg-zinc-50 p-4">
+        <div className="space-y-3 bg-zinc-50 p-3 sm:p-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {/* Mobile: Ngày chiếm trọn 1 hàng vì ô date hiển thị dạng "ngày 22 thg 7, 2026" rất dài */}
             <label className="field-cell col-span-2 sm:col-span-1">
@@ -966,28 +998,16 @@ export default function AcceptanceReportForm({
           </div>
         </div>
 
-        <div className="border-t border-zinc-100 bg-white p-4">
+        <div className="border-t border-zinc-100 bg-white p-3 sm:p-4">
           <RepeatableLinesBlock
             title="Mã SP & số lượng"
             required
             showColumnHeaders
-            actionsAtBottom
             gridTemplateClass={productLineGridClass}
             onAdd={addProductLine}
             addLabel="Thêm dòng"
             hideAddButton={Boolean(editingId)}
-            extraHeaderButtons={
-              !editingId ? (
-                <button
-                  type="button"
-                  onClick={() => setIsQrScannerOpen(true)}
-                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
-                >
-                  <ScanBarcode className="h-3.5 w-3.5" />
-                  Quét QR
-                </button>
-              ) : null
-            }
+            addButtonClassName="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
             columns={[
               { key: 'stt', label: 'STT', className: 'text-center' },
               { key: 'mat_hang', label: 'Mã SP', required: true },
@@ -999,82 +1019,106 @@ export default function AcceptanceReportForm({
           >
             {form.lines.map((line, index) => {
               const matchedProduct = findProductOption(line.mat_hang, productSelectOptions);
+              const isLastLine = index === form.lines.length - 1;
+              const productName = matchedProduct?.name || '';
               return (
               <RepeatableLineRow
                 key={line.id}
                 gridTemplateClass={productLineGridClass}
                 className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
               >
-                <div className="flex min-w-0 items-end gap-1.5 sm:contents">
-                  <div className="flex shrink-0 items-center justify-center self-center sm:col-start-1">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ef1b2d] text-[11px] font-black text-white">
-                      {index + 1}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1 sm:col-start-2">
-                    <span className={mobileFieldLabelClass}>
-                      Mã SP *
-                    </span>
-                    <SearchableSelect
-                      value={line.mat_hang}
-                      onChange={code => handleLineProductChange(line.id, code)}
-                      options={productSelectOptions}
-                      placeholder="Gõ để tìm mã SP"
-                      isLoading={isLoadingProducts}
-                      inputClassName={inputClass}
-                      getValue={item => (item as ProductSelectOption).code}
-                      getLabel={item => {
-                        const product = item as ProductSelectOption;
-                        return product.name ? `${product.code} · ${product.name}` : product.code;
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-3">
-                  <span className={mobileFieldLabelClass}>Tên SP</span>
-                  <input
-                    value={matchedProduct?.name || ''}
-                    readOnly
-                    className={`${inputClass} bg-zinc-50 text-zinc-700`}
-                    placeholder="Tự động theo mã SP"
-                    aria-label="Tên SP"
-                  />
-                </div>
-                <div className="flex items-end gap-1 sm:contents">
-                  <div className="w-11 min-w-0 sm:col-start-4 sm:w-auto">
-                    <span className={mobileFieldLabelClass}>ĐVT</span>
-                    <input
-                      value={line.don_vi}
-                      readOnly
-                      className={`${inputClass} bg-zinc-50 text-zinc-600`}
-                      placeholder="-"
-                      aria-label="ĐVT"
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1 sm:col-start-5 sm:w-auto sm:flex-none">
-                    <span className={mobileFieldLabelClass}>SL *</span>
-                    <input
-                      value={line.so_luong}
-                      onChange={e => handleLineQuantityChange(line.id, e.target.value)}
-                      className={inputClass}
-                      inputMode="decimal"
-                      placeholder="0"
-                      aria-label="Số lượng"
-                    />
-                  </div>
-                  {!editingId && form.lines.length > 1 ? (
-                    <div className="shrink-0 sm:col-start-6">
-                      <span className={`${mobileFieldLabelClass} invisible`}>Xóa</span>
-                      <button
-                        type="button"
-                        onClick={() => removeProductLine(line.id)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 sm:h-10 sm:w-10"
-                        aria-label={`Xóa dòng ${index + 1}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
+                {/* Mobile: 2 dòng — (1) mã/ĐVT/SL, (2) tên SP full. Desktop: grid cột. */}
+                <div className="flex flex-col gap-1.5 sm:contents">
+                  <div className="flex min-w-0 items-end gap-1.5 sm:contents">
+                    <div className="flex shrink-0 items-center justify-center self-end pb-1.5 sm:col-start-1 sm:self-center sm:pb-0">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ef1b2d] text-[11px] font-black text-white">
+                        {index + 1}
+                      </span>
                     </div>
-                  ) : null}
+                    <div className="min-w-0 flex-[1.4] sm:col-start-2 sm:flex-none">
+                      <span className={mobileFieldLabelClass}>Mã SP *</span>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <div className="min-w-0 flex-1">
+                          <SearchableSelect
+                            value={line.mat_hang}
+                            onChange={code => handleLineProductChange(line.id, code)}
+                            options={productSelectOptions}
+                            placeholder="Mã SP"
+                            isLoading={isLoadingProducts}
+                            inputClassName={inputClass}
+                            getValue={item => (item as ProductSelectOption).code}
+                            getLabel={item => {
+                              const product = item as ProductSelectOption;
+                              return product.name ? `${product.code} · ${product.name}` : product.code;
+                            }}
+                            getDisplayLabel={item => (item as ProductSelectOption).code}
+                            getSearchText={item => {
+                              const product = item as ProductSelectOption;
+                              return `${product.code} ${product.name}`.trim();
+                            }}
+                            renderOption={item => renderProductOption(item as ProductSelectOption)}
+                          />
+                        </div>
+                        {!editingId && isLastLine ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsQrScannerOpen(true)}
+                            className="inline-flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-[#ef1b2d] bg-red-50 text-[#ef1b2d] transition hover:bg-red-100 sm:w-auto sm:gap-1 sm:px-2.5"
+                            aria-label="Quét QR mã SP"
+                            title="Quét QR mã SP"
+                          >
+                            <ScanBarcode className="h-4 w-4" />
+                            <span className="hidden text-[11px] font-extrabold sm:inline">Quét QR</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="w-12 shrink-0 sm:col-start-4 sm:w-auto sm:shrink">
+                      <span className={mobileFieldLabelClass}>ĐVT</span>
+                      <input
+                        value={line.don_vi}
+                        readOnly
+                        className={`${inputClass} bg-zinc-50 px-1.5 text-center text-zinc-600 sm:px-3 sm:text-left`}
+                        placeholder="-"
+                        aria-label="ĐVT"
+                      />
+                    </div>
+                    <div className="w-16 shrink-0 sm:col-start-5 sm:w-auto sm:shrink sm:flex-none">
+                      <span className={mobileFieldLabelClass}>SL *</span>
+                      <input
+                        value={line.so_luong}
+                        onChange={e => handleLineQuantityChange(line.id, e.target.value)}
+                        className={`${inputClass} px-1.5 text-center sm:px-3 sm:text-left`}
+                        inputMode="decimal"
+                        placeholder="0"
+                        aria-label="Số lượng"
+                      />
+                    </div>
+                    {!editingId && form.lines.length > 1 ? (
+                      <div className="shrink-0 self-end sm:col-start-6">
+                        <button
+                          type="button"
+                          onClick={() => removeProductLine(line.id)}
+                          className="inline-flex h-10 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 sm:w-10"
+                          aria-label={`Xóa dòng ${index + 1}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 sm:col-start-3">
+                    <span className={mobileFieldLabelClass}>Tên SP</span>
+                    <div
+                      className={`${inputClass} flex h-auto min-h-10 items-center whitespace-normal break-words bg-zinc-50 py-2 leading-snug text-zinc-700`}
+                      title={productName || undefined}
+                      aria-label="Tên SP"
+                    >
+                      {productName || (
+                        <span className="font-semibold text-zinc-400">Tự động theo mã SP</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </RepeatableLineRow>
             );
@@ -1120,7 +1164,7 @@ export default function AcceptanceReportForm({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 bg-white px-3 py-3 sm:px-4">
           <button type="button" onClick={resetForm} className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700">
             Làm mới
           </button>

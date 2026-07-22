@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, ScanBarcode, Trash2, UserCheck, Users } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, Trash2, UserCheck, Users } from 'lucide-react';
 import type { WeighingPendingAdd, WeighingRecord } from '../utils/weighingRecords';
 import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, formatDamagedGoodsRowTotalWeight, formatWeighingWeightField, isSlipHeaderRow, splitDamagedGoodsDefectWeights } from '../utils/weighingRecords';
-import ProductQrScanner from './ProductQrScanner';
 import SearchableSelect from './SearchableSelect';
 import WeighingImagePreviewModal, {
   WeighingImageThumbnail,
@@ -60,11 +59,11 @@ import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/we
 import {
   getProductionShiftOptions,
   normalizeShiftSettings,
+  shiftNamesMatch,
   type ShiftSetting
 } from '../utils/shiftSettings';
 import {
   buildWeighingProductOptionsFromOrders,
-  findMatchedMachineForShift,
   normalizeMixingProductionOrders,
   type MixingProductionOrder
 } from '../utils/mixingOrderAutofill';
@@ -501,13 +500,13 @@ export default function WeighingReportForm({
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
   const [isLoadingProductionOrders, setIsLoadingProductionOrders] = useState(true);
   const [productionOrdersError, setProductionOrdersError] = useState('');
+  const [selectedProductionOrderCode, setSelectedProductionOrderCode] = useState('');
   const [viewingRow, setViewingRow] = useState<WeighingRow | null>(null);
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const [editingRow, setEditingRow] = useState<WeighingRow | null>(null);
   const [activeWeighRound, setActiveWeighRound] = useState('1');
   const [deletingRowId, setDeletingRowId] = useState<number | null>(null);
   const [currentWeigherName, setCurrentWeigherName] = useState(() => readStoredWeigherName(config.weigherStorageKey));
-  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const hasAutoOpenedNewSlip = useRef(false);
   const coreWeightCameraInputRef = useRef<HTMLInputElement>(null);
   const weightCameraInputRef = useRef<HTMLInputElement>(null);
@@ -518,6 +517,19 @@ export default function WeighingReportForm({
   };
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
+
+  const changeProductionContext = (field: 'productionDate' | 'shiftName', value: string) => {
+    setSelectedProductionOrderCode('');
+    setNewRow(prev => ({
+      ...prev,
+      [field]: value,
+      worker1: '',
+      worker2: '',
+      machineName: '',
+      productCode: '',
+      productName: ''
+    }));
+  };
 
   const applySavedRowIds = (savedRows: WeighingRecord[] | undefined, targetRows: WeighingRow[]) => {
     if (!savedRows?.length) return targetRows;
@@ -1321,19 +1333,37 @@ export default function WeighingReportForm({
   const slipContext = rows.length > 0 ? getSlipContextFromRows(rows) : null;
   const restrictProductsToOrders = config.restrictProductsToOrders !== false;
 
+  const productionOrderOptions = useMemo(() => {
+    if (!newRow.productionDate || !newRow.shiftName) return [];
+    return productionOrders.filter(order => {
+      const orderDate = String(order.startDate || '').match(/\d{4}-\d{2}-\d{2}/)?.[0] || '';
+      return orderDate === newRow.productionDate && shiftNamesMatch(order.shift, newRow.shiftName);
+    });
+  }, [productionOrders, newRow.productionDate, newRow.shiftName]);
+
   useEffect(() => {
-    if (!showSlipFields || isLoadingProductionOrders) return;
+    if (!selectedProductionOrderCode) return;
+    if (productionOrderOptions.some(order => order.orderCode === selectedProductionOrderCode)) return;
+    setSelectedProductionOrderCode('');
+  }, [productionOrderOptions, selectedProductionOrderCode]);
 
-    const matchedMachine = findMatchedMachineForShift(
-      productionOrders,
-      { ngay: newRow.productionDate, ca: newRow.shiftName },
-      machines
-    );
-
-    if (matchedMachine && matchedMachine !== newRow.machineName) {
-      setNewRow(prev => ({ ...prev, machineName: matchedMachine }));
-    }
-  }, [showSlipFields, isLoadingProductionOrders, newRow.productionDate, newRow.shiftName, productionOrders, machines]);
+  useEffect(() => {
+    const order = productionOrderOptions.find(item => item.orderCode === selectedProductionOrderCode);
+    if (!order) return;
+    const machineRef = order.machine.trim();
+    const matchedMachine = machines.find(machine => machine.code === machineRef || machine.name === machineRef);
+    const workerNames = order.staff.split(/[,;+|/\n]+/).map(name => name.trim()).filter(Boolean);
+    const firstProduct = order.productLines.find(line => line.productCode.trim() || line.productName.trim());
+    const catalogProduct = firstProduct ? findProductByCode(products, firstProduct.productCode) : null;
+    setNewRow(prev => ({
+      ...prev,
+      worker1: workerNames[0] || '',
+      worker2: workerNames[1] || '',
+      machineName: matchedMachine?.name || machineRef,
+      productCode: firstProduct?.productCode || '',
+      productName: firstProduct?.productName || catalogProduct?.productName || ''
+    }));
+  }, [selectedProductionOrderCode, productionOrderOptions, machines, products]);
 
   const productFilterContext = useMemo(() => {
     const machineName =
@@ -1354,16 +1384,29 @@ export default function WeighingReportForm({
     modalSlipInfo?.machineName
   ]);
 
-  const orderProductOptions = useMemo(
-    () =>
-      buildWeighingProductOptionsFromOrders(
-        productionOrders,
-        productFilterContext,
-        machines,
-        products
-      ),
-    [productionOrders, productFilterContext, machines, products]
-  );
+  const orderProductOptions = useMemo(() => {
+    const selectedOrder = productionOrderOptions.find(
+      order => order.orderCode === selectedProductionOrderCode
+    );
+    if (selectedOrder) {
+      return selectedOrder.productLines
+        .filter(line => line.productCode.trim())
+        .map(line => {
+          const catalog = findProductByCode(products, line.productCode);
+          return {
+            productCode: line.productCode,
+            productName: line.productName || catalog?.productName || line.productCode,
+            newCode: catalog?.newCode
+          };
+        });
+    }
+    return buildWeighingProductOptionsFromOrders(
+      productionOrders,
+      productFilterContext,
+      machines,
+      products
+    );
+  }, [productionOrders, productionOrderOptions, selectedProductionOrderCode, productFilterContext, machines, products]);
 
   const productSelectOptions = useMemo(() => {
     const options = restrictProductsToOrders ? [...orderProductOptions] : [...products];
@@ -1399,28 +1442,6 @@ export default function WeighingReportForm({
         !productFilterContext.ca ||
         !productFilterContext.machineName ||
         productSelectOptions.length === 0));
-
-  const handleProductCodeScan = useCallback(
-    (code: string): boolean => {
-      const trimmed = code.trim();
-      if (!trimmed) return false;
-
-      const match = findProductByCode(productSelectOptions, trimmed);
-      if (!match) {
-        setAddFormError(restrictProductsToOrders ? 'Mã SP không có trong lệnh SX của ca, ngày và máy này.' : 'Mã SP không có trong danh sách sản phẩm.');
-        return false;
-      }
-
-      setNewRow(prev => ({
-        ...prev,
-        productCode: match.productCode,
-        productName: match.productName
-      }));
-      setAddFormError('');
-      return true;
-    },
-    [productSelectOptions]
-  );
 
   useEffect(() => {
     if (!newRow.productCode?.trim() || isLoadingProductionOrders) return;
@@ -2164,7 +2185,7 @@ export default function WeighingReportForm({
                     <input
                       type="date"
                       value={newRow.productionDate}
-                      onChange={e => setNewRow(prev => ({ ...prev, productionDate: e.target.value }))}
+                      onChange={e => changeProductionContext('productionDate', e.target.value)}
                       className={modalInputClass}
                     />
                   </label>
@@ -2175,7 +2196,7 @@ export default function WeighingReportForm({
                     </span>
                     <select
                       value={newRow.shiftName}
-                      onChange={e => setNewRow(prev => ({ ...prev, shiftName: e.target.value }))}
+                      onChange={e => changeProductionContext('shiftName', e.target.value)}
                       className={modalInputClass}
                     >
                       <option value="">Chọn ca</option>
@@ -2205,7 +2226,7 @@ export default function WeighingReportForm({
                 <input
                   type="date"
                   value={newRow.productionDate}
-                  onChange={e => setNewRow(prev => ({ ...prev, productionDate: e.target.value }))}
+                  onChange={e => changeProductionContext('productionDate', e.target.value)}
                   className={modalInputClass}
                 />
               </label>
@@ -2216,7 +2237,7 @@ export default function WeighingReportForm({
                 </span>
                 <select
                   value={newRow.shiftName}
-                  onChange={e => setNewRow(prev => ({ ...prev, shiftName: e.target.value }))}
+                  onChange={e => changeProductionContext('shiftName', e.target.value)}
                   className={modalInputClass}
                 >
                   <option value="">Chọn ca</option>
@@ -2224,6 +2245,40 @@ export default function WeighingReportForm({
                     <option key={shift.value} value={shift.value}>{shift.label}</option>
                   ))}
                 </select>
+              </label>
+              <label className="field-cell col-span-2">
+                <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                  <ClipboardList className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                  Lệnh SX
+                </span>
+                <SearchableSelect
+                  value={selectedProductionOrderCode}
+                  onChange={setSelectedProductionOrderCode}
+                  options={productionOrderOptions}
+                  placeholder={
+                    !newRow.productionDate || !newRow.shiftName
+                      ? 'Chọn ngày và ca trước'
+                      : isLoadingProductionOrders
+                        ? 'Đang tải lệnh SX...'
+                        : productionOrderOptions.length === 0
+                          ? 'Không có lệnh SX phù hợp'
+                          : 'Chọn hoặc nhập lệnh SX'
+                  }
+                  isLoading={isLoadingProductionOrders}
+                  disabled={!newRow.productionDate || !newRow.shiftName || isLoadingProductionOrders}
+                  inputClassName={modalInputClass}
+                  getValue={item => (item as MixingProductionOrder).orderCode}
+                  getLabel={item => {
+                    const order = item as MixingProductionOrder;
+                    return order.machine ? `${order.orderCode} · ${order.machine}` : order.orderCode;
+                  }}
+                  resolveSelectedItem={(options, value) =>
+                    (options as MixingProductionOrder[]).find(order => order.orderCode === value)
+                  }
+                />
+                {productionOrdersError ? (
+                  <p className="text-[10px] font-semibold text-rose-600">{productionOrdersError}</p>
+                ) : null}
               </label>
               {!config.hideWorkersInEntry && (
                 <>
@@ -2282,8 +2337,7 @@ export default function WeighingReportForm({
                   <Hash className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Mã SP
                 </span>
-                <div className="flex gap-2">
-                  <div className="min-w-0 flex-1">
+                <div>
                     <SearchableSelect
                       value={newRow.productCode ?? ''}
                       onChange={productCode => {
@@ -2320,16 +2374,6 @@ export default function WeighingReportForm({
                         findProductByCode(options as ProductOption[], value)
                       }
                     />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsQrScannerOpen(true)}
-                    disabled={productCodeSelectDisabled}
-                    className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <ScanBarcode className="h-4 w-4" />
-                    QR
-                  </button>
                 </div>
                 {(productionOrdersError || productFilterContext.ngay) && (
                   <p className="text-[10px] font-semibold text-zinc-400">
@@ -2827,13 +2871,7 @@ export default function WeighingReportForm({
         </div>
       )}
       <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
-      <ProductQrScanner
-        open={isQrScannerOpen}
-        onClose={() => setIsQrScannerOpen(false)}
-        onScan={handleProductCodeScan}
-        closeAfterScan
-        getConfirmMessage={code => `Đã quét mã ${code}. Bấm Xác nhận để điền mã sản phẩm.`}
-      />
+      {/* Chọn sản phẩm theo lệnh SX; form này không còn dùng trình quét QR. */}
     </div>
   );
 }
