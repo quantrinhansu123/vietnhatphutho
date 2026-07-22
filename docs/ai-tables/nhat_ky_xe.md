@@ -12,7 +12,13 @@
 
 ## Frontend
 
-`src/features/danh-sach-xe/VehicleOperations.tsx` — danh sách, tổng hợp và form.
+`src/features/danh-sach-xe/VehicleOperations.tsx` — danh sách, tổng hợp và form (3 tab).
+
+### Form tabs
+
+1. **Doanh thu mặt hàng** — `tong_mat_hang`, `tong_doanh_thu`, `tong_chi_phi`, `ghi_chu`
+2. **Số KM thực đi** — thưởng chuyến, công/thưởng KM, chỉ số KM trước/về, KM thực tế, số lệnh, số chuyến
+3. **Lương lái xe** — `ten_lx1`, `cong_lx1`, `luong_lx1`, `tien_an_lx1`, `tien_ds_lx1`, `tien_thuong_chuyen_lx1`, `tien_luat_lx1`
 
 ## Liên kết
 

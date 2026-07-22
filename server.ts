@@ -1251,6 +1251,13 @@ function parseVehicleLogBody(
   if (!dateTime || Number.isNaN(Date.parse(dateTime))) return { error: 'Ngày giờ nhật ký không hợp lệ.' };
   if (!plateNumber) return { error: 'Vui lòng chọn biển số xe.' };
 
+  const kmBefore = Math.max(0, parseDriverReconciliationNumber(source.chi_so_km_truoc));
+  const kmAfter = Math.max(0, parseDriverReconciliationNumber(source.chi_so_km_ve));
+  const kmActualRaw = parseDriverReconciliationNumber(source.so_km_thuc_te);
+  const kmActual = Number.isFinite(kmActualRaw) && kmActualRaw > 0
+    ? Math.max(0, kmActualRaw)
+    : Math.max(0, kmAfter - kmBefore);
+
   return {
     record: {
       ngay_gio: dateTime,
@@ -1262,6 +1269,21 @@ function parseVehicleLogBody(
       tong_mat_hang: Math.max(0, parseDriverReconciliationNumber(source.tong_mat_hang)),
       tong_doanh_thu: Math.max(0, parseDriverReconciliationNumber(source.tong_doanh_thu)),
       tong_chi_phi: Math.max(0, parseDriverReconciliationNumber(source.tong_chi_phi)),
+      thuong_chuyen_giao_hang: Math.max(0, parseDriverReconciliationNumber(source.thuong_chuyen_giao_hang)),
+      cong_lai_xe_theo_km: Math.max(0, parseDriverReconciliationNumber(source.cong_lai_xe_theo_km)),
+      thuong_km_di: Math.max(0, parseDriverReconciliationNumber(source.thuong_km_di)),
+      chi_so_km_truoc: kmBefore,
+      chi_so_km_ve: kmAfter,
+      so_km_thuc_te: kmActual,
+      so_lenh: Math.max(0, parseDriverReconciliationNumber(source.so_lenh)),
+      so_chuyen: Math.max(0, parseDriverReconciliationNumber(source.so_chuyen)),
+      ten_lx1: pickRowField(source, ['ten_lx1', 'driverName1'], '') || null,
+      cong_lx1: Math.max(0, parseDriverReconciliationNumber(source.cong_lx1)),
+      luong_lx1: Math.max(0, parseDriverReconciliationNumber(source.luong_lx1)),
+      tien_an_lx1: Math.max(0, parseDriverReconciliationNumber(source.tien_an_lx1)),
+      tien_ds_lx1: Math.max(0, parseDriverReconciliationNumber(source.tien_ds_lx1)),
+      tien_thuong_chuyen_lx1: Math.max(0, parseDriverReconciliationNumber(source.tien_thuong_chuyen_lx1)),
+      tien_luat_lx1: Math.max(0, parseDriverReconciliationNumber(source.tien_luat_lx1)),
       ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
     }
   };

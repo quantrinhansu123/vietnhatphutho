@@ -54,8 +54,25 @@ type VehicleLog = {
   tong_mat_hang: number;
   tong_doanh_thu: number;
   tong_chi_phi: number;
+  thuong_chuyen_giao_hang: number;
+  cong_lai_xe_theo_km: number;
+  thuong_km_di: number;
+  chi_so_km_truoc: number;
+  chi_so_km_ve: number;
+  so_km_thuc_te: number;
+  so_lenh: number;
+  so_chuyen: number;
+  ten_lx1: string;
+  cong_lx1: number;
+  luong_lx1: number;
+  tien_an_lx1: number;
+  tien_ds_lx1: number;
+  tien_thuong_chuyen_lx1: number;
+  tien_luat_lx1: number;
   ghi_chu: string;
 };
+
+type LogFormTab = 'doanh_thu' | 'km' | 'luong';
 
 const EXPENSE_TYPES = ['CHI PHÍ XĂNG DẦU', 'CÁC CHI PHÍ KHÁC CỦA XE'] as const;
 
@@ -136,8 +153,53 @@ function normalizeLogs(data: unknown): VehicleLog[] {
       tong_mat_hang: numberValue(row.tong_mat_hang),
       tong_doanh_thu: numberValue(row.tong_doanh_thu),
       tong_chi_phi: numberValue(row.tong_chi_phi),
+      thuong_chuyen_giao_hang: numberValue(row.thuong_chuyen_giao_hang),
+      cong_lai_xe_theo_km: numberValue(row.cong_lai_xe_theo_km),
+      thuong_km_di: numberValue(row.thuong_km_di),
+      chi_so_km_truoc: numberValue(row.chi_so_km_truoc),
+      chi_so_km_ve: numberValue(row.chi_so_km_ve),
+      so_km_thuc_te: numberValue(row.so_km_thuc_te),
+      so_lenh: numberValue(row.so_lenh),
+      so_chuyen: numberValue(row.so_chuyen),
+      ten_lx1: text(row.ten_lx1),
+      cong_lx1: numberValue(row.cong_lx1),
+      luong_lx1: numberValue(row.luong_lx1),
+      tien_an_lx1: numberValue(row.tien_an_lx1),
+      tien_ds_lx1: numberValue(row.tien_ds_lx1),
+      tien_thuong_chuyen_lx1: numberValue(row.tien_thuong_chuyen_lx1),
+      tien_luat_lx1: numberValue(row.tien_luat_lx1),
       ghi_chu: text(row.ghi_chu)
     }));
+}
+
+function emptyVehicleLogForm(): Omit<VehicleLog, 'id'> {
+  return {
+    ngay_gio: localDateTimeValue(),
+    ca: '',
+    xe_id: '',
+    bien_so_xe: '',
+    ma_nhan_su: '',
+    nhan_vien_phu_trach: '',
+    tong_mat_hang: 0,
+    tong_doanh_thu: 0,
+    tong_chi_phi: 0,
+    thuong_chuyen_giao_hang: 0,
+    cong_lai_xe_theo_km: 0,
+    thuong_km_di: 0,
+    chi_so_km_truoc: 0,
+    chi_so_km_ve: 0,
+    so_km_thuc_te: 0,
+    so_lenh: 0,
+    so_chuyen: 0,
+    ten_lx1: '',
+    cong_lx1: 0,
+    luong_lx1: 0,
+    tien_an_lx1: 0,
+    tien_ds_lx1: 0,
+    tien_thuong_chuyen_lx1: 0,
+    tien_luat_lx1: 0,
+    ghi_chu: ''
+  };
 }
 
 function ActionButton({
@@ -205,6 +267,7 @@ function OperationModal({
   onClose,
   onSave,
   isSaving,
+  wide = false,
   children
 }: {
   title: string;
@@ -212,6 +275,7 @@ function OperationModal({
   onClose: () => void;
   onSave: () => void;
   isSaving: boolean;
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -224,7 +288,7 @@ function OperationModal({
 
   return (
     <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-4">
-      <div className="flex h-[96dvh] max-h-[96dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:h-auto sm:rounded-2xl">
+      <div className={`flex h-[96dvh] max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:h-auto sm:rounded-2xl ${wide ? 'max-w-4xl' : 'max-w-2xl'}`}>
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
           <div className="min-w-0 pr-2">
             <h3 className="truncate text-sm font-black uppercase tracking-wide text-slate-900">{title}</h3>
@@ -251,6 +315,31 @@ function OperationModal({
 
 const inputClass =
   'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10';
+
+/** Ô nhập tiền: hiển thị dấu chấm phân cách hàng nghìn, lưu về number */
+function MoneyInput({
+  value,
+  onChange,
+  className = ''
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  className?: string;
+}) {
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={value ? new Intl.NumberFormat('vi-VN').format(value) : ''}
+      onChange={event => {
+        const digits = event.target.value.replace(/\D/g, '');
+        onChange(digits ? Number(digits) : 0);
+      }}
+      placeholder="0"
+      className={`${inputClass} text-right ${className}`}
+    />
+  );
+}
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
@@ -481,7 +570,7 @@ function ExpenseModal({
           </select>
         </Field>
         <Field label="Tên chi phí *"><input value={form.ten_chi_phi} onChange={event => setForm(prev => ({ ...prev, ten_chi_phi: event.target.value }))} className={inputClass} placeholder="VD: Đổ dầu chuyến Đà Nẵng" /></Field>
-        <Field label="Số tiền"><input type="number" min={0} step={1000} value={form.so_tien} onChange={event => setForm(prev => ({ ...prev, so_tien: Number(event.target.value) || 0 }))} className={`${inputClass} text-right`} /></Field>
+        <Field label="Số tiền"><MoneyInput value={form.so_tien} onChange={so_tien => setForm(prev => ({ ...prev, so_tien }))} /></Field>
         <Field label="Biển số xe (BSX) *">
           <select
             value={form.xe_id}
@@ -673,6 +762,7 @@ function LogModal({
   onSaved: () => void | Promise<void>;
 }) {
   const [form, setForm] = useState<Omit<VehicleLog, 'id'>>(() => ({
+    ...emptyVehicleLogForm(),
     ngay_gio: localDateTimeValue(initial?.ngay_gio),
     ca: initial?.ca || '',
     xe_id: initial?.xe_id || '',
@@ -682,10 +772,44 @@ function LogModal({
     tong_mat_hang: initial?.tong_mat_hang || 0,
     tong_doanh_thu: initial?.tong_doanh_thu || 0,
     tong_chi_phi: initial?.tong_chi_phi || 0,
+    thuong_chuyen_giao_hang: initial?.thuong_chuyen_giao_hang || 0,
+    cong_lai_xe_theo_km: initial?.cong_lai_xe_theo_km || 0,
+    thuong_km_di: initial?.thuong_km_di || 0,
+    chi_so_km_truoc: initial?.chi_so_km_truoc || 0,
+    chi_so_km_ve: initial?.chi_so_km_ve || 0,
+    so_km_thuc_te: initial?.so_km_thuc_te || 0,
+    so_lenh: initial?.so_lenh || 0,
+    so_chuyen: initial?.so_chuyen || 0,
+    ten_lx1: initial?.ten_lx1 || '',
+    cong_lx1: initial?.cong_lx1 || 0,
+    luong_lx1: initial?.luong_lx1 || 0,
+    tien_an_lx1: initial?.tien_an_lx1 || 0,
+    tien_ds_lx1: initial?.tien_ds_lx1 || 0,
+    tien_thuong_chuyen_lx1: initial?.tien_thuong_chuyen_lx1 || 0,
+    tien_luat_lx1: initial?.tien_luat_lx1 || 0,
     ghi_chu: initial?.ghi_chu || ''
   }));
+  const [activeTab, setActiveTab] = useState<LogFormTab>('doanh_thu');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const setNumber = (key: keyof Omit<VehicleLog, 'id'>, value: string) => {
+    setForm(prev => ({ ...prev, [key]: Number(value) || 0 }));
+  };
+
+  const setKmField = (key: 'chi_so_km_truoc' | 'chi_so_km_ve', value: string) => {
+    const next = Number(value) || 0;
+    setForm(prev => {
+      const chi_so_km_truoc = key === 'chi_so_km_truoc' ? next : prev.chi_so_km_truoc;
+      const chi_so_km_ve = key === 'chi_so_km_ve' ? next : prev.chi_so_km_ve;
+      return {
+        ...prev,
+        chi_so_km_truoc,
+        chi_so_km_ve,
+        so_km_thuc_te: Math.max(0, chi_so_km_ve - chi_so_km_truoc)
+      };
+    });
+  };
 
   const save = async () => {
     if (!form.ngay_gio || !form.bien_so_xe) {
@@ -709,10 +833,24 @@ function LogModal({
     }
   };
 
+  const tabs: { id: LogFormTab; label: string }[] = [
+    { id: 'doanh_thu', label: 'Doanh thu mặt hàng' },
+    { id: 'km', label: 'Số KM thực đi' },
+    { id: 'luong', label: 'Lương lái xe' }
+  ];
+
   return (
-    <OperationModal title={initial ? 'Sửa nhật ký xe' : 'Thêm nhật ký xe'} subtitle="Theo dõi mặt hàng, doanh thu và chi phí theo xe/ca" onClose={onClose} onSave={() => void save()} isSaving={isSaving}>
+    <OperationModal
+      wide
+      title={initial ? 'Sửa nhật ký xe' : 'Thêm nhật ký xe'}
+      subtitle="Doanh thu mặt hàng · KM thực đi · Tổng hợp lương lái xe"
+      onClose={onClose}
+      onSave={() => void save()}
+      isSaving={isSaving}
+    >
       {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
-      <div className="grid gap-3 sm:grid-cols-2">
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <Field label="Ngày giờ *"><input type="datetime-local" value={form.ngay_gio} onChange={event => setForm(prev => ({ ...prev, ngay_gio: event.target.value }))} className={inputClass} /></Field>
         <Field label="Ca"><input value={form.ca} onChange={event => setForm(prev => ({ ...prev, ca: event.target.value }))} className={inputClass} placeholder="VD: Ca ngày / 12C1" /></Field>
         <Field label="Biển số xe (BSX) *">
@@ -741,11 +879,83 @@ function LogModal({
             {staff.map(item => <option key={`${item.code}-${item.name}`} value={`${item.code}|${item.name}`}>{item.code ? `${item.code} · ` : ''}{item.name}</option>)}
           </select>
         </Field>
-        <Field label="Tổng mặt hàng"><input type="number" min={0} step={1} value={form.tong_mat_hang} onChange={event => setForm(prev => ({ ...prev, tong_mat_hang: Number(event.target.value) || 0 }))} className={`${inputClass} text-right`} /></Field>
-        <Field label="Tổng doanh thu"><input type="number" min={0} step={1000} value={form.tong_doanh_thu} onChange={event => setForm(prev => ({ ...prev, tong_doanh_thu: Number(event.target.value) || 0 }))} className={`${inputClass} text-right`} /></Field>
-        <Field label="Tổng chi phí"><input type="number" min={0} step={1000} value={form.tong_chi_phi} onChange={event => setForm(prev => ({ ...prev, tong_chi_phi: Number(event.target.value) || 0 }))} className={`${inputClass} text-right`} /></Field>
-        <Field label="Ghi chú" wide><textarea value={form.ghi_chu} onChange={event => setForm(prev => ({ ...prev, ghi_chu: event.target.value }))} className={`${inputClass} min-h-20 py-2`} /></Field>
       </div>
+
+      <div className="mb-3 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`rounded-lg px-3 py-2 text-[11px] font-black uppercase tracking-wide transition ${
+              activeTab === tab.id
+                ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'doanh_thu' && (
+        <section className="space-y-3">
+          <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Doanh thu từng loại mặt hàng</h4>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Tổng mặt hàng"><input type="number" min={0} step={1} value={form.tong_mat_hang} onChange={event => setNumber('tong_mat_hang', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Tổng doanh thu"><input type="number" min={0} step={1000} value={form.tong_doanh_thu} onChange={event => setNumber('tong_doanh_thu', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Tổng chi phí"><input type="number" min={0} step={1000} value={form.tong_chi_phi} onChange={event => setNumber('tong_chi_phi', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Ghi chú" wide><textarea value={form.ghi_chu} onChange={event => setForm(prev => ({ ...prev, ghi_chu: event.target.value }))} className={`${inputClass} min-h-20 py-2`} /></Field>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'km' && (
+        <section className="space-y-3">
+          <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Dữ liệu liên quan số KM thực đi của xe</h4>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Thưởng chuyến (Giao hàng)"><input type="number" min={0} step={1000} value={form.thuong_chuyen_giao_hang} onChange={event => setNumber('thuong_chuyen_giao_hang', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Công lái xe theo số KM"><input type="number" min={0} step={0.01} value={form.cong_lai_xe_theo_km} onChange={event => setNumber('cong_lai_xe_theo_km', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Thưởng KM đi"><input type="number" min={0} step={1000} value={form.thuong_km_di} onChange={event => setNumber('thuong_km_di', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Chỉ số KM trước khi đi"><input type="number" min={0} step={0.1} value={form.chi_so_km_truoc} onChange={event => setKmField('chi_so_km_truoc', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Chỉ số công tơ KM khi về"><input type="number" min={0} step={0.1} value={form.chi_so_km_ve} onChange={event => setKmField('chi_so_km_ve', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Số KM đi thực tế của chuyến"><input type="number" min={0} step={0.1} value={form.so_km_thuc_te} onChange={event => setNumber('so_km_thuc_te', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Số lệnh"><input type="number" min={0} step={1} value={form.so_lenh} onChange={event => setNumber('so_lenh', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Số chuyến"><input type="number" min={0} step={1} value={form.so_chuyen} onChange={event => setNumber('so_chuyen', event.target.value)} className={`${inputClass} text-right`} /></Field>
+          </div>
+          <p className="text-[11px] font-semibold text-slate-400">Số KM thực tế tự tính = KM về − KM trước (vẫn có thể sửa tay).</p>
+        </section>
+      )}
+
+      {activeTab === 'luong' && (
+        <section className="space-y-3">
+          <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Vùng dữ liệu tổng hợp lương lái xe</h4>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Tên LX1">
+              <input
+                list={`lx1-staff-${initial?.id || 'new'}`}
+                value={form.ten_lx1}
+                onChange={event => setForm(prev => ({ ...prev, ten_lx1: event.target.value }))}
+                className={inputClass}
+                placeholder="Chọn hoặc nhập tên lái xe"
+              />
+              <datalist id={`lx1-staff-${initial?.id || 'new'}`}>
+                {staff.map(item => (
+                  <option key={`lx1-${item.code}-${item.name}`} value={item.name}>
+                    {item.code ? `${item.code} · ` : ''}{item.name}
+                  </option>
+                ))}
+              </datalist>
+            </Field>
+            <Field label="Công LX1"><input type="number" min={0} step={0.01} value={form.cong_lx1} onChange={event => setNumber('cong_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Lương LX1"><input type="number" min={0} step={1000} value={form.luong_lx1} onChange={event => setNumber('luong_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Tiền ăn LX1"><input type="number" min={0} step={1000} value={form.tien_an_lx1} onChange={event => setNumber('tien_an_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Tiền DS LX1"><input type="number" min={0} step={1000} value={form.tien_ds_lx1} onChange={event => setNumber('tien_ds_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Tiền thưởng chuyến LX1"><input type="number" min={0} step={1000} value={form.tien_thuong_chuyen_lx1} onChange={event => setNumber('tien_thuong_chuyen_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Tiền luật LX1"><input type="number" min={0} step={1000} value={form.tien_luat_lx1} onChange={event => setNumber('tien_luat_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
+          </div>
+        </section>
+      )}
     </OperationModal>
   );
 }

@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatNumber } from '../../utils';
 import type { AppTab } from '../../routes';
-import ControlBoardShiftSummaryTable from '../../components/ControlBoardShiftSummaryTable';
-import ControlBoardShiftSummaryChart from '../../components/ControlBoardShiftSummaryChart';
 import ControlBoardBbMachineReportTable from '../../components/ControlBoardBbMachineReportTable';
 import { ControlBoardCommonFilters } from '../../components/ControlBoardCommonFilters';
 import {
   buildControlBoardShiftSummary,
   defaultShiftSummaryDateRange,
-  collectShiftSummaryStaffOptions,
   matchesControlBoardDateRange,
   matchesShiftSummaryBucket,
   machineValueMatchesFilter
@@ -19,21 +16,12 @@ import { normalizeAcceptanceReports, type AcceptanceReport } from '../../compone
 import { normalizeMixingReport } from '../../lib/mixingReportModel';
 import type { MixingReport } from '../../components/MixingReportForm';
 import {
-  buildWeighingEditPending,
-  formatDamagedGoodsRowFilmWeight,
-  formatDamagedGoodsRowPlasticWeight,
-  formatDamagedGoodsRowTotalWeight,
-  formatWeighingRowTotalWeight,
-  getWeighingDataRows,
   normalizeWeighingRecords,
   type WeighingPendingAdd,
   type WeighingRecord
 } from '../../utils/weighingRecords';
 import {
-  buildMachineNvlReportGroups,
   normalizeMachineNvlReports,
-  sumMachineNvlCuoiCaReportTotal,
-  sumMachineNvlDauCaReportTotal,
   type MachineNvlSavedReport
 } from '../../utils/machineNvlReports';
 import { DashboardWindow } from '../dashboard';
@@ -73,10 +61,6 @@ import {
 } from '../ke-hoach-san-xuat';
 import {
   Factory,
-  ClipboardCheck,
-  Scale,
-  Boxes,
-  PackageX,
   Eye,
   Pencil,
   Trash2,
@@ -125,14 +109,10 @@ export function ControlBoardPanel({
   const [shiftSummaryDateTo, setShiftSummaryDateTo] = useState(defaultShiftSummaryRange.to);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [weighingSearch, setWeighingSearch] = useState('');
-  const [damagedGoodsSearch, setDamagedGoodsSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
-  const [machineNvlReportSearch, setMachineNvlReportSearch] = useState('');
   const [materialSearch, setMaterialSearch] = useState('');
   const [productionOrderSearch, setProductionOrderSearch] = useState('');
   const [productionOrderStaffFilters, setProductionOrderStaffFilters] = useState<Set<string>>(() => new Set());
-  const [acceptanceReportSearch, setAcceptanceReportSearch] = useState('');
   const [boardFilterShift, setBoardFilterShift] = useState('all');
   const [boardFilterMachine, setBoardFilterMachine] = useState('all');
   const [boardFilterProductionOrder, setBoardFilterProductionOrder] = useState('all');
@@ -142,7 +122,6 @@ export function ControlBoardPanel({
   const [viewingProductionOrder, setViewingProductionOrder] = useState<ProductionOrderRow | null>(null);
   const [editingProductionOrder, setEditingProductionOrder] = useState<ProductionOrderRow | null>(null);
   const [deletingProductionOrderId, setDeletingProductionOrderId] = useState('');
-  const [deletingAcceptanceReportId, setDeletingAcceptanceReportId] = useState('');
   const [selectedProductionOrderIds, setSelectedProductionOrderIds] = useState<string[]>([]);
   const [printingBatchOrders, setPrintingBatchOrders] = useState<PrintableProductionOrder[]>([]);
   const [printingBatchProductCatalog, setPrintingBatchProductCatalog] = useState<ProductRow[]>([]);
@@ -492,58 +471,6 @@ export function ControlBoardPanel({
     ]
   );
 
-  const shiftSummaryFilterSources = useMemo(
-    () => ({
-      shiftSettings: productionOrderSettings,
-      productionOrders: productionOrders.map(order => ({
-        startDate: order.startDate,
-        shift: order.shift,
-        staff: order.staff,
-        machine: order.machine,
-        position: order.position
-      })),
-      mixingReports: mixingReports.map(report => ({
-        ngay: report.ngay,
-        ca: report.ca,
-        nhan_su: report.nhan_su,
-        ma_may: report.ma_may,
-        ten_may: report.ten_may
-      })),
-      warehouseMovements: shiftSummaryWarehouseMovementRefs.map(movement => ({
-        slipDate: movement.slipDate,
-        shift: movement.shift,
-        createdBy: movement.createdBy
-      })),
-      machineNvlReports: machineNvlReports.map(report => ({
-        ngay: report.ngay,
-        ca: report.ca,
-        nhanSu: report.nhanSu,
-        maMay: report.maMay,
-        tenMay: report.tenMay
-      })),
-      weighingRecords: weighingRecords.map(record => ({
-        productionDate: record.productionDate,
-        reportDate: record.reportDate,
-        shiftName: record.shiftName,
-        worker1: record.worker1,
-        worker2: record.worker2,
-        machineName: record.machineName
-      })),
-      acceptanceReports: shiftSummaryAcceptanceReports.map(report => ({
-        ngay: report.ngay,
-        ca: report.ca,
-        ma_may: report.ma_may,
-        ten_may: report.ten_may
-      }))
-    }),
-    [productionOrderSettings, productionOrders, mixingReports, shiftSummaryWarehouseMovementRefs, machineNvlReports, weighingRecords, shiftSummaryAcceptanceReports]
-  );
-
-  const shiftSummaryStaffOptions = useMemo(
-    () => collectShiftSummaryStaffOptions(shiftSummaryFilterSources),
-    [shiftSummaryFilterSources]
-  );
-
   const panelShiftOptions = useMemo(() => {
     const fromSettings = productionOrderSettings
       .filter(setting => setting.loaiCaiDat === 'Thời gian')
@@ -622,47 +549,6 @@ export function ControlBoardPanel({
     }
   }, [boardFilterProductionOrder, productionOrders]);
 
-  const handleDeleteWeighingRecord = async (recordId: string | number) => {
-    const res = await fetch(`/api/phieu-can-dinh-ki/${recordId}`, { method: 'DELETE' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || 'Không thể xóa dòng cân.');
-    }
-    await loadBoard();
-  };
-
-  const handleDeleteWeighingRecords = async (recordIds: Array<string | number>) => {
-    for (const recordId of recordIds) {
-      const res = await fetch(`/api/phieu-can-dinh-ki/${recordId}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể xóa dòng cân.');
-      }
-    }
-    await loadBoard();
-  };
-
-  const handleDeleteWarehouseSlip = async (slipCode: string) => {
-    const res = await fetch(`/api/phieu-xuat-nhap-kho/slip/${encodeURIComponent(slipCode)}`, { method: 'DELETE' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || 'Không thể xóa phiếu xuất nhập kho.');
-    }
-    await loadBoard();
-  };
-
-  const handleDeleteWarehouseSlips = async (slipCodes: string[]) => {
-    const uniqueIds = Array.from(new Set(slipCodes.filter(Boolean)));
-    for (const slipCode of uniqueIds) {
-      const res = await fetch(`/api/phieu-xuat-nhap-kho/slip/${encodeURIComponent(slipCode)}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể xóa phiếu xuất nhập kho.');
-      }
-    }
-    await loadBoard();
-  };
-
   const handleDeleteMixingReport = async (reportId: string) => {
     const res = await fetch(`/api/bao-cao-phoi-tron/${reportId}`, { method: 'DELETE' });
     const data = await res.json().catch(() => ({}));
@@ -684,140 +570,6 @@ export function ControlBoardPanel({
     await loadBoard();
   };
 
-  const handleDeleteMachineNvlReport = async (reportId: string) => {
-    const res = await fetch(`/api/bao-cao-may-nvl-ton/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || 'Không thể xóa báo cáo tồn NVL đầu ca.');
-    }
-    await loadBoard();
-  };
-
-  const handleDeleteMachineNvlReports = async (reportIds: string[]) => {
-    const uniqueIds = Array.from(new Set(reportIds.filter(Boolean)));
-    for (const reportId of uniqueIds) {
-      const res = await fetch(`/api/bao-cao-may-nvl-ton/${encodeURIComponent(reportId)}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể xóa báo cáo tồn NVL đầu ca.');
-      }
-    }
-    await loadBoard();
-  };
-
-  const handleEditWeighingRecord = (recordId: string | number) => {
-    const record = weighingRecords.find(item => item.id === recordId);
-    if (!record || !onEditWeighing) return;
-    onEditWeighing(buildWeighingEditPending(record, weighingRecords));
-  };
-
-  const shiftSummaryDetailSources = useMemo(
-    () => ({
-      shiftSettings: productionOrderSettings,
-      productionOrders: boardScopedProductionOrders.map(order => ({
-        code: order.code,
-        startDate: order.startDate,
-        shift: order.shift,
-        productCode: order.productCode,
-        productName: order.productName,
-        quantity: order.quantity,
-        unit: order.unit,
-        products: order.products
-      })),
-      products: products.map(product => ({ code: product.code, totalWeight: product.totalWeight })),
-      materials: materials.map(material => ({ code: material.code, totalWeight: material.totalWeight })),
-      acceptanceReports: boardScopedAcceptanceReports,
-      warehouseMovements: boardScopedWarehouseMovements,
-      weighingRecords: boardScopedWeighingRecords,
-      damagedRecords: boardScopedDamagedRecords,
-      machineNvlReports: boardScopedMachineNvlReports
-    }),
-    [
-      productionOrderSettings,
-      boardScopedProductionOrders,
-      products,
-      materials,
-      boardScopedAcceptanceReports,
-      boardScopedWarehouseMovements,
-      boardScopedWeighingRecords,
-      boardScopedDamagedRecords,
-      boardScopedMachineNvlReports
-    ]
-  );
-
-  const weighingDataRows = useMemo(() => getWeighingDataRows(weighingRecords), [weighingRecords]);
-  const weighingQuery = weighingSearch.trim().toLowerCase();
-  const filteredWeighingRows = useMemo(() => {
-    return weighingDataRows.filter(row => {
-      if (weighingQuery) {
-        const haystack = `${row.documentNo} ${row.productionDate} ${row.shiftName} ${row.productCode} ${row.productName} ${row.weigherName}`
-          .toLowerCase();
-        if (!haystack.includes(weighingQuery)) return false;
-      }
-      return (
-        matchesBoardDateRange(row.productionDate || row.reportDate) &&
-        matchesBoardShift(row.shiftName) &&
-        matchesBoardMachine(row.machineName) &&
-        matchesBoardProductionOrderBucket(
-          row.productionDate || row.reportDate,
-          row.shiftName,
-          row.machineName
-        )
-      );
-    });
-  }, [weighingDataRows, weighingQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine, hasBoardProductionOrderFilter, boardMatchedProductionOrders]);
-  const recentWeighingRows = useMemo(
-    () =>
-      [...filteredWeighingRows].sort((a, b) => {
-        const dateCompare = (b.productionDate || '').localeCompare(a.productionDate || '');
-        if (dateCompare !== 0) return dateCompare;
-        return (b.weighTime || '').localeCompare(a.weighTime || '');
-      }),
-    [filteredWeighingRows]
-  );
-
-  const damagedDataRows = useMemo(() => getWeighingDataRows(damagedRecords), [damagedRecords]);
-  const damagedGoodsQuery = damagedGoodsSearch.trim().toLowerCase();
-  const filteredDamagedRows = useMemo(() => {
-    return damagedDataRows.filter(row => {
-      if (damagedGoodsQuery) {
-        const haystack =
-          `${row.documentNo} ${row.productionDate} ${row.shiftName} ${row.machineName} ${row.weigherName} ${row.note}`
-            .toLowerCase();
-        if (!haystack.includes(damagedGoodsQuery)) return false;
-      }
-      return (
-        matchesBoardDateRange(row.productionDate || row.reportDate) &&
-        matchesBoardShift(row.shiftName) &&
-        matchesBoardMachine(row.machineName) &&
-        matchesBoardProductionOrderBucket(
-          row.productionDate || row.reportDate,
-          row.shiftName,
-          row.machineName
-        )
-      );
-    });
-  }, [
-    damagedDataRows,
-    damagedGoodsQuery,
-    shiftSummaryDateFrom,
-    shiftSummaryDateTo,
-    boardFilterShift,
-    boardFilterMachine,
-    selectedBoardMachine,
-    hasBoardProductionOrderFilter,
-    boardMatchedProductionOrders
-  ]);
-  const recentDamagedRows = useMemo(
-    () =>
-      [...filteredDamagedRows].sort((a, b) => {
-        const dateCompare = (b.productionDate || '').localeCompare(a.productionDate || '');
-        if (dateCompare !== 0) return dateCompare;
-        return (b.weighTime || '').localeCompare(a.weighTime || '');
-      }),
-    [filteredDamagedRows]
-  );
-
   const productQuery = productSearch.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     if (!productQuery) return products;
@@ -825,54 +577,6 @@ export function ControlBoardPanel({
       `${product.code} ${product.name} ${product.group} ${product.nature}`.toLowerCase().includes(productQuery)
     );
   }, [products, productQuery]);
-
-  const machineNvlReportQuery = machineNvlReportSearch.trim().toLowerCase();
-  const filteredMachineNvlReports = useMemo(() => {
-    return machineNvlReports.filter(report => {
-      if (machineNvlReportQuery) {
-        const haystack = `${report.maMay} ${report.tenMay} ${report.ca} ${report.ngay} ${report.nhanSu} ${report.note}`.toLowerCase();
-        if (!haystack.includes(machineNvlReportQuery)) return false;
-      }
-      return (
-        matchesBoardDateRange(report.ngay) &&
-        matchesBoardShift(report.ca) &&
-        matchesBoardMachine(report.maMay, report.tenMay) &&
-        matchesBoardProductionOrderBucket(report.ngay, report.ca, report.maMay, report.tenMay)
-      );
-    });
-  }, [machineNvlReports, machineNvlReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine, hasBoardProductionOrderFilter, boardMatchedProductionOrders]);
-  const machineNvlBoardRows = useMemo(() => {
-    const groups = buildMachineNvlReportGroups(filteredMachineNvlReports);
-    const rows: Array<{
-      key: string;
-      tenMay: string;
-      maMay: string;
-      ca: string;
-      ngay: string;
-      tonDauCa: number;
-      tonCuoiCa: number;
-    }> = [];
-
-    for (const dateGroup of groups) {
-      for (const shiftGroup of dateGroup.shifts) {
-        for (const machineGroup of shiftGroup.machines) {
-          const dauCaReport = machineGroup.reports.find(report => report.reportKind === 'dau_ca');
-          const cuoiCaReport = machineGroup.reports.find(report => report.reportKind === 'cuoi_ca');
-          rows.push({
-            key: machineGroup.key,
-            tenMay: machineGroup.tenMay,
-            maMay: machineGroup.maMay,
-            ca: shiftGroup.ca,
-            ngay: dateGroup.ngay,
-            tonDauCa: dauCaReport ? sumMachineNvlDauCaReportTotal(dauCaReport) : 0,
-            tonCuoiCa: cuoiCaReport ? sumMachineNvlCuoiCaReportTotal(cuoiCaReport) : 0
-          });
-        }
-      }
-    }
-
-    return rows;
-  }, [filteredMachineNvlReports]);
 
   const materialQuery = materialSearch.trim().toLowerCase();
   const filteredMaterials = useMemo(() => {
@@ -932,38 +636,7 @@ export function ControlBoardPanel({
     boardMatchedProductionOrders
   ]);
 
-  const acceptanceReportQuery = acceptanceReportSearch.trim().toLowerCase();
-  const filteredAcceptanceReports = useMemo(() => {
-    return acceptanceReports.filter(report => {
-      if (acceptanceReportQuery) {
-        const haystack = `${report.ngay} ${report.ca} ${report.lan} ${report.gio} ${report.ma_may} ${report.ten_may} ${report.mat_hang} ${report.don_vi} ${report.so_luong ?? ''}`
-          .toLowerCase();
-        if (!haystack.includes(acceptanceReportQuery)) return false;
-      }
-      return (
-        matchesBoardDateRange(report.ngay) &&
-        matchesBoardShift(report.ca) &&
-        matchesBoardMachine(report.ma_may, report.ten_may) &&
-        matchesBoardProductionOrderBucket(report.ngay, report.ca, report.ma_may, report.ten_may)
-      );
-    });
-  }, [acceptanceReports, acceptanceReportQuery, shiftSummaryDateFrom, shiftSummaryDateTo, boardFilterShift, boardFilterMachine, selectedBoardMachine, hasBoardProductionOrderFilter, boardMatchedProductionOrders]);
-  const totalAcceptanceRolls = useMemo(
-    () =>
-      filteredAcceptanceReports.reduce((sum, report) => {
-        const unit = String(report.don_vi || '')
-          .trim()
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '');
-        if (unit !== 'cuon') return sum;
-        return sum + (report.so_luong ?? 0);
-      }, 0),
-    [filteredAcceptanceReports]
-  );
-
   const previewLimit = 12;
-  const sidePreviewLimit = 6;
   const productionPreviewLimit = 20;
   const visibleProductionOrders = recentProductionOrders.slice(0, productionPreviewLimit);
   const selectedProductionOrdersForPlan = useMemo(
@@ -1007,25 +680,6 @@ export function ControlBoardPanel({
       window.alert(error.message || 'Không thể xóa lệnh sản xuất.');
     } finally {
       setDeletingProductionOrderId('');
-    }
-  };
-
-  const handleDeleteAcceptanceReport = async (report: AcceptanceReport) => {
-    const label = report.mat_hang || report.ten_may || 'báo cáo sản lượng';
-    if (!window.confirm(`Xóa ${label}?`)) return;
-
-    setDeletingAcceptanceReportId(report.id);
-    try {
-      const res = await fetch(`/api/bao-cao-nghiem-thu/${report.id}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể xóa báo cáo sản lượng.');
-      }
-      await loadBoard();
-    } catch (error: any) {
-      window.alert(error.message || 'Không thể xóa báo cáo sản lượng.');
-    } finally {
-      setDeletingAcceptanceReportId('');
     }
   };
 
@@ -1152,33 +806,6 @@ export function ControlBoardPanel({
           isLoading={isLoading}
         />
       </div>
-
-      <ControlBoardShiftSummaryChart
-        rows={shiftSummaryRows}
-        isLoading={isLoading}
-        warehouseMovements={boardScopedWarehouseMovements}
-        shiftSettings={shiftSummaryDetailSources.shiftSettings}
-      />
-
-      <ControlBoardShiftSummaryTable
-        rows={shiftSummaryRows}
-        isLoading={isLoading}
-        dateFrom={shiftSummaryDateFrom}
-        dateTo={shiftSummaryDateTo}
-        shiftFilter={boardFilterShift}
-        machineFilter={boardFilterMachine}
-        detailSources={shiftSummaryDetailSources}
-        filterSources={shiftSummaryFilterSources}
-        staffOptions={shiftSummaryStaffOptions}
-        selectedMachine={selectedBoardMachine}
-        onEditWeighingRecord={onEditWeighing ? handleEditWeighingRecord : undefined}
-        onDeleteWeighingRecord={handleDeleteWeighingRecord}
-        onDeleteWeighingRecords={handleDeleteWeighingRecords}
-        onDeleteWarehouseSlip={handleDeleteWarehouseSlip}
-        onDeleteWarehouseSlips={handleDeleteWarehouseSlips}
-        onDeleteMachineNvlReport={handleDeleteMachineNvlReport}
-        onDeleteMachineNvlReports={handleDeleteMachineNvlReports}
-      />
 
       <ControlBoardBbMachineReportTable
         productionOrders={boardScopedProductionOrders}
@@ -1389,244 +1016,6 @@ export function ControlBoardPanel({
             </tbody>
           </table>
           </div>
-        </DashboardWindow>
-      </div>
-
-      <div className="order-[-10] columns-1 gap-2.5 md:columns-2">
-        <DashboardWindow
-          title="Báo cáo sản lượng"
-          subtitle="Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca"
-          icon={ClipboardCheck}
-          accentClass="bg-gradient-to-r from-sky-900 to-sky-700"
-          count={filteredAcceptanceReports.length}
-          countLabel="Báo cáo"
-          summaryExtra={
-            <>
-              Tổng cuộn: <span className="text-white">{isLoading ? '...' : formatNumber(totalAcceptanceRolls, 0)}</span>
-            </>
-          }
-          search={acceptanceReportSearch}
-          onSearchChange={setAcceptanceReportSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('acceptance-report')}
-          openLabel="Thêm mới"
-          compact
-        >
-          <table className="w-full table-fixed text-left text-[11px]">
-            <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="w-12 px-2 py-1.5 font-black">Ảnh</th>
-                <th className="w-[28%] px-2 py-1.5 font-black">Ngày</th>
-                <th className="px-2 py-1.5 font-black">Mặt hàng</th>
-                <th className="w-16 px-2 py-1.5 text-right font-black">SL</th>
-                <th className="w-10 px-1 py-1.5 text-center font-black"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredAcceptanceReports.slice(0, sidePreviewLimit).map(report => (
-                <tr key={report.id} className="hover:bg-sky-50/50">
-                  <td className="px-2 py-1.5">
-                    {report.hinh_anh ? (
-                      <a
-                        href={report.hinh_anh}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block h-8 w-8 overflow-hidden rounded-md border border-zinc-200"
-                      >
-                        <img src={report.hinh_anh} alt="Sản lượng" className="h-full w-full object-cover" />
-                      </a>
-                    ) : (
-                      <span className="text-zinc-400">-</span>
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <p className="truncate font-mono text-[10px] font-bold text-zinc-700">{report.ngay || '-'}</p>
-                    <p className="truncate text-[9px] font-semibold text-zinc-500">
-                      {report.ca || '-'} · Lần {report.lan || '-'}
-                    </p>
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <p className="truncate font-semibold text-zinc-800">{report.mat_hang || '-'}</p>
-                    <p className="truncate text-[9px] font-semibold text-zinc-500">
-                      {report.ten_may || report.ma_may || '-'} · {report.gio || '-'}
-                    </p>
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
-                    {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
-                  </td>
-                  <td className="px-1 py-1.5 text-center">
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAcceptanceReport(report)}
-                      disabled={deletingAcceptanceReportId === report.id}
-                      title="Xóa báo cáo"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {deletingAcceptanceReportId === report.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && filteredAcceptanceReports.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
-                    Chưa có báo cáo sản lượng.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DashboardWindow>
-
-        <DashboardWindow
-          title="Báo cáo tồn máy"
-          subtitle="NVL tồn theo máy, ca và ngày sản xuất"
-          icon={Boxes}
-          accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
-          count={machineNvlBoardRows.length}
-          countLabel="BC"
-          search={machineNvlReportSearch}
-          onSearchChange={setMachineNvlReportSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('machine-nvl-report-list')}
-          openLabel="Mở"
-          compact
-        >
-          <table className="w-full text-left text-[11px]">
-            <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-2 py-1.5 font-black">Máy</th>
-                <th className="px-2 py-1.5 font-black">Ca</th>
-                <th className="px-2 py-1.5 font-black">Ngày</th>
-                <th className="px-2 py-1.5 text-right font-black">Tồn đầu ca</th>
-                <th className="px-2 py-1.5 text-right font-black">Tồn cuối ca</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {machineNvlBoardRows.slice(0, sidePreviewLimit).map(row => (
-                <tr key={row.key} className="hover:bg-red-50/50">
-                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.tenMay || row.maMay || '—'}</td>
-                  <td className="px-2 py-1.5 text-zinc-600">{row.ca || '—'}</td>
-                  <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-700">{row.ngay || '—'}</td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
-                    {row.tonDauCa > 0 ? formatNumber(row.tonDauCa, 2) : '—'}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
-                    {row.tonCuoiCa > 0 ? formatNumber(row.tonCuoiCa, 2) : '—'}
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && machineNvlBoardRows.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
-                    Chưa có báo cáo tồn máy.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DashboardWindow>
-
-        <DashboardWindow
-          title="Báo cáo hàng hỏng"
-          subtitle="KL nhựa và KL màng theo ngày, ca và máy SX"
-          icon={PackageX}
-          accentClass="bg-gradient-to-r from-rose-700 to-[#ef1b2d]"
-          count={recentDamagedRows.length}
-          countLabel="Dòng"
-          search={damagedGoodsSearch}
-          onSearchChange={setDamagedGoodsSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('damaged-goods-report-list')}
-          openLabel="Mở"
-          compact
-        >
-          <table className="w-full text-left text-[11px]">
-            <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-2 py-1.5 font-black">Máy</th>
-                <th className="px-2 py-1.5 font-black">Ca</th>
-                <th className="px-2 py-1.5 font-black">Ngày</th>
-                <th className="px-2 py-1.5 text-right font-black">KL nhựa</th>
-                <th className="px-2 py-1.5 text-right font-black">KL màng</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {recentDamagedRows.slice(0, sidePreviewLimit).map((row, index) => (
-                <tr key={`${row.id ?? row.documentNo}-${index}`} className="hover:bg-red-50/50">
-                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.machineName || '—'}</td>
-                  <td className="px-2 py-1.5 text-zinc-600">{row.shiftName || '—'}</td>
-                  <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-700">
-                    {row.productionDate || row.reportDate || '—'}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-rose-700">
-                    {formatDamagedGoodsRowPlasticWeight(row)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-rose-700">
-                    {formatDamagedGoodsRowFilmWeight(row)}
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && recentDamagedRows.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
-                    Chưa có báo cáo hàng hỏng.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DashboardWindow>
-
-        <DashboardWindow
-          title="Bảng báo cáo Cân"
-          subtitle="Phiếu cân ca, khối lượng theo ngày và ca SX"
-          icon={Scale}
-          accentClass="bg-gradient-to-r from-[#ef1b2d] to-[#b30d1c]"
-          count={recentWeighingRows.length}
-          countLabel="Dòng"
-          search={weighingSearch}
-          onSearchChange={setWeighingSearch}
-          isLoading={isLoading}
-          error=""
-          onOpen={() => onNavigate('weighing-summary')}
-          openLabel="Mở"
-          compact
-        >
-          <table className="w-full text-left text-[11px]">
-            <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-2 py-1.5 font-black">Ca</th>
-                <th className="px-2 py-1.5 font-black">SP</th>
-                <th className="px-2 py-1.5 text-right font-black">Tổng KL</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {recentWeighingRows.slice(0, sidePreviewLimit).map((row, index) => (
-                <tr key={`${row.id ?? row.documentNo}-${index}`} className="hover:bg-red-50/50">
-                  <td className="px-2 py-1.5 text-zinc-600">{row.shiftName || '—'}</td>
-                  <td className="px-2 py-1.5 font-semibold text-zinc-900">{row.productName || row.productCode || '—'}</td>
-                  <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700">
-                    {formatWeighingRowTotalWeight(row)}
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && recentWeighingRows.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-2 py-4 text-center text-[10px] font-bold text-zinc-400">
-                    Chưa có báo cáo cân.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </DashboardWindow>
       </div>
 

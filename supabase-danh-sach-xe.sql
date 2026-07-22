@@ -134,6 +134,21 @@ alter table public.nhat_ky_xe
   add column if not exists tong_mat_hang numeric(14,2) not null default 0,
   add column if not exists tong_doanh_thu numeric(18,2) not null default 0,
   add column if not exists tong_chi_phi numeric(18,2) not null default 0,
+  add column if not exists thuong_chuyen_giao_hang numeric(16,2) not null default 0,
+  add column if not exists cong_lai_xe_theo_km numeric(14,2) not null default 0,
+  add column if not exists thuong_km_di numeric(16,2) not null default 0,
+  add column if not exists chi_so_km_truoc numeric(14,2) not null default 0,
+  add column if not exists chi_so_km_ve numeric(14,2) not null default 0,
+  add column if not exists so_km_thuc_te numeric(14,2) not null default 0,
+  add column if not exists so_lenh numeric(14,2) not null default 0,
+  add column if not exists so_chuyen numeric(14,2) not null default 0,
+  add column if not exists ten_lx1 text,
+  add column if not exists cong_lx1 numeric(14,2) not null default 0,
+  add column if not exists luong_lx1 numeric(16,2) not null default 0,
+  add column if not exists tien_an_lx1 numeric(16,2) not null default 0,
+  add column if not exists tien_ds_lx1 numeric(16,2) not null default 0,
+  add column if not exists tien_thuong_chuyen_lx1 numeric(16,2) not null default 0,
+  add column if not exists tien_luat_lx1 numeric(16,2) not null default 0,
   add column if not exists ghi_chu text;
 
 create index if not exists nhat_ky_xe_ngay_gio_idx

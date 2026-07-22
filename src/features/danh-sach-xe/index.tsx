@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
+  Check,
+  ChevronDown,
   ClipboardCheck,
   Loader2,
   Pencil,
@@ -698,6 +700,76 @@ const DEFAULT_VEHICLE_TYPE_OPTIONS = [
   'Xe container'
 ];
 
+const splitAssignedDrivers = (value: string) =>
+  value.split(/\s*[,;\n]\s*/).map(item => item.trim()).filter(Boolean);
+
+function MultiDriverSelect({ drivers, selectedCodes, selectedNames, onChange }: {
+  drivers: DriverOption[];
+  selectedCodes: string;
+  selectedNames: string;
+  onChange: (drivers: DriverOption[]) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const codes = splitAssignedDrivers(selectedCodes);
+  const names = splitAssignedDrivers(selectedNames);
+  const options = useMemo(() => {
+    const result = [...drivers];
+    names.forEach((name, index) => {
+      const code = codes[index] || '';
+      if (!result.some(driver => (code && driver.code === code) || (!code && driver.name === name))) result.push({ code, name });
+    });
+    return result;
+  }, [drivers, selectedCodes, selectedNames]);
+  const selected = options.filter(driver => (driver.code && codes.includes(driver.code)) || names.includes(driver.name));
+  const normalizedQuery = query.trim().toLocaleLowerCase('vi');
+  const filtered = options.filter(driver => `${driver.code} ${driver.name}`.toLocaleLowerCase('vi').includes(normalizedQuery));
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, []);
+
+  const toggle = (driver: DriverOption) => {
+    const isSelected = selected.some(item => driver.code ? item.code === driver.code : item.name === driver.name);
+    onChange(isSelected
+      ? selected.filter(item => driver.code ? item.code !== driver.code : item.name !== driver.name)
+      : [...selected, driver]);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button type="button" onClick={() => setIsOpen(open => !open)} className={`${inputClass} flex items-center justify-between gap-2 text-left`} aria-haspopup="listbox" aria-expanded={isOpen}>
+        <span className={selected.length ? 'truncate text-slate-900' : 'text-slate-400'}>{selected.length ? selected.map(driver => driver.name).join(', ') : 'Chưa phân công'}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div className="border-b border-slate-100 p-2"><div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input autoFocus value={query} onChange={event => setQuery(event.target.value)} className="h-9 w-full rounded-md border border-slate-200 pl-8 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" placeholder="Gõ mã hoặc tên tài xế..." />
+        </div></div>
+        <div className="max-h-52 overflow-y-auto p-1" role="listbox" aria-multiselectable="true">
+          {filtered.length ? filtered.map(driver => {
+            const checked = selected.some(item => driver.code ? item.code === driver.code : item.name === driver.name);
+            return <button type="button" key={`${driver.code}-${driver.name}`} onClick={() => toggle(driver)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-slate-50" role="option" aria-selected={checked}>
+              <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${checked ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-300 bg-white'}`}>{checked && <Check className="h-3 w-3" strokeWidth={3} />}</span>
+              <span className="min-w-0 truncate">{driver.code && <span className="mr-1.5 font-bold text-slate-500">{driver.code}</span>}{driver.name}</span>
+            </button>;
+          }) : <p className="px-3 py-4 text-center text-xs text-slate-500">Không tìm thấy tài xế</p>}
+        </div>
+        {selected.length > 0 && <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2 text-xs">
+          <span className="font-semibold text-slate-500">Đã chọn {selected.length} tài xế</span>
+          <button type="button" onClick={() => onChange([])} className="font-bold text-rose-600 hover:text-rose-700">Bỏ chọn tất cả</button>
+        </div>}
+      </div>}
+    </div>
+  );
+}
+
 function VehicleModal({
   initial,
   drivers,
@@ -787,21 +859,16 @@ function VehicleModal({
           <input value={form.bien_so_xe} onChange={event => setForm(prev => ({ ...prev, bien_so_xe: event.target.value.toUpperCase() }))} className={`${inputClass} font-mono`} placeholder="VD: 51D-251.05" />
         </Field>
         <Field label="Tài xế phụ trách">
-          <select
-            value={`${form.ma_tai_xe}|${form.tai_xe_phu_trach}`}
-            onChange={event => {
-              const selected = drivers.find(driver => `${driver.code}|${driver.name}` === event.target.value);
-              setForm(prev => ({
-                ...prev,
-                ma_tai_xe: selected?.code || '',
-                tai_xe_phu_trach: selected?.name || ''
-              }));
-            }}
-            className={inputClass}
-          >
-            <option value="|">Chưa phân công</option>
-            {drivers.map(driver => <option key={`${driver.code}-${driver.name}`} value={`${driver.code}|${driver.name}`}>{driver.code ? `${driver.code} · ` : ''}{driver.name}</option>)}
-          </select>
+          <MultiDriverSelect
+            drivers={drivers}
+            selectedCodes={form.ma_tai_xe}
+            selectedNames={form.tai_xe_phu_trach}
+            onChange={selected => setForm(prev => ({
+              ...prev,
+              ma_tai_xe: selected.map(driver => driver.code).join(', '),
+              tai_xe_phu_trach: selected.map(driver => driver.name).join(', ')
+            }))}
+          />
         </Field>
         <Field label="Trạng thái">
           <select value={form.trang_thai} onChange={event => setForm(prev => ({ ...prev, trang_thai: event.target.value }))} className={inputClass}>
