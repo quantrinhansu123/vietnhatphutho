@@ -301,10 +301,33 @@ function resolveExportWeightKg(
 function movementMentionsOrderCode(movement: ShiftSummaryWarehouseMovement, orderCode: string) {
   const code = String(orderCode || '').trim().toLowerCase();
   if (!code) return false;
-  const hay = `${movement.slipCode} ${movement.createdBy} ${movement.itemName} ${movement.itemCode}`.toLowerCase();
-  // productionOrderRef chưa map vào movement — scan note-ish fields if present via createdBy only is weak;
-  // callers may pass enriched fields later. Also check item fields unlikely.
+  const hay = `${movement.slipCode} ${movement.createdBy} ${movement.itemName} ${movement.itemCode} ${movement.reason || ''}`.toLowerCase();
   return hay.includes(code);
+}
+
+function parseWarehouseSlipOrderCodes(value: string | undefined | null): string[] {
+  return String(value || '')
+    .split(/[,;|/]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function movementMatchesOrderCode(movement: ShiftSummaryWarehouseMovement, orderCode: string) {
+  const code = String(orderCode || '').trim().toUpperCase();
+  if (!code) return false;
+  const linked = parseWarehouseSlipOrderCodes(movement.reason).map(item => item.toUpperCase());
+  if (linked.length > 0) return linked.includes(code);
+  return movementMentionsOrderCode(movement, orderCode);
+}
+
+function orderIncludesProduct(order: ProductionOrderRow, productCode: string, productName: string) {
+  const codeKey = normalizeProductCodeKey(productCode);
+  const nameKey = normalizeProductCodeKey(productName);
+  return getProductionOrderProductLines(order).some(line => {
+    const lineCode = normalizeProductCodeKey(line.productCode);
+    const lineName = normalizeProductCodeKey(line.productName);
+    return (codeKey && lineCode === codeKey) || (nameKey && lineName === nameKey);
+  });
 }
 
 export function buildBbWarehouseExportLineRows(input: {
@@ -377,7 +400,7 @@ export function buildBbWarehouseExportLineRows(input: {
     );
     if (relatedOrders.length === 0) continue;
 
-    const explicitMatches = relatedOrders.filter(order => movementMentionsOrderCode(movement, order.orderCode));
+    const explicitMatches = relatedOrders.filter(order => movementMatchesOrderCode(movement, order.orderCode));
     const matchedOrders = explicitMatches.length > 0 ? explicitMatches : relatedOrders;
     const matchedByOrder = explicitMatches.length > 0;
     const orderCode = [...new Set(matchedOrders.map(order => order.orderCode).filter(Boolean))].join(', ');
@@ -637,6 +660,164 @@ export function groupBbWarehouseExportLines(
       0
     );
   });
+
+  return groups.sort((a, b) => {
+    const dateCmp = b.ngay.localeCompare(a.ngay);
+    if (dateCmp !== 0) return dateCmp;
+    return a.orderCode.localeCompare(b.orderCode, 'vi');
+  });
+}
+
+/** Định mức NVL theo SL thành phẩm nhập kho (phiếu nhập kho TP), gom theo lệnh SX. */
+export function buildBbInboundMaterialNormGroups(input: {
+  productionOrders: ProductionOrderRow[];
+  warehouseMovements: ShiftSummaryWarehouseMovement[];
+  products: ProductRow[];
+  materials: MaterialRow[];
+  machines: MachineRow[];
+  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  dateFrom: string;
+  dateTo: string;
+  shiftFilter?: string;
+  machineFilter?: string;
+  selectedMachine?: { code?: string; name?: string } | null;
+}): BbWarehouseExportGroup[] {
+  const shiftSettings = (input.shiftSettings || []) as ShiftSetting[];
+  const shiftOptions = getProductionShiftOptions(shiftSettings);
+  const lookupSettings = (input.shiftSettings || []) as ProductionOrderLookupSetting[];
+  const headers = collectBbOrderHeaders(input);
+  if (headers.length === 0) return [];
+
+  const materialsCatalog = input.materials.map(mapMaterialToWeightCatalogItem);
+  const inboundMovements = input.warehouseMovements.filter(
+    movement => movement.slipType === 'nhap' && movement.warehouseKind === 'san_pham'
+  );
+  if (inboundMovements.length === 0) return [];
+
+  const groups: BbWarehouseExportGroup[] = [];
+
+  for (const header of headers) {
+    const relatedOrders = input.productionOrders.filter(order => {
+      if (String(order.code || '').trim().toUpperCase() !== String(header.orderCode || '').trim().toUpperCase()) {
+        return false;
+      }
+      const ngay = parseProductionOrderFilterDate(order.startDate);
+      if (header.ngay && ngay && ngay !== header.ngay) return false;
+      return shiftNamesMatch(order.shift, header.shift);
+    });
+
+    const bucketMovements = inboundMovements.filter(movement => {
+      if (!matchesControlBoardDateRange(movement.slipDate, input.dateFrom, input.dateTo)) return false;
+      if (input.shiftFilter && input.shiftFilter !== 'all' && !shiftNamesMatch(movement.shift, input.shiftFilter)) {
+        return false;
+      }
+      return matchesShiftSummaryBucket(header.ngay, header.shift, movement.slipDate, movement.shift, shiftOptions);
+    });
+    if (bucketMovements.length === 0) continue;
+
+    const explicitMatches = bucketMovements.filter(movement => movementMatchesOrderCode(movement, header.orderCode));
+    const matchedMovements =
+      explicitMatches.length > 0
+        ? explicitMatches
+        : bucketMovements.filter(movement =>
+            relatedOrders.some(order => orderIncludesProduct(order, movement.itemCode, movement.itemName))
+          );
+    if (matchedMovements.length === 0) continue;
+
+    const productMap = new Map<string, BbWarehouseExportProductGroup>();
+    const matchedByOrder = explicitMatches.length > 0;
+
+    for (const movement of matchedMovements) {
+      const productCode = String(movement.itemCode || '').trim();
+      const productName = String(movement.itemName || '').trim();
+      const productKey = normalizeProductCodeKey(productCode) || normalizeProductCodeKey(productName) || movement.id;
+      const inboundQty = Math.max(0, Number(movement.quantity) || 0);
+      if (inboundQty <= 0) continue;
+
+      const catalogProduct = findProductByCode(input.products, productCode);
+      let productGroup = productMap.get(productKey);
+      if (!productGroup) {
+        productGroup = {
+          productKey,
+          productCode,
+          productName: productName || catalogProduct?.name || productCode,
+          unit: String(movement.unit || catalogProduct?.unit || '').trim(),
+          orderQuantity: 0,
+          normKgPerUnit: resolveProductUnitNormKg(catalogProduct),
+          normWeightKg: 0,
+          lineCount: 0,
+          quantity: 0,
+          totalWeightKg: 0,
+          allocationMode: 'direct',
+          lines: []
+        };
+        productMap.set(productKey, productGroup);
+      }
+
+      productGroup.quantity += inboundQty;
+      productGroup.orderQuantity += inboundQty;
+      productGroup.lineCount += 1;
+
+      const unitNorm = productGroup.normKgPerUnit;
+      const productWeightKg = unitNorm !== null && unitNorm > 0 ? roundQty(unitNorm * inboundQty, 3) : 0;
+      productGroup.totalWeightKg += productWeightKg;
+
+      const movementPrefix = `${movement.id || movement.slipCode}|${movement.itemCode}|`;
+      for (const item of catalogProduct?.nplItems || []) {
+        const materialKey = normalizeProductCodeKey(item.code);
+        if (!materialKey) continue;
+        const expectedKg = resolveBomExpectedKg(item, inboundQty, unitNorm, materialsCatalog);
+        if (expectedKg === null || expectedKg <= 0) continue;
+
+        productGroup.lines.push({
+          key: `${movementPrefix}${materialKey}`,
+          slipLineKey: `${movementPrefix}${materialKey}`,
+          ngay: parseProductionOrderFilterDate(movement.slipDate) || movement.slipDate,
+          shift: movement.shift,
+          shiftLabel: formatProductionOrderShiftLabel(movement.shift, lookupSettings),
+          orderCode: header.orderCode,
+          machine: header.machine,
+          slipCode: movement.slipCode,
+          itemCode: item.code,
+          itemName: item.name || item.code,
+          unit: item.unit || 'kg',
+          quantity: inboundQty,
+          normWeightKg: expectedKg,
+          materialNorm: null,
+          weightKg: expectedKg,
+          matchedByOrder
+        });
+      }
+    }
+
+    const productGroups = [...productMap.values()]
+      .map(productGroup => {
+        productGroup.normWeightKg = productGroup.lines.reduce(
+          (sum, line) => sum + (line.normWeightKg || 0),
+          0
+        );
+        return productGroup;
+      })
+      .filter(productGroup => productGroup.quantity > 0 || productGroup.lines.length > 0);
+    if (productGroups.length === 0) continue;
+
+    const groupKey = header.orderCode.trim() || `unlinked|${header.ngay}|${header.shift}`;
+    groups.push({
+      groupKey,
+      orderCode: header.orderCode,
+      ngay: header.ngay,
+      shift: header.shift,
+      shiftLabel: formatProductionOrderShiftLabel(header.shift, lookupSettings),
+      machine: header.machine,
+      lineCount: productGroups.reduce((sum, productGroup) => sum + productGroup.lineCount, 0),
+      quantity: productGroups.reduce((sum, productGroup) => sum + productGroup.quantity, 0),
+      totalNormWeightKg: productGroups.reduce((sum, productGroup) => sum + productGroup.normWeightKg, 0),
+      totalWeightKg: productGroups.reduce((sum, productGroup) => sum + productGroup.totalWeightKg, 0),
+      unmatchedCount: matchedByOrder ? 0 : matchedMovements.length,
+      lines: productGroups.flatMap(productGroup => productGroup.lines),
+      productGroups
+    });
+  }
 
   return groups.sort((a, b) => {
     const dateCmp = b.ngay.localeCompare(a.ngay);

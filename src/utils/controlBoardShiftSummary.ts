@@ -36,6 +36,8 @@ export type ShiftSummaryWarehouseMovement = {
   /** Đơn giá từ phiếu xuất/nhập kho (đ/đơn vị) */
   unitPrice?: number;
   createdBy: string;
+  /** Lý do phiếu — thường chứa mã lệnh SX đã chọn khi lập phiếu */
+  reason?: string;
 };
 
 export type ShiftSummaryFilterSources = {

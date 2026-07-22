@@ -483,7 +483,8 @@ export function mapWarehouseMovementsForShiftSummary(rows: WarehouseMovementRow[
     unit: row.unit,
     quantity: row.quantity,
     unitPrice: Number.isFinite(row.unitPrice) ? row.unitPrice : 0,
-    createdBy: row.createdBy
+    createdBy: row.createdBy,
+    reason: row.reason || ''
   }));
 }
 

@@ -22,6 +22,7 @@ import {
   buildBbDanhGiaHaoHutGroups,
   buildBbDauCaLineRows,
   buildBbInboundReportRows,
+  buildBbInboundMaterialNormGroups,
   buildBbMixingRatioGroups,
   buildBbOrderCodeOptions,
   buildBbProductionOrderLineRows,
@@ -280,6 +281,35 @@ export default function ControlBoardBbMachineReportTable({
     () => groupBbWarehouseExportLines(exportRows, scopedProductionOrders, products, materials),
     [exportRows, scopedProductionOrders, products, materials]
   );
+  const inboundNormGroups = useMemo(
+    () =>
+      buildBbInboundMaterialNormGroups({
+        productionOrders: scopedProductionOrders,
+        warehouseMovements,
+        products,
+        materials,
+        machines,
+        shiftSettings,
+        dateFrom,
+        dateTo,
+        shiftFilter,
+        machineFilter,
+        selectedMachine
+      }),
+    [
+      scopedProductionOrders,
+      warehouseMovements,
+      products,
+      materials,
+      machines,
+      shiftSettings,
+      dateFrom,
+      dateTo,
+      shiftFilter,
+      machineFilter,
+      selectedMachine
+    ]
+  );
   const damagedRows = useMemo(
     () =>
       buildBbDamagedGoodsLineRows({
@@ -473,6 +503,10 @@ export default function ControlBoardBbMachineReportTable({
     () => exportGroups.reduce((sum, group) => sum + group.totalNormWeightKg, 0),
     [exportGroups]
   );
+  const inboundNormTotalKg = useMemo(
+    () => inboundNormGroups.reduce((sum, group) => sum + group.totalNormWeightKg, 0),
+    [inboundNormGroups]
+  );
   const damagedTotalKg = useMemo(() => sumBbDamagedGoodsWeightKg(damagedRows), [damagedRows]);
   const cuoiCaTotalKg = useMemo(() => sumBbCuoiCaWeightKg(cuoiCaRows), [cuoiCaRows]);
   const dauCaTotalKg = useMemo(() => sumBbDauCaWeightKg(dauCaRows), [dauCaRows]);
@@ -565,6 +599,8 @@ export default function ControlBoardBbMachineReportTable({
         return cuoiCaGroups.map(group => group.groupKey);
       case 'tong_vat_tu_thuc_dung':
         return thucDungGroups.map(group => group.groupKey);
+      case 'tong_dinh_muc_nvl_nhap_kho':
+        return inboundNormGroups.map(group => group.groupKey);
       case 'tong':
         return tongGroups.map(group => group.groupKey);
       default:
@@ -578,6 +614,7 @@ export default function ControlBoardBbMachineReportTable({
     damagedGroups,
     cuoiCaGroups,
     thucDungGroups,
+    inboundNormGroups,
     tongGroups
   ]);
 
@@ -1762,7 +1799,7 @@ export default function ControlBoardBbMachineReportTable({
           </table>
         ) : activeTab === 'tong_dinh_muc_nvl_nhap_kho' ? (
           <>
-            {exportGroups.length > 0 ? (
+            {inboundNormGroups.length > 0 ? (
               <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
                 <p className="text-sm font-extrabold text-slate-700">
                   Bấm mũi tên ở dòng cha để đóng/mở các dòng con
@@ -1771,7 +1808,7 @@ export default function ControlBoardBbMachineReportTable({
                   <button
                     type="button"
                     onClick={() => setAllActiveGroupsExpanded(true)}
-                    disabled={exportGroups.every(g => isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', g.groupKey))}
+                    disabled={inboundNormGroups.every(g => isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', g.groupKey))}
                     className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-black text-amber-800 shadow-sm transition hover:bg-amber-50 disabled:cursor-default disabled:opacity-40"
                   >
                     Mở tất cả
@@ -1779,7 +1816,7 @@ export default function ControlBoardBbMachineReportTable({
                   <button
                     type="button"
                     onClick={() => setAllActiveGroupsExpanded(false)}
-                    disabled={exportGroups.every(g => !isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', g.groupKey))}
+                    disabled={inboundNormGroups.every(g => !isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', g.groupKey))}
                     className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
                   >
                     Đóng tất cả
@@ -1811,14 +1848,14 @@ export default function ControlBoardBbMachineReportTable({
                     Đang tải định mức vật tư nhập kho...
                   </td>
                 </tr>
-              ) : exportGroups.length === 0 ? (
+              ) : inboundNormGroups.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
-                    Chưa có phiếu xuất kho theo bộ lọc đã chọn.
+                    Chưa có phiếu nhập kho thành phẩm theo bộ lọc đã chọn.
                   </td>
                 </tr>
               ) : (
-                exportGroups.map(group => {
+                inboundNormGroups.map(group => {
                   const expanded = isGroupExpanded('tong_dinh_muc_nvl_nhap_kho', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
@@ -1931,20 +1968,20 @@ export default function ControlBoardBbMachineReportTable({
                 })
               )}
             </tbody>
-            {!isLoading && exportGroups.length > 0 ? (
+            {!isLoading && inboundNormGroups.length > 0 ? (
               <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
                   <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
                     Tổng định mức
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-amber-800">
-                    {formatKg(exportTotalNormKg, 3)}
+                    {formatKg(inboundNormTotalKg, 3)}
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-zinc-700">
-                    {formatNumber(exportGroups.reduce((sum, g) => sum + (g.quantity || 0), 0), 3)}
+                    {formatNumber(inboundNormGroups.reduce((sum, g) => sum + (g.quantity || 0), 0), 3)}
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-amber-800">
-                    {formatKg(exportGroups.reduce((sum, g) => sum + (g.totalWeightKg || 0), 0), 3)}
+                    {formatKg(inboundNormGroups.reduce((sum, g) => sum + (g.totalWeightKg || 0), 0), 3)}
                   </td>
                 </tr>
               </tfoot>
