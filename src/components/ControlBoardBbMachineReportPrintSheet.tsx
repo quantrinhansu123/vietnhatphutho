@@ -35,6 +35,7 @@ type PrintProps = {
   products: ProductRow[];
   materials: MaterialRow[];
   phanTichMap: Record<string, string>;
+  noteByOrder?: Record<string, string>;
 };
 
 type MaterialPrintRow = {
@@ -202,6 +203,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
   const inbound = findOrderGroup(props.inboundRows, order.orderCode);
   const evaluation = findOrderGroup(props.danhGiaGroups, order.orderCode);
   const analysisNote = props.phanTichMap[order.groupKey] || '';
+  const ghiChu = (props.noteByOrder?.[order.groupKey] || '').trim();
   const materialRows = buildMaterialRows(order, props);
   const productRows = order.lines.map(line => {
     const actualQuantity = acceptanceQuantityForProduct(
@@ -354,6 +356,13 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
                 <td className="shift-summary-print-num">{evaluation ? `${formatMoney(evaluation.tongGiaTriHaoHutLoiHong, 0)} đ` : '-'}</td></tr>
             </tbody>
           </table>
+        </section>
+
+        <section className="shift-summary-print-section">
+          <h2 className="production-order-print-section-title">5. GHI CHÚ</h2>
+          <div className="bb-machine-report-print-note">
+            {ghiChu || '—'}
+          </div>
         </section>
 
         <div className="bb-machine-report-print-signatures">

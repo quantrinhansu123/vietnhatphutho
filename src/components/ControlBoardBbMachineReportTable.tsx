@@ -55,10 +55,11 @@ import {
 import { computePercentRatio } from '../utils/controlBoardShiftSummary';
 import type { BbProductionOrderGroup } from '../utils/controlBoardBbMachineReport';
 
-type BbPrintStaffSelection = {
+type BbPrintConfirmSelection = {
   staffMain: string;
   staffAssistant: string;
   staffSupport: string;
+  ghiChu: string;
 };
 
 const BB_PHAN_TICH_STORAGE_KEY = 'control-board-bb-phan-tich-v1';
@@ -168,8 +169,9 @@ export default function ControlBoardBbMachineReportTable({
   const [showPrintSheet, setShowPrintSheet] = useState(false);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [printConfirmOpen, setPrintConfirmOpen] = useState(false);
-  const [printStaffByOrder, setPrintStaffByOrder] = useState<Record<string, BbPrintStaffSelection>>({});
+  const [printStaffByOrder, setPrintStaffByOrder] = useState<Record<string, BbPrintConfirmSelection>>({});
   const [printOrderGroups, setPrintOrderGroups] = useState<BbProductionOrderGroup[]>([]);
+  const [printNoteByOrder, setPrintNoteByOrder] = useState<Record<string, string>>({});
   const [hrStaffNames, setHrStaffNames] = useState<string[]>([]);
   const [selectedMaterialNorm, setSelectedMaterialNorm] = useState<BbMaterialNormFormula | null>(null);
   const [thucDungDetail, setThucDungDetail] = useState<{
@@ -603,12 +605,13 @@ export default function ControlBoardBbMachineReportTable({
 
   const handlePrint = () => {
     if (orderGroups.length === 0) return;
-    const initialStaff: Record<string, BbPrintStaffSelection> = {};
+    const initialStaff: Record<string, BbPrintConfirmSelection> = {};
     orderGroups.forEach(group => {
       initialStaff[group.groupKey] = {
         staffMain: group.staffMain || '',
         staffAssistant: group.staffAssistant || '',
-        staffSupport: group.staffSupport || ''
+        staffSupport: group.staffSupport || '',
+        ghiChu: printNoteByOrder[group.groupKey] || ''
       };
     });
     setPrintStaffByOrder(initialStaff);
@@ -665,7 +668,7 @@ export default function ControlBoardBbMachineReportTable({
 
   const updatePrintStaff = (
     groupKey: string,
-    field: keyof BbPrintStaffSelection,
+    field: keyof BbPrintConfirmSelection,
     value: string
   ) => {
     setPrintStaffByOrder(prev => ({
@@ -674,6 +677,7 @@ export default function ControlBoardBbMachineReportTable({
         staffMain: prev[groupKey]?.staffMain || '',
         staffAssistant: prev[groupKey]?.staffAssistant || '',
         staffSupport: prev[groupKey]?.staffSupport || '',
+        ghiChu: prev[groupKey]?.ghiChu || '',
         [field]: value
       }
     }));
@@ -690,6 +694,12 @@ export default function ControlBoardBbMachineReportTable({
         staffSupport: selected.staffSupport.trim()
       };
     });
+    const nextNotes: Record<string, string> = {};
+    orderGroups.forEach(group => {
+      const note = printStaffByOrder[group.groupKey]?.ghiChu?.trim() || '';
+      if (note) nextNotes[group.groupKey] = note;
+    });
+    setPrintNoteByOrder(nextNotes);
     setPrintOrderGroups(nextGroups);
     setPrintConfirmOpen(false);
     setShowPrintSheet(true);
@@ -728,6 +738,7 @@ export default function ControlBoardBbMachineReportTable({
       setPendingPrint(false);
       setShowPrintSheet(false);
       setPrintOrderGroups([]);
+      setPrintNoteByOrder({});
     };
     window.addEventListener('afterprint', handleAfterPrint);
     return () => window.removeEventListener('afterprint', handleAfterPrint);
@@ -2446,7 +2457,8 @@ export default function ControlBoardBbMachineReportTable({
               const selection = printStaffByOrder[group.groupKey] || {
                 staffMain: group.staffMain || '',
                 staffAssistant: group.staffAssistant || '',
-                staffSupport: group.staffSupport || ''
+                staffSupport: group.staffSupport || '',
+                ghiChu: ''
               };
               const staffSelectClass =
                 'h-10 w-full rounded-lg border border-sky-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15';
@@ -2536,6 +2548,19 @@ export default function ControlBoardBbMachineReportTable({
                       </select>
                     </label>
                   </div>
+
+                  <label className="mt-3 block space-y-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-sky-700">
+                      Ghi chú
+                    </span>
+                    <textarea
+                      value={selection.ghiChu}
+                      onChange={event => updatePrintStaff(group.groupKey, 'ghiChu', event.target.value)}
+                      rows={3}
+                      placeholder="Nhập ghi chú hiển thị trên phiếu in..."
+                      className="min-h-[72px] w-full resize-y rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15"
+                    />
+                  </label>
                 </div>
               );
             })}
@@ -2576,6 +2601,7 @@ export default function ControlBoardBbMachineReportTable({
             products={products}
             materials={materials}
             phanTichMap={phanTichMap}
+            noteByOrder={printNoteByOrder}
           />,
           document.body
         )
