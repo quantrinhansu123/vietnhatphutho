@@ -7,6 +7,7 @@ import {
   Plus,
   ReceiptText,
   Save,
+  Scale,
   Search,
   Trash2,
   Truck,
@@ -15,6 +16,7 @@ import {
 import { BackButton } from '../../components/layout/NavButtons';
 import { normalizeHrBranches } from '../_shared/hr';
 import { VehicleExpensesView, VehicleLogsView } from './VehicleOperations';
+import { DriverPolicyView } from './DriverPolicy';
 
 type Vehicle = {
   id: string;
@@ -153,7 +155,7 @@ async function readJsonResponse(response: Response) {
 }
 
 export function VehiclesPanel({ onBack }: { onBack: () => void }) {
-  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'expenses' | 'logs'>('vehicles');
+  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'expenses' | 'logs' | 'policy'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rows, setRows] = useState<DriverReconciliation[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
@@ -317,7 +319,7 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
             </button>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-4 sm:w-[760px]">
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-5 sm:w-[940px]">
           <button
             type="button"
             onClick={() => setActiveView('vehicles')}
@@ -357,6 +359,16 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
           >
             <BookOpen className="h-4 w-4" />
             Nhật ký xe
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('policy')}
+            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
+              activeView === 'policy' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Scale className="h-4 w-4" />
+            Quy chế lái xe
           </button>
         </div>
       </section>
@@ -567,6 +579,8 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
         </>
       ) : activeView === 'expenses' ? (
         <VehicleExpensesView vehicles={vehicles} staff={staff} />
+      ) : activeView === 'policy' ? (
+        <DriverPolicyView />
       ) : (
         <VehicleLogsView vehicles={vehicles} staff={staff} />
       )}
@@ -575,6 +589,7 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
         <VehicleModal
           initial={vehicleModal.vehicle}
           drivers={drivers}
+          vehicleTypeOptions={vehicles.map(vehicle => vehicle.loai_xe)}
           onClose={() => setVehicleModal(null)}
           onSaved={async () => {
             setVehicleModal(null);
@@ -673,20 +688,46 @@ function ModalShell({
   );
 }
 
+const DEFAULT_VEHICLE_TYPE_OPTIONS = [
+  'Xe tải 1.4T',
+  'Xe tải 2.5T',
+  'Xe tải 3.5T',
+  'Xe tải 5T',
+  'Xe van',
+  'Xe bán tải',
+  'Xe container'
+];
+
 function VehicleModal({
   initial,
   drivers,
+  vehicleTypeOptions = [],
   onClose,
   onSaved
 }: {
   initial?: Vehicle;
   drivers: DriverOption[];
+  vehicleTypeOptions?: string[];
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
   const [form, setForm] = useState<VehicleForm>(initial ? { ...initial } : emptyVehicleForm());
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const loaiXeSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    for (const value of [...vehicleTypeOptions, ...DEFAULT_VEHICLE_TYPE_OPTIONS]) {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      options.push(trimmed);
+    }
+    return options.sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [vehicleTypeOptions]);
 
   const save = async () => {
     if (!form.loai_xe.trim() || !form.bien_so_xe.trim()) {
@@ -728,7 +769,19 @@ function VehicleModal({
       {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Loại xe *">
-          <input value={form.loai_xe} onChange={event => setForm(prev => ({ ...prev, loai_xe: event.target.value }))} className={inputClass} placeholder="VD: Xe tải 1.4T" />
+          <input
+            list="vehicle-type-suggestions"
+            value={form.loai_xe}
+            onChange={event => setForm(prev => ({ ...prev, loai_xe: event.target.value }))}
+            className={inputClass}
+            placeholder="Chọn hoặc nhập loại xe"
+            autoComplete="off"
+          />
+          <datalist id="vehicle-type-suggestions">
+            {loaiXeSuggestions.map(type => (
+              <option key={type} value={type} />
+            ))}
+          </datalist>
         </Field>
         <Field label="Biển số xe (BSX) *">
           <input value={form.bien_so_xe} onChange={event => setForm(prev => ({ ...prev, bien_so_xe: event.target.value.toUpperCase() }))} className={`${inputClass} font-mono`} placeholder="VD: 51D-251.05" />

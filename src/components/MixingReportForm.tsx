@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { openCameraImagePicker } from '../utils/cameraCapture';
+import { openCameraImagePicker, compressImageDataUrl } from '../utils/cameraCapture';
 import { createPortal } from 'react-dom';
 import {
   CalendarDays,
@@ -370,6 +370,52 @@ async function uploadMixingLineImage(imageDataUrl: string) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Không thể upload ảnh lên Cloudinary.');
   return { imageUrl: data.url as string, imagePublicId: data.publicId as string };
+}
+
+function isDataUrlPhoto(url: string) {
+  return String(url || '').trim().toLowerCase().startsWith('data:');
+}
+
+async function resolveMixingPhotosForSave(
+  photosByRound: Partial<Record<RoundKey, MixingRoundPhoto[]>>
+): Promise<Partial<Record<RoundKey, MixingRoundPhoto[]>>> {
+  const result: Partial<Record<RoundKey, MixingRoundPhoto[]>> = {};
+  for (const roundKey of ROUND_KEYS) {
+    const photos = photosByRound[roundKey] ?? [];
+    if (photos.length === 0) continue;
+    const resolved: MixingRoundPhoto[] = [];
+    for (const photo of photos) {
+      const url = String(photo.url || '').trim();
+      if (!url) continue;
+      if (!isDataUrlPhoto(url)) {
+        resolved.push({ url, public_id: photo.public_id });
+        continue;
+      }
+      const uploaded = await uploadMixingLineImage(url);
+      if (!uploaded.imageUrl) {
+        throw new Error('Upload ảnh không trả về URL. Không thể lưu ảnh dạng tạm trên máy.');
+      }
+      resolved.push({ url: uploaded.imageUrl, public_id: uploaded.imagePublicId });
+    }
+    if (resolved.length > 0) result[roundKey] = resolved;
+  }
+  return result;
+}
+
+function parseActualWeightDraftKey(key: string): {
+  roundKey: RoundKey;
+  lineIndex: number;
+  itemIndex: number;
+} | null {
+  const match = /^((?:lan_\d+))-(\d+)-(\d+)$/.exec(String(key || ''));
+  if (!match) return null;
+  const roundKey = match[1] as RoundKey;
+  if (!ROUND_KEYS.includes(roundKey)) return null;
+  return {
+    roundKey,
+    lineIndex: Number(match[2]),
+    itemIndex: Number(match[3])
+  };
 }
 
 const modalInputClass =
@@ -1370,13 +1416,13 @@ export default function MixingReportForm({
 
   const applyActualWeightDrafts = (lines: MixingReportLine[]) =>
     Object.entries(actualWeightDrafts).reduce((current, [key, text]) => {
-      const [roundKey, lineIndex, itemIndex] = key.split('-');
-      if (!ROUND_KEYS.includes(roundKey as RoundKey)) return current;
+      const parsed = parseActualWeightDraftKey(key);
+      if (!parsed) return current;
       return updateMaterialActualWeightInRound(
         current,
-        roundKey as RoundKey,
-        Number(lineIndex),
-        Number(itemIndex),
+        parsed.roundKey,
+        parsed.lineIndex,
+        parsed.itemIndex,
         text
       );
     }, lines);
@@ -1553,19 +1599,14 @@ export default function MixingReportForm({
     setError('');
     try {
       const uploadedPhotos: MixingRoundPhoto[] = [];
-      let usedLocalFallback = false;
       for (const file of fileList) {
-        const dataUrl = await fileToDataUrl(file);
-        try {
-          const uploaded = await uploadMixingLineImage(dataUrl);
-          if (!uploaded.imageUrl) {
-            throw new Error('Upload ảnh không trả về URL.');
-          }
-          uploadedPhotos.push({ url: uploaded.imageUrl, public_id: uploaded.imagePublicId });
-        } catch {
-          uploadedPhotos.push({ url: dataUrl });
-          usedLocalFallback = true;
+        const rawDataUrl = await fileToDataUrl(file);
+        const dataUrl = await compressImageDataUrl(rawDataUrl);
+        const uploaded = await uploadMixingLineImage(dataUrl);
+        if (!uploaded.imageUrl) {
+          throw new Error('Upload ảnh không trả về URL.');
         }
+        uploadedPhotos.push({ url: uploaded.imageUrl, public_id: uploaded.imagePublicId });
       }
       setForm(prev => ({
         ...prev,
@@ -1575,12 +1616,10 @@ export default function MixingReportForm({
         }
       }));
       setMessage(
-        usedLocalFallback
-          ? `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundKey))} (lưu tạm trên máy — Cloudinary chưa sẵn sàng).`
-          : `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundKey))}.`
+        `Đã thêm ${uploadedPhotos.length} ảnh vào ${roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundKey))}.`
       );
     } catch (err: any) {
-      setError(err.message || 'Không thể đọc file ảnh.');
+      setError(err.message || 'Không thể upload ảnh. Kiểm tra Cloudinary rồi thử lại.');
     } finally {
       setUploadingRoundKey(null);
     }
@@ -1626,7 +1665,9 @@ export default function MixingReportForm({
       }
 
       if (sessionRoundEnd > MAX_MIXING_SESSIONS_PER_SHIFT) {
-        setError(`Chỉ còn tối đa ${MAX_MIXING_SESSIONS_PER_SHIFT - sessionRoundStart + 1} lần trộn cho ca · ngày · máy này.`);
+        setError(
+          `Chỉ còn tối đa ${MAX_MIXING_SESSIONS_PER_SHIFT - sessionRoundStart + 1} lần trộn cho ca · ngày · máy này.`
+        );
         return;
       }
     }
@@ -1639,45 +1680,13 @@ export default function MixingReportForm({
         tong_nhua_tron: sumMixingRounds(line.lan_su_dung)
       }));
     let chi_tiet = prepareMixingChiTietForSave(linesToSave);
-    if (chi_tiet.length > 0) {
-      chi_tiet = chi_tiet.map((line, index) =>
-        index === 0
-          ? ({
-              ...line,
-              _ly_do_theo_lan: form.ly_do_theo_lan ?? {},
-              _giai_trinh_theo_lan: form.giai_trinh_theo_lan ?? {}
-            } as MixingReportLine)
-          : line
-      );
-    }
-    const thucTeSuDung = round2(
-      linesToSave.reduce((sum, line) => {
-        const actual = sumMixingRoundsActual(line.lan_su_dung);
-        const hasActual = hasMixingActualWeights(line.lan_su_dung);
-        const lineTotal = hasActual
-          ? actual
-          : line.tong_nhua_tron ?? sumMixingRounds(line.lan_su_dung);
-        return sum + lineTotal;
-      }, 0)
-    );
-
-    const payload = {
-      ...form,
-      lan_thu: sessionRoundStart,
-      so_lan: displayedRoundCount || 1,
-      thuc_te_su_dung: thucTeSuDung,
-      ly_do_theo_lan: form.ly_do_theo_lan ?? {},
-      giai_trinh_theo_lan: form.giai_trinh_theo_lan ?? {},
-      chi_tiet
-    };
-
-    if (payload.chi_tiet.length === 0) {
+    if (chi_tiet.length === 0) {
       setError('Vui lòng thêm ít nhất một lần trộn và nhập NVL.');
       return;
     }
 
-    const missingPhotoRound = ROUND_KEYS.slice(0, displayedRoundCount).find((roundKey, roundIndex) => {
-      const hasNvl = listRoundMaterialEntries(form.chi_tiet, roundKey).length > 0;
+    const missingPhotoRound = ROUND_KEYS.slice(0, displayedRoundCount).find(roundKey => {
+      const hasNvl = listRoundMaterialEntries(chiTietReady, roundKey).length > 0;
       const hasPhoto = (form.hinh_anh_theo_lan?.[roundKey]?.length ?? 0) > 0;
       return hasNvl && !hasPhoto;
     });
@@ -1693,6 +1702,50 @@ export default function MixingReportForm({
     const wasEditing = Boolean(editingId);
 
     try {
+      const hinh_anh_theo_lan = await resolveMixingPhotosForSave(form.hinh_anh_theo_lan ?? {});
+      setForm(prev => ({ ...prev, hinh_anh_theo_lan }));
+
+      chi_tiet = chi_tiet.map((line, index) =>
+        index === 0
+          ? ({
+              ...line,
+              _ly_do_theo_lan: form.ly_do_theo_lan ?? {},
+              _giai_trinh_theo_lan: form.giai_trinh_theo_lan ?? {}
+            } as MixingReportLine)
+          : line
+      );
+
+      const thucTeSuDung = round2(
+        linesToSave.reduce((sum, line) => {
+          const actual = sumMixingRoundsActual(line.lan_su_dung);
+          const hasActual = hasMixingActualWeights(line.lan_su_dung);
+          const lineTotal = hasActual
+            ? actual
+            : line.tong_nhua_tron ?? sumMixingRounds(line.lan_su_dung);
+          return sum + lineTotal;
+        }, 0)
+      );
+
+      const payload = {
+        ca: form.ca.trim(),
+        ngay: form.ngay.trim(),
+        gio: form.gio.trim(),
+        chi_nhanh: form.chi_nhanh.trim(),
+        ma_may: form.ma_may.trim(),
+        ten_may: form.ten_may.trim(),
+        nhan_su: form.nhan_su.trim(),
+        so_phieu: form.so_phieu.trim(),
+        ky_hieu: form.ky_hieu.trim() || 'QT-16-BM02',
+        ghi_chu: form.ghi_chu.trim(),
+        lan_thu: sessionRoundStart,
+        so_lan: displayedRoundCount || 1,
+        thuc_te_su_dung: thucTeSuDung,
+        ly_do_theo_lan: form.ly_do_theo_lan ?? {},
+        giai_trinh_theo_lan: form.giai_trinh_theo_lan ?? {},
+        hinh_anh_theo_lan,
+        chi_tiet
+      };
+
       const res = await fetch(
         editingId ? `/api/bao-cao-phoi-tron/${editingId}` : '/api/bao-cao-phoi-tron',
         {
@@ -1702,7 +1755,7 @@ export default function MixingReportForm({
         }
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo phối trộn.');
+      if (!res.ok) throw new Error(data.error || `Không thể lưu báo cáo phối trộn (HTTP ${res.status}).`);
 
       setActualWeightDrafts({});
       resetForm();

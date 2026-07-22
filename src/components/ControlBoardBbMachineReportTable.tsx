@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Loader2, Printer } from 'lucide-react';
+import { ChevronDown, Loader2, Printer, X } from 'lucide-react';
 import { formatMoney, formatNumber } from '../utils';
 import type { ProductRow } from '../features/san-pham/types';
 import type { MachineRow } from '../features/danh-sach-may';
 import type { MaterialRow } from '../features/kho-nvl';
 import type { ProductionOrderRow, ProductionOrderLookupSetting } from '../features/ke-hoach-san-xuat';
+import { splitProductionOrderStaffNames } from '../features/cai-dat-thoi-gian';
 import type { MixingReport } from './MixingReportForm';
 import type { AcceptanceReport } from './AcceptanceReportForm';
 import type { ShiftSetting } from '../utils/shiftSettings';
@@ -52,6 +53,13 @@ import {
   type BbThucDungLineRow
 } from '../utils/controlBoardBbMachineReport';
 import { computePercentRatio } from '../utils/controlBoardShiftSummary';
+import type { BbProductionOrderGroup } from '../utils/controlBoardBbMachineReport';
+
+type BbPrintStaffSelection = {
+  staffMain: string;
+  staffAssistant: string;
+  staffSupport: string;
+};
 
 const BB_PHAN_TICH_STORAGE_KEY = 'control-board-bb-phan-tich-v1';
 
@@ -159,6 +167,10 @@ export default function ControlBoardBbMachineReportTable({
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
   const [showPrintSheet, setShowPrintSheet] = useState(false);
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [printConfirmOpen, setPrintConfirmOpen] = useState(false);
+  const [printStaffByOrder, setPrintStaffByOrder] = useState<Record<string, BbPrintStaffSelection>>({});
+  const [printOrderGroups, setPrintOrderGroups] = useState<BbProductionOrderGroup[]>([]);
+  const [hrStaffNames, setHrStaffNames] = useState<string[]>([]);
   const [selectedMaterialNorm, setSelectedMaterialNorm] = useState<BbMaterialNormFormula | null>(null);
   const [thucDungDetail, setThucDungDetail] = useState<{
     line: BbThucDungLineRow;
@@ -591,8 +603,102 @@ export default function ControlBoardBbMachineReportTable({
 
   const handlePrint = () => {
     if (orderGroups.length === 0) return;
+    const initialStaff: Record<string, BbPrintStaffSelection> = {};
+    orderGroups.forEach(group => {
+      initialStaff[group.groupKey] = {
+        staffMain: group.staffMain || '',
+        staffAssistant: group.staffAssistant || '',
+        staffSupport: group.staffSupport || ''
+      };
+    });
+    setPrintStaffByOrder(initialStaff);
+    setPrintConfirmOpen(true);
+    void (async () => {
+      try {
+        const res = await fetch('/api/nhan-su');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray(data?.staff)
+          ? data.staff
+          : Array.isArray(data)
+            ? data
+            : [];
+        const names = [
+          ...new Set(
+            rows
+              .map((row: Record<string, unknown>) =>
+                String(row.name ?? row.nhan_su ?? row.ho_ten ?? row.ten ?? '').trim()
+              )
+              .filter(Boolean)
+          )
+        ].sort((a, b) => a.localeCompare(b, 'vi'));
+        setHrStaffNames(names);
+      } catch {
+        /* giữ danh sách từ lệnh SX */
+      }
+    })();
+  };
+
+  const printStaffOptions = useMemo(() => {
+    const names = new Set<string>(hrStaffNames);
+    productionOrders.forEach(order => {
+      splitProductionOrderStaffNames(order.staff || '').forEach(name => {
+        if (name.trim()) names.add(name.trim());
+      });
+    });
+    orderGroups.forEach(group => {
+      [group.staffMain, group.staffAssistant, group.staffSupport].forEach(name => {
+        String(name || '')
+          .split(',')
+          .map(part => part.trim())
+          .filter(Boolean)
+          .forEach(part => names.add(part));
+      });
+    });
+    Object.values(printStaffByOrder).forEach(selection => {
+      [selection.staffMain, selection.staffAssistant, selection.staffSupport].forEach(name => {
+        if (name.trim()) names.add(name.trim());
+      });
+    });
+    return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [hrStaffNames, productionOrders, orderGroups, printStaffByOrder]);
+
+  const updatePrintStaff = (
+    groupKey: string,
+    field: keyof BbPrintStaffSelection,
+    value: string
+  ) => {
+    setPrintStaffByOrder(prev => ({
+      ...prev,
+      [groupKey]: {
+        staffMain: prev[groupKey]?.staffMain || '',
+        staffAssistant: prev[groupKey]?.staffAssistant || '',
+        staffSupport: prev[groupKey]?.staffSupport || '',
+        [field]: value
+      }
+    }));
+  };
+
+  const confirmPrint = () => {
+    const nextGroups = orderGroups.map(group => {
+      const selected = printStaffByOrder[group.groupKey];
+      if (!selected) return group;
+      return {
+        ...group,
+        staffMain: selected.staffMain.trim(),
+        staffAssistant: selected.staffAssistant.trim(),
+        staffSupport: selected.staffSupport.trim()
+      };
+    });
+    setPrintOrderGroups(nextGroups);
+    setPrintConfirmOpen(false);
     setShowPrintSheet(true);
     setPendingPrint(true);
+  };
+
+  const closePrintConfirm = () => {
+    if (pendingPrint) return;
+    setPrintConfirmOpen(false);
   };
 
   useEffect(() => {
@@ -621,6 +727,7 @@ export default function ControlBoardBbMachineReportTable({
       document.body.classList.remove('bb-machine-report-print-active');
       setPendingPrint(false);
       setShowPrintSheet(false);
+      setPrintOrderGroups([]);
     };
     window.addEventListener('afterprint', handleAfterPrint);
     return () => window.removeEventListener('afterprint', handleAfterPrint);
@@ -2306,10 +2413,158 @@ export default function ControlBoardBbMachineReportTable({
         </div>
       </div>
     ) : null}
+    {printConfirmOpen ? (
+      <div
+        className="fixed inset-0 z-[10040] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Xác nhận in báo cáo máy BB"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) closePrintConfirm();
+        }}
+      >
+        <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-sky-900 to-sky-700 px-5 py-4 text-white">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-100">Xác nhận trước khi in</p>
+              <h4 className="mt-1 text-base font-black">Báo cáo tổng hợp máy BB</h4>
+              <p className="mt-1 text-xs font-semibold text-sky-50">
+                Kiểm tra thông tin lệnh SX. Chỉ nhân sự được chọn lại trước khi in.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closePrintConfirm}
+              className="rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-black hover:bg-white/20"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+            {orderGroups.map(group => {
+              const selection = printStaffByOrder[group.groupKey] || {
+                staffMain: group.staffMain || '',
+                staffAssistant: group.staffAssistant || '',
+                staffSupport: group.staffSupport || ''
+              };
+              const staffSelectClass =
+                'h-10 w-full rounded-lg border border-sky-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15';
+              const ensureOption = (value: string) => {
+                const trimmed = value.trim();
+                if (!trimmed) return printStaffOptions;
+                return printStaffOptions.includes(trimmed)
+                  ? printStaffOptions
+                  : [trimmed, ...printStaffOptions];
+              };
+              return (
+                <div
+                  key={group.groupKey}
+                  className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 shadow-sm"
+                >
+                  <div className="mb-3 grid gap-2 text-sm sm:grid-cols-2">
+                    <p>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Số lệnh</span>
+                      <span className="mt-0.5 block font-mono font-black text-sky-900">{group.orderCode || '—'}</span>
+                    </p>
+                    <p>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ngày</span>
+                      <span className="mt-0.5 block font-semibold text-zinc-800">{group.ngay || '—'}</span>
+                    </p>
+                    <p>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ca</span>
+                      <span className="mt-0.5 block font-semibold text-zinc-800">
+                        {group.shiftLabel || group.shift || '—'}
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Máy</span>
+                      <span className="mt-0.5 block font-semibold text-zinc-800">{group.machine || '—'}</span>
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-sky-700">
+                        CN chính máy *
+                      </span>
+                      <select
+                        value={selection.staffMain}
+                        onChange={event => updatePrintStaff(group.groupKey, 'staffMain', event.target.value)}
+                        className={staffSelectClass}
+                      >
+                        <option value="">Chọn nhân sự...</option>
+                        {ensureOption(selection.staffMain).map(name => (
+                          <option key={`main-${group.groupKey}-${name}`} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-sky-700">
+                        CN phụ máy
+                      </span>
+                      <select
+                        value={selection.staffAssistant}
+                        onChange={event => updatePrintStaff(group.groupKey, 'staffAssistant', event.target.value)}
+                        className={staffSelectClass}
+                      >
+                        <option value="">Chọn nhân sự...</option>
+                        {ensureOption(selection.staffAssistant).map(name => (
+                          <option key={`assistant-${group.groupKey}-${name}`} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-sky-700">
+                        CN hỗ trợ việc
+                      </span>
+                      <select
+                        value={selection.staffSupport}
+                        onChange={event => updatePrintStaff(group.groupKey, 'staffSupport', event.target.value)}
+                        className={staffSelectClass}
+                      >
+                        <option value="">Chọn nhân sự...</option>
+                        {ensureOption(selection.staffSupport).map(name => (
+                          <option key={`support-${group.groupKey}-${name}`} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+            <button
+              type="button"
+              onClick={closePrintConfirm}
+              className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-xs font-black text-slate-700"
+            >
+              Huỷ
+            </button>
+            <button
+              type="button"
+              onClick={confirmPrint}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-sky-700 px-4 text-xs font-extrabold text-white hover:bg-sky-800"
+            >
+              <Printer className="h-4 w-4" />
+              Xác nhận &amp; In
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
     {showPrintSheet
       ? createPortal(
           <ControlBoardBbMachineReportPrintBatch
-            orderGroups={orderGroups}
+            orderGroups={printOrderGroups.length > 0 ? printOrderGroups : orderGroups}
             exportGroups={exportGroups}
             dauCaGroups={dauCaGroups}
             cuoiCaGroups={cuoiCaGroups}

@@ -2078,7 +2078,7 @@ function parseMixingReportBody(body: unknown): { error: string } | { record: Rec
     ) / 100;
 
   const so_lan = Math.min(
-    5,
+    MIXING_ROUND_KEYS_SERVER.length,
     Math.max(
       1,
       Number(source.so_lan) ||
@@ -2104,7 +2104,7 @@ function parseMixingReportBody(body: unknown): { error: string } | { record: Rec
     }
   });
   const lan_thu = Math.min(
-    5,
+    MIXING_ROUND_KEYS_SERVER.length,
     Math.max(1, Number(source.lan_thu) || 1)
   );
   let chi_tiet_with_photos = embedMixingReportPhotosInChiTiet(chi_tiet, hinh_anh_theo_lan);

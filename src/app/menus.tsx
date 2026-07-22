@@ -233,6 +233,12 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'vehicles'
   },
   {
+    title: 'Quy chế lái xe',
+    desc: 'Quy định làm việc, lương, phụ cấp và định mức km/dầu của lái xe.',
+    icon: Scale,
+    tab: 'driver-policy'
+  },
+  {
     title: 'Cài đặt',
     desc: 'Xem tham số cấu hình và giá trị mặc định của hệ thống.',
     icon: Settings,
@@ -336,6 +342,7 @@ export const PRIMARY_NAV_GROUPS: {
     children: [
       { label: 'Nhân sự', tab: 'hr' },
       { label: 'Danh sách xe', tab: 'vehicles' },
+      { label: 'Quy chế lái xe', tab: 'driver-policy' },
       { label: 'Cài đặt', tab: 'settings' }
     ]
   },
@@ -398,6 +405,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'settings': { group: 'HCNS', sub: 'Cài đặt' },
   'hr': { group: 'HCNS', sub: 'Nhân sự' },
   'vehicles': { group: 'HCNS', sub: 'Danh sách xe' },
+  'driver-policy': { group: 'HCNS', sub: 'Quy chế lái xe' },
   'orders': { group: 'Đơn hàng', sub: 'Quản lý đơn' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
   'production-orders': { group: 'Nhà máy', sub: 'Lệnh sản xuất' },

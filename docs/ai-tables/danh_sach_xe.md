@@ -10,7 +10,9 @@
 - `server.ts` — `/api/chi-phi-xe`
 - `server.ts` — `/api/nhat-ky-xe`
 
-**UI:** `src/features/danh-sach-xe/index.tsx`, `src/features/danh-sach-xe/VehicleOperations.tsx`
+**UI:** `src/features/danh-sach-xe/index.tsx`, `src/features/danh-sach-xe/VehicleOperations.tsx`, `src/features/danh-sach-xe/DriverPolicy.tsx`
+
+Tab `Quy chế lái xe` (`DriverPolicy.tsx`) là nội dung tĩnh, không có bảng/API — QĐ 220222 CN/QĐ (22/02/2022) để nhân sự & lái xe đọc lại.
 
 Dữ liệu gốc `danh_sach_xe`: loại xe, biển số, tài xế phụ trách.  
 Dữ liệu tháng `doi_chieu_lai_xe`: công quy đổi, chuyến, km, các khoản thưởng và doanh số.
