@@ -161,10 +161,15 @@ export function SearchableSelect({
     const element = inputRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
+    // Trên mobile ô nhập rất hẹp → nới rộng menu để tên dài không bị xuống dòng nhiều
+    const viewportWidth = document.documentElement.clientWidth;
+    const margin = 8;
+    const width = Math.max(rect.width, Math.min(340, viewportWidth - margin * 2));
+    const left = Math.min(Math.max(margin, rect.left), Math.max(margin, viewportWidth - width - margin));
     setMenuStyle({
       top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width
+      left,
+      width
     });
   };
 

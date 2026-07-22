@@ -1837,8 +1837,18 @@ function sumMachineNvlKgByCodeForHeader(
 
   for (const report of reports) {
     if (report.reportKind !== reportKind) continue;
-    const matched = matchBbNvlReportToOrderHeaders(report, [header], shiftOptions);
-    if (matched.length === 0) continue;
+    const reportDate = parseProductionOrderFilterDate(report.ngay);
+    if (
+      !matchesShiftSummaryBucket(
+        header.ngay,
+        header.shift,
+        reportDate || report.ngay,
+        report.ca,
+        shiftOptions
+      )
+    ) {
+      continue;
+    }
 
     for (const line of report.lines) {
       const code = normalizeMaterialCodeKey(line.maNvl || '');
@@ -1923,6 +1933,40 @@ export function buildBbThucDungLineRows(input: {
       shiftOptions,
       'cuoi_ca'
     );
+
+    // Báº£ng thá»±c dÃ¹ng pháº£i hiá»ƒn thá»‹ Ä‘á»§ NVL cá»§a bÃ¡o cÃ¡o tá»“n cÃ¹ng ngÃ y + ca,
+    // ká»ƒ cáº£ khi NVL Ä‘Ã³ khÃ´ng xuáº¥t hiá»‡n trong bÃ¡o cÃ¡o trá»™n.
+    for (const report of input.machineNvlReports) {
+      if (report.reportKind !== 'dau_ca' && report.reportKind !== 'cuoi_ca') continue;
+      const reportDate = parseProductionOrderFilterDate(report.ngay);
+      if (
+        !matchesShiftSummaryBucket(
+          header.ngay,
+          header.shift,
+          reportDate || report.ngay,
+          report.ca,
+          shiftOptions
+        )
+      ) {
+        continue;
+      }
+      for (const line of report.lines) {
+        const code = String(line.maNvl || '').trim();
+        const name = String(line.tenNvl || '').trim();
+        const key = materialIdentityKey(code, name);
+        if (!key || byMaterial.has(key)) continue;
+        byMaterial.set(key, {
+          materialCode: code,
+          materialName: name,
+          unit: String(line.donVi || 'kg').trim() || 'kg',
+          tiLeDinhMucSum: 0,
+          tiLeDinhMucCount: 0,
+          tiLeThucTeSum: 0,
+          tiLeThucTeCount: 0,
+          totalKlThucTe: 0
+        });
+      }
+    }
 
     let tongXuatTrongCaKg = 0;
     for (const movement of input.warehouseMovements) {
@@ -2283,8 +2327,18 @@ export function buildBbThucDungMetricDetail(input: {
   const pushTonRows = (reportKind: 'dau_ca' | 'cuoi_ca') => {
     for (const report of input.machineNvlReports) {
       if (report.reportKind !== reportKind) continue;
-      const matched = matchBbNvlReportToOrderHeaders(report, [header], shiftOptions);
-      if (matched.length === 0) continue;
+      const reportDate = parseProductionOrderFilterDate(report.ngay);
+      if (
+        !matchesShiftSummaryBucket(
+          header.ngay,
+          header.shift,
+          reportDate || report.ngay,
+          report.ca,
+          shiftOptions
+        )
+      ) {
+        continue;
+      }
       report.lines.forEach((line, index) => {
         const code = String(line.maNvl || '').trim();
         const name = String(line.tenNvl || '').trim();

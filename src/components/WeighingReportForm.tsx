@@ -2131,7 +2131,7 @@ export default function WeighingReportForm({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="grid grid-cols-2 gap-2 p-3">
-              <label className="col-span-2 space-y-1">
+              <label className="field-cell col-span-2">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <UserCheck className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Người cân
@@ -2156,7 +2156,7 @@ export default function WeighingReportForm({
               )}
               {editingRow && (
                 <>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                       <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
                       Ngày SX
@@ -2168,7 +2168,7 @@ export default function WeighingReportForm({
                       className={modalInputClass}
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                       <FileText className="h-3.5 w-3.5 text-[#ef1b2d]" />
                       Ca SX
@@ -2197,7 +2197,7 @@ export default function WeighingReportForm({
               )}
               {showSlipFields && (
               <>
-              <label className="space-y-1">
+              <label className="field-cell">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Ngày SX
@@ -2209,7 +2209,7 @@ export default function WeighingReportForm({
                   className={modalInputClass}
                 />
               </label>
-              <label className="space-y-1">
+              <label className="field-cell">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <FileText className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Ca SX
@@ -2227,7 +2227,7 @@ export default function WeighingReportForm({
               </label>
               {!config.hideWorkersInEntry && (
                 <>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                       <Users className="h-3.5 w-3.5 text-[#ef1b2d]" />
                       CN 1
@@ -2241,7 +2241,7 @@ export default function WeighingReportForm({
                       className={modalInputClass}
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                       <Users className="h-3.5 w-3.5 text-[#ef1b2d]" />
                       CN 2
@@ -2257,7 +2257,7 @@ export default function WeighingReportForm({
                   </label>
                 </>
               )}
-              <label className="col-span-2 space-y-1">
+              <label className="field-cell col-span-2">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <Factory className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Tên máy
@@ -2277,7 +2277,7 @@ export default function WeighingReportForm({
               )}
               {!hideProductFields && (
               <>
-              <label className="col-span-2 space-y-1">
+              <label className="field-cell col-span-2">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <Hash className="h-3.5 w-3.5 text-[#ef1b2d]" />
                   Mã SP
@@ -2340,7 +2340,7 @@ export default function WeighingReportForm({
                   </p>
                 )}
               </label>
-              <label className="col-span-2 space-y-1">
+              <label className="field-cell col-span-2">
                 <span className={modalLabelClass}>Tên SP</span>
                 {(() => {
                   const codeMatch = findProductByCode(productSelectOptions, newRow.productCode ?? '');
@@ -2379,7 +2379,7 @@ export default function WeighingReportForm({
               )}
               {splitDamagedPlasticDefectWeights ? (
                 <div className="col-span-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={modalCompactLabelClass}>Nhựa không mảng</span>
                     <input
                       value={newRow.plasticNoFilmWeight ?? ''}
@@ -2390,7 +2390,7 @@ export default function WeighingReportForm({
                       placeholder="0"
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={modalCompactLabelClass}>Nhựa đầu nòng</span>
                     <input
                       value={newRow.plasticNozzleWeight ?? ''}
@@ -2401,7 +2401,7 @@ export default function WeighingReportForm({
                       placeholder="0"
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={modalCompactLabelClass}>Nhựa dính màng</span>
                     <input
                       value={newRow.plasticFilmAdhesionWeight ?? ''}
@@ -2415,7 +2415,7 @@ export default function WeighingReportForm({
                       placeholder="0"
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={modalCompactLabelClass}>KL màng</span>
                     <input
                       type="text"
@@ -2428,7 +2428,7 @@ export default function WeighingReportForm({
                       placeholder="0"
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={modalCompactLabelClass}>TL lõi dính HH</span>
                     <input
                       value={newRow.coreWeight ?? ''}
@@ -2442,7 +2442,7 @@ export default function WeighingReportForm({
                 </div>
               ) : splitPlasticFilmWeights ? (
                 <div className="col-span-2 grid grid-cols-2 gap-1.5">
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={modalCompactLabelClass}>KL nhựa</span>
                     <input
                       value={newRow.weight ?? ''}
@@ -2451,7 +2451,7 @@ export default function WeighingReportForm({
                       placeholder="8,0"
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="field-cell">
                     <span className={modalCompactLabelClass}>KL màng</span>
                     <input
                       type="text"
@@ -2471,7 +2471,7 @@ export default function WeighingReportForm({
                   config.hideCoreShellWeights ? 'grid-cols-1' : 'grid-cols-3'
                 }`}
               >
-                <label className="space-y-1">
+                <label className="field-cell">
                   <span className={modalCompactLabelClass}>Tổng trọng lượng</span>
                   <input
                     value={newRow.weight ?? ''}
@@ -2482,7 +2482,7 @@ export default function WeighingReportForm({
                 </label>
                 {!config.hideCoreShellWeights && (
                   <>
-                    <label className="space-y-1">
+                    <label className="field-cell">
                       <span className={modalCompactLabelClass}>TL lõi</span>
                       <input
                         value={newRow.coreWeight ?? ''}
@@ -2491,7 +2491,7 @@ export default function WeighingReportForm({
                         placeholder="0,5"
                       />
                     </label>
-                    <label className="space-y-1">
+                    <label className="field-cell">
                       <span className={modalCompactLabelClass}>TL bì</span>
                       <input
                         type="text"
@@ -2509,7 +2509,7 @@ export default function WeighingReportForm({
               </div>
               )}
               {!config.hideAcceptanceStatus && (
-                <label className="space-y-1">
+                <label className="field-cell">
                   <span className={modalLabelClass}>Nghiệm thu</span>
                   <select
                     value={newRow.acceptanceStatus ?? ''}
@@ -2525,7 +2525,7 @@ export default function WeighingReportForm({
                   </select>
                 </label>
               )}
-              <label className={`space-y-1 ${config.hideAcceptanceStatus ? 'col-span-2' : ''}`}>
+              <label className={`field-cell ${config.hideAcceptanceStatus ? 'col-span-2' : ''}`}>
                 <span className={modalLabelClass}>Ghi chú</span>
                 <input
                   type="text"
@@ -2536,7 +2536,7 @@ export default function WeighingReportForm({
                 />
               </label>
               {!config.hideCoreWeightImage && (
-                <div className="space-y-1">
+                <div className="field-cell">
                   <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                     <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
                     Ảnh lõi
@@ -2569,7 +2569,7 @@ export default function WeighingReportForm({
                 </div>
               )}
               {!config.hideWeightImage && (
-                <div className="space-y-1">
+                <div className="field-cell">
                   <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                     <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
                     Ảnh cân

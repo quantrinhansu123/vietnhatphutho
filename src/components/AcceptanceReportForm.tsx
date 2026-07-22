@@ -902,14 +902,15 @@ export default function AcceptanceReportForm({
         </div>
 
         <div className="space-y-3 bg-zinc-50 p-4">
-          <div className="grid grid-cols-3 gap-3">
-            <label className="space-y-1">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {/* Mobile: Ngày chiếm trọn 1 hàng vì ô date hiển thị dạng "ngày 22 thg 7, 2026" rất dài */}
+            <label className="field-cell col-span-2 sm:col-span-1">
               <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
                 <CalendarDays className="h-3.5 w-3.5 text-[#ef1b2d]" /> Ngày
               </span>
               <input type="date" value={form.ngay} onChange={e => handleDateChange(e.target.value)} className={inputClass} />
             </label>
-            <label className="space-y-1">
+            <label className="field-cell">
               <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
               <select value={form.ca} onChange={e => handleShiftChange(e.target.value)} className={inputClass}>
                 <option value="">Chọn ca...</option>
@@ -920,7 +921,7 @@ export default function AcceptanceReportForm({
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
+            <label className="field-cell">
               <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
                 <Clock3 className="h-3.5 w-3.5 text-[#ef1b2d]" /> Giờ
               </span>
@@ -933,7 +934,7 @@ export default function AcceptanceReportForm({
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-1">
+            <label className="field-cell">
               <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
                 <Cpu className="h-3.5 w-3.5 text-[#ef1b2d]" /> Máy
               </span>
@@ -953,7 +954,7 @@ export default function AcceptanceReportForm({
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
+            <label className="field-cell">
               <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Lần</span>
               <input
                 value={form.lan}

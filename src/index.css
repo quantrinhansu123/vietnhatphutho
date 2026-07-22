@@ -178,6 +178,27 @@
     min-height: 36px;
   }
 
+  /* Ô nhập trong lưới 2–3 cột: nhãn 1 dòng cố định + control dồn xuống đáy
+     → các ô cùng hàng luôn thẳng nhau trên màn hình hẹp (mobile) */
+  .field-cell {
+    @apply flex min-w-0 flex-col gap-1;
+  }
+
+  .field-cell > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .field-cell > span:first-child > svg {
+    flex: none;
+  }
+
+  .field-cell > *:last-child {
+    margin-top: auto;
+  }
+
   .field-helper {
     @apply text-[10px] italic text-slate-500 mt-0.5;
   }
