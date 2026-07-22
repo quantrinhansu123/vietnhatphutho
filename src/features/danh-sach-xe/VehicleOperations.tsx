@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
+  ChevronDown,
   ExternalLink,
   ImageUp,
   Loader2,
@@ -43,6 +44,15 @@ type VehicleExpense = {
   ghi_chu: string;
 };
 
+type VehicleLogProductLine = {
+  id: string;
+  loai: string;
+  ten_mat_hang: string;
+  ma_san_pham: string;
+  so_luong: number;
+  doanh_thu: number;
+};
+
 type VehicleLog = {
   id: string;
   ngay_gio: string;
@@ -54,6 +64,20 @@ type VehicleLog = {
   tong_mat_hang: number;
   tong_doanh_thu: number;
   tong_chi_phi: number;
+  chi_tiet_mat_hang: VehicleLogProductLine[];
+  ten_mat_hang: string;
+  ma_san_pham: string;
+  sl_cuon_cach_nhiet: number;
+  doanh_thu_cach_nhiet: number;
+  so_luong_bao_bi: number;
+  doanh_thu_bao_bi: number;
+  so_luong_tui_tam_gia_cong: number;
+  doanh_thu_tui_tam_gia_cong: number;
+  so_luong_tui_niem_phong: number;
+  doanh_thu_tui_niem_phong: number;
+  so_luong_tui_cao_cap_chong_soc: number;
+  thanh_tien_tui_cao_cap_chong_soc: number;
+  ds_poly: number;
   thuong_chuyen_giao_hang: number;
   cong_lai_xe_theo_km: number;
   thuong_km_di: number;
@@ -73,6 +97,100 @@ type VehicleLog = {
 };
 
 type LogFormTab = 'doanh_thu' | 'km' | 'luong';
+
+type ProductOption = {
+  code: string;
+  name: string;
+};
+
+const PRODUCT_LINE_TYPES = [
+  { id: 'cach_nhiet', label: 'Cách nhiệt (cuộn)' },
+  { id: 'bao_bi', label: 'Bao bì (cuộn)' },
+  { id: 'tui_tam_gia_cong', label: 'Túi/tấm gia công (cái)' },
+  { id: 'tui_niem_phong', label: 'Túi niêm phong (cuộn)' },
+  { id: 'tui_cao_cap_chong_soc', label: 'Túi cao cấp chống sốc' },
+  { id: 'ds_poly', label: 'DS POLY' }
+] as const;
+
+function createProductLine(partial?: Partial<VehicleLogProductLine>): VehicleLogProductLine {
+  return {
+    id: partial?.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    loai: partial?.loai || '',
+    ten_mat_hang: partial?.ten_mat_hang || '',
+    ma_san_pham: partial?.ma_san_pham || '',
+    so_luong: numberValue(partial?.so_luong),
+    doanh_thu: numberValue(partial?.doanh_thu)
+  };
+}
+
+function parseProductLines(value: unknown): VehicleLogProductLine[] {
+  if (typeof value === 'string') {
+    try {
+      return parseProductLines(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    .map(row => createProductLine({
+      id: text(row.id) || undefined,
+      loai: text(row.loai),
+      ten_mat_hang: text(row.ten_mat_hang),
+      ma_san_pham: text(row.ma_san_pham),
+      so_luong: numberValue(row.so_luong),
+      doanh_thu: numberValue(row.doanh_thu)
+    }));
+}
+
+function productLinesFromFlat(row: Record<string, unknown>): VehicleLogProductLine[] {
+  const existing = parseProductLines(row.chi_tiet_mat_hang);
+  if (existing.length > 0) return existing;
+
+  const fallbackName = text(row.ten_mat_hang);
+  const fallbackCode = text(row.ma_san_pham);
+  const pairs: Array<{ loai: string; so_luong: number; doanh_thu: number }> = [
+    { loai: 'cach_nhiet', so_luong: numberValue(row.sl_cuon_cach_nhiet), doanh_thu: numberValue(row.doanh_thu_cach_nhiet) },
+    { loai: 'bao_bi', so_luong: numberValue(row.so_luong_bao_bi), doanh_thu: numberValue(row.doanh_thu_bao_bi) },
+    { loai: 'tui_tam_gia_cong', so_luong: numberValue(row.so_luong_tui_tam_gia_cong), doanh_thu: numberValue(row.doanh_thu_tui_tam_gia_cong) },
+    { loai: 'tui_niem_phong', so_luong: numberValue(row.so_luong_tui_niem_phong), doanh_thu: numberValue(row.doanh_thu_tui_niem_phong) },
+    { loai: 'tui_cao_cap_chong_soc', so_luong: numberValue(row.so_luong_tui_cao_cap_chong_soc), doanh_thu: numberValue(row.thanh_tien_tui_cao_cap_chong_soc) },
+    { loai: 'ds_poly', so_luong: 0, doanh_thu: numberValue(row.ds_poly) }
+  ];
+  return pairs
+    .filter(item => item.so_luong > 0 || item.doanh_thu > 0)
+    .map(item => createProductLine({
+      loai: item.loai,
+      ten_mat_hang: fallbackName,
+      ma_san_pham: fallbackCode,
+      so_luong: item.so_luong,
+      doanh_thu: item.doanh_thu
+    }));
+}
+
+function flattenProductLines(lines: VehicleLogProductLine[]) {
+  const sumBy = (loai: string, field: 'so_luong' | 'doanh_thu') =>
+    lines.filter(line => line.loai === loai).reduce((sum, line) => sum + numberValue(line[field]), 0);
+
+  return {
+    ten_mat_hang: lines.find(line => line.ten_mat_hang)?.ten_mat_hang || '',
+    ma_san_pham: lines.find(line => line.ma_san_pham)?.ma_san_pham || '',
+    sl_cuon_cach_nhiet: sumBy('cach_nhiet', 'so_luong'),
+    doanh_thu_cach_nhiet: sumBy('cach_nhiet', 'doanh_thu'),
+    so_luong_bao_bi: sumBy('bao_bi', 'so_luong'),
+    doanh_thu_bao_bi: sumBy('bao_bi', 'doanh_thu'),
+    so_luong_tui_tam_gia_cong: sumBy('tui_tam_gia_cong', 'so_luong'),
+    doanh_thu_tui_tam_gia_cong: sumBy('tui_tam_gia_cong', 'doanh_thu'),
+    so_luong_tui_niem_phong: sumBy('tui_niem_phong', 'so_luong'),
+    doanh_thu_tui_niem_phong: sumBy('tui_niem_phong', 'doanh_thu'),
+    so_luong_tui_cao_cap_chong_soc: sumBy('tui_cao_cap_chong_soc', 'so_luong'),
+    thanh_tien_tui_cao_cap_chong_soc: sumBy('tui_cao_cap_chong_soc', 'doanh_thu'),
+    ds_poly: sumBy('ds_poly', 'doanh_thu'),
+    tong_mat_hang: lines.reduce((sum, line) => sum + numberValue(line.so_luong), 0),
+    tong_doanh_thu: lines.reduce((sum, line) => sum + numberValue(line.doanh_thu), 0)
+  };
+}
 
 const EXPENSE_TYPES = ['CHI PHÍ XĂNG DẦU', 'CÁC CHI PHÍ KHÁC CỦA XE'] as const;
 
@@ -153,6 +271,20 @@ function normalizeLogs(data: unknown): VehicleLog[] {
       tong_mat_hang: numberValue(row.tong_mat_hang),
       tong_doanh_thu: numberValue(row.tong_doanh_thu),
       tong_chi_phi: numberValue(row.tong_chi_phi),
+      chi_tiet_mat_hang: productLinesFromFlat(row),
+      ten_mat_hang: text(row.ten_mat_hang),
+      ma_san_pham: text(row.ma_san_pham),
+      sl_cuon_cach_nhiet: numberValue(row.sl_cuon_cach_nhiet),
+      doanh_thu_cach_nhiet: numberValue(row.doanh_thu_cach_nhiet),
+      so_luong_bao_bi: numberValue(row.so_luong_bao_bi),
+      doanh_thu_bao_bi: numberValue(row.doanh_thu_bao_bi),
+      so_luong_tui_tam_gia_cong: numberValue(row.so_luong_tui_tam_gia_cong),
+      doanh_thu_tui_tam_gia_cong: numberValue(row.doanh_thu_tui_tam_gia_cong),
+      so_luong_tui_niem_phong: numberValue(row.so_luong_tui_niem_phong),
+      doanh_thu_tui_niem_phong: numberValue(row.doanh_thu_tui_niem_phong),
+      so_luong_tui_cao_cap_chong_soc: numberValue(row.so_luong_tui_cao_cap_chong_soc),
+      thanh_tien_tui_cao_cap_chong_soc: numberValue(row.thanh_tien_tui_cao_cap_chong_soc),
+      ds_poly: numberValue(row.ds_poly),
       thuong_chuyen_giao_hang: numberValue(row.thuong_chuyen_giao_hang),
       cong_lai_xe_theo_km: numberValue(row.cong_lai_xe_theo_km),
       thuong_km_di: numberValue(row.thuong_km_di),
@@ -183,6 +315,20 @@ function emptyVehicleLogForm(): Omit<VehicleLog, 'id'> {
     tong_mat_hang: 0,
     tong_doanh_thu: 0,
     tong_chi_phi: 0,
+    chi_tiet_mat_hang: [],
+    ten_mat_hang: '',
+    ma_san_pham: '',
+    sl_cuon_cach_nhiet: 0,
+    doanh_thu_cach_nhiet: 0,
+    so_luong_bao_bi: 0,
+    doanh_thu_bao_bi: 0,
+    so_luong_tui_tam_gia_cong: 0,
+    doanh_thu_tui_tam_gia_cong: 0,
+    so_luong_tui_niem_phong: 0,
+    doanh_thu_tui_niem_phong: 0,
+    so_luong_tui_cao_cap_chong_soc: 0,
+    thanh_tien_tui_cao_cap_chong_soc: 0,
+    ds_poly: 0,
     thuong_chuyen_giao_hang: 0,
     cong_lai_xe_theo_km: 0,
     thuong_km_di: 0,
@@ -350,12 +496,125 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
   );
 }
 
+function ProductNameCombobox({
+  products,
+  code,
+  name,
+  onChange
+}: {
+  products: ProductOption[];
+  code: string;
+  name: string;
+  onChange: (next: { code: string; name: string }) => void;
+}) {
+  const [query, setQuery] = useState(name);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setQuery(name);
+  }, [name, code]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return products.slice(0, 80);
+    return products
+      .filter(product =>
+        `${product.code} ${product.name}`.toLowerCase().includes(keyword)
+      )
+      .slice(0, 80);
+  }, [products, query]);
+
+  const selectProduct = (product: ProductOption) => {
+    onChange({ code: product.code, name: product.name });
+    setQuery(product.name);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <div className="relative">
+        <input
+          value={query}
+          onChange={event => {
+            const next = event.target.value;
+            setQuery(next);
+            setOpen(true);
+            const matched = products.find(
+              product =>
+                product.name.toLowerCase() === next.trim().toLowerCase() ||
+                `${product.code} · ${product.name}`.toLowerCase() === next.trim().toLowerCase()
+            );
+            if (matched) {
+              onChange({ code: matched.code, name: matched.name });
+            } else {
+              onChange({ code: '', name: next });
+            }
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={event => {
+            if (event.key === 'Escape') setOpen(false);
+            if (event.key === 'Enter' && filtered[0]) {
+              event.preventDefault();
+              selectProduct(filtered[0]);
+            }
+          }}
+          className={`${inputClass} pr-9`}
+          placeholder="Gõ để tìm sản phẩm..."
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => setOpen(prev => !prev)}
+          className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-400 hover:text-slate-600"
+          aria-label="Mở danh sách sản phẩm"
+        >
+          <ChevronDown className={`h-4 w-4 transition ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {open && (
+        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-xs font-semibold text-slate-400">Không tìm thấy sản phẩm.</p>
+          ) : (
+            filtered.map(product => (
+              <button
+                key={`${product.code}-${product.name}`}
+                type="button"
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => selectProduct(product)}
+                className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-brand-50 ${
+                  product.code === code && product.name === name ? 'bg-brand-50' : ''
+                }`}
+              >
+                <span className="text-sm font-bold text-slate-800">{product.name}</span>
+                {product.code && <span className="font-mono text-[10px] font-semibold text-slate-400">{product.code}</span>}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function VehicleExpensesView({
   vehicles,
-  staff
+  staff,
+  currentUser
 }: {
   vehicles: VehicleOption[];
   staff: StaffOption[];
+  currentUser?: { id: string; name: string } | null;
 }) {
   const [rows, setRows] = useState<VehicleExpense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -469,6 +728,7 @@ export function VehicleExpensesView({
           initial={editing || undefined}
           vehicles={vehicles}
           staff={staff}
+          currentUser={currentUser}
           onClose={() => setEditing(undefined)}
           onSaved={async () => {
             setEditing(undefined);
@@ -484,12 +744,14 @@ function ExpenseModal({
   initial,
   vehicles,
   staff,
+  currentUser,
   onClose,
   onSaved
 }: {
   initial?: VehicleExpense;
   vehicles: VehicleOption[];
   staff: StaffOption[];
+  currentUser?: { id: string; name: string } | null;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
@@ -509,6 +771,18 @@ function ExpenseModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (initial || form.ma_nhan_su || form.nhan_vien_phu_trach || !currentUser?.name) return;
+    const normalizedName = currentUser.name.trim().toLocaleLowerCase('vi');
+    const loggedInStaff = staff.find(item => item.name.trim().toLocaleLowerCase('vi') === normalizedName);
+    if (!loggedInStaff) return;
+    setForm(prev => ({
+      ...prev,
+      ma_nhan_su: loggedInStaff.code,
+      nhan_vien_phu_trach: loggedInStaff.name
+    }));
+  }, [currentUser, form.ma_nhan_su, form.nhan_vien_phu_trach, initial, staff]);
 
   const uploadInvoice = async (file?: File) => {
     if (!file) return;
@@ -761,40 +1035,78 @@ function LogModal({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
-  const [form, setForm] = useState<Omit<VehicleLog, 'id'>>(() => ({
-    ...emptyVehicleLogForm(),
-    ngay_gio: localDateTimeValue(initial?.ngay_gio),
-    ca: initial?.ca || '',
-    xe_id: initial?.xe_id || '',
-    bien_so_xe: initial?.bien_so_xe || '',
-    ma_nhan_su: initial?.ma_nhan_su || '',
-    nhan_vien_phu_trach: initial?.nhan_vien_phu_trach || '',
-    tong_mat_hang: initial?.tong_mat_hang || 0,
-    tong_doanh_thu: initial?.tong_doanh_thu || 0,
-    tong_chi_phi: initial?.tong_chi_phi || 0,
-    thuong_chuyen_giao_hang: initial?.thuong_chuyen_giao_hang || 0,
-    cong_lai_xe_theo_km: initial?.cong_lai_xe_theo_km || 0,
-    thuong_km_di: initial?.thuong_km_di || 0,
-    chi_so_km_truoc: initial?.chi_so_km_truoc || 0,
-    chi_so_km_ve: initial?.chi_so_km_ve || 0,
-    so_km_thuc_te: initial?.so_km_thuc_te || 0,
-    so_lenh: initial?.so_lenh || 0,
-    so_chuyen: initial?.so_chuyen || 0,
-    ten_lx1: initial?.ten_lx1 || '',
-    cong_lx1: initial?.cong_lx1 || 0,
-    luong_lx1: initial?.luong_lx1 || 0,
-    tien_an_lx1: initial?.tien_an_lx1 || 0,
-    tien_ds_lx1: initial?.tien_ds_lx1 || 0,
-    tien_thuong_chuyen_lx1: initial?.tien_thuong_chuyen_lx1 || 0,
-    tien_luat_lx1: initial?.tien_luat_lx1 || 0,
-    ghi_chu: initial?.ghi_chu || ''
-  }));
+  const [form, setForm] = useState<Omit<VehicleLog, 'id'>>(() => {
+    const base = emptyVehicleLogForm();
+    if (!initial) return base;
+    const { id: _id, ...rest } = initial;
+    return {
+      ...base,
+      ...rest,
+      ngay_gio: localDateTimeValue(initial.ngay_gio)
+    };
+  });
   const [activeTab, setActiveTab] = useState<LogFormTab>('doanh_thu');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [products, setProducts] = useState<ProductOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await readJson(await fetch('/api/san-pham'));
+        const rows = Array.isArray(data)
+          ? data
+          : Array.isArray((data as { products?: unknown }).products)
+            ? (data as { products: unknown[] }).products
+            : [];
+        if (cancelled) return;
+        setProducts(
+          rows
+            .map((row: unknown) => {
+              if (!row || typeof row !== 'object') return null;
+              const item = row as Record<string, unknown>;
+              const name = text(item.productName ?? item.ten_sp ?? item.name);
+              const code = text(item.productCode ?? item.ma_sp ?? item.code);
+              if (!name && !code) return null;
+              return { name: name || code, code };
+            })
+            .filter((item: ProductOption | null): item is ProductOption => Boolean(item))
+        );
+      } catch {
+        if (!cancelled) setProducts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const setNumber = (key: keyof Omit<VehicleLog, 'id'>, value: string) => {
     setForm(prev => ({ ...prev, [key]: Number(value) || 0 }));
+  };
+
+  const syncProductLines = (lines: VehicleLogProductLine[]) => {
+    const flat = flattenProductLines(lines);
+    setForm(prev => ({
+      ...prev,
+      chi_tiet_mat_hang: lines,
+      ...flat
+    }));
+  };
+
+  const addProductLine = () => {
+    syncProductLines([...form.chi_tiet_mat_hang, createProductLine()]);
+  };
+
+  const updateProductLine = (lineId: string, patch: Partial<VehicleLogProductLine>) => {
+    syncProductLines(
+      form.chi_tiet_mat_hang.map(line => (line.id === lineId ? { ...line, ...patch } : line))
+    );
+  };
+
+  const removeProductLine = (lineId: string) => {
+    syncProductLines(form.chi_tiet_mat_hang.filter(line => line.id !== lineId));
   };
 
   const setKmField = (key: 'chi_so_km_truoc' | 'chi_so_km_ve', value: string) => {
@@ -900,11 +1212,85 @@ function LogModal({
 
       {activeTab === 'doanh_thu' && (
         <section className="space-y-3">
-          <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Doanh thu từng loại mặt hàng</h4>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Doanh thu từng loại mặt hàng</h4>
+            <button
+              type="button"
+              onClick={addProductLine}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 text-xs font-extrabold text-brand-700 hover:bg-brand-100"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm dòng
+            </button>
+          </div>
+
+          {form.chi_tiet_mat_hang.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-xs font-semibold text-slate-500">
+              Chưa có dòng mặt hàng. Bấm <span className="font-black text-brand-700">Thêm dòng</span> để nhập từng loại.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {form.chi_tiet_mat_hang.map((line, index) => (
+                <div key={line.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Dòng {index + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeProductLine(line.id)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                      title="Xóa dòng"
+                      aria-label="Xóa dòng"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Field label="Loại mặt hàng">
+                      <select
+                        value={line.loai}
+                        onChange={event => updateProductLine(line.id, { loai: event.target.value })}
+                        className={inputClass}
+                      >
+                        <option value="">Chọn loại</option>
+                        {PRODUCT_LINE_TYPES.map(type => (
+                          <option key={type.id} value={type.id}>{type.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Tên mặt hàng">
+                      <ProductNameCombobox
+                        products={products}
+                        code={line.ma_san_pham}
+                        name={line.ten_mat_hang}
+                        onChange={({ code, name }) => updateProductLine(line.id, { ma_san_pham: code, ten_mat_hang: name })}
+                      />
+                    </Field>
+                    <Field label="Số lượng">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={line.so_luong}
+                        onChange={event => updateProductLine(line.id, { so_luong: Number(event.target.value) || 0 })}
+                        className={`${inputClass} text-right`}
+                      />
+                    </Field>
+                    <Field label="Doanh thu (VNĐ)">
+                      <MoneyInput
+                        value={line.doanh_thu}
+                        onChange={doanh_thu => updateProductLine(line.id, { doanh_thu })}
+                      />
+                    </Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Tổng mặt hàng"><input type="number" min={0} step={1} value={form.tong_mat_hang} onChange={event => setNumber('tong_mat_hang', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Tổng doanh thu"><input type="number" min={0} step={1000} value={form.tong_doanh_thu} onChange={event => setNumber('tong_doanh_thu', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Tổng chi phí"><input type="number" min={0} step={1000} value={form.tong_chi_phi} onChange={event => setNumber('tong_chi_phi', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Tổng doanh thu"><MoneyInput value={form.tong_doanh_thu} onChange={tong_doanh_thu => setForm(prev => ({ ...prev, tong_doanh_thu }))} /></Field>
+            <Field label="Tổng chi phí"><MoneyInput value={form.tong_chi_phi} onChange={tong_chi_phi => setForm(prev => ({ ...prev, tong_chi_phi }))} /></Field>
             <Field label="Ghi chú" wide><textarea value={form.ghi_chu} onChange={event => setForm(prev => ({ ...prev, ghi_chu: event.target.value }))} className={`${inputClass} min-h-20 py-2`} /></Field>
           </div>
         </section>
@@ -914,9 +1300,9 @@ function LogModal({
         <section className="space-y-3">
           <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Dữ liệu liên quan số KM thực đi của xe</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Thưởng chuyến (Giao hàng)"><input type="number" min={0} step={1000} value={form.thuong_chuyen_giao_hang} onChange={event => setNumber('thuong_chuyen_giao_hang', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Thưởng chuyến (Giao hàng)"><MoneyInput value={form.thuong_chuyen_giao_hang} onChange={thuong_chuyen_giao_hang => setForm(prev => ({ ...prev, thuong_chuyen_giao_hang }))} /></Field>
             <Field label="Công lái xe theo số KM"><input type="number" min={0} step={0.01} value={form.cong_lai_xe_theo_km} onChange={event => setNumber('cong_lai_xe_theo_km', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Thưởng KM đi"><input type="number" min={0} step={1000} value={form.thuong_km_di} onChange={event => setNumber('thuong_km_di', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Thưởng KM đi"><MoneyInput value={form.thuong_km_di} onChange={thuong_km_di => setForm(prev => ({ ...prev, thuong_km_di }))} /></Field>
             <Field label="Chỉ số KM trước khi đi"><input type="number" min={0} step={0.1} value={form.chi_so_km_truoc} onChange={event => setKmField('chi_so_km_truoc', event.target.value)} className={`${inputClass} text-right`} /></Field>
             <Field label="Chỉ số công tơ KM khi về"><input type="number" min={0} step={0.1} value={form.chi_so_km_ve} onChange={event => setKmField('chi_so_km_ve', event.target.value)} className={`${inputClass} text-right`} /></Field>
             <Field label="Số KM đi thực tế của chuyến"><input type="number" min={0} step={0.1} value={form.so_km_thuc_te} onChange={event => setNumber('so_km_thuc_te', event.target.value)} className={`${inputClass} text-right`} /></Field>
@@ -948,11 +1334,11 @@ function LogModal({
               </datalist>
             </Field>
             <Field label="Công LX1"><input type="number" min={0} step={0.01} value={form.cong_lx1} onChange={event => setNumber('cong_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Lương LX1"><input type="number" min={0} step={1000} value={form.luong_lx1} onChange={event => setNumber('luong_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Tiền ăn LX1"><input type="number" min={0} step={1000} value={form.tien_an_lx1} onChange={event => setNumber('tien_an_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Tiền DS LX1"><input type="number" min={0} step={1000} value={form.tien_ds_lx1} onChange={event => setNumber('tien_ds_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Tiền thưởng chuyến LX1"><input type="number" min={0} step={1000} value={form.tien_thuong_chuyen_lx1} onChange={event => setNumber('tien_thuong_chuyen_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
-            <Field label="Tiền luật LX1"><input type="number" min={0} step={1000} value={form.tien_luat_lx1} onChange={event => setNumber('tien_luat_lx1', event.target.value)} className={`${inputClass} text-right`} /></Field>
+            <Field label="Lương LX1"><MoneyInput value={form.luong_lx1} onChange={luong_lx1 => setForm(prev => ({ ...prev, luong_lx1 }))} /></Field>
+            <Field label="Tiền ăn LX1"><MoneyInput value={form.tien_an_lx1} onChange={tien_an_lx1 => setForm(prev => ({ ...prev, tien_an_lx1 }))} /></Field>
+            <Field label="Tiền DS LX1"><MoneyInput value={form.tien_ds_lx1} onChange={tien_ds_lx1 => setForm(prev => ({ ...prev, tien_ds_lx1 }))} /></Field>
+            <Field label="Tiền thưởng chuyến LX1"><MoneyInput value={form.tien_thuong_chuyen_lx1} onChange={tien_thuong_chuyen_lx1 => setForm(prev => ({ ...prev, tien_thuong_chuyen_lx1 }))} /></Field>
+            <Field label="Tiền luật LX1"><MoneyInput value={form.tien_luat_lx1} onChange={tien_luat_lx1 => setForm(prev => ({ ...prev, tien_luat_lx1 }))} /></Field>
           </div>
         </section>
       )}

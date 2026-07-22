@@ -1101,7 +1101,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <VehiclesPanel onBack={() => navigateToTab('hcns')} />
+                <VehiclesPanel onBack={() => navigateToTab('hcns')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'driver-policy' ? (
               <motion.div

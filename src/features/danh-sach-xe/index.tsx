@@ -156,7 +156,13 @@ async function readJsonResponse(response: Response) {
   return data;
 }
 
-export function VehiclesPanel({ onBack }: { onBack: () => void }) {
+export function VehiclesPanel({
+  onBack,
+  currentUser
+}: {
+  onBack: () => void;
+  currentUser?: { id: string; name: string } | null;
+}) {
   const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'expenses' | 'logs' | 'policy'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rows, setRows] = useState<DriverReconciliation[]>([]);
@@ -580,7 +586,7 @@ export function VehiclesPanel({ onBack }: { onBack: () => void }) {
           </section>
         </>
       ) : activeView === 'expenses' ? (
-        <VehicleExpensesView vehicles={vehicles} staff={staff} />
+        <VehicleExpensesView vehicles={vehicles} staff={staff} currentUser={currentUser} />
       ) : activeView === 'policy' ? (
         <DriverPolicyView />
       ) : (

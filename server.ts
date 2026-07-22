@@ -1258,6 +1258,53 @@ function parseVehicleLogBody(
     ? Math.max(0, kmActualRaw)
     : Math.max(0, kmAfter - kmBefore);
 
+  const rawLines = Array.isArray(source.chi_tiet_mat_hang)
+    ? source.chi_tiet_mat_hang
+    : typeof source.chi_tiet_mat_hang === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(source.chi_tiet_mat_hang);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+  const productLines = rawLines
+    .filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    .map(row => ({
+      id: pickRowField(row, ['id'], '') || undefined,
+      loai: pickRowField(row, ['loai'], '') || '',
+      ten_mat_hang: pickRowField(row, ['ten_mat_hang'], '') || '',
+      ma_san_pham: pickRowField(row, ['ma_san_pham'], '') || '',
+      so_luong: Math.max(0, parseDriverReconciliationNumber(row.so_luong)),
+      doanh_thu: Math.max(0, parseDriverReconciliationNumber(row.doanh_thu))
+    }));
+
+  const sumBy = (loai: string, field: 'so_luong' | 'doanh_thu') =>
+    productLines.filter(line => line.loai === loai).reduce((sum, line) => sum + line[field], 0);
+
+  const flatFromLines = productLines.length > 0
+    ? {
+        ten_mat_hang: productLines.find(line => line.ten_mat_hang)?.ten_mat_hang || '',
+        ma_san_pham: productLines.find(line => line.ma_san_pham)?.ma_san_pham || '',
+        sl_cuon_cach_nhiet: sumBy('cach_nhiet', 'so_luong'),
+        doanh_thu_cach_nhiet: sumBy('cach_nhiet', 'doanh_thu'),
+        so_luong_bao_bi: sumBy('bao_bi', 'so_luong'),
+        doanh_thu_bao_bi: sumBy('bao_bi', 'doanh_thu'),
+        so_luong_tui_tam_gia_cong: sumBy('tui_tam_gia_cong', 'so_luong'),
+        doanh_thu_tui_tam_gia_cong: sumBy('tui_tam_gia_cong', 'doanh_thu'),
+        so_luong_tui_niem_phong: sumBy('tui_niem_phong', 'so_luong'),
+        doanh_thu_tui_niem_phong: sumBy('tui_niem_phong', 'doanh_thu'),
+        so_luong_tui_cao_cap_chong_soc: sumBy('tui_cao_cap_chong_soc', 'so_luong'),
+        thanh_tien_tui_cao_cap_chong_soc: sumBy('tui_cao_cap_chong_soc', 'doanh_thu'),
+        ds_poly: sumBy('ds_poly', 'doanh_thu'),
+        tong_mat_hang: productLines.reduce((sum, line) => sum + line.so_luong, 0),
+        tong_doanh_thu: productLines.reduce((sum, line) => sum + line.doanh_thu, 0)
+      }
+    : null;
+
   return {
     record: {
       ngay_gio: dateTime,
@@ -1266,9 +1313,23 @@ function parseVehicleLogBody(
       bien_so_xe: plateNumber,
       ma_nhan_su: pickRowField(source, ['ma_nhan_su', 'staffCode'], '') || null,
       nhan_vien_phu_trach: pickRowField(source, ['nhan_vien_phu_trach', 'staffName'], '') || null,
-      tong_mat_hang: Math.max(0, parseDriverReconciliationNumber(source.tong_mat_hang)),
-      tong_doanh_thu: Math.max(0, parseDriverReconciliationNumber(source.tong_doanh_thu)),
+      tong_mat_hang: Math.max(0, flatFromLines?.tong_mat_hang ?? parseDriverReconciliationNumber(source.tong_mat_hang)),
+      tong_doanh_thu: Math.max(0, flatFromLines?.tong_doanh_thu ?? parseDriverReconciliationNumber(source.tong_doanh_thu)),
       tong_chi_phi: Math.max(0, parseDriverReconciliationNumber(source.tong_chi_phi)),
+      chi_tiet_mat_hang: productLines,
+      ten_mat_hang: (flatFromLines?.ten_mat_hang || pickRowField(source, ['ten_mat_hang', 'productName'], '')) || null,
+      ma_san_pham: (flatFromLines?.ma_san_pham || pickRowField(source, ['ma_san_pham', 'productCode'], '')) || null,
+      sl_cuon_cach_nhiet: Math.max(0, flatFromLines?.sl_cuon_cach_nhiet ?? parseDriverReconciliationNumber(source.sl_cuon_cach_nhiet)),
+      doanh_thu_cach_nhiet: Math.max(0, flatFromLines?.doanh_thu_cach_nhiet ?? parseDriverReconciliationNumber(source.doanh_thu_cach_nhiet)),
+      so_luong_bao_bi: Math.max(0, flatFromLines?.so_luong_bao_bi ?? parseDriverReconciliationNumber(source.so_luong_bao_bi)),
+      doanh_thu_bao_bi: Math.max(0, flatFromLines?.doanh_thu_bao_bi ?? parseDriverReconciliationNumber(source.doanh_thu_bao_bi)),
+      so_luong_tui_tam_gia_cong: Math.max(0, flatFromLines?.so_luong_tui_tam_gia_cong ?? parseDriverReconciliationNumber(source.so_luong_tui_tam_gia_cong)),
+      doanh_thu_tui_tam_gia_cong: Math.max(0, flatFromLines?.doanh_thu_tui_tam_gia_cong ?? parseDriverReconciliationNumber(source.doanh_thu_tui_tam_gia_cong)),
+      so_luong_tui_niem_phong: Math.max(0, flatFromLines?.so_luong_tui_niem_phong ?? parseDriverReconciliationNumber(source.so_luong_tui_niem_phong)),
+      doanh_thu_tui_niem_phong: Math.max(0, flatFromLines?.doanh_thu_tui_niem_phong ?? parseDriverReconciliationNumber(source.doanh_thu_tui_niem_phong)),
+      so_luong_tui_cao_cap_chong_soc: Math.max(0, flatFromLines?.so_luong_tui_cao_cap_chong_soc ?? parseDriverReconciliationNumber(source.so_luong_tui_cao_cap_chong_soc)),
+      thanh_tien_tui_cao_cap_chong_soc: Math.max(0, flatFromLines?.thanh_tien_tui_cao_cap_chong_soc ?? parseDriverReconciliationNumber(source.thanh_tien_tui_cao_cap_chong_soc)),
+      ds_poly: Math.max(0, flatFromLines?.ds_poly ?? parseDriverReconciliationNumber(source.ds_poly)),
       thuong_chuyen_giao_hang: Math.max(0, parseDriverReconciliationNumber(source.thuong_chuyen_giao_hang)),
       cong_lai_xe_theo_km: Math.max(0, parseDriverReconciliationNumber(source.cong_lai_xe_theo_km)),
       thuong_km_di: Math.max(0, parseDriverReconciliationNumber(source.thuong_km_di)),

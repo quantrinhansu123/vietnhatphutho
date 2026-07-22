@@ -57,6 +57,12 @@ export const MAIN_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Kho NVL, sản phẩm, máy móc và phiếu xuất nhập kho.',
     icon: Building2,
     tab: 'facility-management'
+  },
+  {
+    title: 'Danh sách xe',
+    desc: 'Quản lý xe, chi phí, nhật ký, đối chiếu lái xe và quy chế.',
+    icon: Truck,
+    tab: 'vehicles'
   }
 ];
 
