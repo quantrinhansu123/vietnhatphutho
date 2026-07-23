@@ -2348,6 +2348,20 @@ function isNnsTronMaterialCode(code: string) {
   return key === NNS_TRON_MATERIAL_CODE || key === 'NNSTRON';
 }
 
+function isNnsTronMaterial(code: string, name = '') {
+  if (isNnsTronMaterialCode(code)) return true;
+  const nameKey = String(name || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return (
+    nameKey.includes('nns-tron') ||
+    nameKey.includes('nnstron') ||
+    (nameKey.includes('nhua nguyen sinh') && nameKey.includes('tai che'))
+  );
+}
+
 function lookupNnsTronTonDauKg(maps: {
   byCode: Map<string, number>;
   byName: Map<string, number>;
@@ -2356,13 +2370,7 @@ function lookupNnsTronTonDauKg(maps: {
     if (isNnsTronMaterialCode(code) && Number.isFinite(kg) && kg > 0) return kg;
   }
   for (const [name, kg] of maps.byName.entries()) {
-    const key = String(name || '')
-      .trim()
-      .toUpperCase()
-      .replace(/[\s_]+/g, '-');
-    if ((key === NNS_TRON_MATERIAL_CODE || key.includes('NNS-TRON')) && Number.isFinite(kg) && kg > 0) {
-      return kg;
-    }
+    if (isNnsTronMaterial('', name) && Number.isFinite(kg) && kg > 0) return kg;
   }
   return 0;
 }
@@ -2588,6 +2596,10 @@ export function buildBbThucDungLineRows(input: {
 
     const shiftLabel = formatProductionOrderShiftLabel(header.shift, lookupSettings);
     for (const [materialKey, agg] of byMaterial.entries()) {
+      // Đã phân bổ NNS-TRON xuống NVL khác → ẩn dòng NNS-TRON, không tính vào báo cáo.
+      if (isNnsTronMaterial(agg.materialCode, agg.materialName) && nnsTronTonDauKg > 0) {
+        continue;
+      }
       const tiLeThucTeTbPercent =
         agg.tiLeThucTeCount > 0 ? roundQty(agg.tiLeThucTeSum / agg.tiLeThucTeCount, 2) : null;
       // Trọng lượng đã trộn = Tổng xuất trong ca × Tỉ lệ TB thực tế (%)
@@ -2601,7 +2613,7 @@ export function buildBbThucDungLineRows(input: {
       );
       // Có NNS-TRON tồn đầu → điền tồn đầu các NVL khác = NNS-TRON × tỉ lệ TB thực tế.
       const useNnsTronTonDau =
-        !isNnsTronMaterialCode(agg.materialCode) &&
+        !isNnsTronMaterial(agg.materialCode, agg.materialName) &&
         nnsTronTonDauKg > 0 &&
         tiLeThucTeTbPercent !== null &&
         Number.isFinite(tiLeThucTeTbPercent) &&
