@@ -55,6 +55,7 @@ import {
   type BbThucDungLineRow
 } from '../utils/controlBoardBbMachineReport';
 import { computePercentRatio } from '../utils/controlBoardShiftSummary';
+import { isWarehouseKgUnit } from '../utils/warehouseWeight';
 import type { BbProductionOrderGroup } from '../utils/controlBoardBbMachineReport';
 
 type BbPrintConfirmSelection = {
@@ -1028,7 +1029,13 @@ export default function ControlBoardBbMachineReportTable({
                         <td className="px-4 py-2.5 font-semibold text-zinc-800">{group.machine || '—'}</td>
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-800">
-                          {formatNumber(group.quantity, 3)}
+                          {(() => {
+                            const nonKgQty = (group.productGroups || [])
+                              .flatMap(pg => pg.lines || [])
+                              .filter(line => !isWarehouseKgUnit(line.unit))
+                              .reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
+                            return nonKgQty > 0 ? formatNumber(nonKgQty, 3) : '—';
+                          })()}
                         </td>
                         <td
                           className="px-4 py-2.5 text-right font-mono font-black text-emerald-700"
@@ -1076,11 +1083,16 @@ export default function ControlBoardBbMachineReportTable({
                                         <span className="font-mono font-black text-sky-900">{productGroup.productCode}</span>
                                       ) : null}
                                       <span className="font-black text-zinc-900">{productGroup.productName || '—'}</span>
-                                      {productGroup.quantity > 0 ? (
-                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-600 ring-1 ring-sky-200">
-                                          SL xuất kho: {formatNumber(productGroup.quantity, 3)}
-                                        </span>
-                                      ) : null}
+                                      {(() => {
+                                        const nonKgQty = (productGroup.lines || [])
+                                          .filter(line => !isWarehouseKgUnit(line.unit))
+                                          .reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
+                                        return nonKgQty > 0 ? (
+                                          <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-600 ring-1 ring-sky-200">
+                                            SL xuất kho: {formatNumber(nonKgQty, 3)}
+                                          </span>
+                                        ) : null;
+                                      })()}
                                       {productGroup.orderQuantity > 0 ? (
                                         <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-500 ring-1 ring-zinc-200">
                                           SL lệnh: {formatNumber(productGroup.orderQuantity, 2)} {productGroup.unit}
@@ -1108,7 +1120,12 @@ export default function ControlBoardBbMachineReportTable({
                                     {productGroup.lineCount} dòng
                                   </td>
                                   <td className="px-3 py-2 text-right font-mono text-zinc-800">
-                                    {formatNumber(productGroup.quantity, 3)}
+                                    {(() => {
+                                      const nonKgQty = (productGroup.lines || [])
+                                        .filter(line => !isWarehouseKgUnit(line.unit))
+                                        .reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
+                                      return nonKgQty > 0 ? formatNumber(nonKgQty, 3) : '—';
+                                    })()}
                                   </td>
                                   <td
                                     className="px-3 py-2 text-right font-mono font-black text-emerald-700"
@@ -1154,7 +1171,7 @@ export default function ControlBoardBbMachineReportTable({
                                           </td>
                                           <td className="px-3 py-1.5 text-zinc-600">{row.unit || '—'}</td>
                                           <td className="px-3 py-1.5 text-right font-mono font-bold text-zinc-800">
-                                            {row.quantity <= 0
+                                            {isWarehouseKgUnit(row.unit) || row.quantity <= 0
                                               ? '—'
                                               : row.weightFormula
                                                 ? (
@@ -1172,7 +1189,9 @@ export default function ControlBoardBbMachineReportTable({
                                                 : formatNumber(row.quantity, 3)}
                                           </td>
                                           <td className="px-3 py-1.5 text-right font-mono font-bold text-violet-800">
-                                            {row.normQuantity === null || row.normQuantity <= 0
+                                            {isWarehouseKgUnit(row.unit) ||
+                                            row.normQuantity === null ||
+                                            row.normQuantity <= 0
                                               ? '—'
                                               : row.materialNorm
                                                 ? (
@@ -1946,7 +1965,6 @@ export default function ControlBoardBbMachineReportTable({
                                 totalNormQty: number;
                                 totalExportQty: number;
                                 totalExportKg: number;
-                                seenSlipKeys: Set<string>;
                               }
                             >();
                             allLines.forEach(row => {
@@ -1958,18 +1976,16 @@ export default function ControlBoardBbMachineReportTable({
                                   unit: row.unit,
                                   totalNormQty: 0,
                                   totalExportQty: 0,
-                                  totalExportKg: 0,
-                                  seenSlipKeys: new Set<string>()
+                                  totalExportKg: 0
                                 });
                               }
                               const existing = groupedByCode.get(key)!;
-                              existing.totalNormQty += row.normQuantity && row.normQuantity > 0 ? row.normQuantity : 0;
-                              existing.totalExportKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
-                              const slipKey = row.slipLineKey || row.key;
-                              if (!existing.seenSlipKeys.has(slipKey)) {
-                                existing.seenSlipKeys.add(slipKey);
+                              if (!isWarehouseKgUnit(row.unit)) {
+                                existing.totalNormQty +=
+                                  row.normQuantity && row.normQuantity > 0 ? row.normQuantity : 0;
                                 existing.totalExportQty += row.quantity > 0 ? row.quantity : 0;
                               }
+                              existing.totalExportKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
                             });
                             return Array.from(groupedByCode.values()).map((row, idx) => (
                               <tr key={`${group.groupKey}-nvl-${idx}`} className="bg-white font-semibold hover:bg-amber-50/40 border-b border-slate-50">
@@ -1982,10 +1998,14 @@ export default function ControlBoardBbMachineReportTable({
                                 </td>
                                 <td className="px-4 py-2.5 text-zinc-600">{row.unit || '—'}</td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-700">
-                                  {formatNumber(row.totalExportQty, 3)}
+                                  {isWarehouseKgUnit(row.unit) || row.totalExportQty <= 0
+                                    ? '—'
+                                    : formatNumber(row.totalExportQty, 3)}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-violet-800">
-                                  {row.totalNormQty > 0 ? formatNumber(row.totalNormQty, 3) : '—'}
+                                  {isWarehouseKgUnit(row.unit) || row.totalNormQty <= 0
+                                    ? '—'
+                                    : formatNumber(row.totalNormQty, 3)}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
                                   {formatKg(row.totalExportKg, 3)}
@@ -2413,7 +2433,7 @@ export default function ControlBoardBbMachineReportTable({
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
-              Định mức: SL từng SP × Thành phần NVL. Nhiều SP cùng NVL (SL/KL thực xuất): % = (SL_SP × Thành phần) ÷ tổng nhu cầu, × tổng vật tư xuất. ĐVT ≠ kg → SL làm tròn số nguyên (phảy 5 làm tròn xuống); ĐVT kg → KL = SL; ĐVT khác → × Tổng kg kho NVL.
+              ĐVT kg: SL thực xuất = % × SL phiếu. ĐVT ≠ kg: SL thực xuất = SL định mức (để nguyên).
             </p>
           </div>
         </div>
@@ -2461,7 +2481,7 @@ export default function ControlBoardBbMachineReportTable({
                 <p className="text-xs font-bold text-zinc-500">{selectedExportWeight.unit || '—'}</p>
               </div>
               <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL SP × Thành phần</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL định mức (Thành phần)</p>
                 <p className="mt-1 font-mono text-lg font-black text-zinc-900">
                   {selectedExportWeight.demandQuantity !== null
                     ? formatNumber(selectedExportWeight.demandQuantity, 3)
@@ -2472,7 +2492,7 @@ export default function ControlBoardBbMachineReportTable({
                     ? 'Nhu cầu (kg ĐM)'
                     : selectedExportWeight.bomAmountType === 'quantity'
                       ? selectedExportWeight.bomRateUnit || selectedExportWeight.unit || 'NVL'
-                      : 'Nhu cầu phân bổ'}
+                      : 'Đối chiếu định mức'}
                 </p>
               </div>
               <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
@@ -2549,37 +2569,68 @@ export default function ControlBoardBbMachineReportTable({
                   </p>
                 )}
               </div>
-              {selectedExportWeight.allocationRatio < 0.999999 ||
+              {(!isWarehouseKgUnit(selectedExportWeight.unit) &&
+                selectedExportWeight.bomAmountType === 'quantity' &&
+                selectedExportWeight.bomRate !== null &&
+                selectedExportWeight.productQuantity !== null) ||
+              selectedExportWeight.allocationRatio < 0.999999 ||
               Math.abs(selectedExportWeight.quantity - selectedExportWeight.sourceQuantity) > 1e-9 ||
               (selectedExportWeight.sourceWeightKg !== null &&
                 selectedExportWeight.weightKg !== null &&
                 Math.abs(selectedExportWeight.weightKg - selectedExportWeight.sourceWeightKg) > 1e-9) ? (
-                <p className="mt-2 border-t border-amber-200 pt-2 text-xs font-bold text-amber-900">
-                  % = nhu cầu SP
-                  {selectedExportWeight.demandQuantity !== null
-                    ? ` (${formatNumber(selectedExportWeight.demandQuantity, 3)})`
-                    : ''}
-                  {' ÷ tổng nhu cầu'}
-                  {selectedExportWeight.totalDemand !== null
-                    ? ` (${formatNumber(selectedExportWeight.totalDemand, 3)})`
-                    : ''}
-                  {' = '}
-                  {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}%
-                  {' → '}SL thực xuất = {formatNumber(selectedExportWeight.sourceQuantity, 3)} ×{' '}
-                  {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}% ={' '}
-                  {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
-                  {selectedExportWeight.weightKg !== null ? (
-                    <>
-                      {'; KL thực xuất = '}
-                      {formatKg(selectedExportWeight.weightKg, 3)} kg
-                    </>
-                  ) : null}
-                  {' '}(phần cuối nhận dư làm tròn).
-                </p>
+                !isWarehouseKgUnit(selectedExportWeight.unit) &&
+                selectedExportWeight.bomAmountType === 'quantity' &&
+                selectedExportWeight.bomRate !== null &&
+                selectedExportWeight.productQuantity !== null ? (
+                  <p className="mt-2 border-t border-amber-200 pt-2 text-xs font-bold text-amber-900">
+                    ĐVT ≠ kg → SL thực xuất = SL định mức (SL đặt × Định mức Thành phần) ={' '}
+                    {formatNumber(selectedExportWeight.productQuantity, 3)}
+                    {' × '}
+                    {formatNumber(selectedExportWeight.bomRate, 3)}
+                    {' = '}
+                    {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
+                    {selectedExportWeight.weightKg !== null ? (
+                      <>
+                        {'; KL = '}
+                        {formatKg(selectedExportWeight.weightKg, 3)} kg
+                      </>
+                    ) : null}
+                    . Không chia % phiếu xuất.
+                  </p>
+                ) : (
+                  <p className="mt-2 border-t border-amber-200 pt-2 text-xs font-bold text-amber-900">
+                    ĐVT kg → % phân bổ = SL SP
+                    {selectedExportWeight.productQuantity !== null
+                      ? ` (${formatNumber(selectedExportWeight.productQuantity, 3)} ${selectedExportWeight.productUnit || ''})`
+                      : ''}
+                    {' ÷ tổng SL các SP cùng NVL = '}
+                    {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}%
+                    {' → '}SL thực xuất = {formatNumber(selectedExportWeight.sourceQuantity, 3)} ×{' '}
+                    {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}% ={' '}
+                    {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
+                    {selectedExportWeight.weightKg !== null ? (
+                      <>
+                        {'; KL thực xuất = '}
+                        {formatKg(selectedExportWeight.weightKg, 3)} kg
+                      </>
+                    ) : null}
+                    {' '}(phần cuối nhận dư làm tròn).
+                  </p>
+                )
               ) : (
                 <p className="mt-2 border-t border-amber-200 pt-2 text-xs font-bold text-amber-900">
-                  Một SP (hoặc không chia) → SL thực xuất = SL phiếu ={' '}
-                  {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
+                  {isWarehouseKgUnit(selectedExportWeight.unit) ? (
+                    <>
+                      Một SP (hoặc không chia) → SL thực xuất = SL phiếu ={' '}
+                      {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
+                    </>
+                  ) : (
+                    <>
+                      ĐVT ≠ kg → SL thực xuất = SL định mức ={' '}
+                      {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
+                      . Không chia % phiếu xuất.
+                    </>
+                  )}
                   {selectedExportWeight.weightKg !== null ? (
                     <>
                       {'; KL thực xuất = '}
@@ -2592,7 +2643,7 @@ export default function ControlBoardBbMachineReportTable({
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
-              SL/KL thực xuất từ phiếu xuất kho NVL. Nhiều SP cùng NVL: nhu cầu = SL SP × Thành phần (% hoặc số lượng), % = nhu cầu ÷ tổng nhu cầu, rồi × tổng SL/KL phiếu. ĐVT kg → KL = SL; ĐVT khác → × Tổng kg kho NVL.
+              ĐVT kg: SL thực xuất = % (SL_SP ÷ tổng SL) × SL phiếu. ĐVT ≠ kg: SL thực xuất = SL định mức (để nguyên, không chia %).
             </p>
           </div>
         </div>
