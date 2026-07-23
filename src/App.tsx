@@ -663,7 +663,8 @@ export default function App() {
                 : activeTab === 'control-board' ||
                     activeTab === 'warehouse-slip' ||
                     activeTab === 'warehouse-history' ||
-                    activeTab === 'products'
+                    activeTab === 'products' ||
+                    activeTab === 'machines'
                   ? 'mx-auto w-full min-w-0 max-w-none'
                   : 'mx-auto w-full min-w-0 max-w-[1280px]'
             }

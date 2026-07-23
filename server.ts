@@ -2843,6 +2843,31 @@ function parseMachineDinhLuong(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function parseMachineMixingRatios(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const source = item as Record<string, unknown>;
+      const materialCode = String(source.ma_nvl ?? source.materialCode ?? source.code ?? '').trim();
+      const materialName = String(source.ten_nvl ?? source.materialName ?? source.name ?? '').trim();
+      const rawPercent = String(source.phan_tram ?? source.percent ?? '').trim().replace(',', '.');
+      const percent = Number(rawPercent);
+
+      if ((!materialCode && !materialName) || !Number.isFinite(percent) || percent < 0 || percent > 100) {
+        return null;
+      }
+
+      return {
+        ma_nvl: materialCode,
+        ten_nvl: materialName,
+        phan_tram: Math.round(percent * 100) / 100
+      };
+    })
+    .filter((item): item is { ma_nvl: string; ten_nvl: string; phan_tram: number } => Boolean(item));
+}
+
 function parseMachineBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const code = typeof source.code === 'string' ? source.code.trim() : '';
@@ -2860,7 +2885,8 @@ function parseMachineBody(body: unknown): { error: string } | { record: Record<s
       vi_tri: typeof source.location === 'string' ? source.location.trim() : '',
       trang_thai: typeof source.status === 'string' ? source.status.trim() || 'Đang dùng' : 'Đang dùng',
       ghi_chu: typeof source.note === 'string' ? source.note.trim() : '',
-      dinh_luong: parseMachineDinhLuong(source.dinhLuong)
+      dinh_luong: parseMachineDinhLuong(source.dinhLuong),
+      ty_le_tron: parseMachineMixingRatios(source.mixingRatios ?? source.ty_le_tron)
     }
   };
 }
@@ -4673,7 +4699,8 @@ export function createApp() {
         vi_tri: typeof req.body?.location === 'string' ? req.body.location.trim() : '',
         trang_thai: typeof req.body?.status === 'string' ? req.body.status.trim() || 'Đang dùng' : 'Đang dùng',
         ghi_chu: typeof req.body?.note === 'string' ? req.body.note.trim() : '',
-        dinh_luong: parseMachineDinhLuong(req.body?.dinhLuong)
+        dinh_luong: parseMachineDinhLuong(req.body?.dinhLuong),
+        ty_le_tron: parseMachineMixingRatios(req.body?.mixingRatios ?? req.body?.ty_le_tron)
       };
 
       const { data, error } = await supabase

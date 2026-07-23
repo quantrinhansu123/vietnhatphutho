@@ -31,7 +31,8 @@ alter table public.danh_sach_may
   add column if not exists ghi_chu text,
   add column if not exists anh_url text,
   add column if not exists anh_public_id text,
-  add column if not exists dinh_luong numeric(10,2);
+  add column if not exists dinh_luong numeric(10,2),
+  add column if not exists ty_le_tron jsonb not null default '[]'::jsonb;
 
 alter table public.danh_sach_may enable row level security;
 
@@ -63,3 +64,4 @@ comment on column public.danh_sach_may.ten_may is 'Ten may.';
 comment on column public.danh_sach_may.anh_url is 'URL hinh anh may.';
 comment on column public.danh_sach_may.anh_public_id is 'Cloudinary public id cua hinh anh may.';
 comment on column public.danh_sach_may.dinh_luong is 'Dinh luong may, 2 chu so thap phan.';
+comment on column public.danh_sach_may.ty_le_tron is 'Ty le tron NVL dang JSONB: [{ma_nvl, ten_nvl, phan_tram}].';

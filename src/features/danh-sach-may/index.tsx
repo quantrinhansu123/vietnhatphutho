@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
-import { Cpu, ImagePlus, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { Cpu, Eye, ImagePlus, Loader2, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import {
@@ -25,8 +25,37 @@ export interface MachineRow {
   status: string;
   note: string;
   dinhLuong: string;
+  mixingRatios: MachineMixingRatio[];
   imageUrl?: string;
   imagePublicId?: string;
+}
+
+export type MachineMixingRatio = {
+  materialCode: string;
+  materialName: string;
+  percent: string;
+};
+
+type MachineMaterialOption = {
+  code: string;
+  name: string;
+};
+
+export function normalizeMachineMixingRatios(value: unknown): MachineMixingRatio[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const materialCode = String(record.ma_nvl ?? record.materialCode ?? record.code ?? '').trim();
+      const materialName = String(record.ten_nvl ?? record.materialName ?? record.name ?? '').trim();
+      const rawPercent = record.phan_tram ?? record.percent ?? '';
+      const percent = String(rawPercent).trim();
+      if (!materialCode && !materialName) return null;
+      return { materialCode, materialName, percent };
+    })
+    .filter((item): item is MachineMixingRatio => Boolean(item));
 }
 
 export function parseMachineDinhLuong(value: string) {
@@ -63,6 +92,7 @@ export function normalizeMachines(data: unknown): MachineRow[] {
         status: pickText(record, ['trang_thai', 'status', 'tinh_trang'], 'Đang dùng'),
         note: pickText(record, ['ghi_chu', 'mo_ta', 'note', 'description'], ''),
         dinhLuong: pickText(record, ['dinh_luong', 'dinhLuong'], ''),
+        mixingRatios: normalizeMachineMixingRatios(record.ty_le_tron ?? record.mixingRatios),
         imageUrl: pickText(record, ['anh_url', 'hinh_anh_url', 'image_url', 'imageUrl'], ''),
         imagePublicId: pickText(record, ['anh_public_id', 'image_public_id', 'imagePublicId'], '')
       };
@@ -119,7 +149,8 @@ export function buildMachineSelectOptions(machines: MachineRow[], currentValue =
       location: '-',
       status: '-',
       note: '',
-      dinhLuong: ''
+      dinhLuong: '',
+      mixingRatios: []
     },
     ...machines
   ];
@@ -159,6 +190,7 @@ export type MachineFormState = {
   status: string;
   note: string;
   dinhLuong: string;
+  mixingRatios: MachineMixingRatio[];
 };
 
 const emptyMachineForm = (): MachineFormState => ({
@@ -169,7 +201,8 @@ const emptyMachineForm = (): MachineFormState => ({
   location: '',
   status: 'Đang dùng',
   note: '',
-  dinhLuong: ''
+  dinhLuong: '',
+  mixingRatios: []
 });
 
 export function machineCellToInput(value: string) {
@@ -185,7 +218,8 @@ export function machineToForm(machine: MachineRow): MachineFormState {
     location: machineCellToInput(machine.location),
     status: machineCellToInput(machine.status) || 'Đang dùng',
     note: machineCellToInput(machine.note),
-    dinhLuong: machineCellToInput(machine.dinhLuong)
+    dinhLuong: machineCellToInput(machine.dinhLuong),
+    mixingRatios: machine.mixingRatios.map(item => ({ ...item }))
   };
 }
 
@@ -200,6 +234,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
   const [machineError, setMachineError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingMachine, setViewingMachine] = useState<MachineRow | null>(null);
   const [deletingMachineId, setDeletingMachineId] = useState<string | null>(null);
   const [isSavingMachine, setIsSavingMachine] = useState(false);
   const [uploadingMachineIds, setUploadingMachineIds] = useState<Set<string>>(() => new Set());
@@ -209,6 +244,8 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
   const [formImageFile, setFormImageFile] = useState<File | null>(null);
   const [formImagePreview, setFormImagePreview] = useState('');
   const [isUploadingFormImage, setIsUploadingFormImage] = useState(false);
+  const [materialOptions, setMaterialOptions] = useState<MachineMaterialOption[]>([]);
+  const [isLoadingMaterials, setIsLoadingMaterials] = useState(false);
 
   const resetFormImage = () => {
     setFormImageFile(null);
@@ -259,6 +296,35 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
     loadMachines();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    setIsLoadingMaterials(true);
+    fetch('/api/kho-nvl')
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!active || !ok || !Array.isArray(data?.materials)) return;
+        const options = data.materials
+          .map((item: unknown): MachineMaterialOption | null => {
+            if (!item || typeof item !== 'object') return null;
+            const record = item as Record<string, unknown>;
+            const code = String(record.ma_npl ?? '').trim();
+            const name = String(record.ten_npl ?? '').trim();
+            return code || name ? { code, name } : null;
+          })
+          .filter((item: MachineMaterialOption | null): item is MachineMaterialOption => Boolean(item));
+        setMaterialOptions(options);
+      })
+      .catch(() => {
+        if (active) setMaterialOptions([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingMaterials(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const openAddForm = () => {
     setFormError('');
     setActionMessage('');
@@ -285,6 +351,21 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
     resetFormImage();
   };
 
+  const openMixingView = (machine: MachineRow) => {
+    setViewingMachine(machine);
+  };
+
+  const closeMixingView = () => {
+    setViewingMachine(null);
+  };
+
+  const viewingMixingTotal = viewingMachine
+    ? viewingMachine.mixingRatios.reduce((sum, item) => {
+        const num = Number(String(item.percent || '').replace(',', '.'));
+        return sum + (Number.isFinite(num) ? num : 0);
+      }, 0)
+    : 0;
+
   const handleFormImageChange = (file?: File | null) => {
     if (!file) return;
     setFormImageFile(file);
@@ -294,6 +375,15 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
   const handleSaveMachine = async () => {
     if (!machineForm.code.trim() || !machineForm.name.trim()) {
       setFormError('Vui lòng nhập mã máy và tên máy.');
+      return;
+    }
+
+    const invalidMixingRatio = machineForm.mixingRatios.find(item => {
+      const percent = Number(item.percent.replace(',', '.'));
+      return (!item.materialCode && !item.materialName) || !Number.isFinite(percent) || percent < 0 || percent > 100;
+    });
+    if (invalidMixingRatio) {
+      setFormError('Vui lòng chọn NVL và nhập phần trăm từ 0 đến 100 cho từng dòng tỷ lệ trộn.');
       return;
     }
 
@@ -423,7 +513,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
       const matchesType = selectedType === 'all' || machine.type === selectedType;
       const matchesSearch =
         !normalizedSearch ||
-        `${machine.code} ${machine.name} ${machine.type} ${machine.branch} ${machine.location} ${machine.status}`
+        `${machine.code} ${machine.name} ${machine.type} ${machine.branch} ${machine.location} ${machine.status} ${machine.mixingRatios.map(item => `${item.materialCode} ${item.materialName}`).join(' ')}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesType && matchesSearch;
@@ -432,9 +522,36 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
 
   const branchCount = new Set(machines.map(machine => machine.branch).filter(branch => branch && branch !== '-')).size;
   const activeCount = machines.filter(machine => /đang|hoạt|active|dung|dùng/i.test(machine.status)).length;
+  const mixingPercentTotal = machineForm.mixingRatios.reduce((sum, item) => {
+    const value = Number(item.percent.replace(',', '.'));
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+
+  const addMixingRatio = () => {
+    setMachineForm(prev => ({
+      ...prev,
+      mixingRatios: [...prev.mixingRatios, { materialCode: '', materialName: '', percent: '' }]
+    }));
+  };
+
+  const updateMixingRatio = (index: number, patch: Partial<MachineMixingRatio>) => {
+    setMachineForm(prev => ({
+      ...prev,
+      mixingRatios: prev.mixingRatios.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...patch } : item
+      )
+    }));
+  };
+
+  const removeMixingRatio = (index: number) => {
+    setMachineForm(prev => ({
+      ...prev,
+      mixingRatios: prev.mixingRatios.filter((_, itemIndex) => itemIndex !== index)
+    }));
+  };
 
   return (
-    <div className="mx-auto w-full max-w-[1680px] space-y-4">
+    <div className="w-full space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
           <div className="flex items-start justify-end gap-3">
@@ -475,7 +592,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
 
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="w-full max-w-lg rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
@@ -558,6 +675,87 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                   allowEmpty={false}
                 />
               </label>
+              <div className="col-span-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wider text-zinc-600">Tỷ lệ trộn</p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
+                      Chọn NVL và nhập phần trăm. Dữ liệu được lưu dạng JSONB.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addMixingRatio}
+                    className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-black text-[#ef1b2d] transition hover:border-[#ef1b2d]"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Thêm NVL
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {machineForm.mixingRatios.map((item, index) => (
+                    <div key={`${index}-${item.materialCode}`} className="grid grid-cols-[minmax(0,1fr)_110px_36px] gap-2">
+                      <SearchableSelect
+                        value={item.materialCode}
+                        onChange={materialCode => {
+                          const material = materialOptions.find(option => option.code === materialCode);
+                          updateMixingRatio(index, {
+                            materialCode,
+                            materialName: material?.name || item.materialName
+                          });
+                        }}
+                        options={materialOptions}
+                        placeholder="Chọn mã NVL"
+                        isLoading={isLoadingMaterials}
+                        inputClassName={machineFieldClass}
+                        getLabel={option => {
+                          const material = option as MachineMaterialOption;
+                          return material.name ? `${material.code} · ${material.name}` : material.code;
+                        }}
+                        getValue={option => (option as MachineMaterialOption).code}
+                        getSearchText={option => {
+                          const material = option as MachineMaterialOption;
+                          return `${material.code} ${material.name}`;
+                        }}
+                      />
+                      <div className="relative">
+                        <input
+                          value={item.percent}
+                          onChange={event => updateMixingRatio(index, {
+                            percent: sanitizeDecimalTyping(event.target.value)
+                          })}
+                          className={`${machineFieldClass} pr-8 text-right`}
+                          inputMode="decimal"
+                          placeholder="0"
+                          aria-label={`Phần trăm NVL dòng ${index + 1}`}
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-zinc-400">%</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeMixingRatio(index)}
+                        title="Xóa NVL"
+                        className="flex h-11 w-9 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {machineForm.mixingRatios.length === 0 && (
+                    <p className="rounded-lg border border-dashed border-zinc-300 bg-white px-3 py-4 text-center text-xs font-semibold text-zinc-400">
+                      Chưa thiết lập tỷ lệ trộn.
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-2 flex justify-end text-xs font-black">
+                  <span className={Math.abs(mixingPercentTotal - 100) < 0.001 ? 'text-emerald-600' : 'text-amber-600'}>
+                    Tổng: {formatNumber(mixingPercentTotal, 2)}%
+                  </span>
+                </div>
+              </div>
               <label className="col-span-2 space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
                 <input
@@ -694,7 +892,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="min-w-[1120px] w-full text-left text-sm">
+          <table className="min-w-[1320px] w-full text-left text-sm">
             <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
               <tr>
                 <th className="px-4 py-3 font-black">Mã máy</th>
@@ -702,6 +900,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-4 py-3 font-black">Hình ảnh</th>
                 <th className="px-4 py-3 font-black">Loại/Nhóm</th>
                 <th className="px-4 py-3 text-right font-black">Định lượng</th>
+                <th className="px-4 py-3 font-black">Tỷ lệ trộn</th>
                 <th className="px-4 py-3 font-black">Chi nhánh</th>
                 <th className="px-4 py-3 font-black">Vị trí</th>
                 <th className="px-4 py-3 font-black">Trạng thái</th>
@@ -767,6 +966,29 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                   </td>
                   <td className="px-4 py-3 font-bold text-zinc-700">{machine.type}</td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-zinc-700">{formatMachineDinhLuong(machine.dinhLuong)}</td>
+                  <td className="px-4 py-3">
+                    {machine.mixingRatios.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openMixingView(machine)}
+                        className="inline-flex min-w-[160px] flex-col items-start gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left transition hover:border-amber-400 hover:bg-amber-100"
+                        title="Xem định mức tỉ lệ trộn"
+                      >
+                        <span className="text-[11px] font-black uppercase tracking-wider text-amber-700">
+                          {machine.mixingRatios.length} NVL · Xem
+                        </span>
+                        <span className="line-clamp-2 text-[11px] font-bold text-amber-900">
+                          {machine.mixingRatios
+                            .slice(0, 3)
+                            .map(item => `${item.materialCode || item.materialName} ${formatMachineDinhLuong(item.percent)}%`)
+                            .join(' · ')}
+                          {machine.mixingRatios.length > 3 ? '…' : ''}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="text-zinc-400">-</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-semibold text-zinc-600">{machine.branch}</td>
                   <td className="px-4 py-3 font-semibold text-zinc-600">{machine.location}</td>
                   <td className="px-4 py-3">
@@ -777,6 +999,14 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-4 py-3 font-semibold text-zinc-500">{machine.note || '-'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openMixingView(machine)}
+                        title="Xem định mức tỉ lệ trộn"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-amber-700 transition hover:bg-amber-50"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEditForm(machine)}
@@ -805,7 +1035,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
 
               {!isLoadingMachines && filteredMachines.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center font-bold text-zinc-500">
+                  <td colSpan={11} className="px-4 py-8 text-center font-bold text-zinc-500">
                     Bảng danh_sach_may chưa có dữ liệu hoặc không có máy phù hợp bộ lọc.
                   </td>
                 </tr>
@@ -814,6 +1044,121 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
           </table>
         </div>
       </section>
+
+      {viewingMachine ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Định mức tỉ lệ trộn"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) closeMixingView();
+          }}
+        >
+          <div className="max-h-[94vh] w-full max-w-2xl overflow-hidden rounded-t-2xl border border-amber-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-amber-100 bg-gradient-to-r from-amber-700 to-amber-500 px-4 py-3 text-white">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-100">
+                  Định mức tỉ lệ trộn
+                </p>
+                <h3 className="mt-1 text-base font-black">
+                  {viewingMachine.code || '—'} · {viewingMachine.name || '—'}
+                </h3>
+                <p className="mt-1 text-xs font-semibold text-amber-50">
+                  Định lượng máy:{' '}
+                  <span className="font-black">{formatMachineDinhLuong(viewingMachine.dinhLuong)}</span>
+                  {viewingMachine.type && viewingMachine.type !== 'Chưa phân loại'
+                    ? ` · ${viewingMachine.type}`
+                    : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeMixingView}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/25 bg-white/10 text-white transition hover:bg-white/20"
+                title="Đóng"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto p-4">
+              {viewingMachine.mixingRatios.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center text-sm font-bold text-zinc-400">
+                  Máy này chưa thiết lập định mức tỉ lệ trộn.
+                </p>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-zinc-200">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
+                      <tr>
+                        <th className="px-3 py-2.5 font-black">STT</th>
+                        <th className="px-3 py-2.5 font-black">Mã NVL</th>
+                        <th className="px-3 py-2.5 font-black">Tên NVL</th>
+                        <th className="px-3 py-2.5 text-right font-black">Tỉ lệ (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {viewingMachine.mixingRatios.map((item, index) => (
+                        <tr key={`${item.materialCode}-${index}`} className="bg-white hover:bg-amber-50/50">
+                          <td className="px-3 py-2.5 font-mono font-bold text-zinc-500">{index + 1}</td>
+                          <td className="px-3 py-2.5 font-mono font-black text-zinc-900">
+                            {item.materialCode || '—'}
+                          </td>
+                          <td className="px-3 py-2.5 font-semibold text-zinc-700">
+                            {item.materialName || '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-black text-amber-800">
+                            {formatMachineDinhLuong(item.percent)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t-2 border-zinc-200 bg-amber-50 text-sm font-black">
+                      <tr>
+                        <td colSpan={3} className="px-3 py-3 text-right uppercase tracking-wider text-zinc-600">
+                          Tổng tỉ lệ
+                        </td>
+                        <td
+                          className={`px-3 py-3 text-right font-mono ${
+                            Math.abs(viewingMixingTotal - 100) < 0.001
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          }`}
+                        >
+                          {formatNumber(viewingMixingTotal, 2)}%
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const machine = viewingMachine;
+                  closeMixingView();
+                  openEditForm(machine);
+                }}
+                className="flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-[#ef1b2d] transition hover:border-[#ef1b2d]"
+              >
+                <Pencil className="h-4 w-4" />
+                Sửa định mức
+              </button>
+              <button
+                type="button"
+                onClick={closeMixingView}
+                className="h-10 rounded-xl bg-zinc-900 px-4 text-xs font-black text-white transition hover:bg-zinc-700"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

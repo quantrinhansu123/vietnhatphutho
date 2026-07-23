@@ -1,6 +1,6 @@
 import { findProductByCode } from '../features/san-pham';
 import { normalizeProductCodeKey, type ProductRow, type ProductNplItem } from '../features/san-pham/types';
-import type { MachineRow } from '../features/danh-sach-may';
+import { findMachineByRef, type MachineRow } from '../features/danh-sach-may';
 import type { MaterialRow } from '../features/kho-nvl';
 import {
   getProductionOrderProductLines,
@@ -264,6 +264,24 @@ function findMachineForOrder(order: ProductionOrderRow, machines: MachineRow[]) 
         return token === code || token === name || token.includes(code) || code.includes(token) || name.includes(token);
       })
     ) ?? null
+  );
+}
+
+/** Tìm máy theo nhãn hiển thị (mã / tên / "mã · tên") — khớp mờ, bỏ khoảng trắng & phân biệt hoa thường. */
+function findBbMachineByLabel(machines: MachineRow[], label: string): MachineRow | null {
+  const exact = findMachineByRef(machines, label);
+  if (exact) return exact;
+  const token = String(label || '').replace(/\s+/g, '').toUpperCase();
+  if (!token) return null;
+  return (
+    machines.find(machine => {
+      const code = machine.code.replace(/\s+/g, '').toUpperCase();
+      const name = machine.name.replace(/\s+/g, '').toUpperCase();
+      return (
+        (code && (token === code || token.includes(code) || code.includes(token))) ||
+        (name && (token === name || token.includes(name) || name.includes(token)))
+      );
+    }) ?? null
   );
 }
 
@@ -2356,6 +2374,30 @@ export function buildBbThucDungLineRows(input: {
 
   for (const header of headers) {
     const byMaterial = new Map<string, MixingThucDungAgg>();
+    // Tỉ lệ ĐM (%) lấy từ cấu hình "tỉ lệ trộn" của máy (Danh sách máy) theo từng NVL.
+    const machineRow = findBbMachineByLabel(input.machines, header.machine);
+    const machineRatioByCode = new Map<string, number>();
+    const machineRatioByName = new Map<string, number>();
+    const machineHasRatios = Boolean(machineRow && machineRow.mixingRatios.length > 0);
+    if (machineRow && machineHasRatios) {
+      for (const ratio of machineRow.mixingRatios) {
+        const pct = Number(String(ratio.percent ?? '').trim().replace(',', '.'));
+        if (!Number.isFinite(pct)) continue;
+        const codeKey = normalizeProductCodeKey(ratio.materialCode);
+        if (codeKey) machineRatioByCode.set(codeKey, pct);
+        const nameKey = (ratio.materialName || '').trim().toLowerCase();
+        if (nameKey) machineRatioByName.set(nameKey, pct);
+      }
+    }
+    /** Tỉ lệ ĐM từ máy theo NVL; undefined = máy chưa cấu hình → lùi về TB báo cáo trộn. */
+    const resolveMachineDinhMuc = (code: string, name: string): number | null | undefined => {
+      if (!machineHasRatios) return undefined;
+      const codeKey = normalizeProductCodeKey(code);
+      if (codeKey && machineRatioByCode.has(codeKey)) return machineRatioByCode.get(codeKey)!;
+      const nameKey = (name || '').trim().toLowerCase();
+      if (nameKey && machineRatioByName.has(nameKey)) return machineRatioByName.get(nameKey)!;
+      return null;
+    };
     const tonDauMaps = sumMachineNvlKgByCodeForHeader(
       input.machineNvlReports,
       header,
@@ -2552,8 +2594,12 @@ export function buildBbThucDungLineRows(input: {
         materialCode: agg.materialCode,
         materialName: agg.materialName,
         unit: agg.unit,
-        tiLeDinhMucPercent:
-          agg.tiLeDinhMucCount > 0 ? roundQty(agg.tiLeDinhMucSum / agg.tiLeDinhMucCount, 2) : null,
+        tiLeDinhMucPercent: (() => {
+          const fromMachine = resolveMachineDinhMuc(agg.materialCode, agg.materialName);
+          if (fromMachine !== undefined) return fromMachine === null ? null : roundQty(fromMachine, 2);
+          // Máy chưa cấu hình tỉ lệ trộn → lùi về trung bình từ báo cáo trộn.
+          return agg.tiLeDinhMucCount > 0 ? roundQty(agg.tiLeDinhMucSum / agg.tiLeDinhMucCount, 2) : null;
+        })(),
         tiLeThucTeTbPercent,
         batchCount: agg.tiLeThucTeCount,
         xuatTrongCaKg: tongXuatTrongCaKg,
