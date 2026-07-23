@@ -2378,8 +2378,7 @@ export function buildBbThucDungLineRows(input: {
     const machineRow = findBbMachineByLabel(input.machines, header.machine);
     const machineRatioByCode = new Map<string, number>();
     const machineRatioByName = new Map<string, number>();
-    const machineHasRatios = Boolean(machineRow && machineRow.mixingRatios.length > 0);
-    if (machineRow && machineHasRatios) {
+    if (machineRow) {
       for (const ratio of machineRow.mixingRatios) {
         const pct = Number(String(ratio.percent ?? '').trim().replace(',', '.'));
         if (!Number.isFinite(pct)) continue;
@@ -2389,9 +2388,8 @@ export function buildBbThucDungLineRows(input: {
         if (nameKey) machineRatioByName.set(nameKey, pct);
       }
     }
-    /** Tỉ lệ ĐM từ máy theo NVL; undefined = máy chưa cấu hình → lùi về TB báo cáo trộn. */
-    const resolveMachineDinhMuc = (code: string, name: string): number | null | undefined => {
-      if (!machineHasRatios) return undefined;
+    /** Tỉ lệ ĐM lấy thẳng từ Tỷ lệ trộn của máy theo NVL; không có thì để trống (—). */
+    const resolveMachineDinhMuc = (code: string, name: string): number | null => {
       const codeKey = normalizeProductCodeKey(code);
       if (codeKey && machineRatioByCode.has(codeKey)) return machineRatioByCode.get(codeKey)!;
       const nameKey = (name || '').trim().toLowerCase();
@@ -2596,9 +2594,7 @@ export function buildBbThucDungLineRows(input: {
         unit: agg.unit,
         tiLeDinhMucPercent: (() => {
           const fromMachine = resolveMachineDinhMuc(agg.materialCode, agg.materialName);
-          if (fromMachine !== undefined) return fromMachine === null ? null : roundQty(fromMachine, 2);
-          // Máy chưa cấu hình tỉ lệ trộn → lùi về trung bình từ báo cáo trộn.
-          return agg.tiLeDinhMucCount > 0 ? roundQty(agg.tiLeDinhMucSum / agg.tiLeDinhMucCount, 2) : null;
+          return fromMachine === null ? null : roundQty(fromMachine, 2);
         })(),
         tiLeThucTeTbPercent,
         batchCount: agg.tiLeThucTeCount,
