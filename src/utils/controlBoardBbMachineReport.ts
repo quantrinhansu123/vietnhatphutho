@@ -190,6 +190,10 @@ export type BbExportWeightFormula = {
   demandQuantity: number | null;
   /** Tổng nhu cầu các SP cùng NVL (mẫu số tỉ lệ %). */
   totalDemand: number | null;
+  /** KL định mức của SP này (SL đặt × ĐM kg) — dùng làm tử số % phân bổ. */
+  allocWeightBase: number | null;
+  /** Tổng KL định mức các SP cùng NVL — mẫu số % phân bổ theo khối lượng. */
+  allocWeightTotal: number | null;
 };
 
 function roundQty(value: number, digits = 3) {
@@ -390,6 +394,8 @@ function buildExportWeightFormula(input: {
   bomRateUnit?: string;
   demandQuantity?: number | null;
   totalDemand?: number | null;
+  allocWeightBase?: number | null;
+  allocWeightTotal?: number | null;
 }): BbExportWeightFormula | null {
   const hasQty = input.quantity > 0;
   const hasKg = input.weightKg !== null && input.weightKg > 0;
@@ -433,6 +439,14 @@ function buildExportWeightFormula(input: {
     totalDemand:
       input.totalDemand !== undefined && input.totalDemand !== null && input.totalDemand > 0
         ? input.totalDemand
+        : null,
+    allocWeightBase:
+      input.allocWeightBase !== undefined && input.allocWeightBase !== null && input.allocWeightBase > 0
+        ? input.allocWeightBase
+        : null,
+    allocWeightTotal:
+      input.allocWeightTotal !== undefined && input.allocWeightTotal !== null && input.allocWeightTotal > 0
+        ? input.allocWeightTotal
         : null
   };
 }
@@ -445,6 +459,8 @@ type ExportAllocationBomShare = {
   bomRateUnit: string;
   demandQuantity: number;
   totalDemand: number;
+  allocWeightBase: number;
+  allocWeightTotal: number;
 };
 
 function allocateExportWeightFormula(
@@ -468,7 +484,9 @@ function allocateExportWeightFormula(
     bomRate: bomShare?.bomRate ?? base.bomRate,
     bomRateUnit: bomShare?.bomRateUnit || base.bomRateUnit,
     demandQuantity: bomShare?.demandQuantity ?? base.demandQuantity,
-    totalDemand: bomShare?.totalDemand ?? base.totalDemand
+    totalDemand: bomShare?.totalDemand ?? base.totalDemand,
+    allocWeightBase: bomShare?.allocWeightBase ?? base.allocWeightBase,
+    allocWeightTotal: bomShare?.allocWeightTotal ?? base.allocWeightTotal
   };
 }
 
@@ -1254,7 +1272,9 @@ function buildBbWarehouseExportProductGroups(
         bomRate: Number.isFinite(formula.rate) ? formula.rate : null,
         bomRateUnit: formula.rateUnit || '',
         demandQuantity: demand,
-        totalDemand: demand
+        totalDemand: demand,
+        allocWeightBase: 0,
+        allocWeightTotal: 0
       };
     }
     const fallback = Math.max(0, product.orderQuantity);
@@ -1265,7 +1285,9 @@ function buildBbWarehouseExportProductGroups(
       bomRate: null,
       bomRateUnit: '',
       demandQuantity: fallback,
-      totalDemand: fallback
+      totalDemand: fallback,
+      allocWeightBase: 0,
+      allocWeightTotal: 0
     };
   };
 
@@ -1281,11 +1303,15 @@ function buildBbWarehouseExportProductGroups(
     const materialKey = normalizeProductCodeKey(row.itemCode);
     const bomShares = targets.map(product => resolveAllocationDemand(product, materialKey));
     const totalOrderQty = targets.reduce((sum, product) => sum + Math.max(0, product.orderQuantity), 0);
-    // Giữ nhu cầu Thành phần để hiển thị định mức; % phân bổ kg dùng SL đặt SP.
+    // % phân bổ lấy theo KL định mức (SL đặt × ĐM kg) của từng SP; thiếu ĐM thì lùi về SL đặt.
+    const totalNormWeight = targets.reduce((sum, product) => sum + Math.max(0, product.normWeightKg || 0), 0);
+    const useNormWeight = totalNormWeight > 0;
     const sharesWithTotal = bomShares.map((share, index) => ({
       ...share,
       productQuantity: Math.max(0, targets[index]?.orderQuantity ?? share.productQuantity),
-      totalDemand: totalOrderQty > 0 ? totalOrderQty : share.totalDemand
+      totalDemand: totalOrderQty > 0 ? totalOrderQty : share.totalDemand,
+      allocWeightBase: Math.max(0, targets[index]?.normWeightKg || 0),
+      allocWeightTotal: totalNormWeight
     }));
 
     if (targets.length === 1) {
@@ -1311,8 +1337,14 @@ function buildBbWarehouseExportProductGroups(
     targets.forEach((product, index) => {
       const isLast = index === targets.length - 1;
       const orderQty = Math.max(0, product.orderQuantity);
-      const ratio = totalOrderQty > 0 ? orderQty / totalOrderQty : 1 / targets.length;
-      // ĐVT ≠ kg: SL phân bổ tạm (sẽ ghi đè = định mức); kg giữ thập phân theo % SL SP
+      const normWeight = Math.max(0, product.normWeightKg || 0);
+      // % phân bổ = KL định mức SP ÷ tổng KL định mức; thiếu ĐM thì dùng SL đặt.
+      const ratio = useNormWeight
+        ? normWeight / totalNormWeight
+        : totalOrderQty > 0
+          ? orderQty / totalOrderQty
+          : 1 / targets.length;
+      // ĐVT ≠ kg: SL phân bổ tạm (sẽ ghi đè = định mức); kg giữ thập phân theo % KL định mức
       const qtyShare = isLast
         ? qtyIsNonKg
           ? roundNonKgQuantityToInt(rowQty - assignedQty)

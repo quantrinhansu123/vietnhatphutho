@@ -867,19 +867,20 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-4 py-3.5 text-right font-black">Dòng</th>
                 <th className="px-4 py-3.5 text-right font-black">SL</th>
                 <th className="px-4 py-3.5 text-right font-black">Tổng TL (kg)</th>
+                <th className="px-4 py-3.5 text-right font-black">% KL nhựa</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải báo cáo máy BB...
                   </td>
                 </tr>
               ) : orderGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có lệnh SX máy BB theo bộ lọc đã chọn.
                   </td>
                 </tr>
@@ -915,6 +916,9 @@ export default function ControlBoardBbMachineReportTable({
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-700">
                           {formatKg(group.totalNormKg, 3)}
                         </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-teal-700">
+                          {group.totalNormKg > 0 ? '100%' : '—'}
+                        </td>
                       </tr>
                       {expanded ? (
                         <>
@@ -933,8 +937,14 @@ export default function ControlBoardBbMachineReportTable({
                               Tổng (kg)
                             </td>
                             <td />
+                            <td className="px-4 py-2 text-right font-black">% KL nhựa</td>
                           </tr>
-                          {group.lines.map(row => (
+                          {group.lines.map(row => {
+                            const plasticPercent =
+                              group.totalNormKg > 0 && row.totalNormKg && row.totalNormKg > 0
+                                ? (row.totalNormKg / group.totalNormKg) * 100
+                                : null;
+                            return (
                             <tr key={row.key} className="bg-white font-semibold hover:bg-sky-50/40 border-b border-slate-50">
                               <td className="px-3 py-2" />
                               <td className="px-4 py-2 font-mono font-bold text-zinc-800">{row.productCode || '—'}</td>
@@ -952,8 +962,12 @@ export default function ControlBoardBbMachineReportTable({
                                 {formatKg(row.totalNormKg, 3)}
                               </td>
                               <td />
+                              <td className="px-4 py-2 text-right font-mono font-bold text-teal-700">
+                                {plasticPercent === null ? '—' : `${formatNumber(plasticPercent, 2)}%`}
+                              </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </>
                       ) : null}
                     </React.Fragment>
@@ -970,6 +984,9 @@ export default function ControlBoardBbMachineReportTable({
                   <td className="px-4 py-3.5 text-right font-mono">{formatNumber(orderTotals.quantity, 2)}</td>
                   <td className="px-4 py-3.5 text-right font-mono text-emerald-700">
                     {formatKg(orderTotals.totalNormKg, 3)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-teal-700">
+                    {orderTotals.totalNormKg > 0 ? '100%' : '—'}
                   </td>
                 </tr>
               </tfoot>
@@ -2599,12 +2616,24 @@ export default function ControlBoardBbMachineReportTable({
                   </p>
                 ) : (
                   <p className="mt-2 border-t border-amber-200 pt-2 text-xs font-bold text-amber-900">
-                    ĐVT kg → % phân bổ = SL SP
-                    {selectedExportWeight.productQuantity !== null
-                      ? ` (${formatNumber(selectedExportWeight.productQuantity, 3)} ${selectedExportWeight.productUnit || ''})`
-                      : ''}
-                    {' ÷ tổng SL các SP cùng NVL = '}
-                    {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}%
+                    {selectedExportWeight.allocWeightTotal !== null &&
+                    selectedExportWeight.allocWeightBase !== null ? (
+                      <>
+                        ĐVT kg → % phân bổ = KL định mức SP (
+                        {formatKg(selectedExportWeight.allocWeightBase, 3)} kg){' ÷ tổng KL định mức các SP cùng NVL ('}
+                        {formatKg(selectedExportWeight.allocWeightTotal, 3)} kg) ={' '}
+                        {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}%
+                      </>
+                    ) : (
+                      <>
+                        ĐVT kg → % phân bổ = SL SP
+                        {selectedExportWeight.productQuantity !== null
+                          ? ` (${formatNumber(selectedExportWeight.productQuantity, 3)} ${selectedExportWeight.productUnit || ''})`
+                          : ''}
+                        {' ÷ tổng SL các SP cùng NVL = '}
+                        {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}%
+                      </>
+                    )}
                     {' → '}SL thực xuất = {formatNumber(selectedExportWeight.sourceQuantity, 3)} ×{' '}
                     {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}% ={' '}
                     {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
@@ -2643,7 +2672,7 @@ export default function ControlBoardBbMachineReportTable({
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
-              ĐVT kg: SL thực xuất = % (SL_SP ÷ tổng SL) × SL phiếu. ĐVT ≠ kg: SL thực xuất = SL định mức (để nguyên, không chia %).
+              ĐVT kg: SL thực xuất = % (KL định mức SP ÷ tổng KL định mức) × SL phiếu. ĐVT ≠ kg: SL thực xuất = SL định mức (để nguyên, không chia %).
             </p>
           </div>
         </div>
