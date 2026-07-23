@@ -348,7 +348,15 @@ export function ProductViewModal({
     }
     if (item.quantity === null) return null;
     const unit = (item.unit || '').trim().toLowerCase();
+    // ĐVT = kg → số lượng chính là khối lượng.
     if (unit === '' || unit === 'kg' || unit === '-') return roundWeightKg(item.quantity);
+    // ĐVT khác → nhân số lượng với Tổng kg (kg/ĐVT) của NVL trong kho.
+    const key = normalizeProductCodeKey(item.code);
+    const material = materialOptions.find(option => normalizeProductCodeKey(option.code) === key);
+    const totalWeightPerUnit = parseProductSpecNumber(material?.totalWeight ?? '');
+    if (totalWeightPerUnit !== null && totalWeightPerUnit > 0) {
+      return roundWeightKg(item.quantity * totalWeightPerUnit);
+    }
     return null;
   };
 
@@ -1175,7 +1183,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       const options = materials.map(material => ({
         code: material.code,
         name: material.name,
-        unit: material.unit && material.unit !== '-' ? material.unit : ''
+        unit: material.unit && material.unit !== '-' ? material.unit : '',
+        totalWeight: material.totalWeight
       }));
       setMaterialOptions(options);
       return options;
@@ -1628,7 +1637,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1680px] space-y-4">
+    <div className="w-full space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
           <div className="flex items-start justify-end gap-3">

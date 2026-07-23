@@ -128,6 +128,8 @@ export type BbWarehouseExportLineRow = {
   normWeightKg: number | null;
   materialNorm: BbMaterialNormFormula | null;
   weightKg: number | null;
+  /** Công thức KL thực xuất (click ô KL để xem). */
+  weightFormula: BbExportWeightFormula | null;
   matchedByOrder: boolean;
 };
 
@@ -149,6 +151,45 @@ export type BbMaterialNormFormula = {
   totalNormKg: number;
   allocationRatio: number;
   allocatedNormKg: number;
+};
+
+export type BbExportWeightConvertMode =
+  | 'kg_as_is'
+  | 'multiply_tong_kg'
+  | 'ton_to_kg'
+  | 'gram_to_kg'
+  | 'unknown';
+
+/** Công thức SL/KL thực xuất = quy đổi phiếu xuất + phân bổ theo (SL SP × Thành phần). */
+export type BbExportWeightFormula = {
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  /** SL thực xuất trên dòng này (đã phân bổ theo SP nếu có). */
+  quantity: number;
+  /** KL thực xuất trên dòng này (kg). */
+  weightKg: number | null;
+  convertMode: BbExportWeightConvertMode;
+  /** Hệ số từ cột Tổng kg kho NVL (null nếu ĐVT kg / tấn / g). */
+  catalogKgPerUnit: number | null;
+  /** SL trên phiếu xuất gốc (trước phân bổ SP). */
+  sourceQuantity: number;
+  /** KL phiếu xuất gốc (trước phân bổ SP). */
+  sourceWeightKg: number | null;
+  /** Tỉ lệ phân bổ từ phiếu → SP (1 = không chia). */
+  allocationRatio: number;
+  /** SL sản phẩm (lệnh SX) dùng để tính nhu cầu Thành phần. */
+  productQuantity: number | null;
+  productUnit: string;
+  /** Loại Thành phần: % hoặc số lượng. */
+  bomAmountType: 'percent' | 'quantity' | null;
+  /** Giá trị Thành phần (% hoặc SL NVL / 1 SP). */
+  bomRate: number | null;
+  bomRateUnit: string;
+  /** Nhu cầu SP = SL SP × Thành phần (hoặc KL ĐM nếu loại %). */
+  demandQuantity: number | null;
+  /** Tổng nhu cầu các SP cùng NVL (mẫu số tỉ lệ %). */
+  totalDemand: number | null;
 };
 
 function roundQty(value: number, digits = 3) {
@@ -306,6 +347,131 @@ export function buildBbProductionOrderLineRows(input: {
   });
 }
 
+function resolveExportWeightConvertMode(
+  unit: string,
+  catalogKgPerUnit: number | null
+): BbExportWeightConvertMode {
+  if (isWarehouseKgUnit(unit)) return 'kg_as_is';
+  const normalized = String(unit || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (
+    normalized === 't' ||
+    normalized === 'tan' ||
+    normalized === 'ton' ||
+    normalized === 'tonne' ||
+    normalized === 'mt'
+  ) {
+    return 'ton_to_kg';
+  }
+  if (normalized === 'g' || normalized === 'gr' || normalized === 'gram' || normalized === 'gam') {
+    return 'gram_to_kg';
+  }
+  if (catalogKgPerUnit !== null && catalogKgPerUnit > 0) return 'multiply_tong_kg';
+  return 'unknown';
+}
+
+function buildExportWeightFormula(input: {
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  quantity: number;
+  weightKg: number | null;
+  materialsCatalog: WarehouseWeightCatalogItem[];
+  sourceQuantity?: number;
+  sourceWeightKg?: number | null;
+  allocationRatio?: number;
+  productQuantity?: number | null;
+  productUnit?: string;
+  bomAmountType?: 'percent' | 'quantity' | null;
+  bomRate?: number | null;
+  bomRateUnit?: string;
+  demandQuantity?: number | null;
+  totalDemand?: number | null;
+}): BbExportWeightFormula | null {
+  const hasQty = input.quantity > 0;
+  const hasKg = input.weightKg !== null && input.weightKg > 0;
+  if (!hasQty && !hasKg) return null;
+  const catalogKgPerUnit = findMaterialTongKgPerUnit(input.itemCode, input.materialsCatalog);
+  return {
+    itemCode: input.itemCode,
+    itemName: input.itemName,
+    unit: input.unit || '',
+    quantity: hasQty ? input.quantity : 0,
+    weightKg: hasKg ? input.weightKg : null,
+    convertMode: resolveExportWeightConvertMode(input.unit || '', catalogKgPerUnit),
+    catalogKgPerUnit,
+    sourceQuantity:
+      input.sourceQuantity !== undefined && input.sourceQuantity > 0
+        ? input.sourceQuantity
+        : hasQty
+          ? input.quantity
+          : 0,
+    sourceWeightKg:
+      input.sourceWeightKg !== undefined ? input.sourceWeightKg : input.weightKg,
+    allocationRatio:
+      input.allocationRatio !== undefined && Number.isFinite(input.allocationRatio)
+        ? input.allocationRatio
+        : 1,
+    productQuantity:
+      input.productQuantity !== undefined && input.productQuantity !== null && input.productQuantity > 0
+        ? input.productQuantity
+        : null,
+    productUnit: input.productUnit || '',
+    bomAmountType: input.bomAmountType ?? null,
+    bomRate:
+      input.bomRate !== undefined && input.bomRate !== null && Number.isFinite(input.bomRate)
+        ? input.bomRate
+        : null,
+    bomRateUnit: input.bomRateUnit || '',
+    demandQuantity:
+      input.demandQuantity !== undefined && input.demandQuantity !== null && input.demandQuantity > 0
+        ? input.demandQuantity
+        : null,
+    totalDemand:
+      input.totalDemand !== undefined && input.totalDemand !== null && input.totalDemand > 0
+        ? input.totalDemand
+        : null
+  };
+}
+
+type ExportAllocationBomShare = {
+  productQuantity: number;
+  productUnit: string;
+  bomAmountType: 'percent' | 'quantity' | null;
+  bomRate: number | null;
+  bomRateUnit: string;
+  demandQuantity: number;
+  totalDemand: number;
+};
+
+function allocateExportWeightFormula(
+  base: BbExportWeightFormula | null,
+  allocatedQuantity: number,
+  allocatedWeightKg: number | null,
+  allocationRatio: number,
+  bomShare?: ExportAllocationBomShare | null
+): BbExportWeightFormula | null {
+  const hasQty = allocatedQuantity > 0;
+  const hasKg = allocatedWeightKg !== null && allocatedWeightKg > 0;
+  if (!base || (!hasQty && !hasKg)) return null;
+  return {
+    ...base,
+    quantity: hasQty ? allocatedQuantity : 0,
+    weightKg: hasKg ? allocatedWeightKg : null,
+    allocationRatio: Number.isFinite(allocationRatio) ? allocationRatio : 1,
+    productQuantity: bomShare?.productQuantity ?? base.productQuantity,
+    productUnit: bomShare?.productUnit || base.productUnit,
+    bomAmountType: bomShare?.bomAmountType ?? base.bomAmountType,
+    bomRate: bomShare?.bomRate ?? base.bomRate,
+    bomRateUnit: bomShare?.bomRateUnit || base.bomRateUnit,
+    demandQuantity: bomShare?.demandQuantity ?? base.demandQuantity,
+    totalDemand: bomShare?.totalDemand ?? base.totalDemand
+  };
+}
+
 function resolveExportWeightKg(
   movement: ShiftSummaryWarehouseMovement,
   materials: MaterialRow[]
@@ -413,6 +579,7 @@ export function buildBbWarehouseExportLineRows(input: {
 
   if (headers.length === 0) return [];
 
+  const materialsCatalog = input.materials.map(mapMaterialToWeightCatalogItem);
   const rows: BbWarehouseExportLineRow[] = [];
 
   for (const movement of input.warehouseMovements) {
@@ -434,6 +601,8 @@ export function buildBbWarehouseExportLineRows(input: {
     const machine = [...new Set(matchedOrders.map(order => order.machine).filter(Boolean))].join(', ');
 
     const slipLineKey = `${movement.id || movement.slipCode}|${movement.itemCode}|${movement.slipDate}`;
+    const quantity = Number.isFinite(movement.quantity) ? movement.quantity : 0;
+    const weightKg = resolveExportWeightKg(movement, input.materials);
     rows.push({
       key: slipLineKey,
       slipLineKey,
@@ -446,11 +615,19 @@ export function buildBbWarehouseExportLineRows(input: {
       itemCode: movement.itemCode,
       itemName: movement.itemName,
       unit: movement.unit,
-      quantity: Number.isFinite(movement.quantity) ? movement.quantity : 0,
+      quantity,
       normQuantity: null,
       normWeightKg: null,
       materialNorm: null,
-      weightKg: resolveExportWeightKg(movement, input.materials),
+      weightKg,
+      weightFormula: buildExportWeightFormula({
+        itemCode: movement.itemCode,
+        itemName: movement.itemName,
+        unit: movement.unit,
+        quantity,
+        weightKg,
+        materialsCatalog
+      }),
       matchedByOrder
     });
   }
@@ -824,6 +1001,7 @@ export function buildBbInboundMaterialNormGroups(input: {
           normWeightKg: expectedKg,
           materialNorm: null,
           weightKg: expectedKg,
+          weightFormula: null,
           matchedByOrder
         });
       }
@@ -877,7 +1055,10 @@ type WarehouseProductAllocation = BbWarehouseExportProductGroup & {
 
 /**
  * Chia dòng NVL xuất kho về từng sản phẩm trong lệnh.
- * Khi nhiều SP cùng dùng 1 NVL: % = SL_SP / Σ SL_SP, rồi % × tổng vật tư xuất tương ứng.
+ * Khi nhiều SP cùng dùng 1 NVL:
+ *   nhu cầu_i = SL_SP × Thành phần (số lượng hoặc % → KL ĐM)
+ *   %_i = nhu cầu_i / Σ nhu cầu
+ *   SL/KL thực xuất_i = %_i × tổng vật tư xuất
  * Định mức (KL) vẫn tính theo Thành phần × SL từng SP.
  */
 function buildBbWarehouseExportProductGroups(
@@ -1025,7 +1206,9 @@ function buildBbWarehouseExportProductGroups(
     row: BbWarehouseExportLineRow,
     allocatedQuantity: number,
     allocatedWeightKg: number | null,
-    suffix: string
+    suffix: string,
+    allocationRatio = 1,
+    bomShare: ExportAllocationBomShare | null = null
   ) => {
     const qty = allocatedQuantity > 0 ? allocatedQuantity : 0;
     const weightKg =
@@ -1038,26 +1221,84 @@ function buildBbWarehouseExportProductGroups(
       weightKg,
       normQuantity: null,
       normWeightKg: null,
-      materialNorm: null
+      materialNorm: null,
+      weightFormula: allocateExportWeightFormula(
+        row.weightFormula,
+        qty,
+        weightKg,
+        allocationRatio,
+        bomShare
+      )
     });
     target.quantity += qty;
     target.totalWeightKg += weightKg && weightKg > 0 ? weightKg : 0;
     target.lineCount += 1;
   };
 
-  /** % = SL từng SP / tổng SL các SP liên quan; phần cuối nhận phần dư để tránh lệch làm tròn. */
+  /** Nhu cầu phân bổ = SL SP × Thành phần (số lượng) hoặc KL ĐM (loại %). */
+  const resolveAllocationDemand = (
+    product: WarehouseProductAllocation,
+    materialKey: string
+  ): ExportAllocationBomShare => {
+    const formula = materialKey ? product.materialFormulas.get(materialKey) ?? null : null;
+    if (formula) {
+      const demand =
+        formula.amountType === 'quantity'
+          ? Math.max(0, formula.rawExpectedQuantity)
+          : Math.max(0, formula.totalNormKg);
+      return {
+        productQuantity: Math.max(0, formula.productQuantity),
+        productUnit: formula.productUnit || product.unit || '',
+        bomAmountType: formula.amountType,
+        bomRate: Number.isFinite(formula.rate) ? formula.rate : null,
+        bomRateUnit: formula.rateUnit || '',
+        demandQuantity: demand,
+        totalDemand: demand
+      };
+    }
+    const fallback = Math.max(0, product.orderQuantity);
+    return {
+      productQuantity: fallback,
+      productUnit: product.unit || '',
+      bomAmountType: null,
+      bomRate: null,
+      bomRateUnit: '',
+      demandQuantity: fallback,
+      totalDemand: fallback
+    };
+  };
+
+  /**
+   * % = (SL_SP × Thành phần) / Σ(SL_SP × Thành phần);
+   * SL/KL thực xuất = % × tổng xuất; phần cuối nhận dư làm tròn.
+   */
   const allocateExportByProductShare = (
     targets: WarehouseProductAllocation[],
     row: BbWarehouseExportLineRow
   ) => {
     if (targets.length === 0) return;
+    const materialKey = normalizeProductCodeKey(row.itemCode);
+    const shares = targets.map(product => resolveAllocationDemand(product, materialKey));
+    const totalDemand = shares.reduce((sum, share) => sum + Math.max(0, share.demandQuantity), 0);
+    const sharesWithTotal = shares.map(share => ({
+      ...share,
+      totalDemand: totalDemand > 0 ? totalDemand : share.demandQuantity
+    }));
+
     if (targets.length === 1) {
       targets[0].usedQuotaAllocation = false;
-      addAllocatedLine(targets[0], row, row.quantity, row.weightKg, targets[0].productKey);
+      addAllocatedLine(
+        targets[0],
+        row,
+        row.quantity,
+        row.weightKg,
+        targets[0].productKey,
+        1,
+        sharesWithTotal[0] || null
+      );
       return;
     }
 
-    const totalProductQty = targets.reduce((sum, product) => sum + Math.max(0, product.orderQuantity), 0);
     let assignedQty = 0;
     let assignedKg = 0;
     const rowQty = Math.max(0, row.quantity);
@@ -1066,10 +1307,8 @@ function buildBbWarehouseExportProductGroups(
 
     targets.forEach((product, index) => {
       const isLast = index === targets.length - 1;
-      const ratio =
-        totalProductQty > 0
-          ? Math.max(0, product.orderQuantity) / totalProductQty
-          : 1 / targets.length;
+      const demand = Math.max(0, sharesWithTotal[index]?.demandQuantity ?? 0);
+      const ratio = totalDemand > 0 ? demand / totalDemand : 1 / targets.length;
       // ĐVT ≠ kg: SL phân bổ làm tròn nguyên (.5 → xuống); kg giữ thập phân
       const qtyShare = isLast
         ? qtyIsNonKg
@@ -1087,7 +1326,15 @@ function buildBbWarehouseExportProductGroups(
       if (qtyShare > 0) assignedQty += qtyShare;
       if (kgShare !== null && kgShare > 0) assignedKg += kgShare;
       product.usedQuotaAllocation = true;
-      addAllocatedLine(product, row, qtyShare, kgShare, product.productKey);
+      addAllocatedLine(
+        product,
+        row,
+        qtyShare,
+        kgShare,
+        product.productKey,
+        ratio,
+        sharesWithTotal[index] || null
+      );
     });
   };
 
@@ -1108,7 +1355,7 @@ function buildBbWarehouseExportProductGroups(
       continue;
     }
 
-    // Nhiều SP cùng NVL: % = SL_SP / Σ SL_SP (các SP có NVL này), × tổng xuất
+    // Nhiều SP cùng NVL: % = (SL_SP × Thành phần) / Σ nhu cầu, × tổng xuất
     allocateExportByProductShare(matchedProducts, row);
   }
 
@@ -1157,9 +1404,14 @@ function buildBbWarehouseExportProductGroups(
         continue;
       }
 
+      // NVL ĐVT = kg (thường khai báo dạng %): SL định mức = KL định mức (kg).
+      const normQtyFromKg = (line: BbWarehouseExportLineRow, kgShare: number): number | null =>
+        expectedNormQty === null && isWarehouseKgUnit(line.unit || '') ? kgShare : null;
+
       const totalQty = lines.reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
       if (totalQty <= 0) {
-        assignNorm(lines[0], roundQty(expected), expectedNormQty, 1);
+        const kgShare = roundQty(expected);
+        assignNorm(lines[0], kgShare, expectedNormQty ?? normQtyFromKg(lines[0], kgShare), 1);
         lines.slice(1).forEach(line => {
           assignNorm(line, null, null, 0);
         });
@@ -1178,6 +1430,8 @@ function buildBbWarehouseExportProductGroups(
             ? roundQuantityByUnit(expectedNormQty - assignedNormQty, normQtyUnit)
             : roundQuantityByUnit(expectedNormQty * ratio, normQtyUnit);
           if (qtyShare > 0) assignedNormQty += qtyShare;
+        } else {
+          qtyShare = normQtyFromKg(line, kgShare);
         }
         if (kgShare > 0) assignedKg += kgShare;
         assignNorm(line, kgShare, qtyShare, ratio);

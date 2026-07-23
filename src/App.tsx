@@ -662,7 +662,8 @@ export default function App() {
                 ? 'w-full'
                 : activeTab === 'control-board' ||
                     activeTab === 'warehouse-slip' ||
-                    activeTab === 'warehouse-history'
+                    activeTab === 'warehouse-history' ||
+                    activeTab === 'products'
                   ? 'mx-auto w-full min-w-0 max-w-none'
                   : 'mx-auto w-full min-w-0 max-w-[1280px]'
             }

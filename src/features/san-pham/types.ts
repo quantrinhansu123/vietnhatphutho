@@ -45,6 +45,8 @@ export interface MaterialOption {
   code: string;
   name: string;
   unit: string;
+  /** Tổng khối lượng (kg/ĐVT) từ kho NVL — dùng để quy đổi số lượng sang kg khi ĐVT ≠ kg. */
+  totalWeight?: string;
 }
 
 export function roundNplNumber(value: number) {

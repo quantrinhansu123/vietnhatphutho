@@ -48,6 +48,7 @@ import {
   sumBbWarehouseExportSlipQuantity,
   sumBbWarehouseExportWeightKg,
   type BbMaterialNormFormula,
+  type BbExportWeightFormula,
   type BbMachineReportTabId,
   type BbThucDungDetailMetric,
   type BbThucDungDetailBag,
@@ -175,6 +176,7 @@ export default function ControlBoardBbMachineReportTable({
   const [printNoteByOrder, setPrintNoteByOrder] = useState<Record<string, string>>({});
   const [hrStaffNames, setHrStaffNames] = useState<string[]>([]);
   const [selectedMaterialNorm, setSelectedMaterialNorm] = useState<BbMaterialNormFormula | null>(null);
+  const [selectedExportWeight, setSelectedExportWeight] = useState<BbExportWeightFormula | null>(null);
   const [thucDungDetail, setThucDungDetail] = useState<{
     line: BbThucDungLineRow;
     metric: BbThucDungDetailMetric;
@@ -1130,7 +1132,7 @@ export default function ControlBoardBbMachineReportTable({
                                       <td className="px-3 py-1.5 font-black">ĐVT</td>
                                       <td className="px-3 py-1.5 text-right font-black">SL thực xuất</td>
                                       <td className="px-3 py-1.5 text-right font-black">SL định mức</td>
-                                      <td className="px-3 py-1.5 text-right font-black">KL thực xuất</td>
+                                      <td className="px-3 py-1.5 text-right font-black">Trọng lượng thực xuất</td>
                                     </tr>
                                     {productGroup.lines.length === 0 ? (
                                       <tr className="bg-white">
@@ -1152,7 +1154,22 @@ export default function ControlBoardBbMachineReportTable({
                                           </td>
                                           <td className="px-3 py-1.5 text-zinc-600">{row.unit || '—'}</td>
                                           <td className="px-3 py-1.5 text-right font-mono font-bold text-zinc-800">
-                                            {formatNumber(row.quantity, 3)}
+                                            {row.quantity <= 0
+                                              ? '—'
+                                              : row.weightFormula
+                                                ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        if (row.weightFormula) setSelectedExportWeight(row.weightFormula);
+                                                      }}
+                                                      className="rounded-md px-1.5 py-0.5 font-mono font-black text-zinc-800 underline decoration-dotted underline-offset-2 transition hover:bg-zinc-100 hover:text-zinc-950"
+                                                      title="Bấm để xem công thức SL thực xuất"
+                                                    >
+                                                      {formatNumber(row.quantity, 3)}
+                                                    </button>
+                                                  )
+                                                : formatNumber(row.quantity, 3)}
                                           </td>
                                           <td className="px-3 py-1.5 text-right font-mono font-bold text-violet-800">
                                             {row.normQuantity === null || row.normQuantity <= 0
@@ -1173,7 +1190,20 @@ export default function ControlBoardBbMachineReportTable({
                                           <td className="px-3 py-1.5 text-right font-mono font-bold text-amber-700">
                                             {row.weightKg === null || row.weightKg <= 0
                                               ? '—'
-                                              : formatKg(row.weightKg, 3)}
+                                              : row.weightFormula
+                                                ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        if (row.weightFormula) setSelectedExportWeight(row.weightFormula);
+                                                      }}
+                                                      className="rounded-md px-1.5 py-0.5 font-mono font-black text-amber-700 underline decoration-dotted underline-offset-2 transition hover:bg-amber-100 hover:text-amber-950"
+                                                      title="Bấm để xem công thức KL thực xuất"
+                                                    >
+                                                      {formatKg(row.weightKg, 3)}
+                                                    </button>
+                                                  )
+                                                : formatKg(row.weightKg, 3)}
                                           </td>
                                         </tr>
                                       ))
@@ -1901,7 +1931,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-4 py-2.5 font-black">ĐVT</td>
                             <td className="px-4 py-2.5 text-right font-black">SL thực xuất</td>
                             <td className="px-4 py-2.5 text-right font-black">SL định mức</td>
-                            <td className="px-4 py-2.5 text-right font-black">KL thực xuất</td>
+                            <td className="px-4 py-2.5 text-right font-black">Trọng lượng thực xuất</td>
                           </tr>
                           {(() => {
                             const allLines = group.productGroups.flatMap(productGroup =>
@@ -2383,7 +2413,186 @@ export default function ControlBoardBbMachineReportTable({
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
-              Định mức: SL từng SP × Thành phần NVL. Nhiều SP cùng NVL: % = SL_SP ÷ tổng SL các SP, × tổng vật tư xuất. ĐVT ≠ kg → SL làm tròn số nguyên (phảy 5 làm tròn xuống); ĐVT kg → KL = SL; ĐVT khác → × Tổng kg kho NVL.
+              Định mức: SL từng SP × Thành phần NVL. Nhiều SP cùng NVL (SL/KL thực xuất): % = (SL_SP × Thành phần) ÷ tổng nhu cầu, × tổng vật tư xuất. ĐVT ≠ kg → SL làm tròn số nguyên (phảy 5 làm tròn xuống); ĐVT kg → KL = SL; ĐVT khác → × Tổng kg kho NVL.
+            </p>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    {selectedExportWeight ? (
+      <div
+        className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chi tiết công thức SL/KL thực xuất"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) setSelectedExportWeight(null);
+        }}
+      >
+        <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-amber-800 to-amber-600 px-5 py-4 text-white">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-100">
+                Công thức SL / KL thực xuất
+              </p>
+              <h4 className="mt-1 text-base font-black">
+                {selectedExportWeight.itemCode} · {selectedExportWeight.itemName}
+              </h4>
+              <p className="mt-1 text-xs font-semibold text-amber-50">
+                ĐVT phiếu: {selectedExportWeight.unit || '—'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedExportWeight(null)}
+              className="rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-black hover:bg-white/20"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="space-y-4 p-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL phiếu xuất</p>
+                <p className="mt-1 font-mono text-lg font-black text-zinc-900">
+                  {formatNumber(selectedExportWeight.sourceQuantity, 3)}
+                </p>
+                <p className="text-xs font-bold text-zinc-500">{selectedExportWeight.unit || '—'}</p>
+              </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL SP × Thành phần</p>
+                <p className="mt-1 font-mono text-lg font-black text-zinc-900">
+                  {selectedExportWeight.demandQuantity !== null
+                    ? formatNumber(selectedExportWeight.demandQuantity, 3)
+                    : '—'}
+                </p>
+                <p className="text-xs font-bold text-zinc-500">
+                  {selectedExportWeight.bomAmountType === 'percent'
+                    ? 'Nhu cầu (kg ĐM)'
+                    : selectedExportWeight.bomAmountType === 'quantity'
+                      ? selectedExportWeight.bomRateUnit || selectedExportWeight.unit || 'NVL'
+                      : 'Nhu cầu phân bổ'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL thực xuất</p>
+                <p className="mt-1 font-mono text-lg font-black text-zinc-900">
+                  {formatNumber(selectedExportWeight.quantity, 3)}
+                </p>
+                <p className="text-xs font-bold text-zinc-500">{selectedExportWeight.unit || '—'}</p>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Trọng lượng thực xuất</p>
+                <p className="mt-1 font-mono text-lg font-black text-amber-800">
+                  {formatKg(selectedExportWeight.weightKg, 3)}
+                </p>
+                <p className="text-xs font-bold text-amber-600">kg</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-amber-700">Phép tính cụ thể</p>
+              <div className="mt-2 space-y-1 font-mono text-sm font-black leading-7 text-zinc-900 sm:text-base">
+                {selectedExportWeight.productQuantity !== null &&
+                selectedExportWeight.bomRate !== null &&
+                selectedExportWeight.bomAmountType === 'quantity' ? (
+                  <p>
+                    Nhu cầu SP = {formatNumber(selectedExportWeight.productQuantity, 3)}{' '}
+                    {selectedExportWeight.productUnit || 'SP'}
+                    {' × '}
+                    {formatNumber(selectedExportWeight.bomRate, 3)} {selectedExportWeight.bomRateUnit || ''}
+                    {' (Số lượng Thành phần) = '}
+                    {formatNumber(selectedExportWeight.demandQuantity, 3)}{' '}
+                    {selectedExportWeight.bomRateUnit || selectedExportWeight.unit || ''}
+                  </p>
+                ) : selectedExportWeight.productQuantity !== null &&
+                  selectedExportWeight.bomRate !== null &&
+                  selectedExportWeight.bomAmountType === 'percent' ? (
+                  <p>
+                    Nhu cầu SP = KL ĐM từ Thành phần {formatNumber(selectedExportWeight.bomRate, 3)}%
+                    {' (SL SP '}
+                    {formatNumber(selectedExportWeight.productQuantity, 3)}{' '}
+                    {selectedExportWeight.productUnit || 'SP'}
+                    {') = '}
+                    {formatNumber(selectedExportWeight.demandQuantity, 3)} kg
+                  </p>
+                ) : null}
+                {selectedExportWeight.convertMode === 'kg_as_is' ? (
+                  <p>
+                    ĐVT kg → KL phiếu = SL phiếu = {formatNumber(selectedExportWeight.sourceQuantity, 3)}{' '}
+                    {selectedExportWeight.unit || 'kg'} ={' '}
+                    {formatKg(selectedExportWeight.sourceWeightKg, 3)} kg
+                  </p>
+                ) : selectedExportWeight.convertMode === 'ton_to_kg' ? (
+                  <p>
+                    {formatNumber(selectedExportWeight.sourceQuantity, 3)} {selectedExportWeight.unit || 't'}
+                    {' × '}1000 = {formatKg(selectedExportWeight.sourceWeightKg, 3)} kg
+                  </p>
+                ) : selectedExportWeight.convertMode === 'gram_to_kg' ? (
+                  <p>
+                    {formatNumber(selectedExportWeight.sourceQuantity, 3)} {selectedExportWeight.unit || 'g'}
+                    {' ÷ '}1000 = {formatKg(selectedExportWeight.sourceWeightKg, 3)} kg
+                  </p>
+                ) : selectedExportWeight.convertMode === 'multiply_tong_kg' &&
+                  selectedExportWeight.catalogKgPerUnit !== null ? (
+                  <p>
+                    {formatNumber(selectedExportWeight.sourceQuantity, 3)} {selectedExportWeight.unit || 'đvt'}
+                    {' × '}
+                    {formatNumber(selectedExportWeight.catalogKgPerUnit, 6)} kg/{selectedExportWeight.unit || 'đvt'}
+                    {' (cột Tổng kg kho NVL) = '}
+                    {formatKg(selectedExportWeight.sourceWeightKg, 3)} kg
+                  </p>
+                ) : selectedExportWeight.weightKg === null ? null : (
+                  <p className="text-rose-700">
+                    Chưa quy đổi được KL phiếu xuất cho mã {selectedExportWeight.itemCode || '—'}.
+                  </p>
+                )}
+              </div>
+              {selectedExportWeight.allocationRatio < 0.999999 ||
+              Math.abs(selectedExportWeight.quantity - selectedExportWeight.sourceQuantity) > 1e-9 ||
+              (selectedExportWeight.sourceWeightKg !== null &&
+                selectedExportWeight.weightKg !== null &&
+                Math.abs(selectedExportWeight.weightKg - selectedExportWeight.sourceWeightKg) > 1e-9) ? (
+                <p className="mt-2 border-t border-amber-200 pt-2 text-xs font-bold text-amber-900">
+                  % = nhu cầu SP
+                  {selectedExportWeight.demandQuantity !== null
+                    ? ` (${formatNumber(selectedExportWeight.demandQuantity, 3)})`
+                    : ''}
+                  {' ÷ tổng nhu cầu'}
+                  {selectedExportWeight.totalDemand !== null
+                    ? ` (${formatNumber(selectedExportWeight.totalDemand, 3)})`
+                    : ''}
+                  {' = '}
+                  {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}%
+                  {' → '}SL thực xuất = {formatNumber(selectedExportWeight.sourceQuantity, 3)} ×{' '}
+                  {formatNumber(selectedExportWeight.allocationRatio * 100, 2)}% ={' '}
+                  {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
+                  {selectedExportWeight.weightKg !== null ? (
+                    <>
+                      {'; KL thực xuất = '}
+                      {formatKg(selectedExportWeight.weightKg, 3)} kg
+                    </>
+                  ) : null}
+                  {' '}(phần cuối nhận dư làm tròn).
+                </p>
+              ) : (
+                <p className="mt-2 border-t border-amber-200 pt-2 text-xs font-bold text-amber-900">
+                  Một SP (hoặc không chia) → SL thực xuất = SL phiếu ={' '}
+                  {formatNumber(selectedExportWeight.quantity, 3)} {selectedExportWeight.unit || ''}
+                  {selectedExportWeight.weightKg !== null ? (
+                    <>
+                      {'; KL thực xuất = '}
+                      {formatKg(selectedExportWeight.weightKg, 3)} kg
+                    </>
+                  ) : null}
+                  .
+                </p>
+              )}
+            </div>
+
+            <p className="text-xs font-semibold text-zinc-500">
+              SL/KL thực xuất từ phiếu xuất kho NVL. Nhiều SP cùng NVL: nhu cầu = SL SP × Thành phần (% hoặc số lượng), % = nhu cầu ÷ tổng nhu cầu, rồi × tổng SL/KL phiếu. ĐVT kg → KL = SL; ĐVT khác → × Tổng kg kho NVL.
             </p>
           </div>
         </div>
