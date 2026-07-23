@@ -2175,6 +2175,10 @@ export type BbThucDungLineRow = {
   xuatTrongCaKg: number;
   trongLuongDaTronKg: number;
   tonDauKg: number;
+  /** true khi tồn đầu lấy từ NNS-TRON × tỉ lệ TB thực tế. */
+  tonDauFromNnsTron: boolean;
+  /** KL NNS-TRON tồn đầu ca dùng để phân bổ (nếu có). */
+  nnsTronTonDauKg: number | null;
   tonCuoiKg: number;
   weightKg: number;
 };
@@ -2336,6 +2340,33 @@ function lookupMachineNvlKgByMaterial(
   return 0;
 }
 
+/** Mã tồn hỗn hợp dùng để phân bổ tồn đầu theo tỉ lệ TB thực tế cho các NVL khác. */
+const NNS_TRON_MATERIAL_CODE = 'NNS-TRON';
+
+function isNnsTronMaterialCode(code: string) {
+  const key = normalizeMaterialCodeKey(code).replace(/[\s_]+/g, '-');
+  return key === NNS_TRON_MATERIAL_CODE || key === 'NNSTRON';
+}
+
+function lookupNnsTronTonDauKg(maps: {
+  byCode: Map<string, number>;
+  byName: Map<string, number>;
+}) {
+  for (const [code, kg] of maps.byCode.entries()) {
+    if (isNnsTronMaterialCode(code) && Number.isFinite(kg) && kg > 0) return kg;
+  }
+  for (const [name, kg] of maps.byName.entries()) {
+    const key = String(name || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[\s_]+/g, '-');
+    if ((key === NNS_TRON_MATERIAL_CODE || key.includes('NNS-TRON')) && Number.isFinite(kg) && kg > 0) {
+      return kg;
+    }
+  }
+  return 0;
+}
+
 type MixingThucDungAgg = {
   materialCode: string;
   materialName: string;
@@ -2408,6 +2439,7 @@ export function buildBbThucDungLineRows(input: {
       shiftOptions,
       'cuoi_ca'
     );
+    const nnsTronTonDauKg = lookupNnsTronTonDauKg(tonDauMaps);
 
     // Báº£ng thá»±c dÃ¹ng pháº£i hiá»ƒn thá»‹ Ä‘á»§ NVL cá»§a bÃ¡o cÃ¡o tá»“n cÃ¹ng ngÃ y + ca,
     // ká»ƒ cáº£ khi NVL Ä‘Ã³ khÃ´ng xuáº¥t hiá»‡n trong bÃ¡o cÃ¡o trá»™n.
@@ -2563,10 +2595,20 @@ export function buildBbThucDungLineRows(input: {
         tiLeThucTeTbPercent !== null && Number.isFinite(tiLeThucTeTbPercent)
           ? roundQty(tongXuatTrongCaKg * (tiLeThucTeTbPercent / 100), 3)
           : 0;
-      const tonDauKg = roundQty(
+      const directTonDauKg = roundQty(
         lookupMachineNvlKgByMaterial(tonDauMaps, agg.materialCode, agg.materialName),
         3
       );
+      // Có NNS-TRON tồn đầu → điền tồn đầu các NVL khác = NNS-TRON × tỉ lệ TB thực tế.
+      const useNnsTronTonDau =
+        !isNnsTronMaterialCode(agg.materialCode) &&
+        nnsTronTonDauKg > 0 &&
+        tiLeThucTeTbPercent !== null &&
+        Number.isFinite(tiLeThucTeTbPercent) &&
+        tiLeThucTeTbPercent > 0;
+      const tonDauKg = useNnsTronTonDau
+        ? roundQty(nnsTronTonDauKg * (tiLeThucTeTbPercent / 100), 3)
+        : directTonDauKg;
       const tonCuoiKg = roundQty(
         lookupMachineNvlKgByMaterial(tonCuoiMaps, agg.materialCode, agg.materialName),
         3
@@ -2601,6 +2643,8 @@ export function buildBbThucDungLineRows(input: {
         xuatTrongCaKg: tongXuatTrongCaKg,
         trongLuongDaTronKg,
         tonDauKg,
+        tonDauFromNnsTron: useNnsTronTonDau,
+        nnsTronTonDauKg: useNnsTronTonDau ? nnsTronTonDauKg : null,
         tonCuoiKg,
         weightKg: roundQty(weightKg, 3)
       });
@@ -2847,12 +2891,23 @@ export function buildBbThucDungMetricDetail(input: {
   if (isTonCuoiMetric) pushTonRows('cuoi_ca');
 
   if (input.metric === 'ton_dau' || input.metric === 'ton_cuoi') {
+    const tonDauFormula =
+      input.metric === 'ton_dau' &&
+      input.line.tonDauFromNnsTron &&
+      input.line.nnsTronTonDauKg !== null &&
+      input.line.tiLeThucTeTbPercent !== null
+        ? `Tồn đầu = NNS-TRON (${roundQty(input.line.nnsTronTonDauKg, 3)} kg) × Tỉ lệ TB thực tế (${roundQty(
+            input.line.tiLeThucTeTbPercent,
+            2
+          )}%) = ${roundQty(input.line.tonDauKg, 3)} kg`
+        : undefined;
     return {
       metric: input.metric,
       title,
       subtitle,
       valueLabel,
       valueText: formatValue(),
+      formula: tonDauFormula,
       columns: [
         { key: 'ngay', label: 'Ngày' },
         { key: 'ca', label: 'Ca' },
@@ -2868,6 +2923,15 @@ export function buildBbThucDungMetricDetail(input: {
   }
 
   if (input.metric === 'thuc_dung') {
+    const tonDauPart =
+      input.line.tonDauFromNnsTron &&
+      input.line.nnsTronTonDauKg !== null &&
+      input.line.tiLeThucTeTbPercent !== null
+        ? `Tồn đầu (${roundQty(input.line.tonDauKg, 3)} = NNS-TRON ${roundQty(
+            input.line.nnsTronTonDauKg,
+            3
+          )} × ${roundQty(input.line.tiLeThucTeTbPercent, 2)}%)`
+        : `Tồn đầu (${roundQty(input.line.tonDauKg, 3)})`;
     return {
       metric: input.metric,
       title,
@@ -2877,10 +2941,10 @@ export function buildBbThucDungMetricDetail(input: {
       formula: `${mixingFormula}. Thực dùng (kg) = Trọng lượng đã trộn (${roundQty(
         input.line.trongLuongDaTronKg,
         3
-      )}) + Tồn đầu (${roundQty(input.line.tonDauKg, 3)}) − Tồn cuối (${roundQty(
-        input.line.tonCuoiKg,
+      )}) + ${tonDauPart} − Tồn cuối (${roundQty(input.line.tonCuoiKg, 3)}) = ${roundQty(
+        input.line.weightKg,
         3
-      )}) = ${roundQty(input.line.weightKg, 3)} kg`,
+      )} kg`,
       columns: [
         { key: 'nguon', label: 'Nguồn' },
         { key: 'ngay', label: 'Ngày' },
