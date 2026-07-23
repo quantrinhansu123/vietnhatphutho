@@ -6,6 +6,7 @@ export type WarehouseWeightCatalogItem = {
   code: string;
   name?: string;
   unit?: string;
+  /** Cột "Tổng kg" trong kho NVL / Tổng TL SP — hệ số kg / 1 đơn vị. */
   totalWeight?: string;
   coreWeight?: string;
   bagWeight?: string;
@@ -24,16 +25,30 @@ function normalizeWarehouseUnit(unit: string) {
   return normalizeWarehouseText(unit);
 }
 
+/** Chuẩn hóa mã để khớp BOM ↔ kho NVL (bỏ khoảng trắng, không phân biệt hoa thường). */
+export function normalizeWarehouseCodeKey(code: string) {
+  return String(code || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
+}
+
 export function isWarehouseKgUnit(unit: string) {
   const normalized = normalizeWarehouseUnit(unit);
-  return (
+  if (!normalized) return false;
+  if (
     normalized === 'kg' ||
     normalized === 'kgs' ||
+    normalized === 'kg.' ||
     normalized === 'kilogram' ||
     normalized === 'kilograms' ||
     normalized === 'kilogam' ||
     normalized === 'kilogramo'
-  );
+  ) {
+    return true;
+  }
+  // "kg/sp", "kg/cuon", "kg / cái" — đơn vị gốc đã là kg
+  return normalized.startsWith('kg/') || normalized.startsWith('kg ');
 }
 
 function parseWeightNumber(value: string | number | undefined | null): number | null {
@@ -91,11 +106,28 @@ export function inferWarehouseWeightPerUnitFromLabel(name: string, code = ''): n
   return null;
 }
 
-function resolveCatalogWeightPerUnit(item: WarehouseWeightCatalogItem | null | undefined): number | null {
+/**
+ * Hệ số kg/đơn vị từ cột "Tổng kg" (kho NVL) — ưu tiên tuyệt đối.
+ * Không suy từ tên / cột kg túi / kg lõi khi đã có catalog NVL.
+ */
+export function resolveMaterialTongKgPerUnit(
+  item: WarehouseWeightCatalogItem | null | undefined
+): number | null {
+  if (!item) return null;
+  return parseWeightNumber(item.totalWeight);
+}
+
+function resolveCatalogWeightPerUnit(
+  item: WarehouseWeightCatalogItem | null | undefined,
+  options?: { preferTongKgOnly?: boolean }
+): number | null {
   if (!item) return null;
 
   const fromTotal = parseWeightNumber(item.totalWeight);
   if (fromTotal !== null) return fromTotal;
+
+  // NVL trên bảng điều khiển: chỉ lấy cột Tổng kg — thiếu thì không quy đổi.
+  if (options?.preferTongKgOnly) return null;
 
   const hay = normalizeWarehouseText(`${item.name ?? ''} ${item.code ?? ''}`);
 
@@ -126,12 +158,12 @@ function findCatalogItem(
   materials: WarehouseWeightCatalogItem[],
   products: WarehouseWeightCatalogItem[]
 ) {
-  const codeKey = itemCode.trim().toLowerCase();
+  const codeKey = normalizeWarehouseCodeKey(itemCode);
   if (!codeKey) return null;
 
   return (
-    materials.find(item => item.code.trim().toLowerCase() === codeKey) ??
-    products.find(item => item.code.trim().toLowerCase() === codeKey) ??
+    materials.find(item => normalizeWarehouseCodeKey(item.code) === codeKey) ??
+    products.find(item => normalizeWarehouseCodeKey(item.code) === codeKey) ??
     null
   );
 }
@@ -140,25 +172,40 @@ function findCatalogWeightPerUnit(
   itemCode: string,
   warehouseKind: WarehouseWeightKind | undefined,
   materials: WarehouseWeightCatalogItem[],
-  products: WarehouseWeightCatalogItem[]
+  products: WarehouseWeightCatalogItem[],
+  options?: { preferTongKgOnly?: boolean }
 ): number | null {
-  const codeKey = itemCode.trim().toLowerCase();
+  const codeKey = normalizeWarehouseCodeKey(itemCode);
   if (!codeKey) return null;
 
   if (warehouseKind === 'san_pham') {
-    const product = products.find(item => item.code.trim().toLowerCase() === codeKey);
-    const fromProduct = resolveCatalogWeightPerUnit(product);
+    const product = products.find(item => normalizeWarehouseCodeKey(item.code) === codeKey);
+    const fromProduct = resolveCatalogWeightPerUnit(product, options);
     if (fromProduct !== null) return fromProduct;
   } else if (warehouseKind === 'nvl') {
-    const material = materials.find(item => item.code.trim().toLowerCase() === codeKey);
-    const fromMaterial = resolveCatalogWeightPerUnit(material);
+    const material = materials.find(item => normalizeWarehouseCodeKey(item.code) === codeKey);
+    const fromMaterial = resolveCatalogWeightPerUnit(material, {
+      preferTongKgOnly: options?.preferTongKgOnly !== false
+    });
     if (fromMaterial !== null) return fromMaterial;
+    if (options?.preferTongKgOnly !== false) return null;
   }
 
-  return resolveCatalogWeightPerUnit(findCatalogItem(itemCode, materials, products));
+  return resolveCatalogWeightPerUnit(findCatalogItem(itemCode, materials, products), options);
 }
 
-/** Quy đổi SL + ĐVT về kg: kg giữ nguyên; tấn/g; đơn vị khác = SL × Tổng kg (danh mục NVL/SP). */
+/** Tra cứu hệ số kg/đvt từ cột Tổng kg kho NVL theo mã. */
+export function findMaterialTongKgPerUnit(
+  itemCode: string,
+  materials: WarehouseWeightCatalogItem[]
+): number | null {
+  const codeKey = normalizeWarehouseCodeKey(itemCode);
+  if (!codeKey) return null;
+  const material = materials.find(item => normalizeWarehouseCodeKey(item.code) === codeKey);
+  return resolveMaterialTongKgPerUnit(material);
+}
+
+/** Quy đổi SL + ĐVT về kg: ĐVT kg → giữ nguyên SL (không nhân Tổng kg/định mức); còn lại = SL × Tổng kg. */
 export function convertWarehouseQuantityToKg(input: {
   quantity: number;
   unit: string;
@@ -166,14 +213,19 @@ export function convertWarehouseQuantityToKg(input: {
   warehouseKind?: WarehouseWeightKind;
   materials?: WarehouseWeightCatalogItem[];
   products?: WarehouseWeightCatalogItem[];
+  /** Mặc định true với kho NVL: chỉ dùng cột Tổng kg, không suy từ tên. */
+  preferTongKgOnly?: boolean;
 }): number | null {
   const quantity = input.quantity;
   if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
-  const unit = normalizeWarehouseUnit(input.unit);
-  if (!unit || unit === '-') return null;
+  const unitRaw = String(input.unit || '').trim();
+  if (!unitRaw || unitRaw === '-') return null;
 
-  if (isWarehouseKgUnit(input.unit)) return quantity;
+  // ĐVT đã là kg → KL = SL, không nhân hệ số Tổng kg / định mức
+  if (isWarehouseKgUnit(unitRaw)) return quantity;
+
+  const unit = normalizeWarehouseUnit(unitRaw);
 
   if (unit === 't' || unit === 'tan' || unit === 'ton' || unit === 'tonne' || unit === 'mt') {
     return quantity * 1000;
@@ -183,11 +235,14 @@ export function convertWarehouseQuantityToKg(input: {
     return quantity / 1000;
   }
 
+  const preferTongKgOnly = input.preferTongKgOnly ?? input.warehouseKind === 'nvl';
+
   const perUnit = findCatalogWeightPerUnit(
     input.itemCode ?? '',
     input.warehouseKind,
     input.materials ?? [],
-    input.products ?? []
+    input.products ?? [],
+    { preferTongKgOnly }
   );
   if (perUnit === null) return null;
 

@@ -22,22 +22,71 @@ type PendingScan = {
   code: string;
 };
 
+function isAppleMobile() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  // iPadOS 13+ có thể báo MacIntel nhưng có touch
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+}
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+/** iOS cần xin quyền trước rồi mới enumerate được camera ổn định. */
+async function ensureCameraPermission() {
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    throw new Error(
+      'Camera trên iPhone cần HTTPS (hoặc localhost). Đang mở bằng HTTP LAN nên Safari chặn camera.'
+    );
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Trình duyệt không hỗ trợ camera.');
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: { ideal: 'environment' } }
+  });
+  stream.getTracks().forEach(track => track.stop());
+}
+
 async function pickCameraConfig(): Promise<string | MediaTrackConstraints> {
+  try {
+    await ensureCameraPermission();
+  } catch (err) {
+    // Vẫn thử facingMode — một số máy sẽ hiện prompt khi start().
+    if (err instanceof Error && /HTTPS|localhost|không hỗ trợ/i.test(err.message)) {
+      throw err;
+    }
+  }
+
+  // Trên iPhone, facingMode ổn định hơn deviceId (label camera thường trống).
+  if (isAppleMobile()) {
+    return { facingMode: 'environment' };
+  }
+
   try {
     const cameras = await Html5Qrcode.getCameras();
     if (!cameras?.length) {
-      return { facingMode: 'user' };
+      return { facingMode: 'environment' };
     }
 
     const backCamera = cameras.find(camera => /back|rear|environment|sau/i.test(camera.label));
     if (backCamera) return backCamera.id;
 
     const frontCamera = cameras.find(camera => /front|user|facetime|trước/i.test(camera.label));
-    if (frontCamera) return frontCamera.id;
+    if (frontCamera && cameras.length > 1) {
+      const other = cameras.find(camera => camera.id !== frontCamera.id);
+      if (other) return other.id;
+    }
 
     return cameras[cameras.length - 1].id;
   } catch {
-    return { facingMode: 'user' };
+    return { facingMode: 'environment' };
   }
 }
 
@@ -59,19 +108,29 @@ const supportedProductCodeFormats = [
   Html5QrcodeSupportedFormats.UPC_E
 ];
 
-const scannerConfig = {
-  fps: 15,
-  aspectRatio: 16 / 9,
-  qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-    // Khung ngang vẫn nhận QR nhưng cho phép giữ trọn mã vạch và khoảng trắng hai đầu.
-    const width = Math.floor(Math.min(viewfinderWidth * 0.9, 420));
-    const height = Math.floor(Math.min(viewfinderHeight * 0.62, width, 240));
-    return {
-      width: Math.max(140, width),
-      height: Math.max(120, height)
-    };
-  }
-};
+function buildScannerConfig() {
+  const apple = isAppleMobile();
+  return {
+    // iOS: fps thấp hơn giúp ổn định decode
+    fps: apple ? 10 : 15,
+    // aspectRatio 16:9 hay làm camera/portrait iPhone dừng quét
+    ...(apple ? {} : { aspectRatio: 16 / 9 }),
+    qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+      if (apple) {
+        // Khung vuông — QR/barcode trên iPhone nhận tốt hơn
+        const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72);
+        const clamped = Math.max(160, Math.min(size, 280));
+        return { width: clamped, height: clamped };
+      }
+      const width = Math.floor(Math.min(viewfinderWidth * 0.9, 420));
+      const height = Math.floor(Math.min(viewfinderHeight * 0.62, width, 240));
+      return {
+        width: Math.max(140, width),
+        height: Math.max(120, height)
+      };
+    }
+  };
+}
 
 async function stopScannerSafely(scanner: Html5Qrcode | null) {
   if (!scanner) return;
@@ -79,6 +138,18 @@ async function stopScannerSafely(scanner: Html5Qrcode | null) {
     await scanner.stop();
   } catch {
     // Scanner có thể chưa khởi động xong hoặc đã dừng.
+  }
+}
+
+async function improveIosFocus(scanner: Html5Qrcode) {
+  if (!isAppleMobile()) return;
+  try {
+    await sleep(800);
+    await scanner.applyVideoConstraints({
+      advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet]
+    });
+  } catch {
+    // Một số máy không hỗ trợ focusMode — bỏ qua.
   }
 }
 
@@ -216,37 +287,89 @@ export default function ProductQrScanner({
       const now = Date.now();
       const lastScan = lastScanRef.current;
       if (!value) return;
-      if (lastScan.value === value && now - lastScan.time < 500) return;
+      // Debounce dài hơn trên iOS vì cùng mã có thể fire liên tục
+      const debounceMs = isAppleMobile() ? 1200 : 500;
+      if (lastScan.value === value && now - lastScan.time < debounceMs) return;
 
       lastScanRef.current = { value, time: now };
       applyScanResult(value);
     };
 
     const startScanner = async () => {
+      // Đợi DOM region gắn xong (portal + iOS layout)
       await new Promise<void>(resolve => {
-        window.requestAnimationFrame(() => resolve());
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => resolve());
+        });
       });
       if (cancelled) return;
+
+      const region = document.getElementById(regionId);
+      if (!region) {
+        if (!cancelled) {
+          setIsStarting(false);
+          setError('Không tìm thấy khung camera. Thử đóng và mở lại.');
+        }
+        return;
+      }
+
+      // iOS: chờ region có kích thước thật trước khi start
+      if (isAppleMobile()) {
+        for (let i = 0; i < 8; i += 1) {
+          if (region.clientWidth > 40 && region.clientHeight > 40) break;
+          await sleep(50);
+        }
+      }
 
       const scanner = new Html5Qrcode(regionId, {
         verbose: false,
         formatsToSupport: supportedProductCodeFormats,
-        useBarCodeDetectorIfSupported: true
+        // Safari BarcodeDetector thường experimental / không ổn → tắt trên iPhone
+        useBarCodeDetectorIfSupported: !isAppleMobile()
       });
       scannerRef.current = scanner;
 
+      let preferred: string | MediaTrackConstraints;
+      try {
+        preferred = await pickCameraConfig();
+      } catch (err) {
+        if (!cancelled) {
+          setIsStarting(false);
+          setError(
+            err instanceof Error
+              ? `${err.message} Bạn vẫn có thể nhập mã SP bên dưới.`
+              : 'Không mở được camera. Hãy nhập mã SP bên dưới.'
+          );
+        }
+        return;
+      }
+
       const cameraConfigs: Array<string | MediaTrackConstraints> = [
-        await pickCameraConfig(),
+        preferred,
         { facingMode: 'environment' },
         { facingMode: 'user' }
       ];
 
+      const config = buildScannerConfig();
       let lastError = 'Không mở được camera.';
       for (const cameraConfig of cameraConfigs) {
         if (cancelled) return;
         try {
-          await scanner.start(cameraConfig, scannerConfig, handleDecoded, () => {});
-          if (!cancelled) setIsStarting(false);
+          await scanner.start(cameraConfig, config, handleDecoded, () => {});
+          if (cancelled) {
+            await stopScannerSafely(scanner);
+            return;
+          }
+          // Đảm bảo video playsInline trên iOS
+          const video = region.querySelector('video');
+          if (video) {
+            video.setAttribute('playsinline', 'true');
+            video.setAttribute('webkit-playsinline', 'true');
+            video.muted = true;
+            void video.play().catch(() => {});
+          }
+          void improveIosFocus(scanner);
+          setIsStarting(false);
           return;
         } catch (err) {
           lastError = err instanceof Error ? err.message : lastError;
@@ -256,7 +379,7 @@ export default function ProductQrScanner({
 
       if (!cancelled) {
         setIsStarting(false);
-        setError(`${lastError} Hãy cấp quyền camera hoặc nhập mã SP bên dưới.`);
+        setError(`${lastError} Hãy cấp quyền camera trong Cài đặt → Safari, hoặc nhập mã SP bên dưới.`);
       }
     };
 
@@ -268,14 +391,13 @@ export default function ProductQrScanner({
       const scanner = scannerRef.current;
       scannerRef.current = null;
       if (!scanner) return;
-      void stopScannerSafely(scanner)
-        .finally(() => {
-          try {
-            scanner.clear();
-          } catch {
-            // ignore cleanup errors
-          }
-        });
+      void stopScannerSafely(scanner).finally(() => {
+        try {
+          scanner.clear();
+        } catch {
+          // ignore cleanup errors
+        }
+      });
     };
   }, [open, closeAfterScan, regionId]);
 
@@ -301,11 +423,11 @@ export default function ProductQrScanner({
       ? 'qr-scan-pulse-success'
       : feedback?.type === 'pending'
         ? 'qr-scan-pulse-duplicate'
-      : feedback?.type === 'duplicate'
-        ? 'qr-scan-pulse-duplicate'
-        : feedback?.type === 'error'
-          ? 'qr-scan-pulse-error'
-          : '';
+        : feedback?.type === 'duplicate'
+          ? 'qr-scan-pulse-duplicate'
+          : feedback?.type === 'error'
+            ? 'qr-scan-pulse-error'
+            : '';
 
   if (!open) return null;
 
@@ -326,7 +448,10 @@ export default function ProductQrScanner({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-          <div id={regionId} className="qr-scanner-region min-h-[168px] overflow-hidden rounded-xl bg-zinc-950 sm:min-h-[240px]" />
+          <div
+            id={regionId}
+            className="qr-scanner-region min-h-[220px] overflow-hidden rounded-xl bg-zinc-950 sm:min-h-[240px]"
+          />
           {isStarting && (
             <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Đang mở camera...</p>
           )}
@@ -338,9 +463,9 @@ export default function ProductQrScanner({
                   ? 'border-emerald-500 text-emerald-800'
                   : feedback.type === 'pending'
                     ? 'border-[#ef1b2d] text-zinc-900'
-                  : feedback.type === 'duplicate'
-                    ? 'border-amber-500 text-amber-800'
-                    : 'border-rose-500 text-rose-700'
+                    : feedback.type === 'duplicate'
+                      ? 'border-amber-500 text-amber-800'
+                      : 'border-rose-500 text-rose-700'
               }`}
             >
               {feedback.text}
@@ -354,6 +479,7 @@ export default function ProductQrScanner({
               </p>
               <p className="mt-1 text-center text-[11px] font-medium text-zinc-400">
                 Hỗ trợ QR, EAN-13, EAN-8, Code 128 và UPC.
+                {isAppleMobile() ? ' Trên iPhone: cho phép Camera trong Cài đặt → Safari.' : ''}
               </p>
             </>
           )}

@@ -47,6 +47,7 @@ import type { ShiftSetting } from './shiftSettings';
 import { getProductionShiftOptions, shiftNamesMatch } from './shiftSettings';
 import {
   convertWarehouseQuantityToKg,
+  findMaterialTongKgPerUnit,
   isWarehouseKgUnit,
   mapMaterialToWeightCatalogItem,
   type WarehouseWeightCatalogItem
@@ -119,9 +120,11 @@ export type BbWarehouseExportLineRow = {
   itemCode: string;
   itemName: string;
   unit: string;
-  /** Đúng cột SL trên phiếu xuất kho (`so_luong`) — không nhân tỉ lệ phân bổ. */
+  /** SL thực xuất (đã phân bổ theo % SL SP nếu nhiều sản phẩm). */
   quantity: number;
-  /** KL định mức = SL SP × Giá trị Thành phần (phan_tram/so_luong). */
+  /** SL định mức theo ĐVT NVL (Thành phần × SL từng SP; ĐVT ≠ kg đã làm tròn nguyên). */
+  normQuantity: number | null;
+  /** KL định mức = SL định mức quy đổi sang kg. */
   normWeightKg: number | null;
   materialNorm: BbMaterialNormFormula | null;
   weightKg: number | null;
@@ -141,6 +144,8 @@ export type BbMaterialNormFormula = {
   rateUnit: string;
   rawExpectedQuantity: number;
   rawExpectedUnit: string;
+  /** Hệ số kg/đvt lấy từ cột Tổng kg kho NVL */
+  catalogKgPerUnit: number | null;
   totalNormKg: number;
   allocationRatio: number;
   allocatedNormKg: number;
@@ -149,6 +154,28 @@ export type BbMaterialNormFormula = {
 function roundQty(value: number, digits = 3) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+/**
+ * ĐVT ≠ kg: làm tròn SL về số nguyên.
+ * Phần thập phân &lt; 0.5 → xuống; &gt; 0.5 → lên; đúng 0.5 → làm tròn xuống.
+ */
+function roundNonKgQuantityToInt(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value === 0) return 0;
+  const sign = value < 0 ? -1 : 1;
+  const abs = Math.abs(value);
+  const whole = Math.floor(abs);
+  const frac = abs - whole;
+  // Dùng epsilon để nhận đúng 0.5 do lỗi float
+  if (frac < 0.5 - 1e-9) return sign * whole;
+  if (frac > 0.5 + 1e-9) return sign * (whole + 1);
+  return sign * whole; // đúng .5 → xuống
+}
+
+function roundQuantityByUnit(value: number, unit: string): number {
+  if (isWarehouseKgUnit(unit)) return roundQty(value, 3);
+  return roundNonKgQuantityToInt(value);
 }
 
 /** Máy BB: mã/tên có "BB" hoặc "bao bì" (không phân biệt hoa thường / dấu). */
@@ -420,6 +447,7 @@ export function buildBbWarehouseExportLineRows(input: {
       itemName: movement.itemName,
       unit: movement.unit,
       quantity: Number.isFinite(movement.quantity) ? movement.quantity : 0,
+      normQuantity: null,
       normWeightKg: null,
       materialNorm: null,
       weightKg: resolveExportWeightKg(movement, input.materials),
@@ -551,7 +579,7 @@ export function groupBbProductionOrderLines(rows: BbProductionOrderLineRow[]): B
   });
 }
 
-/** SL SP × Giá trị Thành phần → kg (ĐVT ≠ kg thì lấy Tổng TL từ kho NVL). */
+/** SL SP × Giá trị Thành phần → kg (ĐVT kg giữ nguyên; ĐVT khác: SL làm tròn nguyên rồi × Tổng kg). */
 function resolveBomExpectedKg(
   item: ProductNplItem,
   orderQuantity: number,
@@ -564,11 +592,18 @@ function resolveBomExpectedKg(
     return kg > 0 ? kg : null;
   }
 
-  const qty = Math.max(0, item.quantity ?? 0) * orderQuantity;
-  if (qty <= 0) return null;
+  const rawQty = Math.max(0, item.quantity ?? 0) * orderQuantity;
+  if (rawQty <= 0) return null;
 
   const unit = String(item.unit || '').trim();
-  if (!unit || unit === '-' || isWarehouseKgUnit(unit)) return qty;
+  // ĐVT kg (hoặc trống): KL = SL, không nhân thêm hệ số Tổng kg
+  if (!unit || unit === '-' || isWarehouseKgUnit(unit)) {
+    return rawQty > 0 ? rawQty : null;
+  }
+
+  // ĐVT ≠ kg: làm tròn SL về số nguyên (.5 làm tròn xuống) rồi mới quy đổi kg
+  const qty = roundNonKgQuantityToInt(rawQty);
+  if (qty <= 0) return null;
 
   const converted = convertWarehouseQuantityToKg({
     quantity: qty,
@@ -782,6 +817,10 @@ export function buildBbInboundMaterialNormGroups(input: {
           itemName: item.name || item.code,
           unit: item.unit || 'kg',
           quantity: inboundQty,
+          normQuantity:
+            item.amountType === 'quantity'
+              ? roundQuantityByUnit(Math.max(0, item.quantity ?? 0) * inboundQty, item.unit || '')
+              : expectedKg,
           normWeightKg: expectedKg,
           materialNorm: null,
           weightKg: expectedKg,
@@ -838,11 +877,8 @@ type WarehouseProductAllocation = BbWarehouseExportProductGroup & {
 
 /**
  * Chia dòng NVL xuất kho về từng sản phẩm trong lệnh.
- * Phiếu kho không lưu mã SP, vì vậy NVL chung được phân bổ theo định mức thành phần;
- * mọi dòng không đủ dữ liệu đối chiếu được giữ riêng để tổng không bị sai lệch.
- *
- * orderQuantity (SL lệnh SX) chỉ dùng để tính KL định mức;
- * cột Số lượng trên UI lấy quantity từ phiếu xuất kho (productGroup.quantity / line.quantity).
+ * Khi nhiều SP cùng dùng 1 NVL: % = SL_SP / Σ SL_SP, rồi % × tổng vật tư xuất tương ứng.
+ * Định mức (KL) vẫn tính theo Thành phần × SL từng SP.
  */
 function buildBbWarehouseExportProductGroups(
   group: BbWarehouseExportGroup,
@@ -919,16 +955,30 @@ function buildBbWarehouseExportProductGroups(
       productGroup.materialKeys.add(materialKey);
       const expectedKg = resolveBomExpectedKg(item, orderQuantity, resolvedNormKg, materialsCatalog);
       if (expectedKg === null) continue;
-      productGroup.materialWeights.set(
-        materialKey,
-        (productGroup.materialWeights.get(materialKey) ?? 0) + expectedKg
-      );
       const rate =
         item.amountType === 'quantity'
           ? Math.max(0, item.quantity ?? 0)
           : Math.max(0, item.percent ?? 0);
       const rawExpectedQuantity =
-        item.amountType === 'quantity' ? rate * orderQuantity : expectedKg;
+        item.amountType === 'quantity'
+          ? roundQuantityByUnit(rate * orderQuantity, item.unit || '')
+          : expectedKg;
+      const catalogKgPerUnit =
+        item.amountType === 'quantity' && !isWarehouseKgUnit(item.unit || '')
+          ? findMaterialTongKgPerUnit(item.code, materialsCatalog)
+          : null;
+      // KL định mức: ưu tiên quy đổi từ SL đã làm tròn (ĐVT ≠ kg)
+      const totalNormKg =
+        item.amountType === 'quantity' &&
+        !isWarehouseKgUnit(item.unit || '') &&
+        catalogKgPerUnit !== null &&
+        catalogKgPerUnit > 0
+          ? roundQty(rawExpectedQuantity * catalogKgPerUnit, 3)
+          : expectedKg;
+      productGroup.materialWeights.set(
+        materialKey,
+        (productGroup.materialWeights.get(materialKey) ?? 0) + totalNormKg
+      );
       productGroup.materialFormulas.set(materialKey, {
         productCode: productGroup.productCode,
         productName: productGroup.productName,
@@ -942,9 +992,10 @@ function buildBbWarehouseExportProductGroups(
         rateUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : '%',
         rawExpectedQuantity,
         rawExpectedUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : 'kg',
-        totalNormKg: expectedKg,
+        catalogKgPerUnit,
+        totalNormKg,
         allocationRatio: 1,
-        allocatedNormKg: expectedKg
+        allocatedNormKg: totalNormKg
       });
     }
   }
@@ -972,60 +1023,93 @@ function buildBbWarehouseExportProductGroups(
   const addAllocatedLine = (
     target: WarehouseProductAllocation,
     row: BbWarehouseExportLineRow,
-    ratio: number,
+    allocatedQuantity: number,
+    allocatedWeightKg: number | null,
     suffix: string
   ) => {
-    const allocatedQuantity = row.quantity * ratio;
-    const weightKg = row.weightKg === null ? null : row.weightKg * ratio;
+    const qty = allocatedQuantity > 0 ? allocatedQuantity : 0;
+    const weightKg =
+      allocatedWeightKg === null ? null : allocatedWeightKg > 0 ? allocatedWeightKg : 0;
     target.lines.push({
       ...row,
       key: `${row.slipLineKey}|${suffix}`,
       slipLineKey: row.slipLineKey,
-      // Giữ nguyên cột SL phiếu xuất kho — không nhân tỉ lệ phân bổ SP.
-      quantity: row.quantity,
+      quantity: qty,
       weightKg,
+      normQuantity: null,
       normWeightKg: null,
       materialNorm: null
     });
-    target.quantity += allocatedQuantity > 0 ? allocatedQuantity : 0;
+    target.quantity += qty;
     target.totalWeightKg += weightKg && weightKg > 0 ? weightKg : 0;
     target.lineCount += 1;
   };
 
+  /** % = SL từng SP / tổng SL các SP liên quan; phần cuối nhận phần dư để tránh lệch làm tròn. */
+  const allocateExportByProductShare = (
+    targets: WarehouseProductAllocation[],
+    row: BbWarehouseExportLineRow
+  ) => {
+    if (targets.length === 0) return;
+    if (targets.length === 1) {
+      targets[0].usedQuotaAllocation = false;
+      addAllocatedLine(targets[0], row, row.quantity, row.weightKg, targets[0].productKey);
+      return;
+    }
+
+    const totalProductQty = targets.reduce((sum, product) => sum + Math.max(0, product.orderQuantity), 0);
+    let assignedQty = 0;
+    let assignedKg = 0;
+    const rowQty = Math.max(0, row.quantity);
+    const rowKg = row.weightKg !== null && row.weightKg > 0 ? row.weightKg : 0;
+    const qtyIsNonKg = !isWarehouseKgUnit(row.unit || '');
+
+    targets.forEach((product, index) => {
+      const isLast = index === targets.length - 1;
+      const ratio =
+        totalProductQty > 0
+          ? Math.max(0, product.orderQuantity) / totalProductQty
+          : 1 / targets.length;
+      // ĐVT ≠ kg: SL phân bổ làm tròn nguyên (.5 → xuống); kg giữ thập phân
+      const qtyShare = isLast
+        ? qtyIsNonKg
+          ? roundNonKgQuantityToInt(rowQty - assignedQty)
+          : roundQty(rowQty - assignedQty)
+        : qtyIsNonKg
+          ? roundNonKgQuantityToInt(rowQty * ratio)
+          : roundQty(rowQty * ratio);
+      const kgShare =
+        row.weightKg === null
+          ? null
+          : isLast
+            ? roundQty(rowKg - assignedKg)
+            : roundQty(rowKg * ratio);
+      if (qtyShare > 0) assignedQty += qtyShare;
+      if (kgShare !== null && kgShare > 0) assignedKg += kgShare;
+      product.usedQuotaAllocation = true;
+      addAllocatedLine(product, row, qtyShare, kgShare, product.productKey);
+    });
+  };
+
   for (const row of group.lines) {
     if (productGroups.length === 1) {
-      addAllocatedLine(productGroups[0], row, 1, productGroups[0].productKey);
+      allocateExportByProductShare(productGroups, row);
       continue;
     }
 
     const materialKey = normalizeProductCodeKey(row.itemCode);
     const matchedProducts = productGroups.filter(product => product.materialKeys.has(materialKey));
     if (matchedProducts.length === 0) {
-      addAllocatedLine(unassigned, row, 1, 'unassigned');
-      continue;
-    }
-    if (matchedProducts.length === 1) {
-      addAllocatedLine(matchedProducts[0], row, 1, matchedProducts[0].productKey);
+      if (productGroups.length > 0) {
+        allocateExportByProductShare(productGroups, row);
+      } else {
+        addAllocatedLine(unassigned, row, row.quantity, row.weightKg, 'unassigned');
+      }
       continue;
     }
 
-    const totalExpected = matchedProducts.reduce(
-      (sum, product) => sum + Math.max(0, product.materialWeights.get(materialKey) ?? 0),
-      0
-    );
-    matchedProducts.forEach((product, index) => {
-      const ratio =
-        index === matchedProducts.length - 1
-          ? 1 - matchedProducts.slice(0, index).reduce((sum, previous) => {
-              const expected = Math.max(0, previous.materialWeights.get(materialKey) ?? 0);
-              return sum + (totalExpected > 0 ? expected / totalExpected : 1 / matchedProducts.length);
-            }, 0)
-          : totalExpected > 0
-            ? Math.max(0, product.materialWeights.get(materialKey) ?? 0) / totalExpected
-            : 1 / matchedProducts.length;
-      product.usedQuotaAllocation = true;
-      addAllocatedLine(product, row, ratio, product.productKey);
-    });
+    // Nhiều SP cùng NVL: % = SL_SP / Σ SL_SP (các SP có NVL này), × tổng xuất
+    allocateExportByProductShare(matchedProducts, row);
   }
 
   /** Gán KL định mức (kg) từng dòng NVL từ Thành phần (đã quy đổi ĐVT qua kho NVL). */
@@ -1046,37 +1130,57 @@ function buildBbWarehouseExportProductGroups(
     for (const [materialKey, lines] of linesByMaterial) {
       const expected = Math.max(0, target.materialWeights.get(materialKey) ?? 0);
       const baseFormula = target.materialFormulas.get(materialKey) ?? null;
-      const assignNorm = (line: BbWarehouseExportLineRow, value: number | null, ratio: number) => {
+      const expectedNormQty =
+        baseFormula && baseFormula.amountType === 'quantity'
+          ? Math.max(0, baseFormula.rawExpectedQuantity)
+          : null;
+      const normQtyUnit = baseFormula?.rawExpectedUnit || lines[0]?.unit || '';
+
+      const assignNorm = (
+        line: BbWarehouseExportLineRow,
+        value: number | null,
+        normQty: number | null,
+        ratio: number
+      ) => {
         line.normWeightKg = value;
+        line.normQuantity = normQty;
         line.materialNorm =
           baseFormula && value !== null
             ? { ...baseFormula, allocationRatio: ratio, allocatedNormKg: value }
             : null;
       };
+
       if (expected <= 0) {
         lines.forEach(line => {
-          assignNorm(line, null, 0);
+          assignNorm(line, null, null, 0);
         });
         continue;
       }
+
       const totalQty = lines.reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
       if (totalQty <= 0) {
-        assignNorm(lines[0], roundQty(expected), 1);
+        assignNorm(lines[0], roundQty(expected), expectedNormQty, 1);
         lines.slice(1).forEach(line => {
-          assignNorm(line, null, 0);
+          assignNorm(line, null, null, 0);
         });
         continue;
       }
-      let assigned = 0;
+
+      let assignedKg = 0;
+      let assignedNormQty = 0;
       lines.forEach((line, index) => {
         const ratio = Math.max(0, line.quantity) / totalQty;
-        if (index === lines.length - 1) {
-          assignNorm(line, roundQty(expected - assigned), ratio);
-          return;
+        const isLast = index === lines.length - 1;
+        const kgShare = isLast ? roundQty(expected - assignedKg) : roundQty(expected * ratio);
+        let qtyShare: number | null = null;
+        if (expectedNormQty !== null) {
+          qtyShare = isLast
+            ? roundQuantityByUnit(expectedNormQty - assignedNormQty, normQtyUnit)
+            : roundQuantityByUnit(expectedNormQty * ratio, normQtyUnit);
+          if (qtyShare > 0) assignedNormQty += qtyShare;
         }
-        const share = roundQty(expected * ratio);
-        assignNorm(line, share, ratio);
-        assigned += share;
+        if (kgShare > 0) assignedKg += kgShare;
+        assignNorm(line, kgShare, qtyShare, ratio);
       });
     }
   };

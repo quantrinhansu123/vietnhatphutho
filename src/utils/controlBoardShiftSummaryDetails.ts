@@ -297,7 +297,17 @@ function isKgUnit(unit: string) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
-  return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
+  if (
+    normalized === 'kg' ||
+    normalized === 'kgs' ||
+    normalized === 'kg.' ||
+    normalized === 'kilogram' ||
+    normalized === 'kilograms' ||
+    normalized === 'kilogam'
+  ) {
+    return true;
+  }
+  return normalized.startsWith('kg/') || normalized.startsWith('kg ');
 }
 
 function isM2Unit(unit: string) {
@@ -867,8 +877,27 @@ export function getShiftSummaryDetail(input: {
       if (!matchesItem(movement.itemCode || '', movement.itemName || '')) continue;
 
       const unit = movement.unit || '';
-      const resolved = isKgUnit(unit) ? 1 : resolveLineKgFactor(unit, movement.itemCode || '', null);
-      const usedFallback = !isKgUnit(unit) && (resolved === null || resolved <= 0);
+      if (isKgUnit(unit)) {
+        const kg = movement.quantity;
+        total += kg;
+        rows.push({
+          rowKey: movement.id || `${movement.slipCode}|${movement.itemCode}`,
+          recordId: movement.slipCode || '',
+          soPhieu: movement.slipCode || '-',
+          loaiPhieu: warehouseSlipTypeLabel(movement.slipType),
+          maNvl: movement.itemCode || '-',
+          tenNvl: movement.itemName || '-',
+          soLuong: formatDetailNumber(movement.quantity, 3),
+          donVi: movement.unit || '-',
+          heSo: '—',
+          heSoNguon: 'ĐVT kg (không nhân)',
+          khoiLuong: formatDetailNumber(kg, 3)
+        });
+        continue;
+      }
+
+      const resolved = resolveLineKgFactor(unit, movement.itemCode || '', null);
+      const usedFallback = resolved === null || resolved <= 0;
       const factor = usedFallback ? fallbackFactor : resolved;
       const kg = factor !== null && factor > 0 ? movement.quantity * factor : 0;
       if (kg <= 0) continue;
@@ -884,7 +913,7 @@ export function getShiftSummaryDetail(input: {
         soLuong: formatDetailNumber(movement.quantity, 3),
         donVi: movement.unit || '-',
         heSo: factor !== null ? formatDetailNumberExact(factor) : '-',
-        heSoNguon: usedFallback ? 'Mặc định' : 'Danh mục NVL',
+        heSoNguon: usedFallback ? 'Mặc định' : 'Tổng kg kho NVL',
         khoiLuong: formatDetailNumber(kg, 3)
       });
     }

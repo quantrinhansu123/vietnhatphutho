@@ -367,7 +367,17 @@ function isKgUnit(unit: string) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
-  return normalized === 'kg' || normalized === 'kilogram' || normalized === 'kilogam';
+  if (
+    normalized === 'kg' ||
+    normalized === 'kgs' ||
+    normalized === 'kg.' ||
+    normalized === 'kilogram' ||
+    normalized === 'kilograms' ||
+    normalized === 'kilogam'
+  ) {
+    return true;
+  }
+  return normalized.startsWith('kg/') || normalized.startsWith('kg ');
 }
 
 /** ĐVT cuộn trên phiếu báo cáo sản lượng (bao_cao_nghiem_thu). */
@@ -510,6 +520,7 @@ function sumWarehouseMovementExportKg(
   const qty = movement.quantity;
   if (!Number.isFinite(qty) || qty <= 0) return 0;
   const unit = movement.unit || '';
+  // ĐVT kg → KL = SL, không nhân Tổng kg / định mức mặc định
   if (isKgUnit(unit)) return qty;
   const resolved = resolveKgFactor(unit, movement.itemCode || '', null);
   const factor = resolved !== null && resolved > 0 ? resolved : fallbackFactor ?? null;
@@ -586,6 +597,25 @@ export function computeMachineNvlLineKg(
 ) {
   const materialType = resolveMachineNvlLineMaterialType(line);
 
+  const componentQty =
+    (line.soLuongTrongMay ?? 0) +
+    (line.soLuongTrongBonTron ?? 0) +
+    (line.soLuongNlChuaTron ?? 0) +
+    (line.soLuongTonNgoai ?? 0);
+  const base =
+    reportKind === 'dau_ca'
+      ? line.soLuongTon > 0
+        ? line.soLuongTon
+        : componentQty
+      : Number.isFinite(line.soLuongTon) && line.soLuongTon > 0
+        ? line.soLuongTon
+        : componentQty;
+
+  if (base <= 0) return 0;
+
+  // ĐVT đã là kg → KL = SL, không nhân Tổng kg / định mức
+  if (isKgUnit(line.donVi || '')) return base;
+
   let factor: number | null = null;
   if (resolveKgFactor) {
     factor = resolveKgFactor(line.donVi || '', line.maNvl || '', line.trongLuongQuyDoiKg);
@@ -601,21 +631,7 @@ export function computeMachineNvlLineKg(
   }
   if (factor === null || factor <= 0) return 0;
 
-  const componentQty =
-    (line.soLuongTrongMay ?? 0) +
-    (line.soLuongTrongBonTron ?? 0) +
-    (line.soLuongNlChuaTron ?? 0) +
-    (line.soLuongTonNgoai ?? 0);
-  const base =
-    reportKind === 'dau_ca'
-      ? line.soLuongTon > 0
-        ? line.soLuongTon
-        : componentQty
-      : Number.isFinite(line.soLuongTon) && line.soLuongTon > 0
-        ? line.soLuongTon
-        : componentQty;
-
-  return base > 0 ? base * factor : 0;
+  return base * factor;
 }
 
 function splitMachineNvlLineByMaterial(
@@ -740,8 +756,11 @@ export function buildControlBoardShiftSummary(input: {
   })();
 
   const resolveKgFactor = (unit: string, code: string, lineFactor: number | null | undefined) => {
+    // ĐVT kg → không nhân hệ số Tổng kg / định mức
     if (isKgUnit(unit)) return 1;
-    if (lineFactor !== null && lineFactor !== undefined && Number.isFinite(lineFactor) && lineFactor > 0) return lineFactor;
+    if (lineFactor !== null && lineFactor !== undefined && Number.isFinite(lineFactor) && lineFactor > 0) {
+      return lineFactor;
+    }
     return inventoryTotalKgByCode.get(normalizeProductCodeKey(code)) ?? null;
   };
 

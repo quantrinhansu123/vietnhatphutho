@@ -3608,14 +3608,19 @@ input[type="number"] {
 }
 
 @media (max-width: 640px) {
-  .qr-scanner-region,
-  .qr-scanner-region > div,
-  .qr-scanner-region video {
-    max-height: 32dvh !important;
+  .qr-scanner-region {
+    min-height: 220px !important;
+    max-height: 48dvh !important;
+  }
+
+  .qr-scanner-region > div {
+    max-height: 48dvh !important;
   }
 
   .qr-scanner-region video {
     width: 100% !important;
+    max-height: 48dvh !important;
     object-fit: cover;
+    /* iOS Safari: video trong modal cần playsinline */
   }
 }

@@ -982,7 +982,7 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-4 py-3.5 font-black">Lệnh SX</th>
                 <th className="px-4 py-3.5 font-black">Máy</th>
                 <th className="px-4 py-3.5 text-right font-black">Dòng NVL</th>
-                <th className="px-4 py-3.5 text-right font-black">SL</th>
+                <th className="px-4 py-3.5 text-right font-black">SL thực xuất</th>
                 <th className="px-4 py-3.5 text-right font-black">Định mức (kg)</th>
                 <th className="px-4 py-3.5 text-right font-black">Tổng (kg)</th>
               </tr>
@@ -1128,9 +1128,9 @@ export default function ControlBoardBbMachineReportTable({
                                         Tên NPL
                                       </td>
                                       <td className="px-3 py-1.5 font-black">ĐVT</td>
-                                      <td className="px-3 py-1.5 text-right font-black">SL</td>
-                                      <td className="px-3 py-1.5 text-right font-black">KL định mức</td>
-                                      <td className="px-3 py-1.5 text-right font-black">TL (kg)</td>
+                                      <td className="px-3 py-1.5 text-right font-black">SL thực xuất</td>
+                                      <td className="px-3 py-1.5 text-right font-black">SL định mức</td>
+                                      <td className="px-3 py-1.5 text-right font-black">KL thực xuất</td>
                                     </tr>
                                     {productGroup.lines.length === 0 ? (
                                       <tr className="bg-white">
@@ -1154,24 +1154,26 @@ export default function ControlBoardBbMachineReportTable({
                                           <td className="px-3 py-1.5 text-right font-mono font-bold text-zinc-800">
                                             {formatNumber(row.quantity, 3)}
                                           </td>
-                                          <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-700">
-                                            {row.normWeightKg === null || row.normWeightKg <= 0
+                                          <td className="px-3 py-1.5 text-right font-mono font-bold text-violet-800">
+                                            {row.normQuantity === null || row.normQuantity <= 0
                                               ? '—'
                                               : row.materialNorm
                                                 ? (
                                                     <button
                                                       type="button"
                                                       onClick={() => setSelectedMaterialNorm(row.materialNorm)}
-                                                      className="rounded-md px-1.5 py-0.5 font-mono font-black text-emerald-700 underline decoration-dotted underline-offset-2 transition hover:bg-emerald-100 hover:text-emerald-900"
+                                                      className="rounded-md px-1.5 py-0.5 font-mono font-black text-violet-800 underline decoration-dotted underline-offset-2 transition hover:bg-violet-100 hover:text-violet-950"
                                                       title="Bấm để xem công thức tính định mức"
                                                     >
-                                                      {formatKg(row.normWeightKg, 3)}
+                                                      {formatNumber(row.normQuantity, 3)}
                                                     </button>
                                                   )
-                                                : formatKg(row.normWeightKg, 3)}
+                                                : formatNumber(row.normQuantity, 3)}
                                           </td>
                                           <td className="px-3 py-1.5 text-right font-mono font-bold text-amber-700">
-                                            {formatKg(row.weightKg, 3)}
+                                            {row.weightKg === null || row.weightKg <= 0
+                                              ? '—'
+                                              : formatKg(row.weightKg, 3)}
                                           </td>
                                         </tr>
                                       ))
@@ -1897,9 +1899,9 @@ export default function ControlBoardBbMachineReportTable({
                               Tên NVL
                             </td>
                             <td className="px-4 py-2.5 font-black">ĐVT</td>
-                            <td className="px-4 py-2.5 text-right font-black">Định mức (kg)</td>
-                            <td className="px-4 py-2.5 text-right font-black">SL</td>
-                            <td className="px-4 py-2.5 text-right font-black">Tổng TL (kg)</td>
+                            <td className="px-4 py-2.5 text-right font-black">SL thực xuất</td>
+                            <td className="px-4 py-2.5 text-right font-black">SL định mức</td>
+                            <td className="px-4 py-2.5 text-right font-black">KL thực xuất</td>
                           </tr>
                           {(() => {
                             const allLines = group.productGroups.flatMap(productGroup =>
@@ -1911,7 +1913,7 @@ export default function ControlBoardBbMachineReportTable({
                                 itemCode: string;
                                 itemName: string;
                                 unit: string;
-                                totalNormWeight: number;
+                                totalNormQty: number;
                                 totalExportQty: number;
                                 totalExportKg: number;
                                 seenSlipKeys: Set<string>;
@@ -1924,14 +1926,14 @@ export default function ControlBoardBbMachineReportTable({
                                   itemCode: row.itemCode,
                                   itemName: row.itemName,
                                   unit: row.unit,
-                                  totalNormWeight: 0,
+                                  totalNormQty: 0,
                                   totalExportQty: 0,
                                   totalExportKg: 0,
                                   seenSlipKeys: new Set<string>()
                                 });
                               }
                               const existing = groupedByCode.get(key)!;
-                              existing.totalNormWeight += row.normWeightKg || 0;
+                              existing.totalNormQty += row.normQuantity && row.normQuantity > 0 ? row.normQuantity : 0;
                               existing.totalExportKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
                               const slipKey = row.slipLineKey || row.key;
                               if (!existing.seenSlipKeys.has(slipKey)) {
@@ -1949,11 +1951,11 @@ export default function ControlBoardBbMachineReportTable({
                                   {row.itemName || '—'}
                                 </td>
                                 <td className="px-4 py-2.5 text-zinc-600">{row.unit || '—'}</td>
-                                <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
-                                  {formatKg(row.totalNormWeight, 3)}
-                                </td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-700">
                                   {formatNumber(row.totalExportQty, 3)}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-violet-800">
+                                  {row.totalNormQty > 0 ? formatNumber(row.totalNormQty, 3) : '—'}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
                                   {formatKg(row.totalExportKg, 3)}
@@ -2353,24 +2355,35 @@ export default function ControlBoardBbMachineReportTable({
                     {' = '}{formatNumber(selectedMaterialNorm.rawExpectedQuantity, 3)} {selectedMaterialNorm.rawExpectedUnit}
                   </p>
                   {selectedMaterialNorm.rawExpectedUnit.toLowerCase() !== 'kg' ? (
-                    <p>
-                      Quy đổi theo Tổng TL trong kho NVL: {formatNumber(selectedMaterialNorm.rawExpectedQuantity, 3)} {selectedMaterialNorm.rawExpectedUnit}
-                      {' = '}{formatKg(selectedMaterialNorm.totalNormKg, 3)} kg
-                    </p>
+                    selectedMaterialNorm.catalogKgPerUnit !== null && selectedMaterialNorm.catalogKgPerUnit > 0 ? (
+                      <p>
+                        Quy đổi theo cột Tổng kg kho NVL ({formatNumber(selectedMaterialNorm.catalogKgPerUnit, 6)} kg/
+                        {selectedMaterialNorm.rawExpectedUnit}):{' '}
+                        {formatNumber(selectedMaterialNorm.rawExpectedQuantity, 3)} {selectedMaterialNorm.rawExpectedUnit}
+                        {' × '}{formatNumber(selectedMaterialNorm.catalogKgPerUnit, 6)}
+                        {' = '}{formatKg(selectedMaterialNorm.totalNormKg, 3)} kg
+                      </p>
+                    ) : (
+                      <p className="text-rose-700">
+                        Chưa có cột Tổng kg trong kho NVL cho mã {selectedMaterialNorm.materialCode || '—'} — không quy đổi được sang kg.
+                      </p>
+                    )
                   ) : null}
                 </div>
               )}
               {selectedMaterialNorm.allocationRatio < 0.999999 ? (
                 <p className="mt-2 border-t border-emerald-200 pt-2 text-xs font-bold text-emerald-800">
-                  Dòng phiếu này chiếm {formatNumber(selectedMaterialNorm.allocationRatio * 100, 2)}% tổng số lượng NVL:
-                  {' '}{formatKg(selectedMaterialNorm.totalNormKg, 3)} × {formatNumber(selectedMaterialNorm.allocationRatio * 100, 2)}%
-                  {' = '}{formatKg(selectedMaterialNorm.allocatedNormKg, 3)} kg.
+                  Phân bổ theo tỉ lệ SL sản phẩm trên phiếu xuất: dòng này nhận{' '}
+                  {formatNumber(selectedMaterialNorm.allocationRatio * 100, 2)}% tổng NVL xuất
+                  {' '}→ KL định mức phân bổ = {formatKg(selectedMaterialNorm.totalNormKg, 3)} ×{' '}
+                  {formatNumber(selectedMaterialNorm.allocationRatio * 100, 2)}% ={' '}
+                  {formatKg(selectedMaterialNorm.allocatedNormKg, 3)} kg.
                 </p>
               ) : null}
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
-              Nguồn định mức: SL lệnh SX × TL định mức và Thành phần NVL trong bảng Sản phẩm. Cột SL trên bảng = đúng cột SL phiếu xuất kho (`so_luong`), không nhân tỉ lệ phân bổ.
+              Định mức: SL từng SP × Thành phần NVL. Nhiều SP cùng NVL: % = SL_SP ÷ tổng SL các SP, × tổng vật tư xuất. ĐVT ≠ kg → SL làm tròn số nguyên (phảy 5 làm tròn xuống); ĐVT kg → KL = SL; ĐVT khác → × Tổng kg kho NVL.
             </p>
           </div>
         </div>
