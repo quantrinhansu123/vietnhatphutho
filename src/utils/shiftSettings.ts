@@ -145,3 +145,110 @@ export function resolveShiftName(rawName: string, options: ShiftOption[]): strin
 
   return trimmed;
 }
+
+function shiftOptionIndex(rawShift: string, options: ShiftOption[]): number {
+  if (!rawShift.trim() || options.length === 0) return -1;
+  const resolved = resolveShiftName(rawShift, options);
+  const exact = options.findIndex(
+    option =>
+      option.value === resolved ||
+      shiftNamesMatch(rawShift, option.value) ||
+      shiftNamesMatch(resolved, option.value) ||
+      shiftNamesMatch(rawShift, option.label)
+  );
+  if (exact >= 0) return exact;
+
+  const extractRank = (value: string) => {
+    const cMatch = value.match(/c\s*(\d+)/i);
+    if (cMatch) return Number(cMatch[1]);
+    return null;
+  };
+  const currentRank = extractRank(rawShift);
+  if (currentRank === null) return -1;
+  return options.findIndex(
+    option => extractRank(option.value) === currentRank || extractRank(option.label) === currentRank
+  );
+}
+
+function shiftIsoDateByDays(isoDate: string, deltaDays: number): string | null {
+  const match = String(isoDate || '')
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (Number.isNaN(date.getTime())) return null;
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Ca trước của ca hiện tại:
+ * - Cùng ngày: 12C1 là ca trước của 12C2
+ * - Qua ngày: 12C2 ngày hôm trước là ca trước của 12C1 hôm nay
+ */
+export function resolvePreviousProductionShift(
+  ngay: string,
+  shift: string,
+  options: ShiftOption[]
+): { ngay: string; shift: string } | null {
+  const date = String(ngay || '').trim();
+  const rawShift = String(shift || '').trim();
+  if (!date || !rawShift) return null;
+
+  /** Vi du "Ca 12C1" -> family=12, num=1 */
+  const parseCShift = (value: string) => {
+    const m = String(value || '').match(/(\d*)\s*[cC]\s*(\d+)/);
+    if (!m) return null;
+    return { family: m[1] || '', num: Number(m[2]) };
+  };
+
+  const current = parseCShift(rawShift);
+  if (current && Number.isFinite(current.num)) {
+    const resolveInOptions = (family: string, num: number, fallback: string) => {
+      const matched = options.find(option => {
+        const parsed = parseCShift(option.value) || parseCShift(option.label);
+        return parsed && parsed.family === family && parsed.num === num;
+      });
+      return matched?.value || fallback;
+    };
+
+    // 12C2 -> 12C1 cung ngay
+    if (current.num > 1) {
+      const fallback = rawShift.replace(/([cC]\s*)\d+/, `$1${current.num - 1}`);
+      return {
+        ngay: date,
+        shift: resolveInOptions(current.family, current.num - 1, fallback)
+      };
+    }
+
+    // 12C1 hom nay -> 12C2 (hoac C lon nhat cung ho) cua ngay hom truoc
+    const prevDate = shiftIsoDateByDays(date, -1);
+    if (!prevDate) return null;
+
+    let maxNum = 2;
+    for (const option of options) {
+      const parsed = parseCShift(option.value) || parseCShift(option.label);
+      if (!parsed || parsed.family !== current.family) continue;
+      if (parsed.num > maxNum) maxNum = parsed.num;
+    }
+    const fallback = rawShift.replace(/([cC]\s*)\d+/, `$1${maxNum}`);
+    return {
+      ngay: prevDate,
+      shift: resolveInOptions(current.family, maxNum, fallback)
+    };
+  }
+
+  if (options.length > 0) {
+    const idx = shiftOptionIndex(rawShift, options);
+    if (idx > 0) {
+      return { ngay: date, shift: options[idx - 1].value };
+    }
+    if (idx === 0) {
+      const prevDate = shiftIsoDateByDays(date, -1);
+      if (!prevDate) return null;
+      return { ngay: prevDate, shift: options[options.length - 1].value };
+    }
+  }
+
+  return null;
+}

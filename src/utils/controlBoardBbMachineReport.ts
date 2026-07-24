@@ -44,7 +44,7 @@ import {
   sumReportNormTotal
 } from '../lib/mixingReportModel';
 import type { ShiftSetting } from './shiftSettings';
-import { getProductionShiftOptions, shiftNamesMatch } from './shiftSettings';
+import { getProductionShiftOptions, resolvePreviousProductionShift, shiftNamesMatch } from './shiftSettings';
 import {
   convertWarehouseQuantityToKg,
   findMaterialTongKgPerUnit,
@@ -2179,6 +2179,9 @@ export type BbThucDungLineRow = {
   tonDauFromNnsTron: boolean;
   /** KL NNS-TRON tồn đầu ca dùng để phân bổ (nếu có). */
   nnsTronTonDauKg: number | null;
+  /** Ca nguồn của tỉ lệ TB thực tế (ca trước). */
+  tiLeThucTeSourceNgay: string | null;
+  tiLeThucTeSourceShift: string | null;
   tonCuoiKg: number;
   weightKg: number;
 };
@@ -2387,7 +2390,7 @@ type MixingThucDungAgg = {
 };
 
 /** Thực dùng theo từng NVL từ báo cáo trộn: TL đã trộn + tồn đầu − tồn cuối.
- * TL đã trộn = Tổng xuất trong ca × Tỉ lệ TB thực tế (%).
+ * TL đã trộn = Tổng xuất trong ca × Tỉ lệ TB thực tế (% lấy từ ca trước).
  */
 export function buildBbThucDungLineRows(input: {
   productionOrders: ProductionOrderRow[];
@@ -2501,9 +2504,20 @@ export function buildBbThucDungLineRows(input: {
     }
     tongXuatTrongCaKg = roundQty(tongXuatTrongCaKg, 3);
 
+    // Tỉ lệ trộn / TB thực tế lấy từ ca trước (vd: 12C1 → 12C2 cùng ngày).
+    const previousShift = resolvePreviousProductionShift(header.ngay, header.shift, shiftOptions);
+    const mixingRatioNgay = previousShift?.ngay || header.ngay;
+    const mixingRatioShift = previousShift?.shift || header.shift;
+
     for (const report of input.mixingReports) {
       if (
-        !matchesShiftSummaryBucket(header.ngay, header.shift, report.ngay, report.ca, shiftOptions)
+        !matchesShiftSummaryBucket(
+          mixingRatioNgay,
+          mixingRatioShift,
+          report.ngay,
+          report.ca,
+          shiftOptions
+        )
       ) {
         continue;
       }
@@ -2657,6 +2671,8 @@ export function buildBbThucDungLineRows(input: {
         tonDauKg,
         tonDauFromNnsTron: useNnsTronTonDau,
         nnsTronTonDauKg: useNnsTronTonDau ? nnsTronTonDauKg : null,
+        tiLeThucTeSourceNgay: previousShift ? mixingRatioNgay : null,
+        tiLeThucTeSourceShift: previousShift ? mixingRatioShift : null,
         tonCuoiKg,
         weightKg: roundQty(weightKg, 3)
       });
@@ -2780,13 +2796,20 @@ export function buildBbThucDungMetricDetail(input: {
     }
   };
 
+  const previousShift = resolvePreviousProductionShift(header.ngay, header.shift, shiftOptions);
+  const mixingRatioNgay = previousShift?.ngay || header.ngay;
+  const mixingRatioShift = previousShift?.shift || header.shift;
+  const previousShiftNote = previousShift
+    ? `Tỉ lệ TB thực tế lấy từ ca trước: ${previousShift.shift} (${previousShift.ngay})`
+    : 'Tỉ lệ TB thực tế lấy từ ca hiện tại (không xác định được ca trước)';
+
   const mixingFormula =
     input.line.tiLeThucTeTbPercent !== null && input.line.tiLeThucTeTbPercent !== undefined
-      ? `Trọng lượng đã trộn = Tổng xuất trong ca (${roundQty(input.line.xuatTrongCaKg, 3)}) × Tỉ lệ TB thực tế (${roundQty(
+      ? `${previousShiftNote}. Trọng lượng đã trộn = Tổng xuất trong ca (${roundQty(input.line.xuatTrongCaKg, 3)}) × Tỉ lệ TB thực tế (${roundQty(
           input.line.tiLeThucTeTbPercent,
           2
         )}%) = ${roundQty(input.line.trongLuongDaTronKg, 3)} kg`
-      : `Trọng lượng đã trộn = Tổng xuất trong ca (${roundQty(input.line.xuatTrongCaKg, 3)}) × Tỉ lệ TB thực tế (—) = ${roundQty(
+      : `${previousShiftNote}. Trọng lượng đã trộn = Tổng xuất trong ca (${roundQty(input.line.xuatTrongCaKg, 3)}) × Tỉ lệ TB thực tế (—) = ${roundQty(
           input.line.trongLuongDaTronKg,
           3
         )} kg`;
@@ -2804,7 +2827,13 @@ export function buildBbThucDungMetricDetail(input: {
   if (isMixingMetric) {
     for (const report of input.mixingReports) {
       if (
-        !matchesShiftSummaryBucket(header.ngay, header.shift, report.ngay, report.ca, shiftOptions)
+        !matchesShiftSummaryBucket(
+          mixingRatioNgay,
+          mixingRatioShift,
+          report.ngay,
+          report.ca,
+          shiftOptions
+        )
       ) {
         continue;
       }
@@ -3329,7 +3358,7 @@ type MixingRatioAgg = {
   totalKlThucTe: number;
 };
 
-/** TB tỉ lệ thực tế từng NVL giữa các mẻ trộn gắn lệnh BB. */
+/** TB tỉ lệ thực tế từng NVL — lấy từ báo cáo trộn của ca trước (vd 12C1 → 12C2). */
 export function buildBbMixingRatioGroups(input: {
   productionOrders: ProductionOrderRow[];
   mixingReports: MixingReport[];
@@ -3351,10 +3380,20 @@ export function buildBbMixingRatioGroups(input: {
 
   for (const header of headers) {
     const byMaterial = new Map<string, MixingRatioAgg>();
+    // Tỉ lệ trộn lấy từ ca trước của ca lệnh hiện tại.
+    const previousShift = resolvePreviousProductionShift(header.ngay, header.shift, shiftOptions);
+    const mixingRatioNgay = previousShift?.ngay || header.ngay;
+    const mixingRatioShift = previousShift?.shift || header.shift;
 
     for (const report of input.mixingReports) {
       if (
-        !matchesShiftSummaryBucket(header.ngay, header.shift, report.ngay, report.ca, shiftOptions)
+        !matchesShiftSummaryBucket(
+          mixingRatioNgay,
+          mixingRatioShift,
+          report.ngay,
+          report.ca,
+          shiftOptions
+        )
       ) {
         continue;
       }

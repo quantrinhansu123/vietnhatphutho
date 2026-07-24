@@ -792,8 +792,8 @@ export default function ControlBoardBbMachineReportTable({
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-200/90">Báo cáo máy BB</p>
           <h3 className="text-sm font-black sm:text-base">Báo cáo tổng hợp máy BB</h3>
           <p className="mt-0.5 hidden text-[11px] font-medium text-sky-100/80 md:block">
-            Gom theo lệnh SX — bấm nút sổ xuống để xem chi tiết từng dòng. Tab tỉ lệ trộn lấy trung bình thực
-            tế giữa các mẻ trộn.
+            Gom theo lệnh SX — bấm nút sổ xuống để xem chi tiết từng dòng. Tỉ lệ trộn lấy từ ca trước:
+            12C2 ← 12C1 cùng ngày; 12C1 ← 12C2 ngày hôm trước.
           </p>
         </div>
         <button
