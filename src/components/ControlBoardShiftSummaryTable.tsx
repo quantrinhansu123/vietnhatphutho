@@ -359,14 +359,14 @@ export default function ControlBoardShiftSummaryTable({
   return (
     <>
       <section className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 bg-gradient-to-r from-indigo-950 to-indigo-800 px-3 py-2 text-white">
+        <div className="border-b border-zinc-100 bg-gradient-to-r from-sky-950 to-sky-800 px-3 py-2 text-white">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-wider text-indigo-200">Tổng hợp sản xuất</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-200/90">Tổng hợp sản xuất</p>
               <h3 className="text-sm font-black sm:text-base">Tổng hợp máy cách nhiệt</h3>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-indigo-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
+              <label className="col-span-1 flex min-w-0 flex-col gap-1 text-[10px] font-bold text-sky-100 sm:flex-row sm:items-center sm:gap-1.5 sm:text-xs">
                 <span className="shrink-0">NV</span>
                 <select
                   value={staffFilter}
@@ -388,10 +388,10 @@ export default function ControlBoardShiftSummaryTable({
                 type="button"
                 onClick={handlePrint}
                 disabled={isLoading}
-                className="col-span-2 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/20 bg-white/10 px-2.5 text-[11px] font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1 sm:w-auto"
+                className="col-span-2 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-white/80 bg-white px-3 text-[11px] font-black text-sky-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1 sm:w-auto"
               >
                 <Printer className="h-4 w-4" />
-                In
+                In báo cáo
               </button>
             </div>
           </div>
@@ -403,10 +403,10 @@ export default function ControlBoardShiftSummaryTable({
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`shrink-0 rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition ${
+              className={`shrink-0 rounded-md px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide transition ${
                 activeTab === tab.id
-                  ? 'bg-indigo-900 text-white shadow-sm'
-                  : 'text-zinc-600 hover:bg-white hover:text-indigo-900'
+                  ? 'bg-sky-700 text-white shadow-sm'
+                  : 'bg-white text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100'
               }`}
             >
               {tab.label}
@@ -775,7 +775,7 @@ export default function ControlBoardShiftSummaryTable({
         <div className="hidden overflow-x-auto md:block">
           {activeTab === 'lenh_sx' ? (
           <table className="min-w-[720px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -800,7 +800,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="slHang" formatted={formatShiftSummaryNumber(row.slHang, 0)} className="px-3 py-2 text-right font-mono font-bold text-zinc-800" onOpen={openDetail} />
@@ -827,7 +827,7 @@ export default function ControlBoardShiftSummaryTable({
           </table>
           ) : activeTab === 'phieu_xuat_kho' ? (
           <table className="min-w-[960px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -854,7 +854,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="khoiLuongNpl" formatted={formatShiftSummaryKg(row.khoiLuongNpl, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
@@ -881,7 +881,7 @@ export default function ControlBoardShiftSummaryTable({
           </table>
           ) : activeTab === 'ton_dau_ca' ? (
           <table className="min-w-[960px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -908,7 +908,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="tonDauCaNhua" formatted={formatShiftSummaryKg(row.tonDauCaNhua, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
@@ -935,7 +935,7 @@ export default function ControlBoardShiftSummaryTable({
           </table>
           ) : activeTab === 'ton_cuoi_ca' ? (
           <table className="min-w-[960px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -962,7 +962,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="tonCuoiCaNhua" formatted={formatShiftSummaryKg(row.tonCuoiCaNhua, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
@@ -989,7 +989,7 @@ export default function ControlBoardShiftSummaryTable({
           </table>
           ) : activeTab === 'phieu_nhap_kho' ? (
           <table className="min-w-[1080px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -1017,7 +1017,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="slDatThucTeNhapKho" formatted={formatShiftSummaryNumber(row.slDatThucTeNhapKho, 0)} className="px-3 py-2 text-right font-mono font-bold text-sky-700" onOpen={openDetail} />
@@ -1046,7 +1046,7 @@ export default function ControlBoardShiftSummaryTable({
           </table>
           ) : activeTab === 'bao_cao_loi_hong' ? (
           <table className="min-w-[1280px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -1074,7 +1074,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="tlNhuaKhongMangLoiHong" formatted={formatShiftSummaryKg(row.tlNhuaKhongMangLoiHong, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
@@ -1103,7 +1103,7 @@ export default function ControlBoardShiftSummaryTable({
           </table>
           ) : activeTab === 'tong_vat_tu_thuc_dung' ? (
           <table className="min-w-[900px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -1130,7 +1130,7 @@ export default function ControlBoardShiftSummaryTable({
                 </tr>
               ) : (
                 filteredRows.map(row => (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="tongNhuaThucDung" formatted={formatShiftSummaryKg(row.tongNhuaThucDung, 3)} className="px-3 py-2 text-right font-mono font-bold text-amber-700" onOpen={openDetail} />
@@ -1157,7 +1157,7 @@ export default function ControlBoardShiftSummaryTable({
           </table>
           ) : activeTab === 'san_luong' ? (
           <table className="min-w-[1680px] w-full text-left text-xs">
-            <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="bg-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày</th>
                 <th className="px-3 py-2.5 font-black">Ca</th>
@@ -1193,7 +1193,7 @@ export default function ControlBoardShiftSummaryTable({
                   const giaNhua = resolveRowGiaNhua(row);
                   const soTienLoLaiNhua = computeSoTienLoLaiNhua(row.giaTriLoLaiNhua, giaNhua);
                   return (
-                  <tr key={row.key} className="hover:bg-indigo-50/40">
+                  <tr key={row.key} className="hover:bg-sky-50/50">
                     <td className="px-3 py-2 font-mono font-bold text-zinc-700">{row.ngay}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ca}</td>
                     <SummaryValueCell row={row} metric="tongTrongLuongNhapKho" formatted={formatShiftSummaryKg(row.tongTrongLuongNhapKho, 3)} className="px-3 py-2 text-right font-mono font-bold text-emerald-700" onOpen={openDetail} />
