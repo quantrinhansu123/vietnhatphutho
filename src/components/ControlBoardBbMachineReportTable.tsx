@@ -288,7 +288,7 @@ export default function ControlBoardBbMachineReportTable({
     () =>
       buildBbInboundMaterialNormGroups({
         productionOrders: scopedProductionOrders,
-        warehouseMovements,
+        acceptanceReports,
         products,
         materials,
         machines,
@@ -301,7 +301,7 @@ export default function ControlBoardBbMachineReportTable({
       }),
     [
       scopedProductionOrders,
-      warehouseMovements,
+      acceptanceReports,
       products,
       materials,
       machines,
@@ -466,9 +466,11 @@ export default function ControlBoardBbMachineReportTable({
       metric: thucDungDetail.metric,
       mixingReports,
       machineNvlReports,
+      warehouseMovements,
+      materials,
       shiftSettings
     });
-  }, [thucDungDetail, mixingReports, machineNvlReports, shiftSettings]);
+  }, [thucDungDetail, mixingReports, machineNvlReports, warehouseMovements, materials, shiftSettings]);
   const tongGroups = useMemo(
     () =>
       buildBbTongGroups({
@@ -809,26 +811,29 @@ export default function ControlBoardBbMachineReportTable({
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-1 border-b border-zinc-100 bg-zinc-50/80 px-2 py-1.5">
-        {BB_MACHINE_REPORT_TABS.map(tab => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`rounded-md px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide transition ${
-              activeTab === tab.id
-                ? 'bg-sky-700 text-white shadow-sm'
-                : 'bg-white text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="relative border-b border-zinc-100 bg-zinc-50/80">
+        <div className="bb-tab-scroller gap-1.5 px-2 py-2">
+          {BB_MACHINE_REPORT_TABS.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wide transition ${
+                activeTab === tab.id
+                  ? 'bg-sky-700 text-white shadow-sm'
+                  : 'bg-white text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-50 to-transparent" />
       </div>
 
       {activeGroupKeys.length > 0 ? (
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
-          <p className="text-sm font-extrabold text-slate-700">
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <p className="text-xs font-extrabold text-slate-700 sm:text-sm">
             Bấm mũi tên ở dòng cha để đóng/mở các dòng con
           </p>
           <div className="flex shrink-0 gap-2">
@@ -852,7 +857,7 @@ export default function ControlBoardBbMachineReportTable({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto">
+      <div className="bb-table-scroll">
         {activeTab === 'lenh_sx' ? (
           <table className="min-w-[1280px] w-full text-left text-sm font-semibold">
             <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
@@ -1374,8 +1379,8 @@ export default function ControlBoardBbMachineReportTable({
         ) : activeTab === 'bao_cao_loi_hong' ? (
           <>
             {damagedGroups.length > 0 ? (
-              <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
-                <p className="text-sm font-extrabold text-slate-700">
+              <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <p className="text-xs font-extrabold text-slate-700 sm:text-sm">
                   Bấm mũi tên ở dòng cha để đóng/mở các dòng con
                 </p>
                 <div className="flex shrink-0 gap-2">
@@ -1399,7 +1404,7 @@ export default function ControlBoardBbMachineReportTable({
               </div>
             ) : null}
 
-            <div className="overflow-x-auto">
+            <div className="bb-table-scroll">
           <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
             <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
@@ -1757,16 +1762,21 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 font-black">Mã NVL</td>
                             <td className="px-3 py-1.5 font-black">Tên NVL</td>
                             <td className="px-3 py-1.5 text-right font-black">Tỉ lệ ĐM (%)</td>
-                            <td className="px-3 py-1.5 text-right font-black">Tỉ lệ TB thực tế (%)</td>
                             <td
                               className="px-3 py-1.5 text-right font-black"
-                              title="Tổng xuất trong ca × Tỉ lệ TB thực tế (%)"
+                              title="Từ phiếu trộn ca liền trước: KL NVL ÷ tổng trộn × 100"
                             >
-                              Trọng lượng đã trộn
+                              Tỉ lệ TB thực tế (%)
+                            </td>
+                            <td
+                              className="px-3 py-1.5 text-right font-black"
+                              title="Từ phiếu xuất kho NVL của ca hiện tại"
+                            >
+                              Xuất trong ca
                             </td>
                             <td className="px-3 py-1.5 text-right font-black">Tồn đầu</td>
                             <td className="px-3 py-1.5 text-right font-black">Tồn cuối</td>
-                            <td className="px-3 py-1.5 text-right font-black" title="Trọng lượng đã trộn + Tồn đầu − Tồn cuối">
+                            <td className="px-3 py-1.5 text-right font-black" title="Xuất trong ca + Tồn đầu − Tồn cuối">
                               Thực dùng (kg)
                             </td>
                             <td className="px-3 py-1.5 text-right font-black">Số mẻ có KL TT</td>
@@ -1802,7 +1812,7 @@ export default function ControlBoardBbMachineReportTable({
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-mono text-amber-700">
                                   <ThucDungMetricButton
-                                    label={formatKg(row.trongLuongDaTronKg, 3)}
+                                    label={formatKg(row.xuatTrongCaKg, 3)}
                                     className="font-mono text-amber-700"
                                     onOpen={() => setThucDungDetail({ line: row, metric: 'trong_luong_da_tron' })}
                                   />
@@ -1868,8 +1878,8 @@ export default function ControlBoardBbMachineReportTable({
         ) : activeTab === 'tong_dinh_muc_nvl_nhap_kho' ? (
           <>
             {inboundNormGroups.length > 0 ? (
-              <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
-                <p className="text-sm font-extrabold text-slate-700">
+              <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <p className="text-xs font-extrabold text-slate-700 sm:text-sm">
                   Bấm mũi tên ở dòng cha để đóng/mở các dòng con
                 </p>
                 <div className="flex shrink-0 gap-2">
@@ -1893,7 +1903,7 @@ export default function ControlBoardBbMachineReportTable({
               </div>
             ) : null}
 
-            <div className="overflow-x-auto">
+            <div className="bb-table-scroll">
           <table className="min-w-[1200px] w-full text-left text-sm font-semibold">
             <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
@@ -1913,13 +1923,13 @@ export default function ControlBoardBbMachineReportTable({
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải định mức vật tư nhập kho...
+                    Đang tải định mức từ phiếu báo cáo sản lượng...
                   </td>
                 </tr>
               ) : inboundNormGroups.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
-                    Chưa có phiếu nhập kho thành phẩm theo bộ lọc đã chọn.
+                    Chưa có phiếu báo cáo sản lượng theo ngày/ca đã chọn.
                   </td>
                 </tr>
               ) : (
@@ -1965,9 +1975,8 @@ export default function ControlBoardBbMachineReportTable({
                               Tên NVL
                             </td>
                             <td className="px-4 py-2.5 font-black">ĐVT</td>
-                            <td className="px-4 py-2.5 text-right font-black">SL thực xuất</td>
-                            <td className="px-4 py-2.5 text-right font-black">SL định mức</td>
-                            <td className="px-4 py-2.5 text-right font-black">Trọng lượng thực xuất</td>
+                            <td className="px-4 py-2.5 text-right font-black">SL thực nhập</td>
+                            <td className="px-4 py-2.5 text-right font-black">Trọng lượng thực nhập</td>
                           </tr>
                           {(() => {
                             const allLines = group.productGroups.flatMap(productGroup =>
@@ -1979,9 +1988,8 @@ export default function ControlBoardBbMachineReportTable({
                                 itemCode: string;
                                 itemName: string;
                                 unit: string;
-                                totalNormQty: number;
-                                totalExportQty: number;
-                                totalExportKg: number;
+                                totalInboundQty: number;
+                                totalInboundKg: number;
                               }
                             >();
                             allLines.forEach(row => {
@@ -1991,18 +1999,15 @@ export default function ControlBoardBbMachineReportTable({
                                   itemCode: row.itemCode,
                                   itemName: row.itemName,
                                   unit: row.unit,
-                                  totalNormQty: 0,
-                                  totalExportQty: 0,
-                                  totalExportKg: 0
+                                  totalInboundQty: 0,
+                                  totalInboundKg: 0
                                 });
                               }
                               const existing = groupedByCode.get(key)!;
                               if (!isWarehouseKgUnit(row.unit)) {
-                                existing.totalNormQty +=
-                                  row.normQuantity && row.normQuantity > 0 ? row.normQuantity : 0;
-                                existing.totalExportQty += row.quantity > 0 ? row.quantity : 0;
+                                existing.totalInboundQty += row.quantity > 0 ? row.quantity : 0;
                               }
-                              existing.totalExportKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
+                              existing.totalInboundKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
                             });
                             return Array.from(groupedByCode.values()).map((row, idx) => (
                               <tr key={`${group.groupKey}-nvl-${idx}`} className="bg-white font-semibold hover:bg-amber-50/40 border-b border-slate-50">
@@ -2015,17 +2020,12 @@ export default function ControlBoardBbMachineReportTable({
                                 </td>
                                 <td className="px-4 py-2.5 text-zinc-600">{row.unit || '—'}</td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-700">
-                                  {isWarehouseKgUnit(row.unit) || row.totalExportQty <= 0
+                                  {isWarehouseKgUnit(row.unit) || row.totalInboundQty <= 0
                                     ? '—'
-                                    : formatNumber(row.totalExportQty, 3)}
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono font-bold text-violet-800">
-                                  {isWarehouseKgUnit(row.unit) || row.totalNormQty <= 0
-                                    ? '—'
-                                    : formatNumber(row.totalNormQty, 3)}
+                                    : formatNumber(row.totalInboundQty, 3)}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
-                                  {formatKg(row.totalExportKg, 3)}
+                                  {formatKg(row.totalInboundKg, 3)}
                                 </td>
                               </tr>
                             ));
@@ -2182,7 +2182,7 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="bb-table-scroll">
             <table className="min-w-[2200px] w-full text-left text-sm font-semibold">
               <thead className="bg-slate-200 text-xs uppercase tracking-wider text-slate-700">
                 <tr>

@@ -407,6 +407,73 @@ input[type="number"] {
   display: none;
 }
 
+/* ===== Báo cáo máy BB — thanh tab cuộn ngang & bảng thân thiện điện thoại ===== */
+/* Dải tab kéo ngang: giữ 1 hàng, cuộn mượt, có thanh kéo mảnh để kéo sang */
+.bb-tab-scroller {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+.bb-tab-scroller::-webkit-scrollbar {
+  height: 6px;
+}
+.bb-tab-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+.bb-tab-scroller::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: 9999px;
+}
+.bb-tab-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
+}
+.bb-tab-scroller > * {
+  scroll-snap-align: start;
+}
+
+/* Bảng dữ liệu: cuộn ngang mượt trên điện thoại + thanh kéo rõ ràng */
+.bb-table-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.bb-table-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+.bb-table-scroll::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.12);
+}
+.bb-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 9999px;
+}
+.bb-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+/* Nén bảng lại trên màn hình điện thoại để bớt phải kéo ngang */
+@media (max-width: 640px) {
+  .bb-table-scroll table {
+    font-size: 11px;
+  }
+  .bb-table-scroll th,
+  .bb-table-scroll td {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+}
+
 .order-print-sheet {
   display: none;
 }

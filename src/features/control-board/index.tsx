@@ -10,7 +10,12 @@ import {
   matchesShiftSummaryBucket,
   machineValueMatchesFilter
 } from '../../utils/controlBoardShiftSummary';
-import { getProductionShiftOptions, shiftNamesMatch } from '../../utils/shiftSettings';
+import {
+  getProductionShiftOptions,
+  resolvePreviousProductionShift,
+  shiftIsoDateByDays,
+  shiftNamesMatch
+} from '../../utils/shiftSettings';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { normalizeAcceptanceReports, type AcceptanceReport } from '../../components/AcceptanceReportForm';
 import { normalizeMixingReport } from '../../lib/mixingReportModel';
@@ -145,6 +150,8 @@ export function ControlBoardPanel({
     try {
       const summaryFrom = shiftSummaryDateFrom || defaultShiftSummaryRange.from;
       const summaryTo = shiftSummaryDateTo || defaultShiftSummaryRange.to;
+      // Tỉ lệ TB thực tế lấy phiếu trộn ca liền trước (12C1 → 12C2 ngày hôm trước) → tải thêm 1 ngày trước.
+      const mixingFrom = shiftIsoDateByDays(summaryFrom, -1) || summaryFrom;
       const [orderRes, productRes, machineRes, materialRes, productionRes, settingRes, acceptanceRes, shiftSummaryAcceptanceRes, mixingRes, weighingRes, damagedRes, machineNvlRes, warehouseMovementRes] =
         await Promise.all([
         fetch('/api/don-hang'),
@@ -157,7 +164,7 @@ export function ControlBoardPanel({
         fetch(
           `/api/bao-cao-nghiem-thu?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`
         ),
-        fetch(`/api/bao-cao-phoi-tron?tu_ngay=${encodeURIComponent(summaryFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`),
+        fetch(`/api/bao-cao-phoi-tron?tu_ngay=${encodeURIComponent(mixingFrom)}&den_ngay=${encodeURIComponent(summaryTo)}`),
         fetch(`/api/phieu-can-dinh-ki?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
         fetch(`/api/bao-cao-hang-hong?from=${encodeURIComponent(summaryFrom)}&to=${encodeURIComponent(summaryTo)}`),
         fetch(
@@ -435,11 +442,54 @@ export function ControlBoardPanel({
   }, [machineNvlReports, hasBoardProductionOrderFilter, boardMatchedProductionOrders, boardShiftOptions, machines]);
 
   const boardScopedMixingReports = useMemo(() => {
-    if (!hasBoardProductionOrderFilter) return mixingReports;
-    return mixingReports.filter(report =>
-      matchesBoardProductionOrderBucket(report.ngay, report.ca, report.ma_may, report.ten_may)
-    );
-  }, [mixingReports, hasBoardProductionOrderFilter, boardMatchedProductionOrders, boardShiftOptions, machines]);
+    if (!hasBoardProductionOrderFilter || !boardMatchedProductionOrders) return mixingReports;
+    if (boardMatchedProductionOrders.length === 0) return [];
+    // Giữ phiếu trộn ca lệnh + ca liền trước (nguồn Tỉ lệ TB thực tế trên tab thực dùng).
+    return mixingReports.filter(report => {
+      if (matchesBoardProductionOrderBucket(report.ngay, report.ca, report.ma_may, report.ten_may)) {
+        return true;
+      }
+      return boardMatchedProductionOrders.some(order => {
+        const orderNgay = parseProductionOrderFilterDate(order.startDate) || order.startDate;
+        const previous = resolvePreviousProductionShift(String(orderNgay || ''), order.shift, boardShiftOptions);
+        if (!previous) return false;
+        if (
+          !matchesShiftSummaryBucket(
+            previous.ngay,
+            previous.shift,
+            report.ngay,
+            report.ca,
+            boardShiftOptions
+          )
+        ) {
+          return false;
+        }
+        const hasMachineHint = [report.ma_may, report.ten_may].some(value => {
+          const raw = String(value || '').trim();
+          return Boolean(raw && raw !== '-');
+        });
+        if (!hasMachineHint) return true;
+        return machineValueMatchesFilter(
+          order.machine || 'all',
+          {
+            code: order.machine,
+            name: resolveProductionOrderMachine(order, machines)
+          },
+          report.ma_may,
+          report.ten_may,
+          order.machine,
+          order.position,
+          resolveProductionOrderMachine(order, machines)
+        );
+      });
+    });
+  }, [
+    mixingReports,
+    hasBoardProductionOrderFilter,
+    boardMatchedProductionOrders,
+    boardShiftOptions,
+    machines
+  ]);
 
   const shiftSummaryRows = useMemo(
     () =>
