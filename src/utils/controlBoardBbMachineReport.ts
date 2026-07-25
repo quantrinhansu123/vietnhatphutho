@@ -3315,7 +3315,7 @@ export type BbSanLuongNvlLine = {
   materialNorm: BbMaterialNormFormula | null;
   /** Tổng NVL cả ca (trước khi × % mặt hàng). */
   baseActualWeightKg: number;
-  /** % mặt hàng = SL SP ÷ tổng SL lệnh SX (0–100). */
+  /** % mặt hàng = SL SP ÷ tổng SL mọi SP trên phiếu báo cáo sản lượng (0–100). */
   productSharePercent: number;
   /**
    * Trọng lượng thực tế (kg) = baseActualWeightKg × (productSharePercent / 100)
@@ -3331,11 +3331,26 @@ export type BbSanLuongProductGroup = {
   unit: string;
   /** SL mặt hàng từ báo cáo sản lượng. */
   quantity: number;
+  /** % mặt hàng = quantity ÷ tổng SL mọi SP cùng nhóm phiếu sản lượng. */
+  productSharePercent: number;
   reportCount: number;
   lineCount: number;
   totalNormWeightKg: number;
   totalActualWeightKg: number;
   lines: BbSanLuongNvlLine[];
+};
+
+export type BbSanLuongNvlTotal = {
+  key: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  /** Tổng KL định mức của NVL này trên mọi SP. */
+  normWeightKg: number;
+  /** Tổng trọng lượng thực tế = cộng các phần đã phân bổ theo SP (= cân bằng cả ca). */
+  actualWeightKg: number;
+  baseActualWeightKg: number;
+  balanceDetail: BbInboundMaterialBalanceDetail | null;
 };
 
 export type BbSanLuongGroup = {
@@ -3349,9 +3364,11 @@ export type BbSanLuongGroup = {
   lineCount: number;
   totalQuantity: number;
   totalNormWeightKg: number;
-  /** Tổng TL thực tế = tổng các dòng NVL của SP (cùng số liệu dòng con). */
+  /** Tổng TL thực tế = tổng các dòng NVL (cùng số liệu dòng con). */
   totalActualWeightKg: number;
   productGroups: BbSanLuongProductGroup[];
+  /** Dòng con hiển thị: tổng theo từng NVL (không theo SP). */
+  nvlTotals: BbSanLuongNvlTotal[];
 };
 
 /**
@@ -3672,33 +3689,20 @@ export function buildBbSanLuongGroups(input: {
       }
     }
 
-    /** Tổng SL mọi mặt hàng trên lệnh SX (mẫu số %) — không chỉ SP có phiếu nghiệm thu. */
-    let orderProductQtyTotal = 0;
-    for (const order of input.productionOrders) {
-      if (!isBbProductionOrder(order, input.machines)) continue;
-      if (String(order.code || '').trim() !== header.orderCode) continue;
-      const ngay = parseProductionOrderFilterDate(order.startDate) || '';
-      if (ngay && ngay !== header.ngay) continue;
-      if (!shiftNamesMatch(order.shift, header.shift)) continue;
-      for (const line of getProductionOrderProductLines(order)) {
-        const qty = parseProductionOrderQuantity(line.quantity);
-        if (qty > 0) orderProductQtyTotal += qty;
-      }
-    }
-    // Fallback: tổng SL các SP có trên phiếu báo cáo sản lượng.
-    if (!(orderProductQtyTotal > 0)) {
-      orderProductQtyTotal = [...productMap.values()].reduce(
-        (sum, product) => sum + (product.quantity > 0 ? product.quantity : 0),
-        0
-      );
-    }
+    /** Tổng SL mọi SP trên phiếu báo cáo sản lượng (mẫu số % mặt hàng). */
+    const reportedProductQtyTotal = [...productMap.values()].reduce(
+      (sum, product) => sum + (product.quantity > 0 ? product.quantity : 0),
+      0
+    );
 
     const productGroups: BbSanLuongProductGroup[] = [...productMap.entries()]
       .map(([productKey, product]) => {
         const productQty = product.quantity > 0 ? product.quantity : 0;
-        // % mặt hàng = SL SP (phiếu sản lượng) ÷ tổng SL mọi SP trên lệnh SX.
+        // % mặt hàng = SL SP ÷ tổng SL mọi SP cùng nhóm phiếu sản lượng (không dùng SL kế hoạch lệnh SX).
         const productShare =
-          orderProductQtyTotal > 0 && productQty > 0 ? productQty / orderProductQtyTotal : 1;
+          reportedProductQtyTotal > 0 && productQty > 0
+            ? productQty / reportedProductQtyTotal
+            : 1;
         const productSharePercent = roundQty(productShare * 100, 2);
         const lines: BbSanLuongNvlLine[] = [...product.nvlAgg.entries()]
           .map(([materialKey, nvl]) => {
@@ -3740,6 +3744,7 @@ export function buildBbSanLuongGroups(input: {
           productName: product.productName,
           unit: product.unit,
           quantity: product.quantity,
+          productSharePercent,
           reportCount: product.reportCount,
           lineCount: lines.length,
           totalNormWeightKg,
@@ -3749,13 +3754,50 @@ export function buildBbSanLuongGroups(input: {
       })
       .sort((a, b) => a.productName.localeCompare(b.productName, 'vi'));
 
-    // Tổng lệnh = tổng các dòng SP bên dưới (khớp khi cộng tay các dòng con).
+    // Tổng theo NVL (cộng mọi SP) — dùng để hiện dòng con.
+    const nvlAggMap = new Map<string, BbSanLuongNvlTotal>();
+    for (const productGroup of productGroups) {
+      for (const line of productGroup.lines) {
+        const materialKey =
+          normalizeProductCodeKey(line.itemCode) ||
+          String(line.itemName || '').trim().toUpperCase();
+        if (!materialKey) continue;
+        const existing = nvlAggMap.get(materialKey);
+        if (!existing) {
+          nvlAggMap.set(materialKey, {
+            key: `${groupKey}|nvl:${materialKey}`,
+            itemCode: line.itemCode,
+            itemName: line.itemName,
+            unit: line.unit,
+            normWeightKg: line.normWeightKg,
+            actualWeightKg: line.actualWeightKg,
+            baseActualWeightKg: line.baseActualWeightKg,
+            balanceDetail: line.balanceDetail
+          });
+        } else {
+          existing.normWeightKg = roundQty(existing.normWeightKg + line.normWeightKg, 3);
+          existing.actualWeightKg = roundQty(existing.actualWeightKg + line.actualWeightKg, 2);
+          if (!existing.itemCode && line.itemCode) existing.itemCode = line.itemCode;
+          if (!existing.itemName && line.itemName) existing.itemName = line.itemName;
+          if (!existing.unit && line.unit) existing.unit = line.unit;
+          if (!existing.balanceDetail && line.balanceDetail) {
+            existing.balanceDetail = line.balanceDetail;
+            existing.baseActualWeightKg = line.baseActualWeightKg;
+          }
+        }
+      }
+    }
+    const nvlTotals = [...nvlAggMap.values()].sort((a, b) =>
+      a.itemName.localeCompare(b.itemName, 'vi')
+    );
+
+    // Tổng lệnh = tổng các dòng NVL bên dưới (khớp khi cộng tay các dòng con).
     const totalNormWeightKg = roundQty(
-      productGroups.reduce((sum, pg) => sum + pg.totalNormWeightKg, 0),
+      nvlTotals.reduce((sum, row) => sum + row.normWeightKg, 0),
       3
     );
     const totalActualWeightKg = roundQty(
-      productGroups.reduce((sum, pg) => sum + pg.totalActualWeightKg, 0),
+      nvlTotals.reduce((sum, row) => sum + row.actualWeightKg, 0),
       2
     );
 
@@ -3767,11 +3809,12 @@ export function buildBbSanLuongGroups(input: {
       shiftLabel,
       machine: header.machine,
       productCount: productGroups.length,
-      lineCount: productGroups.reduce((sum, pg) => sum + pg.lineCount, 0),
+      lineCount: nvlTotals.length,
       totalQuantity: productGroups.reduce((sum, pg) => sum + pg.quantity, 0),
       totalNormWeightKg,
       totalActualWeightKg,
-      productGroups
+      productGroups,
+      nvlTotals
     });
   }
 
