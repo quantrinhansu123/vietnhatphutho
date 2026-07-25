@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Loader2, Printer, X } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Printer, X } from 'lucide-react';
 import { formatMoney, formatNumber } from '../utils';
 import type { ProductRow } from '../features/san-pham/types';
 import type { MachineRow } from '../features/danh-sach-may';
@@ -23,12 +23,17 @@ import {
   buildBbDauCaLineRows,
   buildBbInboundReportRows,
   buildBbInboundMaterialNormGroups,
+  buildBbInboundBalanceMetricDetail,
+  buildBbMixingMaterialLinesForShift,
   buildBbMixingRatioGroups,
   buildBbOrderCodeOptions,
   buildBbProductionOrderLineRows,
+  buildBbSanLuongGroups,
   buildBbThucDungLineRows,
   buildBbThucDungMetricDetail,
   buildBbTongGroups,
+  buildBbTongHopThucXuatMetricDetail,
+  buildBbTongHopVatTuThucXuatDungGroups,
   buildBbWarehouseExportLineRows,
   groupBbCuoiCaLines,
   groupBbDamagedGoodsLines,
@@ -48,11 +53,18 @@ import {
   sumBbWarehouseExportSlipQuantity,
   sumBbWarehouseExportWeightKg,
   type BbMaterialNormFormula,
+  type BbWarehouseExportLineRow,
+  type BbInboundMaterialBalanceDetail,
+  type BbInboundBalanceDetailMetric,
+  type BbInboundBalanceDetailBag,
   type BbExportWeightFormula,
   type BbMachineReportTabId,
+  type BbDauCaTonDauFormula,
   type BbThucDungDetailMetric,
   type BbThucDungDetailBag,
-  type BbThucDungLineRow
+  type BbThucDungLineRow,
+  type BbTongHopThucXuatDetailMetric,
+  type BbTongHopThucXuatLineRow
 } from '../utils/controlBoardBbMachineReport';
 import { computePercentRatio } from '../utils/controlBoardShiftSummary';
 import { isWarehouseKgUnit } from '../utils/warehouseWeight';
@@ -96,6 +108,18 @@ function formatPercent(value: number | null | undefined, digits = 2) {
   return `${formatNumber(value, digits)}%`;
 }
 
+/** Diễn giải công thức định mức NVL của 1 thành phẩm (hiện khi bấm vào ô). */
+function buildNormFormulaText(mn: BbMaterialNormFormula): string {
+  if (mn.amountType === 'percent') {
+    const klDv = mn.productNormKgPerUnit;
+    return `${klDv != null ? formatNumber(klDv, 3) : '—'} kg/đv × ${formatNumber(mn.productQuantity, 0)} SP × ${formatNumber(mn.rate, 2)}% = ${formatNumber(mn.totalNormKg, 2)} kg`;
+  }
+  if (mn.catalogKgPerUnit != null && mn.catalogKgPerUnit > 0) {
+    return `${formatNumber(mn.rate, 3)} ${mn.rateUnit}/SP × ${formatNumber(mn.productQuantity, 0)} SP → ${formatNumber(mn.rawExpectedQuantity, 0)} ${mn.rawExpectedUnit} × ${formatNumber(mn.catalogKgPerUnit, 3)} kg = ${formatNumber(mn.totalNormKg, 2)} kg`;
+  }
+  return `${formatNumber(mn.rate, 3)} ${mn.rateUnit}/SP × ${formatNumber(mn.productQuantity, 0)} SP = ${formatNumber(mn.totalNormKg, 2)} kg`;
+}
+
 function formatVnd(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value) || value === 0) return '—';
   return `${formatMoney(value, 0)} đ`;
@@ -110,18 +134,20 @@ function formatThucDungDetailCell(value: string | number | null | undefined) {
 function ThucDungMetricButton({
   label,
   className,
-  onOpen
+  onOpen,
+  title = 'Bấm để xem dữ liệu nguồn'
 }: {
   label: string;
   className: string;
   onOpen: () => void;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       className={`rounded-md px-1 py-0.5 underline decoration-dotted underline-offset-2 transition hover:bg-teal-100 ${className}`}
-      title="Bấm để xem dữ liệu nguồn"
+      title={title}
     >
       {label}
     </button>
@@ -164,6 +190,17 @@ export default function ControlBoardBbMachineReportTable({
   selectedMachine?: { code?: string; name?: string } | null;
 }) {
   const [activeTab, setActiveTab] = useState<BbMachineReportTabId>('lenh_sx');
+  /** Đánh dấu tab đã rà soát xong (chỉ tạm trong phiên làm việc, không lưu lại). */
+  const [checkedTabs, setCheckedTabs] = useState<Set<BbMachineReportTabId>>(() => new Set());
+  const toggleTabChecked = (tabId: BbMachineReportTabId, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setCheckedTabs(prev => {
+      const next = new Set(prev);
+      if (next.has(tabId)) next.delete(tabId);
+      else next.add(tabId);
+      return next;
+    });
+  };
   const [phanTichMap, setPhanTichMap] = useState<Record<string, string>>(() =>
     typeof window !== 'undefined' ? loadBbPhanTichMap() : {}
   );
@@ -177,10 +214,40 @@ export default function ControlBoardBbMachineReportTable({
   const [printNoteByOrder, setPrintNoteByOrder] = useState<Record<string, string>>({});
   const [hrStaffNames, setHrStaffNames] = useState<string[]>([]);
   const [selectedMaterialNorm, setSelectedMaterialNorm] = useState<BbMaterialNormFormula | null>(null);
+  const [selectedTonDauFormula, setSelectedTonDauFormula] = useState<BbDauCaTonDauFormula | null>(null);
   const [selectedExportWeight, setSelectedExportWeight] = useState<BbExportWeightFormula | null>(null);
   const [thucDungDetail, setThucDungDetail] = useState<{
     line: BbThucDungLineRow;
     metric: BbThucDungDetailMetric;
+  } | null>(null);
+  const [tongHopDetail, setTongHopDetail] = useState<{
+    line: BbTongHopThucXuatLineRow;
+    metric: BbTongHopThucXuatDetailMetric;
+  } | null>(null);
+  const [normDetail, setNormDetail] = useState<{
+    orderCode: string;
+    ngay: string;
+    shiftLabel: string;
+    machine: string;
+    itemCode: string;
+    itemName: string;
+    unit: string;
+    metric: 'weight' | 'quantity';
+    totalKg: number;
+    totalQty: number;
+    balanceDetail: BbInboundMaterialBalanceDetail | null;
+    lines: BbWarehouseExportLineRow[];
+  } | null>(null);
+  const [inboundBalanceDetail, setInboundBalanceDetail] = useState<{
+    metric: BbInboundBalanceDetailMetric;
+    itemCode: string;
+    itemName: string;
+    ngay: string;
+    shift: string;
+    shiftLabel: string;
+    orderCode: string;
+    machine: string;
+    balanceDetail: BbInboundMaterialBalanceDetail | null;
   } | null>(null);
 
   const scopedGroupKey = (tabId: BbMachineReportTabId, groupKey: string) => `${tabId}:${groupKey}`;
@@ -292,6 +359,10 @@ export default function ControlBoardBbMachineReportTable({
         products,
         materials,
         machines,
+        machineNvlReports,
+        warehouseMovements,
+        damagedRecords,
+        mixingReports,
         shiftSettings,
         dateFrom,
         dateTo,
@@ -305,6 +376,10 @@ export default function ControlBoardBbMachineReportTable({
       products,
       materials,
       machines,
+      machineNvlReports,
+      warehouseMovements,
+      damagedRecords,
+      mixingReports,
       shiftSettings,
       dateFrom,
       dateTo,
@@ -339,6 +414,22 @@ export default function ControlBoardBbMachineReportTable({
     ]
   );
   const damagedGroups = useMemo(() => groupBbDamagedGoodsLines(damagedRows), [damagedRows]);
+  const damagedGroupsWithMixing = useMemo(() => {
+    return damagedGroups.map(group => {
+      const mixingLines = buildBbMixingMaterialLinesForShift({
+        mixingReports,
+        ngay: group.ngay,
+        shift: group.shift,
+        machine: group.machine,
+        shiftSettings
+      });
+      return {
+        ...group,
+        mixingLines,
+        mixingLineCount: mixingLines.length
+      };
+    });
+  }, [damagedGroups, mixingReports, shiftSettings]);
   const cuoiCaRows = useMemo(
     () =>
       buildBbCuoiCaLineRows({
@@ -390,7 +481,52 @@ export default function ControlBoardBbMachineReportTable({
       selectedMachine
     ]
   );
-  const dauCaGroups = useMemo(() => groupBbDauCaLines(dauCaRows), [dauCaRows]);
+  const dauCaGroups = useMemo(
+    () =>
+      groupBbDauCaLines(dauCaRows, scopedProductionOrders, products, materials, {
+        machines,
+        mixingReports,
+        shiftSettings
+      }),
+    [dauCaRows, scopedProductionOrders, products, materials, machines, mixingReports, shiftSettings]
+  );
+  const sanLuongGroups = useMemo(
+    () =>
+      buildBbSanLuongGroups({
+        productionOrders: scopedProductionOrders,
+        acceptanceReports,
+        products,
+        materials,
+        machines,
+        machineNvlReports,
+        warehouseMovements,
+        damagedRecords,
+        mixingReports,
+        shiftSettings,
+        dateFrom,
+        dateTo,
+        shiftFilter,
+        machineFilter,
+        selectedMachine
+      }),
+    [
+      scopedProductionOrders,
+      acceptanceReports,
+      products,
+      materials,
+      machines,
+      machineNvlReports,
+      warehouseMovements,
+      damagedRecords,
+      mixingReports,
+      shiftSettings,
+      dateFrom,
+      dateTo,
+      shiftFilter,
+      machineFilter,
+      selectedMachine
+    ]
+  );
   const inboundRows = useMemo(
     () =>
       buildBbInboundReportRows({
@@ -458,8 +594,49 @@ export default function ControlBoardBbMachineReportTable({
     ]
   );
   const thucDungGroups = useMemo(() => groupBbThucDungLines(thucDungRows), [thucDungRows]);
+  const tongHopThucXuatGroups = useMemo(
+    () =>
+      buildBbTongHopVatTuThucXuatDungGroups({
+        productionOrders: scopedProductionOrders,
+        mixingReports,
+        warehouseMovements,
+        machineNvlReports,
+        materials,
+        machines,
+        shiftSettings,
+        dateFrom,
+        dateTo,
+        shiftFilter,
+        machineFilter,
+        selectedMachine
+      }),
+    [
+      scopedProductionOrders,
+      mixingReports,
+      warehouseMovements,
+      machineNvlReports,
+      materials,
+      machines,
+      shiftSettings,
+      dateFrom,
+      dateTo,
+      shiftFilter,
+      machineFilter,
+      selectedMachine
+    ]
+  );
   // Tab thực xuất dùng: dòng NVL lấy từ báo cáo trộn (đã gộp tỉ lệ).
-  const thucDungDetailView = useMemo<BbThucDungDetailBag | null>(() => {
+  const thucDungDetailView = useMemo<BbThucDungDetailView | null>(() => {
+    if (tongHopDetail) {
+      return buildBbTongHopThucXuatMetricDetail({
+        line: tongHopDetail.line,
+        metric: tongHopDetail.metric,
+        machineNvlReports,
+        warehouseMovements,
+        materials,
+        shiftSettings
+      });
+    }
     if (!thucDungDetail) return null;
     return buildBbThucDungMetricDetail({
       line: thucDungDetail.line,
@@ -470,7 +647,38 @@ export default function ControlBoardBbMachineReportTable({
       materials,
       shiftSettings
     });
-  }, [thucDungDetail, mixingReports, machineNvlReports, warehouseMovements, materials, shiftSettings]);
+  }, [
+    tongHopDetail,
+    thucDungDetail,
+    mixingReports,
+    machineNvlReports,
+    warehouseMovements,
+    materials,
+    shiftSettings
+  ]);
+  const closeMetricDetail = () => {
+    setThucDungDetail(null);
+    setTongHopDetail(null);
+  };
+  const inboundBalanceDetailView = useMemo<BbInboundBalanceDetailBag | null>(() => {
+    if (!inboundBalanceDetail) return null;
+    return buildBbInboundBalanceMetricDetail({
+      metric: inboundBalanceDetail.metric,
+      itemCode: inboundBalanceDetail.itemCode,
+      itemName: inboundBalanceDetail.itemName,
+      ngay: inboundBalanceDetail.ngay,
+      shift: inboundBalanceDetail.shift,
+      shiftLabel: inboundBalanceDetail.shiftLabel,
+      orderCode: inboundBalanceDetail.orderCode,
+      machine: inboundBalanceDetail.machine,
+      balanceDetail: inboundBalanceDetail.balanceDetail,
+      machineNvlReports,
+      warehouseMovements,
+      damagedRecords,
+      materials,
+      shiftSettings
+    });
+  }, [inboundBalanceDetail, machineNvlReports, warehouseMovements, damagedRecords, materials, shiftSettings]);
   const tongGroups = useMemo(
     () =>
       buildBbTongGroups({
@@ -598,12 +806,16 @@ export default function ControlBoardBbMachineReportTable({
         return exportGroups.map(group => group.groupKey);
       case 'ton_dau_ca':
         return dauCaGroups.map(group => group.groupKey);
+      case 'bao_cao_san_luong':
+        return sanLuongGroups.map(group => group.groupKey);
       case 'bao_cao_loi_hong':
-        return damagedGroups.map(group => group.groupKey);
+        return damagedGroupsWithMixing.map(group => group.groupKey);
       case 'kiem_ton_cuoi_ca':
         return cuoiCaGroups.map(group => group.groupKey);
       case 'tong_vat_tu_thuc_dung':
         return thucDungGroups.map(group => group.groupKey);
+      case 'tong_hop_vat_tu_thuc_xuat_dung':
+        return tongHopThucXuatGroups.map(group => group.groupKey);
       case 'tong_dinh_muc_nvl_nhap_kho':
         return inboundNormGroups.map(group => group.groupKey);
       case 'tong':
@@ -616,9 +828,11 @@ export default function ControlBoardBbMachineReportTable({
     orderGroups,
     exportGroups,
     dauCaGroups,
-    damagedGroups,
+    sanLuongGroups,
+    damagedGroupsWithMixing,
     cuoiCaGroups,
     thucDungGroups,
+    tongHopThucXuatGroups,
     inboundNormGroups,
     tongGroups
   ]);
@@ -813,20 +1027,39 @@ export default function ControlBoardBbMachineReportTable({
 
       <div className="relative border-b border-zinc-100 bg-zinc-50/80">
         <div className="bb-tab-scroller gap-1.5 px-2 py-2">
-          {BB_MACHINE_REPORT_TABS.map(tab => (
+          {BB_MACHINE_REPORT_TABS.map(tab => {
+            const isChecked = checkedTabs.has(tab.id);
+            return (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wide transition ${
+              className={`group inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg py-1.5 pl-1.5 pr-3 text-[11px] font-extrabold uppercase tracking-wide transition ${
                 activeTab === tab.id
                   ? 'bg-sky-700 text-white shadow-sm'
                   : 'bg-white text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100'
               }`}
             >
+              <span
+                role="checkbox"
+                aria-checked={isChecked}
+                aria-label={isChecked ? `Bỏ đánh dấu ${tab.label}` : `Đánh dấu đã rà soát ${tab.label}`}
+                onClick={event => toggleTabChecked(tab.id, event)}
+                title={isChecked ? 'Đã rà soát — bấm để bỏ đánh dấu' : 'Bấm để đánh dấu đã rà soát'}
+                className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition ${
+                  isChecked
+                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                    : activeTab === tab.id
+                      ? 'border-white/60 bg-white/10 text-transparent hover:bg-white/20'
+                      : 'border-zinc-300 bg-white text-transparent hover:border-emerald-400'
+                }`}
+              >
+                <Check className="h-3 w-3" strokeWidth={3} />
+              </span>
               {tab.label}
             </button>
-          ))}
+            );
+          })}
         </div>
         <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-50 to-transparent" />
       </div>
@@ -1276,7 +1509,7 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'ton_dau_ca' ? (
-          <table className="min-w-[1100px] w-full text-left text-sm font-semibold">
+          <table className="min-w-[1600px] w-full text-left text-sm font-semibold">
             <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-3 py-3.5 font-black" />
@@ -1284,21 +1517,27 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-4 py-3.5 font-black">Ca</th>
                 <th className="px-4 py-3.5 font-black">Lệnh SX</th>
                 <th className="px-4 py-3.5 font-black">Máy</th>
-                <th className="px-4 py-3.5 text-right font-black">Dòng NVL</th>
+                <th className="px-4 py-3.5 text-right font-black">SP / NVL</th>
+                <th
+                  className="px-4 py-3.5 text-right font-black"
+                  title="KL định mức = SL sản phẩm × định mức thành phần trong công thức SP"
+                >
+                  Định mức (kg)
+                </th>
                 <th className="px-4 py-3.5 text-right font-black">Tồn đầu ca (kg)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={8} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải báo cáo tồn đầu ca...
                   </td>
                 </tr>
               ) : dauCaGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={8} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có báo cáo tồn đầu ca gắn ca/ngày lệnh máy BB.
                   </td>
                 </tr>
@@ -1325,41 +1564,164 @@ export default function ControlBoardBbMachineReportTable({
                         </td>
                         <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
                         <td className="px-4 py-2.5 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">
+                          {group.productCount}/{group.lineCount}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-700">
+                          {formatKg(group.totalNormWeightKg, 3)}
+                        </td>
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
                       </tr>
-                      {expanded ? (
-                        <>
-                          <tr className="border-y border-indigo-100 bg-indigo-100/40 text-xs font-black uppercase tracking-wider text-indigo-900">
-                            <td />
-                            <td className="px-4 py-2 font-black">Mã NVL</td>
-                            <td colSpan={2} className="px-4 py-2 font-black">
-                              Tên NVL
-                            </td>
-                            <td className="px-4 py-2 font-black">ĐVT</td>
-                            <td className="px-4 py-2 text-right font-black">SL</td>
-                            <td className="px-4 py-2 text-right font-black">Tổng (kg)</td>
-                          </tr>
-                          {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white font-semibold hover:bg-indigo-50/40 border-b border-slate-50">
-                              <td className="px-3 py-2" />
-                              <td className="px-4 py-2 font-mono font-bold text-zinc-800">{row.itemCode || '—'}</td>
-                              <td colSpan={2} className="px-4 py-2 text-zinc-700">
-                                {row.itemName || '—'}
-                              </td>
-                              <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
-                              <td className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
-                                {formatNumber(row.quantity, 3)}
-                              </td>
-                              <td className="px-4 py-2 text-right font-mono font-bold text-indigo-700">
-                                {formatKg(row.weightKg, 3)}
-                              </td>
-                            </tr>
-                          ))}
-                        </>
-                      ) : null}
+                      {expanded
+                        ? (group.productGroups || []).map(productGroup => {
+                            const productGroupKey = `${group.groupKey}|product:${productGroup.key}`;
+                            const productExpanded = isGroupExpanded('ton_dau_ca', productGroupKey);
+                            return (
+                              <React.Fragment key={productGroupKey}>
+                                <tr className="border-y border-sky-200 bg-sky-50 font-bold text-sky-950 hover:bg-sky-100/80">
+                                  <td className="px-3 py-1.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleGroup('ton_dau_ca', productGroupKey)}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-300 bg-white text-sky-800 shadow-sm transition hover:bg-sky-50"
+                                      title={
+                                        productExpanded
+                                          ? 'Đóng nguyên phụ liệu của sản phẩm'
+                                          : 'Mở nguyên phụ liệu của sản phẩm'
+                                      }
+                                      aria-expanded={productExpanded}
+                                    >
+                                      <ChevronDown
+                                        className={`h-4 w-4 transition-transform ${productExpanded ? '' : '-rotate-90'}`}
+                                      />
+                                    </button>
+                                  </td>
+                                  <td colSpan={4} className="px-4 py-2">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-sky-600">
+                                        Sản phẩm
+                                      </span>
+                                      {productGroup.productCode ? (
+                                        <span className="font-mono font-black text-sky-900">
+                                          {productGroup.productCode}
+                                        </span>
+                                      ) : null}
+                                      <span className="font-black text-zinc-900">
+                                        {productGroup.productName || '—'}
+                                      </span>
+                                      {productGroup.quantity > 0 ? (
+                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-600 ring-1 ring-sky-200">
+                                          SL: {formatNumber(productGroup.quantity, 3)}
+                                          {productGroup.unit ? ` ${productGroup.unit}` : ''}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono font-bold text-zinc-600">
+                                    {productGroup.lineCount}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono font-black text-emerald-700">
+                                    {formatKg(productGroup.totalNormWeightKg, 3)}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono font-bold text-indigo-800">
+                                    {formatKg(productGroup.totalTonDauWeightKg, 3)}
+                                  </td>
+                                </tr>
+                                {productExpanded ? (
+                                  <>
+                                    <tr className="border-y border-indigo-100 bg-indigo-100/40 text-xs font-black uppercase tracking-wider text-indigo-900">
+                                      <td />
+                                      <td className="px-4 py-2 font-black">Mã NVL</td>
+                                      <td className="px-4 py-2 font-black">Tên nguyên phụ liệu</td>
+                                      <td className="px-4 py-2 font-black">ĐVT</td>
+                                      <td className="px-4 py-2 text-right font-black" title="Từ thành phần % SP hoặc tỉ lệ trộn máy">
+                                        Tỉ lệ ĐM (%)
+                                      </td>
+                                      <td
+                                        className="px-4 py-2 text-right font-black"
+                                        title="Từ phiếu trộn ca liền trước: KL NVL ÷ tổng trộn × 100"
+                                      >
+                                        Tỉ lệ thực tế (%)
+                                      </td>
+                                      <td className="px-4 py-2 text-right font-black">Thành phần</td>
+                                      <td className="px-4 py-2 text-right font-black">SL tồn</td>
+                                      <td
+                                        className="px-4 py-2 text-right font-black"
+                                        title="SL sản phẩm × định mức thành phần"
+                                      >
+                                        KL định mức (kg)
+                                      </td>
+                                      <td
+                                        className="px-4 py-2 text-right font-black"
+                                        title="Có NNS-TRON: NNS-TRON × Tỉ lệ thực tế (%); không thì lấy tồn đầu theo mã NVL"
+                                      >
+                                        Tồn đầu (kg)
+                                      </td>
+                                    </tr>
+                                    {productGroup.lines.map(row => (
+                                      <tr
+                                        key={row.key}
+                                        className="bg-white font-semibold hover:bg-indigo-50/40 border-b border-slate-50"
+                                      >
+                                        <td className="px-3 py-2" />
+                                        <td className="px-4 py-2 font-mono font-bold text-zinc-800">
+                                          {row.itemCode || '—'}
+                                        </td>
+                                        <td className="px-4 py-2 text-zinc-700">{row.itemName || '—'}</td>
+                                        <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
+                                        <td className="px-4 py-2 text-right font-mono text-zinc-600">
+                                          {formatPercent(row.tiLeDinhMucPercent, 2)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right font-mono font-bold text-orange-800">
+                                          {formatPercent(row.tiLeThucTeTbPercent, 2)}
+                                        </td>
+                                        <td className="px-4 py-2 text-right font-mono text-zinc-700">
+                                          {row.dinhMucRate === null || row.dinhMucRate === undefined
+                                            ? '—'
+                                            : `${formatNumber(row.dinhMucRate, row.amountType === 'percent' ? 2 : 3)}${
+                                                row.dinhMucUnit ? ` ${row.dinhMucUnit}` : ''
+                                              }`}
+                                        </td>
+                                        <td className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
+                                          {row.tonDauQuantity > 0 ? formatNumber(row.tonDauQuantity, 3) : '—'}
+                                        </td>
+                                        <td className="px-4 py-2 text-right font-mono font-black text-emerald-700">
+                                          {row.materialNorm ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => setSelectedMaterialNorm(row.materialNorm)}
+                                              className="rounded-md px-1 py-0.5 underline decoration-dotted underline-offset-2 transition hover:bg-emerald-100"
+                                              title="Bấm để xem công thức định mức"
+                                            >
+                                              {formatKg(row.normWeightKg, 3)}
+                                            </button>
+                                          ) : (
+                                            formatKg(row.normWeightKg, 3)
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-2 text-right font-mono font-bold text-indigo-700">
+                                          {row.tonDauFormula ? (
+                                            <ThucDungMetricButton
+                                              label={formatKg(row.tonDauWeightKg, 3)}
+                                              className="font-mono font-bold text-indigo-700"
+                                              onOpen={() => {
+                                                if (row.tonDauFormula) setSelectedTonDauFormula(row.tonDauFormula);
+                                              }}
+                                            />
+                                          ) : (
+                                            formatKg(row.tonDauWeightKg, 3)
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </>
+                                ) : null}
+                              </React.Fragment>
+                            );
+                          })
+                        : null}
                     </React.Fragment>
                   );
                 })
@@ -1369,25 +1731,347 @@ export default function ControlBoardBbMachineReportTable({
               <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
                   <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
-                    Tổng tồn đầu ca
+                    Tổng
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-emerald-800">
+                    {formatKg(
+                      dauCaGroups.reduce((sum, g) => sum + (g.totalNormWeightKg || 0), 0),
+                      3
+                    )}
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-indigo-800">{formatKg(dauCaTotalKg, 3)}</td>
                 </tr>
               </tfoot>
             ) : null}
           </table>
+        ) : activeTab === 'bao_cao_san_luong' ? (
+          <table className="min-w-[1800px] w-full text-left text-sm font-semibold">
+            <thead className="bg-gradient-to-r from-violet-100 to-fuchsia-50 border-b-2 border-violet-300 text-xs uppercase tracking-wider text-violet-900">
+              <tr>
+                <th className="w-10 px-3 py-3.5 font-black" />
+                <th className="px-4 py-3.5 font-black">Ngày</th>
+                <th className="px-4 py-3.5 font-black">Ca</th>
+                <th className="px-4 py-3.5 font-black">Lệnh SX</th>
+                <th className="px-4 py-3.5 font-black">Máy</th>
+                <th className="px-4 py-3.5 text-right font-black">SP / NVL</th>
+                <th className="px-4 py-3.5 text-right font-black">SL sản lượng</th>
+                <th
+                  className="px-4 py-3.5 text-right font-black"
+                  title="NVL từ công thức SP × SL trên phiếu báo cáo sản lượng"
+                >
+                  Định mức NVL (kg)
+                </th>
+                <th
+                  className="px-4 py-3.5 text-right font-black"
+                  title="Tồn đầu + Xuất − Lỗi hỏng − Tồn cuối (cả ca, chưa × % mặt hàng)"
+                >
+                  Tổng NVL ca (kg)
+                </th>
+                <th
+                  className="px-4 py-3.5 text-right font-black"
+                  title="SL mặt hàng ÷ tổng SL mọi SP trên lệnh SX"
+                >
+                  % mặt hàng
+                </th>
+                <th
+                  className="px-4 py-3.5 text-right font-black"
+                  title="Tổng NVL ca × % mặt hàng"
+                >
+                  Trọng lượng thực tế (kg)
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-violet-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải báo cáo sản lượng...
+                  </td>
+                </tr>
+              ) : sanLuongGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có phiếu báo cáo sản lượng gắn ca/ngày lệnh máy BB.
+                  </td>
+                </tr>
+              ) : (
+                sanLuongGroups.map(group => {
+                  const expanded = isGroupExpanded('bao_cao_san_luong', group.groupKey);
+                  return (
+                    <React.Fragment key={group.groupKey}>
+                      <tr className="border-y border-violet-200 bg-violet-50/70 font-bold hover:bg-violet-100/60 transition">
+                        <td className="px-3 py-2.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('bao_cao_san_luong', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-300 bg-white text-violet-800 shadow-sm transition hover:bg-violet-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
+                            aria-expanded={expanded}
+                          >
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">
+                          {group.shiftLabel || group.shift || '—'}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold text-zinc-800">{group.machine || '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">
+                          {group.productCount}/{group.lineCount}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-violet-800">
+                          {formatNumber(group.totalQuantity, 2)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-700">
+                          {formatKg(group.totalNormWeightKg, 3)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-zinc-400">—</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-zinc-400">—</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-amber-800">
+                          {formatKg(group.totalActualWeightKg, 2)}
+                        </td>
+                      </tr>
+                      {expanded
+                        ? (group.productGroups || []).map(productGroup => {
+                            const productGroupKey = `${group.groupKey}|product:${productGroup.key}`;
+                            const productExpanded = isGroupExpanded('bao_cao_san_luong', productGroupKey);
+                            const productNormTotal = productGroup.lines.reduce(
+                              (sum, line) => sum + (line.normWeightKg || 0),
+                              0
+                            );
+                            const productActualTotal = productGroup.lines.reduce(
+                              (sum, line) => sum + (line.actualWeightKg || 0),
+                              0
+                            );
+                            return (
+                              <React.Fragment key={productGroupKey}>
+                                <tr className="border-y border-fuchsia-200 bg-fuchsia-50 font-bold text-fuchsia-950 hover:bg-fuchsia-100/80">
+                                  <td className="px-3 py-1.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleGroup('bao_cao_san_luong', productGroupKey)}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-fuchsia-300 bg-white text-fuchsia-800 shadow-sm transition hover:bg-fuchsia-50"
+                                      title={
+                                        productExpanded
+                                          ? 'Đóng nguyên vật liệu của sản phẩm'
+                                          : 'Mở nguyên vật liệu của sản phẩm'
+                                      }
+                                      aria-expanded={productExpanded}
+                                    >
+                                      <ChevronDown
+                                        className={`h-4 w-4 transition-transform ${productExpanded ? '' : '-rotate-90'}`}
+                                      />
+                                    </button>
+                                  </td>
+                                  <td colSpan={4} className="px-4 py-2">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-fuchsia-600">
+                                        Sản phẩm (báo cáo sản lượng)
+                                      </span>
+                                      {productGroup.productCode ? (
+                                        <span className="font-mono font-black text-fuchsia-900">
+                                          {productGroup.productCode}
+                                        </span>
+                                      ) : null}
+                                      <span className="font-black text-zinc-900">
+                                        {productGroup.productName || '—'}
+                                      </span>
+                                      {productGroup.reportCount > 1 ? (
+                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-600 ring-1 ring-fuchsia-200">
+                                          {productGroup.reportCount} phiếu
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono font-bold text-zinc-600">
+                                    {productGroup.lineCount}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono font-bold text-violet-800">
+                                    {formatNumber(productGroup.quantity, 2)}
+                                    {productGroup.unit ? ` ${productGroup.unit}` : ''}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono font-black text-emerald-700">
+                                    {formatKg(productNormTotal, 3)}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono text-zinc-400">—</td>
+                                  <td className="px-4 py-2 text-right font-mono font-bold text-orange-800">
+                                    {productGroup.lines[0]
+                                      ? formatPercent(productGroup.lines[0].productSharePercent, 2)
+                                      : '—'}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono font-black text-amber-800">
+                                    {formatKg(productActualTotal, 2)}
+                                  </td>
+                                </tr>
+                                {productExpanded ? (
+                                  <>
+                                    <tr className="border-y border-violet-100 bg-violet-100/50 text-xs font-black uppercase tracking-wider text-violet-900">
+                                      <td />
+                                      <td className="px-4 py-2 font-black">Mã NVL</td>
+                                      <td className="px-4 py-2 font-black">Tên nguyên vật liệu</td>
+                                      <td className="px-4 py-2 font-black">ĐVT</td>
+                                      <td className="px-4 py-2 text-right font-black">Tỉ lệ ĐM (%)</td>
+                                      <td className="px-4 py-2 text-right font-black">Thành phần</td>
+                                      <td className="px-4 py-2 text-right font-black">SL SP</td>
+                                      <td
+                                        className="px-4 py-2 text-right font-black"
+                                        title="SL báo cáo sản lượng × định mức thành phần SP"
+                                      >
+                                        KL định mức (kg)
+                                      </td>
+                                      <td
+                                        className="px-4 py-2 text-right font-black"
+                                        title="Tồn đầu + Xuất − Lỗi hỏng − Tồn cuối (cả ca)"
+                                      >
+                                        Tổng NVL ca (kg)
+                                      </td>
+                                      <td
+                                        className="px-4 py-2 text-right font-black"
+                                        title="SL mặt hàng ÷ tổng SL lệnh SX"
+                                      >
+                                        % mặt hàng
+                                      </td>
+                                      <td
+                                        className="px-4 py-2 text-right font-black"
+                                        title="Tổng NVL ca × % mặt hàng"
+                                      >
+                                        Trọng lượng thực tế (kg)
+                                      </td>
+                                    </tr>
+                                    {productGroup.lines.length === 0 ? (
+                                      <tr className="bg-white">
+                                        <td />
+                                        <td colSpan={10} className="px-4 py-2 text-sm font-semibold text-zinc-400">
+                                          Sản phẩm chưa có nguyên vật liệu trong công thức.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      productGroup.lines.map(row => {
+                                        const openBalanceDetail = (metric: BbInboundBalanceDetailMetric) =>
+                                          setInboundBalanceDetail({
+                                            metric,
+                                            itemCode: row.itemCode,
+                                            itemName: row.itemName,
+                                            ngay: group.ngay,
+                                            shift: group.shift,
+                                            shiftLabel: group.shiftLabel,
+                                            orderCode: group.orderCode,
+                                            machine: group.machine,
+                                            balanceDetail: row.balanceDetail
+                                          });
+                                        return (
+                                          <tr
+                                            key={row.key}
+                                            className="bg-white font-semibold hover:bg-violet-50/50 border-b border-slate-50"
+                                          >
+                                            <td className="px-3 py-2" />
+                                            <td className="px-4 py-2 font-mono font-bold text-zinc-800">
+                                              {row.itemCode || '—'}
+                                            </td>
+                                            <td className="px-4 py-2 text-zinc-700">{row.itemName || '—'}</td>
+                                            <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
+                                            <td className="px-4 py-2 text-right font-mono text-zinc-600">
+                                              {formatPercent(row.tiLeDinhMucPercent, 2)}
+                                            </td>
+                                            <td className="px-4 py-2 text-right font-mono text-zinc-700">
+                                              {row.dinhMucRate === null || row.dinhMucRate === undefined
+                                                ? '—'
+                                                : `${formatNumber(
+                                                    row.dinhMucRate,
+                                                    row.amountType === 'percent' ? 2 : 3
+                                                  )}${row.dinhMucUnit ? ` ${row.dinhMucUnit}` : ''}`}
+                                            </td>
+                                            <td className="px-4 py-2 text-right font-mono font-bold text-violet-800">
+                                              {formatNumber(productGroup.quantity, 2)}
+                                            </td>
+                                            <td className="px-4 py-2 text-right font-mono font-black text-emerald-700">
+                                              {row.materialNorm ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setSelectedMaterialNorm(row.materialNorm)}
+                                                  className="rounded-md px-1 py-0.5 underline decoration-dotted underline-offset-2 transition hover:bg-emerald-100"
+                                                  title="Bấm để xem công thức định mức"
+                                                >
+                                                  {formatKg(row.normWeightKg, 3)}
+                                                </button>
+                                              ) : (
+                                                formatKg(row.normWeightKg, 3)
+                                              )}
+                                            </td>
+                                            <td
+                                              className="px-4 py-2 text-right font-mono font-bold text-sky-800"
+                                              title="Tổng NVL cả ca (chưa × % mặt hàng)"
+                                            >
+                                              {formatKg(row.baseActualWeightKg, 2)}
+                                            </td>
+                                            <td className="px-4 py-2 text-right font-mono font-bold text-orange-800">
+                                              {formatPercent(row.productSharePercent, 2)}
+                                            </td>
+                                            <td className="px-4 py-2 text-right font-mono font-black text-amber-800">
+                                              {row.balanceDetail ? (
+                                                <ThucDungMetricButton
+                                                  label={formatKg(row.actualWeightKg, 2)}
+                                                  className="font-mono font-black text-amber-800"
+                                                  title={`Tổng NVL ca ${formatKg(row.baseActualWeightKg, 2)} × ${formatNumber(row.productSharePercent, 2)}%`}
+                                                  onOpen={() => openBalanceDetail('thuc_te')}
+                                                />
+                                              ) : (
+                                                formatKg(row.actualWeightKg, 2)
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </>
+                                ) : null}
+                              </React.Fragment>
+                            );
+                          })
+                        : null}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+            {!isLoading && sanLuongGroups.length > 0 ? (
+              <tfoot className="border-t-2 border-violet-300 bg-violet-50 text-xs font-black text-violet-950">
+                <tr>
+                  <td colSpan={7} className="px-4 py-3.5 text-right uppercase tracking-wider">
+                    Tổng
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-emerald-800">
+                    {formatKg(
+                      sanLuongGroups.reduce((sum, g) => sum + (g.totalNormWeightKg || 0), 0),
+                      3
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-mono text-zinc-400">—</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-zinc-400">—</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-amber-800">
+                    {formatKg(
+                      sanLuongGroups.reduce((sum, g) => sum + (g.totalActualWeightKg || 0), 0),
+                      2
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
+            ) : null}
+          </table>
         ) : activeTab === 'bao_cao_loi_hong' ? (
           <>
-            {damagedGroups.length > 0 ? (
+            {damagedGroupsWithMixing.length > 0 ? (
               <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <p className="text-xs font-extrabold text-slate-700 sm:text-sm">
-                  Bấm mũi tên ở dòng cha để đóng/mở các dòng con
+                  Bấm mũi tên ở dòng cha để đóng/mở các dòng con (NVL từ báo cáo phối trộn cùng ngày/ca)
                 </p>
                 <div className="flex shrink-0 gap-2">
                   <button
                     type="button"
                     onClick={() => setAllActiveGroupsExpanded(true)}
-                    disabled={damagedGroups.every(g => isGroupExpanded('bao_cao_loi_hong', g.groupKey))}
+                    disabled={damagedGroupsWithMixing.every(g => isGroupExpanded('bao_cao_loi_hong', g.groupKey))}
                     className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-black text-rose-800 shadow-sm transition hover:bg-rose-50 disabled:cursor-default disabled:opacity-40"
                   >
                     Mở tất cả
@@ -1395,7 +2079,7 @@ export default function ControlBoardBbMachineReportTable({
                   <button
                     type="button"
                     onClick={() => setAllActiveGroupsExpanded(false)}
-                    disabled={damagedGroups.every(g => !isGroupExpanded('bao_cao_loi_hong', g.groupKey))}
+                    disabled={damagedGroupsWithMixing.every(g => !isGroupExpanded('bao_cao_loi_hong', g.groupKey))}
                     className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-default disabled:opacity-40"
                   >
                     Đóng tất cả
@@ -1413,7 +2097,7 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-4 py-3.5 font-black">Ca</th>
                 <th className="px-4 py-3.5 font-black">Lệnh SX</th>
                 <th className="px-4 py-3.5 font-black">Máy</th>
-                <th className="px-4 py-3.5 text-right font-black">Dòng NVL</th>
+                <th className="px-4 py-3.5 text-right font-black">Dòng NVL trộn</th>
                 <th className="px-4 py-3.5 text-right font-black">Lỗi hỏng (kg)</th>
               </tr>
             </thead>
@@ -1422,17 +2106,17 @@ export default function ControlBoardBbMachineReportTable({
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải báo cáo lỗi hỏng...
+                    Đang tải báo cáo hàng lỗi hỏng...
                   </td>
                 </tr>
-              ) : damagedGroups.length === 0 ? (
+              ) : damagedGroupsWithMixing.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
-                    Chưa có báo cáo lỗi hỏng gắn ca/ngày lệnh máy BB.
+                    Chưa có báo cáo hàng lỗi hỏng gắn ca/ngày lệnh máy BB.
                   </td>
                 </tr>
               ) : (
-                damagedGroups.map(group => {
+                damagedGroupsWithMixing.map(group => {
                   const expanded = isGroupExpanded('bao_cao_loi_hong', group.groupKey);
                   return (
                     <React.Fragment key={group.groupKey}>
@@ -1454,7 +2138,9 @@ export default function ControlBoardBbMachineReportTable({
                         </td>
                         <td className="px-4 py-3 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
                         <td className="px-4 py-3 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-zinc-600">{group.lineCount}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-zinc-600">
+                          {group.mixingLineCount}
+                        </td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-rose-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
@@ -1463,35 +2149,57 @@ export default function ControlBoardBbMachineReportTable({
                         <>
                           <tr className="border-y border-rose-100 bg-rose-100/40 text-xs font-black uppercase tracking-wider text-rose-900">
                             <td />
-                            <td className="px-4 py-2.5 font-black">Phiếu</td>
                             <td className="px-4 py-2.5 font-black">Mã NVL</td>
                             <td colSpan={2} className="px-4 py-2.5 font-black">
-                              Tên NVL
+                              Tên nguyên phụ liệu (báo cáo phối trộn)
                             </td>
                             <td className="px-4 py-2.5 font-black">ĐVT</td>
-                            <td className="px-4 py-2.5 text-right font-black">Tổng (kg)</td>
+                            <td className="px-4 py-2.5 text-right font-black">Tỉ lệ trộn (%)</td>
+                            <td
+                              className="px-4 py-2.5 text-right font-black"
+                              title="Tổng lỗi hỏng × Tỉ lệ trộn (%)"
+                            >
+                              Trọng lượng lỗi
+                            </td>
                           </tr>
-                          {group.lines.map(row => (
-                            <tr key={row.key} className="bg-white font-semibold hover:bg-rose-50/40 border-b border-slate-50">
-                              <td className="px-3 py-2.5" />
-                              <td className="px-4 py-2.5 font-mono text-zinc-700">{row.documentNo || '—'}</td>
-                              <td className="px-4 py-2.5 font-mono font-bold text-zinc-800">
-                                {row.materialCode || '—'}
-                              </td>
-                              <td colSpan={2} className="px-4 py-2.5 text-zinc-700">
-                                {row.materialName || '—'}
-                                {row.productCode ? (
-                                  <span className="ml-2 text-[10px] font-semibold text-zinc-400">
-                                    · SP {row.productCode}
-                                  </span>
-                                ) : null}
-                              </td>
-                              <td className="px-4 py-2.5 text-zinc-600">{row.unit || 'kg'}</td>
-                              <td className="px-4 py-2.5 text-right font-mono font-bold text-rose-700">
-                                {formatKg(row.weightKg, 3)}
+                          {group.mixingLines.length === 0 ? (
+                            <tr className="bg-white">
+                              <td />
+                              <td colSpan={6} className="px-4 py-2.5 text-sm font-semibold text-zinc-400">
+                                Chưa có NVL trong báo cáo phối trộn của ngày/ca này.
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            group.mixingLines.map(row => {
+                              const trongLuongLoiKg =
+                                row.tiLeTronPercent !== null &&
+                                Number.isFinite(row.tiLeTronPercent) &&
+                                Number.isFinite(group.totalWeightKg)
+                                  ? Math.round(((group.totalWeightKg * row.tiLeTronPercent) / 100) * 100) / 100
+                                  : null;
+                              return (
+                              <tr
+                                key={row.key}
+                                className="bg-white font-semibold hover:bg-rose-50/40 border-b border-slate-50"
+                              >
+                                <td className="px-3 py-2.5" />
+                                <td className="px-4 py-2.5 font-mono font-bold text-zinc-800">
+                                  {row.materialCode || '—'}
+                                </td>
+                                <td colSpan={2} className="px-4 py-2.5 text-zinc-700">
+                                  {row.materialName || '—'}
+                                </td>
+                                <td className="px-4 py-2.5 text-zinc-600">{row.unit || 'kg'}</td>
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-orange-800">
+                                  {formatPercent(row.tiLeTronPercent, 2)}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-rose-700">
+                                  {trongLuongLoiKg === null ? '—' : formatKg(trongLuongLoiKg, 3)}
+                                </td>
+                              </tr>
+                              );
+                            })
+                          )}
                         </>
                       ) : null}
                     </React.Fragment>
@@ -1499,11 +2207,11 @@ export default function ControlBoardBbMachineReportTable({
                 })
               )}
             </tbody>
-            {!isLoading && damagedGroups.length > 0 ? (
+            {!isLoading && damagedGroupsWithMixing.length > 0 ? (
               <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
                   <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
-                    Tổng lỗi hỏng
+                    Tổng hàng lỗi hỏng
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-rose-800">{formatKg(damagedTotalKg, 3)}</td>
                 </tr>
@@ -1875,6 +2583,244 @@ export default function ControlBoardBbMachineReportTable({
               </tfoot>
             ) : null}
           </table>
+        ) : activeTab === 'tong_hop_vat_tu_thuc_xuat_dung' ? (
+          <table className="min-w-[1500px] w-full whitespace-nowrap text-left text-sm font-semibold">
+            <thead className="bg-gradient-to-r from-emerald-100 to-teal-50 border-b-2 border-emerald-300 text-xs uppercase tracking-wider text-emerald-900">
+              <tr>
+                <th className="w-10 px-2 py-2.5 font-black" />
+                <th className="px-3 py-2.5 font-black">Ngày</th>
+                <th className="px-3 py-2.5 font-black">Ca</th>
+                <th className="px-3 py-2.5 font-black">Số lệnh SX</th>
+                <th className="px-3 py-2.5 font-black">Máy</th>
+                <th className="px-3 py-2.5 text-right font-black">SP / NVL</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn đầu ca (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Xuất thực tế (kg)</th>
+                <th className="px-3 py-2.5 text-right font-black">Tồn cuối ca (kg)</th>
+                <th
+                  className="px-3 py-2.5 text-right font-black"
+                  title="Thực dùng (kg) = Tồn đầu ca + Xuất thực tế − Tồn cuối ca"
+                >
+                  Thực dùng (kg)
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Đang tải tổng hợp vật tư thực xuất dùng...
+                  </td>
+                </tr>
+              ) : tongHopThucXuatGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-3 py-10 text-center font-bold text-zinc-400">
+                    Chưa có NVL từ báo cáo phối trộn gắn ca/ngày lệnh máy BB.
+                  </td>
+                </tr>
+              ) : (
+                tongHopThucXuatGroups.map(group => {
+                  const expanded = isGroupExpanded('tong_hop_vat_tu_thuc_xuat_dung', group.groupKey);
+                  return (
+                    <React.Fragment key={group.groupKey}>
+                      <tr className="border-y border-emerald-200 bg-emerald-50/80 font-bold hover:bg-emerald-100/70">
+                        <td className="px-2 py-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup('tong_hop_vat_tu_thuc_xuat_dung', group.groupKey)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-300 bg-white text-emerald-800 shadow-sm transition hover:bg-emerald-50"
+                            title={expanded ? 'Đóng các dòng con' : 'Mở các dòng con'}
+                            aria-expanded={expanded}
+                          >
+                            <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                          </button>
+                        </td>
+                        <td className="px-3 py-2 font-mono font-bold text-zinc-700">{group.ngay || '—'}</td>
+                        <td className="px-3 py-2 font-semibold text-zinc-800">
+                          {group.shiftLabel || group.shift || '—'}
+                        </td>
+                        <td className="px-3 py-2 font-mono font-black text-sky-800">{group.orderCode || '—'}</td>
+                        <td className="px-3 py-2 font-semibold text-zinc-800">{group.machine || '—'}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">
+                          {group.productCount}/{group.lineCount}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.tonDauCaTotal, 3)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.xuatCaTotal, 3)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                          {formatKg(group.tonCuoiCaTotal, 3)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800">
+                          {formatKg(group.totalThucDungKg, 3)}
+                        </td>
+                      </tr>
+                      {expanded
+                        ? (group.productGroups || []).map(productGroup => {
+                            const productGroupKey = `${group.groupKey}|product:${productGroup.key}`;
+                            const productExpanded = isGroupExpanded(
+                              'tong_hop_vat_tu_thuc_xuat_dung',
+                              productGroupKey
+                            );
+                            return (
+                              <React.Fragment key={productGroupKey}>
+                                <tr className="border-y border-sky-200 bg-sky-50 font-bold text-sky-950 hover:bg-sky-100/80">
+                                  <td className="px-2 py-1.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        toggleGroup('tong_hop_vat_tu_thuc_xuat_dung', productGroupKey)
+                                      }
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-300 bg-white text-sky-800 shadow-sm transition hover:bg-sky-50"
+                                      title={
+                                        productExpanded ? 'Đóng NVL của sản phẩm' : 'Mở NVL của sản phẩm'
+                                      }
+                                      aria-expanded={productExpanded}
+                                    >
+                                      <ChevronDown
+                                        className={`h-4 w-4 transition-transform ${productExpanded ? '' : '-rotate-90'}`}
+                                      />
+                                    </button>
+                                  </td>
+                                  <td colSpan={4} className="px-3 py-2">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-sky-600">
+                                        Sản phẩm
+                                      </span>
+                                      {productGroup.productCode ? (
+                                        <span className="font-mono font-black text-sky-900">
+                                          {productGroup.productCode}
+                                        </span>
+                                      ) : null}
+                                      <span className="font-black text-zinc-900">
+                                        {productGroup.productName || '—'}
+                                      </span>
+                                      {productGroup.quantity > 0 ? (
+                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-600 ring-1 ring-sky-200">
+                                          SL: {formatNumber(productGroup.quantity, 3)}
+                                          {productGroup.unit ? ` ${productGroup.unit}` : ''}
+                                        </span>
+                                      ) : null}
+                                      {productGroup.share > 0 && productGroup.share < 1 ? (
+                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+                                          Phân bổ {(productGroup.share * 100).toFixed(1)}%
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-mono font-bold text-zinc-600">
+                                    {productGroup.lineCount}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                                    {formatKg(productGroup.tonDauTotal, 3)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                                    {formatKg(productGroup.xuatTotal, 3)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                                    {formatKg(productGroup.tonCuoiTotal, 3)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800">
+                                    {formatKg(productGroup.thucDungTotal, 3)}
+                                  </td>
+                                </tr>
+                                {productExpanded ? (
+                                  <>
+                                    <tr className="border-y border-emerald-100 bg-emerald-50 text-xs font-black uppercase tracking-wider text-emerald-900">
+                                      <td />
+                                      <td className="px-3 py-1.5 font-black">Mã NVL</td>
+                                      <td className="px-3 py-1.5 font-black">Tên NVL (báo cáo phối trộn)</td>
+                                      <td
+                                        className="px-3 py-1.5 text-right font-black"
+                                        title="Lấy từ tab Báo cáo dữ liệu tồn đầu ca — phân bổ theo SP nếu nhiều SP"
+                                      >
+                                        Tồn đầu ca
+                                      </td>
+                                      <td
+                                        className="px-3 py-1.5 text-right font-black"
+                                        title="Lấy từ tab Dữ liệu trong phiếu xuất kho vật tư — phân bổ theo SP nếu nhiều SP"
+                                      >
+                                        Xuất thực tế
+                                      </td>
+                                      <td
+                                        className="px-3 py-1.5 text-right font-black"
+                                        title="Lấy từ tab Dữ liệu trong báo cáo kiểm tồn cuối ca — phân bổ theo SP nếu nhiều SP"
+                                      >
+                                        Tồn cuối ca
+                                      </td>
+                                      <td
+                                        className="px-3 py-1.5 text-right font-black"
+                                        title="Thực dùng (kg) = Tồn đầu ca + Xuất thực tế − Tồn cuối ca"
+                                      >
+                                        Thực dùng (kg)
+                                      </td>
+                                    </tr>
+                                    {productGroup.lines.map(row => (
+                                      <tr key={row.key} className="bg-white font-semibold hover:bg-emerald-50/60">
+                                        <td className="px-2 py-1.5" />
+                                        <td className="px-3 py-1.5 font-mono font-bold text-zinc-800">
+                                          {row.materialCode || '—'}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-zinc-700">{row.materialName || '—'}</td>
+                                        <td className="px-3 py-1.5 text-right font-mono text-zinc-600">
+                                          <ThucDungMetricButton
+                                            label={formatKg(row.tonDauKg, 3)}
+                                            className="font-mono text-zinc-600"
+                                            onOpen={() => setTongHopDetail({ line: row, metric: 'ton_dau' })}
+                                          />
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right font-mono text-amber-700">
+                                          <ThucDungMetricButton
+                                            label={formatKg(row.xuatTrongCaKg, 3)}
+                                            className="font-mono text-amber-700"
+                                            onOpen={() => setTongHopDetail({ line: row, metric: 'xuat_thuc_te' })}
+                                          />
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right font-mono text-zinc-600">
+                                          <ThucDungMetricButton
+                                            label={formatKg(row.tonCuoiKg, 3)}
+                                            className="font-mono text-zinc-600"
+                                            onOpen={() => setTongHopDetail({ line: row, metric: 'ton_cuoi' })}
+                                          />
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-700">
+                                          <ThucDungMetricButton
+                                            label={formatKg(row.thucDungKg, 3)}
+                                            className="font-mono font-bold text-emerald-700"
+                                            onOpen={() => setTongHopDetail({ line: row, metric: 'thuc_dung' })}
+                                          />
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </>
+                                ) : null}
+                              </React.Fragment>
+                            );
+                          })
+                        : null}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+            {!isLoading && tongHopThucXuatGroups.length > 0 ? (
+              <tfoot className="border-t-2 border-emerald-300 bg-emerald-50 text-xs font-black text-emerald-950">
+                <tr>
+                  <td colSpan={9} className="px-3 py-2.5 text-right uppercase tracking-wider">
+                    Tổng thực dùng
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-emerald-800">
+                    {formatKg(
+                      tongHopThucXuatGroups.reduce((sum, g) => sum + (g.totalThucDungKg || 0), 0),
+                      3
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
+            ) : null}
+          </table>
         ) : activeTab === 'tong_dinh_muc_nvl_nhap_kho' ? (
           <>
             {inboundNormGroups.length > 0 ? (
@@ -1904,7 +2850,7 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
 
             <div className="bb-table-scroll">
-          <table className="min-w-[1200px] w-full text-left text-sm font-semibold">
+          <table className="min-w-[1700px] w-full text-left text-sm font-semibold">
             <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-3 py-3.5 font-black" />
@@ -1921,14 +2867,14 @@ export default function ControlBoardBbMachineReportTable({
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải định mức từ phiếu báo cáo sản lượng...
                   </td>
                 </tr>
               ) : inboundNormGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có phiếu báo cáo sản lượng theo ngày/ca đã chọn.
                   </td>
                 </tr>
@@ -1957,31 +2903,19 @@ export default function ControlBoardBbMachineReportTable({
                         <td className="px-4 py-3 font-semibold text-zinc-800">{group.machine || '—'}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-zinc-600">{group.productGroups.length}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-amber-800">
-                          {formatKg(group.totalNormWeightKg, 3)}
+                          {formatKg(group.totalNormWeightKg, 2)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-zinc-600">
-                          {formatNumber(group.quantity, 3)}
+                          {formatNumber(group.quantity, 2)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-amber-700">
-                          {formatKg(group.totalWeightKg, 3)}
+                          {formatKg(group.totalWeightKg, 2)}
                         </td>
                       </tr>
                       {expanded ? (
                         <>
-                          <tr className="border-y border-amber-100 bg-amber-100/40 text-xs font-black uppercase tracking-wider text-amber-900">
-                            <td />
-                            <td className="px-4 py-2.5 font-black">Mã NVL</td>
-                            <td colSpan={3} className="px-4 py-2.5 font-black">
-                              Tên NVL
-                            </td>
-                            <td className="px-4 py-2.5 font-black">ĐVT</td>
-                            <td className="px-4 py-2.5 text-right font-black">SL thực nhập</td>
-                            <td className="px-4 py-2.5 text-right font-black">Trọng lượng thực nhập</td>
-                          </tr>
-                          {(() => {
-                            const allLines = group.productGroups.flatMap(productGroup =>
-                              (productGroup.lines || []).map(row => ({ ...row }))
-                            );
+                          {group.productGroups.map((productGroup, pgIdx) => {
+                            const allLines = (productGroup.lines || []).map(row => ({ ...row }));
                             const groupedByCode = new Map<
                               string,
                               {
@@ -1990,6 +2924,8 @@ export default function ControlBoardBbMachineReportTable({
                                 unit: string;
                                 totalInboundQty: number;
                                 totalInboundKg: number;
+                                balanceDetail: BbInboundMaterialBalanceDetail | null;
+                                sourceLines: BbWarehouseExportLineRow[];
                               }
                             >();
                             allLines.forEach(row => {
@@ -2000,36 +2936,172 @@ export default function ControlBoardBbMachineReportTable({
                                   itemName: row.itemName,
                                   unit: row.unit,
                                   totalInboundQty: 0,
-                                  totalInboundKg: 0
+                                  totalInboundKg: 0,
+                                  balanceDetail: row.balanceDetail,
+                                  sourceLines: []
                                 });
                               }
                               const existing = groupedByCode.get(key)!;
-                              if (!isWarehouseKgUnit(row.unit)) {
+                              // SL "cái" chỉ cộng các dòng định mức loại số lượng (tránh trộn % vào cái).
+                              if (
+                                row.materialNorm?.amountType === 'quantity' &&
+                                !isWarehouseKgUnit(row.unit)
+                              ) {
                                 existing.totalInboundQty += row.quantity > 0 ? row.quantity : 0;
+                                if (row.unit) existing.unit = row.unit;
                               }
                               existing.totalInboundKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
+                              existing.sourceLines.push(row);
                             });
-                            return Array.from(groupedByCode.values()).map((row, idx) => (
-                              <tr key={`${group.groupKey}-nvl-${idx}`} className="bg-white font-semibold hover:bg-amber-50/40 border-b border-slate-50">
+                            const productNvlRows = Array.from(groupedByCode.values());
+                            return (
+                              <React.Fragment key={`${group.groupKey}-pg-${pgIdx}`}>
+                                <tr className="border-y border-amber-300 bg-amber-200/60 text-sm font-black text-amber-900">
+                                  <td className="px-3 py-2" />
+                                  <td colSpan={5} className="px-4 py-2">
+                                    🏷 {productGroup.productName || productGroup.productCode || '—'}
+                                    {productGroup.productCode ? (
+                                      <span className="ml-1 font-mono text-xs text-amber-700">
+                                        ({productGroup.productCode})
+                                      </span>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono text-amber-800">
+                                    {formatKg(productGroup.normWeightKg, 2)}
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono">
+                                    {formatNumber(productGroup.quantity, 0)}
+                                    <span className="ml-1 text-xs font-bold text-amber-700">
+                                      {productGroup.unit || ''}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2 text-right font-mono text-amber-800">
+                                    {formatKg(productGroup.totalWeightKg, 2)}
+                                  </td>
+                                </tr>
+                                <tr className="border-y border-amber-100 bg-amber-100/40 text-xs font-black uppercase tracking-wider text-amber-900">
+                                  <td />
+                                  <td className="px-4 py-2.5 font-black">Mã NVL</td>
+                                  <td colSpan={4} className="px-4 py-2.5 font-black">
+                                    Tên NVL
+                                  </td>
+                                  <td className="px-4 py-2.5 font-black">ĐVT</td>
+                                  <td className="px-4 py-2.5 text-right font-black">SL thực nhập</td>
+                                  <td
+                                    className="px-4 py-2.5 text-right font-black"
+                                    title="Tồn đầu ca: đã trộn (bồn trộn) + chưa trộn"
+                                  >
+                                    Tồn đầu ca
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-black">Xuất thực tế</td>
+                                  <td className="px-4 py-2.5 text-right font-black">Hàng lỗi hỏng</td>
+                                  <td className="px-4 py-2.5 text-right font-black">Tồn cuối ca</td>
+                                  <td
+                                    className="px-4 py-2.5 text-right font-black"
+                                    title="Trọng lượng = Tồn đầu ca + Xuất thực tế − Hàng lỗi hỏng − Tồn cuối ca"
+                                  >
+                                    Trọng lượng
+                                  </td>
+                                </tr>
+                                {productNvlRows.length === 0 ? (
+                                  <tr className="bg-white">
+                                    <td />
+                                    <td colSpan={12} className="px-4 py-2.5 text-sm font-semibold text-zinc-400">
+                                      Thành phẩm chưa có công thức NVL.
+                                    </td>
+                                  </tr>
+                                ) : null}
+                                {productNvlRows.map((row, idx) => {
+                              const openNormDetail = (metric: 'weight' | 'quantity') =>
+                                setNormDetail({
+                                  orderCode: group.orderCode,
+                                  ngay: group.ngay,
+                                  shiftLabel: group.shiftLabel || group.shift,
+                                  machine: `${productGroup.productName || productGroup.productCode || ''} · ${group.machine}`,
+                                  itemCode: row.itemCode,
+                                  itemName: row.itemName,
+                                  unit: row.unit,
+                                  metric,
+                                  totalKg: row.totalInboundKg,
+                                  totalQty: row.totalInboundQty,
+                                  balanceDetail: row.balanceDetail,
+                                  lines: row.sourceLines
+                                });
+                              const showQty = !isWarehouseKgUnit(row.unit) && row.totalInboundQty > 0;
+                              const openBalanceDetail = (metric: BbInboundBalanceDetailMetric) =>
+                                setInboundBalanceDetail({
+                                  metric,
+                                  itemCode: row.itemCode,
+                                  itemName: row.itemName,
+                                  ngay: group.ngay,
+                                  shift: group.shift,
+                                  shiftLabel: group.shiftLabel || group.shift,
+                                  orderCode: group.orderCode,
+                                  machine: group.machine,
+                                  balanceDetail: row.balanceDetail
+                                });
+                              return (
+                              <tr key={`${group.groupKey}-pg-${pgIdx}-nvl-${idx}`} className="bg-white font-semibold hover:bg-amber-50/40 border-b border-slate-50">
                                 <td className="px-3 py-2.5" />
                                 <td className="px-4 py-2.5 font-mono font-bold text-zinc-800">
                                   {row.itemCode || '—'}
                                 </td>
-                                <td colSpan={3} className="px-4 py-2.5 text-zinc-700">
+                                <td colSpan={4} className="px-4 py-2.5 text-zinc-700">
                                   {row.itemName || '—'}
                                 </td>
                                 <td className="px-4 py-2.5 text-zinc-600">{row.unit || '—'}</td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-700">
-                                  {isWarehouseKgUnit(row.unit) || row.totalInboundQty <= 0
-                                    ? '—'
-                                    : formatNumber(row.totalInboundQty, 3)}
+                                  {showQty ? (
+                                    <ThucDungMetricButton
+                                      label={formatNumber(row.totalInboundQty, 2)}
+                                      className="font-mono font-bold text-zinc-700"
+                                      onOpen={() => openNormDetail('quantity')}
+                                    />
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono text-zinc-600">
+                                  <ThucDungMetricButton
+                                    label={row.balanceDetail ? formatKg(row.balanceDetail.tonDauKg, 2) : '—'}
+                                    className="font-mono text-zinc-600"
+                                    onOpen={() => openBalanceDetail('ton_dau')}
+                                  />
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono text-zinc-600">
+                                  <ThucDungMetricButton
+                                    label={row.balanceDetail ? formatKg(row.balanceDetail.xuatThucTeKg, 2) : '—'}
+                                    className="font-mono text-zinc-600"
+                                    onOpen={() => openBalanceDetail('xuat_thuc_te')}
+                                  />
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono text-rose-700">
+                                  <ThucDungMetricButton
+                                    label={row.balanceDetail ? formatKg(row.balanceDetail.loiHongKg, 2) : '—'}
+                                    className="font-mono text-rose-700"
+                                    onOpen={() => openBalanceDetail('loi_hong')}
+                                  />
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono text-zinc-600">
+                                  <ThucDungMetricButton
+                                    label={row.balanceDetail ? formatKg(row.balanceDetail.tonCuoiKg, 2) : '—'}
+                                    className="font-mono text-zinc-600"
+                                    onOpen={() => openBalanceDetail('ton_cuoi')}
+                                  />
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
-                                  {formatKg(row.totalInboundKg, 3)}
+                                  <ThucDungMetricButton
+                                    label={formatKg(row.totalInboundKg, 2)}
+                                    className="font-mono font-bold text-amber-700"
+                                    onOpen={() => openNormDetail('weight')}
+                                  />
                                 </td>
                               </tr>
-                            ));
-                          })()}
+                              );
+                                })}
+                              </React.Fragment>
+                            );
+                          })}
                         </>
                       ) : null}
                     </React.Fragment>
@@ -2044,13 +3116,13 @@ export default function ControlBoardBbMachineReportTable({
                     Tổng định mức
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-amber-800">
-                    {formatKg(inboundNormTotalKg, 3)}
+                    {formatKg(inboundNormTotalKg, 2)}
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-zinc-700">
-                    {formatNumber(inboundNormGroups.reduce((sum, g) => sum + (g.quantity || 0), 0), 3)}
+                    {formatNumber(inboundNormGroups.reduce((sum, g) => sum + (g.quantity || 0), 0), 2)}
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-amber-800">
-                    {formatKg(inboundNormGroups.reduce((sum, g) => sum + (g.totalWeightKg || 0), 0), 3)}
+                    {formatKg(inboundNormGroups.reduce((sum, g) => sum + (g.totalWeightKg || 0), 0), 2)}
                   </td>
                 </tr>
               </tfoot>
@@ -2456,6 +3528,93 @@ export default function ControlBoardBbMachineReportTable({
         </div>
       </div>
     ) : null}
+    {selectedTonDauFormula ? (
+      <div
+        className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chi tiết công thức tồn đầu ca"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) setSelectedTonDauFormula(null);
+        }}
+      >
+        <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-indigo-800 to-indigo-600 px-5 py-4 text-white">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-100">Công thức tồn đầu (kg)</p>
+              <h4 className="mt-1 text-base font-black">
+                {selectedTonDauFormula.itemCode || '—'} · {selectedTonDauFormula.itemName || '—'}
+              </h4>
+              <p className="mt-1 text-xs font-semibold text-indigo-50">
+                {selectedTonDauFormula.orderCode || '—'} · {selectedTonDauFormula.ngay || '—'} ·{' '}
+                {selectedTonDauFormula.shiftLabel || '—'} · {selectedTonDauFormula.machine || '—'}
+              </p>
+              {selectedTonDauFormula.productCode || selectedTonDauFormula.productName ? (
+                <p className="mt-1 text-xs font-semibold text-indigo-100">
+                  Sản phẩm: {selectedTonDauFormula.productCode || '—'} · {selectedTonDauFormula.productName || '—'}
+                </p>
+              ) : null}
+              <p className="mt-2 font-mono text-lg font-black text-white">
+                {formatKg(selectedTonDauFormula.tonDauWeightKg, 3)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedTonDauFormula(null)}
+              className="rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-black hover:bg-white/20"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="space-y-4 p-5">
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-950">
+              {selectedTonDauFormula.fromNnsTron &&
+              selectedTonDauFormula.tiLeThucTeTbPercent !== null ? (
+                <>
+                  Tồn đầu = NNS-TRON ({formatKg(selectedTonDauFormula.nnsTronTonDauKg, 3)})
+                  {' × '}Tỉ lệ thực tế ({formatNumber(selectedTonDauFormula.tiLeThucTeTbPercent, 2)}%)
+                  {' = '}
+                  {formatKg(selectedTonDauFormula.tonDauWeightKg, 3)}
+                </>
+              ) : (
+                <>
+                  Tồn đầu = Tồn ghi nhận theo mã NVL trên báo cáo tồn đầu ca ={' '}
+                  {formatKg(selectedTonDauFormula.tonDauWeightKg, 3)}
+                </>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">NNS-TRON</p>
+                <p className="mt-1 font-mono text-lg font-black text-zinc-900">
+                  {formatKg(selectedTonDauFormula.nnsTronTonDauKg, 3)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tỉ lệ thực tế</p>
+                <p className="mt-1 font-mono text-lg font-black text-orange-800">
+                  {selectedTonDauFormula.tiLeThucTeTbPercent === null
+                    ? '—'
+                    : `${formatNumber(selectedTonDauFormula.tiLeThucTeTbPercent, 2)}%`}
+                </p>
+              </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tồn theo mã NVL</p>
+                <p className="mt-1 font-mono text-lg font-black text-zinc-900">
+                  {formatKg(selectedTonDauFormula.directTonDauKg, 3)}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs font-semibold text-zinc-500">
+              Khi có NNS-TRON: phân bổ về từng NVL bằng Tỉ lệ thực tế (phiếu trộn ca liền trước).
+            </p>
+          </div>
+        </div>
+      </div>
+    ) : null}
     {selectedExportWeight ? (
       <div
         className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
@@ -2685,7 +3844,7 @@ export default function ControlBoardBbMachineReportTable({
         aria-modal="true"
         aria-label="Chi tiết dữ liệu thực xuất dùng"
         onMouseDown={event => {
-          if (event.target === event.currentTarget) setThucDungDetail(null);
+          if (event.target === event.currentTarget) closeMetricDetail();
         }}
       >
         <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-teal-200 bg-white shadow-2xl">
@@ -2700,7 +3859,7 @@ export default function ControlBoardBbMachineReportTable({
             </div>
             <button
               type="button"
-              onClick={() => setThucDungDetail(null)}
+              onClick={closeMetricDetail}
               className="rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-black hover:bg-white/20"
             >
               Đóng
@@ -2757,7 +3916,248 @@ export default function ControlBoardBbMachineReportTable({
               </table>
             </div>
             <p className="text-xs font-semibold text-zinc-500">
-              Nguồn: Báo cáo phối trộn và/hoặc báo cáo tồn đầu/cuối ca theo đúng mã NVL của dòng đang xem.
+              Nguồn: tab Tồn đầu ca / Phiếu xuất kho / Kiểm tồn cuối ca (cùng số liệu các tab đó). Thực dùng =
+              Tồn đầu ca + Xuất thực tế − Tồn cuối ca.
+            </p>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    {normDetail ? (
+      <div
+        className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Công thức định mức NVL"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) setNormDetail(null);
+        }}
+      >
+        <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-amber-700 to-amber-500 px-5 py-4 text-white">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-100">
+                {normDetail.metric === 'weight' ? 'Trọng lượng (kg)' : 'SL thực nhập'}
+              </p>
+              <h4 className="mt-1 text-base font-black">
+                {normDetail.itemCode || '—'} · {normDetail.itemName || '—'}
+              </h4>
+              <p className="mt-1 text-xs font-semibold text-amber-50">
+                {normDetail.orderCode || '—'} · {normDetail.ngay || '—'} · {normDetail.shiftLabel || '—'} · {normDetail.machine || '—'}
+              </p>
+              <p className="mt-2 font-mono text-lg font-black text-white">
+                {normDetail.metric === 'weight'
+                  ? `${formatKg(normDetail.totalKg, 2)} kg`
+                  : `${formatNumber(normDetail.totalQty, 2)} ${normDetail.unit || ''}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNormDetail(null)}
+              className="rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-black hover:bg-white/20"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="space-y-3 overflow-auto p-5">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+              {normDetail.metric === 'weight'
+                ? 'Trọng lượng = [Tồn đầu ca] + [Xuất thực tế] − [Hàng lỗi hỏng] − [Tồn cuối ca]. Nếu mã NVL này dùng chung cho nhiều thành phẩm trong cùng lệnh, mỗi thành phẩm hiển thị lại đúng số cân bằng này (không chia nhỏ theo % định mức BOM).'
+                : 'SL thực nhập = Σ theo từng thành phẩm, đã hiệu chỉnh theo cùng số cân bằng thực tế với trọng lượng ở trên.'}
+            </div>
+            {normDetail.metric === 'weight' && normDetail.balanceDetail ? (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tồn đầu ca</p>
+                  <p className="mt-1 font-mono text-sm font-black text-zinc-800">
+                    {formatKg(normDetail.balanceDetail.tonDauKg, 2)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">+ Xuất thực tế</p>
+                  <p className="mt-1 font-mono text-sm font-black text-zinc-800">
+                    {formatKg(normDetail.balanceDetail.xuatThucTeKg, 2)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-rose-600">− Hàng lỗi hỏng</p>
+                  <p className="mt-1 font-mono text-sm font-black text-rose-700">
+                    {formatKg(normDetail.balanceDetail.loiHongKg, 2)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">− Tồn cuối ca</p>
+                  <p className="mt-1 font-mono text-sm font-black text-zinc-800">
+                    {formatKg(normDetail.balanceDetail.tonCuoiKg, 2)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">= Trọng lượng</p>
+                  <p className="mt-1 font-mono text-sm font-black text-amber-900">
+                    {formatKg(normDetail.balanceDetail.realKg, 2)}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            <div className="bb-table-scroll rounded-xl border border-zinc-200">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-zinc-100 text-[11px] uppercase tracking-wider text-zinc-600">
+                  <tr>
+                    <th className="px-3 py-2.5 font-black">Thành phẩm</th>
+                    <th className="px-3 py-2.5 text-right font-black">SL SP</th>
+                    <th className="px-3 py-2.5 font-black">Định mức</th>
+                    <th className="px-3 py-2.5 font-black">Công thức</th>
+                    <th className="px-3 py-2.5 text-right font-black">
+                      {normDetail.metric === 'weight' ? 'KL (kg)' : 'SL'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {normDetail.lines.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-8 text-center font-bold text-zinc-400">
+                        Không có dòng nguồn (thành phẩm chưa có công thức NVL).
+                      </td>
+                    </tr>
+                  ) : (
+                    normDetail.lines.map((line, index) => {
+                      const mn = line.materialNorm;
+                      const typeLabel = mn
+                        ? mn.amountType === 'percent'
+                          ? `${formatNumber(mn.rate, 2)}%`
+                          : `${formatNumber(mn.rate, 3)} ${mn.rateUnit}`
+                        : '—';
+                      return (
+                        <tr key={`${line.key}-${index}`} className="hover:bg-amber-50/40">
+                          <td className="px-3 py-2 font-semibold text-zinc-800">
+                            {mn?.productName || '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-zinc-700">
+                            {mn && mn.productQuantity > 0
+                              ? `${formatNumber(mn.productQuantity, 0)} ${mn.productUnit || ''}`
+                              : '—'}
+                          </td>
+                          <td className="px-3 py-2 font-semibold text-zinc-700">{typeLabel}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-zinc-600">
+                            {mn ? buildNormFormulaText(mn) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
+                            {normDetail.metric === 'weight'
+                              ? formatKg(line.weightKg ?? line.normWeightKg, 2)
+                              : mn?.amountType === 'quantity'
+                                ? formatNumber(line.quantity, 2)
+                                : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+                <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-black text-zinc-800">
+                  <tr>
+                    <td colSpan={4} className="px-3 py-2.5 text-right uppercase tracking-wider">
+                      Tổng
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-amber-800">
+                      {normDetail.metric === 'weight'
+                        ? formatKg(normDetail.totalKg, 2)
+                        : formatNumber(normDetail.totalQty, 2)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-xs font-semibold text-zinc-500">
+              Nguồn: cân bằng vật tư thực tế (tồn đầu đã trộn+chưa trộn, xuất kho thực tế, hàng lỗi hỏng, tồn cuối ca) — không nhân/chia theo % định mức BOM; công thức định mức bên trên chỉ để đối chiếu tham khảo (Báo cáo sản lượng × công thức sản phẩm). Khớp theo ngày + ca.
+            </p>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    {inboundBalanceDetailView ? (
+      <div
+        className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chi tiết logic hiển thị cân bằng vật tư thực tế"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) setInboundBalanceDetail(null);
+        }}
+      >
+        <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-amber-700 to-amber-500 px-5 py-4 text-white">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-100">
+                {inboundBalanceDetailView.valueLabel}
+              </p>
+              <h4 className="mt-1 text-base font-black">{inboundBalanceDetailView.title}</h4>
+              <p className="mt-1 text-xs font-semibold text-amber-50">{inboundBalanceDetailView.subtitle}</p>
+              <p className="mt-2 font-mono text-lg font-black text-white">{inboundBalanceDetailView.valueText}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInboundBalanceDetail(null)}
+              className="rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-black hover:bg-white/20"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="space-y-3 overflow-auto p-5">
+            {inboundBalanceDetailView.formula ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+                {inboundBalanceDetailView.formula}
+              </div>
+            ) : null}
+            <div className="overflow-x-auto rounded-xl border border-zinc-200">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-zinc-100 text-[11px] uppercase tracking-wider text-zinc-600">
+                  <tr>
+                    {inboundBalanceDetailView.columns.map(column => (
+                      <th
+                        key={column.key}
+                        className={`px-3 py-2.5 font-black ${column.align === 'right' ? 'text-right' : ''}`}
+                      >
+                        {column.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {inboundBalanceDetailView.rows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={inboundBalanceDetailView.columns.length}
+                        className="px-3 py-8 text-center font-bold text-zinc-400"
+                      >
+                        Không tìm thấy dòng nguồn tương ứng.
+                      </td>
+                    </tr>
+                  ) : (
+                    inboundBalanceDetailView.rows.map((row, index) => (
+                      <tr
+                        key={`${String(row.reportId || row.soPhieu || row.documentNo || row.ngay || 'row')}-${index}`}
+                        className="hover:bg-amber-50/50"
+                      >
+                        {inboundBalanceDetailView.columns.map(column => (
+                          <td
+                            key={column.key}
+                            className={`px-3 py-2 font-semibold text-zinc-800 ${
+                              column.align === 'right' ? 'text-right font-mono' : ''
+                            }`}
+                          >
+                            {formatThucDungDetailCell(row[column.key])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs font-semibold text-zinc-500">
+              Nguồn: báo cáo tồn đầu/cuối ca, phiếu xuất kho NVL, báo cáo hàng lỗi hỏng — khớp theo đúng mã NVL, ngày + ca.
             </p>
           </div>
         </div>

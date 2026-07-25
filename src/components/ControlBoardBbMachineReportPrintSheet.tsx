@@ -186,7 +186,7 @@ function buildMaterialRows(
   }
   const damagedGroup = findOrderGroup(props.damagedGroups, order.orderCode);
   for (const line of damagedGroup?.lines || []) {
-    ensure(line.materialCode, line.materialName, line.unit).damagedKg += line.weightKg || 0;
+    ensure(line.materialCode, line.materialName, line.unit || 'kg').damagedKg += line.weightKg || 0;
   }
   const mixingGroup = findOrderGroup(props.mixingGroups, order.orderCode);
   for (const line of mixingGroup?.lines || []) {

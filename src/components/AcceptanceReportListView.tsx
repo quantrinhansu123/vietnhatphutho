@@ -241,6 +241,7 @@ export default function AcceptanceReportListView({
 }) {
   const [filterFromDate, setFilterFromDate] = useState(todayIso());
   const [filterToDate, setFilterToDate] = useState(todayIso());
+  const [filterShift, setFilterShift] = useState('');
   const [reports, setReports] = useState<AcceptanceReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -254,8 +255,22 @@ export default function AcceptanceReportListView({
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const [viewingReport, setViewingReport] = useState<AcceptanceReport | null>(null);
 
-  const dateGroups = useMemo(() => buildDateGroups(reports), [reports]);
-  const allReportIds = useMemo(() => reports.map(report => report.id).filter(Boolean), [reports]);
+  const shiftOptions = useMemo<string[]>(() => {
+    const shifts = reports.reduce<string[]>((result, report) => {
+      const shift = report.ca.trim();
+      if (shift) result.push(shift);
+      return result;
+    }, []);
+    return Array.from(new Set<string>(shifts)).sort((a, b) =>
+      a.localeCompare(b, 'vi', { numeric: true })
+    );
+  }, [reports]);
+  const filteredReports = useMemo(
+    () => (filterShift ? reports.filter(report => report.ca?.trim() === filterShift) : reports),
+    [filterShift, reports]
+  );
+  const dateGroups = useMemo(() => buildDateGroups(filteredReports), [filteredReports]);
+  const allReportIds = useMemo(() => filteredReports.map(report => report.id).filter(Boolean), [filteredReports]);
   const selectedCount = selectedIds.size;
   const allSelected = allReportIds.length > 0 && selectedIds.size === allReportIds.length;
 
@@ -356,7 +371,7 @@ export default function AcceptanceReportListView({
   };
 
   const handlePrint = () => {
-    startPrint(buildAcceptancePrintSlips(addProductNamesForPrint(reports)));
+    startPrint(buildAcceptancePrintSlips(addProductNamesForPrint(filteredReports)));
   };
 
   const handleDelete = async (id: string) => {
@@ -494,7 +509,7 @@ export default function AcceptanceReportListView({
           <div className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4 text-emerald-700" />
             <span className="text-xs font-black uppercase tracking-wider text-zinc-600">
-              {dateGroups.length} ngày · {reports.length} dòng
+              {dateGroups.length} ngày · {filteredReports.length} dòng
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -521,12 +536,23 @@ export default function AcceptanceReportListView({
             <button
               type="button"
               onClick={handlePrint}
-              disabled={reports.length === 0}
+              disabled={filteredReports.length === 0}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Printer className="h-4 w-4" />
               In phiếu
             </button>
+            <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+              Ca
+              <select value={filterShift} onChange={e => setFilterShift(e.target.value)} className={inputClass}>
+                <option value="">Tất cả ca</option>
+                {shiftOptions.map(shift => (
+                  <option key={shift} value={shift}>
+                    {shift}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
               Từ ngày
               <input
@@ -557,7 +583,7 @@ export default function AcceptanceReportListView({
           </div>
         ) : dateGroups.length === 0 ? (
           <div className="px-3 py-8 text-center font-bold text-zinc-400">
-            Chưa có báo cáo phù hợp khoảng ngày.
+            Chưa có báo cáo phù hợp với bộ lọc.
           </div>
         ) : (
           <div className="space-y-3 p-3 sm:p-4">
