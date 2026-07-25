@@ -2724,8 +2724,10 @@ export default function ControlBoardBbMachineReportTable({
                                 itemCode: string;
                                 itemName: string;
                                 unit: string;
-                                totalInboundQty: number;
-                                totalInboundKg: number;
+                                productQuantity: number;
+                                productUnit: string;
+                                componentNormWeightKg: number | null;
+                                totalNormKg: number;
                                 balanceDetail: BbInboundMaterialBalanceDetail | null;
                                 sourceLines: BbWarehouseExportLineRow[];
                               }
@@ -2737,22 +2739,22 @@ export default function ControlBoardBbMachineReportTable({
                                   itemCode: row.itemCode,
                                   itemName: row.itemName,
                                   unit: row.unit,
-                                  totalInboundQty: 0,
-                                  totalInboundKg: 0,
+                                  productQuantity: 0,
+                                  productUnit: row.materialNorm?.productUnit || productGroup.unit || '',
+                                  componentNormWeightKg:
+                                    row.materialNorm &&
+                                    row.materialNorm.productQuantity > 0 &&
+                                    row.normWeightKg !== null
+                                      ? row.normWeightKg / row.materialNorm.productQuantity
+                                      : null,
+                                  totalNormKg: 0,
                                   balanceDetail: row.balanceDetail,
                                   sourceLines: []
                                 });
                               }
                               const existing = groupedByCode.get(key)!;
-                              // SL "cái" chỉ cộng các dòng định mức loại số lượng (tránh trộn % vào cái).
-                              if (
-                                row.materialNorm?.amountType === 'quantity' &&
-                                !isWarehouseKgUnit(row.unit)
-                              ) {
-                                existing.totalInboundQty += row.quantity > 0 ? row.quantity : 0;
-                                if (row.unit) existing.unit = row.unit;
-                              }
-                              existing.totalInboundKg += row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
+                              existing.productQuantity += row.materialNorm?.productQuantity || 0;
+                              existing.totalNormKg += row.normWeightKg && row.normWeightKg > 0 ? row.normWeightKg : 0;
                               existing.sourceLines.push(row);
                             });
                             const productNvlRows = Array.from(groupedByCode.values());
@@ -2784,31 +2786,29 @@ export default function ControlBoardBbMachineReportTable({
                                 <tr className="border-y border-amber-100 bg-amber-100/40 text-xs font-black uppercase tracking-wider text-amber-900">
                                   <td />
                                   <td className="px-4 py-2.5 font-black">Mã NVL</td>
-                                  <td colSpan={4} className="px-4 py-2.5 font-black">
+                                  <td colSpan={2} className="px-4 py-2.5 font-black">
                                     Tên NVL
                                   </td>
                                   <td className="px-4 py-2.5 font-black">ĐVT</td>
-                                  <td className="px-4 py-2.5 text-right font-black">SL thực nhập</td>
                                   <td
                                     className="px-4 py-2.5 text-right font-black"
-                                    title="Tồn đầu ca: đã trộn (bồn trộn) + chưa trộn"
+                                    title="Tổng TL (kg) của mã sản phẩm trong trang Sản phẩm"
                                   >
-                                    Tồn đầu ca
+                                    Định mức
                                   </td>
-                                  <td className="px-4 py-2.5 text-right font-black">Xuất thực tế</td>
-                                  <td className="px-4 py-2.5 text-right font-black">Hàng lỗi hỏng</td>
-                                  <td className="px-4 py-2.5 text-right font-black">Tồn cuối ca</td>
+                                  <td className="px-4 py-2.5 text-right font-black">Số lượng</td>
                                   <td
                                     className="px-4 py-2.5 text-right font-black"
-                                    title="Trọng lượng = Tồn đầu ca + Xuất thực tế − Hàng lỗi hỏng − Tồn cuối ca"
+                                    title="Khối lượng (kg) của NVL trong tab Thành phần của mã sản phẩm"
                                   >
-                                    Trọng lượng
+                                    Trọng lượng định mức
                                   </td>
+                                  <td className="px-4 py-2.5 text-right font-black">Trọng lượng</td>
                                 </tr>
                                 {productNvlRows.length === 0 ? (
                                   <tr className="bg-white">
                                     <td />
-                                    <td colSpan={12} className="px-4 py-2.5 text-sm font-semibold text-zinc-400">
+                                    <td colSpan={8} className="px-4 py-2.5 text-sm font-semibold text-zinc-400">
                                       Thành phẩm chưa có công thức NVL.
                                     </td>
                                   </tr>
@@ -2824,23 +2824,10 @@ export default function ControlBoardBbMachineReportTable({
                                   itemName: row.itemName,
                                   unit: row.unit,
                                   metric,
-                                  totalKg: row.totalInboundKg,
-                                  totalQty: row.totalInboundQty,
+                                  totalKg: row.totalNormKg,
+                                  totalQty: row.productQuantity,
                                   balanceDetail: row.balanceDetail,
                                   lines: row.sourceLines
-                                });
-                              const showQty = !isWarehouseKgUnit(row.unit) && row.totalInboundQty > 0;
-                              const openBalanceDetail = (metric: BbInboundBalanceDetailMetric) =>
-                                setInboundBalanceDetail({
-                                  metric,
-                                  itemCode: row.itemCode,
-                                  itemName: row.itemName,
-                                  ngay: group.ngay,
-                                  shift: group.shift,
-                                  shiftLabel: group.shiftLabel || group.shift,
-                                  orderCode: group.orderCode,
-                                  machine: group.machine,
-                                  balanceDetail: row.balanceDetail
                                 });
                               return (
                               <tr key={`${group.groupKey}-pg-${pgIdx}-nvl-${idx}`} className="bg-white font-semibold hover:bg-amber-50/40 border-b border-slate-50">
@@ -2848,52 +2835,27 @@ export default function ControlBoardBbMachineReportTable({
                                 <td className="px-4 py-2.5 font-mono font-bold text-zinc-800">
                                   {row.itemCode || '—'}
                                 </td>
-                                <td colSpan={4} className="px-4 py-2.5 text-zinc-700">
+                                <td colSpan={2} className="px-4 py-2.5 text-zinc-700">
                                   {row.itemName || '—'}
                                 </td>
                                 <td className="px-4 py-2.5 text-zinc-600">{row.unit || '—'}</td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-700">
-                                  {showQty ? (
-                                    <ThucDungMetricButton
-                                      label={formatNumber(row.totalInboundQty, 2)}
-                                      className="font-mono font-bold text-zinc-700"
-                                      onOpen={() => openNormDetail('quantity')}
-                                    />
-                                  ) : (
-                                    '—'
-                                  )}
+                                  {productGroup.normKgPerUnit === null
+                                    ? '—'
+                                    : formatKg(productGroup.normKgPerUnit, 3)}
                                 </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-zinc-600">
-                                  <ThucDungMetricButton
-                                    label={row.balanceDetail ? formatKg(row.balanceDetail.tonDauKg, 2) : '—'}
-                                    className="font-mono text-zinc-600"
-                                    onOpen={() => openBalanceDetail('ton_dau')}
-                                  />
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-700">
+                                  {formatNumber(row.productQuantity, 2)}
+                                  {row.productUnit ? ` ${row.productUnit}` : ''}
                                 </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-zinc-600">
-                                  <ThucDungMetricButton
-                                    label={row.balanceDetail ? formatKg(row.balanceDetail.xuatThucTeKg, 2) : '—'}
-                                    className="font-mono text-zinc-600"
-                                    onOpen={() => openBalanceDetail('xuat_thuc_te')}
-                                  />
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-rose-700">
-                                  <ThucDungMetricButton
-                                    label={row.balanceDetail ? formatKg(row.balanceDetail.loiHongKg, 2) : '—'}
-                                    className="font-mono text-rose-700"
-                                    onOpen={() => openBalanceDetail('loi_hong')}
-                                  />
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-zinc-600">
-                                  <ThucDungMetricButton
-                                    label={row.balanceDetail ? formatKg(row.balanceDetail.tonCuoiKg, 2) : '—'}
-                                    className="font-mono text-zinc-600"
-                                    onOpen={() => openBalanceDetail('ton_cuoi')}
-                                  />
+                                <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-700">
+                                  {row.componentNormWeightKg === null
+                                    ? '—'
+                                    : formatKg(row.componentNormWeightKg, 4)}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-700">
                                   <ThucDungMetricButton
-                                    label={formatKg(row.totalInboundKg, 2)}
+                                    label={formatKg(row.totalNormKg, 2)}
                                     className="font-mono font-bold text-amber-700"
                                     onOpen={() => openNormDetail('weight')}
                                   />
