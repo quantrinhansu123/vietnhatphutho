@@ -1,4 +1,4 @@
-import { findProductByCode } from '../features/san-pham';
+import { findProductByCode, resolveProductNplItemWeightKg } from '../features/san-pham';
 import { normalizeProductCodeKey, type ProductRow, type ProductNplItem } from '../features/san-pham/types';
 import { findMachineByRef, type MachineRow } from '../features/danh-sach-may';
 import type { MaterialRow } from '../features/kho-nvl';
@@ -183,6 +183,8 @@ export type BbMaterialNormFormula = {
   rawExpectedUnit: string;
   /** Hệ số kg/đvt lấy từ cột Tổng kg kho NVL */
   catalogKgPerUnit: number | null;
+  /** Giá trị lấy trực tiếp từ cột Khối lượng (kg) của dòng NVL trong Thành phần sản phẩm. */
+  componentWeightKg?: number | null;
   totalNormKg: number;
   allocationRatio: number;
   allocatedNormKg: number;
@@ -1091,7 +1093,13 @@ export function buildBbInboundMaterialNormGroups(input: {
       for (const item of catalogProduct?.nplItems || []) {
         const materialKey = normalizeProductCodeKey(item.code);
         if (!materialKey) continue;
-        const expectedKg = resolveBomExpectedKg(item, inboundQty, unitNorm, materialsCatalog);
+        const componentWeightKg = catalogProduct
+          ? resolveProductNplItemWeightKg(catalogProduct, item, input.materials)
+          : null;
+        const expectedKg =
+          componentWeightKg !== null && componentWeightKg > 0
+            ? roundQty(componentWeightKg * inboundQty, 4)
+            : null;
         if (expectedKg === null || expectedKg <= 0) continue;
 
         const rate =
@@ -1121,6 +1129,7 @@ export function buildBbInboundMaterialNormGroups(input: {
           rawExpectedQuantity,
           rawExpectedUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : 'kg',
           catalogKgPerUnit,
+          componentWeightKg,
           totalNormKg: expectedKg,
           allocationRatio: 1,
           allocatedNormKg: expectedKg

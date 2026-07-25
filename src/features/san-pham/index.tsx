@@ -271,6 +271,30 @@ export function resolveProductMaterialBaseKg(
   return roundNplNumber(total - core - bag);
 }
 
+/** Giá trị hiển thị tại cột “Khối lượng (kg)” trong bảng Thành phần NVL. */
+export function resolveProductNplItemWeightKg(
+  product: Pick<ProductRow, 'plasticWeight' | 'totalWeight' | 'coreWeight' | 'bagWeight'>,
+  item: ProductNplItem,
+  materialOptions: MaterialOption[]
+): number | null {
+  const roundWeightKg = (value: number) => Math.round(value * 10000) / 10000;
+  if (item.amountType === 'percent') {
+    const materialBaseKg = resolveProductMaterialBaseKg(product);
+    if (item.percent === null || materialBaseKg <= 0) return null;
+    return roundWeightKg((item.percent / 100) * materialBaseKg);
+  }
+  if (item.quantity === null) return null;
+  const unit = (item.unit || '').trim().toLowerCase();
+  if (unit === '' || unit === 'kg' || unit === '-') return roundWeightKg(item.quantity);
+  const key = normalizeProductCodeKey(item.code);
+  const material = materialOptions.find(option => normalizeProductCodeKey(option.code) === key);
+  const totalWeightPerUnit = parseProductSpecNumber(material?.totalWeight ?? '');
+  if (totalWeightPerUnit !== null && totalWeightPerUnit > 0) {
+    return roundWeightKg(item.quantity * totalWeightPerUnit);
+  }
+  return null;
+}
+
 export function normalizeProductCodeKey(code: string) {
   return code.trim().replace(/\s+/g, '').toUpperCase();
 }
@@ -336,32 +360,10 @@ export function ProductViewModal({
     return sum + item.percent;
   }, 0);
   const percentItemCount = items.filter(item => item.amountType === 'percent').length;
-
   const materialBaseKg = resolveProductMaterialBaseKg(product);
 
-  const roundWeightKg = (value: number) => Math.round(value * 10000) / 10000;
-
-  const resolveItemWeightKg = (item: ProductNplItem): number | null => {
-    if (item.amountType === 'percent') {
-      if (item.percent === null || materialBaseKg <= 0) return null;
-      return roundWeightKg((item.percent / 100) * materialBaseKg);
-    }
-    if (item.quantity === null) return null;
-    const unit = (item.unit || '').trim().toLowerCase();
-    // ĐVT = kg → số lượng chính là khối lượng.
-    if (unit === '' || unit === 'kg' || unit === '-') return roundWeightKg(item.quantity);
-    // ĐVT khác → nhân số lượng với Tổng kg (kg/ĐVT) của NVL trong kho.
-    const key = normalizeProductCodeKey(item.code);
-    const material = materialOptions.find(option => normalizeProductCodeKey(option.code) === key);
-    const totalWeightPerUnit = parseProductSpecNumber(material?.totalWeight ?? '');
-    if (totalWeightPerUnit !== null && totalWeightPerUnit > 0) {
-      return roundWeightKg(item.quantity * totalWeightPerUnit);
-    }
-    return null;
-  };
-
   const formatItemWeight = (item: ProductNplItem): string => {
-    const weight = resolveItemWeightKg(item);
+    const weight = resolveProductNplItemWeightKg(product, item, materialOptions);
     if (weight === null) return '-';
     return `${formatNumber(weight, 4)} kg`;
   };

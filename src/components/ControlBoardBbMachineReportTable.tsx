@@ -108,18 +108,6 @@ function formatPercent(value: number | null | undefined, digits = 2) {
   return `${formatNumber(value, digits)}%`;
 }
 
-/** Diễn giải công thức định mức NVL của 1 thành phẩm (hiện khi bấm vào ô). */
-function buildNormFormulaText(mn: BbMaterialNormFormula): string {
-  if (mn.amountType === 'percent') {
-    const klDv = mn.productNormKgPerUnit;
-    return `${klDv != null ? formatNumber(klDv, 3) : '—'} kg/đv × ${formatNumber(mn.productQuantity, 0)} SP × ${formatNumber(mn.rate, 2)}% = ${formatNumber(mn.totalNormKg, 2)} kg`;
-  }
-  if (mn.catalogKgPerUnit != null && mn.catalogKgPerUnit > 0) {
-    return `${formatNumber(mn.rate, 3)} ${mn.rateUnit}/SP × ${formatNumber(mn.productQuantity, 0)} SP → ${formatNumber(mn.rawExpectedQuantity, 0)} ${mn.rawExpectedUnit} × ${formatNumber(mn.catalogKgPerUnit, 3)} kg = ${formatNumber(mn.totalNormKg, 2)} kg`;
-  }
-  return `${formatNumber(mn.rate, 3)} ${mn.rateUnit}/SP × ${formatNumber(mn.productQuantity, 0)} SP = ${formatNumber(mn.totalNormKg, 2)} kg`;
-}
-
 function formatVnd(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value) || value === 0) return '—';
   return `${formatMoney(value, 0)} đ`;
@@ -2741,12 +2729,7 @@ export default function ControlBoardBbMachineReportTable({
                                   unit: row.unit,
                                   productQuantity: 0,
                                   productUnit: row.materialNorm?.productUnit || productGroup.unit || '',
-                                  componentNormWeightKg:
-                                    row.materialNorm &&
-                                    row.materialNorm.productQuantity > 0 &&
-                                    row.normWeightKg !== null
-                                      ? row.normWeightKg / row.materialNorm.productQuantity
-                                      : null,
+                                  componentNormWeightKg: row.materialNorm?.componentWeightKg ?? null,
                                   totalNormKg: 0,
                                   balanceDetail: row.balanceDetail,
                                   sourceLines: []
@@ -3726,45 +3709,6 @@ export default function ControlBoardBbMachineReportTable({
           </div>
 
           <div className="space-y-3 overflow-auto p-5">
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
-              {normDetail.metric === 'weight'
-                ? 'Trọng lượng = [Tồn đầu ca] + [Xuất thực tế] − [Hàng lỗi hỏng] − [Tồn cuối ca]. Nếu mã NVL này dùng chung cho nhiều thành phẩm trong cùng lệnh, mỗi thành phẩm hiển thị lại đúng số cân bằng này (không chia nhỏ theo % định mức BOM).'
-                : 'SL thực nhập = Σ theo từng thành phẩm, đã hiệu chỉnh theo cùng số cân bằng thực tế với trọng lượng ở trên.'}
-            </div>
-            {normDetail.metric === 'weight' && normDetail.balanceDetail ? (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tồn đầu ca</p>
-                  <p className="mt-1 font-mono text-sm font-black text-zinc-800">
-                    {formatKg(normDetail.balanceDetail.tonDauKg, 2)}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">+ Xuất thực tế</p>
-                  <p className="mt-1 font-mono text-sm font-black text-zinc-800">
-                    {formatKg(normDetail.balanceDetail.xuatThucTeKg, 2)}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-rose-600">− Hàng lỗi hỏng</p>
-                  <p className="mt-1 font-mono text-sm font-black text-rose-700">
-                    {formatKg(normDetail.balanceDetail.loiHongKg, 2)}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">− Tồn cuối ca</p>
-                  <p className="mt-1 font-mono text-sm font-black text-zinc-800">
-                    {formatKg(normDetail.balanceDetail.tonCuoiKg, 2)}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">= Trọng lượng</p>
-                  <p className="mt-1 font-mono text-sm font-black text-amber-900">
-                    {formatKg(normDetail.balanceDetail.realKg, 2)}
-                  </p>
-                </div>
-              </div>
-            ) : null}
             <div className="bb-table-scroll rounded-xl border border-zinc-200">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-zinc-100 text-[11px] uppercase tracking-wider text-zinc-600">
@@ -3804,8 +3748,10 @@ export default function ControlBoardBbMachineReportTable({
                               : '—'}
                           </td>
                           <td className="px-3 py-2 font-semibold text-zinc-700">{typeLabel}</td>
-                          <td className="px-3 py-2 font-mono text-xs text-zinc-600">
-                            {mn ? buildNormFormulaText(mn) : '—'}
+                          <td className="px-3 py-2 text-right font-mono font-bold text-zinc-700">
+                            {mn?.componentWeightKg === null || mn?.componentWeightKg === undefined
+                              ? '—'
+                              : formatKg(mn.componentWeightKg, 4)}
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
                             {normDetail.metric === 'weight'
@@ -3833,9 +3779,6 @@ export default function ControlBoardBbMachineReportTable({
                 </tfoot>
               </table>
             </div>
-            <p className="text-xs font-semibold text-zinc-500">
-              Nguồn: cân bằng vật tư thực tế (tồn đầu đã trộn+chưa trộn, xuất kho thực tế, hàng lỗi hỏng, tồn cuối ca) — không nhân/chia theo % định mức BOM; công thức định mức bên trên chỉ để đối chiếu tham khảo (Báo cáo sản lượng × công thức sản phẩm). Khớp theo ngày + ca.
-            </p>
           </div>
         </div>
       </div>
