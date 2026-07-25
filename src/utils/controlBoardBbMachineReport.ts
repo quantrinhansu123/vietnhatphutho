@@ -86,10 +86,8 @@ export const BB_MACHINE_REPORT_TABS: Array<{ id: BbMachineReportTabId; label: st
   { id: 'bao_cao_san_luong', label: 'Dữ liệu trong báo cáo sản lượng' },
   { id: 'bao_cao_loi_hong', label: 'Dữ liệu trong báo cáo hàng lỗi hỏng' },
   { id: 'kiem_ton_cuoi_ca', label: 'Dữ liệu trong báo cáo kiểm tồn cuối ca' },
-  { id: 'phieu_nhap_kho', label: 'Dữ liệu trong báo cáo phiếu nhập kho' },
   { id: 'tong_vat_tu_thuc_dung', label: 'Tổng vật tư thực xuất dùng & tỉ lệ trộn' },
   { id: 'tong_hop_vat_tu_thuc_xuat_dung', label: 'Tổng hợp vật tư thực xuất dùng' },
-  { id: 'tong_dinh_muc_nvl_nhap_kho', label: 'Tổng định mức vật tư của thành phẩm nhập kho' },
   { id: 'tong', label: 'Tổng' },
   { id: 'danh_gia_hao_hut', label: 'Đánh giá hiệu quả lỗi hỏng & hao hụt NVL' }
 ];
