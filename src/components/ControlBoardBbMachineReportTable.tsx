@@ -1522,7 +1522,7 @@ export default function ControlBoardBbMachineReportTable({
             ) : null}
           </table>
         ) : activeTab === 'ton_dau_ca' ? (
-          <table className="min-w-[1600px] w-full text-left text-sm font-semibold">
+          <table className="min-w-[1400px] w-full text-left text-sm font-semibold">
             <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-10 px-3 py-3.5 font-black" />
@@ -1530,12 +1530,8 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-4 py-3.5 font-black">Ca</th>
                 <th className="px-4 py-3.5 font-black">Lệnh SX</th>
                 <th className="px-4 py-3.5 font-black">Máy</th>
-                <th className="px-4 py-3.5 text-right font-black">SP / NVL</th>
-                <th
-                  className="px-4 py-3.5 text-right font-black"
-                  title="KL định mức = SL sản phẩm × định mức thành phần trong công thức SP"
-                >
-                  Định mức (kg)
+                <th colSpan={3} className="px-4 py-3.5 text-right font-black">
+                  SP / NVL
                 </th>
                 <th className="px-4 py-3.5 text-right font-black">Tồn đầu ca (kg)</th>
               </tr>
@@ -1543,14 +1539,14 @@ export default function ControlBoardBbMachineReportTable({
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải báo cáo tồn đầu ca...
                   </td>
                 </tr>
               ) : dauCaGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={9} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có báo cáo tồn đầu ca gắn ca/ngày lệnh máy BB.
                   </td>
                 </tr>
@@ -1577,164 +1573,82 @@ export default function ControlBoardBbMachineReportTable({
                         </td>
                         <td className="px-4 py-2.5 font-mono font-black text-sky-900">{group.orderCode || '—'}</td>
                         <td className="px-4 py-2.5 font-semibold text-zinc-800">{group.machine || '—'}</td>
-                        <td className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">
+                        <td colSpan={3} className="px-4 py-2.5 text-right font-mono font-bold text-zinc-600">
                           {group.productCount}/{group.lineCount}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-700">
-                          {formatKg(group.totalNormWeightKg, 3)}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-800">
                           {formatKg(group.totalWeightKg, 3)}
                         </td>
                       </tr>
-                      {expanded
-                        ? (group.productGroups || []).map(productGroup => {
-                            const productGroupKey = `${group.groupKey}|product:${productGroup.key}`;
-                            const productExpanded = isGroupExpanded('ton_dau_ca', productGroupKey);
-                            return (
-                              <React.Fragment key={productGroupKey}>
-                                <tr className="border-y border-sky-200 bg-sky-50 font-bold text-sky-950 hover:bg-sky-100/80">
-                                  <td className="px-3 py-1.5 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleGroup('ton_dau_ca', productGroupKey)}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-300 bg-white text-sky-800 shadow-sm transition hover:bg-sky-50"
-                                      title={
-                                        productExpanded
-                                          ? 'Đóng nguyên phụ liệu của sản phẩm'
-                                          : 'Mở nguyên phụ liệu của sản phẩm'
-                                      }
-                                      aria-expanded={productExpanded}
-                                    >
-                                      <ChevronDown
-                                        className={`h-4 w-4 transition-transform ${productExpanded ? '' : '-rotate-90'}`}
-                                      />
-                                    </button>
-                                  </td>
-                                  <td colSpan={4} className="px-4 py-2">
-                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                      <span className="text-[10px] font-black uppercase tracking-wider text-sky-600">
-                                        Sản phẩm
-                                      </span>
-                                      {productGroup.productCode ? (
-                                        <span className="font-mono font-black text-sky-900">
-                                          {productGroup.productCode}
-                                        </span>
-                                      ) : null}
-                                      <span className="font-black text-zinc-900">
-                                        {productGroup.productName || '—'}
-                                      </span>
-                                      {productGroup.quantity > 0 ? (
-                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-600 ring-1 ring-sky-200">
-                                          SL: {formatNumber(productGroup.quantity, 3)}
-                                          {productGroup.unit ? ` ${productGroup.unit}` : ''}
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-2 text-right font-mono font-bold text-zinc-600">
-                                    {productGroup.lineCount}
-                                  </td>
-                                  <td className="px-4 py-2 text-right font-mono font-black text-emerald-700">
-                                    {formatKg(productGroup.totalNormWeightKg, 3)}
-                                  </td>
-                                  <td className="px-4 py-2 text-right font-mono font-bold text-indigo-800">
-                                    {formatKg(productGroup.totalTonDauWeightKg, 3)}
-                                  </td>
-                                </tr>
-                                {productExpanded ? (
-                                  <>
-                                    <tr className="border-y border-indigo-100 bg-indigo-100/40 text-xs font-black uppercase tracking-wider text-indigo-900">
-                                      <td />
-                                      <td className="px-4 py-2 font-black">Mã NVL</td>
-                                      <td className="px-4 py-2 font-black">Tên nguyên phụ liệu</td>
-                                      <td className="px-4 py-2 font-black">ĐVT</td>
-                                      <td className="px-4 py-2 text-right font-black" title="Từ thành phần % SP hoặc tỉ lệ trộn máy">
-                                        Tỉ lệ ĐM (%)
-                                      </td>
-                                      <td
-                                        className="px-4 py-2 text-right font-black"
-                                        title="Từ phiếu trộn ca liền trước: KL NVL ÷ tổng trộn × 100"
-                                      >
-                                        Tỉ lệ thực tế (%)
-                                      </td>
-                                      <td className="px-4 py-2 text-right font-black">Thành phần</td>
-                                      <td className="px-4 py-2 text-right font-black">SL tồn</td>
-                                      <td
-                                        className="px-4 py-2 text-right font-black"
-                                        title="SL sản phẩm × định mức thành phần"
-                                      >
-                                        KL định mức (kg)
-                                      </td>
-                                      <td
-                                        className="px-4 py-2 text-right font-black"
-                                        title="Có NNS-TRON: NNS-TRON × Tỉ lệ thực tế (%); không thì lấy tồn đầu theo mã NVL × tỉ lệ SL sản phẩm/tổng SL lệnh"
-                                      >
-                                        Tồn đầu (kg)
-                                      </td>
-                                    </tr>
-                                    {productGroup.lines.map(row => (
-                                      <tr
-                                        key={row.key}
-                                        className="bg-white font-semibold hover:bg-indigo-50/40 border-b border-slate-50"
-                                      >
-                                        <td className="px-3 py-2" />
-                                        <td className="px-4 py-2 font-mono font-bold text-zinc-800">
-                                          {row.itemCode || '—'}
-                                        </td>
-                                        <td className="px-4 py-2 text-zinc-700">{row.itemName || '—'}</td>
-                                        <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
-                                        <td className="px-4 py-2 text-right font-mono text-zinc-600">
-                                          {formatPercent(row.tiLeDinhMucPercent, 2)}
-                                        </td>
-                                        <td className="px-4 py-2 text-right font-mono font-bold text-orange-800">
-                                          {formatPercent(row.tiLeThucTeTbPercent, 2)}
-                                        </td>
-                                        <td className="px-4 py-2 text-right font-mono text-zinc-700">
-                                          {row.dinhMucRate === null || row.dinhMucRate === undefined
-                                            ? '—'
-                                            : `${formatNumber(row.dinhMucRate, row.amountType === 'percent' ? 2 : 3)}${
-                                                row.dinhMucUnit ? ` ${row.dinhMucUnit}` : ''
-                                              }`}
-                                        </td>
-                                        <td className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
-                                          {row.tonDauQuantity > 0 ? formatNumber(row.tonDauQuantity, 3) : '—'}
-                                        </td>
-                                        <td className="px-4 py-2 text-right font-mono font-black text-emerald-700">
-                                          {row.materialNorm ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => setSelectedMaterialNorm(row.materialNorm)}
-                                              className="rounded-md px-1 py-0.5 underline decoration-dotted underline-offset-2 transition hover:bg-emerald-100"
-                                              title="Bấm để xem công thức định mức"
-                                            >
-                                              {formatKg(row.normWeightKg, 3)}
-                                            </button>
-                                          ) : (
-                                            formatKg(row.normWeightKg, 3)
-                                          )}
-                                        </td>
-                                        <td className="px-4 py-2 text-right font-mono font-bold text-indigo-700">
-                                          {row.tonDauFormula ? (
-                                            <ThucDungMetricButton
-                                              label={formatKg(row.tonDauWeightKg, 3)}
-                                              className="font-mono font-bold text-indigo-700"
-                                              onOpen={() => {
-                                                if (row.tonDauFormula) setSelectedTonDauFormula(row.tonDauFormula);
-                                              }}
-                                            />
-                                          ) : (
-                                            formatKg(row.tonDauWeightKg, 3)
-                                          )}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </>
-                                ) : null}
-                              </React.Fragment>
-                            );
-                          })
-                        : null}
+                      {expanded ? (
+                        <>
+                          <tr className="border-y border-indigo-100 bg-indigo-100/40 text-xs font-black uppercase tracking-wider text-indigo-900">
+                            <td />
+                            <td className="px-4 py-2 font-black">Mã NVL</td>
+                            <td className="px-4 py-2 font-black">Tên nguyên phụ liệu</td>
+                            <td className="px-4 py-2 font-black">ĐVT</td>
+                            <td className="px-4 py-2 text-right font-black" title="Từ thành phần % SP hoặc tỉ lệ trộn máy">
+                              Tỉ lệ ĐM (%)
+                            </td>
+                            <td
+                              className="px-4 py-2 text-right font-black"
+                              title="Từ phiếu trộn ca liền trước: KL NVL ÷ tổng trộn × 100"
+                            >
+                              Tỉ lệ thực tế (%)
+                            </td>
+                            <td className="px-4 py-2 text-right font-black">Thành phần</td>
+                            <td className="px-4 py-2 text-right font-black">SL tồn</td>
+                            <td
+                              className="px-4 py-2 text-right font-black"
+                              title="Có NNS-TRON: NNS-TRON × Tỉ lệ thực tế (%); không thì lấy tồn đầu theo mã NVL"
+                            >
+                              Tồn đầu (kg)
+                            </td>
+                          </tr>
+                          {(group.materialLines || []).map(row => (
+                            <tr
+                              key={row.key}
+                              className="bg-white font-semibold hover:bg-indigo-50/40 border-b border-slate-50"
+                            >
+                              <td className="px-3 py-2" />
+                              <td className="px-4 py-2 font-mono font-bold text-zinc-800">
+                                {row.itemCode || '—'}
+                              </td>
+                              <td className="px-4 py-2 text-zinc-700">{row.itemName || '—'}</td>
+                              <td className="px-4 py-2 text-zinc-600">{row.unit || '—'}</td>
+                              <td className="px-4 py-2 text-right font-mono text-zinc-600">
+                                {formatPercent(row.tiLeDinhMucPercent, 2)}
+                              </td>
+                              <td className="px-4 py-2 text-right font-mono font-bold text-orange-800">
+                                {formatPercent(row.tiLeThucTeTbPercent, 2)}
+                              </td>
+                              <td className="px-4 py-2 text-right font-mono text-zinc-700">
+                                {row.dinhMucRate === null || row.dinhMucRate === undefined
+                                  ? '—'
+                                  : `${formatNumber(row.dinhMucRate, row.amountType === 'percent' ? 2 : 3)}${
+                                      row.dinhMucUnit ? ` ${row.dinhMucUnit}` : ''
+                                    }`}
+                              </td>
+                              <td className="px-4 py-2 text-right font-mono font-bold text-zinc-800">
+                                {row.tonDauQuantity > 0 ? formatNumber(row.tonDauQuantity, 3) : '—'}
+                              </td>
+                              <td className="px-4 py-2 text-right font-mono font-bold text-indigo-700">
+                                {row.tonDauFormula ? (
+                                  <ThucDungMetricButton
+                                    label={formatKg(row.tonDauWeightKg, 3)}
+                                    className="font-mono font-bold text-indigo-700"
+                                    onOpen={() => {
+                                      if (row.tonDauFormula) setSelectedTonDauFormula(row.tonDauFormula);
+                                    }}
+                                  />
+                                ) : (
+                                  formatKg(row.tonDauWeightKg, 3)
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </>
+                      ) : null}
                     </React.Fragment>
                   );
                 })
@@ -1743,14 +1657,8 @@ export default function ControlBoardBbMachineReportTable({
             {!isLoading && dauCaGroups.length > 0 ? (
               <tfoot className="border-t-2 border-slate-300 bg-slate-100 text-xs font-black text-slate-900">
                 <tr>
-                  <td colSpan={6} className="px-4 py-3.5 text-right uppercase tracking-wider">
+                  <td colSpan={8} className="px-4 py-3.5 text-right uppercase tracking-wider">
                     Tổng
-                  </td>
-                  <td className="px-4 py-3.5 text-right font-mono text-emerald-800">
-                    {formatKg(
-                      dauCaGroups.reduce((sum, g) => sum + (g.totalNormWeightKg || 0), 0),
-                      3
-                    )}
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono text-indigo-800">{formatKg(dauCaTotalKg, 3)}</td>
                 </tr>
@@ -1842,7 +1750,7 @@ export default function ControlBoardBbMachineReportTable({
                             <ThucDungMetricButton
                               label={formatKg(group.totalActualWeightKg, 2)}
                               className="font-mono font-black text-amber-800"
-                              title="Tồn đầu (đã+chưa) + Xuất − Lỗi hỏng − Tồn cuối"
+                              title="Tồn đầu (tab Tồn đầu ca) + Xuất − Lỗi hỏng − Tồn cuối"
                               onOpen={() =>
                                 setInboundBalanceDetail({
                                   metric: 'thuc_te',
@@ -1922,7 +1830,7 @@ export default function ControlBoardBbMachineReportTable({
                                       <ThucDungMetricButton
                                         label={formatKg(row.actualWeightKg, 2)}
                                         className="font-mono font-black text-amber-800"
-                                        title={`(Đã trộn+chưa trộn ${formatKg(row.balanceDetail.tonDauKg, 2)}) + (Xuất ${formatKg(row.balanceDetail.xuatThucTeKg, 2)}) − (Lỗi ${formatKg(row.balanceDetail.loiHongKg, 2)}) − (Tồn cuối ${formatKg(row.balanceDetail.tonCuoiKg, 2)})`}
+                                        title={`(Tồn đầu tab ${formatKg(row.balanceDetail.tonDauKg, 2)}) + (Xuất ${formatKg(row.balanceDetail.xuatThucTeKg, 2)}) − (Lỗi ${formatKg(row.balanceDetail.loiHongKg, 2)}) − (Tồn cuối ${formatKg(row.balanceDetail.tonCuoiKg, 2)})`}
                                         onOpen={openBalanceDetail}
                                       />
                                     ) : (
@@ -3481,9 +3389,7 @@ export default function ControlBoardBbMachineReportTable({
                 </>
               ) : (
                 <>
-                  Tồn đầu = Tồn ghi nhận theo mã NVL ({formatKg(selectedTonDauFormula.directTonDauKg, 3)})
-                  {' × '}Tỉ lệ SL SP ({formatNumber(selectedTonDauFormula.share * 100, 2)}%)
-                  {' = '}
+                  Tồn đầu = Tồn ghi nhận theo mã NVL trên báo cáo tồn đầu ca ={' '}
                   {formatKg(selectedTonDauFormula.tonDauWeightKg, 3)}
                 </>
               )}
@@ -3510,17 +3416,11 @@ export default function ControlBoardBbMachineReportTable({
                   {formatKg(selectedTonDauFormula.directTonDauKg, 3)}
                 </p>
               </div>
-              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tỉ lệ SL SP</p>
-                <p className="mt-1 font-mono text-lg font-black text-zinc-900">
-                  {formatNumber(selectedTonDauFormula.share * 100, 2)}%
-                </p>
-              </div>
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
               Khi có NNS-TRON: phân bổ về từng NVL bằng Tỉ lệ thực tế (phiếu trộn ca liền trước). Khi không có
-              NNS-TRON: chia tồn theo mã NVL cho từng sản phẩm theo Tỉ lệ SL SP (SL sản phẩm ÷ tổng SL lệnh SX).
+              NNS-TRON: lấy nguyên tồn ghi nhận theo mã NVL (dùng chung cho mọi sản phẩm cùng mã NVL đó trong lệnh).
             </p>
           </div>
         </div>
