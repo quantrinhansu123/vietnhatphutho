@@ -758,6 +758,10 @@ export type BbProductionOrderGroup = {
   lineCount: number;
   quantity: number;
   totalNormKg: number;
+  /** ĐVT của SP — chỉ có giá trị khi mọi dòng trong lệnh cùng một ĐVT, ngược lại rỗng. */
+  unit: string;
+  /** Định mức (kg/ĐVT) lấy từ SP tương ứng — chỉ có giá trị khi mọi dòng trong lệnh cùng một SP. */
+  normKgPerUnit: number | null;
   lines: BbProductionOrderLineRow[];
 };
 
@@ -814,6 +818,8 @@ export function groupBbProductionOrderLines(rows: BbProductionOrderLineRow[]): B
         lineCount: 1,
         quantity: row.quantity > 0 ? row.quantity : 0,
         totalNormKg: row.totalNormKg && row.totalNormKg > 0 ? row.totalNormKg : 0,
+        unit: row.unit || '',
+        normKgPerUnit: row.normKgPerUnit,
         lines: [row]
       });
       continue;
@@ -824,11 +830,23 @@ export function groupBbProductionOrderLines(rows: BbProductionOrderLineRow[]): B
     existing.lines.push(row);
   }
 
-  return [...map.values()].sort((a, b) => {
-    const dateCmp = b.ngay.localeCompare(a.ngay);
-    if (dateCmp !== 0) return dateCmp;
-    return a.orderCode.localeCompare(b.orderCode, 'vi');
-  });
+  return [...map.values()]
+    .map(group => {
+      const firstProductCode = normalizeProductCodeKey(group.lines[0]?.productCode || '');
+      const sameProduct =
+        firstProductCode !== '' &&
+        group.lines.every(line => normalizeProductCodeKey(line.productCode || '') === firstProductCode);
+      return {
+        ...group,
+        unit: sameProduct ? group.unit : '',
+        normKgPerUnit: sameProduct ? group.normKgPerUnit : null
+      };
+    })
+    .sort((a, b) => {
+      const dateCmp = b.ngay.localeCompare(a.ngay);
+      if (dateCmp !== 0) return dateCmp;
+      return a.orderCode.localeCompare(b.orderCode, 'vi');
+    });
 }
 
 /** SL SP × Giá trị Thành phần → kg (ĐVT kg giữ nguyên; ĐVT khác: SL làm tròn nguyên rồi × Tổng kg). */
@@ -3096,10 +3114,10 @@ function buildBbDauCaProductGroupsForOrder(input: {
               tiLeThucTeTbPercent > 0 &&
               !isNnsTronMaterial(item.code, item.name || '');
             const tonDauWeightKg = roundQty(
-              useNns ? nnsTronTonDauKg * (tiLeThucTeTbPercent / 100) : directTon,
+              useNns ? nnsTronTonDauKg * (tiLeThucTeTbPercent / 100) : directTon * share,
               2
             );
-            const tonDauQuantity = roundQty(useNns ? 0 : directQty, 3);
+            const tonDauQuantity = roundQty(useNns ? 0 : directQty * share, 3);
             const tonDauFormula: BbDauCaTonDauFormula = {
               itemCode: item.code || '',
               itemName: item.name || item.code || '',
@@ -3364,17 +3382,23 @@ export type BbSanLuongGroup = {
   lineCount: number;
   totalQuantity: number;
   totalNormWeightKg: number;
-  /** Tổng TL thực tế = tổng các dòng NVL (cùng số liệu dòng con). */
+  /**
+   * Trọng lượng thực tế cả lệnh = cộng TL thực tế từng NVL
+   * (đã trộn+chưa trộn + xuất − lỗi hỏng − tồn cuối).
+   */
   totalActualWeightKg: number;
+  /** Tổng 4 thành phần cân bằng của các NVL trên lệnh. */
+  balanceSummary: BbInboundMaterialBalanceDetail;
   productGroups: BbSanLuongProductGroup[];
-  /** Dòng con hiển thị: tổng theo từng NVL (không theo SP). */
+  /** Dòng con: tổng theo từng NVL. */
   nvlTotals: BbSanLuongNvlTotal[];
 };
 
 /**
  * Tab Dữ liệu trong báo cáo sản lượng:
- * phiếu báo cáo sản lượng → sản phẩm → NVL (công thức × SL)
- * + trọng lượng thực tế = Tồn đầu + Xuất − Lỗi hỏng − Tồn cuối (quy về từng NVL).
+ * phiếu báo cáo sản lượng → định mức NVL (công thức × SL)
+ * + trọng lượng thực tế từng NVL =
+ *   [Tồn đầu đã trộn + chưa trộn] + [Xuất thực tế] − [Lỗi hỏng] − [Tồn cuối ca]
  */
 export function buildBbSanLuongGroups(input: {
   productionOrders: ProductionOrderRow[];
@@ -3579,14 +3603,15 @@ export function buildBbSanLuongGroups(input: {
     const shiftLabel = formatProductionOrderShiftLabel(header.shift, lookupSettings);
     const groupKey = header.orderCode.trim() || `san-luong|${header.ngay}|${header.shift}`;
 
-    // Trọng lượng thực tế theo từng NVL: Tồn đầu + Xuất − Lỗi hỏng − Tồn cuối.
-    // Tồn đầu = đúng tổng tab «Tồn đầu ca» (máy + bồn trộn + chưa trộn + tồn ngoài),
-    // không dùng chỉ «đã trộn + chưa trộn».
-    const tonDauMaps = sumMachineNvlKgByCodeForHeader(
+    // Trọng lượng thực tế theo từng NVL (ví dụ Nhựa nguyên sinh 1L):
+    //   [Tồn đầu ca đã trộn + chưa trộn]
+    // + [Xuất thực tế]
+    // − [Hàng lỗi hỏng (= tổng lỗi tab × tỉ lệ trộn)]
+    // − [Tồn cuối ca]
+    const tonDauMaps = sumMachineNvlDaTronChuaTronKgByCodeForHeader(
       input.machineNvlReports || [],
       header,
-      shiftOptions,
-      'dau_ca'
+      shiftOptions
     );
     const tonCuoiMaps = sumMachineNvlKgByCodeForHeader(
       input.machineNvlReports || [],
@@ -3641,13 +3666,18 @@ export function buildBbSanLuongGroups(input: {
     const baseBalanceByMaterial = new Map<string, BbInboundMaterialBalanceDetail>();
     {
       for (const [key, mat] of materialKeys.entries()) {
-        const directTonDau = lookupMachineNvlKgByMaterial(tonDauMaps, mat.code, mat.name);
-        // Khớp tab «Tồn đầu ca»: có NNS-TRON → NNS-TRON × Tỉ lệ thực tế (%)
-        // (12C1 ngày 01/07: tỉ lệ thực tế = tỉ lệ ĐM BOM/máy).
+        // AF: tồn đầu = đã trộn + chưa trộn ghi nhận trực tiếp theo mã.
+        const directTonDau = roundQty(
+          lookupMachineNvlKgByMaterial(tonDauMaps, mat.code, mat.name),
+          2
+        );
         const tiLeThucTeTbPercent = useDinhMucAsThucTe
           ? mat.tiLeDinhMucPercent ?? tonDauAllocation.resolveTiLeThucTeTbPercent(mat.code, mat.name)
           : tonDauAllocation.resolveTiLeThucTeTbPercent(mat.code, mat.name);
+        // Chỉ phân bổ từ NNS-TRON khi mã này chưa có tồn đầu trực tiếp (đã+chưa).
+        // Ví dụ Nhựa nguyên sinh 1L = 28,51 kg → giữ nguyên, không × tỉ lệ NNS-TRON.
         const useNnsTonDau =
+          !(directTonDau > 0) &&
           !isNnsTronMaterial(mat.code, mat.name) &&
           nnsTronTonDauKg > 0 &&
           tiLeThucTeTbPercent !== null &&
@@ -3657,9 +3687,11 @@ export function buildBbSanLuongGroups(input: {
           useNnsTonDau ? nnsTronTonDauKg * (tiLeThucTeTbPercent / 100) : directTonDau,
           2
         );
+        // P: xuất thực tế theo mã.
         const xuat = roundQty(lookupMachineNvlKgByMaterial(xuatThucTeMaps, mat.code, mat.name), 2);
+        // CH: tồn cuối ca theo mã.
         const tonCuoi = roundQty(lookupMachineNvlKgByMaterial(tonCuoiMaps, mat.code, mat.name), 2);
-        // Giống tab «Dữ liệu trong báo cáo lỗi hỏng»: Tổng lỗi hỏng × Tỉ lệ trộn (%).
+        // BS: hàng lỗi hỏng của mã = tổng lỗi tab × tỉ lệ trộn (%).
         const tiLeTronPercent = lookupMixingTiLeTronPercent(mixingTiLeMaps, mat.code, mat.name);
         const deduction = roundQty(
           tiLeTronPercent !== null && tiLeTronPercent > 0 && damagedTabTotalKg > 0
@@ -3673,7 +3705,7 @@ export function buildBbSanLuongGroups(input: {
         baseBalanceByMaterial.set(key, {
           tonDauKg,
           tonDauFromNnsTron: useNnsTonDau,
-          tonDauDirectKg: roundQty(directTonDau, 2),
+          tonDauDirectKg: directTonDau,
           nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 2),
           tiLeThucTeTbPercent,
           xuatThucTeKg: xuat,
@@ -3754,7 +3786,7 @@ export function buildBbSanLuongGroups(input: {
       })
       .sort((a, b) => a.productName.localeCompare(b.productName, 'vi'));
 
-    // Tổng theo NVL (cộng mọi SP) — dùng để hiện dòng con.
+    // Tổng theo NVL (cộng mọi SP) — TL thực tế = cân bằng cả ca của mã (không chia % SP).
     const nvlAggMap = new Map<string, BbSanLuongNvlTotal>();
     for (const productGroup of productGroups) {
       for (const line of productGroup.lines) {
@@ -3770,19 +3802,20 @@ export function buildBbSanLuongGroups(input: {
             itemName: line.itemName,
             unit: line.unit,
             normWeightKg: line.normWeightKg,
-            actualWeightKg: line.actualWeightKg,
+            // Hiện đúng công thức cả ca (vd: 28,51+50−4,40−17,57 = 56,54).
+            actualWeightKg: line.baseActualWeightKg,
             baseActualWeightKg: line.baseActualWeightKg,
             balanceDetail: line.balanceDetail
           });
         } else {
           existing.normWeightKg = roundQty(existing.normWeightKg + line.normWeightKg, 3);
-          existing.actualWeightKg = roundQty(existing.actualWeightKg + line.actualWeightKg, 2);
           if (!existing.itemCode && line.itemCode) existing.itemCode = line.itemCode;
           if (!existing.itemName && line.itemName) existing.itemName = line.itemName;
           if (!existing.unit && line.unit) existing.unit = line.unit;
           if (!existing.balanceDetail && line.balanceDetail) {
             existing.balanceDetail = line.balanceDetail;
             existing.baseActualWeightKg = line.baseActualWeightKg;
+            existing.actualWeightKg = line.baseActualWeightKg;
           }
         }
       }
@@ -3791,15 +3824,48 @@ export function buildBbSanLuongGroups(input: {
       a.itemName.localeCompare(b.itemName, 'vi')
     );
 
-    // Tổng lệnh = tổng các dòng NVL bên dưới (khớp khi cộng tay các dòng con).
+    // Tổng định mức = cộng NVL BOM; TL thực tế = cộng cân bằng từng NVL
+    // (AF đã+chưa + P xuất − BS lỗi − CH tồn cuối).
     const totalNormWeightKg = roundQty(
       nvlTotals.reduce((sum, row) => sum + row.normWeightKg, 0),
       3
     );
-    const totalActualWeightKg = roundQty(
-      nvlTotals.reduce((sum, row) => sum + row.actualWeightKg, 0),
+    const sumTonDau = roundQty(
+      nvlTotals.reduce((sum, row) => sum + (row.balanceDetail?.tonDauKg || 0), 0),
       2
     );
+    const sumXuat = roundQty(
+      nvlTotals.reduce((sum, row) => sum + (row.balanceDetail?.xuatThucTeKg || 0), 0),
+      2
+    );
+    const sumLoi = roundQty(
+      nvlTotals.reduce((sum, row) => sum + (row.balanceDetail?.loiHongKg || 0), 0),
+      2
+    );
+    const sumTonCuoi = roundQty(
+      nvlTotals.reduce((sum, row) => sum + (row.balanceDetail?.tonCuoiKg || 0), 0),
+      2
+    );
+    const totalActualWeightKg = roundQty(
+      nvlTotals.reduce((sum, row) => sum + (row.actualWeightKg || 0), 0),
+      2
+    );
+    const balanceSummary: BbInboundMaterialBalanceDetail = {
+      tonDauKg: sumTonDau,
+      tonDauFromNnsTron: false,
+      tonDauDirectKg: sumTonDau,
+      nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 2),
+      tiLeThucTeTbPercent: null,
+      xuatThucTeKg: sumXuat,
+      loiHongKg: sumLoi,
+      loiHongGroup: 'nhua',
+      loiHongGroupTotalKg: roundQty(damagedTabTotalKg, 2),
+      loiHongBaseKg: roundQty(Math.max(0, sumTonDau + sumXuat - sumTonCuoi), 2),
+      loiHongGroupBaseSumKg: 0,
+      loiHongTiLeTronPercent: null,
+      tonCuoiKg: sumTonCuoi,
+      realKg: totalActualWeightKg
+    };
 
     groups.push({
       groupKey,
@@ -3813,6 +3879,7 @@ export function buildBbSanLuongGroups(input: {
       totalQuantity: productGroups.reduce((sum, pg) => sum + pg.quantity, 0),
       totalNormWeightKg,
       totalActualWeightKg,
+      balanceSummary,
       productGroups,
       nvlTotals
     });
@@ -4526,7 +4593,9 @@ export function buildBbInboundBalanceMetricDetail(input: {
   const subtitle = `${input.orderCode || '—'} · ${input.ngay || '—'} · ${input.shiftLabel || input.shift || '—'} · ${
     input.machine || '—'
   }`;
-  const title = `${input.itemCode || '—'} · ${input.itemName || '—'}`;
+  const title = String(input.itemCode || '').trim()
+    ? `${input.itemCode} · ${input.itemName || '—'}`
+    : String(input.itemName || '').trim() || 'Tất cả NVL';
   const bd = input.balanceDetail;
   const target = { materialCode: input.itemCode, materialName: input.itemName };
 
@@ -4542,17 +4611,17 @@ export function buildBbInboundBalanceMetricDetail(input: {
       subtitle,
       valueLabel,
       valueText: `${baseReal} kg`,
-      formula: `Bước 1 — Tổng NVL cả ca = Tồn đầu (${tonDau}) + Xuất (${xuat}) − Lỗi hỏng (${loi}) − Tồn cuối (${tonCuoi}) = ${baseReal} kg. Bước 2 — × % mặt hàng (SL SP ÷ tổng SL lệnh SX) = trọng lượng thực tế của SP.`,
+      formula: `Trọng lượng thực tế = [Tồn đầu đã trộn + chưa trộn] (${tonDau}) + [Xuất thực tế] (${xuat}) − [Hàng lỗi hỏng] (${loi}) − [Tồn cuối ca] (${tonCuoi}) = ${baseReal} kg.`,
       columns: [
         { key: 'thanhPhan', label: 'Thành phần' },
         { key: 'weightKg', label: 'TL (kg)', align: 'right' }
       ],
       rows: [
-        { thanhPhan: 'Tồn đầu ca', weightKg: tonDau },
+        { thanhPhan: 'Tồn đầu ca (đã trộn + chưa trộn)', weightKg: tonDau },
         { thanhPhan: 'Xuất thực tế', weightKg: xuat },
         { thanhPhan: 'Hàng lỗi hỏng (−)', weightKg: loi },
         { thanhPhan: 'Tồn cuối ca (−)', weightKg: tonCuoi },
-        { thanhPhan: 'Tổng NVL cả ca', weightKg: baseReal }
+        { thanhPhan: 'Trọng lượng thực tế', weightKg: baseReal }
       ]
     };
   }

@@ -1106,19 +1106,23 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-4 py-3.5 text-right font-black">SL</th>
                 <th className="px-4 py-3.5 text-right font-black">Tổng TL (kg)</th>
                 <th className="px-4 py-3.5 text-right font-black">% KL nhựa</th>
+                <th className="px-4 py-3.5 font-black">ĐVT</th>
+                <th className="px-4 py-3.5 text-right font-black" title="Định mức (kg/ĐVT) lấy từ SP tương ứng">
+                  TL định mức
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={13} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải báo cáo máy BB...
                   </td>
                 </tr>
               ) : orderGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={13} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có lệnh SX máy BB theo bộ lọc đã chọn.
                   </td>
                 </tr>
@@ -1157,6 +1161,10 @@ export default function ControlBoardBbMachineReportTable({
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-teal-700">
                           {group.totalNormKg > 0 ? '100%' : '—'}
                         </td>
+                        <td className="px-4 py-2.5 text-zinc-700">{group.unit || '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-700">
+                          {formatKg(group.normKgPerUnit, 3)}
+                        </td>
                       </tr>
                       {expanded ? (
                         <>
@@ -1176,6 +1184,8 @@ export default function ControlBoardBbMachineReportTable({
                             </td>
                             <td />
                             <td className="px-4 py-2 text-right font-black">% KL nhựa</td>
+                            <td />
+                            <td />
                           </tr>
                           {group.lines.map(row => {
                             const plasticPercent =
@@ -1203,6 +1213,8 @@ export default function ControlBoardBbMachineReportTable({
                               <td className="px-4 py-2 text-right font-mono font-bold text-teal-700">
                                 {plasticPercent === null ? '—' : `${formatNumber(plasticPercent, 2)}%`}
                               </td>
+                              <td />
+                              <td />
                             </tr>
                             );
                           })}
@@ -1226,6 +1238,7 @@ export default function ControlBoardBbMachineReportTable({
                   <td className="px-4 py-3.5 text-right font-mono text-teal-700">
                     {orderTotals.totalNormKg > 0 ? '100%' : '—'}
                   </td>
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             ) : null}
@@ -1655,7 +1668,7 @@ export default function ControlBoardBbMachineReportTable({
                                       </td>
                                       <td
                                         className="px-4 py-2 text-right font-black"
-                                        title="Có NNS-TRON: NNS-TRON × Tỉ lệ thực tế (%); không thì lấy tồn đầu theo mã NVL"
+                                        title="Có NNS-TRON: NNS-TRON × Tỉ lệ thực tế (%); không thì lấy tồn đầu theo mã NVL × tỉ lệ SL sản phẩm/tổng SL lệnh"
                                       >
                                         Tồn đầu (kg)
                                       </td>
@@ -1825,7 +1838,28 @@ export default function ControlBoardBbMachineReportTable({
                           {formatKg(group.totalNormWeightKg, 3)}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono font-black text-amber-800">
-                          {formatKg(group.totalActualWeightKg, 2)}
+                          {group.balanceSummary ? (
+                            <ThucDungMetricButton
+                              label={formatKg(group.totalActualWeightKg, 2)}
+                              className="font-mono font-black text-amber-800"
+                              title="Tồn đầu (đã+chưa) + Xuất − Lỗi hỏng − Tồn cuối"
+                              onOpen={() =>
+                                setInboundBalanceDetail({
+                                  metric: 'thuc_te',
+                                  itemCode: '',
+                                  itemName: 'Tất cả NVL',
+                                  ngay: group.ngay,
+                                  shift: group.shift,
+                                  shiftLabel: group.shiftLabel,
+                                  orderCode: group.orderCode,
+                                  machine: group.machine,
+                                  balanceDetail: group.balanceSummary
+                                })
+                              }
+                            />
+                          ) : (
+                            formatKg(group.totalActualWeightKg, 2)
+                          )}
                         </td>
                       </tr>
                       {expanded ? (
@@ -1888,7 +1922,7 @@ export default function ControlBoardBbMachineReportTable({
                                       <ThucDungMetricButton
                                         label={formatKg(row.actualWeightKg, 2)}
                                         className="font-mono font-black text-amber-800"
-                                        title="Tổng NVL ca (đã cộng mọi SP)"
+                                        title={`(Đã trộn+chưa trộn ${formatKg(row.balanceDetail.tonDauKg, 2)}) + (Xuất ${formatKg(row.balanceDetail.xuatThucTeKg, 2)}) − (Lỗi ${formatKg(row.balanceDetail.loiHongKg, 2)}) − (Tồn cuối ${formatKg(row.balanceDetail.tonCuoiKg, 2)})`}
                                         onOpen={openBalanceDetail}
                                       />
                                     ) : (
@@ -3447,7 +3481,9 @@ export default function ControlBoardBbMachineReportTable({
                 </>
               ) : (
                 <>
-                  Tồn đầu = Tồn ghi nhận theo mã NVL trên báo cáo tồn đầu ca ={' '}
+                  Tồn đầu = Tồn ghi nhận theo mã NVL ({formatKg(selectedTonDauFormula.directTonDauKg, 3)})
+                  {' × '}Tỉ lệ SL SP ({formatNumber(selectedTonDauFormula.share * 100, 2)}%)
+                  {' = '}
                   {formatKg(selectedTonDauFormula.tonDauWeightKg, 3)}
                 </>
               )}
@@ -3474,10 +3510,17 @@ export default function ControlBoardBbMachineReportTable({
                   {formatKg(selectedTonDauFormula.directTonDauKg, 3)}
                 </p>
               </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tỉ lệ SL SP</p>
+                <p className="mt-1 font-mono text-lg font-black text-zinc-900">
+                  {formatNumber(selectedTonDauFormula.share * 100, 2)}%
+                </p>
+              </div>
             </div>
 
             <p className="text-xs font-semibold text-zinc-500">
-              Khi có NNS-TRON: phân bổ về từng NVL bằng Tỉ lệ thực tế (phiếu trộn ca liền trước).
+              Khi có NNS-TRON: phân bổ về từng NVL bằng Tỉ lệ thực tế (phiếu trộn ca liền trước). Khi không có
+              NNS-TRON: chia tồn theo mã NVL cho từng sản phẩm theo Tỉ lệ SL SP (SL sản phẩm ÷ tổng SL lệnh SX).
             </p>
           </div>
         </div>
