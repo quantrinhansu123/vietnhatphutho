@@ -2297,12 +2297,11 @@ export default function ControlBoardBbMachineReportTable({
                             <td className="px-3 py-1.5 text-right font-black" title="Xuất trong ca + Tồn đầu − Tồn cuối">
                               Thực dùng (kg)
                             </td>
-                            <td className="px-3 py-1.5 text-right font-black">Số mẻ có KL TT</td>
                           </tr>
                           {group.lines.length === 0 ? (
                             <tr className="bg-white">
                               <td />
-                              <td colSpan={9} className="px-3 py-2 text-sm font-semibold text-zinc-400">
+                              <td colSpan={8} className="px-3 py-2 text-sm font-semibold text-zinc-400">
                                 Chưa có dòng NVL từ báo cáo trộn.
                               </td>
                             </tr>
@@ -2354,13 +2353,6 @@ export default function ControlBoardBbMachineReportTable({
                                     label={formatKg(row.weightKg, 3)}
                                     className="font-mono font-bold text-teal-700"
                                     onOpen={() => setThucDungDetail({ line: row, metric: 'thuc_dung' })}
-                                  />
-                                </td>
-                                <td className="px-3 py-1.5 text-right font-mono text-zinc-700">
-                                  <ThucDungMetricButton
-                                    label={formatNumber(row.batchCount, 0)}
-                                    className="font-mono text-zinc-700"
-                                    onOpen={() => setThucDungDetail({ line: row, metric: 'so_me' })}
                                   />
                                 </td>
                               </tr>
