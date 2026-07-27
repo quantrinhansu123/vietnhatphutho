@@ -87,6 +87,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'settings': 'hcns',
   'orders': 'menu',
   'customers': 'business',
+  'shipping-orders': 'business',
   'production-orders': 'factory',
   'production-plan-history': 'production-reports',
   'weighing-summary': 'report-forms',

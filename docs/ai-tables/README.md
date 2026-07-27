@@ -29,6 +29,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `phieu_xuat_nhap_kho` | `/phieu-xuat-nhap-kho` | [phieu_xuat_nhap_kho.md](./phieu_xuat_nhap_kho.md) |
 | `don_hang` | `/don-hang` | [don_hang.md](./don_hang.md) |
 | `khach_hang` | `/khach-hang` | [khach_hang.md](./khach_hang.md) |
+| `lenh_xuat_hang` | `/lenh-xuat-hang` | [lenh_xuat_hang.md](./lenh_xuat_hang.md) |
 | `lenh_sx` | `/lenh-san-xuat` | [lenh_sx.md](./lenh_sx.md) |
 | `ke_hoach_san_xuat` | `/ke-hoach-san-xuat` | [ke_hoach_san_xuat.md](./ke_hoach_san_xuat.md) |
 | `nhan_su` | `/nhan-su` | [nhan_su.md](./nhan_su.md) |

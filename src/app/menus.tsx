@@ -258,6 +258,12 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Xem danh sách khách hàng phục vụ lập và tra cứu đơn hàng.',
     icon: BriefcaseBusiness,
     tab: 'customers'
+  },
+  {
+    title: 'Lệnh xuất hàng',
+    desc: 'Tạo lệnh xuất hàng cho khách hàng, chọn khách từ danh mục.',
+    icon: Truck,
+    tab: 'shipping-orders'
   }
 ];
 
@@ -356,7 +362,10 @@ export const PRIMARY_NAV_GROUPS: {
     title: 'Kinh doanh',
     icon: BriefcaseBusiness,
     tab: 'business',
-    children: [{ label: 'Khách hàng', tab: 'customers' }]
+    children: [
+      { label: 'Khách hàng', tab: 'customers' },
+      { label: 'Lệnh xuất hàng', tab: 'shipping-orders' }
+    ]
   },
   {
     title: 'Đơn hàng',
@@ -414,6 +423,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'driver-policy': { group: 'HCNS', sub: 'Quy chế lái xe' },
   'orders': { group: 'Đơn hàng', sub: 'Quản lý đơn' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
+  'shipping-orders': { group: 'Kinh doanh', sub: 'Lệnh xuất hàng' },
   'production-orders': { group: 'Nhà máy', sub: 'Lệnh sản xuất' },
   'dashboard': { group: 'Phân tích', sub: 'Dashboard' }
 };

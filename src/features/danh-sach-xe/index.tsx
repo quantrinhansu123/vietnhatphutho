@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ClipboardCheck,
+  Gauge,
   Loader2,
   Pencil,
   Plus,
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { normalizeHrBranches } from '../_shared/hr';
-import { VehicleDeliveryRequestsView, VehicleExpensesView, VehicleLogsView } from './VehicleOperations';
+import { VehicleDeliveryRequestsView, VehicleExpensesView, VehicleKmLogsView, VehicleLogsView } from './VehicleOperations';
 import { DriverPolicyView } from './DriverPolicy';
 
 type Vehicle = {
@@ -163,7 +164,7 @@ export function VehiclesPanel({
   onBack: () => void;
   currentUser?: { id: string; name: string } | null;
 }) {
-  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'delivery' | 'expenses' | 'logs' | 'policy'>('vehicles');
+  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'delivery' | 'expenses' | 'logs' | 'km_log' | 'policy'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rows, setRows] = useState<DriverReconciliation[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
@@ -327,7 +328,7 @@ export function VehiclesPanel({
             </button>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-6 sm:w-[1120px]">
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-7 sm:w-[1280px]">
           <button
             type="button"
             onClick={() => setActiveView('vehicles')}
@@ -377,6 +378,16 @@ export function VehiclesPanel({
           >
             <BookOpen className="h-4 w-4" />
             Nhật ký xe
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('km_log')}
+            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
+              activeView === 'km_log' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Gauge className="h-4 w-4" />
+            Nhật ký KM xe
           </button>
           <button
             type="button"
@@ -599,6 +610,8 @@ export function VehiclesPanel({
         <VehicleDeliveryRequestsView vehicles={vehicles} staff={staff} />
       ) : activeView === 'expenses' ? (
         <VehicleExpensesView vehicles={vehicles} staff={staff} currentUser={currentUser} />
+      ) : activeView === 'km_log' ? (
+        <VehicleKmLogsView vehicles={vehicles} staff={staff} />
       ) : activeView === 'policy' ? (
         <DriverPolicyView />
       ) : (

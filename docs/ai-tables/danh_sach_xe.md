@@ -19,3 +19,5 @@ Dữ liệu gốc `danh_sach_xe`: loại xe, biển số, tài xế phụ trách
 Dữ liệu tháng `doi_chieu_lai_xe`: công quy đổi, chuyến, km, các khoản thưởng và doanh số.
 Chi phí `chi_phi_xe`: ngày giờ, loại/tên chi phí, số tiền, BSX, nhân viên và ảnh hóa đơn.
 Nhật ký `nhat_ky_xe`: ngày giờ, ca, BSX, nhân viên, tổng mặt hàng, doanh thu và chi phí.
+Nhật ký KM `nhat_ky_km_xe`: loại KM, số KM đi/về, tổng KM, ảnh xác nhận.
+API: `/api/nhat-ky-km-xe`

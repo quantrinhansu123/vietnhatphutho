@@ -12,6 +12,7 @@ export type TableId =
   | 'phieu_xuat_nhap_kho'
   | 'don_hang'
   | 'khach_hang'
+  | 'lenh_xuat_hang'
   | 'lenh_sx'
   | 'ke_hoach_san_xuat'
   | 'nhan_su'
@@ -133,9 +134,20 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     label: 'Khách hàng',
     sql: ['supabase-don-hang-san-pham.sql'],
     apiPrefix: '/api/khach-hang',
-    serverLines: '4436–4479',
+    serverLines: '5601–5644',
     appTab: 'customers',
     appLines: 'src/features/khach-hang/index.tsx',
+    components: [],
+    utils: []
+  },
+  lenh_xuat_hang: {
+    table: 'lenh_xuat_hang',
+    label: 'Lệnh xuất hàng',
+    sql: ['supabase-lenh-xuat-hang.sql'],
+    apiPrefix: '/api/lenh-xuat-hang',
+    serverLines: '5705–5790',
+    appTab: 'shipping-orders',
+    appLines: 'src/features/lenh-xuat-hang/index.tsx',
     components: [],
     utils: []
   },

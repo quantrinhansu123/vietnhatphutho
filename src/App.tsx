@@ -57,6 +57,7 @@ import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsInventoryPanel } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
 import { CustomersPanel } from './features/khach-hang';
+import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
 import { OrdersPanel } from './features/don-hang';
 import { ProductionOrdersPanel } from './features/lenh-sx';
 import { ProductionPlanHistoryPanel } from './features/ke-hoach-san-xuat';
@@ -1194,6 +1195,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <CustomersPanel onBack={() => navigateToTab('business')} />
+              </motion.div>
+            ) : activeTab === 'shipping-orders' ? (
+              <motion.div
+                key="shipping-orders"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ShippingOrdersPanel onBack={() => navigateToTab('business')} />
               </motion.div>
             ) : activeTab === 'production-orders' ? (
               <motion.div

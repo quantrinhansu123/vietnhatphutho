@@ -24,6 +24,8 @@ export type VehicleOption = {
   id: string;
   loai_xe: string;
   bien_so_xe: string;
+  ma_tai_xe?: string;
+  tai_xe_phu_trach?: string;
 };
 
 export type StaffOption = {
@@ -36,6 +38,7 @@ type VehicleExpense = {
   ngay_gio: string;
   loai_chi_phi: string;
   ten_chi_phi: string;
+  so_luong: number;
   so_tien: number;
   xe_id: string;
   bien_so_xe: string;
@@ -45,6 +48,39 @@ type VehicleExpense = {
   hoa_don_public_id: string;
   ghi_chu: string;
 };
+
+type FuelPriceOption = {
+  title: string;
+  price: number;
+  zone1_price: number;
+  zone2_price: number;
+};
+
+function normalizeFuelPriceOptions(payload: unknown, date: string): FuelPriceOption[] {
+  const source = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>).options
+    : payload;
+  const records = Array.isArray(source)
+    ? source.flatMap(group => Array.isArray(group) ? group : [group])
+    : [];
+  const seen = new Set<string>();
+
+  return records.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const recordDate = text(record.date).slice(0, 10);
+    if (recordDate && recordDate !== date) return [];
+    const title = text(record.title);
+    if (!title || seen.has(title)) return [];
+    seen.add(title);
+    return [{
+      title,
+      price: numberValue(record.price ?? record.zone1_price),
+      zone1_price: numberValue(record.zone1_price ?? record.price),
+      zone2_price: numberValue(record.zone2_price)
+    }];
+  });
+}
 
 type VehicleDeliveryRequest = {
   id: string;
@@ -59,6 +95,23 @@ type VehicleDeliveryRequest = {
   ma_nhan_su: string;
   ten_tai_xe: string;
   trang_thai: string;
+  ghi_chu: string;
+};
+
+type VehicleKmLog = {
+  id: string;
+  ten_lai_xe: string;
+  ma_nhan_su: string;
+  xe_id: string;
+  bien_so_xe: string;
+  ngay_gio_di: string;
+  ngay_gio_ve: string;
+  loai_km: string;
+  so_km_di: number;
+  so_km_ve: number;
+  tong_km: number;
+  anh_url: string;
+  anh_public_id: string;
   ghi_chu: string;
 };
 
@@ -81,7 +134,7 @@ function printVehicleExpenses(
     return;
   }
   popup.opener = null;
-  const total = rows.reduce((sum, row) => sum + row.so_tien, 0);
+  const total = rows.reduce((sum, row) => sum + row.so_luong * row.so_tien, 0);
   const driver = filters.staff || [...new Set(rows.map(row => row.nhan_vien_phu_trach).filter(Boolean))].join(', ');
   const vehicle = filters.vehicle || [...new Set(rows.map(row => row.bien_so_xe).filter(Boolean))].join(', ');
   const period = filters.fromDate || filters.toDate
@@ -92,9 +145,9 @@ function printVehicleExpenses(
         <tr>
           <td class="center">${index + 1}</td>
           <td>${escapePrintHtml(row.ten_chi_phi)}<small>${escapePrintHtml(formatDateTime(row.ngay_gio))} · ${escapePrintHtml(row.loai_chi_phi)}</small></td>
-          <td class="center">1</td>
+          <td class="center">${escapePrintHtml(row.so_luong)}</td>
           <td class="money">${escapePrintHtml(formatMoney(row.so_tien))}</td>
-          <td class="money">${escapePrintHtml(formatMoney(row.so_tien))}</td>
+          <td class="money">${escapePrintHtml(formatMoney(row.so_luong * row.so_tien))}</td>
           <td>${escapePrintHtml(row.ghi_chu || '')}</td>
         </tr>`).join('')
     : '<tr><td colspan="6" class="center empty">Không có dữ liệu phù hợp bộ lọc</td></tr>';
@@ -124,8 +177,13 @@ function printVehicleExpenses(
     .total td { font-weight: 700; }
     .summary { width: 55%; margin-top: 10px; }
     .summary td:first-child { font-weight: 700; width: 55%; }
-    .sign { margin-top: 28px; text-align: right; font-style: italic; }
-    .sign-space { height: 65px; }
+    .sign-date { margin-top: 24px; text-align: right; font-style: italic; }
+    .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 18px; text-align: center; }
+    .sign-box { min-height: 118px; }
+    .sign-title { font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+    .sign-hint { margin-top: 4px; font-size: 11px; font-style: italic; color: #333; }
+    .sign-space { height: 72px; }
+    .sign-name { margin-top: 4px; min-height: 18px; }
   </style></head><body>
     <main class="sheet">
       <header class="header">
@@ -156,7 +214,124 @@ function printVehicleExpenses(
       <div class="section">V. Hóa đơn nợ và chuyển khoản</div>
       <table><thead><tr><th>STT</th><th>Khách hàng</th><th>Số tiền</th><th>Người cho nợ</th></tr></thead><tbody>${[1,2,3].map(i => `<tr><td class="center">${i}</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join('')}</tbody></table>
       <table class="summary"><tr><td>TỔNG THU</td><td></td></tr><tr><td>CHI PHÍ</td><td class="money">${escapePrintHtml(formatMoney(total))}</td></tr><tr><td>CÒN NỘP</td><td></td></tr></table>
-      <div class="sign">Đà Nẵng, ngày ...... tháng ...... năm ........</div><div class="sign-space"></div>
+      <div class="sign-date">Đà Nẵng, ngày ...... tháng ...... năm ........</div>
+      <div class="sign-grid">
+        <div class="sign-box">
+          <div class="sign-title">Lái xe</div>
+          <div class="sign-hint">(Ký và ghi rõ họ tên)</div>
+          <div class="sign-space"></div>
+          <div class="sign-name">${escapePrintHtml(driver || '................................')}</div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-title">Quản lý</div>
+          <div class="sign-hint">(Ký và ghi rõ họ tên)</div>
+          <div class="sign-space"></div>
+          <div class="sign-name">................................</div>
+        </div>
+      </div>
+    </main>
+    <script>window.addEventListener('load', () => { window.print(); });<\/script>
+  </body></html>`);
+  popup.document.close();
+}
+
+function printVehicleKmLogs(
+  rows: VehicleKmLog[],
+  filters: { fromDate: string; toDate: string; vehicle: string; driver: string }
+) {
+  const popup = window.open('', '_blank', 'width=900,height=1000');
+  if (!popup) {
+    window.alert('Trình duyệt đang chặn cửa sổ in. Vui lòng cho phép popup rồi thử lại.');
+    return;
+  }
+  popup.opener = null;
+  const driver = filters.driver || [...new Set(rows.map(row => row.ten_lai_xe).filter(Boolean))].join(', ');
+  const vehicle = filters.vehicle || [...new Set(rows.map(row => row.bien_so_xe).filter(Boolean))].join(', ');
+  const totalKm = rows.reduce((sum, row) => sum + row.tong_km, 0);
+  const bodyRows = rows.length > 0
+    ? rows.map(row => `
+        <tr>
+          <td>${escapePrintHtml(formatDateTime(row.ngay_gio_di))}</td>
+          <td>${escapePrintHtml(row.ngay_gio_ve ? formatDateTime(row.ngay_gio_ve) : '')}</td>
+          <td>${escapePrintHtml(row.loai_km || '')}</td>
+          <td class="center">${escapePrintHtml(formatNumber(row.so_km_di))}</td>
+          <td class="center">${escapePrintHtml(formatNumber(row.so_km_ve))}</td>
+          <td class="center">${escapePrintHtml(formatNumber(row.tong_km))}</td>
+          <td>${escapePrintHtml(row.ghi_chu || '')}</td>
+        </tr>`).join('')
+    : `<tr><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td></tr>`;
+
+  popup.document.write(`<!doctype html>
+  <html lang="vi"><head><meta charset="utf-8"><title>Phiếu xác nhận KM lái xe</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #111; font-family: "Times New Roman", serif; font-size: 13px; }
+    .sheet { width: 100%; }
+    .header { display: grid; grid-template-columns: 130px 1fr; align-items: center; border-bottom: 1px solid #111; padding-bottom: 7px; }
+    .logo { width: 118px; max-height: 58px; object-fit: contain; }
+    .company { font-size: 13px; font-weight: 700; line-height: 1.4; }
+    h1 { margin: 16px 0 14px; text-align: center; font-size: 20px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px 40px; margin-bottom: 14px; font-weight: 700; }
+    .meta span.value { font-weight: 400; border-bottom: 1px dotted #555; padding: 0 4px; display: inline-block; min-width: 160px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+    th, td { border: 1px solid #111; padding: 7px 8px; vertical-align: middle; }
+    th { text-align: center; font-weight: 700; background: #f2f2f2; }
+    .center { text-align: center; }
+    .blank-cell { height: 34px; }
+    tfoot td { font-weight: 700; }
+    .confirm { margin-top: 30px; text-align: center; font-weight: 700; }
+    .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 10px; text-align: center; }
+    .sign-box { min-height: 110px; }
+    .sign-title { font-weight: 700; }
+    .sign-hint { margin-top: 4px; font-size: 11px; font-style: italic; color: #333; }
+    .sign-space { height: 70px; }
+    .sign-name { margin-top: 4px; min-height: 18px; }
+  </style></head><body>
+    <main class="sheet">
+      <header class="header">
+        <img class="logo" src="${escapePrintHtml(vietNhatLogoUrl)}" alt="Việt Nhật">
+        <div class="company">Công ty cổ phần vật liệu cách nhiệt Việt Nhật<br>Đ/c: Số 21 đường Phước Lý 10 - P. Hòa Minh, Q. Liên Chiểu, Đà Nẵng</div>
+      </header>
+      <h1>PHIẾU XÁC NHẬN KM LÁI XE</h1>
+      <div class="meta">
+        <div>Tên Lái Xe: <span class="value">${escapePrintHtml(driver)}</span></div>
+        <div>Biển số xe: <span class="value">${escapePrintHtml(vehicle)}</span></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th colspan="2">Thời gian lưu hành</th>
+            <th rowspan="2">Loại KM</th>
+            <th colspan="3">Số Km</th>
+            <th rowspan="2">Ghi chú</th>
+          </tr>
+          <tr>
+            <th>Ngày giờ đi</th>
+            <th>Ngày giờ về</th>
+            <th>Số KM đi</th>
+            <th>Số KM về</th>
+            <th>Tổng</th>
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+        ${rows.length > 0 ? `<tfoot><tr><td colspan="5" class="center">Tổng cộng</td><td class="center">${escapePrintHtml(formatNumber(totalKm))}</td><td></td></tr></tfoot>` : ''}
+      </table>
+      <div class="confirm">Bộ phận xác nhận</div>
+      <div class="sign-grid">
+        <div class="sign-box">
+          <div class="sign-title">Lái xe</div>
+          <div class="sign-hint">(Ký và ghi rõ họ tên)</div>
+          <div class="sign-space"></div>
+          <div class="sign-name">${escapePrintHtml(driver || '................................')}</div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-title">Quản lý</div>
+          <div class="sign-hint">(Ký và ghi rõ họ tên)</div>
+          <div class="sign-space"></div>
+          <div class="sign-name">................................</div>
+        </div>
+      </div>
     </main>
     <script>window.addEventListener('load', () => { window.print(); });<\/script>
   </body></html>`);
@@ -312,6 +487,7 @@ function flattenProductLines(lines: VehicleLogProductLine[]) {
 }
 
 const EXPENSE_TYPES = ['CHI PHÍ XĂNG DẦU', 'CÁC CHI PHÍ KHÁC CỦA XE'] as const;
+const KM_TYPES = ['Giao hàng', 'Nhận hàng', 'Giao & nhận', 'Công tác', 'Nội bộ', 'Khác'] as const;
 
 function text(value: unknown) {
   return value === null || value === undefined ? '' : String(value).trim();
@@ -345,6 +521,10 @@ function formatMoney(value: number) {
   return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value || 0)} đ`;
 }
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value || 0);
+}
+
 async function readJson(response: Response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Không thể xử lý yêu cầu.');
@@ -362,6 +542,7 @@ function normalizeExpenses(data: unknown): VehicleExpense[] {
       ngay_gio: text(row.ngay_gio),
       loai_chi_phi: text(row.loai_chi_phi),
       ten_chi_phi: text(row.ten_chi_phi),
+      so_luong: numberValue(row.so_luong) || 1,
       so_tien: numberValue(row.so_tien),
       xe_id: text(row.xe_id),
       bien_so_xe: text(row.bien_so_xe),
@@ -463,6 +644,48 @@ function emptyVehicleLogForm(): Omit<VehicleLog, 'id'> {
     tien_ds_lx1: 0,
     tien_thuong_chuyen_lx1: 0,
     tien_luat_lx1: 0,
+    ghi_chu: ''
+  };
+}
+
+function normalizeKmLogs(data: unknown): VehicleKmLog[] {
+  const rows = data && typeof data === 'object' && Array.isArray((data as { rows?: unknown }).rows)
+    ? (data as { rows: unknown[] }).rows
+    : [];
+  return rows
+    .filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    .map(row => ({
+      id: text(row.id),
+      ten_lai_xe: text(row.ten_lai_xe),
+      ma_nhan_su: text(row.ma_nhan_su),
+      xe_id: text(row.xe_id),
+      bien_so_xe: text(row.bien_so_xe),
+      ngay_gio_di: text(row.ngay_gio_di),
+      ngay_gio_ve: text(row.ngay_gio_ve),
+      loai_km: text(row.loai_km),
+      so_km_di: numberValue(row.so_km_di),
+      so_km_ve: numberValue(row.so_km_ve),
+      tong_km: numberValue(row.tong_km),
+      anh_url: text(row.anh_url),
+      anh_public_id: text(row.anh_public_id),
+      ghi_chu: text(row.ghi_chu)
+    }));
+}
+
+function emptyVehicleKmLogForm(): Omit<VehicleKmLog, 'id'> {
+  return {
+    ten_lai_xe: '',
+    ma_nhan_su: '',
+    xe_id: '',
+    bien_so_xe: '',
+    ngay_gio_di: localDateTimeValue(),
+    ngay_gio_ve: '',
+    loai_km: KM_TYPES[0],
+    so_km_di: 0,
+    so_km_ve: 0,
+    tong_km: 0,
+    anh_url: '',
+    anh_public_id: '',
     ghi_chu: ''
   };
 }
@@ -947,7 +1170,10 @@ export function VehicleExpensesView({
       return true;
     });
   }, [fromDate, rows, searchText, staffFilter, toDate, typeFilter, vehicleFilter]);
-  const total = useMemo(() => filteredRows.reduce((sum, row) => sum + row.so_tien, 0), [filteredRows]);
+  const total = useMemo(
+    () => filteredRows.reduce((sum, row) => sum + row.so_luong * row.so_tien, 0),
+    [filteredRows]
+  );
 
   const deleteRow = async (row: VehicleExpense) => {
     if (!window.confirm(`Xóa chi phí "${row.ten_chi_phi}"?`)) return;
@@ -1030,7 +1256,9 @@ export function VehicleExpensesView({
                 <th className="px-3 py-2.5 font-black">Tên chi phí</th>
                 <th className="px-3 py-2.5 font-black">BSX</th>
                 <th className="px-3 py-2.5 font-black">NV phụ trách</th>
-                <th className="px-3 py-2.5 text-right font-black">Số tiền</th>
+                <th className="px-3 py-2.5 text-right font-black">Số lượng</th>
+                <th className="px-3 py-2.5 text-right font-black">Đơn giá</th>
+                <th className="px-3 py-2.5 text-right font-black">Thành tiền</th>
                 <th className="px-3 py-2.5 text-center font-black">Hóa đơn</th>
                 <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
               </tr>
@@ -1044,7 +1272,9 @@ export function VehicleExpensesView({
                   <td className="px-3 py-2.5 font-semibold">{row.ten_chi_phi}</td>
                   <td className="px-3 py-2.5 font-mono font-black text-brand-700">{row.bien_so_xe}</td>
                   <td className="px-3 py-2.5">{row.nhan_vien_phu_trach || '—'}</td>
-                  <td className="px-3 py-2.5 text-right font-black text-rose-700">{formatMoney(row.so_tien)}</td>
+                  <td className="px-3 py-2.5 text-right font-bold">{new Intl.NumberFormat('vi-VN').format(row.so_luong)}</td>
+                  <td className="px-3 py-2.5 text-right font-bold">{formatMoney(row.so_tien)}</td>
+                  <td className="px-3 py-2.5 text-right font-black text-rose-700">{formatMoney(row.so_luong * row.so_tien)}</td>
                   <td className="px-3 py-2.5 text-center">
                     {row.hoa_don_url ? (
                       <a href={row.hoa_don_url} target="_blank" rel="noreferrer" className="inline-flex h-10 w-14 overflow-hidden rounded-lg border border-slate-200">
@@ -1076,7 +1306,10 @@ export function VehicleExpensesView({
                   <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
                 </div>
               </div>
-              <p className="mt-2 text-sm font-black text-rose-700">{formatMoney(row.so_tien)}</p>
+              <p className="mt-2 text-sm font-black text-rose-700">
+                {new Intl.NumberFormat('vi-VN').format(row.so_luong)} × {formatMoney(row.so_tien)}
+                {' = '}{formatMoney(row.so_luong * row.so_tien)}
+              </p>
               <p className="mt-1 text-xs text-slate-500">{row.loai_chi_phi} · {row.nhan_vien_phu_trach || 'Chưa phân công'}</p>
             </article>
           ))}
@@ -1120,6 +1353,7 @@ function ExpenseModal({
     ngay_gio: localDateTimeValue(initial?.ngay_gio),
     loai_chi_phi: initial?.loai_chi_phi || EXPENSE_TYPES[0],
     ten_chi_phi: initial?.ten_chi_phi || '',
+    so_luong: initial?.so_luong || 1,
     so_tien: initial?.so_tien || 0,
     xe_id: initial?.xe_id || '',
     bien_so_xe: initial?.bien_so_xe || '',
@@ -1132,18 +1366,56 @@ function ExpenseModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
+  const [fuelOptions, setFuelOptions] = useState<FuelPriceOption[]>([]);
+  const [isLoadingFuelOptions, setIsLoadingFuelOptions] = useState(false);
+  const isFuelExpense = form.loai_chi_phi === EXPENSE_TYPES[0];
+  const expenseDate = form.ngay_gio.slice(0, 10);
+  const assignedVehicle = vehicles.find(vehicle => vehicle.id === form.xe_id);
+  const assignedStaffValue = `${form.ma_nhan_su}|${form.nhan_vien_phu_trach}`;
+  const assignedStaffExists = staff.some(item => `${item.code}|${item.name}` === assignedStaffValue);
 
   useEffect(() => {
-    if (initial || form.ma_nhan_su || form.nhan_vien_phu_trach || !currentUser?.name) return;
-    const normalizedName = currentUser.name.trim().toLocaleLowerCase('vi');
-    const loggedInStaff = staff.find(item => item.name.trim().toLocaleLowerCase('vi') === normalizedName);
-    if (!loggedInStaff) return;
-    setForm(prev => ({
-      ...prev,
-      ma_nhan_su: loggedInStaff.code,
-      nhan_vien_phu_trach: loggedInStaff.name
-    }));
-  }, [currentUser, form.ma_nhan_su, form.nhan_vien_phu_trach, initial, staff]);
+    if (!isFuelExpense || !expenseDate) {
+      setFuelOptions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsLoadingFuelOptions(true);
+    void (async () => {
+      try {
+        let payload: unknown;
+        try {
+          payload = await readJson(await fetch(
+            `/api/chi-phi-xe/gia-xang?ngay=${encodeURIComponent(expenseDate)}`,
+            { signal: controller.signal }
+          ));
+        } catch (proxyError: any) {
+          if (proxyError?.name === 'AbortError') throw proxyError;
+          payload = await readJson(await fetch(
+            `https://giaxanghomnay.com/api/pvdate/${encodeURIComponent(expenseDate)}`,
+            { signal: controller.signal }
+          ));
+        }
+        setFuelOptions(normalizeFuelPriceOptions(payload, expenseDate));
+      } catch (loadError: any) {
+        if (loadError?.name === 'AbortError') return;
+        setFuelOptions([]);
+        setError(loadError.message || 'Không thể tải danh sách diễn giải giá xăng.');
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingFuelOptions(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [expenseDate, isFuelExpense]);
+
+  useEffect(() => {
+    if (!isFuelExpense || !form.ten_chi_phi || fuelOptions.length === 0) return;
+    const selected = fuelOptions.find(option => option.title === form.ten_chi_phi);
+    if (!selected || selected.price <= 0 || selected.price === form.so_tien) return;
+    setForm(prev => ({ ...prev, so_tien: selected.price }));
+  }, [form.so_tien, form.ten_chi_phi, fuelOptions, isFuelExpense]);
 
   const uploadInvoice = async (file?: File) => {
     if (!file) return;
@@ -1200,18 +1472,85 @@ function ExpenseModal({
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Ngày giờ *"><input type="datetime-local" value={form.ngay_gio} onChange={event => setForm(prev => ({ ...prev, ngay_gio: event.target.value }))} className={inputClass} /></Field>
         <Field label="Loại chi phí *">
-          <select value={form.loai_chi_phi} onChange={event => setForm(prev => ({ ...prev, loai_chi_phi: event.target.value }))} className={inputClass}>
+          <select
+            value={form.loai_chi_phi}
+            onChange={event => {
+              const loai_chi_phi = event.target.value;
+              setForm(prev => ({
+                ...prev,
+                loai_chi_phi,
+                ...(loai_chi_phi === EXPENSE_TYPES[0]
+                  ? { ngay_gio: localDateTimeValue(), ten_chi_phi: '' }
+                  : {})
+              }));
+            }}
+            className={inputClass}
+          >
             {EXPENSE_TYPES.map(type => <option key={type}>{type}</option>)}
           </select>
         </Field>
-        <Field label="Tên chi phí *"><input value={form.ten_chi_phi} onChange={event => setForm(prev => ({ ...prev, ten_chi_phi: event.target.value }))} className={inputClass} placeholder="VD: Đổ dầu chuyến Đà Nẵng" /></Field>
-        <Field label="Số tiền"><MoneyInput value={form.so_tien} onChange={so_tien => setForm(prev => ({ ...prev, so_tien }))} /></Field>
+        <Field label="Diễn giải *">
+          {isFuelExpense ? (
+            <select
+              value={form.ten_chi_phi}
+              onChange={event => {
+                const title = event.target.value;
+                const selected = fuelOptions.find(option => option.title === title);
+                setForm(prev => ({
+                  ...prev,
+                  ten_chi_phi: title,
+                  so_tien: selected?.price || 0
+                }));
+              }}
+              className={inputClass}
+              disabled={isLoadingFuelOptions}
+            >
+              <option value="">
+                {isLoadingFuelOptions ? 'Đang tải giá xăng...' : 'Chọn loại xăng dầu'}
+              </option>
+              {fuelOptions.map(option => (
+                <option key={option.title} value={option.title}>{option.title}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={form.ten_chi_phi}
+              onChange={event => setForm(prev => ({ ...prev, ten_chi_phi: event.target.value }))}
+              className={inputClass}
+              placeholder="Nhập diễn giải chi phí"
+            />
+          )}
+        </Field>
+        <Field label="Số lượng *">
+          <input
+            type="number"
+            min="0.01"
+            step="any"
+            value={form.so_luong}
+            onChange={event => setForm(prev => ({ ...prev, so_luong: Number(event.target.value) }))}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Đơn giá"><MoneyInput value={form.so_tien} onChange={so_tien => setForm(prev => ({ ...prev, so_tien }))} /></Field>
+        <Field label="Thành tiền">
+          <input
+            value={formatMoney(form.so_luong * form.so_tien)}
+            className={`${inputClass} bg-slate-50 font-black text-rose-700`}
+            readOnly
+          />
+        </Field>
         <Field label="Biển số xe (BSX) *">
           <select
             value={form.xe_id}
             onChange={event => {
               const vehicle = vehicles.find(item => item.id === event.target.value);
-              setForm(prev => ({ ...prev, xe_id: vehicle?.id || '', bien_so_xe: vehicle?.bien_so_xe || '' }));
+              setForm(prev => ({
+                ...prev,
+                xe_id: vehicle?.id || '',
+                bien_so_xe: vehicle?.bien_so_xe || '',
+                ma_nhan_su: vehicle?.ma_tai_xe || '',
+                nhan_vien_phu_trach: vehicle?.tai_xe_phu_trach || ''
+              }));
             }}
             className={inputClass}
           >
@@ -1221,14 +1560,16 @@ function ExpenseModal({
         </Field>
         <Field label="Nhân viên phụ trách">
           <select
-            value={`${form.ma_nhan_su}|${form.nhan_vien_phu_trach}`}
-            onChange={event => {
-              const selected = staff.find(item => `${item.code}|${item.name}` === event.target.value);
-              setForm(prev => ({ ...prev, ma_nhan_su: selected?.code || '', nhan_vien_phu_trach: selected?.name || '' }));
-            }}
+            value={assignedStaffValue}
             className={inputClass}
+            disabled
           >
-            <option value="|">Chưa phân công</option>
+            <option value="|">{assignedVehicle ? 'Xe chưa phân công' : 'Chọn xe trước'}</option>
+            {!assignedStaffExists && form.nhan_vien_phu_trach && (
+              <option value={assignedStaffValue}>
+                {form.ma_nhan_su ? `${form.ma_nhan_su} · ` : ''}{form.nhan_vien_phu_trach}
+              </option>
+            )}
             {staff.map(item => <option key={`${item.code}-${item.name}`} value={`${item.code}|${item.name}`}>{item.code ? `${item.code} · ` : ''}{item.name}</option>)}
           </select>
         </Field>
@@ -1703,6 +2044,407 @@ function LogModal({
           </div>
         </section>
       )}
+    </OperationModal>
+  );
+}
+
+export function VehicleKmLogsView({
+  vehicles,
+  staff
+}: {
+  vehicles: VehicleOption[];
+  staff: StaffOption[];
+}) {
+  const [rows, setRows] = useState<VehicleKmLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
+  const [editing, setEditing] = useState<VehicleKmLog | null | undefined>(undefined);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [vehicleFilter, setVehicleFilter] = useState('');
+  const [driverFilter, setDriverFilter] = useState('');
+
+  const loadRows = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const data = await readJson(await fetch('/api/nhat-ky-km-xe'));
+      setRows(normalizeKmLogs(data));
+      setWarning(text(data.warning));
+    } catch (loadError: any) {
+      setRows([]);
+      setError(loadError.message || 'Không thể tải nhật ký KM xe.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRows();
+  }, [loadRows]);
+
+  const filteredRows = useMemo(() => {
+    return rows.filter(row => {
+      const date = row.ngay_gio_di.slice(0, 10);
+      if (fromDate && date < fromDate) return false;
+      if (toDate && date > toDate) return false;
+      if (vehicleFilter && row.bien_so_xe !== vehicleFilter) return false;
+      if (driverFilter && row.ten_lai_xe !== driverFilter) return false;
+      return true;
+    });
+  }, [driverFilter, fromDate, rows, toDate, vehicleFilter]);
+
+  const totalKm = useMemo(() => filteredRows.reduce((sum, row) => sum + row.tong_km, 0), [filteredRows]);
+
+  const deleteRow = async (row: VehicleKmLog) => {
+    if (!window.confirm(`Xóa nhật ký KM của ${row.ten_lai_xe || row.bien_so_xe}?`)) return;
+    try {
+      await readJson(await fetch(`/api/nhat-ky-km-xe/${encodeURIComponent(row.id)}`, { method: 'DELETE' }));
+      await loadRows();
+    } catch (deleteError: any) {
+      setError(deleteError.message || 'Không thể xóa nhật ký KM xe.');
+    }
+  };
+
+  return (
+    <>
+      <ViewHeader title="Nhật ký KM xe" subtitle={`Tổng KM theo bộ lọc ${formatNumber(totalKm)} km`} count={filteredRows.length} buttonLabel="Thêm nhật ký KM" onAdd={() => setEditing(null)} />
+      {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      {warning && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{warning}</p>}
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+          <Field label="Từ ngày"><input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} className={inputClass} /></Field>
+          <Field label="Đến ngày"><input type="date" value={toDate} onChange={event => setToDate(event.target.value)} className={inputClass} /></Field>
+          <Field label="Biển số xe">
+            <select value={vehicleFilter} onChange={event => setVehicleFilter(event.target.value)} className={inputClass}>
+              <option value="">Tất cả xe</option>
+              {vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.bien_so_xe}>{vehicle.bien_so_xe}</option>)}
+            </select>
+          </Field>
+          <Field label="Lái xe">
+            <select value={driverFilter} onChange={event => setDriverFilter(event.target.value)} className={inputClass}>
+              <option value="">Tất cả lái xe</option>
+              {staff.map(person => <option key={`${person.code}-${person.name}`} value={person.name}>{person.name}</option>)}
+            </select>
+          </Field>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate('');
+                setToDate('');
+                setVehicleFilter('');
+                setDriverFilter('');
+              }}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            >
+              Xóa lọc
+            </button>
+            <button
+              type="button"
+              onClick={() => printVehicleKmLogs(filteredRows, {
+                fromDate,
+                toDate,
+                vehicle: vehicleFilter,
+                driver: driverFilter
+              })}
+              disabled={filteredRows.length === 0}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-slate-950 px-3 text-xs font-extrabold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Printer className="h-4 w-4" />
+              In theo lọc
+            </button>
+          </div>
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1200px] text-left text-xs">
+            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-2.5 font-black">Lái xe</th>
+                <th className="px-3 py-2.5 font-black">BSX</th>
+                <th className="px-3 py-2.5 font-black">Loại KM</th>
+                <th className="px-3 py-2.5 font-black">Ngày giờ đi</th>
+                <th className="px-3 py-2.5 font-black">Ngày giờ về</th>
+                <th className="px-3 py-2.5 text-right font-black">Số KM đi</th>
+                <th className="px-3 py-2.5 text-right font-black">Số KM về</th>
+                <th className="px-3 py-2.5 text-right font-black">Tổng KM</th>
+                <th className="px-3 py-2.5 font-black">Ảnh</th>
+                <th className="px-3 py-2.5 font-black">Ghi chú</th>
+                <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRows.map(row => (
+                <tr key={row.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-2.5 font-bold text-slate-800">{row.ten_lai_xe || '—'}</td>
+                  <td className="px-3 py-2.5 font-mono font-black text-brand-700">{row.bien_so_xe || '—'}</td>
+                  <td className="px-3 py-2.5 font-semibold text-slate-700">{row.loai_km || '—'}</td>
+                  <td className="px-3 py-2.5">{formatDateTime(row.ngay_gio_di)}</td>
+                  <td className="px-3 py-2.5">{row.ngay_gio_ve ? formatDateTime(row.ngay_gio_ve) : '—'}</td>
+                  <td className="px-3 py-2.5 text-right">{formatNumber(row.so_km_di)}</td>
+                  <td className="px-3 py-2.5 text-right">{formatNumber(row.so_km_ve)}</td>
+                  <td className="px-3 py-2.5 text-right font-black text-emerald-700">{formatNumber(row.tong_km)}</td>
+                  <td className="px-3 py-2.5">
+                    {row.anh_url ? (
+                      <a href={row.anh_url} target="_blank" rel="noreferrer" className="inline-flex h-10 w-14 overflow-hidden rounded-lg border border-slate-200">
+                        <img src={cloudinaryPreviewUrl(row.anh_url, 160)} alt="Ảnh KM" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="max-w-[220px] truncate px-3 py-2.5 text-slate-500" title={row.ghi_chu}>{row.ghi_chu || '—'}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex justify-center gap-1">
+                      <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
+                      <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {filteredRows.length > 0 && (
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-black">
+                <tr>
+                  <td colSpan={7} className="px-3 py-3 text-right uppercase">Tổng</td>
+                  <td className="px-3 py-3 text-right text-emerald-700">{formatNumber(totalKm)}</td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải nhật ký KM xe...</p>}
+        {!isLoading && filteredRows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Không có nhật ký KM phù hợp bộ lọc.</p>}
+      </section>
+      {editing !== undefined && (
+        <KmLogModal
+          initial={editing || undefined}
+          vehicles={vehicles}
+          staff={staff}
+          onClose={() => setEditing(undefined)}
+          onSaved={async () => {
+            setEditing(undefined);
+            await loadRows();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function KmLogModal({
+  initial,
+  vehicles,
+  staff,
+  onClose,
+  onSaved
+}: {
+  initial?: VehicleKmLog;
+  vehicles: VehicleOption[];
+  staff: StaffOption[];
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [form, setForm] = useState<Omit<VehicleKmLog, 'id'>>(() => {
+    const base = emptyVehicleKmLogForm();
+    if (!initial) return base;
+    const { id: _id, ...rest } = initial;
+    return {
+      ...base,
+      ...rest,
+      loai_km: initial.loai_km || KM_TYPES[0],
+      ngay_gio_di: localDateTimeValue(initial.ngay_gio_di),
+      ngay_gio_ve: initial.ngay_gio_ve ? localDateTimeValue(initial.ngay_gio_ve) : ''
+    };
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState('');
+
+  const setKmField = (key: 'so_km_di' | 'so_km_ve', value: string) => {
+    const next = Number(value) || 0;
+    setForm(prev => {
+      const so_km_di = key === 'so_km_di' ? next : prev.so_km_di;
+      const so_km_ve = key === 'so_km_ve' ? next : prev.so_km_ve;
+      return {
+        ...prev,
+        so_km_di,
+        so_km_ve,
+        tong_km: Math.max(0, so_km_ve - so_km_di)
+      };
+    });
+  };
+
+  const uploadPhoto = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Ảnh nhật ký KM phải là file ảnh.');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setError('Ảnh không được vượt quá 12 MB.');
+      return;
+    }
+    setIsUploading(true);
+    setError('');
+    try {
+      const dataUrl = await fileToOptimizedImageDataUrl(file, { maxEdge: 1600, quality: 0.76 });
+      const uploaded = await uploadImage(dataUrl, 'xe/nhat_ky_km');
+      setForm(prev => ({
+        ...prev,
+        anh_url: uploaded.imageUrl,
+        anh_public_id: uploaded.imagePublicId
+      }));
+    } catch (uploadError: any) {
+      setError(uploadError.message || 'Không thể tải ảnh nhật ký KM.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const save = async () => {
+    if (!form.ten_lai_xe.trim() || !form.bien_so_xe || !form.ngay_gio_di) {
+      setError('Vui lòng chọn lái xe, biển số xe và ngày giờ đi.');
+      return;
+    }
+    if (!form.loai_km.trim()) {
+      setError('Vui lòng chọn loại KM.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    try {
+      const endpoint = initial ? `/api/nhat-ky-km-xe/${encodeURIComponent(initial.id)}` : '/api/nhat-ky-km-xe';
+      await readJson(await fetch(endpoint, {
+        method: initial ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          ngay_gio_di: apiDateTimeValue(form.ngay_gio_di),
+          ngay_gio_ve: form.ngay_gio_ve ? apiDateTimeValue(form.ngay_gio_ve) : ''
+        })
+      }));
+      await onSaved();
+    } catch (saveError: any) {
+      setError(saveError.message || 'Không thể lưu nhật ký KM xe.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <OperationModal title={initial ? 'Sửa nhật ký KM xe' : 'Thêm nhật ký KM xe'} subtitle="Chọn loại KM, nhập số KM đi/về và chụp ảnh xác nhận" onClose={onClose} onSave={() => void save()} isSaving={isSaving}>
+      {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Tên lái xe *">
+          <select
+            value={`${form.ma_nhan_su}|${form.ten_lai_xe}`}
+            onChange={event => {
+              const selected = staff.find(item => `${item.code}|${item.name}` === event.target.value);
+              setForm(prev => ({ ...prev, ma_nhan_su: selected?.code || '', ten_lai_xe: selected?.name || '' }));
+            }}
+            className={inputClass}
+          >
+            <option value="|">Chọn lái xe</option>
+            {staff.map(item => <option key={`${item.code}-${item.name}`} value={`${item.code}|${item.name}`}>{item.code ? `${item.code} · ` : ''}{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Biển số xe (BSX) *">
+          <select
+            value={form.xe_id}
+            onChange={event => {
+              const vehicle = vehicles.find(item => item.id === event.target.value);
+              setForm(prev => ({ ...prev, xe_id: vehicle?.id || '', bien_so_xe: vehicle?.bien_so_xe || '' }));
+            }}
+            className={inputClass}
+          >
+            <option value="">Chọn xe</option>
+            {vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.bien_so_xe} · {vehicle.loai_xe}</option>)}
+          </select>
+        </Field>
+        <Field label="Ngày giờ đi *"><input type="datetime-local" value={form.ngay_gio_di} onChange={event => setForm(prev => ({ ...prev, ngay_gio_di: event.target.value }))} className={inputClass} /></Field>
+        <Field label="Ngày giờ về"><input type="datetime-local" value={form.ngay_gio_ve} onChange={event => setForm(prev => ({ ...prev, ngay_gio_ve: event.target.value }))} className={inputClass} /></Field>
+
+        <Field label="Loại KM *" wide>
+          <select
+            value={form.loai_km}
+            onChange={event => setForm(prev => ({ ...prev, loai_km: event.target.value }))}
+            className={inputClass}
+          >
+            {KM_TYPES.map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+            {form.loai_km && !(KM_TYPES as readonly string[]).includes(form.loai_km) ? (
+              <option value={form.loai_km}>{form.loai_km}</option>
+            ) : null}
+          </select>
+        </Field>
+        <Field label="Số KM đi">
+          <input type="number" min={0} step={0.1} value={form.so_km_di} onChange={event => setKmField('so_km_di', event.target.value)} className={`${inputClass} text-right`} />
+        </Field>
+        <Field label="Số KM về">
+          <input type="number" min={0} step={0.1} value={form.so_km_ve} onChange={event => setKmField('so_km_ve', event.target.value)} className={`${inputClass} text-right`} />
+        </Field>
+        <Field label="Tổng KM">
+          <input type="number" min={0} step={0.1} value={form.tong_km} onChange={event => setForm(prev => ({ ...prev, tong_km: Number(event.target.value) || 0 }))} className={`${inputClass} text-right`} />
+        </Field>
+        <p className="sm:col-span-2 text-[11px] font-semibold text-slate-400">
+          Tổng KM tự tính = Số KM về − Số KM đi (vẫn có thể sửa tay).
+        </p>
+
+        <div className="sm:col-span-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+          <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Chụp ảnh xác nhận KM</p>
+          <div className="flex flex-wrap items-center gap-3">
+            {form.anh_url ? (
+              <a href={form.anh_url} target="_blank" rel="noreferrer" className="relative block h-28 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <img src={cloudinaryPreviewUrl(form.anh_url, 400)} alt="Ảnh KM" className="h-full w-full object-cover" />
+                <ExternalLink className="absolute right-1 top-1 h-4 w-4 rounded bg-white/90 p-0.5 text-slate-700" />
+              </a>
+            ) : (
+              <div className="flex h-28 w-40 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-[10px] font-black uppercase text-slate-400">
+                Chưa có ảnh
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <label className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">
+                {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
+                {isUploading ? 'Đang tải...' : form.anh_url ? 'Chụp / đổi ảnh' : 'Chụp ảnh'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  disabled={isUploading}
+                  onChange={event => {
+                    void uploadPhoto(event.target.files?.[0]);
+                    event.currentTarget.value = '';
+                  }}
+                  className="hidden"
+                />
+              </label>
+              {form.anh_url ? (
+                <button
+                  type="button"
+                  onClick={() => setForm(prev => ({ ...prev, anh_url: '', anh_public_id: '' }))}
+                  className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-700"
+                >
+                  Xóa ảnh
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] font-semibold text-slate-400">
+            Trên điện thoại sẽ mở camera. Ảnh được nén trước khi tải lên.
+          </p>
+        </div>
+
+        <Field label="Ghi chú" wide>
+          <textarea value={form.ghi_chu} onChange={event => setForm(prev => ({ ...prev, ghi_chu: event.target.value }))} className={`${inputClass} min-h-20 py-2`} />
+        </Field>
+      </div>
     </OperationModal>
   );
 }

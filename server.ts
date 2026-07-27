@@ -35,8 +35,10 @@ const SUPABASE_VEHICLE_EXPENSES_TABLE = process.env.SUPABASE_VEHICLE_EXPENSES_TA
 const SUPABASE_VEHICLE_LOGS_TABLE = process.env.SUPABASE_VEHICLE_LOGS_TABLE || 'nhat_ky_xe';
 const SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE =
   process.env.SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE || 'yeu_cau_xuat_hang_xe';
+const SUPABASE_VEHICLE_KM_LOGS_TABLE = process.env.SUPABASE_VEHICLE_KM_LOGS_TABLE || 'nhat_ky_km_xe';
 const SUPABASE_ORDERS_TABLE = process.env.SUPABASE_ORDERS_TABLE || 'don_hang';
 const SUPABASE_CUSTOMERS_TABLE = process.env.SUPABASE_CUSTOMERS_TABLE || 'khach_hang';
+const SUPABASE_SHIPPING_ORDERS_TABLE = process.env.SUPABASE_SHIPPING_ORDERS_TABLE || 'lenh_xuat_hang';
 const SUPABASE_SETTINGS_TABLE = process.env.SUPABASE_SETTINGS_TABLE || 'cai_dat_thoi_gian';
 const SUPABASE_PRODUCTION_ORDERS_TABLE = process.env.SUPABASE_PRODUCTION_ORDERS_TABLE || 'lenh_sx';
 const SUPABASE_PRODUCTION_PLANS_TABLE = process.env.SUPABASE_PRODUCTION_PLANS_TABLE || 'ke_hoach_san_xuat';
@@ -112,6 +114,7 @@ if (useSupabase) {
     staff: SUPABASE_STAFF_TABLE,
     orders: SUPABASE_ORDERS_TABLE,
     customers: SUPABASE_CUSTOMERS_TABLE,
+    shippingOrders: SUPABASE_SHIPPING_ORDERS_TABLE,
     settings: SUPABASE_SETTINGS_TABLE,
     productionOrders: SUPABASE_PRODUCTION_ORDERS_TABLE,
     productionPlans: SUPABASE_PRODUCTION_PLANS_TABLE,
@@ -1266,6 +1269,7 @@ function parseVehicleExpenseBody(
   const expenseType = pickRowField(source, ['loai_chi_phi', 'expenseType'], 'CHI PHÍ XĂNG DẦU').toUpperCase();
   const expenseName = pickRowField(source, ['ten_chi_phi', 'expenseName'], '');
   const plateNumber = pickRowField(source, ['bien_so_xe', 'bsx', 'plateNumber'], '').toUpperCase();
+  const quantity = parseDriverReconciliationNumber(source.so_luong ?? source.quantity ?? 1);
   const amount = parseDriverReconciliationNumber(source.so_tien ?? source.amount);
 
   if (!dateTime || Number.isNaN(Date.parse(dateTime))) return { error: 'Ngày giờ chi phí không hợp lệ.' };
@@ -1274,6 +1278,7 @@ function parseVehicleExpenseBody(
   }
   if (!expenseName) return { error: 'Vui lòng nhập tên chi phí.' };
   if (!plateNumber) return { error: 'Vui lòng chọn biển số xe.' };
+  if (quantity <= 0) return { error: 'Số lượng phải lớn hơn 0.' };
   if (amount < 0) return { error: 'Số tiền không được âm.' };
 
   return {
@@ -1281,6 +1286,7 @@ function parseVehicleExpenseBody(
       ngay_gio: dateTime,
       loai_chi_phi: expenseType,
       ten_chi_phi: expenseName,
+      so_luong: quantity,
       so_tien: amount,
       xe_id: source.xe_id === null || source.xe_id === undefined || source.xe_id === '' ? null : source.xe_id,
       bien_so_xe: plateNumber,
@@ -1321,6 +1327,63 @@ function parseVehicleDeliveryRequestBody(
       ten_tai_xe: pickRowField(source, ['ten_tai_xe', 'driverName'], '') || null,
       trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Chờ xuất hàng'),
       ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
+    }
+  };
+}
+
+function parseShippingOrderBody(
+  body: unknown
+): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const code = pickRowField(source, ['ma_lenh', 'code'], '');
+  const shipDate = pickRowField(source, ['ngay_xuat', 'ship_date', 'shipDate'], '');
+  const customerName = pickRowField(source, ['ten_khach_hang', 'customer_name', 'khach_hang'], '');
+  const rawLines = Array.isArray(source.chi_tiet)
+    ? source.chi_tiet
+    : typeof source.chi_tiet === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(source.chi_tiet);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+  if (!code) return { error: 'Vui lòng nhập mã lệnh xuất hàng.' };
+  if (!shipDate || Number.isNaN(Date.parse(shipDate))) return { error: 'Ngày xuất không hợp lệ.' };
+  if (!customerName) return { error: 'Vui lòng chọn khách hàng.' };
+
+  const lines = rawLines
+    .filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    .map(row => ({
+      ma_sp: pickRowField(row, ['ma_sp', 'ma_san_pham', 'code'], ''),
+      ten_sp: pickRowField(row, ['ten_sp', 'ten_san_pham', 'name'], ''),
+      don_vi: pickRowField(row, ['don_vi', 'unit'], ''),
+      so_luong: Math.max(0, parseDriverReconciliationNumber(row.so_luong ?? row.quantity))
+    }))
+    .filter(row => row.ma_sp || row.ten_sp || row.so_luong > 0);
+
+  if (lines.length === 0) return { error: 'Vui lòng thêm ít nhất một dòng hàng xuất.' };
+  for (const line of lines) {
+    if (!line.ma_sp && !line.ten_sp) return { error: 'Mỗi dòng cần có mã SP hoặc tên SP.' };
+    if (!(line.so_luong > 0)) return { error: `Số lượng phải lớn hơn 0 (${line.ma_sp || line.ten_sp}).` };
+  }
+
+  return {
+    record: {
+      ma_lenh: code,
+      ngay_xuat: shipDate.slice(0, 10),
+      ma_khach_hang: pickRowField(source, ['ma_khach_hang', 'customer_code'], '') || null,
+      ten_khach_hang: customerName,
+      dia_chi_giao: pickRowField(source, ['dia_chi_giao', 'dia_chi', 'address'], '') || null,
+      so_dien_thoai: pickRowField(source, ['so_dien_thoai', 'dien_thoai', 'phone'], '') || null,
+      nhan_vien: pickRowField(source, ['nhan_vien', 'staff'], '') || null,
+      trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Chờ xuất') || 'Chờ xuất',
+      ghi_chu: pickRowField(source, ['ghi_chu', 'notes', 'note'], '') || null,
+      chi_tiet: lines,
+      updated_at: new Date().toISOString()
     }
   };
 }
@@ -1429,6 +1492,45 @@ function parseVehicleLogBody(
       tien_ds_lx1: Math.max(0, parseDriverReconciliationNumber(source.tien_ds_lx1)),
       tien_thuong_chuyen_lx1: Math.max(0, parseDriverReconciliationNumber(source.tien_thuong_chuyen_lx1)),
       tien_luat_lx1: Math.max(0, parseDriverReconciliationNumber(source.tien_luat_lx1)),
+      ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
+    }
+  };
+}
+
+function parseVehicleKmLogBody(
+  body: unknown
+): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const driverName = pickRowField(source, ['ten_lai_xe', 'driverName'], '');
+  const plateNumber = pickRowField(source, ['bien_so_xe', 'bsx', 'plateNumber'], '').toUpperCase();
+  const departureTime = pickRowField(source, ['ngay_gio_di', 'departureTime'], '');
+  const returnTime = pickRowField(source, ['ngay_gio_ve', 'returnTime'], '');
+
+  if (!driverName) return { error: 'Vui lòng chọn tên lái xe.' };
+  if (!plateNumber) return { error: 'Vui lòng chọn biển số xe.' };
+  if (!departureTime || Number.isNaN(Date.parse(departureTime))) return { error: 'Ngày giờ đi không hợp lệ.' };
+  if (returnTime && Number.isNaN(Date.parse(returnTime))) return { error: 'Ngày giờ về không hợp lệ.' };
+
+  const kmDeparture = Math.max(0, parseDriverReconciliationNumber(source.so_km_di));
+  const kmReturn = Math.max(0, parseDriverReconciliationNumber(source.so_km_ve));
+  const totalRaw = parseDriverReconciliationNumber(source.tong_km);
+  const totalKm = totalRaw > 0 ? totalRaw : Math.max(0, kmReturn - kmDeparture);
+  const kmType = pickRowField(source, ['loai_km', 'kmType'], '');
+
+  return {
+    record: {
+      ten_lai_xe: driverName,
+      ma_nhan_su: pickRowField(source, ['ma_nhan_su', 'staffCode'], '') || null,
+      xe_id: source.xe_id === null || source.xe_id === undefined || source.xe_id === '' ? null : source.xe_id,
+      bien_so_xe: plateNumber,
+      ngay_gio_di: departureTime,
+      ngay_gio_ve: returnTime || null,
+      loai_km: kmType || null,
+      so_km_di: kmDeparture,
+      so_km_ve: kmReturn,
+      tong_km: totalKm,
+      anh_url: pickRowField(source, ['anh_url', 'imageUrl', 'photoUrl'], '') || null,
+      anh_public_id: pickRowField(source, ['anh_public_id', 'imagePublicId', 'photoPublicId'], '') || null,
       ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
     }
   };
@@ -5607,6 +5709,154 @@ export function createApp() {
     }
   });
 
+  app.post('/api/khach-hang', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const name = pickRowField(source, ['ten_khach_hang', 'khach_hang', 'name', 'ten'], '');
+      let code = pickRowField(source, ['ma_khach_hang', 'ma_kh', 'code'], '');
+      if (!name) return res.status(400).json({ error: 'Vui lòng nhập tên khách hàng.' });
+
+      if (!code) {
+        const existing = await supabase
+          .from(SUPABASE_CUSTOMERS_TABLE)
+          .select('ma_khach_hang')
+          .order('ma_khach_hang', { ascending: false })
+          .limit(200);
+        let max = 0;
+        for (const row of existing.data || []) {
+          const raw = String((row as { ma_khach_hang?: unknown }).ma_khach_hang || '').trim().toUpperCase();
+          const match = raw.match(/^KH(\d+)$/);
+          if (!match) continue;
+          const num = Number(match[1]);
+          if (Number.isFinite(num) && num > max) max = num;
+        }
+        const next = max + 1;
+        code = `KH${String(next).padStart(Math.max(3, String(next).length), '0')}`;
+      }
+
+      const record: Record<string, unknown> = {
+        ma_khach_hang: code,
+        ten_khach_hang: name,
+        dia_chi: pickRowField(source, ['dia_chi', 'address'], '') || null,
+        so_dien_thoai: pickRowField(source, ['so_dien_thoai', 'dien_thoai', 'phone', 'sdt'], '') || null,
+        ghi_chu: pickRowField(source, ['ghi_chu', 'note', 'notes'], '') || null
+      };
+
+      const { data, error } = await supabase
+        .from(SUPABASE_CUSTOMERS_TABLE)
+        .insert(record)
+        .select('*')
+        .single();
+
+      if (error) {
+        // Nếu bảng chưa có cột phụ, thử insert tối thiểu mã + tên
+        const minimal = { ma_khach_hang: code, ten_khach_hang: name };
+        const retry = await supabase
+          .from(SUPABASE_CUSTOMERS_TABLE)
+          .insert(minimal)
+          .select('*')
+          .single();
+        if (retry.error) {
+          return res.status(500).json({ error: vehicleWriteError(retry.error, SUPABASE_CUSTOMERS_TABLE) });
+        }
+        return res.status(201).json({ success: true, customer: retry.data });
+      }
+
+      return res.status(201).json({ success: true, customer: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thêm khách hàng.' });
+    }
+  });
+
+  app.get('/api/lenh-xuat-hang', async (_req, res) => {
+    if (!supabase) {
+      return res.json({ orders: [], total: 0, source: 'local' });
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_SHIPPING_ORDERS_TABLE)
+        .select('*')
+        .order('ngay_xuat', { ascending: false });
+
+      if (error) {
+        return respondSupabaseReadError(res, error, SUPABASE_SHIPPING_ORDERS_TABLE, {
+          orders: [],
+          total: 0
+        });
+      }
+
+      return res.json({
+        orders: data || [],
+        total: data?.length || 0,
+        source: 'supabase'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải lệnh xuất hàng.' });
+    }
+  });
+
+  app.post('/api/lenh-xuat-hang', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const parsed = parseShippingOrderBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { data, error } = await supabase
+        .from(SUPABASE_SHIPPING_ORDERS_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_SHIPPING_ORDERS_TABLE) });
+      }
+      return res.status(201).json({ success: true, order: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thêm lệnh xuất hàng.' });
+    }
+  });
+
+  app.put('/api/lenh-xuat-hang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID lệnh xuất hàng.' });
+
+    try {
+      const parsed = parseShippingOrderBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { data, error } = await supabase
+        .from(SUPABASE_SHIPPING_ORDERS_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_SHIPPING_ORDERS_TABLE) });
+      }
+      return res.json({ success: true, order: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật lệnh xuất hàng.' });
+    }
+  });
+
+  app.delete('/api/lenh-xuat-hang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID lệnh xuất hàng.' });
+
+    try {
+      const { error } = await supabase.from(SUPABASE_SHIPPING_ORDERS_TABLE).delete().eq('id', id);
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_SHIPPING_ORDERS_TABLE) });
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa lệnh xuất hàng.' });
+    }
+  });
+
   app.get('/api/cai-dat', async (_req, res) => {
     if (!supabase) {
       return res.json({ settings: [], total: 0, source: 'local' });
@@ -6695,8 +6945,57 @@ export function createApp() {
       label: 'yêu cầu xuất hàng',
       parse: parseVehicleDeliveryRequestBody,
       dateColumn: 'ngay_yeu_cau'
+    },
+    {
+      path: 'nhat-ky-km-xe',
+      table: SUPABASE_VEHICLE_KM_LOGS_TABLE,
+      label: 'nhật ký KM xe',
+      parse: parseVehicleKmLogBody,
+      dateColumn: 'ngay_gio_di'
     }
   ] as const;
+
+  app.get('/api/chi-phi-xe/gia-xang', async (req, res) => {
+    const date = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Ngày tra giá xăng không hợp lệ.' });
+    }
+
+    try {
+      const response = await fetchWithTimeoutAndRetry(
+        `https://giaxanghomnay.com/api/pvdate/${encodeURIComponent(date)}`,
+        { headers: { Accept: 'application/json' } }
+      );
+      if (!response.ok) {
+        return res.status(502).json({ error: `Không thể tải giá xăng ngày ${date}.` });
+      }
+
+      const payload: unknown = await response.json();
+      const groups = Array.isArray(payload) ? payload : [];
+      const records = groups
+        .flatMap(group => Array.isArray(group) ? group : [])
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .filter(item => String(item.date || '').slice(0, 10) === date);
+      const seen = new Set<string>();
+      const options = records.flatMap(item => {
+        const title = String(item.title || '').trim();
+        if (!title || seen.has(title)) return [];
+        seen.add(title);
+        return [{
+          title,
+          price: Number(item.price ?? item.zone1_price) || 0,
+          zone1_price: Number(item.zone1_price ?? item.price) || 0,
+          zone2_price: Number(item.zone2_price) || 0
+        }];
+      });
+
+      return res.json({ date, options });
+    } catch (err: any) {
+      return res.status(502).json({
+        error: err.message || `Không thể kết nối API giá xăng ngày ${date}.`
+      });
+    }
+  });
 
   for (const route of vehicleOperationRoutes) {
     app.get(`/api/${route.path}`, async (req, res) => {
