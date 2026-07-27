@@ -1291,16 +1291,10 @@ export function buildBbInboundMaterialNormGroups(input: {
           const ratio = real / theoretical;
           for (const line of agg.lines) {
             const scaledWeight = roundQty((line.normWeightKg || 0) * ratio, 3);
-            line.normWeightKg = scaledWeight;
             line.weightKg = scaledWeight;
             line.balanceDetail = balanceDetail;
             if (line.materialNorm) {
               line.materialNorm = { ...line.materialNorm, allocationRatio: ratio, allocatedNormKg: scaledWeight };
-            }
-            if (line.materialNorm?.amountType === 'quantity') {
-              const scaledQty = roundQuantityByUnit((line.quantity || 0) * ratio, line.unit || '');
-              line.quantity = scaledQty;
-              line.normQuantity = scaledQty;
             }
           }
         }

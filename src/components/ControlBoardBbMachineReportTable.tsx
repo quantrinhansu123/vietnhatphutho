@@ -3755,7 +3755,7 @@ export default function ControlBoardBbMachineReportTable({
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-amber-700">
                             {normDetail.metric === 'weight'
-                              ? formatKg(line.weightKg ?? line.normWeightKg, 2)
+                              ? formatKg(line.normWeightKg, 2)
                               : mn?.amountType === 'quantity'
                                 ? formatNumber(line.quantity, 2)
                                 : '—'}
