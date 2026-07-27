@@ -142,11 +142,15 @@ export default function SearchableSelect({
     const element = inputRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
-    // Trên mobile ô nhập rất hẹp → nới rộng menu để tên SP dài không bị xuống dòng nhiều
-    const viewportWidth = document.documentElement.clientWidth;
+    // Dùng visual viewport để menu bám đúng ô nhập khi bàn phím điện thoại mở.
+    const visualViewport = window.visualViewport;
+    const viewportLeft = visualViewport?.offsetLeft ?? 0;
+    const viewportWidth = visualViewport?.width ?? document.documentElement.clientWidth;
     const margin = 8;
     const width = Math.max(rect.width, Math.min(340, viewportWidth - margin * 2));
-    const left = Math.min(Math.max(margin, rect.left), Math.max(margin, viewportWidth - width - margin));
+    const minLeft = viewportLeft + margin;
+    const maxLeft = viewportLeft + viewportWidth - width - margin;
+    const left = Math.min(Math.max(minLeft, rect.left), Math.max(minLeft, maxLeft));
     setMenuStyle({
       top: rect.bottom + 4,
       left,
@@ -163,9 +167,13 @@ export default function SearchableSelect({
     const handleReposition = () => updateMenuPosition();
     window.addEventListener('resize', handleReposition);
     window.addEventListener('scroll', handleReposition, true);
+    window.visualViewport?.addEventListener('resize', handleReposition);
+    window.visualViewport?.addEventListener('scroll', handleReposition);
     return () => {
       window.removeEventListener('resize', handleReposition);
       window.removeEventListener('scroll', handleReposition, true);
+      window.visualViewport?.removeEventListener('resize', handleReposition);
+      window.visualViewport?.removeEventListener('scroll', handleReposition);
     };
   }, [open, query, filteredOptions.length]);
 

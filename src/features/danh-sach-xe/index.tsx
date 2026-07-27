@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { normalizeHrBranches } from '../_shared/hr';
-import { VehicleExpensesView, VehicleLogsView } from './VehicleOperations';
+import { VehicleDeliveryRequestsView, VehicleExpensesView, VehicleLogsView } from './VehicleOperations';
 import { DriverPolicyView } from './DriverPolicy';
 
 type Vehicle = {
@@ -163,7 +163,7 @@ export function VehiclesPanel({
   onBack: () => void;
   currentUser?: { id: string; name: string } | null;
 }) {
-  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'expenses' | 'logs' | 'policy'>('vehicles');
+  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'delivery' | 'expenses' | 'logs' | 'policy'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rows, setRows] = useState<DriverReconciliation[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
@@ -327,7 +327,7 @@ export function VehiclesPanel({
             </button>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-5 sm:w-[940px]">
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-6 sm:w-[1120px]">
           <button
             type="button"
             onClick={() => setActiveView('vehicles')}
@@ -347,6 +347,16 @@ export function VehiclesPanel({
           >
             <ClipboardCheck className="h-4 w-4" />
             Đối chiếu lái xe
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('delivery')}
+            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
+              activeView === 'delivery' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            Yêu cầu xuất hàng
           </button>
           <button
             type="button"
@@ -585,6 +595,8 @@ export function VehiclesPanel({
             {isLoadingRows && <LoadingState text="Đang tải bảng đối chiếu..." />}
           </section>
         </>
+      ) : activeView === 'delivery' ? (
+        <VehicleDeliveryRequestsView vehicles={vehicles} staff={staff} />
       ) : activeView === 'expenses' ? (
         <VehicleExpensesView vehicles={vehicles} staff={staff} currentUser={currentUser} />
       ) : activeView === 'policy' ? (

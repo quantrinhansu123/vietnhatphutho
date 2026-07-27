@@ -39,6 +39,10 @@ export interface WeighingRecord {
   plasticNozzleWeight?: string;
   /** TL nhựa lỗi dính màng (kg) */
   plasticFilmAdhesionWeight?: string;
+  /** Loại hàng hỏng: nhựa hoặc vật tư khác. */
+  materialType?: string;
+  materialCode?: string;
+  materialQuantity?: string;
   acceptanceStatus: string;
   note: string;
   imageUrl?: string;
@@ -388,6 +392,9 @@ export function normalizeWeighingRecords(data: unknown): WeighingRecord[] {
         plasticFilmAdhesionWeight: String(
           row.plasticFilmAdhesionWeight ?? row.trong_luong_nhua_dinh_mang ?? ''
         ).trim(),
+        materialType: String(row.materialType ?? row.loai_hang_hong ?? '').trim(),
+        materialCode: String(row.materialCode ?? row.ma_vat_tu ?? '').trim(),
+        materialQuantity: String(row.materialQuantity ?? row.so_luong_vat_tu ?? '').trim(),
         imageUrl: String(row.imageUrl ?? row.anh_url ?? '').trim() || undefined,
         coreWeightImageUrl: String(row.coreWeightImageUrl ?? row.anh_trong_luong_loi_url ?? '').trim() || undefined,
         createdAt: String(row.createdAt ?? row.created_at ?? '').trim() || undefined

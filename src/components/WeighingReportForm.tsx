@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Save, Trash2, UserCheck, Users } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, Save, Trash2, UserCheck, Users } from 'lucide-react';
 import type { WeighingPendingAdd, WeighingRecord } from '../utils/weighingRecords';
 import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, formatDamagedGoodsRowTotalWeight, formatWeighingWeightField, isSlipHeaderRow, splitDamagedGoodsDefectWeights } from '../utils/weighingRecords';
 import SearchableSelect from './SearchableSelect';
@@ -8,7 +8,7 @@ import WeighingImagePreviewModal, {
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../utils/cameraCapture';
-import { showAppToast } from '../lib/appToast';
+import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 
 interface WeighingRow {
   id: number;
@@ -27,6 +27,9 @@ interface WeighingRow {
   plasticNoFilmWeight?: string;
   plasticNozzleWeight?: string;
   plasticFilmAdhesionWeight?: string;
+  materialType?: string;
+  materialCode?: string;
+  materialQuantity?: string;
   acceptanceStatus: string;
   note: string;
   machineName: string;
@@ -142,6 +145,25 @@ interface MachineOption {
   id: string;
   code: string;
   name: string;
+}
+
+interface MaterialOption {
+  code: string;
+  name: string;
+  unit: string;
+}
+
+function normalizeMaterials(data: unknown): MaterialOption[] {
+  const rows = data && typeof data === 'object' && Array.isArray((data as { materials?: unknown }).materials)
+    ? (data as { materials: Record<string, unknown>[] }).materials
+    : [];
+  return rows
+    .map(row => ({
+      code: String(row.ma_npl ?? '').trim(),
+      name: String(row.ten_npl ?? '').trim(),
+      unit: String(row.don_vi ?? '').trim()
+    }))
+    .filter(row => row.code);
 }
 
 function normalizeProducts(data: unknown): ProductOption[] {
@@ -420,6 +442,9 @@ function recordsToRows(records: WeighingRecord[]): WeighingRow[] {
     plasticNoFilmWeight: record.plasticNoFilmWeight || '',
     plasticNozzleWeight: record.plasticNozzleWeight || '',
     plasticFilmAdhesionWeight: record.plasticFilmAdhesionWeight || '',
+    materialType: record.materialType || '',
+    materialCode: record.materialCode || '',
+    materialQuantity: record.materialQuantity || '',
     acceptanceStatus: record.acceptanceStatus || '',
     note: record.note || '',
     machineName: isRealMachineName(record.machineName) ? record.machineName : '',
@@ -447,6 +472,9 @@ function rowToNewRowState(row: WeighingRow): Omit<WeighingRow, 'id' | 'weighNo' 
     plasticNoFilmWeight: row.plasticNoFilmWeight || '',
     plasticNozzleWeight: row.plasticNozzleWeight || '',
     plasticFilmAdhesionWeight: row.plasticFilmAdhesionWeight || '',
+    materialType: row.materialType || '',
+    materialCode: row.materialCode || '',
+    materialQuantity: row.materialQuantity || '',
     acceptanceStatus: row.acceptanceStatus,
     note: row.note,
     machineName: row.machineName,
@@ -494,6 +522,7 @@ export default function WeighingReportForm({
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [staffError, setStaffError] = useState('');
   const [machines, setMachines] = useState<MachineOption[]>([]);
+  const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [isLoadingMachines, setIsLoadingMachines] = useState(true);
   const [machinesError, setMachinesError] = useState('');
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
@@ -558,7 +587,7 @@ export default function WeighingReportForm({
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.error || 'Không thể lưu phiếu cân.');
+      throw new Error(readApiErrorMessage(res, data, 'Không thể lưu phiếu cân.'));
     }
 
     return data as {
@@ -628,6 +657,9 @@ export default function WeighingReportForm({
     plasticNoFilmWeight: '',
     plasticNozzleWeight: '',
     plasticFilmAdhesionWeight: '',
+    materialType: '',
+    materialCode: '',
+    materialQuantity: '',
     acceptanceStatus: '',
     note: '',
     weight: '',
@@ -773,6 +805,23 @@ export default function WeighingReportForm({
   }, []);
 
   useEffect(() => {
+    if (!splitDamagedPlasticDefectWeights) return;
+    let cancelled = false;
+    fetch('/api/kho-nvl')
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách kho NVL.');
+        if (!cancelled) setMaterials(normalizeMaterials(data));
+      })
+      .catch(() => {
+        if (!cancelled) setMaterials([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [splitDamagedPlasticDefectWeights]);
+
+  useEffect(() => {
     if (isLoadingStaff || staff.length === 0) return;
 
     const validNames = new Set(staff.map(person => person.name));
@@ -821,6 +870,9 @@ export default function WeighingReportForm({
       plasticNoFilmWeight: '',
       plasticNozzleWeight: '',
       plasticFilmAdhesionWeight: '',
+      materialType: '',
+      materialCode: '',
+      materialQuantity: '',
       acceptanceStatus: '',
       note: '',
       weight: '',
@@ -997,8 +1049,29 @@ export default function WeighingReportForm({
       return;
     }
 
+    if (splitDamagedPlasticDefectWeights && !newRow.materialType?.trim()) {
+      setAddFormError('Vui lòng chọn loại hàng hỏng: Nhựa hoặc Vật tư khác.');
+      return;
+    }
+
+    if (
+      splitDamagedPlasticDefectWeights &&
+      newRow.materialType === 'vat_tu_khac' &&
+      (!newRow.materialCode?.trim() || !newRow.materialQuantity?.trim())
+    ) {
+      setAddFormError('Vui lòng chọn Mã vật tư và nhập Số lượng.');
+      return;
+    }
+
+    if (!config.hideAcceptanceStatus && !newRow.acceptanceStatus.trim()) {
+      setAddFormError('Vui lòng chọn kết quả Nghiệm thu.');
+      return;
+    }
+
     if (splitDamagedPlasticDefectWeights) {
       if (
+        !newRow.weight.trim() &&
+        !newRow.materialQuantity?.trim() &&
         !newRow.plasticNoFilmWeight?.trim() &&
         !newRow.plasticNozzleWeight?.trim() &&
         !newRow.plasticFilmAdhesionWeight?.trim() &&
@@ -1081,6 +1154,9 @@ export default function WeighingReportForm({
           plasticNoFilmWeight: newRow.plasticNoFilmWeight || '',
           plasticNozzleWeight: newRow.plasticNozzleWeight || '',
           plasticFilmAdhesionWeight: newRow.plasticFilmAdhesionWeight || '',
+          materialType: newRow.materialType || '',
+          materialCode: newRow.materialCode || '',
+          materialQuantity: newRow.materialQuantity || '',
           acceptanceStatus: newRow.acceptanceStatus || '',
           note: newRow.note || '',
           machineName: slipForEdit?.machineName || editingRow.machineName,
@@ -1127,6 +1203,9 @@ export default function WeighingReportForm({
         plasticNoFilmWeight: newRow.plasticNoFilmWeight || '',
         plasticNozzleWeight: newRow.plasticNozzleWeight || '',
         plasticFilmAdhesionWeight: newRow.plasticFilmAdhesionWeight || '',
+        materialType: newRow.materialType || '',
+        materialCode: newRow.materialCode || '',
+        materialQuantity: newRow.materialQuantity || '',
         acceptanceStatus: newRow.acceptanceStatus || '',
         note: newRow.note || '',
         machineName,
@@ -1168,6 +1247,9 @@ export default function WeighingReportForm({
         plasticNoFilmWeight: '',
         plasticNozzleWeight: '',
         plasticFilmAdhesionWeight: '',
+        materialType: '',
+        materialCode: '',
+        materialQuantity: '',
         acceptanceStatus: '',
         note: '',
         weight: '',
@@ -1225,17 +1307,6 @@ export default function WeighingReportForm({
     }
   };
 
-  const resetForm = () => {
-    setForm({
-      documentNo: '',
-      reportDate: today
-    });
-    setRows(DEFAULT_ROWS);
-    setImageFile(null);
-    setCoreWeightImageFile(null);
-    setSaveMessage(null);
-  };
-
   const handleSave = async () => {
     const filledRows = rows.filter(row =>
       row.productCode.trim() ||
@@ -1245,6 +1316,9 @@ export default function WeighingReportForm({
       row.shellWeight.trim() ||
       row.weighNo.trim() ||
       row.weight.trim() ||
+      row.materialType?.trim() ||
+      row.materialCode?.trim() ||
+      row.materialQuantity?.trim() ||
       row.acceptanceStatus.trim() ||
       row.note.trim() ||
       row.imageUrl ||
@@ -1252,13 +1326,22 @@ export default function WeighingReportForm({
     );
 
     if (filledRows.length === 0) {
-      setSaveMessage({ type: 'error', text: 'Vui lòng thêm ít nhất một dòng cân.' });
+      const text = showSaveFailure('Vui lòng thêm ít nhất một dòng cân.');
+      setSaveMessage({ type: 'error', text });
       return;
     }
 
     const missingShift = filledRows.find(row => !row.productionDate || !row.shiftName.trim());
     if (missingShift) {
-      setSaveMessage({ type: 'error', text: 'Mỗi dòng cần có ngày sản xuất và ca sản xuất.' });
+      const text = showSaveFailure('Mỗi dòng cần có ngày sản xuất và ca sản xuất.');
+      setSaveMessage({ type: 'error', text });
+      return;
+    }
+
+    const missingAcceptanceStatus = !config.hideAcceptanceStatus &&
+      filledRows.some(row => !row.acceptanceStatus.trim());
+    if (missingAcceptanceStatus) {
+      setSaveMessage({ type: 'error', text: 'Mỗi dòng cân cần có kết quả Nghiệm thu.' });
       return;
     }
 
@@ -1302,15 +1385,16 @@ export default function WeighingReportForm({
           : rowsToSync.length > 0
             ? 'Đã lưu phiếu thành công.'
             : 'Không thể đồng bộ phiếu — vui lòng thêm lại dòng cân.';
-      setSaveMessage({
-        type: 'success',
-        text: successText
-      });
       if (unsavedRows.length > 0 || rowsToSync.length > 0) {
+        setSaveMessage({ type: 'success', text: successText });
         showAppToast(successText);
+      } else {
+        const text = showSaveFailure(successText);
+        setSaveMessage({ type: 'error', text });
       }
     } catch (error: any) {
-      setSaveMessage({ type: 'error', text: error.message || 'Không thể lưu phiếu cân.' });
+      const text = showSaveFailure(error, 'Không thể lưu phiếu cân.');
+      setSaveMessage({ type: 'error', text });
     } finally {
       setIsSaving(false);
     }
@@ -1483,19 +1567,7 @@ export default function WeighingReportForm({
               ) : null}
             </div>
           </div>
-          <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:mt-2 sm:gap-2">
-            <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
-              <span className="flex items-center gap-1">
-                <CalendarDays className="h-3 w-3 text-[#ef1b2d]" />
-                Ngày lập
-              </span>
-              <input
-                type="date"
-                value={form.reportDate}
-                onChange={e => setForm(prev => ({ ...prev, reportDate: e.target.value }))}
-                className={compactHeaderInputClass}
-              />
-            </label>
+          <div className="mt-1.5 grid grid-cols-1 gap-1.5 sm:mt-2 sm:gap-2">
             <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
               <span className="flex items-center gap-1">
                 <Hash className="h-3 w-3 text-[#ef1b2d]" />
@@ -2088,14 +2160,6 @@ export default function WeighingReportForm({
           <div className="flex items-center justify-end gap-1 overflow-x-auto">
             <button
               type="button"
-              onClick={resetForm}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-ink-200 bg-white px-2 text-[10px] font-semibold text-ink-600 transition hover:bg-ink-50 sm:px-2.5 sm:text-[11px]"
-            >
-              <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              Reset
-            </button>
-            <button
-              type="button"
               onClick={() => openAddForm({ newWeighRound: true })}
               disabled={weighingRows.length === 0}
               className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#ef1b2d]/30 bg-white px-2 text-[10px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 sm:rounded-lg sm:px-2.5 sm:text-[11px]"
@@ -2423,6 +2487,72 @@ export default function WeighingReportForm({
               )}
               {splitDamagedPlasticDefectWeights ? (
                 <div className="col-span-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  <label className="field-cell col-span-2 sm:col-span-3">
+                    <span className={modalCompactLabelClass}>
+                      Loại hàng hỏng <span className="text-[#ef1b2d]">*</span>
+                    </span>
+                    <select
+                      value={newRow.materialType ?? ''}
+                      onChange={e => setNewRow(prev => ({ ...prev, materialType: e.target.value }))}
+                      className={modalInputClass}
+                      required
+                    >
+                      <option value="">Chọn...</option>
+                      <option value="nhua">Nhựa</option>
+                      <option value="vat_tu_khac">Vật tư khác</option>
+                    </select>
+                  </label>
+                  {newRow.materialType === 'vat_tu_khac' ? (
+                    <>
+                      <label className="field-cell col-span-2 sm:col-span-3">
+                        <span className={modalCompactLabelClass}>
+                          Mã vật tư <span className="text-[#ef1b2d]">*</span>
+                        </span>
+                        <select
+                          value={newRow.materialCode ?? ''}
+                          onChange={e => setNewRow(prev => ({ ...prev, materialCode: e.target.value }))}
+                          className={modalInputClass}
+                          required
+                        >
+                          <option value="">Chọn từ kho NVL...</option>
+                          {materials.map(material => (
+                            <option key={material.code} value={material.code}>
+                              {material.code}{material.name ? ` — ${material.name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field-cell">
+                        <span className={modalCompactLabelClass}>
+                          Số lượng <span className="text-[#ef1b2d]">*</span>
+                        </span>
+                        <input
+                          value={newRow.materialQuantity ?? ''}
+                          onChange={e =>
+                            setNewRow(prev => ({
+                              ...prev,
+                              materialQuantity: sanitizeDecimalTyping(e.target.value)
+                            }))
+                          }
+                          className={modalInputClass}
+                          placeholder="0"
+                          required
+                        />
+                      </label>
+                      <label className="field-cell col-span-1 sm:col-span-2">
+                        <span className={modalCompactLabelClass}>Khối lượng vật tư khác</span>
+                        <input
+                          value={newRow.weight ?? ''}
+                          onChange={e =>
+                            setNewRow(prev => ({ ...prev, weight: sanitizeDecimalTyping(e.target.value) }))
+                          }
+                          className={modalInputClass}
+                          placeholder="0"
+                        />
+                      </label>
+                    </>
+                  ) : (
+                  <>
                   <label className="field-cell">
                     <span className={modalCompactLabelClass}>Nhựa không mảng</span>
                     <input
@@ -2483,6 +2613,8 @@ export default function WeighingReportForm({
                       placeholder="0"
                     />
                   </label>
+                  </>
+                  )}
                 </div>
               ) : splitPlasticFilmWeights ? (
                 <div className="col-span-2 grid grid-cols-2 gap-1.5">
@@ -2554,11 +2686,14 @@ export default function WeighingReportForm({
               )}
               {!config.hideAcceptanceStatus && (
                 <label className="field-cell">
-                  <span className={modalLabelClass}>Nghiệm thu</span>
+                  <span className={modalLabelClass}>
+                    Nghiệm thu <span className="text-[#ef1b2d]">*</span>
+                  </span>
                   <select
                     value={newRow.acceptanceStatus ?? ''}
                     onChange={e => setNewRow(prev => ({ ...prev, acceptanceStatus: e.target.value }))}
                     className={modalInputClass}
+                    required
                   >
                     <option value="">Chọn...</option>
                     {ACCEPTANCE_STATUS_OPTIONS.map(option => (

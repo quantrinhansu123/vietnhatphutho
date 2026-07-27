@@ -28,7 +28,7 @@ import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch } fr
 import { normalizeProducts } from '../san-pham';
 import { normalizeMaterialsInventory } from '../kho-nvl';
 import type { ShiftSummaryWarehouseMovement } from '../../utils/controlBoardShiftSummary';
-import { showAppToast } from '../../lib/appToast';
+import { readApiErrorMessage, showAppToast, showSaveFailure } from '../../lib/appToast';
 import type { MaterialOption } from '../san-pham/types';
 import {
   convertWarehouseQuantityToKg,
@@ -1015,7 +1015,7 @@ export function WarehouseSlipPanel({
       requireInboundLot: false
     });
     if ('error' in parsed) {
-      setFormError(parsed.error);
+      setFormError(showSaveFailure(parsed.error));
       return;
     }
 
@@ -1048,7 +1048,13 @@ export function WarehouseSlipPanel({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error || (isEditing ? 'Không thể cập nhật phiếu xuất nhập kho.' : 'Không thể lưu phiếu xuất nhập kho.'));
+        throw new Error(
+          readApiErrorMessage(
+            res,
+            data,
+            isEditing ? 'Không thể cập nhật phiếu xuất nhập kho.' : 'Không thể lưu phiếu xuất nhập kho.'
+          )
+        );
       }
 
       const savedSlipCode = String(data.slipCode || editSlipCode || '').trim();
@@ -1085,7 +1091,7 @@ export function WarehouseSlipPanel({
       setProductionOrderSearch('');
       setLines([createWarehouseLineDraft()]);
     } catch (error: any) {
-      setFormError(error.message || 'Không thể lưu phiếu xuất nhập kho.');
+      setFormError(showSaveFailure(error, 'Không thể lưu phiếu xuất nhập kho.'));
     } finally {
       setIsSaving(false);
     }

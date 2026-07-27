@@ -14,7 +14,7 @@ import {
 } from './MachineRunLogPrintSheet';
 import { STANDARD_SHIFTS } from '../types';
 import { formatNumber } from '../utils';
-import { showAppToast } from '../lib/appToast';
+import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 import { waitForPrintImagesReady } from '../utils/printReady';
 
@@ -547,7 +547,7 @@ export default function MachineRunLogPanel({ onBack }: { onBack: () => void }) {
       .filter(line => line.thoi_diem_ghi || line.so_cuon_ra || line.ly_do || line.nhiet_do_gia_nhiet !== null);
 
     if (!date || !shift || !machineRef.trim() || payloadLines.length === 0) {
-      setError('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng nhật ký.');
+      setError(showSaveFailure('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng nhật ký.'));
       return;
     }
 
@@ -573,7 +573,7 @@ export default function MachineRunLogPanel({ onBack }: { onBack: () => void }) {
         })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể lưu nhật ký chạy máy.');
+      if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không thể lưu nhật ký chạy máy.'));
 
       const slipCode = String(data.log?.so_phieu ?? '').trim();
       const okMsg = slipCode ? `Đã lưu nhật ký ${slipCode}.` : 'Đã lưu nhật ký chạy máy.';
@@ -584,7 +584,7 @@ export default function MachineRunLogPanel({ onBack }: { onBack: () => void }) {
       await loadLogs();
       handlePrint({ ...printPayload, slipCode: slipCode || printPayload.slipCode });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Không thể lưu nhật ký.');
+      setError(showSaveFailure(err, 'Không thể lưu nhật ký.'));
     } finally {
       setIsSaving(false);
     }

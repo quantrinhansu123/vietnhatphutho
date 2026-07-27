@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { openCameraImagePicker, compressImageDataUrl } from '../utils/cameraCapture';
 import { createPortal } from 'react-dom';
 import {
   CalendarDays,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   ClipboardCheck,
   ClipboardList,
   Clock3,
@@ -18,7 +21,7 @@ import {
   X
 } from 'lucide-react';
 import { formatNumber, parseMoneyInput } from '../utils';
-import { showAppToast } from '../lib/appToast';
+import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 import MixingProductionOrderAutofillModal from './MixingProductionOrderAutofillModal';
 import SearchableMultiSelect from './SearchableMultiSelect';
 import {
@@ -974,6 +977,8 @@ export default function MixingReportForm({
   const [uploadingRoundKey, setUploadingRoundKey] = useState<RoundKey | null>(null);
   const [actualWeightDrafts, setActualWeightDrafts] = useState<Record<string, string>>({});
   const [reasonOptions, setReasonOptions] = useState<string[]>([]);
+  const [collapsedRounds, setCollapsedRounds] = useState<Set<RoundKey>>(() => new Set());
+  const autoCollapsedRoundsRef = useRef<Set<RoundKey>>(new Set());
 
   const allReasonOptions = useMemo(() => {
     const merged = new Set<string>(reasonOptions);
@@ -1212,6 +1217,8 @@ export default function MixingReportForm({
     setSessionRoundStart(report.lan_thu && report.lan_thu > 0 ? report.lan_thu : 1);
     setRoundBatchWeightDrafts(batchDrafts);
     setActualWeightDrafts({});
+    setCollapsedRounds(new Set());
+    autoCollapsedRoundsRef.current = new Set();
     setForm({
       ca: report.ca,
       ngay: report.ngay || todayIso(),
@@ -1261,6 +1268,23 @@ export default function MixingReportForm({
       setActiveRoundCount(fromLines);
     }
   }, [form.chi_tiet, activeRoundCount]);
+
+  /** Lần đã nhập xong (có NVL + ảnh) không còn là lần cuối thì tự thu gọn, đỡ phải lướt qua dữ liệu cũ. */
+  useEffect(() => {
+    ROUND_KEYS.slice(0, displayedRoundCount).forEach((roundKey, index) => {
+      const isLast = index === displayedRoundCount - 1;
+      if (isLast) return;
+      if (autoCollapsedRoundsRef.current.has(roundKey)) return;
+      if (!isRoundComplete(roundKey)) return;
+      autoCollapsedRoundsRef.current.add(roundKey);
+      setCollapsedRounds(prev => {
+        if (prev.has(roundKey)) return prev;
+        const next = new Set(prev);
+        next.add(roundKey);
+        return next;
+      });
+    });
+  }, [displayedRoundCount, form.chi_tiet, form.hinh_anh_theo_lan]);
 
   const removeSessionRound = (roundKey: RoundKey, roundIndex: number) => {
     const lastRoundKey = ROUND_KEYS[displayedRoundCount - 1];
@@ -1561,6 +1585,18 @@ export default function MixingReportForm({
 
   const getRoundPhotos = (roundKey: RoundKey) => form.hinh_anh_theo_lan?.[roundKey] ?? [];
 
+  const isRoundComplete = (roundKey: RoundKey) =>
+    listRoundMaterialEntries(form.chi_tiet, roundKey).length > 0 && getRoundPhotos(roundKey).length > 0;
+
+  const toggleRoundCollapsed = (roundKey: RoundKey) => {
+    setCollapsedRounds(prev => {
+      const next = new Set(prev);
+      if (next.has(roundKey)) next.delete(roundKey);
+      else next.add(roundKey);
+      return next;
+    });
+  };
+
   const getRoundReasons = (roundKey: RoundKey) => form.ly_do_theo_lan?.[roundKey] ?? [];
 
   const handleRoundReasonsChange = (roundKey: RoundKey, reasons: string[]) => {
@@ -1642,31 +1678,37 @@ export default function MixingReportForm({
     setForm(newReportForm());
     setMessage('');
     setError('');
+    setCollapsedRounds(new Set());
+    autoCollapsedRoundsRef.current = new Set();
   };
 
   const handleSave = async () => {
     if (!form.ca.trim()) {
-      setError('Vui lòng chọn ca từ lệnh sản xuất.');
+      setError(showSaveFailure('Vui lòng chọn ca từ lệnh sản xuất.'));
       return;
     }
     if (!form.ngay.trim()) {
-      setError('Vui lòng chọn ngày.');
+      setError(showSaveFailure('Vui lòng chọn ngày.'));
       return;
     }
     if (!form.ma_may.trim() && !form.ten_may.trim()) {
-      setError('Vui lòng chọn máy.');
+      setError(showSaveFailure('Vui lòng chọn máy.'));
       return;
     }
 
     if (!editingId) {
       if (sessionRoundStart > MAX_MIXING_SESSIONS_PER_SHIFT) {
-        setError(`Ca · ngày · máy này đã đủ ${MAX_MIXING_SESSIONS_PER_SHIFT} lần trộn.`);
+        setError(
+          showSaveFailure(`Ca · ngày · máy này đã đủ ${MAX_MIXING_SESSIONS_PER_SHIFT} lần trộn.`)
+        );
         return;
       }
 
       if (sessionRoundEnd > MAX_MIXING_SESSIONS_PER_SHIFT) {
         setError(
-          `Chỉ còn tối đa ${MAX_MIXING_SESSIONS_PER_SHIFT - sessionRoundStart + 1} lần trộn cho ca · ngày · máy này.`
+          showSaveFailure(
+            `Chỉ còn tối đa ${MAX_MIXING_SESSIONS_PER_SHIFT - sessionRoundStart + 1} lần trộn cho ca · ngày · máy này.`
+          )
         );
         return;
       }
@@ -1681,7 +1723,7 @@ export default function MixingReportForm({
       }));
     let chi_tiet = prepareMixingChiTietForSave(linesToSave);
     if (chi_tiet.length === 0) {
-      setError('Vui lòng thêm ít nhất một lần trộn và nhập NVL.');
+      setError(showSaveFailure('Vui lòng thêm ít nhất một lần trộn và nhập NVL.'));
       return;
     }
 
@@ -1692,7 +1734,9 @@ export default function MixingReportForm({
     });
     if (missingPhotoRound) {
       const roundIndex = ROUND_KEYS.indexOf(missingPhotoRound);
-      setError(`Vui lòng chụp ít nhất một ảnh cho ${roundColumnLabel(sessionRoundStart, roundIndex)}.`);
+      setError(
+        showSaveFailure(`Vui lòng chụp ít nhất một ảnh cho ${roundColumnLabel(sessionRoundStart, roundIndex)}.`)
+      );
       return;
     }
 
@@ -1755,7 +1799,9 @@ export default function MixingReportForm({
         }
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Không thể lưu báo cáo phối trộn (HTTP ${res.status}).`);
+      if (!res.ok) {
+        throw new Error(readApiErrorMessage(res, data, 'Không thể lưu báo cáo phối trộn.'));
+      }
 
       setActualWeightDrafts({});
       resetForm();
@@ -1768,7 +1814,7 @@ export default function MixingReportForm({
         setMessage(okMsg);
       }
     } catch (err: any) {
-      setError(err.message || 'Không thể lưu báo cáo phối trộn.');
+      setError(showSaveFailure(err, 'Không thể lưu báo cáo phối trộn.'));
     } finally {
       setIsSaving(false);
     }
@@ -1914,10 +1960,11 @@ export default function MixingReportForm({
               </button>
               <input
                 type="number"
-                min={1}
-                max={MIXING_MAX_ROUNDS}
-                value={displayedRoundCount}
-                onChange={event => applyRoundCount(Number(event.target.value))}
+                min={sessionRoundStart}
+                max={sessionRoundStart + MIXING_MAX_ROUNDS - 1}
+                value={sessionRoundStart + displayedRoundCount - 1}
+                onChange={event => applyRoundCount(Number(event.target.value) - sessionRoundStart + 1)}
+                title="Ghi nhận đến Lần số mấy"
                 className="h-7 w-11 rounded-md border border-zinc-200 bg-white text-center text-sm font-black text-zinc-900 outline-none focus:border-[#ef1b2d]"
               />
               <button
@@ -1940,8 +1987,12 @@ export default function MixingReportForm({
               const entries = listRoundMaterialEntries(form.chi_tiet, roundKey);
               const isLastRound = roundIndex === displayedRoundCount - 1;
               const canRemoveRound = displayedRoundCount > 1 && isLastRound;
+              const roundComplete = isRoundComplete(roundKey);
+              const isCollapsed = collapsedRounds.has(roundKey);
+              const roundPhotos = getRoundPhotos(roundKey);
               return (
-                <div key={roundKey} className="mixing-round-card relative rounded-lg border border-zinc-200 sm:rounded-xl">
+                <React.Fragment key={roundKey}>
+                <div className="mixing-round-card relative rounded-lg border border-zinc-200 sm:rounded-xl">
                   <div className="border-b border-zinc-100 bg-zinc-50 px-2 py-1.5 sm:px-3 sm:py-2">
                     <div className="flex items-center justify-between gap-2">
                       {roundIndex === 0 ? (
@@ -1963,6 +2014,12 @@ export default function MixingReportForm({
                         </p>
                       )}
                       <div className="flex items-center gap-1.5">
+                        {roundComplete ? (
+                          <span className="hidden items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-700 sm:inline-flex">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Đã xong
+                          </span>
+                        ) : null}
                         {canRemoveRound ? (
                           <button
                             type="button"
@@ -1974,6 +2031,14 @@ export default function MixingReportForm({
                             <span className="hidden sm:inline">Xóa lần</span>
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => toggleRoundCollapsed(roundKey)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-50 sm:h-8 sm:w-8"
+                          title={isCollapsed ? 'Mở rộng lần này' : 'Thu gọn lần này'}
+                        >
+                          {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                        </button>
                         <label className="flex items-center gap-1 text-[9px] font-bold text-zinc-700 sm:gap-2 sm:text-xs">
                           <span className="whitespace-nowrap">KL 1 mẻ (kg)</span>
                           <input
@@ -1987,27 +2052,43 @@ export default function MixingReportForm({
                         </label>
                       </div>
                     </div>
-                    <div className="mt-1.5 grid grid-cols-2 gap-1 sm:mt-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openProductionOrderAutofill(roundKey)}
-                        className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 text-[9px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 sm:h-8 sm:justify-start sm:rounded-lg sm:px-3 sm:text-[11px]"
-                      >
-                        <ClipboardCheck className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
-                        <span className="truncate sm:hidden">Theo LSX</span>
-                        <span className="hidden truncate sm:inline">NVL theo Lệnh sản xuất</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openRoundMaterialModal(roundKey)}
-                        className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-1.5 text-[9px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 sm:h-8 sm:justify-start sm:rounded-lg sm:px-3 sm:text-[11px]"
-                      >
-                        <Plus className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
-                        Thêm NVL
-                      </button>
-                    </div>
+                    {!isCollapsed ? (
+                      <div className="mt-1.5 grid grid-cols-2 gap-1 sm:mt-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openProductionOrderAutofill(roundKey)}
+                          className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 text-[9px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 sm:h-8 sm:justify-start sm:rounded-lg sm:px-3 sm:text-[11px]"
+                        >
+                          <ClipboardCheck className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
+                          <span className="truncate sm:hidden">Theo LSX</span>
+                          <span className="hidden truncate sm:inline">NVL theo Lệnh sản xuất</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openRoundMaterialModal(roundKey)}
+                          className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-1.5 text-[9px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 sm:h-8 sm:justify-start sm:rounded-lg sm:px-3 sm:text-[11px]"
+                        >
+                          <Plus className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
+                          Thêm NVL
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                  {entries.length === 0 ? (
+                  {isCollapsed ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleRoundCollapsed(roundKey)}
+                      className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left transition hover:bg-zinc-50 sm:px-3"
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5 truncate text-[10px] font-bold text-zinc-600 sm:text-xs">
+                        {entries.length} NVL · {roundPhotos.length} ảnh đã chụp
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-extrabold text-[#ef1b2d] sm:text-[11px]">
+                        Mở rộng
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </span>
+                    </button>
+                  ) : entries.length === 0 ? (
                     <p className="px-2 py-2 text-center text-[10px] font-semibold text-zinc-400 sm:px-3 sm:py-3 sm:text-xs">
                       Chưa có NVL trong {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}.
                     </p>
@@ -2308,81 +2389,97 @@ export default function MixingReportForm({
                       </div>
                     </>
                   )}
-                  <div className="relative z-20 border-t border-zinc-100 bg-white px-2 py-2 sm:px-3 sm:py-3">
-                    <div className="mixing-round-meta-grid grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-2">
-                      <label className="space-y-0.5">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
-                          Lý do
-                        </span>
-                        <SearchableMultiSelect
-                          values={getRoundReasons(roundKey)}
-                          onChange={reasons => handleRoundReasonsChange(roundKey, reasons)}
-                          options={allReasonOptions}
-                          placeholder="Gõ để tìm hoặc chọn lý do..."
-                          inputClassName="mixing-round-reason-input min-h-8 w-full rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:min-h-9 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-xs"
-                        />
-                      </label>
-                      <label className="space-y-0.5">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
-                          Giải trình
-                        </span>
-                        <textarea
-                          value={form.giai_trinh_theo_lan?.[roundKey] ?? ''}
-                          onChange={event => handleRoundExplanationChange(roundKey, event.target.value)}
-                          rows={2}
-                          placeholder="Tự điền theo lý do đã chọn"
-                          className="mixing-round-explain-input min-h-[52px] w-full resize-y rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:min-h-[72px] sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                  <div className="relative z-20 border-t border-zinc-100 bg-zinc-50/50 px-2 py-2 sm:px-3 sm:py-2.5">
-                    <p className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
-                      Ảnh xác nhận {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}
-                    </p>
-                    <div className="mt-1.5 flex flex-col gap-1.5 sm:mt-2 sm:flex-row sm:items-center sm:gap-2">
-                      <button
-                        type="button"
-                        onClick={() => pickRoundPhotos(roundKey)}
-                        disabled={uploadingRoundKey === roundKey}
-                        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:opacity-60 sm:h-10 sm:text-xs"
-                      >
-                        {uploadingRoundKey === roundKey ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <ImagePlus className="h-3.5 w-3.5" />
-                        )}
-                        {uploadingRoundKey === roundKey ? 'Đang chụp...' : 'Chụp ảnh'}
-                      </button>
-                    </div>
-                    {getRoundPhotos(roundKey).length > 0 ? (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
-                        {getRoundPhotos(roundKey).map((photo, photoIndex) => (
-                          <div
-                            key={`${roundKey}-photo-${photoIndex}`}
-                            className="group relative h-12 w-12 overflow-hidden rounded-md border border-zinc-200 bg-white sm:h-14 sm:w-14 sm:rounded-lg"
-                          >
-                            <a href={photo.url} target="_blank" rel="noreferrer" title="Xem ảnh">
-                              <img src={photo.url} alt={`Ảnh ${roundIndex + 1}`} className="h-full w-full object-cover" />
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => removeRoundPhoto(roundKey, photoIndex)}
-                              className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-950/75 text-white opacity-0 transition group-hover:opacity-100"
-                              title="Xóa ảnh"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
+                  {!isCollapsed ? (
+                    <>
+                      <div className="relative z-20 border-t border-zinc-100 bg-white px-2 py-2 sm:px-3 sm:py-3">
+                        <div className="mixing-round-meta-grid grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-2">
+                          <label className="space-y-0.5">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
+                              Lý do
+                            </span>
+                            <SearchableMultiSelect
+                              values={getRoundReasons(roundKey)}
+                              onChange={reasons => handleRoundReasonsChange(roundKey, reasons)}
+                              options={allReasonOptions}
+                              placeholder="Gõ để tìm hoặc chọn lý do..."
+                              inputClassName="mixing-round-reason-input min-h-8 w-full rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:min-h-9 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-xs"
+                            />
+                          </label>
+                          <label className="space-y-0.5">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
+                              Giải trình
+                            </span>
+                            <textarea
+                              value={form.giai_trinh_theo_lan?.[roundKey] ?? ''}
+                              onChange={event => handleRoundExplanationChange(roundKey, event.target.value)}
+                              rows={2}
+                              placeholder="Tự điền theo lý do đã chọn"
+                              className="mixing-round-explain-input min-h-[52px] w-full resize-y rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:min-h-[72px] sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs"
+                            />
+                          </label>
+                        </div>
                       </div>
-                    ) : (
-                      <p className="mt-1 hidden text-[10px] font-semibold text-zinc-400 sm:block sm:text-[11px]">
-                        Bấm Chụp ảnh để mở camera · có thể chụp nhiều lần.
-                      </p>
-                    )}
-                  </div>
+                      <div className="relative z-20 border-t border-zinc-100 bg-zinc-50/50 px-2 py-2 sm:px-3 sm:py-2.5">
+                        <p className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
+                          Ảnh xác nhận {roundColumnLabel(sessionRoundStart, roundIndex).toLowerCase()}
+                        </p>
+                        <div className="mt-1.5 flex flex-col gap-1.5 sm:mt-2 sm:flex-row sm:items-center sm:gap-2">
+                          <button
+                            type="button"
+                            onClick={() => pickRoundPhotos(roundKey)}
+                            disabled={uploadingRoundKey === roundKey}
+                            className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:opacity-60 sm:h-10 sm:text-xs"
+                          >
+                            {uploadingRoundKey === roundKey ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <ImagePlus className="h-3.5 w-3.5" />
+                            )}
+                            {uploadingRoundKey === roundKey ? 'Đang chụp...' : 'Chụp ảnh'}
+                          </button>
+                        </div>
+                        {roundPhotos.length > 0 ? (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                            {roundPhotos.map((photo, photoIndex) => (
+                              <div
+                                key={`${roundKey}-photo-${photoIndex}`}
+                                className="group relative h-12 w-12 overflow-hidden rounded-md border border-zinc-200 bg-white sm:h-14 sm:w-14 sm:rounded-lg"
+                              >
+                                <a href={photo.url} target="_blank" rel="noreferrer" title="Xem ảnh">
+                                  <img src={photo.url} alt={`Ảnh ${roundIndex + 1}`} className="h-full w-full object-cover" />
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => removeRoundPhoto(roundKey, photoIndex)}
+                                  className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-950/75 text-white opacity-0 transition group-hover:opacity-100"
+                                  title="Xóa ảnh"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1 hidden text-[10px] font-semibold text-zinc-400 sm:block sm:text-[11px]">
+                            Bấm Chụp ảnh để mở camera · có thể chụp nhiều lần.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  ) : null}
                 </div>
+                {isLastRound && roundComplete && canAddSessionRound ? (
+                  <button
+                    type="button"
+                    onClick={() => applyRoundCount(displayedRoundCount + 1)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#ef1b2d]/40 bg-red-50/40 px-3 py-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 sm:text-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Đã xong {roundColumnLabel(sessionRoundStart, roundIndex)} · Thêm{' '}
+                    {roundColumnLabel(sessionRoundStart, roundIndex + 1)}?
+                  </button>
+                ) : null}
+                </React.Fragment>
               );
             })}
             </div>

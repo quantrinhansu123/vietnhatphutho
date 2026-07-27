@@ -14,7 +14,7 @@ import {
 } from './MachineDowntimePrintSheet';
 import { STANDARD_SHIFTS } from '../types';
 import { formatNumber } from '../utils';
-import { showAppToast } from '../lib/appToast';
+import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 import { RepeatableLineRow, RepeatableLinesBlock } from './RepeatableLinesBlock';
 import { waitForPrintImagesReady } from '../utils/printReady';
 
@@ -470,7 +470,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
       .filter(line => line.thoi_gian_bat_dau || line.thoi_gian_chay_lai || line.ly_do_dung_may);
 
     if (!date || !shift || !machineRef.trim() || payloadLines.length === 0) {
-      setError('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng dừng máy.');
+      setError(showSaveFailure('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng dừng máy.'));
       return;
     }
 
@@ -493,7 +493,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
         })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Không thể lưu phiếu báo dừng máy.');
+      if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không thể lưu phiếu báo dừng máy.'));
 
       const slipCode = String(data.slip?.so_phieu ?? '').trim();
       const okMsg = slipCode ? `Đã lưu phiếu ${slipCode}.` : 'Đã lưu phiếu báo dừng máy.';
@@ -504,7 +504,7 @@ export default function MachineDowntimeReportPanel({ onBack }: { onBack: () => v
       await loadSlips();
       handlePrint({ ...printPayload, slipCode: slipCode || printPayload.slipCode });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Không thể lưu phiếu.');
+      setError(showSaveFailure(err, 'Không thể lưu phiếu.'));
     } finally {
       setIsSaving(false);
     }

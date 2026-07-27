@@ -7,6 +7,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Printer,
   ReceiptText,
   Save,
   Trash2,
@@ -17,6 +18,7 @@ import {
   fileToOptimizedImageDataUrl,
   uploadImage
 } from '../_shared/recordHelpers';
+import { vietNhatLogoUrl } from '../../components/layout/constants';
 
 export type VehicleOption = {
   id: string;
@@ -43,6 +45,123 @@ type VehicleExpense = {
   hoa_don_public_id: string;
   ghi_chu: string;
 };
+
+type VehicleDeliveryRequest = {
+  id: string;
+  so_yeu_cau: string;
+  ngay_yeu_cau: string;
+  dia_diem_giao: string;
+  hang_hoa: string;
+  so_luong: number;
+  don_vi: string;
+  xe_id: string;
+  bien_so_xe: string;
+  ma_nhan_su: string;
+  ten_tai_xe: string;
+  trang_thai: string;
+  ghi_chu: string;
+};
+
+function escapePrintHtml(value: unknown) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function printVehicleExpenses(
+  rows: VehicleExpense[],
+  filters: { fromDate: string; toDate: string; vehicle: string; staff: string }
+) {
+  const popup = window.open('', '_blank', 'width=900,height=1000');
+  if (!popup) {
+    window.alert('Trình duyệt đang chặn cửa sổ in. Vui lòng cho phép popup rồi thử lại.');
+    return;
+  }
+  popup.opener = null;
+  const total = rows.reduce((sum, row) => sum + row.so_tien, 0);
+  const driver = filters.staff || [...new Set(rows.map(row => row.nhan_vien_phu_trach).filter(Boolean))].join(', ');
+  const vehicle = filters.vehicle || [...new Set(rows.map(row => row.bien_so_xe).filter(Boolean))].join(', ');
+  const period = filters.fromDate || filters.toDate
+    ? `${filters.fromDate || '...'} đến ${filters.toDate || '...'}`
+    : 'Tất cả thời gian';
+  const expenseRows = rows.length > 0
+    ? rows.map((row, index) => `
+        <tr>
+          <td class="center">${index + 1}</td>
+          <td>${escapePrintHtml(row.ten_chi_phi)}<small>${escapePrintHtml(formatDateTime(row.ngay_gio))} · ${escapePrintHtml(row.loai_chi_phi)}</small></td>
+          <td class="center">1</td>
+          <td class="money">${escapePrintHtml(formatMoney(row.so_tien))}</td>
+          <td class="money">${escapePrintHtml(formatMoney(row.so_tien))}</td>
+          <td>${escapePrintHtml(row.ghi_chu || '')}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="6" class="center empty">Không có dữ liệu phù hợp bộ lọc</td></tr>';
+
+  popup.document.write(`<!doctype html>
+  <html lang="vi"><head><meta charset="utf-8"><title>Báo cáo chi phí lái xe</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #111; font-family: "Times New Roman", serif; font-size: 12px; }
+    .sheet { width: 100%; }
+    .header { display: grid; grid-template-columns: 130px 1fr; align-items: center; border-bottom: 1px solid #111; padding-bottom: 7px; }
+    .logo { width: 118px; max-height: 58px; object-fit: contain; }
+    .company { font-size: 13px; font-weight: 700; line-height: 1.4; }
+    h1 { margin: 14px 0 10px; text-align: center; font-size: 19px; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 24px; margin-bottom: 9px; }
+    .meta div { border-bottom: 1px dotted #555; padding: 3px 2px; }
+    .section { margin-top: 8px; font-weight: 700; }
+    .blank { height: 25px; border-bottom: 1px dotted #777; padding: 5px 3px; font-weight: 400; }
+    table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+    th, td { border: 1px solid #111; padding: 5px 6px; vertical-align: top; }
+    th { text-align: center; font-weight: 700; }
+    td small { display: block; margin-top: 2px; color: #444; }
+    .center { text-align: center; }
+    .money { text-align: right; white-space: nowrap; }
+    .empty { height: 42px; vertical-align: middle; color: #666; }
+    .total td { font-weight: 700; }
+    .summary { width: 55%; margin-top: 10px; }
+    .summary td:first-child { font-weight: 700; width: 55%; }
+    .sign { margin-top: 28px; text-align: right; font-style: italic; }
+    .sign-space { height: 65px; }
+  </style></head><body>
+    <main class="sheet">
+      <header class="header">
+        <img class="logo" src="${escapePrintHtml(vietNhatLogoUrl)}" alt="Việt Nhật">
+        <div class="company">Công ty cổ phần vật liệu cách nhiệt Việt Nhật<br>Số 21 đường Phước Lý 10 - P. Hòa Minh, Q. Liên Chiểu, Đà Nẵng</div>
+      </header>
+      <h1>BÁO CÁO – CHI PHÍ – LÁI XE</h1>
+      <div class="meta">
+        <div><b>Tên lái xe:</b> ${escapePrintHtml(driver || '................................')}</div>
+        <div><b>BSX:</b> ${escapePrintHtml(vehicle || '................................')}</div>
+        <div><b>Khoảng ngày:</b> ${escapePrintHtml(period)}</div>
+        <div><b>Số khoản chi:</b> ${rows.length}</div>
+      </div>
+      <div class="section">I. Phần giao hàng (kẹp yêu cầu xuất hàng vào)</div>
+      <div class="blank">Yêu cầu xuất hàng số: ........................................ Ngày: ........................</div>
+      <div class="blank">Địa điểm giao hàng: ............................................................................</div>
+      <div class="blank">Số lượng hàng hóa: ..............................................................................</div>
+      <div class="section">II. Báo cáo hàng trả về, lý do (nếu có hàng trả yêu cầu có xác nhận của thủ kho)</div>
+      <div class="blank"></div><div class="blank"></div>
+      <div class="section">III. Chi phí lái xe</div>
+      <table>
+        <thead><tr><th style="width:7%">STT</th><th>Diễn giải</th><th style="width:10%">Số lượng</th><th style="width:16%">Đơn giá</th><th style="width:17%">Thành tiền</th><th style="width:18%">Ghi chú</th></tr></thead>
+        <tbody>${expenseRows}</tbody>
+        <tfoot><tr class="total"><td colspan="4" class="center">Tổng cộng</td><td class="money">${escapePrintHtml(formatMoney(total))}</td><td></td></tr></tfoot>
+      </table>
+      <div class="section">IV. Thu tiền</div>
+      <table><thead><tr><th>STT</th><th>Khách hàng</th><th>Số tiền</th></tr></thead><tbody>${[1,2,3].map(i => `<tr><td class="center">${i}</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join('')}</tbody></table>
+      <div class="section">V. Hóa đơn nợ và chuyển khoản</div>
+      <table><thead><tr><th>STT</th><th>Khách hàng</th><th>Số tiền</th><th>Người cho nợ</th></tr></thead><tbody>${[1,2,3].map(i => `<tr><td class="center">${i}</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join('')}</tbody></table>
+      <table class="summary"><tr><td>TỔNG THU</td><td></td></tr><tr><td>CHI PHÍ</td><td class="money">${escapePrintHtml(formatMoney(total))}</td></tr><tr><td>CÒN NỘP</td><td></td></tr></table>
+      <div class="sign">Đà Nẵng, ngày ...... tháng ...... năm ........</div><div class="sign-space"></div>
+    </main>
+    <script>window.addEventListener('load', () => { window.print(); });<\/script>
+  </body></html>`);
+  popup.document.close();
+}
 
 type VehicleLogProductLine = {
   id: string;
@@ -607,6 +726,169 @@ function ProductNameCombobox({
   );
 }
 
+export function VehicleDeliveryRequestsView({
+  vehicles,
+  staff
+}: {
+  vehicles: VehicleOption[];
+  staff: StaffOption[];
+}) {
+  const [rows, setRows] = useState<VehicleDeliveryRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState<VehicleDeliveryRequest | null | undefined>(undefined);
+  const [search, setSearch] = useState('');
+
+  const loadRows = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const data = await readJson(await fetch('/api/yeu-cau-xuat-hang-xe'));
+      const source = Array.isArray(data.rows) ? data.rows : [];
+      setRows(source.map((row: Record<string, unknown>) => ({
+        id: text(row.id),
+        so_yeu_cau: text(row.so_yeu_cau),
+        ngay_yeu_cau: text(row.ngay_yeu_cau),
+        dia_diem_giao: text(row.dia_diem_giao),
+        hang_hoa: text(row.hang_hoa),
+        so_luong: numberValue(row.so_luong),
+        don_vi: text(row.don_vi),
+        xe_id: text(row.xe_id),
+        bien_so_xe: text(row.bien_so_xe),
+        ma_nhan_su: text(row.ma_nhan_su),
+        ten_tai_xe: text(row.ten_tai_xe),
+        trang_thai: text(row.trang_thai) || 'Chờ xuất hàng',
+        ghi_chu: text(row.ghi_chu)
+      })));
+    } catch (loadError: any) {
+      setRows([]);
+      setError(loadError.message || 'Không thể tải yêu cầu xuất hàng.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadRows(); }, [loadRows]);
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('vi');
+    if (!query) return rows;
+    return rows.filter(row =>
+      `${row.so_yeu_cau} ${row.dia_diem_giao} ${row.hang_hoa} ${row.bien_so_xe} ${row.ten_tai_xe} ${row.trang_thai}`
+        .toLocaleLowerCase('vi').includes(query)
+    );
+  }, [rows, search]);
+
+  const deleteRow = async (row: VehicleDeliveryRequest) => {
+    if (!window.confirm(`Xóa yêu cầu "${row.so_yeu_cau}"?`)) return;
+    try {
+      await readJson(await fetch(`/api/yeu-cau-xuat-hang-xe/${encodeURIComponent(row.id)}`, { method: 'DELETE' }));
+      await loadRows();
+    } catch (deleteError: any) {
+      setError(deleteError.message || 'Không thể xóa yêu cầu xuất hàng.');
+    }
+  };
+
+  return (
+    <>
+      <ViewHeader title="Yêu cầu xuất hàng" subtitle="Điều phối giao hàng theo xe và lái xe" count={filteredRows.length} buttonLabel="Thêm yêu cầu" onAdd={() => setEditing(null)} />
+      {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      <label className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:max-w-lg">
+        <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm số yêu cầu, nơi giao, hàng hóa, BSX..." className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" />
+      </label>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1120px] text-left text-xs">
+            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
+              <tr><th className="px-3 py-2.5">Số yêu cầu</th><th className="px-3 py-2.5">Ngày</th><th className="px-3 py-2.5">Địa điểm giao</th><th className="px-3 py-2.5">Hàng hóa</th><th className="px-3 py-2.5 text-right">Số lượng</th><th className="px-3 py-2.5">BSX</th><th className="px-3 py-2.5">Lái xe</th><th className="px-3 py-2.5">Trạng thái</th><th className="px-3 py-2.5 text-center">Thao tác</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRows.map(row => (
+                <tr key={row.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-2.5 font-black text-brand-700">{row.so_yeu_cau}</td>
+                  <td className="px-3 py-2.5">{row.ngay_yeu_cau}</td>
+                  <td className="px-3 py-2.5 font-semibold">{row.dia_diem_giao}</td>
+                  <td className="px-3 py-2.5">{row.hang_hoa}</td>
+                  <td className="px-3 py-2.5 text-right font-black">{row.so_luong} {row.don_vi}</td>
+                  <td className="px-3 py-2.5 font-mono font-black">{row.bien_so_xe || '—'}</td>
+                  <td className="px-3 py-2.5">{row.ten_tai_xe || '—'}</td>
+                  <td className="px-3 py-2.5">{row.trang_thai}</td>
+                  <td className="px-3 py-2.5"><div className="flex justify-center gap-1"><ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton><ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải yêu cầu xuất hàng...</p>}
+        {!isLoading && filteredRows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Chưa có yêu cầu xuất hàng.</p>}
+      </section>
+      {editing !== undefined && (
+        <DeliveryRequestModal
+          initial={editing || undefined}
+          vehicles={vehicles}
+          staff={staff}
+          onClose={() => setEditing(undefined)}
+          onSaved={async () => { setEditing(undefined); await loadRows(); }}
+        />
+      )}
+    </>
+  );
+}
+
+function DeliveryRequestModal({
+  initial, vehicles, staff, onClose, onSaved
+}: {
+  initial?: VehicleDeliveryRequest;
+  vehicles: VehicleOption[];
+  staff: StaffOption[];
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [form, setForm] = useState<Omit<VehicleDeliveryRequest, 'id'>>(() => ({
+    so_yeu_cau: initial?.so_yeu_cau || `YCXH-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}`,
+    ngay_yeu_cau: initial?.ngay_yeu_cau || new Date().toISOString().slice(0, 10),
+    dia_diem_giao: initial?.dia_diem_giao || '',
+    hang_hoa: initial?.hang_hoa || '',
+    so_luong: initial?.so_luong || 0,
+    don_vi: initial?.don_vi || '',
+    xe_id: initial?.xe_id || '',
+    bien_so_xe: initial?.bien_so_xe || '',
+    ma_nhan_su: initial?.ma_nhan_su || '',
+    ten_tai_xe: initial?.ten_tai_xe || '',
+    trang_thai: initial?.trang_thai || 'Chờ xuất hàng',
+    ghi_chu: initial?.ghi_chu || ''
+  }));
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    setIsSaving(true); setError('');
+    try {
+      const endpoint = initial ? `/api/yeu-cau-xuat-hang-xe/${encodeURIComponent(initial.id)}` : '/api/yeu-cau-xuat-hang-xe';
+      await readJson(await fetch(endpoint, { method: initial ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }));
+      await onSaved();
+    } catch (saveError: any) {
+      setError(saveError.message || 'Không thể lưu yêu cầu xuất hàng.');
+    } finally { setIsSaving(false); }
+  };
+  return (
+    <OperationModal title={initial ? 'Sửa yêu cầu xuất hàng' : 'Thêm yêu cầu xuất hàng'} subtitle="Thông tin giao hàng, xe và lái xe phụ trách" onClose={onClose} onSave={() => void save()} isSaving={isSaving}>
+      {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Số yêu cầu *"><input value={form.so_yeu_cau} onChange={e => setForm(p => ({ ...p, so_yeu_cau: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Ngày yêu cầu *"><input type="date" value={form.ngay_yeu_cau} onChange={e => setForm(p => ({ ...p, ngay_yeu_cau: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Địa điểm giao *"><input value={form.dia_diem_giao} onChange={e => setForm(p => ({ ...p, dia_diem_giao: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Hàng hóa *"><input value={form.hang_hoa} onChange={e => setForm(p => ({ ...p, hang_hoa: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Số lượng *"><input type="number" min="0" step="any" value={form.so_luong || ''} onChange={e => setForm(p => ({ ...p, so_luong: Number(e.target.value) }))} className={inputClass} /></Field>
+        <Field label="Đơn vị"><input value={form.don_vi} onChange={e => setForm(p => ({ ...p, don_vi: e.target.value }))} className={inputClass} placeholder="cuộn, kg, cái..." /></Field>
+        <Field label="Biển số xe"><select value={form.xe_id} onChange={e => { const v = vehicles.find(x => x.id === e.target.value); setForm(p => ({ ...p, xe_id: v?.id || '', bien_so_xe: v?.bien_so_xe || '' })); }} className={inputClass}><option value="">Chọn xe</option>{vehicles.map(v => <option key={v.id} value={v.id}>{v.bien_so_xe} · {v.loai_xe}</option>)}</select></Field>
+        <Field label="Lái xe"><select value={`${form.ma_nhan_su}|${form.ten_tai_xe}`} onChange={e => { const s = staff.find(x => `${x.code}|${x.name}` === e.target.value); setForm(p => ({ ...p, ma_nhan_su: s?.code || '', ten_tai_xe: s?.name || '' })); }} className={inputClass}><option value="|">Chọn lái xe</option>{staff.map(s => <option key={`${s.code}-${s.name}`} value={`${s.code}|${s.name}`}>{s.name}</option>)}</select></Field>
+        <Field label="Trạng thái"><select value={form.trang_thai} onChange={e => setForm(p => ({ ...p, trang_thai: e.target.value }))} className={inputClass}>{['Chờ xuất hàng', 'Đang giao', 'Hoàn thành', 'Đã hủy'].map(v => <option key={v}>{v}</option>)}</select></Field>
+        <Field label="Ghi chú"><input value={form.ghi_chu} onChange={e => setForm(p => ({ ...p, ghi_chu: e.target.value }))} className={inputClass} /></Field>
+      </div>
+    </OperationModal>
+  );
+}
+
 export function VehicleExpensesView({
   vehicles,
   staff,
@@ -621,6 +903,12 @@ export function VehicleExpensesView({
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [editing, setEditing] = useState<VehicleExpense | null | undefined>(undefined);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [vehicleFilter, setVehicleFilter] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [searchText, setSearchText] = useState('');
 
   const loadRows = useCallback(async () => {
     setIsLoading(true);
@@ -641,7 +929,25 @@ export function VehicleExpensesView({
     void loadRows();
   }, [loadRows]);
 
-  const total = useMemo(() => rows.reduce((sum, row) => sum + row.so_tien, 0), [rows]);
+  const filteredRows = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLocaleLowerCase('vi');
+    return rows.filter(row => {
+      const date = row.ngay_gio.slice(0, 10);
+      if (fromDate && date < fromDate) return false;
+      if (toDate && date > toDate) return false;
+      if (vehicleFilter && row.bien_so_xe !== vehicleFilter) return false;
+      if (staffFilter && row.nhan_vien_phu_trach !== staffFilter) return false;
+      if (typeFilter && row.loai_chi_phi !== typeFilter) return false;
+      if (
+        normalizedSearch &&
+        !`${row.ten_chi_phi} ${row.ghi_chu} ${row.bien_so_xe} ${row.nhan_vien_phu_trach}`
+          .toLocaleLowerCase('vi')
+          .includes(normalizedSearch)
+      ) return false;
+      return true;
+    });
+  }, [fromDate, rows, searchText, staffFilter, toDate, typeFilter, vehicleFilter]);
+  const total = useMemo(() => filteredRows.reduce((sum, row) => sum + row.so_tien, 0), [filteredRows]);
 
   const deleteRow = async (row: VehicleExpense) => {
     if (!window.confirm(`Xóa chi phí "${row.ten_chi_phi}"?`)) return;
@@ -655,9 +961,64 @@ export function VehicleExpensesView({
 
   return (
     <>
-      <ViewHeader title="Chi phí xe" subtitle={`Tổng chi phí ${formatMoney(total)}`} count={rows.length} buttonLabel="Thêm chi phí" onAdd={() => setEditing(null)} />
+      <ViewHeader title="Chi phí xe" subtitle={`Tổng theo bộ lọc ${formatMoney(total)}`} count={filteredRows.length} buttonLabel="Thêm chi phí" onAdd={() => setEditing(null)} />
       {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
       {warning && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{warning}</p>}
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <Field label="Từ ngày"><input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} className={inputClass} /></Field>
+          <Field label="Đến ngày"><input type="date" value={toDate} onChange={event => setToDate(event.target.value)} className={inputClass} /></Field>
+          <Field label="Biển số xe">
+            <select value={vehicleFilter} onChange={event => setVehicleFilter(event.target.value)} className={inputClass}>
+              <option value="">Tất cả xe</option>
+              {vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.bien_so_xe}>{vehicle.bien_so_xe}</option>)}
+            </select>
+          </Field>
+          <Field label="Nhân viên">
+            <select value={staffFilter} onChange={event => setStaffFilter(event.target.value)} className={inputClass}>
+              <option value="">Tất cả nhân viên</option>
+              {staff.map(person => <option key={`${person.code}-${person.name}`} value={person.name}>{person.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Loại chi phí">
+            <select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className={inputClass}>
+              <option value="">Tất cả loại</option>
+              {EXPENSE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+            </select>
+          </Field>
+          <Field label="Tìm kiếm"><input value={searchText} onChange={event => setSearchText(event.target.value)} className={inputClass} placeholder="Tên chi phí, ghi chú..." /></Field>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate('');
+                setToDate('');
+                setVehicleFilter('');
+                setStaffFilter('');
+                setTypeFilter('');
+                setSearchText('');
+              }}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            >
+              Xóa lọc
+            </button>
+            <button
+              type="button"
+              onClick={() => printVehicleExpenses(filteredRows, {
+                fromDate,
+                toDate,
+                vehicle: vehicleFilter,
+                staff: staffFilter
+              })}
+              disabled={filteredRows.length === 0}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-slate-950 px-3 text-xs font-extrabold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Printer className="h-4 w-4" />
+              In theo lọc
+            </button>
+          </div>
+        </div>
+      </section>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1120px] text-left text-xs">
@@ -675,7 +1036,7 @@ export function VehicleExpensesView({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map(row => (
+              {filteredRows.map(row => (
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-3 py-2.5 font-mono text-slate-500">{row.id}</td>
                   <td className="px-3 py-2.5 font-semibold">{formatDateTime(row.ngay_gio)}</td>
@@ -703,7 +1064,7 @@ export function VehicleExpensesView({
           </table>
         </div>
         <div className="divide-y divide-slate-100 md:hidden">
-          {rows.map(row => (
+          {filteredRows.map(row => (
             <article key={row.id} className="p-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -721,7 +1082,7 @@ export function VehicleExpensesView({
           ))}
         </div>
         {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải chi phí xe...</p>}
-        {!isLoading && rows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Chưa có chi phí xe.</p>}
+        {!isLoading && filteredRows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Không có chi phí xe phù hợp bộ lọc.</p>}
       </section>
       {editing !== undefined && (
         <ExpenseModal

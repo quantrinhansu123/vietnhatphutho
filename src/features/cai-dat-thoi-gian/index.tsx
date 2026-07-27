@@ -90,6 +90,21 @@ export type SettingFormState = {
   note: string;
 };
 
+function sanitize24HourTimeInput(value: string) {
+  if (value.includes(':')) {
+    const [hours = '', minutes = ''] = value.split(':');
+    return `${hours.replace(/\D/g, '').slice(0, 2)}:${minutes.replace(/\D/g, '').slice(0, 2)}`;
+  }
+  const digits = value.replace(/\D/g, '').slice(0, 4);
+  return digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits;
+}
+
+function isValid24HourTime(value: string) {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  return Number(match[1]) <= 23 && Number(match[2]) <= 59;
+}
+
 const emptySettingForm = (): SettingFormState => ({
   code: '',
   name: '',
@@ -192,12 +207,12 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       setFormError('Vui lòng chọn loại cài đặt (loai_cai_dat).');
       return false;
     }
-    if (!settingForm.startTime) {
-      setFormError('Vui lòng chọn giờ bắt đầu.');
+    if (!isValid24HourTime(settingForm.startTime)) {
+      setFormError('Giờ bắt đầu phải đúng định dạng 24 giờ HH:mm (00:00–23:59).');
       return false;
     }
-    if (!settingForm.endTime) {
-      setFormError('Vui lòng chọn giờ kết thúc.');
+    if (!isValid24HourTime(settingForm.endTime)) {
+      setFormError('Giờ kết thúc phải đúng định dạng 24 giờ HH:mm (00:00–23:59).');
       return false;
     }
     return true;
@@ -285,50 +300,8 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     });
   }, [normalizedSearch, selectedGroup, settings]);
 
-  const filledTimeRangeCount = settings.filter(
-    setting => setting.startTime !== '-' && setting.endTime !== '-'
-  ).length;
-
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex items-start justify-end gap-3">
-            <div className="hidden">
-              <p className="text-xs font-black uppercase tracking-wider text-red-300">Tham số hệ thống</p>
-              <h2 className="mt-1 text-2xl font-black leading-tight">Cài đặt</h2>
-              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Dữ liệu được tải trực tiếp từ bảng Supabase cai_dat_thoi_gian.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={openAddForm}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm mới
-              </button>
-
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
-            {[
-              ['Mục cài đặt', settings.length],
-              ['Nhóm', settingGroups.length > 0 ? settingGroups.length - 1 : 0],
-              ['Đủ khung giờ', filledTimeRangeCount]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <span className="block font-bold text-zinc-400">{label}</span>
-                <span className="mt-1 block text-xl font-black text-white">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="w-full max-w-lg rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
@@ -385,19 +358,29 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu *</span>
                 <input
-                  type="time"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={5}
                   value={settingForm.startTime}
-                  onChange={e => setSettingForm(prev => ({ ...prev, startTime: e.target.value }))}
+                  onChange={e =>
+                    setSettingForm(prev => ({ ...prev, startTime: sanitize24HourTimeInput(e.target.value) }))
+                  }
                   className={orderFieldClass}
+                  placeholder="00:00"
                 />
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ kết thúc *</span>
                 <input
-                  type="time"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={5}
                   value={settingForm.endTime}
-                  onChange={e => setSettingForm(prev => ({ ...prev, endTime: e.target.value }))}
+                  onChange={e =>
+                    setSettingForm(prev => ({ ...prev, endTime: sanitize24HourTimeInput(e.target.value) }))
+                  }
                   className={orderFieldClass}
+                  placeholder="23:59"
                 />
               </label>
               <label className="space-y-1.5">
@@ -533,6 +516,15 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
           />
         </label>
+
+        <button
+          type="button"
+          onClick={openAddForm}
+          className="mt-3 flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] lg:mt-0"
+        >
+          <Plus className="h-4 w-4" />
+          Thêm mới
+        </button>
 
         {settingsError && (
           <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">

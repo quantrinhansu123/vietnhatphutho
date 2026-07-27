@@ -77,6 +77,12 @@ export default function MixingOrderAutofillModal({
 
   const allFilteredSelected =
     filteredProducts.length > 0 && filteredProducts.every(item => selectedProductKeys.includes(item.key));
+  const visibleOrderCodes = useMemo(
+    () => [...new Set(orderOptions.map(order => order.orderCode).filter(Boolean))],
+    [orderOptions]
+  );
+  const allVisibleOrdersSelected =
+    visibleOrderCodes.length > 0 && visibleOrderCodes.every(code => selectedOrderCodes.includes(code));
 
   const toggleOrderCode = (orderCode: string) => {
     setSelectedOrderCodes(prev => {
@@ -92,6 +98,19 @@ export default function MixingOrderAutofillModal({
 
   const toggleProductKey = (key: string) => {
     setSelectedProductKeys(prev => (prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]));
+  };
+
+  const toggleSelectAllOrders = () => {
+    if (allVisibleOrdersSelected) {
+      const visibleCodes = new Set(visibleOrderCodes);
+      setSelectedOrderCodes(prev => prev.filter(code => !visibleCodes.has(code)));
+      setSelectedProductKeys(prev =>
+        prev.filter(key => !visibleOrderCodes.some(code => key.startsWith(`${code}::`)))
+      );
+      setProductOrderFilter(current => (visibleCodes.has(current) ? 'all' : current));
+      return;
+    }
+    setSelectedOrderCodes(prev => [...new Set([...prev, ...visibleOrderCodes])]);
   };
 
   const toggleSelectAllFiltered = () => {
@@ -146,6 +165,21 @@ export default function MixingOrderAutofillModal({
               className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
             />
           </label>
+          <button
+            type="button"
+            onClick={toggleSelectAllOrders}
+            disabled={visibleOrderCodes.length === 0}
+            className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <input
+              type="checkbox"
+              checked={allVisibleOrdersSelected}
+              readOnly
+              tabIndex={-1}
+              className="pointer-events-none h-4 w-4 rounded border-zinc-300 text-[#ef1b2d]"
+            />
+            {allVisibleOrdersSelected ? 'Bỏ chọn tất cả đơn' : 'Chọn tất cả đơn'}
+          </button>
         </div>
 
         <div className="max-h-[28vh] overflow-y-auto p-4">

@@ -33,6 +33,8 @@ const SUPABASE_DRIVER_RECONCILIATION_TABLE =
   process.env.SUPABASE_DRIVER_RECONCILIATION_TABLE || 'doi_chieu_lai_xe';
 const SUPABASE_VEHICLE_EXPENSES_TABLE = process.env.SUPABASE_VEHICLE_EXPENSES_TABLE || 'chi_phi_xe';
 const SUPABASE_VEHICLE_LOGS_TABLE = process.env.SUPABASE_VEHICLE_LOGS_TABLE || 'nhat_ky_xe';
+const SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE =
+  process.env.SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE || 'yeu_cau_xuat_hang_xe';
 const SUPABASE_ORDERS_TABLE = process.env.SUPABASE_ORDERS_TABLE || 'don_hang';
 const SUPABASE_CUSTOMERS_TABLE = process.env.SUPABASE_CUSTOMERS_TABLE || 'khach_hang';
 const SUPABASE_SETTINGS_TABLE = process.env.SUPABASE_SETTINGS_TABLE || 'cai_dat_thoi_gian';
@@ -289,6 +291,9 @@ function buildDbRecordFromClientRow(row: Record<string, unknown>, payload?: Reco
     trong_luong_nhua_khong_mang: emptyToNull(row.plasticNoFilmWeight),
     trong_luong_nhua_dau_nong: emptyToNull(row.plasticNozzleWeight),
     trong_luong_nhua_dinh_mang: emptyToNull(row.plasticFilmAdhesionWeight),
+    loai_hang_hong: emptyToNull(row.materialType),
+    ma_vat_tu: emptyToNull(row.materialCode),
+    so_luong_vat_tu: emptyToNull(row.materialQuantity),
     anh_url: emptyToNull(row.imageUrl),
     anh_public_id: emptyToNull(row.imagePublicId),
     nghiem_thu: emptyToNull(row.acceptanceStatus),
@@ -317,6 +322,9 @@ function mapWeighingRow(row: Record<string, unknown>) {
     plasticNoFilmWeight: String(row.trong_luong_nhua_khong_mang ?? '').trim(),
     plasticNozzleWeight: String(row.trong_luong_nhua_dau_nong ?? '').trim(),
     plasticFilmAdhesionWeight: String(row.trong_luong_nhua_dinh_mang ?? '').trim(),
+    materialType: String(row.loai_hang_hong ?? '').trim(),
+    materialCode: String(row.ma_vat_tu ?? '').trim(),
+    materialQuantity: String(row.so_luong_vat_tu ?? '').trim(),
     imageUrl: String(row.anh_url ?? '').trim() || undefined,
     coreWeightImageUrl: String(row.anh_trong_luong_loi_url ?? '').trim() || undefined,
     acceptanceStatus: String(row.nghiem_thu ?? '').trim(),
@@ -331,6 +339,8 @@ type WeighingSlipApiConfig = {
   sqlMigrationFile: string;
   entityLabel: string;
   localEntryPrefix: string;
+  requireAcceptanceStatus?: boolean;
+  requireDamagedMaterialType?: boolean;
 };
 
 function createWeighingLocalStore(cfg: Pick<WeighingSlipApiConfig, 'localFilePath' | 'localEntryPrefix'>) {
@@ -659,9 +669,16 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
 
       const records = rows
         .filter((row: any) =>
-          row.productCode || row.productName || row.machineName || row.coreWeight || row.shellWeight || row.weighNo || row.weight || row.imageUrl || row.coreWeightImageUrl || row.acceptanceStatus || row.note
+          row.productCode || row.productName || row.machineName || row.coreWeight || row.shellWeight || row.weighNo || row.weight || row.imageUrl || row.coreWeightImageUrl || row.acceptanceStatus || row.materialType || row.materialCode || row.materialQuantity || row.note
         )
         .map((row: any) => buildDbRecordFromClientRow(row, payload));
+      if (!cfg.requireDamagedMaterialType) {
+        records.forEach(record => {
+          delete record.loai_hang_hong;
+          delete record.ma_vat_tu;
+          delete record.so_luong_vat_tu;
+        });
+      }
 
       if (records.length === 0) {
         return res.status(400).json({ error: 'Vui lòng nhập ít nhất một dòng cân có dữ liệu.' });
@@ -670,6 +687,21 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
       const missingShift = records.find(record => !record.ngay_san_xuat || !record.ca_san_xuat);
       if (missingShift) {
         return res.status(400).json({ error: 'Mỗi dòng cần có ngày sản xuất và ca sản xuất.' });
+      }
+
+      if (cfg.requireAcceptanceStatus && records.some(record => !String(record.nghiem_thu ?? '').trim())) {
+        return res.status(400).json({ error: 'Mỗi dòng cân cần có kết quả Nghiệm thu.' });
+      }
+
+      if (cfg.requireDamagedMaterialType && records.some(record => !String(record.loai_hang_hong ?? '').trim())) {
+        return res.status(400).json({ error: 'Mỗi dòng cần chọn loại hàng hỏng: Nhựa hoặc Vật tư khác.' });
+      }
+      const invalidOtherMaterial = records.some(record =>
+        record.loai_hang_hong === 'vat_tu_khac' &&
+        (!String(record.ma_vat_tu ?? '').trim() || !String(record.so_luong_vat_tu ?? '').trim())
+      );
+      if (cfg.requireDamagedMaterialType && invalidOtherMaterial) {
+        return res.status(400).json({ error: 'Vật tư khác cần có Mã vật tư và Số lượng.' });
       }
 
       if (supabase) {
@@ -794,9 +826,29 @@ function registerWeighingSlipRoutes(app: express.Application, apiPath: string, c
 
       const payload = req.body;
       const record = buildDbRecordFromClientRow(row, payload);
+      if (!cfg.requireDamagedMaterialType) {
+        delete record.loai_hang_hong;
+        delete record.ma_vat_tu;
+        delete record.so_luong_vat_tu;
+      }
 
       if (!record.ngay_san_xuat || !record.ca_san_xuat) {
         return res.status(400).json({ error: 'Mỗi dòng cần có ngày sản xuất và ca sản xuất.' });
+      }
+
+      if (cfg.requireAcceptanceStatus && !String(record.nghiem_thu ?? '').trim()) {
+        return res.status(400).json({ error: 'Dòng cân cần có kết quả Nghiệm thu.' });
+      }
+
+      if (cfg.requireDamagedMaterialType && !String(record.loai_hang_hong ?? '').trim()) {
+        return res.status(400).json({ error: 'Dòng cần chọn loại hàng hỏng: Nhựa hoặc Vật tư khác.' });
+      }
+      if (
+        cfg.requireDamagedMaterialType &&
+        record.loai_hang_hong === 'vat_tu_khac' &&
+        (!String(record.ma_vat_tu ?? '').trim() || !String(record.so_luong_vat_tu ?? '').trim())
+      ) {
+        return res.status(400).json({ error: 'Vật tư khác cần có Mã vật tư và Số lượng.' });
       }
 
       if (isLocalWeighingId(id)) {
@@ -1236,6 +1288,38 @@ function parseVehicleExpenseBody(
       nhan_vien_phu_trach: pickRowField(source, ['nhan_vien_phu_trach', 'staffName'], '') || null,
       hoa_don_url: pickRowField(source, ['hoa_don_url', 'invoiceUrl'], '') || null,
       hoa_don_public_id: pickRowField(source, ['hoa_don_public_id', 'invoicePublicId'], '') || null,
+      ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
+    }
+  };
+}
+
+function parseVehicleDeliveryRequestBody(
+  body: unknown
+): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const requestNo = pickRowField(source, ['so_yeu_cau', 'requestNo'], '');
+  const requestDate = pickRowField(source, ['ngay_yeu_cau', 'requestDate'], '');
+  const address = pickRowField(source, ['dia_diem_giao', 'deliveryAddress'], '');
+  const goods = pickRowField(source, ['hang_hoa', 'goods'], '');
+  const quantity = parseDriverReconciliationNumber(source.so_luong ?? source.quantity);
+  if (!requestNo) return { error: 'Vui lòng nhập số yêu cầu xuất hàng.' };
+  if (!requestDate || Number.isNaN(Date.parse(requestDate))) return { error: 'Ngày yêu cầu không hợp lệ.' };
+  if (!address) return { error: 'Vui lòng nhập địa điểm giao hàng.' };
+  if (!goods) return { error: 'Vui lòng nhập hàng hóa.' };
+  if (quantity <= 0) return { error: 'Số lượng phải lớn hơn 0.' };
+  return {
+    record: {
+      so_yeu_cau: requestNo,
+      ngay_yeu_cau: requestDate,
+      dia_diem_giao: address,
+      hang_hoa: goods,
+      so_luong: quantity,
+      don_vi: pickRowField(source, ['don_vi', 'unit'], '') || null,
+      xe_id: source.xe_id === null || source.xe_id === undefined || source.xe_id === '' ? null : source.xe_id,
+      bien_so_xe: pickRowField(source, ['bien_so_xe', 'plateNumber'], '').toUpperCase() || null,
+      ma_nhan_su: pickRowField(source, ['ma_nhan_su', 'staffCode'], '') || null,
+      ten_tai_xe: pickRowField(source, ['ten_tai_xe', 'driverName'], '') || null,
+      trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Chờ xuất hàng'),
       ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
     }
   };
@@ -2708,11 +2792,20 @@ function parseSettingBody(body: unknown): { error: string } | SettingWritePayloa
   if (!code) return { error: 'Vui lòng nhập mã cài đặt.' };
   if (!name) return { error: 'Vui lòng nhập tên cài đặt.' };
 
-  const startTime = typeof source.startTime === 'string' ? source.startTime.trim() : '';
-  const endTime = typeof source.endTime === 'string' ? source.endTime.trim() : '';
+  const normalize24HourTime = (value: unknown) => {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return '';
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours > 23 || minutes > 59) return '';
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+  const startTime = normalize24HourTime(source.startTime);
+  const endTime = normalize24HourTime(source.endTime);
 
-  if (!startTime) return { error: 'Vui lòng chọn giờ bắt đầu.' };
-  if (!endTime) return { error: 'Vui lòng chọn giờ kết thúc.' };
+  if (!startTime) return { error: 'Giờ bắt đầu phải đúng định dạng 24 giờ HH:mm (00:00–23:59).' };
+  if (!endTime) return { error: 'Giờ kết thúc phải đúng định dạng 24 giờ HH:mm (00:00–23:59).' };
 
   const loaiCaiDat =
     typeof source.loaiCaiDat === 'string' && source.loaiCaiDat.trim()
@@ -6586,13 +6679,22 @@ export function createApp() {
       path: 'chi-phi-xe',
       table: SUPABASE_VEHICLE_EXPENSES_TABLE,
       label: 'chi phí xe',
-      parse: parseVehicleExpenseBody
+      parse: parseVehicleExpenseBody,
+      dateColumn: 'ngay_gio'
     },
     {
       path: 'nhat-ky-xe',
       table: SUPABASE_VEHICLE_LOGS_TABLE,
       label: 'nhật ký xe',
-      parse: parseVehicleLogBody
+      parse: parseVehicleLogBody,
+      dateColumn: 'ngay_gio'
+    },
+    {
+      path: 'yeu-cau-xuat-hang-xe',
+      table: SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE,
+      label: 'yêu cầu xuất hàng',
+      parse: parseVehicleDeliveryRequestBody,
+      dateColumn: 'ngay_yeu_cau'
     }
   ] as const;
 
@@ -6606,11 +6708,11 @@ export function createApp() {
         const plateNumber = typeof req.query.bien_so_xe === 'string' ? req.query.bien_so_xe.trim() : '';
         const fromDate = typeof req.query.tu_ngay === 'string' ? req.query.tu_ngay.trim() : '';
         const toDate = typeof req.query.den_ngay === 'string' ? req.query.den_ngay.trim() : '';
-        let query = supabase.from(route.table).select('*').order('ngay_gio', { ascending: false });
+        let query = supabase.from(route.table).select('*').order(route.dateColumn, { ascending: false });
 
         if (plateNumber) query = query.eq('bien_so_xe', plateNumber);
-        if (fromDate) query = query.gte('ngay_gio', fromDate);
-        if (toDate) query = query.lte('ngay_gio', toDate);
+        if (fromDate) query = query.gte(route.dateColumn, fromDate);
+        if (toDate) query = query.lte(route.dateColumn, toDate);
 
         const { data, error } = await query;
         if (error) {
@@ -6677,7 +6779,8 @@ export function createApp() {
     supabaseTable: SUPABASE_WEIGHING_TABLE,
     sqlMigrationFile: 'supabase-phieu-can-dinh-ki.sql',
     entityLabel: 'phiếu cân',
-    localEntryPrefix: 'pcdk_'
+    localEntryPrefix: 'pcdk_',
+    requireAcceptanceStatus: true
   });
 
   registerWeighingSlipRoutes(app, '/api/bao-cao-hang-hong', {
@@ -6685,7 +6788,8 @@ export function createApp() {
     supabaseTable: SUPABASE_DAMAGED_GOODS_TABLE,
     sqlMigrationFile: 'supabase-bao-cao-hang-hong.sql',
     entityLabel: 'báo cáo hàng hỏng',
-    localEntryPrefix: 'bchh_'
+    localEntryPrefix: 'bchh_',
+    requireDamagedMaterialType: true
   });
 
   app.get('/api/bao-cao-phoi-tron', async (req, res) => {

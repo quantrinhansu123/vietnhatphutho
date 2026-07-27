@@ -64,6 +64,24 @@ function compareMixingReports(left: MixingReport, right: MixingReport) {
   return compareMixingReportsBySession(left, right);
 }
 
+function compareMixingReportsForList(
+  left: MixingReport,
+  right: MixingReport,
+  shiftOptions: ReturnType<typeof getProductionShiftOptions>
+) {
+  const shiftOrder = (ca: string) => {
+    const index = shiftOptions.findIndex(
+      option => option.value === ca || shiftNamesMatch(option.value, ca) || shiftNamesMatch(option.label, ca)
+    );
+    return index >= 0 ? index : 999;
+  };
+  const byShift = shiftOrder(left.ca || '') - shiftOrder(right.ca || '');
+  if (byShift !== 0) return byShift;
+  const byShiftName = String(left.ca || '').localeCompare(String(right.ca || ''), 'vi', { numeric: true });
+  if (byShiftName !== 0) return byShiftName;
+  return compareMixingReportsBySession(left, right);
+}
+
 function buildShiftGroups(
   reports: MixingReport[],
   shiftOptions: ReturnType<typeof getProductionShiftOptions>
@@ -254,7 +272,10 @@ export default function MixingReportListView({
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
   const shiftGroups = useMemo(() => buildShiftGroups(reports, shiftOptions), [reports, shiftOptions]);
-  const sortedReports = useMemo(() => [...reports].sort(compareMixingReportsBySession), [reports]);
+  const sortedReports = useMemo(
+    () => [...reports].sort((left, right) => compareMixingReportsForList(left, right, shiftOptions)),
+    [reports, shiftOptions]
+  );
   const dateGroups = useMemo(() => {
     const map = new Map<string, MixingReport[]>();
     for (const report of sortedReports) {

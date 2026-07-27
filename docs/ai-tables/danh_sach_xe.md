@@ -1,6 +1,6 @@
-# danh_sach_xe / doi_chieu_lai_xe / chi_phi_xe / nhat_ky_xe
+# danh_sach_xe / doi_chieu_lai_xe / chi_phi_xe / nhat_ky_xe / yeu_cau_xuat_hang_xe
 
-| **Bảng** | `danh_sach_xe`, `doi_chieu_lai_xe`, `chi_phi_xe`, `nhat_ky_xe` |
+| **Bảng** | `danh_sach_xe`, `doi_chieu_lai_xe`, `chi_phi_xe`, `nhat_ky_xe`, `yeu_cau_xuat_hang_xe` |
 | **Tab** | `vehicles` → `/danh-sach-xe` |
 | **SQL** | `supabase-danh-sach-xe.sql` |
 
@@ -9,6 +9,7 @@
 - `server.ts` — `/api/doi-chieu-lai-xe`
 - `server.ts` — `/api/chi-phi-xe`
 - `server.ts` — `/api/nhat-ky-xe`
+- `server.ts` — `/api/yeu-cau-xuat-hang-xe`
 
 **UI:** `src/features/danh-sach-xe/index.tsx`, `src/features/danh-sach-xe/VehicleOperations.tsx`, `src/features/danh-sach-xe/DriverPolicy.tsx`
 

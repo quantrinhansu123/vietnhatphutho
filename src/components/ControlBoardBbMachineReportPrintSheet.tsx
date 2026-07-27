@@ -59,7 +59,7 @@ function formatDate(value: string) {
   return year && month && day ? `${day}/${month}/${year}` : value || '-';
 }
 
-function printNumber(value: number | null | undefined, digits = 3) {
+function printNumber(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '-';
   return formatNumber(value, digits);
 }
@@ -279,9 +279,9 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
                   <td>{row.productCode || '-'}</td><td>{row.productName || '-'}</td>
                   <td className="shift-summary-print-center">{row.unit || '-'}</td>
                   <td className="shift-summary-print-num">{printNumber(row.quantity, 2)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.requiredWeight, 3)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.requiredWeight, 2)}</td>
                   <td className="shift-summary-print-num">{printNumber(row.actualQuantity, 2)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.actualWeight, 3)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.actualWeight, 2)}</td>
                   <td className="shift-summary-print-num">{printPercent(row.quantity > 0 ? (row.actualQuantity / row.quantity) * 100 : null)}</td>
                   <td>{row.machine || order.machine || '-'}</td><td>{analysisNote || '-'}</td>
                 </tr>
@@ -289,9 +289,9 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
               <tr className="shift-summary-print-total-row">
                 <td colSpan={3} className="shift-summary-print-total-label">Tổng cộng</td>
                 <td className="shift-summary-print-num">{printNumber(requiredQtyTotal, 2)}</td>
-                <td className="shift-summary-print-num">{printNumber(requiredWeightTotal, 3)}</td>
+                <td className="shift-summary-print-num">{printNumber(requiredWeightTotal, 2)}</td>
                 <td className="shift-summary-print-num">{printNumber(actualQtyTotal, 2)}</td>
-                <td className="shift-summary-print-num">{printNumber(actualWeightTotal || inbound?.finishedGoodsInboundKg, 3)}</td>
+                <td className="shift-summary-print-num">{printNumber(actualWeightTotal || inbound?.finishedGoodsInboundKg, 2)}</td>
                 <td className="shift-summary-print-num">{printPercent(requiredQtyTotal > 0 ? (actualQtyTotal / requiredQtyTotal) * 100 : null)}</td>
                 <td colSpan={2} />
               </tr>
@@ -317,12 +317,12 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
                 return <tr key={row.key}>
                   <td>{row.code || '-'}</td><td>{row.name || '-'}</td><td className="shift-summary-print-center">{row.unit || 'kg'}</td>
                   <td className="shift-summary-print-num">{printPercent(norm)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.actualMixedKg, 3)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.openingKg, 3)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.exportKg, 3)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.finishedKg, 3)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.damagedKg, 3)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.closingKg, 3)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.actualMixedKg, 2)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.openingKg, 2)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.exportKg, 2)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.finishedKg, 2)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.damagedKg, 2)}</td>
+                  <td className="shift-summary-print-num">{printNumber(row.closingKg, 2)}</td>
                 </tr>;
               })}
             </tbody>
@@ -337,19 +337,19 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
               <tr><td className="shift-summary-print-center">1</td><td>Tỉ lệ hàng lỗi / thành phẩm</td>
                 <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeLoiHongDinhMuc)}</td>
                 <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeLoiHong)}</td>
-                <td className="shift-summary-print-num">{printNumber(damagedQuantity, 3)} kg</td>
+                <td className="shift-summary-print-num">{printNumber(damagedQuantity, 2)} kg</td>
                 <td className="shift-summary-print-num">{printNumber(unitPrice(damagedMoney, damagedQuantity), 0)} đ/kg</td>
                 <td className="shift-summary-print-num">{evaluation ? `${formatMoney(damagedMoney, 0)} đ` : '-'}</td></tr>
               <tr><td className="shift-summary-print-center">2</td><td>Hao hụt nhựa</td>
                 <td className="shift-summary-print-num">100%</td>
                 <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeNhuaThucXuatVsDinhMuc)}</td>
-                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutNhuaKg, 3)} kg</td>
+                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutNhuaKg, 2)} kg</td>
                 <td className="shift-summary-print-num">{printNumber(unitPrice(evaluation?.giaTriHaoHutNhua, evaluation?.giaTriHaoHutNhuaKg), 0)} đ/kg</td>
                 <td className="shift-summary-print-num">{evaluation ? `${formatMoney(evaluation.giaTriHaoHutNhua, 0)} đ` : '-'}</td></tr>
               <tr><td className="shift-summary-print-center">3</td><td>Hao hụt màng</td>
                 <td className="shift-summary-print-num">100%</td>
                 <td className="shift-summary-print-num">{printPercent(evaluation?.tiLeMangThucXuatVsDinhMuc)}</td>
-                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutMangKg, 3)} kg</td>
+                <td className="shift-summary-print-num">{printNumber(evaluation?.giaTriHaoHutMangKg, 2)} kg</td>
                 <td className="shift-summary-print-num">{printNumber(unitPrice(evaluation?.giaTriHaoHutMang, evaluation?.giaTriHaoHutMangKg), 0)} đ/kg</td>
                 <td className="shift-summary-print-num">{evaluation ? `${formatMoney(evaluation.giaTriHaoHutMang, 0)} đ` : '-'}</td></tr>
               <tr className="shift-summary-print-total-row"><td colSpan={6} className="shift-summary-print-total-label">Tổng giá trị hao hụt &amp; lỗi hỏng</td>

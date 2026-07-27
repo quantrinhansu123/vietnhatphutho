@@ -5,7 +5,7 @@ import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercent
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
-import { showAppToast } from '../../lib/appToast';
+import { readApiErrorMessage, showAppToast, showSaveFailure } from '../../lib/appToast';
 import {
   MachineNvlPrintBatch,
   buildMachineNvlPrintReportFromForm,
@@ -698,7 +698,7 @@ export function MachineNvlReportPanel({
       );
 
     if (!date || !shift || !machineRef.trim() || materialLines.length === 0) {
-      setMessage('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng NVL tồn.');
+      setMessage(showSaveFailure('Vui lòng chọn ngày, ca, máy và nhập ít nhất một dòng NVL tồn.'));
       return;
     }
 
@@ -725,7 +725,9 @@ export function MachineNvlReportPanel({
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || `Không thể ${isEdit ? 'cập nhật' : 'lưu'} báo cáo NVL tồn theo máy.`);
+        throw new Error(
+          readApiErrorMessage(res, data, `Không thể ${isEdit ? 'cập nhật' : 'lưu'} báo cáo NVL tồn theo máy.`)
+        );
       }
 
       setMessage('');
@@ -739,7 +741,7 @@ export function MachineNvlReportPanel({
       setNote('');
       await loadReports(activeKind);
     } catch (error: any) {
-      setMessage(error.message || 'Không thể lưu báo cáo.');
+      setMessage(showSaveFailure(error, 'Không thể lưu báo cáo.'));
     } finally {
       setIsSaving(false);
     }
@@ -1225,7 +1227,9 @@ export function MachineNvlReportPanel({
 
             <div className="mt-3 space-y-2">
               {message ? (
-                <p className="text-center text-[11px] font-bold text-zinc-600">{message}</p>
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-center text-[11px] font-bold text-rose-700">
+                  {message}
+                </p>
               ) : null}
               <div className="flex items-stretch gap-1.5">
                 <button

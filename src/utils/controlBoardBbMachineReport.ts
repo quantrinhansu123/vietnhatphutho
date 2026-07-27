@@ -233,7 +233,7 @@ export type BbExportWeightFormula = {
   allocWeightTotal: number | null;
 };
 
-function roundQty(value: number, digits = 3) {
+function roundQty(value: number, digits = 4) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
@@ -256,7 +256,7 @@ function roundNonKgQuantityToInt(value: number): number {
 }
 
 function roundQuantityByUnit(value: number, unit: string): number {
-  if (isWarehouseKgUnit(unit)) return roundQty(value, 3);
+  if (isWarehouseKgUnit(unit)) return roundQty(value, 4);
   return roundNonKgQuantityToInt(value);
 }
 
@@ -374,7 +374,7 @@ export function buildBbProductionOrderLineRows(input: {
       const product = findProductByCode(input.products, line.productCode);
       const normKgPerUnit = resolveProductUnitNormKg(product);
       const totalNormKg =
-        normKgPerUnit !== null && quantity > 0 ? roundQty(normKgPerUnit * quantity, 3) : null;
+        normKgPerUnit !== null && quantity > 0 ? roundQty(normKgPerUnit * quantity, 4) : null;
 
       rows.push({
         key: `${order.id || order.code}|${line.productCode || index}|${index}`,
@@ -561,7 +561,7 @@ function resolveExportWeightKg(
     materials: catalog
   });
   if (converted === null || !Number.isFinite(converted) || converted <= 0) return null;
-  return roundQty(converted, 3);
+  return roundQty(converted, 4);
 }
 
 function movementMentionsOrderCode(movement: ShiftSummaryWarehouseMovement, orderCode: string) {
@@ -1086,7 +1086,7 @@ export function buildBbInboundMaterialNormGroups(input: {
       }
 
       const unitNorm = productGroup.normKgPerUnit;
-      const productWeightKg = unitNorm !== null && unitNorm > 0 ? roundQty(unitNorm * inboundQty, 3) : 0;
+      const productWeightKg = unitNorm !== null && unitNorm > 0 ? roundQty(unitNorm * inboundQty, 4) : 0;
       productGroup.totalWeightKg += productWeightKg;
 
       const movementPrefix = `${report.id}|${resolvedCode}|`;
@@ -1245,20 +1245,20 @@ export function buildBbInboundMaterialNormGroups(input: {
         realKg.set(key, real);
         const grp = classifyBbMaterialGroup(agg.code, agg.name);
         balanceDetailByMaterial.set(key, {
-          tonDauKg: roundQty(daTron, 3),
+          tonDauKg: roundQty(daTron, 4),
           tonDauFromNnsTron: tonDauResolved.fromNnsTron,
-          tonDauDirectKg: roundQty(directDaTron, 3),
-          nnsTronTonDauKg: roundQty(tonDauAllocation.nnsTronTonDauKg, 3),
+          tonDauDirectKg: roundQty(directDaTron, 4),
+          nnsTronTonDauKg: roundQty(tonDauAllocation.nnsTronTonDauKg, 4),
           tiLeThucTeTbPercent: tonDauResolved.tiLeThucTeTbPercent,
-          xuatThucTeKg: roundQty(xuat, 3),
-          loiHongKg: roundQty(deduction, 3),
+          xuatThucTeKg: roundQty(xuat, 4),
+          loiHongKg: roundQty(deduction, 4),
           loiHongGroup: grp,
           loiHongGroupTotalKg: damagedTabTotalKg,
           loiHongBaseKg: roundQty(Math.max(0, base), 3),
           loiHongGroupBaseSumKg: 0,
           loiHongTiLeTronPercent: tiLeTronPercent,
-          tonCuoiKg: roundQty(tonCuoi, 3),
-          realKg: roundQty(real, 3)
+          tonCuoiKg: roundQty(tonCuoi, 4),
+          realKg: roundQty(real, 4)
         });
       }
 
@@ -1290,7 +1290,7 @@ export function buildBbInboundMaterialNormGroups(input: {
           }
           const ratio = real / theoretical;
           for (const line of agg.lines) {
-            const scaledWeight = roundQty((line.normWeightKg || 0) * ratio, 3);
+            const scaledWeight = roundQty((line.normWeightKg || 0) * ratio, 4);
             line.weightKg = scaledWeight;
             line.balanceDetail = balanceDetail;
             if (line.materialNorm) {
@@ -1426,6 +1426,10 @@ function buildBbWarehouseExportProductGroups(
       const materialKey = normalizeProductCodeKey(item.code);
       if (!materialKey) continue;
       productGroup.materialKeys.add(materialKey);
+      // Khối lượng (kg) đúng cột "Khối lượng (kg)" trong bảng Thành phần (per 1 SP).
+      const componentWeightKg = catalogProduct
+        ? resolveProductNplItemWeightKg(catalogProduct, item, materials)
+        : null;
       const expectedKg = resolveBomExpectedKg(item, orderQuantity, resolvedNormKg, materialsCatalog);
       if (expectedKg === null) continue;
       const rate =
@@ -1446,7 +1450,7 @@ function buildBbWarehouseExportProductGroups(
         !isWarehouseKgUnit(item.unit || '') &&
         catalogKgPerUnit !== null &&
         catalogKgPerUnit > 0
-          ? roundQty(rawExpectedQuantity * catalogKgPerUnit, 3)
+          ? roundQty(rawExpectedQuantity * catalogKgPerUnit, 4)
           : expectedKg;
       productGroup.materialWeights.set(
         materialKey,
@@ -1466,6 +1470,7 @@ function buildBbWarehouseExportProductGroups(
         rawExpectedQuantity,
         rawExpectedUnit: item.amountType === 'quantity' ? item.unit || 'đơn vị' : 'kg',
         catalogKgPerUnit,
+        componentWeightKg,
         totalNormKg,
         allocationRatio: 1,
         allocatedNormKg: totalNormKg
@@ -1758,7 +1763,7 @@ function buildBbWarehouseExportProductGroups(
       if (newKg === null && newQty > 0) {
         const catalogKg = findMaterialTongKgPerUnit(line.itemCode, materialsCatalog);
         if (catalogKg !== null && catalogKg > 0) {
-          newKg = roundQty(newQty * catalogKg, 3);
+          newKg = roundQty(newQty * catalogKg, 4);
         }
       }
       line.quantity = newQty;
@@ -2100,7 +2105,7 @@ export function buildBbDamagedGoodsLineRows(input: {
         materialCode: item.code,
         materialName: item.name,
         unit: 'kg',
-        weightKg: roundQty(weightKg, 3),
+        weightKg: roundQty(weightKg, 4),
         matchedByOrder: true
       });
     }
@@ -2188,7 +2193,7 @@ export function buildBbMixingMaterialLinesForShift(input: {
       materialName: stat.materialName,
       unit: stat.unit || 'kg',
       tiLeTronPercent: resolveBbMixingShiftTiLeThucTeTbPercent(stat.klSum, stats.totalMixKg),
-      totalKlThucTe: roundQty(stat.klSum, 3),
+      totalKlThucTe: roundQty(stat.klSum, 4),
       batchCount: stat.batchCount
     }))
     .sort((a, b) => a.materialName.localeCompare(b.materialName, 'vi'));
@@ -2422,7 +2427,7 @@ export function buildBbTongHopVatTuThucXuatDungGroups(input: {
         materialName: mix.materialName,
         unit: mix.unit || 'kg',
         tiLeTronPercent: mix.tiLeTronPercent,
-        tiLeDinhMucPercent: fromMachine === null ? null : roundQty(fromMachine, 2),
+        tiLeDinhMucPercent: fromMachine === null ? null : roundQty(fromMachine, 4),
         xuatTrongCaKg,
         tonDauKg: tonDauRounded,
         tonCuoiKg,
@@ -2491,9 +2496,9 @@ export function buildBbTongHopVatTuThucXuatDungGroups(input: {
               product.productName.toUpperCase() ||
               'sp';
             const lines = baseLines.map(line => {
-              const tonDauKg = roundQty(line.baseTonDauKg * share, 3);
-              const xuatTrongCaKg = roundQty(line.baseXuatTrongCaKg * share, 3);
-              const tonCuoiKg = roundQty(line.baseTonCuoiKg * share, 3);
+              const tonDauKg = roundQty(line.baseTonDauKg * share, 4);
+              const xuatTrongCaKg = roundQty(line.baseXuatTrongCaKg * share, 4);
+              const tonCuoiKg = roundQty(line.baseTonCuoiKg * share, 4);
               const thucDungKg = roundQty(
                 computeMaterialUsageKg(xuatTrongCaKg, tonDauKg, tonCuoiKg),
                 3
@@ -2677,7 +2682,7 @@ export function buildBbCuoiCaLineRows(input: {
         itemName: line.tenNvl || '',
         unit: line.donVi || '',
         quantity: Number.isFinite(quantity) ? quantity : 0,
-        weightKg: Number.isFinite(weightKg) && weightKg > 0 ? roundQty(weightKg, 3) : 0
+        weightKg: Number.isFinite(weightKg) && weightKg > 0 ? roundQty(weightKg, 4) : 0
       });
     });
   }
@@ -2868,7 +2873,7 @@ export function buildBbDauCaLineRows(input: {
         itemName: line.tenNvl || '',
         unit: line.donVi || '',
         quantity: Number.isFinite(quantity) ? quantity : 0,
-        weightKg: Number.isFinite(weightKg) && weightKg > 0 ? roundQty(weightKg, 3) : 0
+        weightKg: Number.isFinite(weightKg) && weightKg > 0 ? roundQty(weightKg, 4) : 0
       });
     });
   }
@@ -3026,10 +3031,10 @@ function buildBbDauCaMaterialLinesForOrder(input: {
         item.amountType === 'quantity' ? Math.max(0, item.quantity ?? 0) : Math.max(0, item.percent ?? 0);
       const tiLeDinhMucPercent =
         item.amountType === 'percent' && rate > 0
-          ? roundQty(rate, 2)
+          ? roundQty(rate, 4)
           : (() => {
               const fromMachine = resolveMachineDinhMuc(item.code, item.name || '');
-              return fromMachine === null ? null : roundQty(fromMachine, 2);
+              return fromMachine === null ? null : roundQty(fromMachine, 4);
             })();
       materialMeta.set(materialKey, {
         itemCode: item.code || '',
@@ -3061,8 +3066,8 @@ function buildBbDauCaMaterialLinesForOrder(input: {
       Number.isFinite(tiLeThucTeTbPercent) &&
       tiLeThucTeTbPercent > 0 &&
       !isNnsTronMaterial(meta.itemCode, meta.itemName);
-    const tonDauWeightKg = roundQty(useNns ? nnsTronTonDauKg * (tiLeThucTeTbPercent / 100) : directTon, 2);
-    const tonDauQuantity = roundQty(useNns ? 0 : directQty, 3);
+    const tonDauWeightKg = roundQty(useNns ? nnsTronTonDauKg * (tiLeThucTeTbPercent / 100) : directTon, 4);
+    const tonDauQuantity = roundQty(useNns ? 0 : directQty, 4);
     const tonDauFormula: BbDauCaTonDauFormula = {
       itemCode: meta.itemCode,
       itemName: meta.itemName,
@@ -3073,8 +3078,8 @@ function buildBbDauCaMaterialLinesForOrder(input: {
       shiftLabel: group.shiftLabel || group.shift,
       machine: group.machine,
       fromNnsTron: useNns,
-      nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 3),
-      directTonDauKg: roundQty(directTon, 3),
+      nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 4),
+      directTonDauKg: roundQty(directTon, 4),
       tiLeThucTeTbPercent,
       share: 1,
       productQuantity: 0,
@@ -3115,14 +3120,14 @@ function buildBbDauCaMaterialLinesForOrder(input: {
       amountType: null,
       tiLeDinhMucPercent: (() => {
         const fromMachine = resolveMachineDinhMuc(row.itemCode, row.itemName);
-        return fromMachine === null ? null : roundQty(fromMachine, 2);
+        return fromMachine === null ? null : roundQty(fromMachine, 4);
       })(),
       tiLeThucTeTbPercent: resolveTiLeThucTe(
         row.itemCode,
         row.itemName,
         (() => {
           const fromMachine = resolveMachineDinhMuc(row.itemCode, row.itemName);
-          return fromMachine === null ? null : roundQty(fromMachine, 2);
+          return fromMachine === null ? null : roundQty(fromMachine, 4);
         })()
       ),
       tonDauQuantity: row.quantity,
@@ -3137,20 +3142,20 @@ function buildBbDauCaMaterialLinesForOrder(input: {
         shiftLabel: group.shiftLabel || group.shift,
         machine: group.machine,
         fromNnsTron: false,
-        nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 3),
-        directTonDauKg: roundQty(row.weightKg, 3),
+        nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 4),
+        directTonDauKg: roundQty(row.weightKg, 4),
         tiLeThucTeTbPercent: resolveTiLeThucTe(
           row.itemCode,
           row.itemName,
           (() => {
             const fromMachine = resolveMachineDinhMuc(row.itemCode, row.itemName);
-            return fromMachine === null ? null : roundQty(fromMachine, 2);
+            return fromMachine === null ? null : roundQty(fromMachine, 4);
           })()
         ),
         share: 1,
         productQuantity: 0,
         orderQuantityTotal: 0,
-        tonDauWeightKg: roundQty(row.weightKg, 3)
+        tonDauWeightKg: roundQty(row.weightKg, 4)
       }
     });
   }
@@ -3477,10 +3482,10 @@ export function buildBbSanLuongGroups(input: {
           !isWarehouseKgUnit(item.unit || '') &&
           catalogKgPerUnit !== null &&
           catalogKgPerUnit > 0
-            ? roundQty(rawExpectedQuantity * catalogKgPerUnit, 3)
-            : roundQty(expectedKg, 3);
+            ? roundQty(rawExpectedQuantity * catalogKgPerUnit, 4)
+            : roundQty(expectedKg, 4);
         const tiLeDinhMucPercent =
-          item.amountType === 'percent' && rate > 0 ? roundQty(rate, 2) : null;
+          item.amountType === 'percent' && rate > 0 ? roundQty(rate, 4) : null;
         const materialNorm: BbMaterialNormFormula = {
           productCode: product.productCode,
           productName: product.productName,
@@ -3514,7 +3519,7 @@ export function buildBbSanLuongGroups(input: {
             materialNorm
           });
         } else {
-          existingNvl.normWeightKg = roundQty(existingNvl.normWeightKg + normWeightKg, 3);
+          existingNvl.normWeightKg = roundQty(existingNvl.normWeightKg + normWeightKg, 4);
           if (existingNvl.materialNorm) {
             existingNvl.materialNorm = {
               ...existingNvl.materialNorm,
@@ -3575,10 +3580,10 @@ export function buildBbSanLuongGroups(input: {
         String(line.itemName || '').trim().toUpperCase();
       if (!materialKey) continue;
       dauCaTonByMaterial.set(materialKey, {
-        tonDauKg: roundQty(line.tonDauWeightKg || 0, 2),
+        tonDauKg: roundQty(line.tonDauWeightKg || 0, 4),
         fromNnsTron: Boolean(line.tonDauFormula?.fromNnsTron),
-        directTonDauKg: roundQty(line.tonDauFormula?.directTonDauKg || 0, 2),
-        nnsTronTonDauKg: roundQty(line.tonDauFormula?.nnsTronTonDauKg || 0, 2),
+        directTonDauKg: roundQty(line.tonDauFormula?.directTonDauKg || 0, 4),
+        nnsTronTonDauKg: roundQty(line.tonDauFormula?.nnsTronTonDauKg || 0, 4),
         tiLeThucTeTbPercent: line.tonDauFormula?.tiLeThucTeTbPercent ?? line.tiLeThucTeTbPercent
       });
     }
@@ -3667,7 +3672,7 @@ export function buildBbSanLuongGroups(input: {
             ? mat.tiLeDinhMucPercent ?? tonDauAllocation.resolveTiLeThucTeTbPercent(mat.code, mat.name)
             : tonDauAllocation.resolveTiLeThucTeTbPercent(mat.code, mat.name);
           const resolved = tonDauAllocation.resolveTonDau(mat.code, mat.name, direct);
-          tonDauKg = roundQty(resolved.tonDauKg, 2);
+          tonDauKg = roundQty(resolved.tonDauKg, 4);
           useNnsTonDau = resolved.fromNnsTron;
           tiLeThucTeTbPercent = resolved.tiLeThucTeTbPercent ?? tiLeThucTeTbPercent;
         }
@@ -3688,12 +3693,12 @@ export function buildBbSanLuongGroups(input: {
           tonDauKg,
           tonDauFromNnsTron: useNnsTonDau,
           tonDauDirectKg: directTonDau,
-          nnsTronTonDauKg: roundQty(nnsForDetail, 2),
+          nnsTronTonDauKg: roundQty(nnsForDetail, 4),
           tiLeThucTeTbPercent,
           xuatThucTeKg: xuat,
           loiHongKg: deduction,
           loiHongGroup: grp,
-          loiHongGroupTotalKg: roundQty(damagedTabTotalKg, 2),
+          loiHongGroupTotalKg: roundQty(damagedTabTotalKg, 4),
           loiHongBaseKg: roundQty(Math.max(0, tonDauKg + xuat - tonCuoi), 2),
           loiHongGroupBaseSumKg: 0,
           loiHongTiLeTronPercent: tiLeTronPercent,
@@ -3717,7 +3722,7 @@ export function buildBbSanLuongGroups(input: {
           reportedProductQtyTotal > 0 && productQty > 0
             ? productQty / reportedProductQtyTotal
             : 1;
-        const productSharePercent = roundQty(productShare * 100, 2);
+        const productSharePercent = roundQty(productShare * 100, 4);
         const lines: BbSanLuongNvlLine[] = [...product.nvlAgg.entries()]
           .map(([materialKey, nvl]) => {
             // 1) Tổng NVL cả ca → 2) × % mặt hàng = KL NVL con của SP này.
@@ -3732,13 +3737,13 @@ export function buildBbSanLuongGroups(input: {
               dinhMucRate: nvl.rate > 0 ? roundQty(nvl.rate, 4) : null,
               dinhMucUnit: nvl.rateUnit,
               amountType: nvl.amountType,
-              normWeightKg: roundQty(nvl.normWeightKg, 3),
+              normWeightKg: roundQty(nvl.normWeightKg, 4),
               materialNorm: nvl.materialNorm
                 ? { ...nvl.materialNorm, productQuantity: product.quantity }
                 : null,
-              baseActualWeightKg: roundQty(baseActual, 2),
+              baseActualWeightKg: roundQty(baseActual, 4),
               productSharePercent,
-              actualWeightKg: roundQty(baseActual * productShare, 2),
+              actualWeightKg: roundQty(baseActual * productShare, 4),
               // Giữ số cân bằng cả ca (chưa × %) để modal hiện đúng công thức 2 bước.
               balanceDetail: baseBalance
             };
@@ -3790,7 +3795,7 @@ export function buildBbSanLuongGroups(input: {
             balanceDetail: line.balanceDetail
           });
         } else {
-          existing.normWeightKg = roundQty(existing.normWeightKg + line.normWeightKg, 3);
+          existing.normWeightKg = roundQty(existing.normWeightKg + line.normWeightKg, 4);
           if (!existing.itemCode && line.itemCode) existing.itemCode = line.itemCode;
           if (!existing.itemName && line.itemName) existing.itemName = line.itemName;
           if (!existing.unit && line.unit) existing.unit = line.unit;
@@ -3836,12 +3841,12 @@ export function buildBbSanLuongGroups(input: {
       tonDauKg: sumTonDau,
       tonDauFromNnsTron: false,
       tonDauDirectKg: sumTonDau,
-      nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 2),
+      nnsTronTonDauKg: roundQty(nnsTronTonDauKg, 4),
       tiLeThucTeTbPercent: null,
       xuatThucTeKg: sumXuat,
       loiHongKg: sumLoi,
       loiHongGroup: 'nhua',
-      loiHongGroupTotalKg: roundQty(damagedTabTotalKg, 2),
+      loiHongGroupTotalKg: roundQty(damagedTabTotalKg, 4),
       loiHongBaseKg: roundQty(Math.max(0, sumTonDau + sumXuat - sumTonCuoi), 2),
       loiHongGroupBaseSumKg: 0,
       loiHongTiLeTronPercent: null,
@@ -4173,7 +4178,7 @@ function sumBbDamagedGoodsTabTotalKgForHeader(
     if (!Number.isFinite(split.tong) || split.tong <= 0) continue;
     total += split.tong;
   }
-  return roundQty(total, 3);
+  return roundQty(total, 4);
 }
 
 /** Map tỉ lệ trộn (%) theo mã/tên NVL — cùng nguồn tab lỗi hỏng (báo cáo phối trộn). */
@@ -4417,14 +4422,14 @@ function buildBbMixingShiftStats(input: {
     if (Number.isFinite(stat.klSum) && stat.klSum > 0) totalMixKg += stat.klSum;
   }
 
-  return { byMaterial, totalMixKg: roundQty(totalMixKg, 3) };
+  return { byMaterial, totalMixKg: roundQty(totalMixKg, 4) };
 }
 
 function resolveBbMixingShiftTiLeThucTeTbPercent(klSum: number, totalMixKg: number): number | null {
   if (!Number.isFinite(klSum) || klSum <= 0 || !Number.isFinite(totalMixKg) || totalMixKg <= 0) {
     return null;
   }
-  return roundQty((klSum / totalMixKg) * 100, 2);
+  return roundQty((klSum / totalMixKg) * 100, 4);
 }
 
 /** 12C1 ngày 01/07: không có ca trước hợp lệ → TB thực tế = tỉ lệ ĐM máy. */
@@ -4498,7 +4503,7 @@ function buildBbTonDauAllocationContext(params: {
   const resolveTiLeThucTeTbPercent = (code: string, name: string): number | null => {
     if (useDinhMucAsThucTe) {
       const fromMachine = resolveMachineDinhMuc(code, name);
-      return fromMachine === null ? null : roundQty(fromMachine, 2);
+      return fromMachine === null ? null : roundQty(fromMachine, 4);
     }
     const key = materialIdentityKey(code, name);
     const mixStat = key ? mixingShiftStats.byMaterial.get(key) : undefined;
@@ -4516,7 +4521,7 @@ function buildBbTonDauAllocationContext(params: {
       const useNnsTronTonDau =
         tiLeThucTeTbPercent !== null && Number.isFinite(tiLeThucTeTbPercent) && tiLeThucTeTbPercent > 0;
       return useNnsTronTonDau
-        ? { tonDauKg: roundQty(nnsTronTonDauKg * (tiLeThucTeTbPercent / 100), 3), fromNnsTron: true, tiLeThucTeTbPercent }
+        ? { tonDauKg: roundQty(nnsTronTonDauKg * (tiLeThucTeTbPercent / 100), 4), fromNnsTron: true, tiLeThucTeTbPercent }
         : { tonDauKg: directTonDauKg, fromNnsTron: false, tiLeThucTeTbPercent };
     }
   };
@@ -4582,10 +4587,10 @@ export function buildBbInboundBalanceMetricDetail(input: {
   const target = { materialCode: input.itemCode, materialName: input.itemName };
 
   if (input.metric === 'thuc_te') {
-    const tonDau = roundQty(bd?.tonDauKg ?? 0, 2);
-    const xuat = roundQty(bd?.xuatThucTeKg ?? 0, 2);
-    const loi = roundQty(bd?.loiHongKg ?? 0, 2);
-    const tonCuoi = roundQty(bd?.tonCuoiKg ?? 0, 2);
+    const tonDau = roundQty(bd?.tonDauKg ?? 0, 4);
+    const xuat = roundQty(bd?.xuatThucTeKg ?? 0, 4);
+    const loi = roundQty(bd?.loiHongKg ?? 0, 4);
+    const tonCuoi = roundQty(bd?.tonCuoiKg ?? 0, 4);
     const baseReal = roundQty(bd?.realKg ?? Math.max(0, tonDau + xuat - loi - tonCuoi), 2);
     return {
       metric: input.metric,
@@ -4635,25 +4640,24 @@ export function buildBbInboundBalanceMetricDetail(input: {
           donVi: line.donVi || '',
           bonTron: line.soLuongTrongBonTron,
           chuaTron: line.soLuongNlChuaTron,
-          weightKg: roundQty(kg, 3),
+          weightKg: roundQty(kg, 4),
           reportId: report.id || `dau_ca-${index}`
         });
       });
     }
     const formula = bd?.tonDauFromNnsTron
-      ? `Chưa ghi nhận tồn đầu trực tiếp cho mã này (= ${roundQty(bd.tonDauDirectKg, 3)} kg) → phân bổ từ NNS-TRON: ${roundQty(
-          bd.nnsTronTonDauKg,
-          3
+      ? `Chưa ghi nhận tồn đầu trực tiếp cho mã này (= ${roundQty(bd.tonDauDirectKg, 4)} kg) → phân bổ từ NNS-TRON: ${roundQty(
+          bd.nnsTronTonDauKg, 4
         )} kg × Tỉ lệ TB thực tế ${
-          bd.tiLeThucTeTbPercent !== null ? `${roundQty(bd.tiLeThucTeTbPercent, 2)}%` : '—'
-        } = ${roundQty(bd.tonDauKg, 3)} kg.`
-      : `Tồn đầu ghi nhận trực tiếp theo mã NVL (đã trộn trong bồn + chưa trộn) = ${roundQty(bd?.tonDauKg ?? 0, 3)} kg.`;
+          bd.tiLeThucTeTbPercent !== null ? `${roundQty(bd.tiLeThucTeTbPercent, 4)}%` : '—'
+        } = ${roundQty(bd.tonDauKg, 4)} kg.`
+      : `Tồn đầu ghi nhận trực tiếp theo mã NVL (đã trộn trong bồn + chưa trộn) = ${roundQty(bd?.tonDauKg ?? 0, 4)} kg.`;
     return {
       metric: input.metric,
       title,
       subtitle,
       valueLabel,
-      valueText: `${roundQty(bd?.tonDauKg ?? 0, 3)} kg`,
+      valueText: `${roundQty(bd?.tonDauKg ?? 0, 4)} kg`,
       formula,
       columns: [
         { key: 'ngay', label: 'Ngày' },
@@ -4690,7 +4694,7 @@ export function buildBbInboundBalanceMetricDetail(input: {
         tenNvl: name,
         donVi: movement.unit,
         soLuong: movement.quantity,
-        weightKg: roundQty(kg, 3)
+        weightKg: roundQty(kg, 4)
       });
     }
     return {
@@ -4698,10 +4702,9 @@ export function buildBbInboundBalanceMetricDetail(input: {
       title,
       subtitle,
       valueLabel,
-      valueText: `${roundQty(bd?.xuatThucTeKg ?? 0, 3)} kg`,
+      valueText: `${roundQty(bd?.xuatThucTeKg ?? 0, 4)} kg`,
       formula: `Xuất thực tế = tổng KL các phiếu xuất kho NVL loại "xuất" khớp mã NVL, đúng ngày + ca = ${roundQty(
-        bd?.xuatThucTeKg ?? 0,
-        3
+        bd?.xuatThucTeKg ?? 0, 4
       )} kg.`,
       columns: [
         { key: 'ngay', label: 'Ngày' },
@@ -4741,7 +4744,7 @@ export function buildBbInboundBalanceMetricDetail(input: {
           tenNvl: name,
           donVi: line.donVi || '',
           soLuongTon: line.soLuongTon,
-          weightKg: roundQty(kg, 3),
+          weightKg: roundQty(kg, 4),
           reportId: report.id || `cuoi_ca-${index}`
         });
       });
@@ -4751,10 +4754,9 @@ export function buildBbInboundBalanceMetricDetail(input: {
       title,
       subtitle,
       valueLabel,
-      valueText: `${roundQty(bd?.tonCuoiKg ?? 0, 3)} kg`,
+      valueText: `${roundQty(bd?.tonCuoiKg ?? 0, 4)} kg`,
       formula: `Tồn cuối ca = tổng KL theo báo cáo kiểm tồn cuối ca khớp mã NVL, đúng ngày + ca = ${roundQty(
-        bd?.tonCuoiKg ?? 0,
-        3
+        bd?.tonCuoiKg ?? 0, 4
       )} kg.`,
       columns: [
         { key: 'ngay', label: 'Ngày' },
@@ -4796,7 +4798,7 @@ export function buildBbInboundBalanceMetricDetail(input: {
       ca: record.shiftName,
       documentNo: record.documentNo || '',
       productCode: record.productCode || '',
-      weightKg: roundQty(split.tong, 3)
+      weightKg: roundQty(split.tong, 4)
     });
   }
   const formula =
@@ -4805,18 +4807,17 @@ export function buildBbInboundBalanceMetricDetail(input: {
     bd.loiHongTiLeTronPercent !== undefined &&
     bd.loiHongGroupTotalKg > 0
       ? `Hàng lỗi hỏng = Tổng lỗi hỏng tab báo cáo lỗi hỏng (${roundQty(
-          bd.loiHongGroupTotalKg,
-          3
-        )} kg) × Tỉ lệ trộn (${roundQty(bd.loiHongTiLeTronPercent, 2)}%) = ${roundQty(bd.loiHongKg, 3)} kg.`
+          bd.loiHongGroupTotalKg, 4
+        )} kg) × Tỉ lệ trộn (${roundQty(bd.loiHongTiLeTronPercent, 4)}%) = ${roundQty(bd.loiHongKg, 4)} kg.`
       : bd && bd.loiHongGroupTotalKg > 0
-        ? `Có tổng lỗi hỏng tab ${roundQty(bd.loiHongGroupTotalKg, 3)} kg nhưng NVL này chưa có tỉ lệ trộn trong báo cáo phối trộn → không trừ.`
+        ? `Có tổng lỗi hỏng tab ${roundQty(bd.loiHongGroupTotalKg, 4)} kg nhưng NVL này chưa có tỉ lệ trộn trong báo cáo phối trộn → không trừ.`
         : `Không có hàng lỗi hỏng trong tab báo cáo lỗi hỏng (ngày+ca+máy) → không trừ.`;
   return {
     metric: input.metric,
     title,
     subtitle,
     valueLabel,
-    valueText: `${roundQty(bd?.loiHongKg ?? 0, 3)} kg`,
+    valueText: `${roundQty(bd?.loiHongKg ?? 0, 4)} kg`,
     formula,
     columns: [
       { key: 'ngay', label: 'Ngày' },
@@ -4972,7 +4973,7 @@ export function buildBbThucDungLineRows(input: {
       }
     }
     for (const [key, kg] of xuatByMaterial.entries()) {
-      xuatByMaterial.set(key, roundQty(kg, 3));
+      xuatByMaterial.set(key, roundQty(kg, 4));
     }
 
     // Tỉ lệ TB thực tế chỉ lấy từ phiếu trộn ca liền trước (vd: 12C2 ← 12C1 cùng ngày; 12C1 ← 12C2 hôm trước).
@@ -5014,12 +5015,12 @@ export function buildBbThucDungLineRows(input: {
       }
       const mixStat = mixingShiftStats.byMaterial.get(materialKey);
       const mixingShiftMaterialKg =
-        !useDinhMucAsThucTe && mixStat && mixStat.klSum > 0 ? roundQty(mixStat.klSum, 3) : null;
+        !useDinhMucAsThucTe && mixStat && mixStat.klSum > 0 ? roundQty(mixStat.klSum, 4) : null;
       const mixingShiftTotalKg =
         !useDinhMucAsThucTe && mixingShiftStats.totalMixKg > 0 ? mixingShiftStats.totalMixKg : null;
       const tiLeDinhMucPercent = (() => {
         const fromMachine = resolveMachineDinhMuc(agg.materialCode, agg.materialName);
-        return fromMachine === null ? null : roundQty(fromMachine, 2);
+        return fromMachine === null ? null : roundQty(fromMachine, 4);
       })();
       // 12C1 ngày 1/7: TB thực tế = ĐM; còn lại lấy từ phiếu trộn ca liền trước.
       const tiLeThucTeTbPercent = useDinhMucAsThucTe
@@ -5040,7 +5041,7 @@ export function buildBbThucDungLineRows(input: {
         Number.isFinite(tiLeThucTeTbPercent) &&
         tiLeThucTeTbPercent > 0;
       const tonDauKg = useNnsTronTonDau
-        ? roundQty(nnsTronTonDauKg * (tiLeThucTeTbPercent / 100), 3)
+        ? roundQty(nnsTronTonDauKg * (tiLeThucTeTbPercent / 100), 4)
         : directTonDauKg;
       const tonCuoiKg = roundQty(
         lookupMachineNvlKgByMaterial(tonCuoiMaps, agg.materialCode, agg.materialName),
@@ -5079,7 +5080,7 @@ export function buildBbThucDungLineRows(input: {
         mixingShiftMaterialKg,
         mixingShiftTotalKg,
         tonCuoiKg,
-        weightKg: roundQty(weightKg, 3)
+        weightKg: roundQty(weightKg, 4)
       });
     }
   }
@@ -5185,21 +5186,21 @@ export function buildBbThucDungMetricDetail(input: {
       case 'ti_le_dinh_muc':
         return input.line.tiLeDinhMucPercent === null || input.line.tiLeDinhMucPercent === undefined
           ? '—'
-          : `${roundQty(input.line.tiLeDinhMucPercent, 2)}%`;
+          : `${roundQty(input.line.tiLeDinhMucPercent, 4)}%`;
       case 'ti_le_thuc_te':
         return input.line.tiLeThucTeTbPercent === null || input.line.tiLeThucTeTbPercent === undefined
           ? '—'
-          : `${roundQty(input.line.tiLeThucTeTbPercent, 2)}%`;
+          : `${roundQty(input.line.tiLeThucTeTbPercent, 4)}%`;
       case 'so_me':
         return String(input.line.batchCount || 0);
       case 'trong_luong_da_tron':
-        return `${roundQty(input.line.xuatTrongCaKg, 3)} kg`;
+        return `${roundQty(input.line.xuatTrongCaKg, 4)} kg`;
       case 'ton_dau':
-        return `${roundQty(input.line.tonDauKg, 3)} kg`;
+        return `${roundQty(input.line.tonDauKg, 4)} kg`;
       case 'ton_cuoi':
-        return `${roundQty(input.line.tonCuoiKg, 3)} kg`;
+        return `${roundQty(input.line.tonCuoiKg, 4)} kg`;
       case 'thuc_dung':
-        return `${roundQty(input.line.weightKg, 3)} kg`;
+        return `${roundQty(input.line.weightKg, 4)} kg`;
       default:
         return '—';
     }
@@ -5216,14 +5217,13 @@ export function buildBbThucDungMetricDetail(input: {
       : 'Tỉ lệ TB thực tế: chưa xác định được ca liền trước';
 
   const xuatTrongCaFormula = `Xuất trong ca = tổng KL phiếu xuất kho NVL của mã này trong ca hiện tại = ${roundQty(
-    input.line.xuatTrongCaKg,
-    3
+    input.line.xuatTrongCaKg, 4
   )} kg`;
 
   const tiLeThucTePercentFormula = useDinhMucAsThucTe
     ? `${previousShiftNote} (${
         input.line.tiLeDinhMucPercent !== null && input.line.tiLeDinhMucPercent !== undefined
-          ? `${roundQty(input.line.tiLeDinhMucPercent, 2)}%`
+          ? `${roundQty(input.line.tiLeDinhMucPercent, 4)}%`
           : '—'
       }).`
     : input.line.tiLeThucTeTbPercent !== null &&
@@ -5231,11 +5231,9 @@ export function buildBbThucDungMetricDetail(input: {
         input.line.mixingShiftMaterialKg !== null &&
         input.line.mixingShiftTotalKg !== null
       ? `${previousShiftNote}. Tỉ lệ TB thực tế = KL NVL (${roundQty(
-          input.line.mixingShiftMaterialKg,
-          3
-        )}) ÷ Tổng trộn (${roundQty(input.line.mixingShiftTotalKg, 3)}) × 100 = ${roundQty(
-          input.line.tiLeThucTeTbPercent,
-          2
+          input.line.mixingShiftMaterialKg, 4
+        )}) ÷ Tổng trộn (${roundQty(input.line.mixingShiftTotalKg, 4)}) × 100 = ${roundQty(
+          input.line.tiLeThucTeTbPercent, 4
         )}%`
       : `${previousShiftNote}. Tỉ lệ TB thực tế = KL NVL ÷ Tổng trộn ca × 100 (chưa đủ dữ liệu trộn ca trước).`;
 
@@ -5275,7 +5273,7 @@ export function buildBbThucDungMetricDetail(input: {
         tenNvl: name,
         donVi: movement.unit,
         soLuong: movement.quantity,
-        weightKg: Number.isFinite(kg) ? roundQty(kg, 3) : 0
+        weightKg: Number.isFinite(kg) ? roundQty(kg, 4) : 0
       });
     }
   }
@@ -5322,7 +5320,7 @@ export function buildBbThucDungMetricDetail(input: {
               Number.isFinite(kl) &&
               batchWeight &&
               batchWeight > 0
-                ? roundQty((kl / batchWeight) * 100, 2)
+                ? roundQty((kl / batchWeight) * 100, 4)
                 : null;
             mixingRows.push({
               ngay: report.ngay,
@@ -5389,7 +5387,7 @@ export function buildBbThucDungMetricDetail(input: {
           bonTron: line.soLuongTrongBonTron,
           chuaTron: line.soLuongNlChuaTron,
           tonNgoai: line.soLuongTonNgoai,
-          weightKg: Number.isFinite(kg) ? roundQty(kg, 3) : 0,
+          weightKg: Number.isFinite(kg) ? roundQty(kg, 4) : 0,
           reportId: report.id || `${reportKind}-${index}`
         });
       });
@@ -5409,10 +5407,10 @@ export function buildBbThucDungMetricDetail(input: {
         donVi: input.line.unit || 'kg',
         soLuongTon: null,
         trongMay: null,
-        bonTron: `NNS-TRON × ${roundQty(input.line.tiLeThucTeTbPercent, 2)}%`,
+        bonTron: `NNS-TRON × ${roundQty(input.line.tiLeThucTeTbPercent, 4)}%`,
         chuaTron: null,
         tonNgoai: null,
-        weightKg: roundQty(input.line.tonDauKg, 3),
+        weightKg: roundQty(input.line.tonDauKg, 4),
         reportId: 'nns-tron-allocated'
       });
     }
@@ -5426,10 +5424,9 @@ export function buildBbThucDungMetricDetail(input: {
       input.line.tonDauFromNnsTron &&
       input.line.nnsTronTonDauKg !== null &&
       input.line.tiLeThucTeTbPercent !== null
-        ? `Tồn đầu = NNS-TRON (${roundQty(input.line.nnsTronTonDauKg, 3)} kg) × Tỉ lệ TB thực tế (${roundQty(
-            input.line.tiLeThucTeTbPercent,
-            2
-          )}%) = ${roundQty(input.line.tonDauKg, 3)} kg`
+        ? `Tồn đầu = NNS-TRON (${roundQty(input.line.nnsTronTonDauKg, 4)} kg) × Tỉ lệ TB thực tế (${roundQty(
+            input.line.tiLeThucTeTbPercent, 4
+          )}%) = ${roundQty(input.line.tonDauKg, 4)} kg`
         : undefined;
     const fromNns = input.metric === 'ton_dau' && Boolean(input.line.tonDauFromNnsTron);
     return {
@@ -5471,11 +5468,10 @@ export function buildBbThucDungMetricDetail(input: {
       input.line.tonDauFromNnsTron &&
       input.line.nnsTronTonDauKg !== null &&
       input.line.tiLeThucTeTbPercent !== null
-        ? `Tồn đầu (${roundQty(input.line.tonDauKg, 3)} = NNS-TRON ${roundQty(
-            input.line.nnsTronTonDauKg,
-            3
-          )} × ${roundQty(input.line.tiLeThucTeTbPercent, 2)}%)`
-        : `Tồn đầu (${roundQty(input.line.tonDauKg, 3)})`;
+        ? `Tồn đầu (${roundQty(input.line.tonDauKg, 4)} = NNS-TRON ${roundQty(
+            input.line.nnsTronTonDauKg, 4
+          )} × ${roundQty(input.line.tiLeThucTeTbPercent, 4)}%)`
+        : `Tồn đầu (${roundQty(input.line.tonDauKg, 4)})`;
     return {
       metric: input.metric,
       title,
@@ -5483,11 +5479,9 @@ export function buildBbThucDungMetricDetail(input: {
       valueLabel,
       valueText: formatValue(),
       formula: `${xuatTrongCaFormula}. Thực dùng (kg) = Xuất trong ca (${roundQty(
-        input.line.xuatTrongCaKg,
-        3
-      )}) + ${tonDauPart} − Tồn cuối (${roundQty(input.line.tonCuoiKg, 3)}) = ${roundQty(
-        input.line.weightKg,
-        3
+        input.line.xuatTrongCaKg, 4
+      )}) + ${tonDauPart} − Tồn cuối (${roundQty(input.line.tonCuoiKg, 4)}) = ${roundQty(
+        input.line.weightKg, 4
       )} kg`,
       columns: [
         { key: 'nguon', label: 'Nguồn' },
@@ -5616,8 +5610,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
               ? input.line.baseXuatTrongCaKg
               : input.metric === 'ton_cuoi'
                 ? input.line.baseTonCuoiKg
-                : input.line.baseThucDungKg,
-          3
+                : input.line.baseThucDungKg, 4
         )} kg → ${roundQty(
           input.metric === 'ton_dau'
             ? input.line.tonDauKg
@@ -5625,21 +5618,20 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
               ? input.line.xuatTrongCaKg
               : input.metric === 'ton_cuoi'
                 ? input.line.tonCuoiKg
-                : input.line.thucDungKg,
-          3
+                : input.line.thucDungKg, 4
         )} kg).`
       : '';
 
   const formatValue = () => {
     switch (input.metric) {
       case 'ton_dau':
-        return `${roundQty(input.line.tonDauKg, 3)} kg`;
+        return `${roundQty(input.line.tonDauKg, 4)} kg`;
       case 'xuat_thuc_te':
-        return `${roundQty(input.line.xuatTrongCaKg, 3)} kg`;
+        return `${roundQty(input.line.xuatTrongCaKg, 4)} kg`;
       case 'ton_cuoi':
-        return `${roundQty(input.line.tonCuoiKg, 3)} kg`;
+        return `${roundQty(input.line.tonCuoiKg, 4)} kg`;
       case 'thuc_dung':
-        return `${roundQty(input.line.thucDungKg, 3)} kg`;
+        return `${roundQty(input.line.thucDungKg, 4)} kg`;
       default:
         return '—';
     }
@@ -5679,7 +5671,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
         tenNvl: name,
         donVi: movement.unit,
         soLuong: movement.quantity,
-        weightKg: Number.isFinite(kg) ? roundQty(kg, 3) : 0
+        weightKg: Number.isFinite(kg) ? roundQty(kg, 4) : 0
       });
     }
   }
@@ -5726,7 +5718,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
           bonTron: line.soLuongTrongBonTron,
           chuaTron: line.soLuongNlChuaTron,
           tonNgoai: line.soLuongTonNgoai,
-          weightKg: Number.isFinite(kg) ? roundQty(kg, 3) : 0,
+          weightKg: Number.isFinite(kg) ? roundQty(kg, 4) : 0,
           reportId: report.id || `dau-${index}`
         });
       });
@@ -5763,7 +5755,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
           tenNvl: name,
           donVi: line.donVi || '',
           soLuongTon: line.soLuongTon,
-          weightKg: Number.isFinite(kg) ? roundQty(kg, 3) : 0,
+          weightKg: Number.isFinite(kg) ? roundQty(kg, 4) : 0,
           reportId: report.id || `cuoi-${index}`
         });
       });
@@ -5778,8 +5770,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
       valueLabel,
       valueText: formatValue(),
       formula: `Tồn đầu ca lấy từ tab «Báo cáo dữ liệu tồn đầu ca» = ${roundQty(
-        input.line.baseTonDauKg,
-        3
+        input.line.baseTonDauKg, 4
       )} kg (toàn ca).${shareNote}`,
       columns: [
         { key: 'ngay', label: 'Ngày' },
@@ -5807,8 +5798,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
       valueLabel,
       valueText: formatValue(),
       formula: `Tồn cuối ca lấy từ tab «Dữ liệu trong báo cáo kiểm tồn cuối ca» = ${roundQty(
-        input.line.baseTonCuoiKg,
-        3
+        input.line.baseTonCuoiKg, 4
       )} kg (toàn ca).${shareNote}`,
       columns: [
         { key: 'ngay', label: 'Ngày' },
@@ -5832,8 +5822,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
       valueLabel,
       valueText: formatValue(),
       formula: `Xuất thực tế lấy từ tab «Dữ liệu trong phiếu xuất kho vật tư» = ${roundQty(
-        input.line.baseXuatTrongCaKg,
-        3
+        input.line.baseXuatTrongCaKg, 4
       )} kg (toàn ca).${shareNote}`,
       columns: [
         { key: 'ngay', label: 'Ngày' },
@@ -5849,7 +5838,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
     };
   }
 
-  const tonDauPart = `Tồn đầu ca (${roundQty(input.line.tonDauKg, 3)})`;
+  const tonDauPart = `Tồn đầu ca (${roundQty(input.line.tonDauKg, 4)})`;
 
   return {
     metric: mappedMetric,
@@ -5858,11 +5847,9 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
     valueLabel,
     valueText: formatValue(),
     formula: `Thực dùng (kg) = ${tonDauPart} + Xuất thực tế (${roundQty(
-      input.line.xuatTrongCaKg,
-      3
-    )}) − Tồn cuối ca (${roundQty(input.line.tonCuoiKg, 3)}) = ${roundQty(
-      input.line.thucDungKg,
-      3
+      input.line.xuatTrongCaKg, 4
+    )}) − Tồn cuối ca (${roundQty(input.line.tonCuoiKg, 4)}) = ${roundQty(
+      input.line.thucDungKg, 4
     )} kg.${shareNote}`,
     columns: [
       { key: 'nguon', label: 'Nguồn' },
@@ -6071,7 +6058,7 @@ export function buildBbTongGroups(input: {
     const mangThucDung = computeMaterialUsageKg(xuat.mang, tonDau.mang, tonCuoi.mang);
     const loiThucDung = computeMaterialUsageKg(xuat.loi, tonDau.loi, tonCuoi.loi);
     const tuiThucDung = computeMaterialUsageKg(xuat.tui, tonDau.tui, tonCuoi.tui);
-    const tongThucDung = roundQty(nhuaThucDung + mangThucDung + loiThucDung + tuiThucDung, 3);
+    const tongThucDung = roundQty(nhuaThucDung + mangThucDung + loiThucDung + tuiThucDung, 4);
 
     const tlNhuaTpNhapKho = computeTlNhuaTpNhapKhoFromShiftSummary({
       khoiLuongNpl: xuat.nhua,
@@ -6087,13 +6074,12 @@ export function buildBbTongGroups(input: {
       tonCuoiCaMang: tonCuoi.mang,
       tlMangLoiHong
     });
-    const tlLoiTpNhapKho = roundQty(loiThucDung, 3);
-    const tlTuiBaoBiNhapKho = roundQty(tuiThucDung, 3);
+    const tlLoiTpNhapKho = roundQty(loiThucDung, 4);
+    const tlTuiBaoBiNhapKho = roundQty(tuiThucDung, 4);
     const tongTpNhapKho = roundQty(
-      tlNhuaTpNhapKho + tlMangTpNhapKho + tlLoiTpNhapKho + tlTuiBaoBiNhapKho,
-      3
+      tlNhuaTpNhapKho + tlMangTpNhapKho + tlLoiTpNhapKho + tlTuiBaoBiNhapKho, 4
     );
-    const tongLoiHong = roundQty(tongTrongLuongLoiHong, 3);
+    const tongLoiHong = roundQty(tongTrongLuongLoiHong, 4);
 
     const metrics = computeShiftSummarySanLuongMetrics({
       tongTpNhapKho,
@@ -6255,13 +6241,13 @@ export function buildBbMixingRatioGroups(input: {
         materialCode: stat.materialCode,
         materialName: stat.materialName,
         tiLeDinhMucPercent:
-          stat.tiLeDinhMucCount > 0 ? roundQty(stat.tiLeDinhMucSum / stat.tiLeDinhMucCount, 2) : null,
+          stat.tiLeDinhMucCount > 0 ? roundQty(stat.tiLeDinhMucSum / stat.tiLeDinhMucCount, 4) : null,
         tiLeThucTeTbPercent: resolveBbMixingShiftTiLeThucTeTbPercent(
           stat.klSum,
           mixingShiftStats.totalMixKg
         ),
         batchCount: stat.batchCount,
-        totalKlThucTe: roundQty(stat.klSum, 3)
+        totalKlThucTe: roundQty(stat.klSum, 4)
       }))
       .sort((a, b) => a.materialName.localeCompare(b.materialName, 'vi'));
 
@@ -6435,10 +6421,10 @@ export function buildBbDanhGiaHaoHutGroups(input: {
     const tongMangThucXuat = computeMaterialUsageKg(xuat.mang, tonDau.mang, tonCuoi.mang);
     const loiThucDung = computeMaterialUsageKg(xuat.loi, tonDau.loi, tonCuoi.loi);
     const tuiThucDung = computeMaterialUsageKg(xuat.tui, tonDau.tui, tonCuoi.tui);
-    const tongThucDung = roundQty(tongNhuaThucXuat + tongMangThucXuat + loiThucDung + tuiThucDung, 3);
+    const tongThucDung = roundQty(tongNhuaThucXuat + tongMangThucXuat + loiThucDung + tuiThucDung, 4);
 
-    const khoiLuongLoi = roundQty(slHang, 3);
-    const khoiLuongMang = roundQty(slHang * KHOI_LUONG_MANG_KG_PER_UNIT, 3);
+    const khoiLuongLoi = roundQty(slHang, 4);
+    const khoiLuongMang = roundQty(slHang * KHOI_LUONG_MANG_KG_PER_UNIT, 4);
     const tongNhuaDinhMuc = computeKhoiLuongNhuaTp(khoiLuongHang, khoiLuongLoi, khoiLuongMang);
     const tongMangDinhMuc = khoiLuongMang;
 
@@ -6457,15 +6443,14 @@ export function buildBbDanhGiaHaoHutGroups(input: {
       tlMangLoiHong
     });
     const tongTpNhapKho = roundQty(
-      tlNhuaTpNhapKho + tlMangTpNhapKho + loiThucDung + tuiThucDung,
-      3
+      tlNhuaTpNhapKho + tlMangTpNhapKho + loiThucDung + tuiThucDung, 4
     );
 
     const sanLuong = computeShiftSummarySanLuongMetrics({
       tongTpNhapKho,
       tongTrongLuongLoiHong,
       tongThucDung,
-      chenhLechNhua: roundQty(tongNhuaThucXuat - tongNhuaDinhMuc - hangHongNhua, 3),
+      chenhLechNhua: roundQty(tongNhuaThucXuat - tongNhuaDinhMuc - hangHongNhua, 4),
       tongMangThucDung: tongMangThucXuat,
       tlMangTpNhapKho,
       hangHongMang
@@ -6499,9 +6484,9 @@ export function buildBbDanhGiaHaoHutGroups(input: {
 
     const giaTriHaoHutNhua = computeSoTienLoLaiNhua(giaTriHaoHutNhuaKg, giaNhua);
     const giaTriHaoHutMang = computeSoTienLoLaiNhua(giaTriHaoHutMangKg, giaMang);
-    const soLuongNhuaLoiHong = roundQty(hangHongNhua, 3);
-    const soLuongMangLoiHong = roundQty(hangHongMang, 3);
-    const soLuongLoiLoiHong = roundQty(soCuonLoiHong, 3);
+    const soLuongNhuaLoiHong = roundQty(hangHongNhua, 4);
+    const soLuongMangLoiHong = roundQty(hangHongMang, 4);
+    const soLuongLoiLoiHong = roundQty(soCuonLoiHong, 4);
     const giaTriNhuaLoiHong = computeSoTienLoLaiNhua(soLuongNhuaLoiHong, giaNhua);
     const giaTriMangLoiHong = computeSoTienLoLaiNhua(soLuongMangLoiHong, giaMang);
     const giaTriLoiLoiHong = computeSoTienLoLaiNhua(soLuongLoiLoiHong, giaLoi);
@@ -6529,13 +6514,13 @@ export function buildBbDanhGiaHaoHutGroups(input: {
       shift: header.shift,
       shiftLabel,
       machine: header.machine,
-      tongNhuaThucXuat: roundQty(tongNhuaThucXuat, 3),
-      tongNhuaDinhMuc: roundQty(tongNhuaDinhMuc, 3),
+      tongNhuaThucXuat: roundQty(tongNhuaThucXuat, 4),
+      tongNhuaDinhMuc: roundQty(tongNhuaDinhMuc, 4),
       tiLeNhuaThucXuatVsDinhMuc,
       giaTriHaoHutNhuaKg,
       giaTriHaoHutNhua,
-      tongMangThucXuat: roundQty(tongMangThucXuat, 3),
-      tongMangDinhMuc: roundQty(tongMangDinhMuc, 3),
+      tongMangThucXuat: roundQty(tongMangThucXuat, 4),
+      tongMangDinhMuc: roundQty(tongMangDinhMuc, 4),
       tiLeMangThucXuatVsDinhMuc,
       giaTriHaoHutMangKg,
       giaTriHaoHutMang,
@@ -6655,8 +6640,8 @@ export function buildBbInboundReportRows(input: {
       orderCode: header.orderCode,
       machine: header.machine,
       acceptedRolls: Math.round(acceptedRolls),
-      mixedPlasticKg: roundQty(mixedPlasticKg, 3),
-      finishedGoodsInboundKg: roundQty(tongTpByGroupKey.get(groupKey) ?? 0, 3)
+      mixedPlasticKg: roundQty(mixedPlasticKg, 4),
+      finishedGoodsInboundKg: roundQty(tongTpByGroupKey.get(groupKey) ?? 0, 4)
     };
   });
 

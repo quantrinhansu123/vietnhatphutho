@@ -19,7 +19,7 @@ import WeighingImagePreviewModal, {
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
 import { CAMERA_IMAGE_INPUT_PROPS, compressImageDataUrl } from '../utils/cameraCapture';
-import { showAppToast } from '../lib/appToast';
+import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 
 const productLineGridClass =
   'grid-cols-1 sm:grid-cols-[2.25rem_minmax(0,1.1fr)_minmax(0,1.3fr)_4rem_6rem_2.5rem]';
@@ -778,19 +778,19 @@ export default function AcceptanceReportForm({
 
   const validateForm = () => {
     if (!form.ngay.trim()) {
-      setError('Vui lòng chọn ngày.');
+      setError(showSaveFailure('Vui lòng chọn ngày.'));
       return null;
     }
     if (!form.ca.trim()) {
-      setError('Vui lòng chọn ca.');
+      setError(showSaveFailure('Vui lòng chọn ca.'));
       return null;
     }
     if (!form.ma_may.trim() && !form.ten_may.trim()) {
-      setError('Vui lòng chọn máy.');
+      setError(showSaveFailure('Vui lòng chọn máy.'));
       return null;
     }
     if (!form.lan.trim()) {
-      setError('Vui lòng nhập lần ghi nhận.');
+      setError(showSaveFailure('Vui lòng nhập lần ghi nhận.'));
       return null;
     }
 
@@ -802,23 +802,23 @@ export default function AcceptanceReportForm({
       .filter(line => line.mat_hang.trim() || line.so_luong.trim());
 
     if (validLines.length === 0) {
-      setError('Vui lòng thêm ít nhất một dòng mã SP và số lượng.');
+      setError(showSaveFailure('Vui lòng thêm ít nhất một dòng mã SP và số lượng.'));
       return null;
     }
 
     for (const line of validLines) {
       if (!line.mat_hang.trim()) {
-        setError('Vui lòng chọn mã SP cho từng dòng.');
+        setError(showSaveFailure('Vui lòng chọn mã SP cho từng dòng.'));
         return null;
       }
       if (!Number.isFinite(line.soLuong) || line.soLuong <= 0) {
-        setError(`Số lượng phải lớn hơn 0 (${line.mat_hang}).`);
+        setError(showSaveFailure(`Số lượng phải lớn hơn 0 (${line.mat_hang}).`));
         return null;
       }
     }
 
     if (!form.hinh_anh.trim() && !form.imagePreview.trim()) {
-      setError('Vui lòng chụp ảnh chung cho các dòng sản lượng.');
+      setError(showSaveFailure('Vui lòng chụp ảnh chung cho các dòng sản lượng.'));
       return null;
     }
 
@@ -836,7 +836,7 @@ export default function AcceptanceReportForm({
     try {
       const resolvedImage = await resolveImageForSave();
       if (!resolvedImage) {
-        setError('Vui lòng chụp ảnh chung cho các dòng sản lượng.');
+        setError(showSaveFailure('Vui lòng chụp ảnh chung cho các dòng sản lượng.'));
         return;
       }
 
@@ -864,7 +864,7 @@ export default function AcceptanceReportForm({
           })
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo sản lượng.');
+        if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không thể lưu báo cáo sản lượng.'));
         const okMsg = 'Đã cập nhật báo cáo sản lượng.';
         setMessage(okMsg);
         showAppToast(okMsg);
@@ -882,7 +882,7 @@ export default function AcceptanceReportForm({
             })
           });
           const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || 'Không thể lưu báo cáo sản lượng.');
+          if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không thể lưu báo cáo sản lượng.'));
           savedCount += 1;
         }
         const okMsg =
@@ -893,7 +893,7 @@ export default function AcceptanceReportForm({
 
       resetForm();
     } catch (err: any) {
-      setError(err.message || 'Không thể lưu báo cáo sản lượng.');
+      setError(showSaveFailure(err, 'Không thể lưu báo cáo sản lượng.'));
     } finally {
       setIsSaving(false);
     }
