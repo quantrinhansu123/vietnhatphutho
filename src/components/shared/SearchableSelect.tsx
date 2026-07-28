@@ -33,7 +33,8 @@ export function SearchableSelect({
   resolveSelectedItem,
   getOptionLabel,
   getSearchText,
-  displaySelectedAsValue = false
+  displaySelectedAsValue = false,
+  desktopAutoFlip = false
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -51,10 +52,12 @@ export function SearchableSelect({
   getOptionLabel?: (item: unknown) => string;
   getSearchText?: (item: unknown) => string;
   displaySelectedAsValue?: boolean;
+  /** Trên desktop, tự mở menu lên trên nếu phía dưới không đủ chỗ. */
+  desktopAutoFlip?: boolean;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const inputRef = useRef<HTMLInputElement>(null);
-  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
   const selectedItem = useMemo(() => {
     if (!value) return null;
     if (resolveSelectedItem) {
@@ -166,11 +169,34 @@ export function SearchableSelect({
     const margin = 8;
     const width = Math.max(rect.width, Math.min(340, viewportWidth - margin * 2));
     const left = Math.min(Math.max(margin, rect.left), Math.max(margin, viewportWidth - width - margin));
-    setMenuStyle({
-      top: rect.bottom + 4,
-      left,
-      width
-    });
+    const isDesktop = window.matchMedia('(min-width: 1280px)').matches;
+
+    if (desktopAutoFlip && isDesktop) {
+      const viewportHeight = document.documentElement.clientHeight;
+      const preferredHeight = 208;
+      const spaceBelow = Math.max(0, viewportHeight - rect.bottom - margin);
+      const spaceAbove = Math.max(0, rect.top - margin);
+
+      if (spaceBelow < preferredHeight && spaceAbove > spaceBelow) {
+        setMenuStyle({
+          bottom: viewportHeight - rect.top + 4,
+          left,
+          width,
+          maxHeight: Math.min(preferredHeight, spaceAbove)
+        });
+        return;
+      }
+
+      setMenuStyle({
+        top: rect.bottom + 4,
+        left,
+        width,
+        maxHeight: Math.min(preferredHeight, spaceBelow)
+      });
+      return;
+    }
+
+    setMenuStyle({ top: rect.bottom + 4, left, width });
   };
 
   useEffect(() => {
@@ -186,7 +212,7 @@ export function SearchableSelect({
       window.removeEventListener('resize', handleReposition);
       window.removeEventListener('scroll', handleReposition, true);
     };
-  }, [open, query, filteredOptions.length]);
+  }, [open, query, filteredOptions.length, desktopAutoFlip]);
 
   const dropdownPanelClass =
     'fixed z-[200] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';

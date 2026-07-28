@@ -1504,6 +1504,7 @@ export function WarehouseSlipPanel({
                     isLoading={isLoadingItems}
                     disabled={isLoadingItems}
                     inputClassName={warehouseFieldClass}
+                    desktopAutoFlip
                     getLabel={item => {
                       const option = item as MaterialOption;
                       return `${option.code} · ${option.name}`;
