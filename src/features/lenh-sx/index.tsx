@@ -180,7 +180,9 @@ export function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-4 py-3 font-black">Tên hàng</th>
                 <th className="px-4 py-3 font-black">SL</th>
                 <th className="px-4 py-3 font-black">Đơn vị</th>
-                <th className="px-4 py-3 font-black">Trạng thái</th>
+                <th className="w-32 min-w-32 whitespace-nowrap px-4 py-3 font-black">
+                  Trạng thái
+                </th>
                 <th className="px-4 py-3 font-black">Khách hàng</th>
                 <th className="px-4 py-3 font-black">Đơn hàng</th>
                 <th className="px-4 py-3 font-black">Bắt đầu</th>
@@ -214,8 +216,8 @@ export function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
                       .map(product => product.unit || '-')
                       .join(' | ') || '-'}
                   </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
+                  <td className="w-32 min-w-32 whitespace-nowrap px-4 py-3">
+                    <span className="inline-flex whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
                       {row.status}
                     </span>
                   </td>
