@@ -905,7 +905,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <tr>
               <th className="px-3 py-2.5 font-black">Mã đơn</th>
               <th className="whitespace-nowrap px-3 py-2.5 font-black">Ngày tạo</th>
-              <th className="px-3 py-2.5 font-black">Loại đơn</th>
+              <th className="w-24 min-w-24 whitespace-nowrap px-3 py-2.5 font-black">
+                Loại đơn
+              </th>
               <th className="px-3 py-2.5 font-black">Trạng thái</th>
               <th className="px-3 py-2.5 font-black">Nhân viên</th>
               <th className="px-3 py-2.5 font-black">Khách hàng</th>
@@ -928,13 +930,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs font-semibold text-zinc-600">
                   {formatOrderCreatedAt(order.createdAt)}
                 </td>
-                <td className="px-3 py-2.5">
-                  <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2 py-0.5 text-[11px] font-black text-[#ef1b2d]">
+                <td className="w-24 min-w-24 whitespace-nowrap px-3 py-2.5">
+                  <span className="inline-flex whitespace-nowrap rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2 py-0.5 text-[11px] font-black text-[#ef1b2d]">
                     {order.orderType}
                   </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-800">
+                  <span className="inline-flex whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-800">
                     {order.status}
                   </span>
                 </td>
