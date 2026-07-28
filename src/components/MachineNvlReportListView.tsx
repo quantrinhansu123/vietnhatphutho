@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Boxes, ChevronLeft, Eye, Loader2, PackageX, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronLeft, Eye, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { formatNumber } from '../utils';
 import { waitForPrintImagesReady } from '../utils/printReady';
@@ -27,13 +27,7 @@ import {
   shiftNamesMatch,
   type ShiftSetting
 } from '../utils/shiftSettings';
-import {
-  getWeighingDataRows,
-  normalizeWeighingRecords,
-  formatWeighingWeightField,
-  sumDamagedGoodsRowWeight,
-  type WeighingRecord
-} from '../utils/weighingRecords';
+import { formatWeighingWeightField } from '../utils/weighingRecords';
 
 const MACHINE_NVL_SECTIONS: { id: MachineNvlReportKind; title: string; emptyLabel: string }[] = [
   { id: 'dau_ca', title: 'Báo cáo tồn đầu ca', emptyLabel: 'báo cáo tồn đầu ca' },
@@ -239,26 +233,6 @@ function MachineNvlReportDetailModal({
   );
 
   return typeof document !== 'undefined' ? createPortal(modal, document.body) : null;
-}
-
-type DamagedDateGroup = { ngay: string; rows: WeighingRecord[]; total: number };
-
-function groupDamagedRecordsByDate(records: WeighingRecord[]): DamagedDateGroup[] {
-  const byDate = new Map<string, WeighingRecord[]>();
-  for (const record of getWeighingDataRows(records)) {
-    const ngay = record.productionDate || record.reportDate || '-';
-    const list = byDate.get(ngay) ?? [];
-    list.push(record);
-    byDate.set(ngay, list);
-  }
-
-  return [...byDate.entries()]
-    .map(([ngay, rows]) => ({
-      ngay,
-      rows: [...rows].sort((a, b) => (b.weighTime || '').localeCompare(a.weighTime || '')),
-      total: rows.reduce((sum, row) => sum + sumDamagedGoodsRowWeight(row), 0)
-    }))
-    .sort((a, b) => b.ngay.localeCompare(a.ngay));
 }
 
 function MachineNvlSection({
@@ -496,92 +470,6 @@ function MachineNvlSection({
   );
 }
 
-function DamagedGoodsSection({ groups, isLoading }: { groups: DamagedDateGroup[]; isLoading: boolean }) {
-  return (
-    <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-      <div className="flex items-center gap-1.5 border-b-4 border-[#ef1b2d] bg-white px-3 py-2.5">
-        <PackageX className="h-3.5 w-3.5 shrink-0 text-[#ef1b2d]" />
-        <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">
-          Báo cáo hàng hỏng
-        </p>
-      </div>
-      <div className="p-2 sm:p-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-sm font-semibold text-zinc-500">
-            <Loader2 className="h-5 w-5 animate-spin text-[#ef1b2d]" />
-            Đang tải báo cáo hàng hỏng...
-          </div>
-        ) : groups.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center">
-            <PackageX className="mx-auto h-8 w-8 text-zinc-300" />
-            <p className="mt-2 text-sm font-black text-zinc-700">Chưa có báo cáo hàng hỏng</p>
-            <p className="mt-1 text-xs font-semibold text-zinc-500">Chọn khoảng ngày khác để xem báo cáo.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {groups.map(dateGroup => (
-              <div key={dateGroup.ngay} className="overflow-hidden rounded-xl border border-zinc-200">
-                <div className="flex items-baseline justify-between gap-1.5 border-b border-zinc-200 bg-zinc-100 px-3 py-1.5">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
-                    <span className="font-mono text-xs font-black text-zinc-900">{dateGroup.ngay}</span>
-                  </div>
-                  <span className="font-mono text-[11px] font-black text-[#b30d1c]">
-                    {formatNumber(dateGroup.total, 3)} kg
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] border-collapse text-left text-[11px] sm:text-xs">
-                    <thead className="bg-zinc-50 text-[9px] uppercase tracking-wider text-zinc-500 sm:text-[10px]">
-                      <tr>
-                        <th className="px-2 py-1.5 font-black">Số phiếu</th>
-                        <th className="px-2 py-1.5 font-black">Ca</th>
-                        <th className="px-2 py-1.5 font-black">Máy</th>
-                        <th className="px-2 py-1.5 font-black">Giờ</th>
-                        <th className="px-2 py-1.5 text-right font-black">KL nhựa</th>
-                        <th className="px-2 py-1.5 text-right font-black">KL màng</th>
-                        <th className="px-2 py-1.5 text-right font-black">Tổng KL</th>
-                        <th className="px-2 py-1.5 font-black">Ghi chú</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {dateGroup.rows.map(record => (
-                        <tr
-                          key={String(record.id ?? `${record.documentNo}|${record.weighNo}|${record.weighTime}`)}
-                          className="align-top transition hover:bg-zinc-50"
-                        >
-                          <td className="px-2 py-1.5 font-semibold text-zinc-700">{record.documentNo || '-'}</td>
-                          <td className="px-2 py-1.5 font-bold text-zinc-800">{record.shiftName || '-'}</td>
-                          <td className="px-2 py-1.5 font-semibold text-zinc-700">{record.machineName || '-'}</td>
-                          <td className="px-2 py-1.5 font-mono text-zinc-500">{record.weighTime || '-'}</td>
-                          <td className="px-2 py-1.5 text-right font-mono text-zinc-700">
-                            {formatWeighingWeightField(record.weight)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono text-zinc-700">
-                            {formatWeighingWeightField(record.shellWeight)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono font-black text-[#b30d1c]">
-                            {formatNumber(sumDamagedGoodsRowWeight(record), 3)}
-                          </td>
-                          <td className="max-w-[220px] px-2 py-1.5">
-                            <span className="block truncate text-zinc-500" title={record.note || undefined}>
-                              {record.note || '-'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 export default function MachineNvlReportListView({
   onBack,
   onCreate,
@@ -597,7 +485,6 @@ export default function MachineNvlReportListView({
   const [filterMachine, setFilterMachine] = useState('');
   const [dauCaReports, setDauCaReports] = useState<MachineNvlSavedReport[]>([]);
   const [cuoiCaReports, setCuoiCaReports] = useState<MachineNvlSavedReport[]>([]);
-  const [damagedRecords, setDamagedRecords] = useState<WeighingRecord[]>([]);
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -649,22 +536,6 @@ export default function MachineNvlReportListView({
     [filteredCuoiCaReports, shiftOptions]
   );
 
-  const filteredDamagedRecords = useMemo(
-    () =>
-      damagedRecords.filter(record => {
-        if (filterCa && !shiftNamesMatch(filterCa, record.shiftName)) return false;
-        if (filterMachine) {
-          const key = filterMachine.trim().toLowerCase();
-          const may = record.machineName.trim().toLowerCase();
-          if (may !== key && !may.includes(key)) return false;
-        }
-        return true;
-      }),
-    [damagedRecords, filterCa, filterMachine]
-  );
-
-  const damagedGroups = useMemo(() => groupDamagedRecordsByDate(filteredDamagedRecords), [filteredDamagedRecords]);
-
   const machineOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const report of [...dauCaReports, ...cuoiCaReports]) {
@@ -681,19 +552,13 @@ export default function MachineNvlReportListView({
     if (tuNgay) params.set('tu_ngay', tuNgay);
     if (denNgay) params.set('den_ngay', denNgay);
 
-    const damagedParams = new URLSearchParams();
-    if (tuNgay) damagedParams.set('tu_ngay', tuNgay);
-    if (denNgay) damagedParams.set('den_ngay', denNgay);
-
-    const [dauCaRes, cuoiCaRes, damagedRes] = await Promise.all([
+    const [dauCaRes, cuoiCaRes] = await Promise.all([
       fetch(`/api/bao-cao-may-nvl-ton?${params.toString()}&loai_bao_cao=dau_ca`),
-      fetch(`/api/bao-cao-may-nvl-ton?${params.toString()}&loai_bao_cao=cuoi_ca`),
-      fetch(`/api/bao-cao-hang-hong?${damagedParams.toString()}`)
+      fetch(`/api/bao-cao-may-nvl-ton?${params.toString()}&loai_bao_cao=cuoi_ca`)
     ]);
-    const [dauCaData, cuoiCaData, damagedData] = await Promise.all([
+    const [dauCaData, cuoiCaData] = await Promise.all([
       dauCaRes.json().catch(() => ({})),
-      cuoiCaRes.json().catch(() => ({})),
-      damagedRes.json().catch(() => [])
+      cuoiCaRes.json().catch(() => ({}))
     ]);
 
     if (!dauCaRes.ok || !cuoiCaRes.ok) {
@@ -706,7 +571,6 @@ export default function MachineNvlReportListView({
 
     setDauCaReports(normalizeMachineNvlReports(dauCaData));
     setCuoiCaReports(normalizeMachineNvlReports(cuoiCaData));
-    if (damagedRes.ok) setDamagedRecords(normalizeWeighingRecords(damagedData));
   };
 
   useEffect(() => {
@@ -971,8 +835,6 @@ export default function MachineNvlReportListView({
         onClearSelection={() => clearSelection('cuoi_ca')}
         bulkDeleting={bulkDeleting}
       />
-
-      <DamagedGoodsSection groups={damagedGroups} isLoading={isLoading} />
 
       {viewingReport ? (
         <MachineNvlReportDetailModal

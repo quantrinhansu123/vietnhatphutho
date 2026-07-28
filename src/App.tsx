@@ -1193,7 +1193,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ShippingOrdersPanel onBack={() => navigateToTab('business')} />
+                <ShippingOrdersPanel onBack={() => navigateToTab('business')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'production-orders' ? (
               <motion.div

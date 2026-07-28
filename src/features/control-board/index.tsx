@@ -67,6 +67,7 @@ import {
 import {
   Factory,
   Eye,
+  MoreHorizontal,
   Pencil,
   Trash2,
   Printer,
@@ -1012,47 +1013,55 @@ export function ControlBoardPanel({
                   >
                     {row.note && row.note !== '-' ? row.note : '-'}
                   </td>
-                  <td className="px-2 py-1.5">
-                      <div className="flex items-center justify-center gap-1">
+                  <td className="px-2 py-1.5 text-center">
+                    <details className="relative inline-block text-left">
+                      <summary
+                        className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                        title="Mở thao tác"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </summary>
+                      <div className="absolute right-0 top-9 z-20 min-w-[132px] overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-xl">
                         <button
                           type="button"
                           onClick={() => setViewingProductionOrder(row)}
-                          title="Xem chi tiết"
-                          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
                         >
                           <Eye className="h-4 w-4" />
+                          Xem
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingProductionOrder(row)}
-                          title="Sửa lệnh SX"
-                          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[#ef1b2d] transition hover:bg-red-50"
                         >
                           <Pencil className="h-4 w-4" />
+                          Sửa
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteProductionOrder(row)}
                           disabled={deletingProductionOrderId === row.id}
-                          title="Xóa lệnh SX"
-                          className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {deletingProductionOrderId === row.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             <Trash2 className="h-4 w-4" />
                           )}
+                          Xóa
                         </button>
                         <button
                           type="button"
                           onClick={() => printProductionOrder(row)}
                           disabled={isLoadingPrint}
-                        title="In lệnh SX"
-                        className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Printer className="h-4 w-4" />
-                      </button>
-                    </div>
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Printer className="h-4 w-4" />
+                          In
+                        </button>
+                      </div>
+                    </details>
                   </td>
                 </tr>
               ))}

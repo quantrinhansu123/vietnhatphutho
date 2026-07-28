@@ -138,7 +138,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appTab: 'customers',
     appLines: 'src/features/khach-hang/index.tsx',
     components: [],
-    utils: []
+    utils: ['src/utils/customerExcel.ts']
   },
   lenh_xuat_hang: {
     table: 'lenh_xuat_hang',

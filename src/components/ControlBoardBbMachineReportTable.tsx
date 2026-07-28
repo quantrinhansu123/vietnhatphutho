@@ -1283,7 +1283,7 @@ export default function ControlBoardBbMachineReportTable({
 
       <div className="bb-table-scroll">
         {activeTab === 'lenh_sx' ? (
-          <table className="min-w-[1000px] w-full text-left text-sm font-semibold">
+          <table className="min-w-[900px] w-full text-left text-sm font-semibold">
             <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300 text-xs uppercase tracking-wider text-slate-700">
               <tr>
                 <th className="w-8 px-1.5 py-2 font-black" />
@@ -1297,23 +1297,19 @@ export default function ControlBoardBbMachineReportTable({
                 <th className="px-2 py-2 text-right font-black">SL</th>
                 <th className="px-2 py-2 text-right font-black">Tổng TL (kg)</th>
                 <th className="px-2 py-2 text-right font-black">% KL nhựa</th>
-                <th className="px-2 py-2 font-black">ĐVT</th>
-                <th className="px-2 py-2 text-right font-black" title="Định mức (kg/ĐVT) lấy từ SP tương ứng">
-                  TL định mức
-                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={13} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải báo cáo máy BB...
                   </td>
                 </tr>
               ) : orderGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-3 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={11} className="px-3 py-10 text-center font-bold text-zinc-400">
                     Chưa có lệnh SX máy BB theo bộ lọc đã chọn.
                   </td>
                 </tr>
@@ -1352,10 +1348,6 @@ export default function ControlBoardBbMachineReportTable({
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-teal-700">
                           {group.totalNormKg > 0 ? '100%' : '—'}
                         </td>
-                        <td className="px-2 py-1.5 text-zinc-700">{group.unit || '—'}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-indigo-700">
-                          {formatKg(group.normKgPerUnit, 2)}
-                        </td>
                       </tr>
                       {expanded ? (
                         <>
@@ -1375,8 +1367,6 @@ export default function ControlBoardBbMachineReportTable({
                             </td>
                             <td />
                             <td className="px-2 py-1.5 text-right font-black">% KL nhựa</td>
-                            <td />
-                            <td />
                           </tr>
                           {group.lines.map(row => {
                             const plasticPercent =
@@ -1404,8 +1394,6 @@ export default function ControlBoardBbMachineReportTable({
                               <td className="px-2 py-1.5 text-right font-mono font-bold text-teal-700">
                                 {plasticPercent === null ? '—' : `${formatNumber(plasticPercent, 2)}%`}
                               </td>
-                              <td />
-                              <td />
                             </tr>
                             );
                           })}

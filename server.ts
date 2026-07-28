@@ -1361,9 +1361,20 @@ function parseShippingOrderBody(
       ma_sp: pickRowField(row, ['ma_sp', 'ma_san_pham', 'code'], ''),
       ten_sp: pickRowField(row, ['ten_sp', 'ten_san_pham', 'name'], ''),
       don_vi: pickRowField(row, ['don_vi', 'unit'], ''),
-      so_luong: Math.max(0, parseDriverReconciliationNumber(row.so_luong ?? row.quantity))
+      so_luong: Math.max(0, parseDriverReconciliationNumber(row.so_luong ?? row.quantity)),
+      don_gia: Math.max(0, parseDriverReconciliationNumber(row.don_gia ?? row.unit_price)),
+      tong_tien: Math.max(
+        0,
+        parseDriverReconciliationNumber(
+          row.tong_tien ?? row.total_amount ?? row.thanh_tien
+        )
+      )
     }))
-    .filter(row => row.ma_sp || row.ten_sp || row.so_luong > 0);
+    .map(row => ({
+      ...row,
+      tong_tien: row.tong_tien > 0 ? row.tong_tien : row.so_luong * row.don_gia
+    }))
+    .filter(row => row.ma_sp || row.ten_sp || row.so_luong > 0 || row.don_gia > 0);
 
   if (lines.length === 0) return { error: 'Vui lòng thêm ít nhất một dòng hàng xuất.' };
   for (const line of lines) {
@@ -5709,6 +5720,27 @@ export function createApp() {
     }
   });
 
+  function buildCustomerOptionalFields(source: Record<string, unknown>): Record<string, unknown> {
+    const congNoRaw = pickRowField(source, ['cong_no', 'debt'], '');
+    const congNo = congNoRaw ? Number(congNoRaw) : 0;
+    const isInternalRaw = source.la_doi_tuong_noi_bo ?? source.is_internal;
+    const isInternal =
+      typeof isInternalRaw === 'boolean'
+        ? isInternalRaw
+        : ['true', '1', 'co', 'có', 'x', 'yes'].includes(String(isInternalRaw ?? '').trim().toLowerCase());
+
+    return {
+      dia_chi: pickRowField(source, ['dia_chi', 'address'], '') || null,
+      cong_no: Number.isFinite(congNo) ? congNo : 0,
+      ma_so_thue: pickRowField(source, ['ma_so_thue', 'ma_so_thue_cccd', 'tax_code'], '') || null,
+      so_dien_thoai: pickRowField(source, ['so_dien_thoai', 'dien_thoai', 'phone', 'sdt'], '') || null,
+      dt_di_dong_nlh: pickRowField(source, ['dt_di_dong_nlh', 'di_dong_nlh', 'mobile_nlh'], '') || null,
+      la_doi_tuong_noi_bo: isInternal,
+      don_vi_quan_ly: pickRowField(source, ['don_vi_quan_ly', 'managing_unit'], '') || null,
+      ghi_chu: pickRowField(source, ['ghi_chu', 'note', 'notes'], '') || null
+    };
+  }
+
   app.post('/api/khach-hang', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
 
@@ -5739,9 +5771,7 @@ export function createApp() {
       const record: Record<string, unknown> = {
         ma_khach_hang: code,
         ten_khach_hang: name,
-        dia_chi: pickRowField(source, ['dia_chi', 'address'], '') || null,
-        so_dien_thoai: pickRowField(source, ['so_dien_thoai', 'dien_thoai', 'phone', 'sdt'], '') || null,
-        ghi_chu: pickRowField(source, ['ghi_chu', 'note', 'notes'], '') || null
+        ...buildCustomerOptionalFields(source)
       };
 
       const { data, error } = await supabase
@@ -5767,6 +5797,56 @@ export function createApp() {
       return res.status(201).json({ success: true, customer: data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi thêm khách hàng.' });
+    }
+  });
+
+  app.put('/api/khach-hang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID khách hàng.' });
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const name = pickRowField(source, ['ten_khach_hang', 'khach_hang', 'name', 'ten'], '');
+      const code = pickRowField(source, ['ma_khach_hang', 'ma_kh', 'code'], '');
+      if (!name) return res.status(400).json({ error: 'Vui lòng nhập tên khách hàng.' });
+
+      const record: Record<string, unknown> = {
+        ...(code ? { ma_khach_hang: code } : {}),
+        ten_khach_hang: name,
+        ...buildCustomerOptionalFields(source)
+      };
+
+      const { data, error } = await supabase
+        .from(SUPABASE_CUSTOMERS_TABLE)
+        .update(record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
+      }
+
+      return res.json({ success: true, customer: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật khách hàng.' });
+    }
+  });
+
+  app.delete('/api/khach-hang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID khách hàng.' });
+
+    try {
+      const { error } = await supabase.from(SUPABASE_CUSTOMERS_TABLE).delete().eq('id', id);
+      if (error) {
+        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa khách hàng.' });
     }
   });
 

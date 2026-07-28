@@ -19,6 +19,8 @@ export type ShippingOrderLine = {
   ten_sp: string;
   don_vi: string;
   so_luong: number;
+  don_gia: number;
+  tong_tien: number;
 };
 
 export type ShippingOrder = {
@@ -46,7 +48,7 @@ type CustomerDetail = {
 const STATUS_OPTIONS = ['Chờ xuất', 'Đang giao', 'Đã giao', 'Hủy'] as const;
 
 const lineGridClass =
-  'grid-cols-2 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_5.5rem_6rem_2.5rem]';
+  'grid-cols-2 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.3fr)_5.5rem_6rem_7.5rem_8rem_2.5rem]';
 
 function todayIso() {
   const now = new Date();
@@ -63,12 +65,17 @@ function formatDateVi(value: string) {
 }
 
 function createLine(partial?: Partial<ShippingOrderLine>): ShippingOrderLine {
+  const soLuong = Number.isFinite(partial?.so_luong) ? Number(partial?.so_luong) : 0;
+  const donGia = Number.isFinite(partial?.don_gia) ? Number(partial?.don_gia) : 0;
+  const tongTien = Number.isFinite(partial?.tong_tien) ? Number(partial?.tong_tien) : soLuong * donGia;
   return {
     id: partial?.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     ma_sp: partial?.ma_sp || '',
     ten_sp: partial?.ten_sp || '',
     don_vi: partial?.don_vi || '',
-    so_luong: Number.isFinite(partial?.so_luong) ? Number(partial?.so_luong) : 0
+    so_luong: soLuong,
+    don_gia: donGia,
+    tong_tien: tongTien
   };
 }
 
@@ -89,7 +96,9 @@ function parseLines(value: unknown): ShippingOrderLine[] {
         ma_sp: pickText(row, ['ma_sp', 'ma_san_pham', 'code'], ''),
         ten_sp: pickText(row, ['ten_sp', 'ten_san_pham', 'name'], ''),
         don_vi: pickText(row, ['don_vi', 'unit'], ''),
-        so_luong: Number(row.so_luong ?? row.quantity ?? 0)
+        so_luong: Number(row.so_luong ?? row.quantity ?? 0),
+        don_gia: Number(row.don_gia ?? row.unit_price ?? 0),
+        tong_tien: Number(row.tong_tien ?? row.total_amount ?? row.thanh_tien ?? 0)
       })
     );
 }
@@ -153,7 +162,7 @@ function generateNextShippingCode(existingCodes: Iterable<string>) {
   return `LXH${String(next).padStart(width, '0')}`;
 }
 
-function emptyForm(code = ''): Omit<ShippingOrder, 'id'> {
+function emptyForm(code = '', staffName = ''): Omit<ShippingOrder, 'id'> {
   return {
     ma_lenh: code,
     ngay_xuat: todayIso(),
@@ -161,7 +170,7 @@ function emptyForm(code = ''): Omit<ShippingOrder, 'id'> {
     ten_khach_hang: '',
     dia_chi_giao: '',
     so_dien_thoai: '',
-    nhan_vien: '',
+    nhan_vien: staffName,
     trang_thai: 'Chờ xuất',
     ghi_chu: '',
     chi_tiet: [createLine()]
@@ -175,7 +184,13 @@ function statusClass(status: string) {
   return 'bg-amber-50 text-amber-800 ring-amber-200';
 }
 
-export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
+export function ShippingOrdersPanel({
+  onBack,
+  currentUser
+}: {
+  onBack: () => void;
+  currentUser?: { id: string; name: string } | null;
+}) {
   const [orders, setOrders] = useState<ShippingOrder[]>([]);
   const [customers, setCustomers] = useState<CustomerDetail[]>([]);
   const [products, setProducts] = useState<OrderProductOption[]>([]);
@@ -185,7 +200,7 @@ export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<Omit<ShippingOrder, 'id'>>(emptyForm());
+  const [form, setForm] = useState<Omit<ShippingOrder, 'id'>>(emptyForm('', currentUser?.name || ''));
 
   const loadAll = async () => {
     setIsLoading(true);
@@ -228,7 +243,7 @@ export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm(generateNextShippingCode(orders.map(order => order.ma_lenh))));
+    setForm(emptyForm(generateNextShippingCode(orders.map(order => order.ma_lenh)), currentUser?.name || ''));
     setFormOpen(true);
     setError('');
   };
@@ -251,6 +266,11 @@ export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
     setError('');
   };
 
+  useEffect(() => {
+    if (!formOpen || editingId || form.nhan_vien.trim() || !currentUser?.name?.trim()) return;
+    setForm(prev => ({ ...prev, nhan_vien: currentUser.name.trim() }));
+  }, [currentUser?.name, editingId, form.nhan_vien, formOpen]);
+
   const selectCustomer = (customerName: string) => {
     const customer =
       customers.find(item => item.name === customerName || item.code === customerName || item.id === customerName) ||
@@ -267,7 +287,12 @@ export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
   const updateLine = (lineId: string, patch: Partial<ShippingOrderLine>) => {
     setForm(prev => ({
       ...prev,
-      chi_tiet: prev.chi_tiet.map(line => (line.id === lineId ? { ...line, ...patch } : line))
+      chi_tiet: prev.chi_tiet.map(line => {
+        if (line.id !== lineId) return line;
+        const next = { ...line, ...patch };
+        next.tong_tien = (next.so_luong || 0) * (next.don_gia || 0);
+        return next;
+      })
     }));
   };
 
@@ -315,7 +340,9 @@ export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
           ma_sp: line.ma_sp.trim(),
           ten_sp: line.ten_sp.trim(),
           don_vi: line.don_vi.trim(),
-          so_luong: line.so_luong
+          so_luong: line.so_luong,
+          don_gia: line.don_gia,
+          tong_tien: line.tong_tien
         }))
       };
       const res = await fetch(
@@ -599,6 +626,8 @@ export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
                   { key: 'name', label: 'Tên SP' },
                   { key: 'unit', label: 'ĐVT' },
                   { key: 'qty', label: 'SL', required: true },
+                  { key: 'price', label: 'Đơn giá' },
+                  { key: 'amount', label: 'Tổng tiền' },
                   { key: 'actions', label: '' }
                 ]}
               >
@@ -651,6 +680,27 @@ export function ShippingOrdersPanel({ onBack }: { onBack: () => void }) {
                             updateLine(line.id, { so_luong: Number(event.target.value) || 0 })
                           }
                           className={`${orderFieldClass} text-right`}
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="col-span-1 min-w-0">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={line.don_gia || ''}
+                          onChange={event =>
+                            updateLine(line.id, { don_gia: Number(event.target.value) || 0 })
+                          }
+                          className={`${orderFieldClass} text-right`}
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="col-span-1 min-w-0">
+                        <input
+                          value={line.tong_tien > 0 ? formatNumber(line.tong_tien, 0) : ''}
+                          readOnly
+                          className={`${orderFieldClass} bg-slate-50 text-right`}
                           placeholder="0"
                         />
                       </div>
