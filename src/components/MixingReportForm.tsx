@@ -1942,41 +1942,41 @@ export default function MixingReportForm({
       )}
 
       <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-2 py-2 sm:px-4">
+        <div className="flex flex-col gap-2 border-b border-zinc-100 px-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <p className="text-sm font-black text-zinc-950">Bảng trộn vật tư</p>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-1.5 py-1">
-              <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-wider text-zinc-500">
-                Số lần
-              </span>
-              <button
-                type="button"
-                onClick={() => applyRoundCount(displayedRoundCount - 1)}
-                disabled={displayedRoundCount <= 1}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-sm font-black text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50"
-                title="Giảm số lần"
-              >
-                −
-              </button>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[104px] space-y-1">
+              <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">Lần bắt đầu</span>
               <input
                 type="number"
-                min={sessionRoundStart}
-                max={sessionRoundStart + MIXING_MAX_ROUNDS - 1}
-                value={sessionRoundStart + displayedRoundCount - 1}
-                onChange={event => applyRoundCount(Number(event.target.value) - sessionRoundStart + 1)}
-                title="Ghi nhận đến Lần số mấy"
-                className="h-7 w-11 rounded-md border border-zinc-200 bg-white text-center text-sm font-black text-zinc-900 outline-none focus:border-[#ef1b2d]"
+                min={1}
+                max={Math.max(1, MAX_MIXING_SESSIONS_PER_SHIFT - displayedRoundCount + 1)}
+                value={sessionRoundStart}
+                onChange={e => applySessionRoundStart(Number(e.target.value || 1))}
+                className={`${inputClass} h-8 text-center`}
               />
-              <button
-                type="button"
-                onClick={() => applyRoundCount(displayedRoundCount + 1)}
-                disabled={!canAddSessionRound || displayedRoundCount >= MIXING_MAX_ROUNDS}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[#ef1b2d] text-sm font-black text-white transition hover:bg-[#b30d1c] disabled:opacity-50"
-                title="Tăng số lần"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            </label>
+            <label className="min-w-[104px] space-y-1">
+              <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lần</span>
+              <input
+                type="number"
+                min={1}
+                max={Math.min(MIXING_MAX_ROUNDS, MAX_MIXING_SESSIONS_PER_SHIFT - sessionRoundStart + 1)}
+                value={displayedRoundCount}
+                onChange={e => applyRoundCount(Number(e.target.value || 1))}
+                className={`${inputClass} h-8 text-center`}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => applyRoundCount(displayedRoundCount + 1)}
+              disabled={!canAddSessionRound || displayedRoundCount >= MIXING_MAX_ROUNDS}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-50"
+              title="Thêm một lần trộn mới"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm lần
+            </button>
           </div>
         </div>
 
@@ -1995,24 +1995,9 @@ export default function MixingReportForm({
                 <div className="mixing-round-card relative rounded-lg border border-zinc-200 sm:rounded-xl">
                   <div className="border-b border-zinc-100 bg-zinc-50 px-2 py-1.5 sm:px-3 sm:py-2">
                     <div className="flex items-center justify-between gap-2">
-                      {roundIndex === 0 ? (
-                        <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-700 sm:text-xs">
-                          <span>Lần</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={MAX_MIXING_SESSIONS_PER_SHIFT}
-                            value={sessionRoundStart}
-                            onChange={event => applySessionRoundStart(Number(event.target.value))}
-                            className="h-7 w-12 rounded-md border border-zinc-200 bg-white text-center text-xs font-black text-zinc-900 outline-none focus:border-[#ef1b2d]"
-                            title="Đổi số lần bắt đầu"
-                          />
-                        </div>
-                      ) : (
-                        <p className="text-[10px] font-black uppercase tracking-wider text-zinc-700 sm:text-xs">
-                          {roundColumnLabel(sessionRoundStart, roundIndex)}
-                        </p>
-                      )}
+                      <p className="text-[10px] font-black uppercase tracking-wider text-zinc-700 sm:text-xs">
+                        {roundColumnLabel(sessionRoundStart, roundIndex)}
+                      </p>
                       <div className="flex items-center gap-1.5">
                         {roundComplete ? (
                           <span className="hidden items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-700 sm:inline-flex">

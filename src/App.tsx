@@ -66,7 +66,6 @@ import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
 import { VehiclesPanel } from './features/danh-sach-xe';
-import { DriverPolicyView } from './features/danh-sach-xe/DriverPolicy';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -1107,17 +1106,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <VehiclesPanel onBack={() => navigateToTab('hcns')} currentUser={authUser} />
-              </motion.div>
-            ) : activeTab === 'driver-policy' ? (
-              <motion.div
-                key="driver-policy"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-              >
-                <DriverPolicyView onBack={() => navigateToTab('hcns')} />
+                <VehiclesPanel onBack={() => navigateToTab('menu')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'products' ? (
               <motion.div

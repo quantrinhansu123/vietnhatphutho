@@ -10,7 +10,6 @@ import {
   Plus,
   ReceiptText,
   Save,
-  Scale,
   Search,
   Trash2,
   Truck,
@@ -19,8 +18,6 @@ import {
 import { BackButton } from '../../components/layout/NavButtons';
 import { normalizeHrBranches } from '../_shared/hr';
 import { VehicleDeliveryRequestsView, VehicleExpensesView, VehicleKmLogsView, VehicleLogsView } from './VehicleOperations';
-import { DriverPolicyView } from './DriverPolicy';
-
 type Vehicle = {
   id: string;
   loai_xe: string;
@@ -164,7 +161,7 @@ export function VehiclesPanel({
   onBack: () => void;
   currentUser?: { id: string; name: string } | null;
 }) {
-  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'delivery' | 'expenses' | 'logs' | 'km_log' | 'policy'>('vehicles');
+  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'delivery' | 'expenses' | 'logs' | 'km_log'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rows, setRows] = useState<DriverReconciliation[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
@@ -328,7 +325,7 @@ export function VehiclesPanel({
             </button>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-7 sm:w-[1280px]">
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-6 sm:w-[1100px]">
           <button
             type="button"
             onClick={() => setActiveView('vehicles')}
@@ -388,16 +385,6 @@ export function VehiclesPanel({
           >
             <Gauge className="h-4 w-4" />
             Nhật ký KM xe
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('policy')}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
-              activeView === 'policy' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Scale className="h-4 w-4" />
-            Quy chế lái xe
           </button>
         </div>
       </section>
@@ -612,8 +599,6 @@ export function VehiclesPanel({
         <VehicleExpensesView vehicles={vehicles} staff={staff} currentUser={currentUser} />
       ) : activeView === 'km_log' ? (
         <VehicleKmLogsView vehicles={vehicles} staff={staff} />
-      ) : activeView === 'policy' ? (
-        <DriverPolicyView />
       ) : (
         <VehicleLogsView vehicles={vehicles} staff={staff} />
       )}

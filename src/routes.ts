@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'driver-policy' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -27,7 +27,6 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'acceptance-report-list': '/danh-sach-bao-cao-san-luong',
   hr: '/nhan-su',
   vehicles: '/danh-sach-xe',
-  'driver-policy': '/quy-che-lai-xe',
   products: '/san-pham',
   machines: '/danh-sach-may',
   materials: '/kho-nvl',
@@ -48,6 +47,7 @@ const PATH_TO_TAB = new Map<string, AppTab>(
 
 PATH_TO_TAB.set('/bao-cao-nghiem-thu', 'acceptance-report');
 PATH_TO_TAB.set('/menu', 'menu');
+PATH_TO_TAB.set('/quy-che-lai-xe', 'menu');
 PATH_TO_TAB.set('/bao-cao-can', 'weighing-summary');
 PATH_TO_TAB.set('/nguyen-phu-lieu', 'materials');
 PATH_TO_TAB.set('/tong-hop-ca', 'weighing-summary');

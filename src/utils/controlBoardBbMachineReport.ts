@@ -743,6 +743,73 @@ export function sumBbWarehouseExportSlipQuantity(rows: BbWarehouseExportLineRow[
   return sum;
 }
 
+/** Dòng tổng NVL lấy thẳng từ phiếu xuất kho (không phân bổ theo SP). */
+export type BbWarehouseExportMaterialTotal = {
+  key: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  /** Tổng SL trên phiếu xuất (sau khi khử trùng slipLineKey). */
+  quantity: number;
+  /** Tổng KL (kg) quy đổi từ phiếu xuất. */
+  weightKg: number;
+  /** Số dòng phiếu xuất góp vào tổng. */
+  lineCount: number;
+};
+
+/**
+ * Gom tổng NVL đã xuất lấy thẳng từ dòng phiếu xuất kho.
+ * Mỗi `slipLineKey` chỉ cộng một lần — không dùng dòng đã phân bổ theo SP.
+ */
+export function aggregateBbWarehouseExportByMaterial(
+  rows: BbWarehouseExportLineRow[]
+): BbWarehouseExportMaterialTotal[] {
+  const seen = new Set<string>();
+  const map = new Map<string, BbWarehouseExportMaterialTotal>();
+
+  for (const row of rows) {
+    const slipId = row.slipLineKey || row.key;
+    if (seen.has(slipId)) continue;
+    seen.add(slipId);
+
+    const code = String(row.itemCode || '').trim();
+    const name = String(row.itemName || '').trim();
+    const unit = String(row.unit || '').trim();
+    const materialKey =
+      normalizeMaterialCodeKey(code) ||
+      (name ? `name:${name.toUpperCase()}` : '') ||
+      slipId;
+
+    const qty = row.quantity > 0 ? row.quantity : 0;
+    const kg = row.weightKg && row.weightKg > 0 ? row.weightKg : 0;
+    const existing = map.get(materialKey);
+    if (!existing) {
+      map.set(materialKey, {
+        key: materialKey,
+        itemCode: code,
+        itemName: name,
+        unit,
+        quantity: qty,
+        weightKg: kg,
+        lineCount: 1
+      });
+      continue;
+    }
+    existing.quantity += qty;
+    existing.weightKg += kg;
+    existing.lineCount += 1;
+    if (!existing.itemName && name) existing.itemName = name;
+    if (!existing.itemCode && code) existing.itemCode = code;
+    if (!existing.unit && unit) existing.unit = unit;
+  }
+
+  return [...map.values()].sort((a, b) => {
+    const codeCmp = a.itemCode.localeCompare(b.itemCode, 'vi');
+    if (codeCmp !== 0) return codeCmp;
+    return a.itemName.localeCompare(b.itemName, 'vi');
+  });
+}
+
 export type BbProductionOrderGroup = {
   groupKey: string;
   orderCode: string;
@@ -794,6 +861,58 @@ export type BbWarehouseExportProductGroup = {
   allocationMode: 'direct' | 'quota' | 'unassigned';
   lines: BbWarehouseExportLineRow[];
 };
+
+function roundInboundDisplayKg(value: number, digits = 2): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const factor = 10 ** digits;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
+/** Σ TL định mức NVL theo BOM (kg thành phần/1 SP × SL) — khớp cột «TL định mức» trên UI. */
+export function sumBbInboundTheoreticalNormKgForProductGroup(
+  productGroup: BbWarehouseExportProductGroup
+): number {
+  const productQty = productGroup.quantity > 0 ? productGroup.quantity : 0;
+  const groupedByCode = new Map<string, { componentPerUnit: number; productQuantity: number }>();
+  for (const line of productGroup.lines || []) {
+    const key = line.itemCode || '—';
+    const componentWeightKg = line.materialNorm?.componentWeightKg ?? null;
+    const lineQty = line.materialNorm?.productQuantity || 0;
+    let existing = groupedByCode.get(key);
+    if (!existing) {
+      existing = {
+        componentPerUnit:
+          componentWeightKg !== null && componentWeightKg > 0 ? componentWeightKg : 0,
+        productQuantity: lineQty
+      };
+      groupedByCode.set(key, existing);
+    } else {
+      if (lineQty > existing.productQuantity) existing.productQuantity = lineQty;
+      if (existing.componentPerUnit <= 0 && componentWeightKg !== null && componentWeightKg > 0) {
+        existing.componentPerUnit = componentWeightKg;
+      }
+    }
+  }
+  let total = 0;
+  for (const row of groupedByCode.values()) {
+    const qty = row.productQuantity > 0 ? row.productQuantity : productQty;
+    total += roundInboundDisplayKg(
+      row.componentPerUnit > 0 && qty > 0 ? row.componentPerUnit * qty : 0,
+      2
+    );
+  }
+  return roundInboundDisplayKg(total, 2);
+}
+
+export function sumBbInboundTheoreticalNormKgForGroup(group: BbWarehouseExportGroup): number {
+  return roundInboundDisplayKg(
+    group.productGroups.reduce(
+      (sum, productGroup) => sum + sumBbInboundTheoreticalNormKgForProductGroup(productGroup),
+      0
+    ),
+    2
+  );
+}
 
 /** Gom dòng hàng theo số lệnh SX (giữ thứ tự ngày desc). */
 export function groupBbProductionOrderLines(rows: BbProductionOrderLineRow[]): BbProductionOrderGroup[] {
@@ -1292,6 +1411,7 @@ export function buildBbInboundMaterialNormGroups(input: {
           for (const line of agg.lines) {
             const scaledWeight = roundQty((line.normWeightKg || 0) * ratio, 4);
             line.weightKg = scaledWeight;
+            line.normWeightKg = scaledWeight;
             line.balanceDetail = balanceDetail;
             if (line.materialNorm) {
               line.materialNorm = { ...line.materialNorm, allocationRatio: ratio, allocatedNormKg: scaledWeight };
@@ -1322,7 +1442,13 @@ export function buildBbInboundMaterialNormGroups(input: {
       machine: header.machine,
       lineCount: productGroups.reduce((sum, productGroup) => sum + productGroup.lineCount, 0),
       quantity: productGroups.reduce((sum, productGroup) => sum + productGroup.quantity, 0),
-      totalNormWeightKg: productGroups.reduce((sum, productGroup) => sum + productGroup.normWeightKg, 0),
+      totalNormWeightKg: roundInboundDisplayKg(
+        productGroups.reduce(
+          (sum, productGroup) => sum + sumBbInboundTheoreticalNormKgForProductGroup(productGroup),
+          0
+        ),
+        2
+      ),
       totalWeightKg: productGroups.reduce((sum, productGroup) => sum + productGroup.totalWeightKg, 0),
       unmatchedCount: 0,
       lines: productGroups.flatMap(productGroup => productGroup.lines),
