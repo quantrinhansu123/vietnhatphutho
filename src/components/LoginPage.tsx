@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2, Lock, User2, ShieldCheck } from 'lucide-react';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { normalizeHrBranches } from '../features/_shared/hr';
 import type { StaffViewPermissions } from '../features/nhan-su/menuViews';
+import { buildPermissionKey, parsePermissionSettings } from '../features/cai-dat-thoi-gian/permissionKeys';
 
 export type AuthUser = {
   id: string;
@@ -55,18 +56,39 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
         return;
       }
 
-      const res = await fetch('/api/nhan-su?format=groups&scope=all');
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể kết nối máy chủ. Vui lòng thử lại.');
+      const [staffRes, settingsRes] = await Promise.all([
+        fetch('/api/nhan-su?format=groups&scope=all'),
+        fetch('/api/cai-dat')
+      ]);
+      const staffData = await staffRes.json().catch(() => ({}));
+      const settingsData = await settingsRes.json().catch(() => ({}));
+      if (!staffRes.ok) {
+        throw new Error(staffData.error || 'Không thể kết nối máy chủ. Vui lòng thử lại.');
       }
 
-      const members = normalizeHrBranches(data).flatMap(branch =>
-        branch.departments.flatMap(department => department.members)
+      const members = normalizeHrBranches(staffData).flatMap(branch =>
+        branch.departments.flatMap(department =>
+          department.members.map(member => ({
+            member,
+            departmentName: department.name
+          }))
+        )
       );
+      const permissionSettings = settingsRes.ok
+        ? parsePermissionSettings(
+            Array.isArray(settingsData.settings) ? (settingsData.settings as any[]).map(item => ({
+              id: String(item?.id ?? ''),
+              code: String(item?.ma_cai_dat ?? item?.code ?? ''),
+              name: String(item?.ten_cai_dat ?? item?.ten ?? item?.name ?? ''),
+              loaiCaiDat: String(item?.loai_cai_dat ?? item?.loai ?? ''),
+              group: String(item?.nhom ?? item?.group ?? ''),
+              note: String(item?.ghi_chu ?? item?.note ?? '')
+            })) : []
+          )
+        : [];
 
       const matched = members.find(
-        member =>
+        ({ member }) =>
           member.username &&
           member.password &&
           normalizeUsername(member.username) === user &&
@@ -79,11 +101,18 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
       }
 
       onLogin({
-        id: matched.id,
-        name: matched.name,
-        username: matched.username || user,
-        role: matched.role || 'Nhân sự',
-        viewPermissions: matched.viewPermissions || []
+        id: matched.member.id,
+        name: matched.member.name,
+        username: matched.member.username || user,
+        role: matched.member.role || 'Nhân sự',
+        viewPermissions:
+          permissionSettings.find(
+            item =>
+              item.permissionKey ===
+              buildPermissionKey(matched.departmentName, matched.member.role || matched.member.position || '')
+          )?.viewPermissions ||
+          matched.member.viewPermissions ||
+          []
       });
     } catch (err: any) {
       setError(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.');

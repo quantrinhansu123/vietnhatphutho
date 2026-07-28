@@ -40,10 +40,12 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
   {
     menu: 'hcns',
     label: 'HCNS',
-    children: [
-      { tab: 'hr', label: 'Nhân sự' },
-      { tab: 'settings', label: 'Cài đặt' }
-    ]
+    children: [{ tab: 'hr', label: 'Nhân sự' }]
+  },
+  {
+    menu: 'settings',
+    label: 'Cài đặt',
+    children: [{ tab: 'settings', label: 'Phân quyền & tham số' }]
   },
   {
     menu: 'business',

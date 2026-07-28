@@ -3,11 +3,8 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import {
-  ClipboardCheck,
-  ClipboardPaste,
   Download,
   Eye,
-  FlaskConical,
   History,
   Loader2,
   Package,
@@ -21,8 +18,11 @@ import {
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
-import { downloadBulkOpeningStockTemplate, parseBulkOpeningStockExcel } from '../../utils/bulkOpeningStockExcel';
-import { downloadBulkMaterialTotalWeightTemplate, parseBulkMaterialTotalWeightExcel } from '../../utils/bulkMaterialTotalWeightExcel';
+import {
+  downloadBulkMaterialTotalWeightTemplate,
+  parseBulkMaterialTotalWeightExcel,
+  type BulkMaterialTotalWeightImportRow
+} from '../../utils/bulkMaterialTotalWeightExcel';
 import { productFieldClass } from '../san-pham/productFieldClass';
 import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
 
@@ -47,11 +47,6 @@ export function parseInventoryNumber(value: string): number | null {
   const normalized = String(value).trim().replace(',', '.');
   const num = Number(normalized);
   return Number.isFinite(num) ? num : null;
-}
-
-export function isMaterialKgUnit(unit: string) {
-  const normalized = unit.trim().toLowerCase();
-  return normalized === 'kg';
 }
 
 function parseDecimalParts(raw: string) {
@@ -183,393 +178,11 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
   };
 }
 
-async function patchMaterialsTotalWeight(materials: MaterialRow[], totalWeight: string) {
-  await Promise.all(
-    materials.map(async material => {
-      const payload = {
-        ...materialToForm(material),
-        totalWeight
-      };
-      const res = await fetch(`/api/kho-nvl/${encodeURIComponent(material.code)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Không thể cập nhật ${material.code}.`);
-      }
-    })
-  );
-  return materials.length;
-}
-
-export function isFetchNetworkError(error: unknown) {
-  if (error instanceof TypeError) return true;
-  const message = String((error as { message?: string })?.message ?? error ?? '').toLowerCase();
-  return message.includes('failed to fetch') || message.includes('networkerror');
-}
-
 const materialFieldClass =
   'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
-export type BulkOpeningStockPreviewRow = BulkOpeningStockImportRow & {
-  material: MaterialRow | null;
-  status: 'update' | 'create' | 'invalid' | 'skipped';
-};
-
 export function normalizeMaterialCodeKey(code: string) {
   return code.trim().replace(/\s+/g, '').toUpperCase();
-}
-
-export function buildBulkOpeningStockPreview(
-  rows: BulkOpeningStockImportRow[],
-  materials: MaterialRow[]
-): BulkOpeningStockPreviewRow[] {
-  const materialByCode = new Map<string, MaterialRow>();
-  materials.forEach(material => {
-    if (material.code && material.code !== '-') {
-      materialByCode.set(normalizeMaterialCodeKey(material.code), material);
-    }
-  });
-
-  return rows.map(row => {
-    const openingValue = row.openingStock.trim().replace(',', '.');
-    const hasOpeningValue = openingValue !== '' && openingValue !== '-';
-    const isValidNumber = hasOpeningValue && Number.isFinite(Number(openingValue));
-    const material = materialByCode.get(normalizeMaterialCodeKey(row.code)) ?? null;
-
-    if (!hasOpeningValue) {
-      return { ...row, material, status: 'skipped' as const };
-    }
-
-    return {
-      ...row,
-      material,
-      status: !isValidNumber ? 'invalid' : material ? 'update' : 'create'
-    };
-  });
-}
-
-export function buildBulkOpeningStockPayload(
-  row: BulkOpeningStockPreviewRow,
-  material?: MaterialRow | null
-) {
-  const openingStock = row.openingStock.trim().replace(',', '.');
-  const code = row.code.trim();
-  const name = (row.name || material?.name || code).trim();
-
-  if (material) {
-    return {
-      ...materialToForm(material),
-      code,
-      name: name || material.name.trim(),
-      unit: material.unit === '-' ? '' : material.unit.trim(),
-      openingStock
-    };
-  }
-
-  return {
-    ...emptyMaterialForm(),
-    code,
-    name: name || code,
-    openingStock
-  };
-}
-
-export function BulkOpeningStockModal({
-  open,
-  materials,
-  onClose,
-  onApplied
-}: {
-  open: boolean;
-  materials: MaterialRow[];
-  onClose: () => void;
-  onApplied: (message: string) => void;
-}) {
-  const [importRows, setImportRows] = useState<BulkOpeningStockImportRow[]>([]);
-  const [uploadedFileName, setUploadedFileName] = useState('');
-  const [pasteError, setPasteError] = useState('');
-  const [isApplying, setIsApplying] = useState(false);
-  const [isReadingFile, setIsReadingFile] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      setImportRows([]);
-      setUploadedFileName('');
-      setPasteError('');
-      setIsApplying(false);
-      setIsReadingFile(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }, [open]);
-
-  const previewRows = useMemo(
-    () => (importRows.length > 0 ? buildBulkOpeningStockPreview(importRows, materials) : []),
-    [importRows, materials]
-  );
-  const updateRows = previewRows.filter(row => row.status === 'update');
-  const createRows = previewRows.filter(row => row.status === 'create');
-  const applicableCount = updateRows.length + createRows.length;
-  const invalidCount = previewRows.filter(row => row.status === 'invalid').length;
-  const skippedCount = previewRows.filter(row => row.status === 'skipped').length;
-
-  const handleDownloadTemplate = () => {
-    downloadBulkOpeningStockTemplate(
-      materials.map(material => ({
-        code: material.code,
-        name: material.name,
-        openingStock: material.openingStock
-      }))
-    );
-  };
-
-  const handleFileChange = async (file?: File | null) => {
-    if (!file) return;
-
-    setIsReadingFile(true);
-    setPasteError('');
-    setUploadedFileName(file.name);
-
-    try {
-      const rows = await parseBulkOpeningStockExcel(file);
-      if (rows.length === 0) {
-        throw new Error('File Excel không có dòng dữ liệu hợp lệ.');
-      }
-      setImportRows(rows);
-    } catch (error: any) {
-      setImportRows([]);
-      setPasteError(error.message || 'Không thể đọc file Excel.');
-    } finally {
-      setIsReadingFile(false);
-    }
-  };
-
-  const handleApply = async () => {
-    if (applicableCount === 0) {
-      setPasteError('Không có dòng hợp lệ để xử lý. Kiểm tra lại cột Mã NPL và Tồn đầu trong file Excel.');
-      return;
-    }
-
-    if (
-      !window.confirm(
-        `Ghi đè Tồn đầu cho ${updateRows.length} NPL và thêm mới ${createRows.length} NPL?`
-      )
-    ) {
-      return;
-    }
-
-    setIsApplying(true);
-    setPasteError('');
-
-    try {
-      const updatedCodes: string[] = [];
-      const createdCodes: string[] = [];
-
-      await Promise.all([
-        ...updateRows.map(async row => {
-          const material = row.material!;
-          const payload = buildBulkOpeningStockPayload(row, material);
-          const res = await fetch(`/api/kho-nvl/${material.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            throw new Error(data.error || `Không thể cập nhật ${material.code}.`);
-          }
-          updatedCodes.push(material.code);
-        }),
-        ...createRows.map(async row => {
-          const payload = buildBulkOpeningStockPayload(row);
-          const res = await fetch('/api/kho-nvl', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            throw new Error(data.error || `Không thể thêm mới ${row.code}.`);
-          }
-          createdCodes.push(row.code);
-        })
-      ]);
-
-      const parts: string[] = [];
-      if (updatedCodes.length > 0) parts.push(`ghi đè ${updatedCodes.length} NPL`);
-      if (createdCodes.length > 0) parts.push(`thêm mới ${createdCodes.length} NPL`);
-      onApplied(`Đã ${parts.join(', ')}.`);
-      onClose();
-    } catch (error: any) {
-      setPasteError(error.message || 'Không thể cập nhật tồn đầu hàng loạt.');
-    } finally {
-      setIsApplying(false);
-    }
-  };
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Cập nhật Tồn đầu từ Excel</h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              Mã đã có sẽ ghi đè Tồn đầu; mã chưa có sẽ tự thêm dòng NPL mới
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isApplying}
-            className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
-          >
-            Đóng
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-          {pasteError && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
-              {pasteError}
-            </div>
-          )}
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={handleDownloadTemplate}
-              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
-            >
-              <Download className="h-4 w-4" />
-              Tải mẫu Excel
-            </button>
-            <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
-              {isReadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              {isReadingFile ? 'Đang đọc file...' : 'Tải file Excel lên'}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                className="hidden"
-                onChange={event => {
-                  const file = event.target.files?.[0];
-                  void handleFileChange(file);
-                }}
-              />
-            </label>
-          </div>
-
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs leading-5 text-zinc-600">
-            <p className="font-bold text-zinc-800">Hướng dẫn</p>
-            <ol className="mt-1 list-decimal space-y-1 pl-4">
-              <li>Bấm <strong>Tải mẫu Excel</strong> — file có sẵn Mã NPL, Tên NVL và Tồn đầu hiện tại.</li>
-              <li>Sửa cột <strong>Tồn đầu</strong> hoặc thêm dòng mới (Mã NPL + Tên NVL + Tồn đầu).</li>
-              <li>Bấm <strong>Tải file Excel lên</strong> — mã cũ ghi đè, mã mới tự thêm.</li>
-            </ol>
-          </div>
-
-          {uploadedFileName && (
-            <p className="text-xs font-bold text-zinc-500">
-              File: <span className="text-zinc-800">{uploadedFileName}</span>
-            </p>
-          )}
-
-          {previewRows.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-2 text-xs font-bold">
-                <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-emerald-800">
-                  Ghi đè: {updateRows.length}
-                </span>
-                <span className="rounded-lg bg-sky-50 px-2.5 py-1 text-sky-800">
-                  Thêm mới: {createRows.length}
-                </span>
-                {skippedCount > 0 && (
-                  <span className="rounded-lg bg-zinc-100 px-2.5 py-1 text-zinc-700">
-                    Bỏ qua (trống): {skippedCount}
-                  </span>
-                )}
-                {invalidCount > 0 && (
-                  <span className="rounded-lg bg-rose-50 px-2.5 py-1 text-rose-700">
-                    Tồn đầu không hợp lệ: {invalidCount}
-                  </span>
-                )}
-              </div>
-
-              <div className="overflow-hidden rounded-xl border border-zinc-200">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
-                    <tr>
-                      <th className="px-3 py-2 font-black">Mã NPL</th>
-                      <th className="px-3 py-2 font-black">Tên NVL</th>
-                      <th className="px-3 py-2 font-black">Tồn đầu mới</th>
-                      <th className="px-3 py-2 font-black">Tồn đầu hiện tại</th>
-                      <th className="px-3 py-2 font-black">Trạng thái</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {previewRows.map((row, index) => (
-                      <tr
-                        key={`${row.code}-${index}`}
-                        className={
-                          row.status === 'update'
-                            ? 'bg-white'
-                            : row.status === 'create'
-                              ? 'bg-sky-50/60'
-                              : row.status === 'skipped'
-                                ? 'bg-zinc-50'
-                                : 'bg-rose-50/60'
-                        }
-                      >
-                        <td className="px-3 py-2 font-black text-zinc-900">{row.code}</td>
-                        <td className="px-3 py-2 font-semibold text-zinc-700">
-                          {row.name || row.material?.name || '-'}
-                        </td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-800">{row.openingStock}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-500">
-                          {row.material?.openingStock ?? '-'}
-                        </td>
-                        <td className="px-3 py-2 font-bold">
-                          {row.status === 'update' && <span className="text-emerald-700">Ghi đè</span>}
-                          {row.status === 'create' && <span className="text-sky-700">Thêm mới</span>}
-                          {row.status === 'skipped' && <span className="text-zinc-500">Bỏ qua</span>}
-                          {row.status === 'invalid' && <span className="text-rose-700">Số không hợp lệ</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isApplying}
-            className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
-          >
-            Hủy
-          </button>
-          <button
-            type="button"
-            onClick={handleApply}
-            disabled={isApplying || applicableCount === 0}
-            className="flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isApplying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isApplying ? 'Đang xử lý...' : `Áp dụng ${applicableCount} dòng`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export type BulkMaterialTotalWeightPreviewRow = BulkMaterialTotalWeightImportRow & {
@@ -926,7 +539,7 @@ export function sumMaterialMovementQuantity(rows: MaterialMovementRow[], slipTyp
     .reduce((sum, row) => sum + row.quantity, 0);
 }
 
-export type MaterialViewTab = 'info' | 'nvl-info' | 'history';
+export type MaterialViewTab = 'detail' | 'inbound-history' | 'outbound-history';
 
 export function MaterialViewModal({
   material,
@@ -941,13 +554,13 @@ export function MaterialViewModal({
   onDelete: (material: MaterialRow) => void;
   isDeleting: boolean;
 }) {
-  const [tab, setTab] = useState<MaterialViewTab>('info');
+  const [tab, setTab] = useState<MaterialViewTab>('detail');
   const [movements, setMovements] = useState<MaterialMovementRow[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState('');
 
   useEffect(() => {
-    if (tab !== 'history' || !material.code) return;
+    if (tab === 'detail' || !material.code || movements.length > 0) return;
 
     const loadHistory = async () => {
       setIsLoadingHistory(true);
@@ -969,14 +582,14 @@ export function MaterialViewModal({
     };
 
     loadHistory();
-  }, [tab, material.code]);
+  }, [tab, material.code, movements.length]);
 
   const inboundRows = useMemo(() => movements.filter(row => row.slipType === 'nhap'), [movements]);
   const outboundRows = useMemo(() => movements.filter(row => row.slipType === 'xuat'), [movements]);
   const totalInbound = sumMaterialMovementQuantity(movements, 'nhap');
   const totalOutbound = sumMaterialMovementQuantity(movements, 'xuat');
-  const inboundDisplay = tab === 'history' ? String(Math.round(totalInbound * 100) / 100) : material.inbound;
-  const outboundDisplay = tab === 'history' ? String(Math.round(totalOutbound * 100) / 100) : material.outbound;
+  const inboundDisplay = tab !== 'detail' ? String(Math.round(totalInbound * 100) / 100) : material.inbound;
+  const outboundDisplay = tab !== 'detail' ? String(Math.round(totalOutbound * 100) / 100) : material.outbound;
   const closingDisplay = computeClosingStock(material.openingStock, inboundDisplay, outboundDisplay);
 
   const infoRows: Array<[string, string]> = [
@@ -1002,7 +615,7 @@ export function MaterialViewModal({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <div
         className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl ${
-          tab === 'history' ? 'max-w-4xl' : 'max-w-lg'
+          tab === 'detail' ? 'max-w-lg' : 'max-w-3xl'
         }`}
       >
         <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-3">
@@ -1017,38 +630,38 @@ export function MaterialViewModal({
         <div className="flex gap-1 border-b border-zinc-200 px-4">
           <button
             type="button"
-            onClick={() => setTab('info')}
+            onClick={() => setTab('detail')}
             className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'info' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
+              tab === 'detail' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
             }`}
           >
             <Package className="h-4 w-4" />
-            Thông tin
+            Chi tiết
           </button>
           <button
             type="button"
-            onClick={() => setTab('nvl-info')}
+            onClick={() => setTab('inbound-history')}
             className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'nvl-info' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
-            }`}
-          >
-            <FlaskConical className="h-4 w-4" />
-            Thông tin NVL
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('history')}
-            className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-              tab === 'history' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
+              tab === 'inbound-history' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
             }`}
           >
             <History className="h-4 w-4" />
-            Lịch sử X/N
+            Lịch sử nhập
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('outbound-history')}
+            className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
+              tab === 'outbound-history' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
+            }`}
+          >
+            <History className="h-4 w-4" />
+            Lịch sử xuất
           </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {tab === 'history' ? (
+          {tab !== 'detail' ? (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
@@ -1073,10 +686,17 @@ export function MaterialViewModal({
               {isLoadingHistory ? (
                 <p className="py-8 text-center text-sm font-bold text-zinc-500">Đang tải lịch sử...</p>
               ) : (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="overflow-hidden rounded-xl border border-emerald-200">
-                    <div className="bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-emerald-800">
-                      Nhập kho ({inboundRows.length})
+                <div className={`overflow-hidden rounded-xl border ${
+                  tab === 'inbound-history' ? 'border-emerald-200' : 'border-amber-200'
+                }`}>
+                    <div className={`px-3 py-2 text-xs font-black uppercase tracking-wider ${
+                      tab === 'inbound-history'
+                        ? 'bg-emerald-50 text-emerald-800'
+                        : 'bg-amber-50 text-amber-800'
+                    }`}>
+                      {tab === 'inbound-history'
+                        ? `Nhập kho (${inboundRows.length})`
+                        : `Xuất kho (${outboundRows.length})`}
                     </div>
                     <div className="max-h-64 overflow-y-auto">
                       <table className="min-w-full text-left text-xs">
@@ -1088,19 +708,21 @@ export function MaterialViewModal({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100">
-                          {inboundRows.map(row => (
+                          {(tab === 'inbound-history' ? inboundRows : outboundRows).map(row => (
                             <tr key={`${row.slipCode}-${row.slipDate}-${row.quantity}`}>
                               <td className="px-3 py-2 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
                               <td className="px-3 py-2 font-bold text-zinc-900">{row.slipCode || '-'}</td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
+                              <td className={`px-3 py-2 text-right font-mono font-bold ${
+                                tab === 'inbound-history' ? 'text-emerald-700' : 'text-amber-800'
+                              }`}>
                                 {formatNumber(row.quantity, 2)}
                               </td>
                             </tr>
                           ))}
-                          {inboundRows.length === 0 && (
+                          {(tab === 'inbound-history' ? inboundRows : outboundRows).length === 0 && (
                             <tr>
                               <td colSpan={3} className="px-3 py-6 text-center font-semibold text-zinc-400">
-                                Chưa có phiếu nhập
+                                {tab === 'inbound-history' ? 'Chưa có phiếu nhập' : 'Chưa có phiếu xuất'}
                               </td>
                             </tr>
                           )}
@@ -1108,47 +730,11 @@ export function MaterialViewModal({
                       </table>
                     </div>
                   </div>
-
-                  <div className="overflow-hidden rounded-xl border border-amber-200">
-                    <div className="bg-amber-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-amber-800">
-                      Xuất kho ({outboundRows.length})
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      <table className="min-w-full text-left text-xs">
-                        <thead className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
-                          <tr>
-                            <th className="px-3 py-2 font-black">Ngày</th>
-                            <th className="px-3 py-2 font-black">Phiếu</th>
-                            <th className="px-3 py-2 text-right font-black">SL</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100">
-                          {outboundRows.map(row => (
-                            <tr key={`${row.slipCode}-${row.slipDate}-${row.quantity}`}>
-                              <td className="px-3 py-2 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
-                              <td className="px-3 py-2 font-bold text-zinc-900">{row.slipCode || '-'}</td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">
-                                {formatNumber(row.quantity, 2)}
-                              </td>
-                            </tr>
-                          ))}
-                          {outboundRows.length === 0 && (
-                            <tr>
-                              <td colSpan={3} className="px-3 py-6 text-center font-semibold text-zinc-400">
-                                Chưa có phiếu xuất
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
               )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 text-sm">
-              {(tab === 'info' ? infoRows : nvlInfoRows).map(([label, value]) => (
+              {[...infoRows, ...nvlInfoRows].map(([label, value]) => (
                 <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
                   <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
                   <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
@@ -1192,9 +778,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm);
-  const [showBulkOpeningStock, setShowBulkOpeningStock] = useState(false);
   const [showBulkTotalWeight, setShowBulkTotalWeight] = useState(false);
-  const [isFillingKgTotalWeight, setIsFillingKgTotalWeight] = useState(false);
 
   const loadMaterials = async () => {
     setIsLoadingMaterials(true);
@@ -1252,71 +836,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         totalWeight: material.totalWeight
       }))
     );
-  };
-
-  const handleDownloadOpeningStockTemplate = () => {
-    downloadBulkOpeningStockTemplate(
-      materials.map(material => ({
-        code: material.code,
-        name: material.name,
-        openingStock: material.openingStock
-      }))
-    );
-  };
-
-  const handleFillKgTotalWeight25 = async () => {
-    const kgMaterials = materials.filter(
-      material => material.code && isMaterialKgUnit(material.unit)
-    );
-    if (kgMaterials.length === 0) {
-      setMaterialsError('Không có NPL nào có đơn vị Kg.');
-      return;
-    }
-
-    if (!window.confirm(`Điền Tổng kg = 25 cho ${kgMaterials.length} NPL có đơn vị Kg?`)) {
-      return;
-    }
-
-    setIsFillingKgTotalWeight(true);
-    setMaterialsError('');
-    setActionMessage('');
-
-    try {
-      let updated = 0;
-
-      try {
-        const res = await fetch('/api/kho-nvl/fill-total-kg', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value: 25 })
-        });
-        const data = await res.json().catch(() => ({}));
-
-        if (res.ok) {
-          updated = data.updated ?? kgMaterials.length;
-        } else if (res.status === 404) {
-          updated = await patchMaterialsTotalWeight(kgMaterials, '25');
-        } else {
-          throw new Error(data.error || 'Không thể điền Tổng kg hàng loạt.');
-        }
-      } catch (error) {
-        if (!isFetchNetworkError(error)) throw error;
-        updated = await patchMaterialsTotalWeight(kgMaterials, '25');
-      }
-
-      setActionMessage(`Đã điền Tổng kg = 25 cho ${updated} NPL (đơn vị Kg).`);
-      await loadMaterials();
-    } catch (error: any) {
-      if (isFetchNetworkError(error)) {
-        setMaterialsError(
-          'Mất kết nối server (Failed to fetch). Chạy `npm run dev` trong thư mục dự án, đợi dòng "Server running on http://0.0.0.0:3002", rồi tải lại trang.'
-        );
-        return;
-      }
-      setMaterialsError(error.message || 'Không thể điền Tổng kg hàng loạt.');
-    } finally {
-      setIsFillingKgTotalWeight(false);
-    }
   };
 
   const openAddForm = () => {
@@ -1447,22 +966,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               <button
                 type="button"
-                onClick={handleDownloadOpeningStockTemplate}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100"
-              >
-                <Download className="h-4 w-4" />
-                Tải mẫu Tồn đầu
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowBulkOpeningStock(true)}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200"
-              >
-                <ClipboardPaste className="h-4 w-4" />
-                Excel Tồn đầu
-              </button>
-              <button
-                type="button"
                 onClick={handleDownloadTotalWeightTemplate}
                 className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100"
               >
@@ -1476,15 +979,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               >
                 <Upload className="h-4 w-4" />
                 Tải Excel lên
-              </button>
-              <button
-                type="button"
-                onClick={handleFillKgTotalWeight25}
-                disabled={isFillingKgTotalWeight || isLoadingMaterials || materials.length === 0}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-extrabold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isFillingKgTotalWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-                Điền 25 kg (Kg)
               </button>
               <button
                 type="button"
@@ -1640,16 +1134,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           isDeleting={deletingMaterialId === viewingMaterial.id}
         />
       )}
-
-      <BulkOpeningStockModal
-        open={showBulkOpeningStock}
-        materials={materials}
-        onClose={() => setShowBulkOpeningStock(false)}
-        onApplied={message => {
-          setActionMessage(message);
-          void loadMaterials();
-        }}
-      />
 
       <BulkMaterialTotalWeightModal
         open={showBulkTotalWeight}

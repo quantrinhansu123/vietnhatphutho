@@ -310,22 +310,18 @@ export function VehiclesPanel({
               <p className="text-[11px] font-medium text-slate-500">Danh mục, chi phí, nhật ký và đối chiếu lái xe</p>
             </div>
           </div>
-          {(activeView === 'vehicles' || activeView === 'reconciliation') && (
+          {activeView === 'vehicles' && (
             <button
               type="button"
-              onClick={() =>
-                activeView === 'vehicles'
-                  ? setVehicleModal({ mode: 'create' })
-                  : setRowModal({ mode: 'create' })
-              }
+              onClick={() => setVehicleModal({ mode: 'create' })}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-xs font-extrabold text-white transition hover:bg-brand-600"
             >
               <Plus className="h-4 w-4" />
-              {activeView === 'vehicles' ? 'Thêm xe' : 'Thêm đối chiếu'}
+              Thêm xe
             </button>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-6 sm:w-[1100px]">
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-4 sm:w-[760px]">
           <button
             type="button"
             onClick={() => setActiveView('vehicles')}
@@ -335,16 +331,6 @@ export function VehiclesPanel({
           >
             <Truck className="h-4 w-4" />
             Danh sách xe
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('reconciliation')}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
-              activeView === 'reconciliation' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ClipboardCheck className="h-4 w-4" />
-            Đối chiếu lái xe
           </button>
           <button
             type="button"
@@ -371,16 +357,6 @@ export function VehiclesPanel({
             onClick={() => setActiveView('logs')}
             className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
               activeView === 'logs' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <BookOpen className="h-4 w-4" />
-            Nhật ký xe
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('km_log')}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
-              activeView === 'km_log' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             <Gauge className="h-4 w-4" />

@@ -604,7 +604,7 @@ function StaffViewPermissionsModal({ member, onClose }: { member: HrMember; onCl
   );
 }
 
-function StaffViewPermissionsPicker({
+export function StaffViewPermissionsPicker({
   value,
   onChange
 }: {

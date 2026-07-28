@@ -7,6 +7,11 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage, formatCell, formatTimeCell } from '../_shared/recordHelpers';
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
+import { StaffViewPermissionsPicker } from '../nhan-su';
+import type { StaffViewPermissions } from '../nhan-su/menuViews';
+import { summarizeStaffViewPermissions } from '../nhan-su/menuViews';
+import { buildPermissionKey, parsePermissionSettings } from './permissionKeys';
 import { Eye, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
 
 export interface SettingRow {
@@ -133,8 +138,11 @@ export function settingToForm(setting: SettingRow): SettingFormState {
 
 export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [settings, setSettings] = useState<SettingRow[]>([]);
+  const [branches, setBranches] = useState<HrBranch[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
+  const [activeTab, setActiveTab] = useState<'settings' | 'permissions'>('settings');
+  const [permissionTab, setPermissionTab] = useState<'keys' | 'tabs'>('keys');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [settingsError, setSettingsError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -145,6 +153,23 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [settingForm, setSettingForm] = useState<SettingFormState>(emptySettingForm);
+  const [permissionForm, setPermissionForm] = useState<{
+    id: string;
+    department: string;
+    position: string;
+    viewPermissions: StaffViewPermissions;
+  }>({
+    id: '',
+    department: '',
+    position: '',
+    viewPermissions: []
+  });
+  const [isSavingPermission, setIsSavingPermission] = useState(false);
+  const [deletingPermissionId, setDeletingPermissionId] = useState('');
+  const [permissionError, setPermissionError] = useState('');
+  const [permissionMessage, setPermissionMessage] = useState('');
+  const [isLoadingStaffOptions, setIsLoadingStaffOptions] = useState(true);
+  const [staffOptionsError, setStaffOptionsError] = useState('');
 
   const loadSettings = async () => {
     setIsLoadingSettings(true);
@@ -169,6 +194,28 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     loadSettings();
+  }, []);
+
+  useEffect(() => {
+    const loadStaffGroups = async () => {
+      setIsLoadingStaffOptions(true);
+      setStaffOptionsError('');
+      try {
+        const res = await fetch('/api/nhan-su?format=groups&scope=all');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || 'Không thể tải phòng ban / vị trí từ nhan_su.');
+        }
+        setBranches(normalizeHrBranches(data));
+      } catch (error: any) {
+        setBranches([]);
+        setStaffOptionsError(error.message || 'Không thể tải phòng ban / vị trí từ nhan_su.');
+      } finally {
+        setIsLoadingStaffOptions(false);
+      }
+    };
+
+    void loadStaffGroups();
   }, []);
 
   const openAddForm = () => {
@@ -290,6 +337,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredSettings = useMemo(() => {
     return settings.filter(setting => {
+      const permissionText = `${setting.group} ${setting.loaiCaiDat}`.toLowerCase();
+      const isPermissionSetting = permissionText.includes('phân quyền') || permissionText.includes('phan quyen');
+      if (isPermissionSetting) return false;
       const matchesGroup = selectedGroup === 'all' || setting.group === selectedGroup;
       const matchesSearch =
         !normalizedSearch ||
@@ -299,6 +349,179 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       return matchesGroup && matchesSearch;
     });
   }, [normalizedSearch, selectedGroup, settings]);
+
+  const permissionSettings = useMemo(
+    () =>
+      parsePermissionSettings(
+        settings.map(setting => ({
+          id: setting.id,
+          code: setting.code,
+          name: setting.name,
+          loaiCaiDat: setting.loaiCaiDat,
+          group: setting.group,
+          note: setting.note
+        }))
+      ),
+    [settings]
+  );
+
+  // Phòng ban = distinct phong_ban từ bảng nhan_su
+  const departmentOptions = useMemo(() => {
+    const names = new Set<string>();
+    branches.forEach(branch =>
+      branch.departments.forEach(department => {
+        const name = department.name.trim();
+        if (name && name !== 'Chưa phân phòng ban') names.add(name);
+      })
+    );
+    return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [branches]);
+
+  // Vị trí = distinct cong_viec (role) từ nhan_su, theo phòng ban đang chọn
+  const positionOptions = useMemo(() => {
+    const names = new Set<string>();
+    branches.forEach(branch =>
+      branch.departments.forEach(department => {
+        if (permissionForm.department && department.name !== permissionForm.department) return;
+        department.members.forEach(member => {
+          const position = (member.role || member.position || '').trim();
+          if (position) names.add(position);
+        });
+      })
+    );
+    if (names.size === 0) {
+      branches.forEach(branch =>
+        branch.departments.forEach(department => {
+          department.members.forEach(member => {
+            const position = (member.role || member.position || '').trim();
+            if (position) names.add(position);
+          });
+        })
+      );
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [branches, permissionForm.department]);
+
+  useEffect(() => {
+    if (!permissionForm.department && departmentOptions[0]) {
+      setPermissionForm(prev => ({ ...prev, department: departmentOptions[0] }));
+    }
+  }, [departmentOptions, permissionForm.department]);
+
+  useEffect(() => {
+    if (!permissionForm.position) {
+      if (positionOptions[0]) {
+        setPermissionForm(prev => ({ ...prev, position: positionOptions[0] }));
+      }
+      return;
+    }
+    if (positionOptions.length > 0 && !positionOptions.includes(permissionForm.position)) {
+      setPermissionForm(prev => ({ ...prev, position: positionOptions[0] || '' }));
+    }
+  }, [positionOptions, permissionForm.position]);
+
+  const currentPermissionKey = buildPermissionKey(permissionForm.department, permissionForm.position);
+
+  const handleSelectPermission = (permissionId: string) => {
+    const selected = permissionSettings.find(item => item.id === permissionId);
+    if (!selected) return;
+    setPermissionForm({
+      id: selected.id,
+      department: selected.department,
+      position: selected.position,
+      viewPermissions: selected.viewPermissions
+    });
+    setPermissionError('');
+    setPermissionMessage('');
+  };
+
+  const resetPermissionForm = () => {
+    setPermissionForm({
+      id: '',
+      department: departmentOptions[0] || '',
+      position: '',
+      viewPermissions: []
+    });
+    setPermissionError('');
+    setPermissionMessage('');
+  };
+
+  const handleSavePermission = async () => {
+    if (!permissionForm.department.trim()) {
+      setPermissionError('Vui lòng chọn phòng ban.');
+      return;
+    }
+    if (!permissionForm.position.trim()) {
+      setPermissionError('Vui lòng chọn vị trí.');
+      return;
+    }
+
+    setIsSavingPermission(true);
+    setPermissionError('');
+    setPermissionMessage('');
+
+    try {
+      const existed = permissionSettings.find(
+        item =>
+          item.permissionKey === currentPermissionKey &&
+          (!permissionForm.id || permissionForm.id !== item.id)
+      );
+      const targetId = permissionForm.id || existed?.id || '';
+      const payload = {
+        code: `PERM_KEY_${currentPermissionKey}`,
+        name: `${permissionForm.department} - ${permissionForm.position}`,
+        loaiCaiDat: 'Phân quyền',
+        startTime: '00:00',
+        endTime: '00:00',
+        group: 'Phân quyền',
+        note: JSON.stringify({
+          department: permissionForm.department,
+          position: permissionForm.position,
+          permissionKey: currentPermissionKey,
+          viewPermissions: permissionForm.viewPermissions
+        })
+      };
+      const res = await fetch(targetId ? `/api/cai-dat/${targetId}` : '/api/cai-dat', {
+        method: targetId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể lưu key phân quyền.');
+      }
+      setPermissionMessage(targetId ? 'Đã cập nhật key phân quyền.' : 'Đã tạo key phân quyền.');
+      await loadSettings();
+      if (!targetId) {
+        setPermissionForm(prev => ({ ...prev, id: '' }));
+      }
+    } catch (error: any) {
+      setPermissionError(error.message || 'Không thể lưu key phân quyền.');
+    } finally {
+      setIsSavingPermission(false);
+    }
+  };
+
+  const handleDeletePermission = async (permissionId: string) => {
+    if (!window.confirm('Bạn có chắc muốn xóa key phân quyền này?')) return;
+    setDeletingPermissionId(permissionId);
+    setPermissionError('');
+    setPermissionMessage('');
+    try {
+      const res = await fetch(`/api/cai-dat/${permissionId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa key phân quyền.');
+      }
+      if (permissionForm.id === permissionId) resetPermissionForm();
+      setPermissionMessage('Đã xóa key phân quyền.');
+      await loadSettings();
+    } catch (error: any) {
+      setPermissionError(error.message || 'Không thể xóa key phân quyền.');
+    } finally {
+      setDeletingPermissionId('');
+    }
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
@@ -483,6 +706,33 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      <section className="flex flex-wrap gap-2 rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveTab('settings')}
+          className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
+            activeTab === 'settings'
+              ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
+              : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
+          }`}
+        >
+          Cài đặt hệ thống
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('permissions')}
+          className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
+            activeTab === 'permissions'
+              ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
+              : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
+          }`}
+        >
+          Phân quyền
+        </button>
+      </section>
+
+      {activeTab === 'settings' ? (
+        <>
       <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
         <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-1 lg:pb-0">
           {settingGroups.map(group => (
@@ -623,6 +873,228 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           </table>
         </div>
       </section>
+        </>
+      ) : (
+        <>
+          <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setPermissionTab('keys')}
+                className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
+                  permissionTab === 'keys'
+                    ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
+                    : 'border-zinc-200 bg-white text-zinc-700'
+                }`}
+              >
+                Key phân quyền
+              </button>
+              <button
+                type="button"
+                onClick={() => setPermissionTab('tabs')}
+                className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
+                  permissionTab === 'tabs'
+                    ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
+                    : 'border-zinc-200 bg-white text-zinc-700'
+                }`}
+              >
+                Tab phân quyền
+              </button>
+            </div>
+          </section>
+
+          <section className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+            <div className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Key phân quyền</h3>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">Ghép `Phòng ban + Vị trí` thành 1 key.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetPermissionForm}
+                  className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                >
+                  Tạo mới
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Phòng ban</span>
+                  <select
+                    value={permissionForm.department}
+                    onChange={event =>
+                      setPermissionForm(prev => ({
+                        ...prev,
+                        id: '',
+                        department: event.target.value,
+                        position: '',
+                        viewPermissions: prev.id ? [] : prev.viewPermissions
+                      }))
+                    }
+                    disabled={isLoadingStaffOptions || departmentOptions.length === 0}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10 disabled:bg-zinc-50 disabled:text-zinc-400"
+                  >
+                    {departmentOptions.length === 0 ? (
+                      <option value="">
+                        {isLoadingStaffOptions ? 'Đang tải từ nhan_su...' : 'Chưa có phòng ban'}
+                      </option>
+                    ) : (
+                      departmentOptions.map(department => (
+                        <option key={department} value={department}>
+                          {department}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Vị trí</span>
+                  <select
+                    value={permissionForm.position}
+                    onChange={event =>
+                      setPermissionForm(prev => ({ ...prev, id: '', position: event.target.value }))
+                    }
+                    disabled={isLoadingStaffOptions || positionOptions.length === 0}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10 disabled:bg-zinc-50 disabled:text-zinc-400"
+                  >
+                    {positionOptions.length === 0 ? (
+                      <option value="">
+                        {isLoadingStaffOptions ? 'Đang tải từ nhan_su...' : 'Chưa có vị trí / chức vụ'}
+                      </option>
+                    ) : (
+                      positionOptions.map(position => (
+                        <option key={position} value={position}>
+                          {position}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                {staffOptionsError && (
+                  <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                    {staffOptionsError}
+                  </p>
+                )}
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Key tạo ra</p>
+                  <p className="mt-1 break-all text-sm font-black text-[#ef1b2d]">{currentPermissionKey || '-'}</p>
+                  <p className="mt-1 text-[11px] font-semibold text-zinc-500">
+                    Nguồn: `phong_ban` + `cong_viec` từ bảng nhan_su
+                  </p>
+                </div>
+                {permissionError && (
+                  <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                    {permissionError}
+                  </p>
+                )}
+                {permissionMessage && (
+                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+                    {permissionMessage}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSavePermission}
+                  disabled={isSavingPermission}
+                  className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+                >
+                  {isSavingPermission ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {isSavingPermission ? 'Đang lưu...' : permissionForm.id ? 'Cập nhật key' : 'Lưu key'}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="min-w-[760px] w-full text-left text-sm">
+                    <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
+                      <tr>
+                        <th className="px-4 py-3 font-black">Phòng ban</th>
+                        <th className="px-4 py-3 font-black">Vị trí</th>
+                        <th className="px-4 py-3 font-black">Key</th>
+                        <th className="px-4 py-3 font-black">Menu đã cấp</th>
+                        <th className="px-4 py-3 text-center font-black">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {permissionSettings.map(item => (
+                        <tr
+                          key={item.id}
+                          className={`transition ${permissionForm.id === item.id ? 'bg-red-50/70' : 'hover:bg-red-50/40'}`}
+                        >
+                          <td className="px-4 py-3 font-semibold text-zinc-900">{item.department}</td>
+                          <td className="px-4 py-3 font-semibold text-zinc-700">{item.position}</td>
+                          <td className="px-4 py-3 font-black text-[#ef1b2d]">{item.permissionKey}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-zinc-600">
+                            {summarizeStaffViewPermissions(item.viewPermissions)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectPermission(item.id)}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                                title="Chọn"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePermission(item.id)}
+                                disabled={deletingPermissionId === item.id}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                                title="Xóa"
+                              >
+                                {deletingPermissionId === item.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {!isLoadingSettings && permissionSettings.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8 text-center font-bold text-zinc-500">
+                            Chưa có key phân quyền nào.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {permissionTab === 'tabs' && (
+                <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tab phân quyền</h3>
+                    <p className="mt-1 text-xs font-semibold text-zinc-500">
+                      Chọn menu cha và menu con được phép xem cho key hiện tại.
+                    </p>
+                  </div>
+                  <div className="mb-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs font-semibold text-zinc-700">
+                    Đang cấu hình: <span className="font-black text-zinc-950">{permissionForm.department || '-'}</span>
+                    {' / '}
+                    <span className="font-black text-zinc-950">{permissionForm.position || '-'}</span>
+                    {' / '}
+                    <span className="font-black text-[#ef1b2d]">{currentPermissionKey || '-'}</span>
+                  </div>
+                  <StaffViewPermissionsPicker
+                    value={permissionForm.viewPermissions}
+                    onChange={viewPermissions => setPermissionForm(prev => ({ ...prev, viewPermissions }))}
+                  />
+                </section>
+              )}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

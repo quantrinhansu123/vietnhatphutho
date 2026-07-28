@@ -1510,8 +1510,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     });
   }, [normalizedSearch, products, selectedGroup, selectedNatures]);
 
-  const natureCount = new Set(products.map(product => product.nature)).size;
-  const unitCount = new Set(products.map(product => product.unit).filter(Boolean)).size;
   const selectedProducts = useMemo(
     () => products.filter(product => selectedProductIds.has(product.id)),
     [products, selectedProductIds]
@@ -1640,41 +1638,15 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="w-full space-y-4">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex items-start justify-end gap-3">
-            <div className="hidden">
-              <p className="text-xs font-black uppercase tracking-wider text-red-300">Danh mục sản phẩm</p>
-              <h2 className="mt-1 text-2xl font-black leading-tight">Sản phẩm</h2>
-              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Dữ liệu được tải trực tiếp từ bảng Supabase san_pham.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={openProductCreate}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm mới
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
-            {[
-              ['Sản phẩm', products.length],
-              ['Nhóm VTHH', productGroups.length > 0 ? productGroups.length - 1 : 0],
-              ['Đơn vị', unitCount || natureCount]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <span className="block font-bold text-zinc-400">{label}</span>
-                <span className="mt-1 block text-xl font-black text-white">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      <section className="flex justify-end rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+        <button
+          type="button"
+          onClick={openProductCreate}
+          className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+        >
+          <Plus className="h-4 w-4" />
+          Thêm mới
+        </button>
       </section>
 
       <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">

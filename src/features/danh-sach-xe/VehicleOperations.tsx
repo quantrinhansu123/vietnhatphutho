@@ -19,6 +19,7 @@ import {
   uploadImage
 } from '../_shared/recordHelpers';
 import { vietNhatLogoUrl } from '../../components/layout/constants';
+import { SearchableSelect } from '../../components/shared/SearchableSelect';
 
 export type VehicleOption = {
   id: string;
@@ -96,6 +97,23 @@ type VehicleDeliveryRequest = {
   ten_tai_xe: string;
   trang_thai: string;
   ghi_chu: string;
+};
+
+type BusinessShippingOrderLine = {
+  ma_sp: string;
+  ten_sp: string;
+  don_vi: string;
+  so_luong: number;
+};
+
+type BusinessShippingOrder = {
+  id: string;
+  ma_lenh: string;
+  ngay_xuat: string;
+  dia_chi_giao: string;
+  ten_khach_hang: string;
+  ghi_chu: string;
+  chi_tiet: BusinessShippingOrderLine[];
 };
 
 type VehicleKmLog = {
@@ -957,6 +975,7 @@ export function VehicleDeliveryRequestsView({
   staff: StaffOption[];
 }) {
   const [rows, setRows] = useState<VehicleDeliveryRequest[]>([]);
+  const [shippingOrders, setShippingOrders] = useState<BusinessShippingOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<VehicleDeliveryRequest | null | undefined>(undefined);
@@ -966,8 +985,11 @@ export function VehicleDeliveryRequestsView({
     setIsLoading(true);
     setError('');
     try {
-      const data = await readJson(await fetch('/api/yeu-cau-xuat-hang-xe'));
-      const source = Array.isArray(data.rows) ? data.rows : [];
+      const [requestData, shippingData] = await Promise.all([
+        readJson(await fetch('/api/yeu-cau-xuat-hang-xe')),
+        readJson(await fetch('/api/lenh-xuat-hang'))
+      ]);
+      const source = Array.isArray(requestData.rows) ? requestData.rows : [];
       setRows(source.map((row: Record<string, unknown>) => ({
         id: text(row.id),
         so_yeu_cau: text(row.so_yeu_cau),
@@ -983,8 +1005,31 @@ export function VehicleDeliveryRequestsView({
         trang_thai: text(row.trang_thai) || 'Chờ xuất hàng',
         ghi_chu: text(row.ghi_chu)
       })));
+      const shippingSource = Array.isArray(shippingData.orders) ? shippingData.orders : [];
+      setShippingOrders(
+        shippingSource.map((row: Record<string, unknown>) => ({
+          id: text(row.id),
+          ma_lenh: text(row.ma_lenh),
+          ngay_xuat: text(row.ngay_xuat).slice(0, 10),
+          dia_chi_giao: text(row.dia_chi_giao),
+          ten_khach_hang: text(row.ten_khach_hang),
+          ghi_chu: text(row.ghi_chu),
+          chi_tiet: Array.isArray(row.chi_tiet)
+            ? row.chi_tiet.map((line: unknown) => {
+                const item = line && typeof line === 'object' ? (line as Record<string, unknown>) : {};
+                return {
+                  ma_sp: text(item.ma_sp),
+                  ten_sp: text(item.ten_sp),
+                  don_vi: text(item.don_vi),
+                  so_luong: numberValue(item.so_luong)
+                };
+              })
+            : []
+        }))
+      );
     } catch (loadError: any) {
       setRows([]);
+      setShippingOrders([]);
       setError(loadError.message || 'Không thể tải yêu cầu xuất hàng.');
     } finally {
       setIsLoading(false);
@@ -1050,6 +1095,7 @@ export function VehicleDeliveryRequestsView({
           initial={editing || undefined}
           vehicles={vehicles}
           staff={staff}
+          shippingOrders={shippingOrders}
           onClose={() => setEditing(undefined)}
           onSaved={async () => { setEditing(undefined); await loadRows(); }}
         />
@@ -1059,14 +1105,16 @@ export function VehicleDeliveryRequestsView({
 }
 
 function DeliveryRequestModal({
-  initial, vehicles, staff, onClose, onSaved
+  initial, vehicles, staff, shippingOrders, onClose, onSaved
 }: {
   initial?: VehicleDeliveryRequest;
   vehicles: VehicleOption[];
   staff: StaffOption[];
+  shippingOrders: BusinessShippingOrder[];
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
+  const [selectedShippingOrderId, setSelectedShippingOrderId] = useState('');
   const [form, setForm] = useState<Omit<VehicleDeliveryRequest, 'id'>>(() => ({
     so_yeu_cau: initial?.so_yeu_cau || `YCXH-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}`,
     ngay_yeu_cau: initial?.ngay_yeu_cau || new Date().toISOString().slice(0, 10),
@@ -1083,6 +1131,34 @@ function DeliveryRequestModal({
   }));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const shippingOrderOptions = useMemo(
+    () =>
+      shippingOrders.filter(order => order.ngay_xuat === form.ngay_yeu_cau),
+    [form.ngay_yeu_cau, shippingOrders]
+  );
+
+  const applyBusinessShippingOrder = (orderId: string) => {
+    setSelectedShippingOrderId(orderId);
+    const order = shippingOrders.find(item => item.id === orderId);
+    if (!order) return;
+    const totalQuantity = order.chi_tiet.reduce((sum, line) => sum + (line.so_luong || 0), 0);
+    const firstUnit = order.chi_tiet.find(line => line.don_vi)?.don_vi || '';
+    const goodsSummary = order.chi_tiet
+      .map(line => line.ten_sp || line.ma_sp)
+      .filter(Boolean)
+      .join(', ');
+    setForm(prev => ({
+      ...prev,
+      so_yeu_cau: order.ma_lenh || prev.so_yeu_cau,
+      ngay_yeu_cau: order.ngay_xuat || prev.ngay_yeu_cau,
+      dia_diem_giao: order.dia_chi_giao || prev.dia_diem_giao,
+      hang_hoa: goodsSummary || order.ten_khach_hang || prev.hang_hoa,
+      so_luong: totalQuantity > 0 ? totalQuantity : prev.so_luong,
+      don_vi: firstUnit || prev.don_vi,
+      ghi_chu: order.ghi_chu || prev.ghi_chu
+    }));
+  };
+
   const save = async () => {
     setIsSaving(true); setError('');
     try {
@@ -1097,6 +1173,23 @@ function DeliveryRequestModal({
     <OperationModal title={initial ? 'Sửa yêu cầu xuất hàng' : 'Thêm yêu cầu xuất hàng'} subtitle="Thông tin giao hàng, xe và lái xe phụ trách" onClose={onClose} onSave={() => void save()} isSaving={isSaving}>
       {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
+        {!initial ? (
+          <>
+            <Field label="Ngày lấy từ kinh doanh">
+              <input type="date" value={form.ngay_yeu_cau} onChange={e => setForm(p => ({ ...p, ngay_yeu_cau: e.target.value }))} className={inputClass} />
+            </Field>
+            <Field label="Lệnh xuất hàng (kinh doanh)">
+              <select value={selectedShippingOrderId} onChange={e => applyBusinessShippingOrder(e.target.value)} className={inputClass}>
+                <option value="">Chọn lệnh xuất hàng theo ngày</option>
+                {shippingOrderOptions.map(order => (
+                  <option key={order.id} value={order.id}>
+                    {order.ma_lenh} · {order.ten_khach_hang || 'Khách hàng'} · {order.chi_tiet.length} SP
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </>
+        ) : null}
         <Field label="Số yêu cầu *"><input value={form.so_yeu_cau} onChange={e => setForm(p => ({ ...p, so_yeu_cau: e.target.value }))} className={inputClass} /></Field>
         <Field label="Ngày yêu cầu *"><input type="date" value={form.ngay_yeu_cau} onChange={e => setForm(p => ({ ...p, ngay_yeu_cau: e.target.value }))} className={inputClass} /></Field>
         <Field label="Địa điểm giao *"><input value={form.dia_diem_giao} onChange={e => setForm(p => ({ ...p, dia_diem_giao: e.target.value }))} className={inputClass} /></Field>
@@ -1104,7 +1197,27 @@ function DeliveryRequestModal({
         <Field label="Số lượng *"><input type="number" min="0" step="any" value={form.so_luong || ''} onChange={e => setForm(p => ({ ...p, so_luong: Number(e.target.value) }))} className={inputClass} /></Field>
         <Field label="Đơn vị"><input value={form.don_vi} onChange={e => setForm(p => ({ ...p, don_vi: e.target.value }))} className={inputClass} placeholder="cuộn, kg, cái..." /></Field>
         <Field label="Biển số xe"><select value={form.xe_id} onChange={e => { const v = vehicles.find(x => x.id === e.target.value); setForm(p => ({ ...p, xe_id: v?.id || '', bien_so_xe: v?.bien_so_xe || '' })); }} className={inputClass}><option value="">Chọn xe</option>{vehicles.map(v => <option key={v.id} value={v.id}>{v.bien_so_xe} · {v.loai_xe}</option>)}</select></Field>
-        <Field label="Lái xe"><select value={`${form.ma_nhan_su}|${form.ten_tai_xe}`} onChange={e => { const s = staff.find(x => `${x.code}|${x.name}` === e.target.value); setForm(p => ({ ...p, ma_nhan_su: s?.code || '', ten_tai_xe: s?.name || '' })); }} className={inputClass}><option value="|">Chọn lái xe</option>{staff.map(s => <option key={`${s.code}-${s.name}`} value={`${s.code}|${s.name}`}>{s.name}</option>)}</select></Field>
+        <Field label="Lái xe">
+          <SearchableSelect
+            value={`${form.ma_nhan_su}|${form.ten_tai_xe}`}
+            options={staff}
+            onChange={value => {
+              const s = staff.find(x => `${x.code}|${x.name}` === value);
+              setForm(p => ({ ...p, ma_nhan_su: s?.code || '', ten_tai_xe: s?.name || '' }));
+            }}
+            placeholder="Gõ để tìm lái xe"
+            getValue={item => `${(item as StaffOption).code}|${(item as StaffOption).name}`}
+            getLabel={item => {
+              const staffItem = item as StaffOption;
+              return staffItem.code ? `${staffItem.name} (${staffItem.code})` : staffItem.name;
+            }}
+            getSearchText={item => {
+              const staffItem = item as StaffOption;
+              return `${staffItem.name} ${staffItem.code}`;
+            }}
+            inputClassName={inputClass}
+          />
+        </Field>
         <Field label="Trạng thái"><select value={form.trang_thai} onChange={e => setForm(p => ({ ...p, trang_thai: e.target.value }))} className={inputClass}>{['Chờ xuất hàng', 'Đang giao', 'Hoàn thành', 'Đã hủy'].map(v => <option key={v}>{v}</option>)}</select></Field>
         <Field label="Ghi chú"><input value={form.ghi_chu} onChange={e => setForm(p => ({ ...p, ghi_chu: e.target.value }))} className={inputClass} /></Field>
       </div>

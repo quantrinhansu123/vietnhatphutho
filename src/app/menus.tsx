@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
-  ClipboardList, Settings, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale,
+  ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck
 } from 'lucide-react';
 import type { AppTab } from '../routes';
@@ -30,7 +30,7 @@ export const MAIN_MENU_ITEMS: MenuCardConfig[] = [
   },
   {
     title: 'HCNS',
-    desc: 'Nhân sự và các tham số cài đặt vận hành hệ thống.',
+    desc: 'Quản lý nhân sự, chi nhánh, bộ phận và ca làm việc.',
     icon: UsersRound,
     tab: 'hcns'
   },
@@ -63,6 +63,12 @@ export const MAIN_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Quản lý xe, chi phí, nhật ký, đối chiếu lái xe và quy chế.',
     icon: Truck,
     tab: 'vehicles'
+  },
+  {
+    title: 'Cài đặt',
+    desc: 'Cấu hình hệ thống và phân quyền xem menu theo phòng ban, vị trí.',
+    icon: Settings,
+    tab: 'settings'
   }
 ];
 
@@ -231,12 +237,6 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Quản lý danh sách nhân viên, chi nhánh, bộ phận và ca làm việc.',
     icon: UsersRound,
     tab: 'hr'
-  },
-  {
-    title: 'Cài đặt',
-    desc: 'Xem tham số cấu hình và giá trị mặc định của hệ thống.',
-    icon: Settings,
-    tab: 'settings'
   }
 ];
 
@@ -339,10 +339,7 @@ export const PRIMARY_NAV_GROUPS: {
     title: 'HCNS',
     icon: UsersRound,
     tab: 'hcns',
-    children: [
-      { label: 'Nhân sự', tab: 'hr' },
-      { label: 'Cài đặt', tab: 'settings' }
-    ]
+    children: [{ label: 'Nhân sự', tab: 'hr' }]
   },
   {
     title: 'Kinh doanh',
@@ -373,6 +370,12 @@ export const PRIMARY_NAV_GROUPS: {
     icon: BarChart3,
     tab: 'dashboard',
     children: []
+  },
+  {
+    title: 'Cài đặt',
+    icon: Settings,
+    tab: 'settings',
+    children: [{ label: 'Phân quyền & tham số', tab: 'settings' }]
   }
 ];
 
@@ -403,7 +406,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machines': { group: 'CSVC & Kho', sub: 'Danh sách máy' },
   'warehouse-slip': { group: 'CSVC & Kho', sub: 'Phiếu xuất nhập kho' },
   'warehouse-history': { group: 'CSVC & Kho', sub: 'Lịch sử XNK' },
-  'settings': { group: 'HCNS', sub: 'Cài đặt' },
+  'settings': { group: 'Cài đặt', sub: 'Phân quyền & tham số' },
   'hr': { group: 'HCNS', sub: 'Nhân sự' },
   'vehicles': { group: 'Trang chủ', sub: 'Danh sách xe' },
   'orders': { group: 'Đơn hàng', sub: 'Quản lý đơn' },
@@ -434,7 +437,7 @@ export function SubNav({
   allowedTabs?: Set<string>;
   fullAccess?: boolean;
 }) {
-  const canSee = (tab: AppTab) => fullAccess || (allowedTabs?.has(tab) ?? false);
+  const canSee = (tab: AppTab) => tab === 'settings' || fullAccess || (allowedTabs?.has(tab) ?? false);
   const visibleGroups = PRIMARY_NAV_GROUPS
     .map(group => ({
       ...group,

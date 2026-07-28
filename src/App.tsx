@@ -467,7 +467,7 @@ export default function App() {
   const knownPermissionTabs = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
   // Tab không thuộc cây phân quyền => không bị kiểm soát, luôn hiển thị
   const canSeeTab = (tab: AppTab) =>
-    menuFullAccess || !knownPermissionTabs.has(tab) || allowedMenuTabs.has(tab);
+    tab === 'settings' || menuFullAccess || !knownPermissionTabs.has(tab) || allowedMenuTabs.has(tab);
   const visibleMainMenuItems = menuFullAccess
     ? MAIN_MENU_ITEMS
     : MAIN_MENU_ITEMS.filter(item => canSeeTab(item.tab));
@@ -794,7 +794,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="HCNS" desc="Nhân sự, bảng báo cáo cân và cấu hình hệ thống." />
+                <MenuPageHeader title="HCNS" desc="Quản lý nhân sự, chi nhánh, bộ phận và ca làm việc." />
                 <MenuCardGrid items={filterMenuItems(HCNS_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'business' ? (

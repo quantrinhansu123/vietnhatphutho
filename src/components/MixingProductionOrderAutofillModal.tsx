@@ -94,6 +94,30 @@ export default function MixingProductionOrderAutofillModal({
     setSelectedProductKeys(prev => (prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]));
   };
 
+  const visibleOrderCodes = orderOptions.map(order => order.orderCode);
+  const allVisibleOrdersSelected =
+    visibleOrderCodes.length > 0 && visibleOrderCodes.every(code => selectedOrderCodes.includes(code));
+
+  const toggleAllVisibleOrders = () => {
+    if (allVisibleOrdersSelected) {
+      const visibleCodeSet = new Set(visibleOrderCodes);
+      setSelectedOrderCodes(prev => prev.filter(code => !visibleCodeSet.has(code)));
+      setSelectedProductKeys(prev =>
+        prev.filter(key => !visibleOrderCodes.some(orderCode => key.startsWith(`${orderCode}::`)))
+      );
+      return;
+    }
+
+    const nextOrderCodes = Array.from(new Set([...selectedOrderCodes, ...visibleOrderCodes]));
+    const nextProducts = buildMixingProductionOrderProductCandidates(
+      matchedOrders,
+      visibleOrderCodes,
+      catalogProducts
+    );
+    setSelectedOrderCodes(nextOrderCodes);
+    setSelectedProductKeys(prev => Array.from(new Set([...prev, ...nextProducts.map(product => product.key)])));
+  };
+
   const handleApply = () => {
     if (selectedProductKeys.length === 0) return;
     const items = buildMixingRoundItemsFromProductCandidates(
@@ -141,16 +165,24 @@ export default function MixingProductionOrderAutofillModal({
           </div>
         ) : (
           <>
-            <div className="border-b border-zinc-100 p-4">
-              <label className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
-                <Search className="h-4 w-4 text-zinc-400" />
-                <input
-                  value={orderSearch}
-                  onChange={event => setOrderSearch(event.target.value)}
-                  placeholder="Tìm mã lệnh SX, máy, mã SP..."
-                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-                />
+            <div className="flex items-center gap-2 border-b border-zinc-100 p-4">
+              <label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+                  <Search className="h-4 w-4 shrink-0 text-zinc-400" />
+                  <input
+                    value={orderSearch}
+                    onChange={event => setOrderSearch(event.target.value)}
+                    placeholder="Tìm mã lệnh SX, máy, mã SP..."
+                    className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                  />
               </label>
+              <button
+                type="button"
+                onClick={toggleAllVisibleOrders}
+                disabled={orderOptions.length === 0}
+                className="h-8 shrink-0 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-2.5 text-[11px] font-black text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {allVisibleOrdersSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+              </button>
             </div>
 
             <div className="max-h-[28vh] overflow-y-auto p-4">
