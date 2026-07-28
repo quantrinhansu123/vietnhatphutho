@@ -1028,8 +1028,8 @@ export default function AcceptanceReportForm({
                 className={line.id === highlightLineId ? 'line-added-flash rounded-lg px-1' : ''}
               >
                 {/* Mobile: 2 dòng — (1) mã/ĐVT/SL, (2) tên SP full. Desktop: grid cột. */}
-                <div className="flex flex-col gap-1.5 sm:contents">
-                  <div className="flex min-w-0 items-end gap-1.5 sm:contents">
+                <div className="flex flex-col gap-1.5 sm:col-span-6">
+                  <div className="flex min-w-0 flex-wrap items-end gap-1.5 sm:grid sm:grid-cols-[2.25rem_minmax(0,1.1fr)_minmax(0,1.3fr)_4rem_6rem_2.5rem] sm:gap-2">
                     <div className="flex shrink-0 items-center justify-center self-end pb-1.5 sm:col-start-1 sm:self-center sm:pb-0">
                       <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#ef1b2d] text-[11px] font-black text-white">
                         {index + 1}
@@ -1106,17 +1106,17 @@ export default function AcceptanceReportForm({
                         </button>
                       </div>
                     ) : null}
-                  </div>
-                  <div className="min-w-0 sm:col-start-3">
-                    <span className={mobileFieldLabelClass}>Tên SP</span>
-                    <div
-                      className={`${inputClass} flex h-auto min-h-10 items-center whitespace-normal break-words bg-zinc-50 py-2 leading-snug text-zinc-700`}
-                      title={productName || undefined}
-                      aria-label="Tên SP"
-                    >
-                      {productName || (
-                        <span className="font-semibold text-zinc-400">Tự động theo mã SP</span>
-                      )}
+                    <div className="order-last w-full min-w-0 sm:order-none sm:col-start-3 sm:row-start-1 sm:w-auto">
+                      <span className={mobileFieldLabelClass}>Tên SP</span>
+                      <div
+                        className={`${inputClass} flex h-auto min-h-10 items-center whitespace-normal break-words bg-zinc-50 py-2 leading-snug text-zinc-700`}
+                        title={productName || undefined}
+                        aria-label="Tên SP"
+                      >
+                        {productName || (
+                          <span className="font-semibold text-zinc-400">Tự động theo mã SP</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

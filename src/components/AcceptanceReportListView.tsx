@@ -617,6 +617,7 @@ export default function AcceptanceReportListView({
                               className="h-4 w-4 accent-[#ef1b2d]"
                             />
                           </th>
+                          <th className="w-12 px-3 py-2 text-center font-black">STT</th>
                           <th className="px-3 py-2 font-black">Ảnh</th>
                           <th className="px-3 py-2 font-black">Ca</th>
                           <th className="px-3 py-2 font-black">Tổ</th>
@@ -629,7 +630,7 @@ export default function AcceptanceReportListView({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
-                        {group.reports.map(report => (
+                        {group.reports.map((report, reportIndex) => (
                           <tr key={report.id} className="hover:bg-emerald-50/40">
                             <td className="px-3 py-2 text-center">
                               <input
@@ -639,6 +640,9 @@ export default function AcceptanceReportListView({
                                 aria-label="Chọn dòng"
                                 className="h-4 w-4 accent-[#ef1b2d]"
                               />
+                            </td>
+                            <td className="px-3 py-2 text-center font-mono font-bold text-zinc-600">
+                              {reportIndex + 1}
                             </td>
                             <td className="px-3 py-2">
                               {report.hinh_anh ? (
@@ -669,6 +673,7 @@ export default function AcceptanceReportListView({
                         ))}
                         {totalsByUnit.map(([unit, total]) => (
                           <tr key={unit} className="bg-zinc-50">
+                            <td className="px-3 py-2" />
                             <td className="px-3 py-2" />
                             <td colSpan={7} className="px-3 py-2 text-right font-black text-zinc-800">
                               Tổng cộng ({unit})
