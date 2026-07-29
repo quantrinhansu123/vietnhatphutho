@@ -117,6 +117,7 @@ function buildMaterialRows(
   props: PrintProps
 ) {
   const rows = new Map<string, MaterialPrintRow>();
+  const round4 = (value: number) => Math.round(value * 10000) / 10000;
   const ensure = (code: string, name: string, unit = 'kg') => {
     const key = normalizeProductCodeKey(code || name) || `${rows.size}`;
     let row = rows.get(key);
@@ -200,6 +201,18 @@ function buildMaterialRows(
     if (line.tiLeDinhMucPercent !== null) row.normPercents.push(line.tiLeDinhMucPercent);
     row.actualPercent = line.tiLeThucTeTbPercent;
     row.actualMixedKg += line.totalKlThucTe;
+  }
+
+  // Nếu có NNS-TRON tồn đầu ca (hỗn hợp chưa tách), phân bổ tồn đầu của NNS-TRON cho từng NVL
+  // theo "Tỉ lệ trộn Thực tế" (phiếu trộn ca liền trước).
+  if (nnsTronTonDauKg > 0) {
+    for (const row of rows.values()) {
+      if (isNnsTronMaterial(row.code, row.name)) continue;
+      const tiLeThucTe = row.actualPercent;
+      if (tiLeThucTe !== null && Number.isFinite(tiLeThucTe) && tiLeThucTe > 0) {
+        row.openingKg = round4(nnsTronTonDauKg * (tiLeThucTe / 100));
+      }
+    }
   }
 
   // TL cuối ca = cột Tổng (kg) tab «Dữ liệu trong báo cáo kiểm tồn cuối ca» (khớp mã hoặc tên NVL).
