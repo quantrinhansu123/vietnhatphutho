@@ -4,7 +4,7 @@ import { pickText } from '../_shared/recordHelpers';
 import { normalizeHrBranches } from '../_shared/hr';
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { showAppToast, showSaveFailure, readApiErrorMessage } from '../../lib/appToast';
-import { downloadCustomerExcelTemplate, parseCustomerExcel } from '../../utils/customerExcel';
+import { downloadCustomerExcel, parseCustomerExcel } from '../../utils/customerExcel';
 
 export interface StaffOption {
   name: string;
@@ -193,7 +193,6 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState('');
-  const [importMessage, setImportMessage] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<CustomerForm>(emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -476,9 +475,65 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
 
     setIsImporting(true);
     setError('');
-    setImportMessage('');
     try {
       const rows = await parseCustomerExcel(file);
+      if (rows.length === 0) throw new Error('File Excel không có dòng dữ liệu khách hàng.');
+
+      const invalidRows = rows.filter(row => !row.code.trim() || !row.name.trim());
+      if (invalidRows.length > 0) {
+        throw new Error(
+          `${invalidRows.length} dòng thiếu mã hoặc tên khách hàng. Không có dữ liệu nào bị thay đổi.`
+        );
+      }
+      const codesInFile = new Set<string>();
+      for (const row of rows) {
+        const code = row.code.trim().toUpperCase();
+        if (codesInFile.has(code)) {
+          throw new Error(`Mã khách hàng ${row.code.trim()} bị trùng trong file Excel. Không có dữ liệu nào bị thay đổi.`);
+        }
+        codesInFile.add(code);
+      }
+
+      const confirmed = window.confirm(
+        `Toàn bộ ${customers.length} khách hàng hiện có sẽ bị xóa và thay bằng ${rows.length} dòng từ file Excel. Bạn có chắc chắn không?`
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      const res = await fetch('/api/khach-hang/replace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customers: rows.map(row => ({
+            ma_khach_hang: row.code.trim(),
+            ten_khach_hang: row.name.trim(),
+            dia_chi: row.address.trim(),
+            dia_chi_moi: row.newAddress.trim(),
+            cong_no: row.debt.trim() ? Number(row.debt.trim()) : 0,
+            ma_so_thue: row.taxCode.trim(),
+            so_dien_thoai: normalizePhoneList(row.phone),
+            dt_di_dong_nlh: normalizePhoneList(row.mobilePhoneNlh),
+            la_doi_tuong_noi_bo: ['true', '1', 'co', 'có', 'x', 'yes'].includes(
+              row.isInternal.trim().toLowerCase()
+            ),
+            don_vi_quan_ly: row.managingUnit.trim(),
+            ghi_chu: row.note.trim()
+          }))
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(readApiErrorMessage(res, data, 'Không thể thay thế danh sách khách hàng.'));
+      }
+
+      await loadCustomers();
+      const total = Number(data.total) || rows.length;
+      const message = `Đã thay thế toàn bộ danh sách bằng ${total} khách hàng từ Excel.`;
+      showAppToast(message);
+      return;
+
+      /* Legacy append-only import kept inactive while the replacement import is in use.
       if (rows.length === 0) throw new Error('File Excel không có dòng dữ liệu khách hàng.');
 
       const existingCodes = new Set(customers.map(item => item.code.trim().toUpperCase()).filter(Boolean));
@@ -536,6 +591,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       setImportMessage(details);
       if (imported > 0) showAppToast(`Đã nhập ${imported} khách hàng từ Excel.`);
       if (imported === 0 && (invalid.length > 0 || failures.length > 0)) setError(details);
+      */
     } catch (importError: unknown) {
       setError(showSaveFailure(importError, 'Không thể đọc hoặc nhập file Excel.'));
     } finally {
@@ -560,8 +616,8 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
         <div className="mt-3 flex flex-wrap gap-2 lg:mt-0">
           <button
             type="button"
-            onClick={downloadCustomerExcelTemplate}
-            disabled={isImporting}
+            onClick={() => downloadCustomerExcel(customers)}
+            disabled={isImporting || isLoading || customers.length === 0}
             className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
@@ -605,12 +661,6 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       {error && (
         <section className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
           {error}
-        </section>
-      )}
-
-      {importMessage && !error && (
-        <section className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-          {importMessage}
         </section>
       )}
 

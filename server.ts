@@ -5866,6 +5866,55 @@ export function createApp() {
     }
   });
 
+  app.post('/api/khach-hang/replace', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const rawCustomers = Array.isArray(source.customers) ? source.customers : [];
+      if (rawCustomers.length === 0) {
+        return res.status(400).json({ error: 'File Excel phải có ít nhất một khách hàng.' });
+      }
+
+      const codes = new Set<string>();
+      const records: Record<string, unknown>[] = [];
+      for (let index = 0; index < rawCustomers.length; index += 1) {
+        const item = rawCustomers[index];
+        if (!item || typeof item !== 'object') {
+          return res.status(400).json({ error: `Dòng ${index + 2} không hợp lệ.` });
+        }
+        const row = item as Record<string, unknown>;
+        const code = pickRowField(row, ['ma_khach_hang', 'ma_kh', 'code'], '');
+        const name = pickRowField(row, ['ten_khach_hang', 'khach_hang', 'name', 'ten'], '');
+        if (!code || !name) {
+          return res.status(400).json({ error: `Dòng ${index + 2} phải có mã và tên khách hàng.` });
+        }
+        const normalizedCode = code.toUpperCase();
+        if (codes.has(normalizedCode)) {
+          return res.status(400).json({ error: `Mã khách hàng ${code} bị trùng trong file Excel.` });
+        }
+        codes.add(normalizedCode);
+        records.push({
+          ma_khach_hang: code,
+          ten_khach_hang: name,
+          ...buildCustomerOptionalFields(row)
+        });
+      }
+
+      const { data, error } = await supabase.rpc('replace_khach_hang_from_json', {
+        p_customers: records
+      });
+      if (error) {
+        return res.status(500).json({
+          error: `Không thể thay thế danh sách khách hàng. Hãy chạy file supabase-khach-hang-replace.sql. ${error.message || ''}`.trim()
+        });
+      }
+      return res.json({ success: true, total: Number(data) || records.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thay thế danh sách khách hàng.' });
+    }
+  });
+
   app.patch('/api/khach-hang/:id/dia-chi-moi', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     const id = String(req.params.id || '').trim();

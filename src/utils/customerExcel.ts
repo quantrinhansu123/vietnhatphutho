@@ -15,6 +15,20 @@ export type CustomerExcelRow = {
   rowNumber: number;
 };
 
+export type CustomerExcelExportRow = {
+  code: string;
+  name: string;
+  address: string;
+  newAddress: string;
+  debt: number;
+  taxCode: string;
+  phone: string;
+  mobilePhoneNlh: string;
+  isInternal: boolean;
+  managingUnit: string;
+  note: string;
+};
+
 const CODE_HEADERS = ['ma khach hang', 'ma kh', 'ma_khach_hang', 'ma_kh', 'code'];
 const NAME_HEADERS = ['ten khach hang', 'ten kh', 'ten_khach_hang', 'khach hang', 'name'];
 const ADDRESS_HEADERS = ['dia chi cu', 'dia chi', 'dia_chi', 'address'];
@@ -154,4 +168,38 @@ export function downloadCustomerExcelTemplate() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Khach_hang');
   XLSX.writeFile(workbook, 'mau-nhap-khach-hang.xlsx');
+}
+
+export function downloadCustomerExcel(customers: CustomerExcelExportRow[]) {
+  const rows = customers.map(customer => ({
+    'Mã khách hàng': customer.code,
+    'Tên khách hàng': customer.name,
+    'Địa chỉ cũ': customer.address,
+    'Địa chỉ mới': customer.newAddress,
+    'Công nợ': customer.debt,
+    'Mã số thuế/CCCD chủ hộ': customer.taxCode,
+    'Điện thoại': customer.phone,
+    'ĐT di động NLH': customer.mobilePhoneNlh,
+    'Là đối tượng nội bộ': customer.isInternal ? 'Có' : 'Không',
+    'Đơn vị quản lý': customer.managingUnit,
+    'Ghi chú': customer.note
+  }));
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  worksheet['!cols'] = [
+    { wch: 18 },
+    { wch: 36 },
+    { wch: 40 },
+    { wch: 40 },
+    { wch: 16 },
+    { wch: 24 },
+    { wch: 24 },
+    { wch: 24 },
+    { wch: 20 },
+    { wch: 24 },
+    { wch: 36 }
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Khach_hang');
+  XLSX.writeFile(workbook, 'danh-sach-khach-hang.xlsx');
 }
