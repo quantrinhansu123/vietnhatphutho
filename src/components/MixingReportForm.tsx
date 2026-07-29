@@ -1547,6 +1547,18 @@ export default function MixingReportForm({
       return;
     }
 
+    // Bắt buộc nhập KL 1 mẻ (kg) cho từng lần phối trộn đang hiển thị.
+    // Nếu thiếu (null/undefined/<=0) thì không cho lưu dòng.
+    const roundCount = visibleRoundCount(current.lan_su_dung);
+    for (let i = 0; i < roundCount; i += 1) {
+      const roundKey = ROUND_KEYS[i];
+      const batchWeight = current.lan_su_dung.khoi_luong_me?.[roundKey];
+      if (!Number.isFinite(batchWeight ?? NaN) || (batchWeight ?? 0) <= 0) {
+        setLineModalError(`Vui lòng nhập KL 1 mẻ (kg) cho ${roundSectionLabel(i, roundCount)} trước khi lưu.`);
+        return;
+      }
+    }
+
     const { ma_nvl, ten_vat_tu } = deriveLineMaterial(current.lan_su_dung);
     const savedLine: MixingReportLine = {
       ...current,

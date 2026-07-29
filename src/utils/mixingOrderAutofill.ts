@@ -1,5 +1,6 @@
 import { parsePercentInput } from '../utils';
 import { shiftNamesMatch } from './shiftSettings';
+import { isWarehouseKgUnit } from './warehouseWeight';
 import type { MixingPhoiTron, MixingReportLine, MixingRoundItem } from '../components/MixingReportForm';
 
 export type MixingBomItem = {
@@ -602,21 +603,31 @@ export function buildMixingOrderProductCandidates(
   );
 }
 
+function isMixingKgItem(item: MixingBomItem): boolean {
+  // Chỉ lấy NVL tính theo % (loại percent) hoặc đơn vị kg.
+  // Bỏ qua NVL loại số lượng đơn vị khác kg (Cái, Cuộn, m...).
+  if (item.amountType === 'percent') return true;
+  const unit = (item.unit || '').trim();
+  return !unit || unit === '-' || isWarehouseKgUnit(unit);
+}
+
 function bomToRoundItems(
   bomItems: MixingBomItem[],
   materialLookup: Map<string, { name: string; unit: string }>
 ): MixingRoundItem[] {
-  return bomItems.map(item => {
-    const matched = materialLookup.get(normalizeKey(item.code));
-    return {
-      ma_nvl: item.code,
-      ten_vat_tu: item.name || matched?.name || item.code,
-      don_vi: item.unit && item.unit !== '-' ? item.unit : matched?.unit || 'kg',
-      ti_le_phan_tram: item.amountType === 'percent' ? item.percent : null,
-      so_luong: item.amountType === 'quantity' ? item.quantity : null,
-      kl_thuc_te: null
-    };
-  });
+  return bomItems
+    .filter(isMixingKgItem)
+    .map(item => {
+      const matched = materialLookup.get(normalizeKey(item.code));
+      return {
+        ma_nvl: item.code,
+        ten_vat_tu: item.name || matched?.name || item.code,
+        don_vi: item.unit && item.unit !== '-' ? item.unit : matched?.unit || 'kg',
+        ti_le_phan_tram: item.amountType === 'percent' ? item.percent : null,
+        so_luong: item.amountType === 'quantity' ? item.quantity : null,
+        kl_thuc_te: null
+      };
+    });
 }
 
 export function buildMixingLinesFromOrderProducts(
