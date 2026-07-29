@@ -777,18 +777,21 @@ function MixingLineFormModal({
                       {roundSectionLabel(roundIndex, roundCount)}
                     </p>
                     <label className="flex items-center gap-2 text-xs font-bold text-zinc-700">
-                      KL 1 mẻ (kg)
+                      <span>
+                        KL 1 mẻ (kg) <span className="text-[#ef1b2d]">*</span>
+                      </span>
                       <input
                         type="number"
-                        min="0"
+                        min="0.01"
                         step="0.01"
+                        required
                         value={batchWeightText}
                         onChange={e => {
                           const lan_su_dung = setRoundBatchWeight(draft.lan_su_dung, roundKey, e.target.value);
                           onChange({ lan_su_dung, tong_nhua_tron: sumMixingRounds(lan_su_dung) });
                         }}
                         className="h-8 w-28 rounded-lg border border-zinc-200 bg-white px-2 text-sm font-black outline-none focus:border-[#ef1b2d]"
-                        placeholder="0"
+                        placeholder="Nhập kg"
                       />
                     </label>
                   </div>
@@ -1726,7 +1729,11 @@ export default function MixingReportForm({
       }
     }
 
-    const chiTietReady = applyActualWeightDrafts(form.chi_tiet);
+    let chiTietReady = applyActualWeightDrafts(form.chi_tiet);
+    chiTietReady = ROUND_KEYS.slice(0, displayedRoundCount).reduce((lines, roundKey) => {
+      if (roundBatchWeightDrafts[roundKey] === undefined) return lines;
+      return setRoundBatchWeightOnLines(lines, roundKey, roundBatchWeightDrafts[roundKey] ?? '');
+    }, chiTietReady);
     const linesToSave = chiTietReady
       .filter(line => line.ma_nvl.trim() || line.ten_vat_tu.trim())
       .map(line => ({
@@ -1736,6 +1743,20 @@ export default function MixingReportForm({
     let chi_tiet = prepareMixingChiTietForSave(linesToSave);
     if (chi_tiet.length === 0) {
       setError(showSaveFailure('Vui lòng thêm ít nhất một lần trộn và nhập NVL.'));
+      return;
+    }
+
+    const missingBatchRound = ROUND_KEYS.slice(0, displayedRoundCount).find(roundKey => {
+      const hasNvl = listRoundMaterialEntries(chiTietReady, roundKey).length > 0;
+      if (!hasNvl) return false;
+      const batchWeight = resolveRoundBatchWeight(chiTietReady, roundKey);
+      return !Number.isFinite(batchWeight ?? NaN) || (batchWeight ?? 0) <= 0;
+    });
+    if (missingBatchRound) {
+      const roundIndex = ROUND_KEYS.indexOf(missingBatchRound);
+      setError(
+        showSaveFailure(`Vui lòng nhập KL 1 mẻ (kg) cho ${roundColumnLabel(sessionRoundStart, roundIndex)}.`)
+      );
       return;
     }
 
@@ -2037,14 +2058,17 @@ export default function MixingReportForm({
                           {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
                         </button>
                         <label className="flex items-center gap-1 text-[9px] font-bold text-zinc-700 sm:gap-2 sm:text-xs">
-                          <span className="whitespace-nowrap">KL 1 mẻ (kg)</span>
+                          <span className="whitespace-nowrap">
+                            KL 1 mẻ (kg) <span className="text-[#ef1b2d]">*</span>
+                          </span>
                           <input
                             type="text"
                             inputMode="decimal"
+                            required
                             value={getRoundBatchWeightInputValue(roundKey)}
                             onChange={event => handleRoundBatchWeightChange(roundKey, event.target.value)}
                             className="mixing-round-batch-input h-7 w-14 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] font-black outline-none focus:border-[#ef1b2d] sm:h-8 sm:w-28 sm:rounded-lg sm:px-2 sm:text-sm"
-                            placeholder="0"
+                            placeholder="Nhập kg"
                           />
                         </label>
                       </div>
