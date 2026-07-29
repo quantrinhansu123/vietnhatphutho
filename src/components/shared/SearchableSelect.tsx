@@ -170,6 +170,14 @@ export function SearchableSelect({
     const width = Math.max(rect.width, Math.min(340, viewportWidth - margin * 2));
     const left = Math.min(Math.max(margin, rect.left), Math.max(margin, viewportWidth - width - margin));
     const isDesktop = window.matchMedia('(min-width: 1280px)').matches;
+    const isMobile =
+      window.matchMedia('(max-width: 768px)').matches || window.matchMedia('(pointer: coarse)').matches;
+
+    // Trên mobile luôn mở dropdown xuống dưới để không che ô nhập liệu.
+    if (isMobile) {
+      setMenuStyle({ top: rect.bottom + 4, left, width });
+      return;
+    }
 
     if (desktopAutoFlip && isDesktop) {
       const viewportHeight = document.documentElement.clientHeight;
@@ -207,10 +215,14 @@ export function SearchableSelect({
     updateMenuPosition();
     const handleReposition = () => updateMenuPosition();
     window.addEventListener('resize', handleReposition);
+    // Scroll của div bên trong modal không phải lúc nào cũng bắn event lên window.
+    // Lắng nghe ở cả document (phase capture) giúp menu luôn bám theo ô nhập.
     window.addEventListener('scroll', handleReposition, true);
+    document.addEventListener('scroll', handleReposition, true);
     return () => {
       window.removeEventListener('resize', handleReposition);
       window.removeEventListener('scroll', handleReposition, true);
+      document.removeEventListener('scroll', handleReposition, true);
     };
   }, [open, query, filteredOptions.length, desktopAutoFlip]);
 
