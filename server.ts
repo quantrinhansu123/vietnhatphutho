@@ -58,9 +58,11 @@ const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Đà Nẵng'
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY?.trim();
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET?.trim();
+const ADDRESS_ENGINE_URL = (process.env.ADDRESS_ENGINE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
 
 const SUPABASE_FETCH_TIMEOUT_MS = 30_000;
 const SUPABASE_FETCH_RETRIES = 3;
+const ADDRESS_ENGINE_TIMEOUT_MS = 10_000;
 
 function isSupabaseNetworkError(error: unknown) {
   const message = String((error as { message?: string })?.message ?? error ?? '').toLowerCase();
@@ -1190,6 +1192,19 @@ function vehicleWriteError(error: { code?: string; message?: string }, table: st
     return 'Biển số xe đã tồn tại trong danh sách.';
   }
   return `Không thể lưu dữ liệu vào ${table}. ${error.message || ''}`.trim();
+}
+
+function customerWriteError(error: { code?: string; message?: string }, table: string) {
+  if (isMissingTableError(error)) {
+    return `Bảng ${table} chưa tồn tại. Hãy chạy file supabase-khach-hang.sql trong Supabase SQL Editor.`;
+  }
+  if (isMissingColumnError(error)) {
+    return `Bảng ${table} đang thiếu cột. Hãy chạy lại file supabase-khach-hang.sql. ${error.message || ''}`.trim();
+  }
+  if (error.code === '23505') {
+    return 'Mã khách hàng đã tồn tại trong danh sách.';
+  }
+  return `Không thể lưu khách hàng vào ${table}. ${error.message || ''}`.trim();
 }
 
 function parseVehicleBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
@@ -5675,6 +5690,58 @@ export function createApp() {
     }
   });
 
+  app.get('/api/address-lookup', async (req, res) => {
+    const address = String(req.query.address || '').trim();
+    if (!address) return res.status(400).json({ error: 'Vui lòng nhập địa chỉ cũ.' });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ADDRESS_ENGINE_TIMEOUT_MS);
+    try {
+      const response = await fetch(
+        `${ADDRESS_ENGINE_URL}/lookup?address=${encodeURIComponent(address)}`,
+        {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
+        }
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || typeof payload !== 'object') {
+        const detail =
+          payload && typeof payload === 'object' && 'detail' in payload
+            ? String((payload as { detail?: unknown }).detail || '')
+            : '';
+        return res.status(502).json({
+          error: detail || `Address Engine trả về lỗi HTTP ${response.status}.`
+        });
+      }
+
+      const result = payload as Record<string, unknown>;
+      const rawNote = String(result.note || '');
+      const note =
+        rawNote === 'Khong xac dinh duoc xa/phuong hoac tinh/thanh tuong ung.'
+          ? 'Không xác định được xã/phường hoặc tỉnh/thành tương ứng.'
+          : rawNote;
+      return res.json({
+        input: String(result.input || address),
+        found: result.found === true,
+        new_address: String(result.new_address || ''),
+        note,
+        method: String(result.method || '')
+      });
+    } catch (lookupError: unknown) {
+      const isTimeout =
+        lookupError instanceof Error &&
+        (lookupError.name === 'AbortError' || lookupError.message.toLowerCase().includes('abort'));
+      return res.status(isTimeout ? 504 : 502).json({
+        error: isTimeout
+          ? 'Address Engine phản hồi quá thời gian.'
+          : 'Không kết nối được Address Engine. Hãy kiểm tra dịch vụ chuyển đổi địa chỉ.'
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
   app.get('/api/khach-hang', async (_req, res) => {
     if (!supabase) {
       return res.json({ customers: [], total: 0, source: 'local' });
@@ -5723,6 +5790,12 @@ export function createApp() {
   function buildCustomerOptionalFields(source: Record<string, unknown>): Record<string, unknown> {
     const congNoRaw = pickRowField(source, ['cong_no', 'debt'], '');
     const congNo = congNoRaw ? Number(congNoRaw) : 0;
+    const normalizePhoneList = (value: string) =>
+      value
+        .split(/[,;\n]+/)
+        .map(phone => phone.trim())
+        .filter(Boolean)
+        .join(', ');
     const isInternalRaw = source.la_doi_tuong_noi_bo ?? source.is_internal;
     const isInternal =
       typeof isInternalRaw === 'boolean'
@@ -5731,10 +5804,13 @@ export function createApp() {
 
     return {
       dia_chi: pickRowField(source, ['dia_chi', 'address'], '') || null,
+      dia_chi_moi: pickRowField(source, ['dia_chi_moi', 'new_address'], '') || null,
       cong_no: Number.isFinite(congNo) ? congNo : 0,
       ma_so_thue: pickRowField(source, ['ma_so_thue', 'ma_so_thue_cccd', 'tax_code'], '') || null,
-      so_dien_thoai: pickRowField(source, ['so_dien_thoai', 'dien_thoai', 'phone', 'sdt'], '') || null,
-      dt_di_dong_nlh: pickRowField(source, ['dt_di_dong_nlh', 'di_dong_nlh', 'mobile_nlh'], '') || null,
+      dien_thoai:
+        normalizePhoneList(pickRowField(source, ['so_dien_thoai', 'dien_thoai', 'phone', 'sdt'], '')) || null,
+      dt_di_dong_nlh:
+        normalizePhoneList(pickRowField(source, ['dt_di_dong_nlh', 'di_dong_nlh', 'mobile_nlh'], '')) || null,
       la_doi_tuong_noi_bo: isInternal,
       don_vi_quan_ly: pickRowField(source, ['don_vi_quan_ly', 'managing_unit'], '') || null,
       ghi_chu: pickRowField(source, ['ghi_chu', 'note', 'notes'], '') || null
@@ -5781,22 +5857,65 @@ export function createApp() {
         .single();
 
       if (error) {
-        // Nếu bảng chưa có cột phụ, thử insert tối thiểu mã + tên
-        const minimal = { ma_khach_hang: code, ten_khach_hang: name };
-        const retry = await supabase
-          .from(SUPABASE_CUSTOMERS_TABLE)
-          .insert(minimal)
-          .select('*')
-          .single();
-        if (retry.error) {
-          return res.status(500).json({ error: vehicleWriteError(retry.error, SUPABASE_CUSTOMERS_TABLE) });
-        }
-        return res.status(201).json({ success: true, customer: retry.data });
+        return res.status(500).json({ error: customerWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
       }
 
       return res.status(201).json({ success: true, customer: data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi thêm khách hàng.' });
+    }
+  });
+
+  app.patch('/api/khach-hang/:id/dia-chi-moi', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID khách hàng.' });
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const oldAddress = pickRowField(source, ['dia_chi', 'old_address'], '');
+      const newAddress = pickRowField(source, ['dia_chi_moi', 'new_address'], '');
+      if (!newAddress) return res.status(400).json({ error: 'Địa chỉ mới không được để trống.' });
+
+      const existing = await supabase
+        .from(SUPABASE_CUSTOMERS_TABLE)
+        .select('ma_khach_hang, dia_chi, dia_chi_moi')
+        .eq('ma_khach_hang', id)
+        .maybeSingle();
+      if (existing.error) {
+        return res.status(500).json({ error: customerWriteError(existing.error, SUPABASE_CUSTOMERS_TABLE) });
+      }
+      if (!existing.data) return res.status(404).json({ error: 'Không tìm thấy khách hàng.' });
+
+      const currentOldAddress = String(existing.data.dia_chi || '').trim();
+      const currentNewAddress = String(existing.data.dia_chi_moi || '').trim();
+      if (currentNewAddress) {
+        return res.json({ success: true, customer: existing.data, skipped: true });
+      }
+      if (oldAddress && currentOldAddress !== oldAddress) {
+        return res.status(409).json({ error: 'Địa chỉ cũ đã thay đổi; không tự động ghi đè.' });
+      }
+
+      let updateQuery = supabase
+        .from(SUPABASE_CUSTOMERS_TABLE)
+        .update({ dia_chi_moi: newAddress })
+        .eq('ma_khach_hang', id)
+        .eq('dia_chi', currentOldAddress);
+      updateQuery =
+        existing.data.dia_chi_moi === null
+          ? updateQuery.is('dia_chi_moi', null)
+          : updateQuery.eq('dia_chi_moi', '');
+
+      const updated = await updateQuery.select('ma_khach_hang, dia_chi, dia_chi_moi').maybeSingle();
+      if (updated.error) {
+        return res.status(500).json({ error: customerWriteError(updated.error, SUPABASE_CUSTOMERS_TABLE) });
+      }
+      if (!updated.data) {
+        return res.status(409).json({ error: 'Dữ liệu khách hàng vừa thay đổi; không tự động ghi đè.' });
+      }
+      return res.json({ success: true, customer: updated.data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu địa chỉ mới.' });
     }
   });
 
@@ -5820,12 +5939,12 @@ export function createApp() {
       const { data, error } = await supabase
         .from(SUPABASE_CUSTOMERS_TABLE)
         .update(record)
-        .eq('id', id)
+        .eq('ma_khach_hang', id)
         .select('*')
         .single();
 
       if (error) {
-        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
+        return res.status(500).json({ error: customerWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
       }
 
       return res.json({ success: true, customer: data });
@@ -5840,9 +5959,9 @@ export function createApp() {
     if (!id) return res.status(400).json({ error: 'Thiếu ID khách hàng.' });
 
     try {
-      const { error } = await supabase.from(SUPABASE_CUSTOMERS_TABLE).delete().eq('id', id);
+      const { error } = await supabase.from(SUPABASE_CUSTOMERS_TABLE).delete().eq('ma_khach_hang', id);
       if (error) {
-        return res.status(500).json({ error: vehicleWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
+        return res.status(500).json({ error: customerWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
       }
       return res.json({ success: true });
     } catch (err: any) {

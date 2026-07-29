@@ -4,6 +4,7 @@ export type CustomerExcelRow = {
   code: string;
   name: string;
   address: string;
+  newAddress: string;
   debt: string;
   taxCode: string;
   phone: string;
@@ -16,7 +17,8 @@ export type CustomerExcelRow = {
 
 const CODE_HEADERS = ['ma khach hang', 'ma kh', 'ma_khach_hang', 'ma_kh', 'code'];
 const NAME_HEADERS = ['ten khach hang', 'ten kh', 'ten_khach_hang', 'khach hang', 'name'];
-const ADDRESS_HEADERS = ['dia chi', 'dia_chi', 'address'];
+const ADDRESS_HEADERS = ['dia chi cu', 'dia chi', 'dia_chi', 'address'];
+const NEW_ADDRESS_HEADERS = ['dia chi moi', 'dia_chi_moi', 'new address'];
 const DEBT_HEADERS = ['cong no', 'cong_no', 'debt'];
 const TAX_CODE_HEADERS = ['ma so thue/cccd chu ho', 'ma so thue cccd chu ho', 'ma so thue', 'ma_so_thue', 'cccd', 'tax code'];
 const PHONE_HEADERS = ['dien thoai', 'so dien thoai', 'so_dien_thoai', 'sdt', 'phone'];
@@ -65,6 +67,7 @@ export async function parseCustomerExcel(file: File): Promise<CustomerExcelRow[]
   }
 
   const addressIndex = findColumn(headers, ADDRESS_HEADERS);
+  const newAddressIndex = findColumn(headers, NEW_ADDRESS_HEADERS);
   const debtIndex = findColumn(headers, DEBT_HEADERS);
   const taxCodeIndex = findColumn(headers, TAX_CODE_HEADERS);
   const phoneIndex = findColumn(headers, PHONE_HEADERS);
@@ -79,6 +82,7 @@ export async function parseCustomerExcel(file: File): Promise<CustomerExcelRow[]
       code: codeIndex >= 0 ? cellToText(row[codeIndex]) : '',
       name: cellToText(row[nameIndex]),
       address: addressIndex >= 0 ? cellToText(row[addressIndex]) : '',
+      newAddress: newAddressIndex >= 0 ? cellToText(row[newAddressIndex]) : '',
       debt: debtIndex >= 0 ? cellToText(row[debtIndex]) : '',
       taxCode: taxCodeIndex >= 0 ? cellToText(row[taxCodeIndex]) : '',
       phone: phoneIndex >= 0 ? cellToText(row[phoneIndex]) : '',
@@ -93,6 +97,7 @@ export async function parseCustomerExcel(file: File): Promise<CustomerExcelRow[]
         row.code ||
         row.name ||
         row.address ||
+        row.newAddress ||
         row.debt ||
         row.taxCode ||
         row.phone ||
@@ -108,7 +113,8 @@ export function downloadCustomerExcelTemplate() {
     [
       'Mã khách hàng',
       'Tên khách hàng',
-      'Địa chỉ',
+      'Địa chỉ cũ',
+      'Địa chỉ mới',
       'Công nợ',
       'Mã số thuế/CCCD chủ hộ',
       'Điện thoại',
@@ -120,11 +126,12 @@ export function downloadCustomerExcelTemplate() {
     [
       'KH001',
       'Công ty mẫu',
-      'Đà Nẵng',
+      'Địa chỉ trước đây',
+      'Địa chỉ hiện tại',
       '0',
       '0123456789',
-      '0901234567',
-      '0912345678',
+      '0123456789, 0213456789',
+      '0901234567, 0912345678',
       'Không',
       'Chi nhánh Đà Nẵng',
       'Xóa dòng mẫu này trước khi nhập'
@@ -133,6 +140,7 @@ export function downloadCustomerExcelTemplate() {
   worksheet['!cols'] = [
     { wch: 18 },
     { wch: 36 },
+    { wch: 40 },
     { wch: 40 },
     { wch: 16 },
     { wch: 24 },

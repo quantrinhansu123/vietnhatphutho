@@ -16,6 +16,7 @@ export interface CustomerOption {
   name: string;
   code: string;
   address: string;
+  newAddress: string;
   debt: number;
   taxCode: string;
   phone: string;
@@ -103,6 +104,14 @@ function pickBoolean(record: Record<string, unknown>, keys: string[]) {
   return false;
 }
 
+function normalizePhoneList(value: string) {
+  return value
+    .split(/[,;\n]+/)
+    .map(phone => phone.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
 export function normalizeCustomerOptions(data: unknown): CustomerOption[] {
   if (!data || typeof data !== 'object') return [];
   const customers = (data as { customers?: unknown }).customers;
@@ -121,6 +130,7 @@ export function normalizeCustomerOptions(data: unknown): CustomerOption[] {
         name: name || code,
         code,
         address: pickText(record, ['dia_chi', 'address'], ''),
+        newAddress: pickText(record, ['dia_chi_moi', 'new_address'], ''),
         debt: pickNumber(record, ['cong_no', 'debt']),
         taxCode: pickText(record, ['ma_so_thue', 'ma_so_thue_cccd', 'tax_code'], ''),
         phone: pickText(record, ['so_dien_thoai', 'dien_thoai', 'phone'], ''),
@@ -150,6 +160,7 @@ type CustomerForm = {
   ma_khach_hang: string;
   ten_khach_hang: string;
   dia_chi: string;
+  dia_chi_moi: string;
   cong_no: string;
   ma_so_thue: string;
   so_dien_thoai: string;
@@ -164,6 +175,7 @@ function emptyForm(code = ''): CustomerForm {
     ma_khach_hang: code,
     ten_khach_hang: '',
     dia_chi: '',
+    dia_chi_moi: '',
     cong_no: '',
     ma_so_thue: '',
     so_dien_thoai: '',
@@ -187,17 +199,106 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingCustomer, setViewingCustomer] = useState<CustomerOption | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isAddressLookingUp, setIsAddressLookingUp] = useState(false);
+  const [addressLookupMessage, setAddressLookupMessage] = useState('');
+  const [backfillingAddressIds, setBackfillingAddressIds] = useState<Set<string>>(() => new Set());
   const excelInputRef = useRef<HTMLInputElement>(null);
+  const addressLookupSequenceRef = useRef(0);
+  const addressBackfillRunRef = useRef(0);
+
+  const backfillMissingCustomerAddresses = async (items: CustomerOption[], run: number) => {
+    const candidates = items.filter(
+      customer => customer.address.trim() && !customer.newAddress.trim() && (customer.dbId || customer.code)
+    );
+    if (candidates.length === 0 || run !== addressBackfillRunRef.current) return;
+
+    setBackfillingAddressIds(new Set(candidates.map(customer => customer.dbId || customer.code)));
+    let nextIndex = 0;
+    let stopBecauseEngineUnavailable = false;
+
+    const worker = async () => {
+      while (
+        run === addressBackfillRunRef.current &&
+        !stopBecauseEngineUnavailable &&
+        nextIndex < candidates.length
+      ) {
+        const customer = candidates[nextIndex++];
+        const customerKey = customer.dbId || customer.code;
+        try {
+          const lookupResponse = await fetch(
+            `/api/address-lookup?address=${encodeURIComponent(customer.address)}`
+          );
+          const lookupData = await lookupResponse.json().catch(() => ({}));
+          if (!lookupResponse.ok) {
+            if (lookupResponse.status >= 500) stopBecauseEngineUnavailable = true;
+            continue;
+          }
+          if (run !== addressBackfillRunRef.current) return;
+
+          const newAddress =
+            lookupData.found && typeof lookupData.new_address === 'string'
+              ? lookupData.new_address.trim()
+              : '';
+          if (!newAddress) continue;
+
+          const saveResponse = await fetch(
+            `/api/khach-hang/${encodeURIComponent(customerKey)}/dia-chi-moi`,
+            {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dia_chi: customer.address,
+              dia_chi_moi: newAddress
+            })
+            }
+          );
+          const saveData = await saveResponse.json().catch(() => ({}));
+          if (!saveResponse.ok || run !== addressBackfillRunRef.current) continue;
+
+          const savedNewAddress =
+            typeof saveData.customer?.dia_chi_moi === 'string'
+              ? saveData.customer.dia_chi_moi.trim()
+              : newAddress;
+          setCustomers(previous =>
+            previous.map(current =>
+              (current.dbId || current.code) === customerKey && !current.newAddress
+                ? { ...current, newAddress: savedNewAddress }
+                : current
+            )
+          );
+        } finally {
+          if (run === addressBackfillRunRef.current) {
+            setBackfillingAddressIds(previous => {
+              const next = new Set(previous);
+              next.delete(customerKey);
+              return next;
+            });
+          }
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(3, candidates.length) }, () => worker())
+    );
+    if (run === addressBackfillRunRef.current) {
+      setBackfillingAddressIds(new Set());
+    }
+  };
 
   const loadCustomers = async () => {
+    const run = ++addressBackfillRunRef.current;
     setIsLoading(true);
+    setBackfillingAddressIds(new Set());
     setError('');
 
     try {
       const res = await fetch('/api/khach-hang');
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách khách hàng.');
-      setCustomers(normalizeCustomerOptions(data));
+      const normalizedCustomers = normalizeCustomerOptions(data);
+      setCustomers(normalizedCustomers);
+      void backfillMissingCustomerAddresses(normalizedCustomers, run);
     } catch (loadError: any) {
       setCustomers([]);
       setError(loadError.message || 'Không thể tải danh sách khách hàng.');
@@ -209,6 +310,62 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     loadCustomers();
   }, []);
+
+  useEffect(() => {
+    if (!formOpen) return;
+
+    const address = form.dia_chi.trim();
+    if (address.length < 5 || form.dia_chi_moi.trim()) {
+      setIsAddressLookingUp(false);
+      return;
+    }
+
+    const sequence = ++addressLookupSequenceRef.current;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setIsAddressLookingUp(true);
+      setAddressLookupMessage('Đang tự động chuyển đổi địa chỉ...');
+      try {
+        const response = await fetch(`/api/address-lookup?address=${encodeURIComponent(address)}`, {
+          signal: controller.signal
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || 'Không thể chuyển đổi địa chỉ.');
+        }
+        if (sequence !== addressLookupSequenceRef.current) return;
+
+        const newAddress = typeof data.new_address === 'string' ? data.new_address.trim() : '';
+        if (data.found && newAddress) {
+          setForm(previous =>
+            previous.dia_chi.trim() === address
+              ? { ...previous, dia_chi_moi: newAddress }
+              : previous
+          );
+          setAddressLookupMessage('Đã tự động chuyển sang địa chỉ mới.');
+        } else {
+          setAddressLookupMessage(data.note || 'Không tìm thấy địa chỉ mới phù hợp. Bạn có thể nhập thủ công.');
+        }
+      } catch (lookupError: unknown) {
+        if (lookupError instanceof Error && lookupError.name === 'AbortError') return;
+        if (sequence !== addressLookupSequenceRef.current) return;
+        setAddressLookupMessage(
+          lookupError instanceof Error
+            ? lookupError.message
+            : 'Không thể chuyển đổi địa chỉ. Bạn có thể nhập thủ công.'
+        );
+      } finally {
+        if (sequence === addressLookupSequenceRef.current) {
+          setIsAddressLookingUp(false);
+        }
+      }
+    }, 600);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [form.dia_chi, form.dia_chi_moi, formOpen]);
 
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredCustomers = useMemo(
@@ -222,6 +379,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm(generateNextCustomerCode(customers.map(item => item.code))));
+    setAddressLookupMessage('');
     setFormOpen(true);
     setError('');
   };
@@ -232,6 +390,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       ma_khach_hang: customer.code,
       ten_khach_hang: customer.name,
       dia_chi: customer.address,
+      dia_chi_moi: customer.newAddress,
       cong_no: customer.debt ? String(customer.debt) : '',
       ma_so_thue: customer.taxCode,
       so_dien_thoai: customer.phone,
@@ -240,6 +399,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       don_vi_quan_ly: customer.managingUnit,
       ghi_chu: customer.note
     });
+    setAddressLookupMessage('');
     setFormOpen(true);
     setError('');
   };
@@ -262,10 +422,11 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
             ma_khach_hang: form.ma_khach_hang.trim(),
             ten_khach_hang: form.ten_khach_hang.trim(),
             dia_chi: form.dia_chi.trim(),
+            dia_chi_moi: form.dia_chi_moi.trim(),
             cong_no: form.cong_no.trim() ? Number(form.cong_no.trim()) : 0,
             ma_so_thue: form.ma_so_thue.trim(),
-            so_dien_thoai: form.so_dien_thoai.trim(),
-            dt_di_dong_nlh: form.dt_di_dong_nlh.trim(),
+            so_dien_thoai: normalizePhoneList(form.so_dien_thoai),
+            dt_di_dong_nlh: normalizePhoneList(form.dt_di_dong_nlh),
             la_doi_tuong_noi_bo: form.la_doi_tuong_noi_bo,
             don_vi_quan_ly: form.don_vi_quan_ly.trim(),
             ghi_chu: form.ghi_chu.trim()
@@ -343,10 +504,11 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
             ma_khach_hang: row.code.trim(),
             ten_khach_hang: row.name.trim(),
             dia_chi: row.address.trim(),
+            dia_chi_moi: row.newAddress.trim(),
             cong_no: row.debt.trim() ? Number(row.debt.trim()) : 0,
             ma_so_thue: row.taxCode.trim(),
-            so_dien_thoai: row.phone.trim(),
-            dt_di_dong_nlh: row.mobilePhoneNlh.trim(),
+            so_dien_thoai: normalizePhoneList(row.phone),
+            dt_di_dong_nlh: normalizePhoneList(row.mobilePhoneNlh),
             la_doi_tuong_noi_bo: ['true', '1', 'co', 'có', 'x', 'yes'].includes(
               row.isInternal.trim().toLowerCase()
             ),
@@ -460,27 +622,28 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                 <th className="px-4 py-3 font-black">STT</th>
                 <th className="px-4 py-3 font-black">Mã khách hàng</th>
                 <th className="px-4 py-3 font-black">Tên khách hàng</th>
-                <th className="px-4 py-3 font-black">Địa chỉ</th>
+                <th className="px-4 py-3 font-black">Địa chỉ cũ</th>
+                <th className="px-4 py-3 font-black">Địa chỉ mới</th>
                 <th className="px-4 py-3 font-black">Công nợ</th>
                 <th className="px-4 py-3 font-black">Mã số thuế/CCCD chủ hộ</th>
                 <th className="px-4 py-3 font-black">Điện thoại</th>
                 <th className="px-4 py-3 font-black">ĐT di động NLH</th>
                 <th className="px-4 py-3 font-black">Là Đối tượng nội bộ</th>
                 <th className="px-4 py-3 font-black">Đơn vị Quản lý</th>
-                <th className="px-4 py-3 font-black text-right">Thao tác</th>
+                <th className="px-4 py-3 font-black text-left">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-10 text-center font-bold text-zinc-400">
+                  <td colSpan={12} className="px-4 py-10 text-center font-bold text-zinc-400">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Đang tải khách hàng...
                   </td>
                 </tr>
               ) : filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-10 text-center font-bold text-zinc-500">
+                  <td colSpan={12} className="px-4 py-10 text-center font-bold text-zinc-500">
                     Chưa có khách hàng phù hợp.
                   </td>
                 </tr>
@@ -491,6 +654,18 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                     <td className="px-4 py-3 font-mono font-bold text-zinc-900">{customer.code || '-'}</td>
                     <td className="px-4 py-3 font-black text-zinc-950">{customer.name}</td>
                     <td className="px-4 py-3 font-semibold text-zinc-700">{customer.address || '-'}</td>
+                    <td className="px-4 py-3 font-semibold text-zinc-700">
+                      {customer.newAddress ? (
+                        customer.newAddress
+                      ) : backfillingAddressIds.has(customer.dbId || customer.code) ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-sky-600">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Đang chuyển...
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-semibold text-zinc-700">
                       {customer.debt ? customer.debt.toLocaleString('vi-VN') : '-'}
                     </td>
@@ -544,8 +719,8 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
 
       {formOpen ? (
         <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-4">
-          <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wide text-slate-900">
                   {editingId ? 'Sửa khách hàng' : 'Thêm khách hàng'}
@@ -566,7 +741,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
               </button>
             </div>
 
-            <div className="space-y-3 p-4">
+            <div className="grid flex-1 grid-cols-1 gap-x-4 gap-y-3 overflow-y-auto p-4 sm:grid-cols-2 sm:p-5">
               <label className="block space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Mã khách hàng</span>
                 <input
@@ -588,13 +763,39 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                 />
               </label>
               <label className="block space-y-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Địa chỉ</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Địa chỉ cũ</span>
                 <input
                   value={form.dia_chi}
-                  onChange={event => setForm(prev => ({ ...prev, dia_chi: event.target.value }))}
+                  onChange={event => {
+                    setAddressLookupMessage('');
+                    setForm(prev => ({
+                      ...prev,
+                      dia_chi: event.target.value,
+                      dia_chi_moi: ''
+                    }));
+                  }}
                   className={orderFieldClass}
-                  placeholder="Địa chỉ giao / liên hệ"
+                  placeholder="Địa chỉ cũ"
                 />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Địa chỉ mới</span>
+                <input
+                  value={form.dia_chi_moi}
+                  onChange={event => setForm(prev => ({ ...prev, dia_chi_moi: event.target.value }))}
+                  className={orderFieldClass}
+                  placeholder="Địa chỉ mới"
+                />
+                {(isAddressLookingUp || addressLookupMessage) && (
+                  <span
+                    className={`flex items-center gap-1 text-[11px] font-semibold ${
+                      isAddressLookingUp ? 'text-sky-600' : 'text-slate-500'
+                    }`}
+                  >
+                    {isAddressLookingUp && <Loader2 className="h-3 w-3 animate-spin" />}
+                    {addressLookupMessage}
+                  </span>
+                )}
               </label>
               <label className="block space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Công nợ</span>
@@ -618,23 +819,31 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                 />
               </label>
               <label className="block space-y-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Điện thoại</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Điện thoại liên hệ
+                </span>
                 <input
                   value={form.so_dien_thoai}
                   onChange={event => setForm(prev => ({ ...prev, so_dien_thoai: event.target.value }))}
+                  onBlur={() =>
+                    setForm(prev => ({ ...prev, so_dien_thoai: normalizePhoneList(prev.so_dien_thoai) }))
+                  }
                   className={orderFieldClass}
-                  placeholder="SĐT liên hệ"
+                  placeholder="0123456789, 0213456789"
                 />
               </label>
               <label className="block space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  ĐT di động NLH
+                  ĐT di động người liên hệ
                 </span>
                 <input
                   value={form.dt_di_dong_nlh}
                   onChange={event => setForm(prev => ({ ...prev, dt_di_dong_nlh: event.target.value }))}
+                  onBlur={() =>
+                    setForm(prev => ({ ...prev, dt_di_dong_nlh: normalizePhoneList(prev.dt_di_dong_nlh) }))
+                  }
                   className={orderFieldClass}
-                  placeholder="SĐT di động người liên hệ"
+                  placeholder="0901234567, 0912345678"
                 />
               </label>
               <label className="block space-y-1.5">
@@ -648,7 +857,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                   placeholder="Đơn vị / chi nhánh quản lý"
                 />
               </label>
-              <label className="flex items-center gap-2">
+              <label className="flex min-h-[42px] items-center gap-2 self-end rounded-xl border border-slate-200 bg-slate-50 px-3">
                 <input
                   type="checkbox"
                   checked={form.la_doi_tuong_noi_bo}
@@ -659,7 +868,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                   Là Đối tượng nội bộ
                 </span>
               </label>
-              <label className="block space-y-1.5">
+              <label className="block space-y-1.5 sm:col-span-2">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ghi chú</span>
                 <input
                   value={form.ghi_chu}
@@ -670,7 +879,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
               </label>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
+            <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
               <button
                 type="button"
                 onClick={() => {
@@ -685,11 +894,15 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={() => void handleSave()}
-                disabled={isSaving}
+                disabled={isSaving || isAddressLookingUp}
                 className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-sm font-extrabold text-white disabled:opacity-60"
               >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {isSaving ? 'Đang lưu...' : 'Lưu'}
+                {isSaving || isAddressLookingUp ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {isSaving ? 'Đang lưu...' : isAddressLookingUp ? 'Đang chuyển...' : 'Lưu'}
               </button>
             </div>
           </div>
@@ -717,7 +930,8 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
               {[
                 ['Mã khách hàng', viewingCustomer.code || '-'],
                 ['Tên khách hàng', viewingCustomer.name || '-'],
-                ['Địa chỉ', viewingCustomer.address || '-'],
+                ['Địa chỉ cũ', viewingCustomer.address || '-'],
+                ['Địa chỉ mới', viewingCustomer.newAddress || '-'],
                 ['Công nợ', viewingCustomer.debt ? viewingCustomer.debt.toLocaleString('vi-VN') : '-'],
                 ['Mã số thuế/CCCD chủ hộ', viewingCustomer.taxCode || '-'],
                 ['Điện thoại', viewingCustomer.phone || '-'],
