@@ -4195,6 +4195,42 @@ function lookupMachineNvlKgByMaterial(
   return 0;
 }
 
+export type BbMaterialKgMaps = {
+  byCode: Map<string, number>;
+  byName: Map<string, number>;
+};
+
+/** Gom cột Tổng (kg) tab «Dữ liệu trong báo cáo kiểm tồn cuối ca» theo mã/tên NVL. */
+export function buildBbMaterialKgMapsFromTabLines(
+  lines: ReadonlyArray<{ itemCode?: string; itemName?: string; weightKg?: number | null }> | null | undefined
+): BbMaterialKgMaps {
+  const byCode = new Map<string, number>();
+  const byName = new Map<string, number>();
+  for (const row of lines || []) {
+    const kg = Number(row.weightKg);
+    if (!Number.isFinite(kg) || kg <= 0) continue;
+    const code = normalizeMaterialCodeKey(row.itemCode || '');
+    const name = String(row.itemName || '')
+      .trim()
+      .toUpperCase();
+    if (code) byCode.set(code, (byCode.get(code) || 0) + kg);
+    else if (name) byName.set(name, (byName.get(name) || 0) + kg);
+  }
+  return { byCode, byName };
+}
+
+export function buildBbCuoiCaKgMapsFromGroup(group: BbCuoiCaGroup | null | undefined): BbMaterialKgMaps {
+  return buildBbMaterialKgMapsFromTabLines(group?.lines);
+}
+
+export function lookupBbMaterialKgByCodeOrName(
+  maps: BbMaterialKgMaps,
+  materialCode: string,
+  materialName: string
+): number {
+  return lookupMachineNvlKgByMaterial(maps, materialCode, materialName);
+}
+
 /** KL 1 dòng tồn đầu ca CHỈ tính phần "đã trộn" (trong bồn trộn) + "chưa trộn" — không gồm trong máy/tồn ngoài. */
 function sumMachineNvlDaTronChuaTronLineKg(line: MachineNvlSavedLine): number {
   let factor = resolveMachineNvlLineKgFactor(line);
@@ -4390,12 +4426,7 @@ function classifyBbMaterialGroup(code: string, name: string): BbMaterialGroup {
 /** Mã tồn hỗn hợp dùng để phân bổ tồn đầu theo tỉ lệ TB thực tế cho các NVL khác. */
 const NNS_TRON_MATERIAL_CODE = 'NNS-TRON';
 
-function isNnsTronMaterialCode(code: string) {
-  const key = normalizeMaterialCodeKey(code).replace(/[\s_]+/g, '-');
-  return key === NNS_TRON_MATERIAL_CODE || key === 'NNSTRON';
-}
-
-function isNnsTronMaterial(code: string, name = '') {
+export function isNnsTronMaterial(code: string, name = '') {
   if (isNnsTronMaterialCode(code)) return true;
   const nameKey = String(name || '')
     .trim()
@@ -4409,10 +4440,12 @@ function isNnsTronMaterial(code: string, name = '') {
   );
 }
 
-function lookupNnsTronTonDauKg(maps: {
-  byCode: Map<string, number>;
-  byName: Map<string, number>;
-}) {
+function isNnsTronMaterialCode(code: string) {
+  const key = normalizeMaterialCodeKey(code).replace(/[\s_]+/g, '-');
+  return key === NNS_TRON_MATERIAL_CODE || key === 'NNSTRON';
+}
+
+export function lookupNnsTronTonDauKg(maps: BbMaterialKgMaps) {
   for (const [code, kg] of maps.byCode.entries()) {
     if (isNnsTronMaterialCode(code) && Number.isFinite(kg) && kg > 0) return kg;
   }

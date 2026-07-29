@@ -2961,28 +2961,38 @@ input[type="number"] {
   .bb-machine-report-print-product-table td:nth-child(10) { width: 12%; }
 
   .bb-machine-report-print-material-table th:nth-child(1),
-  .bb-machine-report-print-material-table td:nth-child(1) { width: 12%; }
+  .bb-machine-report-print-material-table td:nth-child(1) { width: 8%; }
   .bb-machine-report-print-material-table th:nth-child(2),
-  .bb-machine-report-print-material-table td:nth-child(2) { width: 27%; }
+  .bb-machine-report-print-material-table td:nth-child(2) { width: 14%; }
   .bb-machine-report-print-material-table th:nth-child(3),
-  .bb-machine-report-print-material-table td:nth-child(3) { width: 5%; }
+  .bb-machine-report-print-material-table td:nth-child(3) { width: 4%; }
   .bb-machine-report-print-material-table th:nth-child(4),
-  .bb-machine-report-print-material-table td:nth-child(4) { width: 7%; }
+  .bb-machine-report-print-material-table td:nth-child(4),
   .bb-machine-report-print-material-table th:nth-child(5),
-  .bb-machine-report-print-material-table td:nth-child(5) { width: 9%; }
-  .bb-machine-report-print-material-table th:nth-child(n+6):nth-child(-n+10),
-  .bb-machine-report-print-material-table td:nth-child(n+6):nth-child(-n+10) { width: 8%; }
+  .bb-machine-report-print-material-table td:nth-child(5) { width: 5.5%; }
+  .bb-machine-report-print-material-table th:nth-child(n+6):nth-child(-n+13),
+  .bb-machine-report-print-material-table td:nth-child(n+6):nth-child(-n+13) { width: 7%; }
 
-  .bb-machine-report-print-material-table th:nth-child(n+3),
-  .bb-machine-report-print-material-table td:nth-child(n+3) {
+  .bb-machine-report-print-material-table th:nth-child(3),
+  .bb-machine-report-print-material-table td:nth-child(3) {
     text-align: center !important;
     white-space: nowrap;
   }
 
-  .bb-machine-report-print-material-table th:nth-child(n+3) {
+  .bb-machine-report-print-material-table th:nth-child(n+4),
+  .bb-machine-report-print-material-table td:nth-child(n+4) {
+    white-space: nowrap;
+  }
+
+  .bb-machine-report-print-material-table th:nth-child(n+4) {
     white-space: normal;
     line-height: 1.05 !important;
     vertical-align: middle;
+    text-align: center !important;
+  }
+
+  .bb-machine-report-print-material-table td:nth-child(n+4) {
+    text-align: right !important;
   }
 
   .bb-machine-report-print-evaluation-table th:first-child,
