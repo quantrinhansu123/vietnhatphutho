@@ -79,6 +79,19 @@ export default function MixingProductionOrderAutofillModal({
     );
   }, [productCandidates, productSearch]);
 
+  const visibleProductKeys = useMemo(() => filteredProducts.map(item => item.key), [filteredProducts]);
+  const visibleProductKeySet = useMemo(() => new Set(visibleProductKeys), [visibleProductKeys]);
+  const allVisibleProductsSelected =
+    visibleProductKeys.length > 0 && visibleProductKeys.every(key => selectedProductKeys.includes(key));
+
+  const toggleAllVisibleProducts = () => {
+    if (allVisibleProductsSelected) {
+      setSelectedProductKeys(prev => prev.filter(key => !visibleProductKeySet.has(key)));
+      return;
+    }
+    setSelectedProductKeys(prev => Array.from(new Set([...prev, ...visibleProductKeys])));
+  };
+
   const toggleOrderCode = (orderCode: string) => {
     setSelectedOrderCodes(prev => {
       const isSelected = prev.includes(orderCode);
@@ -235,14 +248,24 @@ export default function MixingProductionOrderAutofillModal({
                 <p className="mb-2 text-xs font-black uppercase tracking-wider text-zinc-500">Chọn sản phẩm</p>
                 <label className="space-y-1.5">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tìm sản phẩm</span>
-                  <div className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
-                    <Search className="h-4 w-4 shrink-0 text-zinc-400" />
-                    <input
-                      value={productSearch}
-                      onChange={event => setProductSearch(event.target.value)}
-                      placeholder="Gõ mã SP, tên hàng..."
-                      className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-                    />
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+                      <Search className="h-4 w-4 shrink-0 text-zinc-400" />
+                      <input
+                        value={productSearch}
+                        onChange={event => setProductSearch(event.target.value)}
+                        placeholder="Gõ mã SP, tên hàng..."
+                        className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleAllVisibleProducts}
+                      disabled={filteredProducts.length === 0}
+                      className="h-8 shrink-0 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-2.5 text-[11px] font-black text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {allVisibleProductsSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                    </button>
                   </div>
                 </label>
 
