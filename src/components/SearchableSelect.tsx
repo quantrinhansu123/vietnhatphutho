@@ -167,11 +167,13 @@ export default function SearchableSelect({
     const handleReposition = () => updateMenuPosition();
     window.addEventListener('resize', handleReposition);
     window.addEventListener('scroll', handleReposition, true);
+    document.addEventListener('scroll', handleReposition, true);
     window.visualViewport?.addEventListener('resize', handleReposition);
     window.visualViewport?.addEventListener('scroll', handleReposition);
     return () => {
       window.removeEventListener('resize', handleReposition);
       window.removeEventListener('scroll', handleReposition, true);
+      document.removeEventListener('scroll', handleReposition, true);
       window.visualViewport?.removeEventListener('resize', handleReposition);
       window.visualViewport?.removeEventListener('scroll', handleReposition);
     };
