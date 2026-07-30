@@ -2793,6 +2793,29 @@ input[type="number"] {
   font-style: italic;
 }
 
+.bb-finished-goods-print-title {
+  margin: 0 0 4mm;
+  font-size: 13pt;
+  font-weight: 800;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.bb-finished-goods-print-table th {
+  background: #e5e7eb !important;
+  font-weight: 700;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.bb-finished-goods-print-table td {
+  vertical-align: middle;
+}
+
+.bb-finished-goods-print-empty-row td {
+  height: 7mm;
+}
+
 .bb-machine-report-print-info th {
   width: 10%;
   background: #f1f5f9;

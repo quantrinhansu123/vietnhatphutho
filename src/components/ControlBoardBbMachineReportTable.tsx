@@ -1203,17 +1203,19 @@ export default function ControlBoardBbMachineReportTable({
             12C2 ← 12C1 cùng ngày; 12C1 ← 12C2 ngày hôm trước.
           </p>
         </div>
-        <button
-          type="button"
-          id="bb-machine-report-print-btn"
-          onClick={handlePrint}
-          disabled={isLoading || orderGroups.length === 0 || pendingPrint}
-          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/80 bg-white px-3 text-xs font-black text-sky-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
-          title="In báo cáo tổng hợp máy BB theo từng lệnh sản xuất"
-        >
-          {pendingPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-          {pendingPrint ? 'Đang chuẩn bị...' : 'In báo cáo'}
-        </button>
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            id="bb-machine-report-print-btn"
+            onClick={handlePrint}
+            disabled={isLoading || orderGroups.length === 0 || pendingPrint}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/80 bg-white px-3 text-xs font-black text-sky-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+            title="In báo cáo tổng hợp máy BB"
+          >
+            {pendingPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+            {pendingPrint ? 'Đang chuẩn bị...' : 'In báo cáo'}
+          </button>
+        </div>
       </div>
 
       <div className="relative border-b border-zinc-100 bg-zinc-50/80">

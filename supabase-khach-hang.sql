@@ -23,4 +23,3 @@ alter table public.khach_hang
 
 comment on column public.khach_hang.dia_chi_moi
   is 'Địa chỉ mới của khách hàng; dia_chi lưu địa chỉ cũ.';
-

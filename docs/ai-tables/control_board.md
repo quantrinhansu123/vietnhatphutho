@@ -9,6 +9,7 @@ Tab `control-board` → `/bang-dieu-khien` — **đọc nhiều bảng**, không
 | `src/features/control-board/index.tsx` | Panel bảng điều khiển (shell routing import từ `App.tsx`) |
 | `ControlBoardShiftSummaryTable.tsx` | Bảng tổng hợp ca |
 | `ControlBoardBbMachineReportTable.tsx` | Báo cáo tổng hợp máy BB (lệnh SX, xuất kho, tồn đầu ca, lỗi hỏng, tồn cuối ca, phiếu nhập kho, thực dùng, tổng, tỉ lệ trộn, đánh giá hao hụt) |
+| `ControlBoardBbMachineReportPrintSheet.tsx` | Mẫu in báo cáo tổng hợp máy BB (gồm mục 2 thành phẩm đạt nhập kho) |
 | `ControlBoardShiftSummaryChart.tsx` | Biểu đồ tổng hợp ca |
 | `ControlBoardShiftDetailModal.tsx` | Chi tiết ca |
 | `ControlBoardShiftSummaryPrintSheet.tsx` | In tổng hợp |

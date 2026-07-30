@@ -13,7 +13,6 @@ import {
   mapMaterialToWeightCatalogItem
 } from '../utils/warehouseWeight';
 import {
-  buildBbCuoiCaKgMapsFromGroup,
   buildBbMaterialKgMapsFromTabLines,
   isNnsTronMaterial,
   lookupBbMaterialKgByCodeOrName,
@@ -83,8 +82,54 @@ function groupMatchesOrder(groupOrderCode: string, orderCode: string) {
     .some(code => code === target);
 }
 
-function findOrderGroup<T extends { orderCode: string }>(groups: T[], orderCode: string) {
-  return groups.find(group => groupMatchesOrder(group.orderCode, orderCode));
+function findOrderGroup<T extends { orderCode: string; groupKey?: string }>(
+  groups: T[],
+  order: { orderCode: string; groupKey?: string } | string
+) {
+  if (typeof order === 'string') {
+    return groups.find(group => groupMatchesOrder(group.orderCode, order));
+  }
+  if (order.groupKey) {
+    const byKey = groups.find(group => group.groupKey === order.groupKey);
+    if (byKey) return byKey;
+  }
+  return groups.find(group => groupMatchesOrder(group.orderCode, order.orderCode));
+}
+
+/** Gom mọi group khớp lệnh (ưu tiên cùng groupKey) — dùng cho tồn đầu/cuối ca. */
+function findOrderGroups<T extends { orderCode: string; groupKey?: string; ngay?: string; shift?: string; machine?: string }>(
+  groups: T[],
+  order: { orderCode: string; groupKey?: string; ngay?: string; shift?: string; machine?: string }
+) {
+  if (order.groupKey) {
+    const byKey = groups.filter(group => group.groupKey === order.groupKey);
+    if (byKey.length > 0) return byKey;
+  }
+  const byOrder = groups.filter(group => groupMatchesOrder(group.orderCode, order.orderCode));
+  if (byOrder.length > 0) return byOrder;
+
+  // Fallback: cùng ngày + ca (+ máy nếu có) khi báo cáo tồn chưa gắn đúng mã lệnh
+  if (order.ngay && order.shift) {
+    return groups.filter(group => {
+      if (group.ngay && group.ngay !== order.ngay) return false;
+      if (group.shift && !shiftNamesMatch(group.shift, order.shift)) return false;
+      if (order.machine && group.machine) {
+        const orderMachine = normalizeProductCodeKey(order.machine);
+        const groupMachine = normalizeProductCodeKey(group.machine);
+        if (
+          orderMachine &&
+          groupMachine &&
+          orderMachine !== groupMachine &&
+          !orderMachine.includes(groupMachine) &&
+          !groupMachine.includes(orderMachine)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+  return [];
 }
 
 function findProduct(products: ProductRow[], code: string) {
@@ -179,23 +224,25 @@ function buildMaterialRows(
     }
   }
 
-  const exportGroup = findOrderGroup(props.exportGroups, order.orderCode);
+  const exportGroup = findOrderGroup(props.exportGroups, order);
   for (const line of exportGroup?.lines || []) {
     ensure(line.itemCode, line.itemName, line.unit).exportKg += line.weightKg || 0;
   }
-  const openingGroup = findOrderGroup(props.dauCaGroups, order.orderCode);
-  const tonDauMaps = buildBbMaterialKgMapsFromTabLines(openingGroup?.lines);
+  const openingGroups = findOrderGroups(props.dauCaGroups, order);
+  const openingLines = openingGroups.flatMap(group => group.lines);
+  const tonDauMaps = buildBbMaterialKgMapsFromTabLines(openingLines);
   const nnsTronTonDauKg = lookupNnsTronTonDauKg(tonDauMaps);
-  for (const line of openingGroup?.lines || []) {
-    ensure(line.itemCode, line.itemName, line.unit).openingKg += line.weightKg || 0;
+  for (const line of openingLines) {
+    ensure(line.itemCode, line.itemName, line.unit).openingKg += line.weightKg > 0 ? line.weightKg : 0;
   }
-  const closingGroup = findOrderGroup(props.cuoiCaGroups, order.orderCode);
-  const tonCuoiMaps = buildBbCuoiCaKgMapsFromGroup(closingGroup);
-  const damagedGroup = findOrderGroup(props.damagedGroups, order.orderCode);
+  const closingGroups = findOrderGroups(props.cuoiCaGroups, order);
+  const closingLines = closingGroups.flatMap(group => group.lines);
+  const tonCuoiMaps = buildBbMaterialKgMapsFromTabLines(closingLines);
+  const damagedGroup = findOrderGroup(props.damagedGroups, order);
   for (const line of damagedGroup?.lines || []) {
     ensure(line.materialCode, line.materialName, line.unit || 'kg').damagedKg += line.weightKg || 0;
   }
-  const mixingGroup = findOrderGroup(props.mixingGroups, order.orderCode);
+  const mixingGroup = findOrderGroup(props.mixingGroups, order);
   for (const line of mixingGroup?.lines || []) {
     const row = ensure(line.materialCode, line.materialName, 'kg');
     if (line.tiLeDinhMucPercent !== null) row.normPercents.push(line.tiLeDinhMucPercent);
@@ -219,7 +266,7 @@ function buildMaterialRows(
   for (const row of rows.values()) {
     row.closingKg = lookupBbMaterialKgByCodeOrName(tonCuoiMaps, row.code, row.name);
   }
-  for (const line of closingGroup?.lines || []) {
+  for (const line of closingLines) {
     const row = ensure(line.itemCode, line.itemName, line.unit);
     row.closingKg = lookupBbMaterialKgByCodeOrName(tonCuoiMaps, line.itemCode, line.itemName);
   }
@@ -230,8 +277,8 @@ function buildMaterialRows(
 }
 
 function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGroup; props: PrintProps }) {
-  const inbound = findOrderGroup(props.inboundRows, order.orderCode);
-  const evaluation = findOrderGroup(props.danhGiaGroups, order.orderCode);
+  const inbound = findOrderGroup(props.inboundRows, order);
+  const evaluation = findOrderGroup(props.danhGiaGroups, order);
   const analysisNote = props.phanTichMap[order.groupKey] || '';
   const ghiChu = (props.noteByOrder?.[order.groupKey] || '').trim();
   const materialRows = buildMaterialRows(order, props);
@@ -298,32 +345,57 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
 
         <section className="shift-summary-print-section">
           <h2 className="production-order-print-section-title">2. BÁO CÁO THÀNH PHẨM ĐẠT NHẬP KHO</h2>
-          <table className="shift-summary-print-table shift-summary-print-table-wide bb-machine-report-print-product-table">
-            <thead><tr>
-              <th>Mã sản phẩm</th><th>Tên sản phẩm</th><th>ĐVT</th><th>SL yêu cầu</th>
-              <th>TL yêu cầu</th><th>SL đạt</th><th>TL đạt</th><th>Tỉ lệ đạt</th><th>Máy SX</th><th>Lý do phát sinh</th>
-            </tr></thead>
+          <table className="shift-summary-print-table shift-summary-print-table-wide bb-machine-report-print-product-table bb-finished-goods-print-table">
+            <thead>
+              <tr>
+                <th>Mã sản phẩm</th>
+                <th>Tên sản phẩm</th>
+                <th>ĐVT</th>
+                <th>Số lượng yêu cầu</th>
+                <th>Trọng lượng yêu cầu</th>
+                <th>Số lượng đạt</th>
+                <th>Trọng lượng đạt</th>
+                <th>Tỉ lệ SL đạt/SL kế hoạch</th>
+                <th>Máy sản xuất BB</th>
+                <th>Lý do sản phát sinh thêm hoặc không đạt kế hoạch</th>
+              </tr>
+            </thead>
             <tbody>
-              {productRows.map(row => (
-                <tr key={row.key}>
-                  <td>{row.productCode || '-'}</td><td>{row.productName || '-'}</td>
-                  <td className="shift-summary-print-center">{row.unit || '-'}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.quantity, 2)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.requiredWeight, 2)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.actualQuantity, 2)}</td>
-                  <td className="shift-summary-print-num">{printNumber(row.actualWeight, 2)}</td>
-                  <td className="shift-summary-print-num">{printPercent(row.quantity > 0 ? (row.actualQuantity / row.quantity) * 100 : null)}</td>
-                  <td>{row.machine || order.machine || '-'}</td><td>{analysisNote || '-'}</td>
-                </tr>
-              ))}
+              {productRows.map(row => {
+                const ratio =
+                  row.quantity > 0 ? (row.actualQuantity / row.quantity) * 100 : null;
+                return (
+                  <tr key={row.key}>
+                    <td>{row.productCode || ''}</td>
+                    <td>{row.productName || ''}</td>
+                    <td className="shift-summary-print-center">{row.unit || ''}</td>
+                    <td className="shift-summary-print-num">{printNumber(row.quantity, 2)}</td>
+                    <td className="shift-summary-print-num">{printNumber(row.requiredWeight, 2)}</td>
+                    <td className="shift-summary-print-num">{printNumber(row.actualQuantity, 2)}</td>
+                    <td className="shift-summary-print-num">{printNumber(row.actualWeight, 2)}</td>
+                    <td className="shift-summary-print-num">
+                      {ratio === null || !Number.isFinite(ratio)
+                        ? ''
+                        : `${formatNumber(Math.round(ratio), 0)}%`}
+                    </td>
+                    <td className="shift-summary-print-center">{row.machine || order.machine || ''}</td>
+                    <td>{analysisNote || ''}</td>
+                  </tr>
+                );
+              })}
               <tr className="shift-summary-print-total-row">
-                <td colSpan={3} className="shift-summary-print-total-label">Tổng cộng</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td className="shift-summary-print-center shift-summary-print-total-label">Tổng</td>
                 <td className="shift-summary-print-num">{printNumber(requiredQtyTotal, 2)}</td>
                 <td className="shift-summary-print-num">{printNumber(requiredWeightTotal, 2)}</td>
                 <td className="shift-summary-print-num">{printNumber(actualQtyTotal, 2)}</td>
-                <td className="shift-summary-print-num">{printNumber(actualWeightTotal || inbound?.finishedGoodsInboundKg, 2)}</td>
-                <td className="shift-summary-print-num">{printPercent(requiredQtyTotal > 0 ? (actualQtyTotal / requiredQtyTotal) * 100 : null)}</td>
-                <td colSpan={2} />
+                <td className="shift-summary-print-num">
+                  {printNumber(actualWeightTotal || inbound?.finishedGoodsInboundKg, 2)}
+                </td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
               </tr>
             </tbody>
           </table>
