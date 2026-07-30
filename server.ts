@@ -35,6 +35,8 @@ const SUPABASE_VEHICLE_EXPENSES_TABLE = process.env.SUPABASE_VEHICLE_EXPENSES_TA
 const SUPABASE_VEHICLE_LOGS_TABLE = process.env.SUPABASE_VEHICLE_LOGS_TABLE || 'nhat_ky_xe';
 const SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE =
   process.env.SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE || 'yeu_cau_xuat_hang_xe';
+const SUPABASE_VEHICLE_DELIVERY_ROUTES_TABLE =
+  process.env.SUPABASE_VEHICLE_DELIVERY_ROUTES_TABLE || 'tuyen_giao_hang_xe';
 const SUPABASE_VEHICLE_KM_LOGS_TABLE = process.env.SUPABASE_VEHICLE_KM_LOGS_TABLE || 'nhat_ky_km_xe';
 const SUPABASE_CUSTOMER_PAYMENTS_TABLE =
   process.env.SUPABASE_CUSTOMER_PAYMENTS_TABLE || 'thu_tien_khach_hang';
@@ -61,6 +63,9 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY?.trim();
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET?.trim();
 const ADDRESS_ENGINE_URL = (process.env.ADDRESS_ENGINE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+const VIETMAP_SERVICES_KEY = process.env.VIETMAP_SERVICES_KEY?.trim();
+const VIETMAP_TILE_KEY = process.env.VIETMAP_TILE_KEY?.trim();
+const VIETMAP_API_URL = 'https://maps.vietmap.vn/api';
 
 const SUPABASE_FETCH_TIMEOUT_MS = 30_000;
 const SUPABASE_FETCH_RETRIES = 3;
@@ -1439,7 +1444,15 @@ function parseVehicleDeliveryRequestBody(
       trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Chờ xuất hàng'),
       ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null,
       ten_khach_hang: pickRowField(source, ['ten_khach_hang', 'customerName'], '') || null,
-      thu_tu_giao: Number.isFinite(routeOrder) && routeOrder > 0 ? Math.round(routeOrder) : 0
+      thu_tu_giao: Number.isFinite(routeOrder) && routeOrder > 0 ? Math.round(routeOrder) : 0,
+      vi_do: Number.isFinite(Number(source.vi_do)) ? Number(source.vi_do) : null,
+      kinh_do: Number.isFinite(Number(source.kinh_do)) ? Number(source.kinh_do) : null,
+      km_vietmap: Math.max(0, Number(source.km_vietmap) || 0),
+      km_nhap_tay: source.km_nhap_tay === '' || source.km_nhap_tay === null || source.km_nhap_tay === undefined
+        ? null
+        : Math.max(0, Number(source.km_nhap_tay) || 0),
+      km_chot: Math.max(0, Number(source.km_chot) || 0),
+      km_luy_ke: Math.max(0, Number(source.km_luy_ke) || 0)
     }
   };
 }
@@ -4715,6 +4728,121 @@ export function createApp() {
     });
   });
 
+  app.get('/api/vietmap/config', (_req, res) => {
+    return res.json({
+      configured: Boolean(VIETMAP_SERVICES_KEY && VIETMAP_TILE_KEY),
+      tileKey: VIETMAP_TILE_KEY || ''
+    });
+  });
+
+  app.get('/api/vietmap/autocomplete', async (req, res) => {
+    if (!VIETMAP_SERVICES_KEY) return res.status(503).json({ error: 'Chưa cấu hình VIETMAP_SERVICES_KEY.' });
+    const query = typeof req.query.text === 'string' ? req.query.text.trim() : '';
+    if (query.length < 2) return res.json({ rows: [] });
+    try {
+      const params = new URLSearchParams({
+        apikey: VIETMAP_SERVICES_KEY,
+        text: query,
+        display_type: '5'
+      });
+      const response = await fetchWithTimeoutAndRetry(`${VIETMAP_API_URL}/autocomplete/v4?${params}`);
+      const payload: any = await response.json().catch(() => null);
+      if (!response.ok) return res.status(response.status).json({ error: payload?.message || 'Vietmap không thể gợi ý địa chỉ.' });
+      const rows = Array.isArray(payload) ? payload : [];
+      return res.json({
+        rows: rows.slice(0, 8).map((row: any) => ({
+          refId: String(row?.ref_id || row?.refid || ''),
+          name: String(row?.name || ''),
+          address: String(row?.address || ''),
+          display: String(row?.display || [row?.name, row?.address].filter(Boolean).join(', '))
+        })).filter((row: any) => row.refId)
+      });
+    } catch (error: any) {
+      return res.status(502).json({ error: error?.message || 'Không thể kết nối Vietmap.' });
+    }
+  });
+
+  app.get('/api/vietmap/place', async (req, res) => {
+    if (!VIETMAP_SERVICES_KEY) return res.status(503).json({ error: 'Chưa cấu hình VIETMAP_SERVICES_KEY.' });
+    const refId = typeof req.query.refid === 'string' ? req.query.refid.trim() : '';
+    if (!refId) return res.status(400).json({ error: 'Thiếu refid địa chỉ Vietmap.' });
+    try {
+      const params = new URLSearchParams({ apikey: VIETMAP_SERVICES_KEY, refid: refId });
+      const response = await fetchWithTimeoutAndRetry(`${VIETMAP_API_URL}/place/v4?${params}`);
+      const payload: any = await response.json().catch(() => null);
+      if (!response.ok) return res.status(response.status).json({ error: payload?.message || 'Không thể lấy tọa độ địa chỉ.' });
+      const latitude = Number(payload?.lat);
+      const longitude = Number(payload?.lng);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return res.status(502).json({ error: 'Vietmap không trả về tọa độ hợp lệ.' });
+      }
+      return res.json({
+        display: String(payload?.display || payload?.address || ''),
+        latitude,
+        longitude
+      });
+    } catch (error: any) {
+      return res.status(502).json({ error: error?.message || 'Không thể kết nối Vietmap.' });
+    }
+  });
+
+  app.post('/api/vietmap/route', async (req, res) => {
+    if (!VIETMAP_SERVICES_KEY) return res.status(503).json({ error: 'Chưa cấu hình VIETMAP_SERVICES_KEY.' });
+    const rawPoints = Array.isArray(req.body?.points) ? req.body.points : [];
+    const points = rawPoints.map((point: any) => ({
+      latitude: Number(point?.latitude ?? point?.lat),
+      longitude: Number(point?.longitude ?? point?.lng)
+    })).filter((point: any) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
+    if (points.length < 2) return res.status(400).json({ error: 'Cần ít nhất 2 điểm hợp lệ để tính tuyến.' });
+    if (points.length > 20) return res.status(400).json({ error: 'Một tuyến hỗ trợ tối đa 20 điểm.' });
+    const allowedVehicles = new Set(['car', 'motorcycle', 'truck', 'container']);
+    const vehicle = allowedVehicles.has(String(req.body?.vehicle)) ? String(req.body.vehicle) : 'car';
+
+    const buildParams = (extra: Record<string, string> = {}) => {
+      const params = new URLSearchParams({ apikey: VIETMAP_SERVICES_KEY, vehicle, ...extra });
+      points.forEach(point => params.append('point', `${point.latitude},${point.longitude}`));
+      return params;
+    };
+
+    try {
+      const [routeResponse, distanceResponse, durationResponse] = await Promise.all([
+        fetchWithTimeoutAndRetry(`${VIETMAP_API_URL}/route/v4?${buildParams({ points_encoded: 'false' })}`),
+        fetchWithTimeoutAndRetry(`${VIETMAP_API_URL}/matrix/v4?${buildParams({ annotation: 'distance' })}`),
+        fetchWithTimeoutAndRetry(`${VIETMAP_API_URL}/matrix/v4?${buildParams({ annotation: 'duration' })}`)
+      ]);
+      const [routePayload, distancePayload, durationPayload]: any[] = await Promise.all([
+        routeResponse.json().catch(() => null),
+        distanceResponse.json().catch(() => null),
+        durationResponse.json().catch(() => null)
+      ]);
+      if (!routeResponse.ok) return res.status(routeResponse.status).json({ error: routePayload?.message || routePayload?.messages || 'Vietmap không thể tính tuyến.' });
+      const path = routePayload?.paths?.[0];
+      if (!path) return res.status(502).json({ error: 'Vietmap không tìm thấy hành trình phù hợp.' });
+      const rawCoordinates = Array.isArray(path.points?.coordinates)
+        ? path.points.coordinates
+        : Array.isArray(path.points) ? path.points : [];
+      const coordinates = rawCoordinates.map((coordinate: any) => {
+        const first = Number(coordinate?.[0]);
+        const second = Number(coordinate?.[1]);
+        return Math.abs(first) > 90 ? [first, second] : [second, first];
+      }).filter((coordinate: number[]) => coordinate.every(Number.isFinite));
+      const distances = Array.isArray(distancePayload?.distances) ? distancePayload.distances : [];
+      const durations = Array.isArray(durationPayload?.durations) ? durationPayload.durations : [];
+      const legs = points.slice(0, -1).map((_, index) => ({
+        distanceMeters: Number(distances?.[index]?.[index + 1]) || 0,
+        durationSeconds: Number(durations?.[index]?.[index + 1]) || 0
+      }));
+      return res.json({
+        distanceMeters: Number(path.distance) || legs.reduce((sum, leg) => sum + leg.distanceMeters, 0),
+        durationSeconds: Math.round((Number(path.time) || 0) / 1000) || legs.reduce((sum, leg) => sum + leg.durationSeconds, 0),
+        coordinates,
+        legs
+      });
+    } catch (error: any) {
+      return res.status(502).json({ error: error?.message || 'Không thể kết nối Vietmap để tính tuyến.' });
+    }
+  });
+
   // API Route: Get all reports
   app.get('/api/reports', async (_req, res) => {
     try {
@@ -7471,7 +7599,16 @@ export function createApp() {
           const order = Number(item.thu_tu_giao ?? item.deliveryOrder ?? item.routeOrder);
           return {
             id,
-            thu_tu_giao: Number.isFinite(order) && order > 0 ? Math.round(order) : 0
+            thu_tu_giao: Number.isFinite(order) && order > 0 ? Math.round(order) : 0,
+            dia_diem_giao: String(item.dia_diem_giao || '').trim(),
+            vi_do: Number.isFinite(Number(item.vi_do)) ? Number(item.vi_do) : null,
+            kinh_do: Number.isFinite(Number(item.kinh_do)) ? Number(item.kinh_do) : null,
+            km_vietmap: Math.max(0, Number(item.km_vietmap) || 0),
+            km_nhap_tay: item.km_nhap_tay === '' || item.km_nhap_tay === null || item.km_nhap_tay === undefined
+              ? null
+              : Math.max(0, Number(item.km_nhap_tay) || 0),
+            km_chot: Math.max(0, Number(item.km_chot) || 0),
+            km_luy_ke: Math.max(0, Number(item.km_luy_ke) || 0)
           };
         })
         .filter((item: { id: string }) => item.id);
@@ -7484,9 +7621,18 @@ export function createApp() {
       for (const item of items) {
         const { data, error } = await supabase
           .from(SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE)
-          .update({ thu_tu_giao: item.thu_tu_giao })
+          .update({
+            thu_tu_giao: item.thu_tu_giao,
+            ...(item.dia_diem_giao ? { dia_diem_giao: item.dia_diem_giao } : {}),
+            vi_do: item.vi_do,
+            kinh_do: item.kinh_do,
+            km_vietmap: item.km_vietmap,
+            km_nhap_tay: item.km_nhap_tay,
+            km_chot: item.km_chot,
+            km_luy_ke: item.km_luy_ke
+          })
           .eq('id', item.id)
-          .select('id, thu_tu_giao')
+          .select('*')
           .single();
         if (error) {
           if (isMissingColumnError(error)) {
@@ -7505,6 +7651,84 @@ export function createApp() {
       return res.json({ success: true, rows: results, total: results.length });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi lưu thứ tự tuyến giao hàng.' });
+    }
+  });
+
+  app.get('/api/tuyen-giao-hang-xe', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const ngayTuyen = typeof req.query.ngay_tuyen === 'string' ? req.query.ngay_tuyen.trim() : '';
+    const bienSoXe = typeof req.query.bien_so_xe === 'string' ? req.query.bien_so_xe.trim().toUpperCase() : '';
+    if (!ngayTuyen || !bienSoXe) return res.status(400).json({ error: 'Thiếu ngày tuyến hoặc biển số xe.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_VEHICLE_DELIVERY_ROUTES_TABLE)
+        .select('*')
+        .eq('ngay_tuyen', ngayTuyen)
+        .eq('bien_so_xe', bienSoXe)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: `Không thể tải cấu hình tuyến. ${error.message || ''}`.trim() });
+      return res.json({ row: data || null });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Không thể tải cấu hình tuyến.' });
+    }
+  });
+
+  app.put('/api/tuyen-giao-hang-xe', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const source = req.body && typeof req.body === 'object' ? req.body : {};
+    const ngayTuyen = String(source.ngay_tuyen || '').trim();
+    const bienSoXe = String(source.bien_so_xe || '').trim().toUpperCase();
+    if (!ngayTuyen || !bienSoXe) return res.status(400).json({ error: 'Thiếu ngày tuyến hoặc biển số xe.' });
+    const optionalNumber = (value: unknown) => value === '' || value === null || value === undefined
+      ? null
+      : Number.isFinite(Number(value)) ? Number(value) : null;
+    const rawExtraStops = Array.isArray(source.diem_them) ? source.diem_them : [];
+    const extraStops = rawExtraStops
+      .filter((item: any) => item && typeof item === 'object')
+      .map((item: any) => ({
+        id: String(item.id || '').trim(),
+        ma_khach_hang: String(item.ma_khach_hang || '').trim(),
+        ten_khach_hang: String(item.ten_khach_hang || '').trim(),
+        dia_chi: String(item.dia_chi || '').trim(),
+        vi_do: optionalNumber(item.vi_do),
+        kinh_do: optionalNumber(item.kinh_do),
+        km_vietmap: Math.max(0, Number(item.km_vietmap) || 0),
+        km_nhap_tay: optionalNumber(item.km_nhap_tay),
+        km_chot: Math.max(0, Number(item.km_chot) || 0),
+        thu_tu: Math.max(0, Math.round(Number(item.thu_tu) || 0))
+      }))
+      .filter((item: { id: string; dia_chi: string }) => item.id && item.dia_chi)
+      .slice(0, 20);
+    const record = {
+      ngay_tuyen: ngayTuyen,
+      bien_so_xe: bienSoXe,
+      diem_bat_dau: String(source.diem_bat_dau || '').trim(),
+      vi_do_bat_dau: optionalNumber(source.vi_do_bat_dau),
+      kinh_do_bat_dau: optionalNumber(source.kinh_do_bat_dau),
+      diem_ket_thuc: String(source.diem_ket_thuc || '').trim(),
+      vi_do_ket_thuc: optionalNumber(source.vi_do_ket_thuc),
+      kinh_do_ket_thuc: optionalNumber(source.kinh_do_ket_thuc),
+      loai_phuong_tien: ['car', 'motorcycle', 'truck', 'container'].includes(String(source.loai_phuong_tien))
+        ? String(source.loai_phuong_tien)
+        : 'car',
+      tong_km_vietmap: Math.max(0, Number(source.tong_km_vietmap) || 0),
+      tong_km_nhap_tay: optionalNumber(source.tong_km_nhap_tay),
+      tong_km_chot: Math.max(0, Number(source.tong_km_chot) || 0),
+      tong_thoi_gian_phut: Math.max(0, Number(source.tong_thoi_gian_phut) || 0),
+      ly_do_dieu_chinh: String(source.ly_do_dieu_chinh || '').trim() || null,
+      diem_them: extraStops,
+      updated_at: new Date().toISOString()
+    };
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_VEHICLE_DELIVERY_ROUTES_TABLE)
+        .upsert(record, { onConflict: 'ngay_tuyen,bien_so_xe' })
+        .select('*')
+        .single();
+      if (error) return res.status(500).json({ error: `Không thể lưu tuyến giao hàng. Hãy chạy lại supabase-danh-sach-xe.sql. ${error.message || ''}`.trim() });
+      return res.json({ success: true, row: data });
+    } catch (error: any) {
+      return res.status(500).json({ error: error?.message || 'Không thể lưu tuyến giao hàng.' });
     }
   });
 

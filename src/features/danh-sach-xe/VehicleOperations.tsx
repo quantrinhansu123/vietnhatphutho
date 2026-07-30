@@ -23,6 +23,7 @@ import {
 } from '../_shared/recordHelpers';
 import { vietNhatLogoUrl } from '../../components/layout/constants';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import { VietmapRoutePlanner } from './VietmapRoutePlanner';
 
 export type VehicleOption = {
   id: string;
@@ -102,6 +103,12 @@ type VehicleDeliveryRequest = {
   ghi_chu: string;
   ten_khach_hang: string;
   thu_tu_giao: number;
+  vi_do: number | null;
+  kinh_do: number | null;
+  km_vietmap: number;
+  km_nhap_tay: number | null;
+  km_chot: number;
+  km_luy_ke: number;
 };
 
 type BusinessShippingOrderLine = {
@@ -3268,7 +3275,13 @@ export function VehicleDeliveryRouteView() {
         trang_thai: text(row.trang_thai) || 'Chờ xuất hàng',
         ghi_chu: text(row.ghi_chu),
         ten_khach_hang: text(row.ten_khach_hang),
-        thu_tu_giao: numberValue(row.thu_tu_giao)
+        thu_tu_giao: numberValue(row.thu_tu_giao),
+        vi_do: row.vi_do === null || row.vi_do === undefined ? null : numberValue(row.vi_do),
+        kinh_do: row.kinh_do === null || row.kinh_do === undefined ? null : numberValue(row.kinh_do),
+        km_vietmap: numberValue(row.km_vietmap),
+        km_nhap_tay: row.km_nhap_tay === null || row.km_nhap_tay === undefined ? null : numberValue(row.km_nhap_tay),
+        km_chot: numberValue(row.km_chot),
+        km_luy_ke: numberValue(row.km_luy_ke)
       }));
       setRows(normalized);
     } catch (loadError: any) {
@@ -3284,7 +3297,7 @@ export function VehicleDeliveryRouteView() {
   }, [loadRows]);
 
   const dateOptions = useMemo(() => {
-    const dates = [...new Set(rows.map(row => row.ngay_yeu_cau).filter(Boolean))];
+    const dates = [...new Set(rows.map(row => row.ngay_yeu_cau).filter((value): value is string => Boolean(value)))];
     return dates.sort((a, b) => b.localeCompare(a));
   }, [rows]);
 
@@ -3298,7 +3311,7 @@ export function VehicleDeliveryRouteView() {
         rows
           .filter(row => !selectedDate || row.ngay_yeu_cau === selectedDate)
           .map(row => row.bien_so_xe)
-          .filter(Boolean)
+          .filter((value): value is string => Boolean(value))
       )
     ];
     return plates.sort((a, b) => a.localeCompare(b, 'vi'));
@@ -3468,6 +3481,22 @@ export function VehicleDeliveryRouteView() {
           </p>
         )}
       </section>
+
+      <VietmapRoutePlanner
+        date={selectedDate}
+        plate={selectedPlate}
+        sourceStops={orderedStops.map((row, index) => ({
+          id: row.id,
+          title: row.ten_khach_hang || row.hang_hoa || row.so_yeu_cau,
+          address: row.dia_diem_giao,
+          latitude: row.vi_do,
+          longitude: row.kinh_do,
+          apiKm: row.km_vietmap,
+          manualKm: row.km_nhap_tay,
+          order: row.thu_tu_giao > 0 ? row.thu_tu_giao : index + 1
+        }))}
+        onSaved={loadRows}
+      />
     </>
   );
 }
