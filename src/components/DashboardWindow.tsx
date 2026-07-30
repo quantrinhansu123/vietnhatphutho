@@ -28,7 +28,7 @@ export function DashboardWindow({
   children
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   icon: React.ComponentType<{ className?: string }>;
   accentClass: string;
   count: number;
@@ -92,7 +92,9 @@ export function DashboardWindow({
                 </span>
               ) : null}
             </div>
-            <p className="mt-0.5 truncate text-[10px] font-semibold text-white/65">{subtitle}</p>
+            {subtitle ? (
+              <p className="mt-0.5 truncate text-[10px] font-semibold text-white/65">{subtitle}</p>
+            ) : null}
           </div>
         </div>
 

@@ -39,6 +39,66 @@ type RouteResult = {
 
 const inputClass = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100';
 
+/** Mỗi chặng một màu — lặp nếu nhiều đoạn hơn bảng màu. */
+const LEG_COLORS = [
+  '#ef4444',
+  '#f59e0b',
+  '#10b981',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+  '#14b8a6',
+  '#f97316',
+  '#6366f1',
+  '#84cc16'
+] as const;
+
+function legColor(index: number) {
+  return LEG_COLORS[index % LEG_COLORS.length];
+}
+
+function nearestCoordinateIndex(coordinates: number[][], longitude: number, latitude: number) {
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  coordinates.forEach((coordinate, index) => {
+    const dx = Number(coordinate[0]) - longitude;
+    const dy = Number(coordinate[1]) - latitude;
+    const distance = dx * dx + dy * dy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+/** Cắt polyline tổng thành từng chặng theo các điểm dừng (lng/lat). */
+function splitRouteIntoLegCoordinates(
+  coordinates: number[][],
+  waypoints: Array<{ longitude: number; latitude: number }>
+) {
+  if (coordinates.length < 2 || waypoints.length < 2) return [];
+  const rawIndices = waypoints.map(point => nearestCoordinateIndex(coordinates, point.longitude, point.latitude));
+  const indices: number[] = [];
+  rawIndices.forEach((index, position) => {
+    if (position === 0) {
+      indices.push(index);
+      return;
+    }
+    indices.push(Math.max(index, indices[position - 1] + 1));
+  });
+  indices[indices.length - 1] = Math.min(indices[indices.length - 1], coordinates.length - 1);
+
+  const legs: number[][][] = [];
+  for (let i = 0; i < indices.length - 1; i += 1) {
+    const from = indices[i];
+    const to = Math.max(indices[i + 1], from + 1);
+    const slice = coordinates.slice(from, to + 1);
+    if (slice.length >= 2) legs.push(slice);
+  }
+  return legs;
+}
+
 async function readJson(response: Response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
@@ -170,6 +230,7 @@ function RouteMap({ tileKey, stops, start, end, route }: {
 
   useEffect(() => {
     if (!containerRef.current || !tileKey || mapRef.current) return;
+    let disposed = false;
     const map = new vietmapgl.Map({
       container: containerRef.current,
       style: `https://maps.vietmap.vn/maps/styles/tm/style.json?apikey=${encodeURIComponent(tileKey)}`,
@@ -178,15 +239,40 @@ function RouteMap({ tileKey, stops, start, end, route }: {
     });
     map.addControl(new vietmapgl.NavigationControl(), 'top-right');
     mapRef.current = map;
-    map.on('load', () => map.resize());
-    const resizeObserver = new ResizeObserver(() => map.resize());
+    const handleLoad = () => {
+      if (!disposed) map.resize();
+    };
+    map.on('load', handleLoad);
+    const resizeObserver = new ResizeObserver(() => {
+      if (!disposed) map.resize();
+    });
     resizeObserver.observe(containerRef.current);
     return () => {
+      disposed = true;
       resizeObserver.disconnect();
       markersRef.current.forEach(marker => marker.remove());
       markersRef.current = [];
-      map.remove();
       mapRef.current = null;
+      map.off('load', handleLoad);
+
+      // Vietmap tách Style khỏi Map trước khi hủy request tải style. Nếu component
+      // unmount khi style còn tải (đặc biệt trong React Strict Mode), AbortError
+      // vì vậy không tới listener của Map và bị thư viện in như lỗi chưa xử lý.
+      const style = map.style as
+        | { on?: (type: string, listener: (event: { error?: unknown }) => void) => void }
+        | undefined;
+      style?.on?.('error', event => {
+        const error = event?.error;
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (error instanceof Error && error.name === 'AbortError') return;
+        if (error) console.error(error);
+      });
+
+      try {
+        map.remove();
+      } catch (error) {
+        if (!(error instanceof Error) || error.name !== 'AbortError') throw error;
+      }
     };
   }, [tileKey]);
 
@@ -196,114 +282,189 @@ function RouteMap({ tileKey, stops, start, end, route }: {
     const render = () => {
       markersRef.current.forEach(marker => marker.remove());
       markersRef.current = [];
+
+      const deliveryStops = stops.filter(stop => stop.latitude !== null && stop.longitude !== null);
+      const hasEnd = end.latitude !== null && end.longitude !== null;
       const points = [
-        ...(start.latitude !== null && start.longitude !== null ? [{ ...start, label: 'Xuất phát', color: '#059669' }] : []),
-        ...stops.filter(stop => stop.latitude !== null && stop.longitude !== null).map((stop, index) => ({
+        ...(start.latitude !== null && start.longitude !== null
+          ? [{
+              address: start.address || 'Điểm xuất phát',
+              latitude: start.latitude,
+              longitude: start.longitude,
+              label: 'A',
+              subLabel: 'Xuất phát',
+              color: '#059669',
+              size: 'lg' as const
+            }]
+          : []),
+        ...deliveryStops.map((stop, index) => ({
           address: stop.address,
-          latitude: stop.latitude,
-          longitude: stop.longitude,
+          latitude: stop.latitude as number,
+          longitude: stop.longitude as number,
           label: String(index + 1),
-          color: '#ef4444'
+          subLabel: stop.title || `Điểm ${index + 1}`,
+          color: legColor(index),
+          size: 'xl' as const
         })),
-        ...(end.latitude !== null && end.longitude !== null ? [{ ...end, label: 'Kết thúc', color: '#2563eb' }] : [])
+        ...(hasEnd
+          ? [{
+              address: end.address || 'Điểm kết thúc',
+              latitude: end.latitude as number,
+              longitude: end.longitude as number,
+              label: 'B',
+              subLabel: 'Kết thúc',
+              color: '#2563eb',
+              size: 'lg' as const
+            }]
+          : [])
       ];
+
       points.forEach(point => {
         const element = document.createElement('div');
-        element.className = 'flex h-8 min-w-8 items-center justify-center rounded-full border-2 border-white px-2 text-[11px] font-black text-white shadow-lg';
-        element.style.backgroundColor = point.color;
-        element.textContent = point.label;
-        const marker = new vietmapgl.Marker({ element })
+        element.style.display = 'flex';
+        element.style.flexDirection = 'column';
+        element.style.alignItems = 'center';
+        element.style.gap = '2px';
+        element.style.pointerEvents = 'auto';
+
+        const badge = document.createElement('div');
+        const isStopNumber = point.size === 'xl';
+        badge.style.display = 'flex';
+        badge.style.alignItems = 'center';
+        badge.style.justifyContent = 'center';
+        badge.style.minWidth = isStopNumber ? '48px' : '40px';
+        badge.style.height = isStopNumber ? '48px' : '40px';
+        badge.style.padding = '0 10px';
+        badge.style.borderRadius = '9999px';
+        badge.style.border = '3px solid #fff';
+        badge.style.backgroundColor = point.color;
+        badge.style.color = '#fff';
+        badge.style.fontWeight = '900';
+        badge.style.fontSize = isStopNumber ? '20px' : '14px';
+        badge.style.lineHeight = '1';
+        badge.style.boxShadow = '0 8px 20px rgba(15, 23, 42, 0.35)';
+        badge.textContent = point.label;
+
+        const caption = document.createElement('div');
+        caption.style.maxWidth = '280px';
+        caption.style.width = 'max-content';
+        caption.style.whiteSpace = 'normal';
+        caption.style.wordBreak = 'break-word';
+        caption.style.textAlign = 'center';
+        caption.style.borderRadius = '10px';
+        caption.style.background = 'rgba(15, 23, 42, 0.88)';
+        caption.style.color = '#fff';
+        caption.style.fontSize = '12px';
+        caption.style.fontWeight = '800';
+        caption.style.lineHeight = '1.25';
+        caption.style.padding = '4px 10px';
+        caption.style.boxShadow = '0 4px 12px rgba(15, 23, 42, 0.28)';
+        caption.textContent = point.subLabel;
+        caption.title = point.subLabel;
+
+        element.appendChild(badge);
+        element.appendChild(caption);
+
+        const marker = new vietmapgl.Marker({ element, anchor: 'bottom' })
           .setLngLat([Number(point.longitude), Number(point.latitude)])
-          .setPopup(new vietmapgl.Popup({ offset: 24 }).setText(point.address))
+          .setPopup(new vietmapgl.Popup({ offset: 36 }).setText(point.address))
           .addTo(map);
         markersRef.current.push(marker);
       });
 
       const routeCoordinates = route?.coordinates || [];
-      let endLegCoordinates: number[][] = [];
-      const lastDeliveryStop = [...stops].reverse().find(stop => stop.latitude !== null && stop.longitude !== null);
-      if (
-        routeCoordinates.length > 1
-        && lastDeliveryStop
-        && end.latitude !== null
-        && end.longitude !== null
-      ) {
-        let splitIndex = 0;
-        let nearestDistance = Number.POSITIVE_INFINITY;
-        routeCoordinates.forEach((coordinate, index) => {
-          const longitudeDelta = Number(coordinate[0]) - Number(lastDeliveryStop.longitude);
-          const latitudeDelta = Number(coordinate[1]) - Number(lastDeliveryStop.latitude);
-          const distance = longitudeDelta * longitudeDelta + latitudeDelta * latitudeDelta;
-          if (distance < nearestDistance) {
-            nearestDistance = distance;
-            splitIndex = index;
+      const waypointsForSplit = [
+        ...(start.latitude !== null && start.longitude !== null
+          ? [{ longitude: Number(start.longitude), latitude: Number(start.latitude) }]
+          : []),
+        ...deliveryStops.map(stop => ({
+          longitude: Number(stop.longitude),
+          latitude: Number(stop.latitude)
+        })),
+        ...(hasEnd
+          ? [{ longitude: Number(end.longitude), latitude: Number(end.latitude) }]
+          : [])
+      ];
+      const legCoordinates = splitRouteIntoLegCoordinates(routeCoordinates, waypointsForSplit);
+      const routeGeojson = {
+        type: 'FeatureCollection',
+        features: legCoordinates.map((coordinates, index) => ({
+          type: 'Feature',
+          properties: {
+            color: legColor(index),
+            leg: index + 1
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates
           }
-        });
-        endLegCoordinates = routeCoordinates.slice(splitIndex);
-      }
+        }))
+      };
 
-      const source = map.getSource('delivery-route') as any;
-      const geojson = routeCoordinates.length >= 2
-        ? {
-            type: 'Feature',
-            properties: {},
-            geometry: { type: 'LineString', coordinates: routeCoordinates }
-          }
-        : { type: 'FeatureCollection', features: [] };
-      if (source) source.setData(geojson);
-      else {
-        map.addSource('delivery-route', { type: 'geojson', data: geojson } as any);
-      }
-      if (!map.getLayer('delivery-route-line')) {
-        map.addLayer({
-          id: 'delivery-route-line',
-          type: 'line',
-          source: 'delivery-route',
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': '#ef4444', 'line-width': 5, 'line-opacity': 0.88 }
-        } as any);
-      }
+      const source = map.getSource('delivery-route-legs') as any;
+      if (source) source.setData(routeGeojson);
+      else map.addSource('delivery-route-legs', { type: 'geojson', data: routeGeojson } as any);
 
-      const endLegSource = map.getSource('delivery-route-end-leg') as any;
-      const endLegGeojson = endLegCoordinates.length >= 2
-        ? {
-            type: 'Feature',
-            properties: {},
-            geometry: { type: 'LineString', coordinates: endLegCoordinates }
-          }
-        : { type: 'FeatureCollection', features: [] };
-      if (endLegSource) endLegSource.setData(endLegGeojson);
-      else {
-        map.addSource('delivery-route-end-leg', { type: 'geojson', data: endLegGeojson } as any);
-      }
-      if (!map.getLayer('delivery-route-end-leg-line')) {
+      if (!map.getLayer('delivery-route-legs-casing')) {
         map.addLayer({
-          id: 'delivery-route-end-leg-line',
+          id: 'delivery-route-legs-casing',
           type: 'line',
-          source: 'delivery-route-end-leg',
+          source: 'delivery-route-legs',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': '#2563eb',
-            'line-width': 5,
-            'line-opacity': 0.92,
-            'line-dasharray': [2, 2]
+            'line-color': '#ffffff',
+            'line-width': 10,
+            'line-opacity': 0.9
+          }
+        } as any);
+      }
+      if (!map.getLayer('delivery-route-legs-line')) {
+        map.addLayer({
+          id: 'delivery-route-legs-line',
+          type: 'line',
+          source: 'delivery-route-legs',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': ['get', 'color'],
+            'line-width': 6,
+            'line-opacity': 0.95
           }
         } as any);
       }
 
-      const boundsPoints = route?.coordinates?.length ? route.coordinates : points.map(point => [Number(point.longitude), Number(point.latitude)]);
+      // Gỡ layer cũ (một màu) nếu còn sót từ phiên bản trước.
+      ['delivery-route-line', 'delivery-route-end-leg-line'].forEach(layerId => {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+      });
+      ['delivery-route', 'delivery-route-end-leg'].forEach(sourceId => {
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+      });
+
+      const boundsPoints = routeCoordinates.length
+        ? routeCoordinates
+        : points.map(point => [Number(point.longitude), Number(point.latitude)]);
       if (boundsPoints.length > 0) {
-        const bounds = new vietmapgl.LngLatBounds(boundsPoints[0] as [number, number], boundsPoints[0] as [number, number]);
+        const bounds = new vietmapgl.LngLatBounds(
+          boundsPoints[0] as [number, number],
+          boundsPoints[0] as [number, number]
+        );
         boundsPoints.slice(1).forEach(point => bounds.extend(point as [number, number]));
-        map.fitBounds(bounds, { padding: 55, maxZoom: 15, duration: 500 });
+        map.fitBounds(bounds, { padding: 72, maxZoom: 15, duration: 500 });
       }
       map.resize();
     };
-    if (map.isStyleLoaded?.()) render(); else map.once('load', render);
+    if (map.isStyleLoaded?.()) render();
+    else map.once('load', render);
   }, [end, route, start, stops]);
 
-  if (!tileKey) return <div className="flex h-[520px] items-center justify-center bg-slate-100 px-6 text-center text-sm font-bold text-slate-500">Chưa cấu hình VIETMAP_TILE_KEY nên chưa thể hiển thị bản đồ.</div>;
-  return <div ref={containerRef} className="vietmapgl-map h-full min-h-[520px] w-full lg:min-h-[640px]" />;
+  if (!tileKey) {
+    return (
+      <div className="flex h-full min-h-[420px] items-center justify-center bg-slate-100 px-6 text-center text-sm font-bold text-slate-500">
+        Chưa cấu hình VIETMAP_TILE_KEY nên chưa thể hiển thị bản đồ.
+      </div>
+    );
+  }
+  return <div ref={containerRef} className="vietmapgl-map absolute inset-0 h-full w-full" />;
 }
 
 export function VietmapRoutePlanner({ date, plate, sourceStops, onSaved }: {
@@ -462,6 +623,16 @@ export function VietmapRoutePlanner({ date, plate, sourceStops, onSaved }: {
   const apiTotalKm = route ? route.distanceMeters / 1000 : calculatedStops.reduce((sum, stop) => sum + stop.apiKm, 0) + endLegKm;
   const calculatedTotalKm = calculatedStops.reduce((sum, stop) => sum + stop.selectedKm, 0) + endLegKm;
   const finalTotalKm = manualTotal === null ? calculatedTotalKm : manualTotal;
+  const legendLegs = useMemo(() => {
+    const count = route?.legs?.length || Math.max(0, calculatedStops.length);
+    return Array.from({ length: count }, (_, index) => ({
+      index,
+      color: legColor(index),
+      label: index < calculatedStops.length
+        ? `Chặng ${index + 1} → điểm ${index + 1}`
+        : `Chặng ${index + 1} → kết thúc`
+    }));
+  }, [calculatedStops.length, route?.legs?.length]);
 
   const moveStop = (index: number, direction: -1 | 1) => {
     setStops(current => {
@@ -569,77 +740,110 @@ export function VietmapRoutePlanner({ date, plate, sourceStops, onSaved }: {
   if (!date || !plate || sourceStops.length === 0) return null;
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(420px,0.95fr)_minmax(520px,1.35fr)]">
-      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="space-y-1 sm:col-span-2"><span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Điểm xuất phát</span><AddressPicker value={start} placeholder="Nhập kho hoặc điểm xuất phát..." onChange={value => { setStart(value); setRoute(null); }} /></label>
-          <label className="space-y-1 sm:col-span-2"><span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Điểm kết thúc (để trống nếu dừng tại khách cuối)</span><AddressPicker value={end} placeholder="Nhập điểm về hoặc kho..." onChange={value => { setEnd(value); setRoute(null); }} /></label>
-          <label className="space-y-1"><span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Phương tiện</span><select className={inputClass} value={vehicle} onChange={event => { setVehicle(event.target.value); setRoute(null); }}><option value="truck">Xe tải</option><option value="car">Ô tô</option><option value="motorcycle">Xe máy</option><option value="container">Container</option></select></label>
-          <button type="button" onClick={() => void calculate()} disabled={loading} className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 text-xs font-black text-white hover:bg-red-700 disabled:opacity-60">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}Tính tuyến</button>
-        </div>
+    <section className="relative flex min-h-[calc(100dvh-7.5rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:flex-row">
+      <aside className="z-20 flex max-h-[46vh] w-full shrink-0 flex-col overflow-hidden border-b border-slate-200 bg-white/95 backdrop-blur lg:max-h-none lg:w-[440px] lg:border-b-0 lg:border-r">
+        <div className="space-y-3 overflow-y-auto p-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="space-y-1 sm:col-span-2"><span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Điểm xuất phát</span><AddressPicker value={start} placeholder="Nhập kho hoặc điểm xuất phát..." onChange={value => { setStart(value); setRoute(null); }} /></label>
+            <label className="space-y-1 sm:col-span-2"><span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Điểm kết thúc (để trống nếu dừng tại khách cuối)</span><AddressPicker value={end} placeholder="Nhập điểm về hoặc kho..." onChange={value => { setEnd(value); setRoute(null); }} /></label>
+            <label className="space-y-1"><span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Phương tiện</span><select className={inputClass} value={vehicle} onChange={event => { setVehicle(event.target.value); setRoute(null); }}><option value="truck">Xe tải</option><option value="car">Ô tô</option><option value="motorcycle">Xe máy</option><option value="container">Container</option></select></label>
+            <button type="button" onClick={() => void calculate()} disabled={loading} className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 text-xs font-black text-white hover:bg-red-700 disabled:opacity-60">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}Tính tuyến</button>
+          </div>
 
-        {error && <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
-        {message && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">{message}</p>}
+          {error && <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+          {message && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">{message}</p>}
 
-        <div className="space-y-2">
-          {calculatedStops.map((stop, index) => (
-            <article key={stop.id} className={`rounded-xl border p-3 ${stop.latitude === null ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200'}`}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-black text-slate-900">Điểm {index + 1}: {stop.title}</p>
-                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${stop.kind === 'adhoc' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
-                    {stop.kind === 'adhoc' ? 'Ghé thêm' : 'Yêu cầu xuất hàng'}
-                  </span>
+          <div className="space-y-2">
+            {calculatedStops.map((stop, index) => (
+              <article key={stop.id} className={`rounded-xl border p-3 ${stop.latitude === null ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200'}`}>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm font-black text-white shadow"
+                      style={{ backgroundColor: legColor(index) }}
+                    >
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-black text-slate-900">{stop.title}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${stop.kind === 'adhoc' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {stop.kind === 'adhoc' ? 'Ghé thêm' : 'Yêu cầu xuất hàng'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="mr-1 text-[11px] font-black text-brand-700">Lũy kế {stop.cumulativeKm.toFixed(1)} km</span>
+                    <button type="button" title="Lên trên" disabled={index === 0} onClick={() => moveStop(index, -1)} className="rounded-lg border border-slate-200 p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button>
+                    <button type="button" title="Xuống dưới" disabled={index === calculatedStops.length - 1} onClick={() => moveStop(index, 1)} className="rounded-lg border border-slate-200 p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button>
+                    {stop.kind === 'adhoc' && (
+                      <button type="button" title="Xoá điểm ghé thêm" onClick={() => removeStop(stop.id)} className="rounded-lg border border-rose-200 p-1 text-rose-600 hover:bg-rose-50"><X className="h-3.5 w-3.5" /></button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <span className="mr-1 text-[11px] font-black text-brand-700">Lũy kế {stop.cumulativeKm.toFixed(1)} km</span>
-                  <button type="button" title="Lên trên" disabled={index === 0} onClick={() => moveStop(index, -1)} className="rounded-lg border border-slate-200 p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button>
-                  <button type="button" title="Xuống dưới" disabled={index === calculatedStops.length - 1} onClick={() => moveStop(index, 1)} className="rounded-lg border border-slate-200 p-1 text-slate-500 hover:bg-slate-50 disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button>
-                  {stop.kind === 'adhoc' && (
-                    <button type="button" title="Xoá điểm ghé thêm" onClick={() => removeStop(stop.id)} className="rounded-lg border border-rose-200 p-1 text-rose-600 hover:bg-rose-50"><X className="h-3.5 w-3.5" /></button>
-                  )}
+                <AddressPicker value={{ address: stop.address, latitude: stop.latitude, longitude: stop.longitude }} placeholder="Chọn địa chỉ giao hàng..." onChange={value => { setStops(current => current.map(item => item.id === stop.id ? { ...item, address: value.address, latitude: value.latitude, longitude: value.longitude } : item)); setRoute(null); }} />
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-lg bg-slate-50 p-2"><span className="block text-[9px] font-black uppercase text-slate-400">Vietmap</span><strong>{stop.apiKm.toFixed(1)} km</strong></div>
+                  <label className="rounded-lg bg-amber-50 p-2"><span className="block text-[9px] font-black uppercase text-amber-700">Nhập tay</span><input type="number" min={0} step={0.1} value={stop.manualKm ?? ''} placeholder="—" onChange={event => setStops(current => current.map(item => item.id === stop.id ? { ...item, manualKm: event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0) } : item))} className="mt-0.5 w-full bg-transparent font-black outline-none" /></label>
+                  <div className="rounded-lg bg-emerald-50 p-2 text-emerald-800"><span className="block text-[9px] font-black uppercase">KM sử dụng</span><strong>{stop.selectedKm.toFixed(1)} km</strong></div>
                 </div>
-              </div>
-              <AddressPicker value={{ address: stop.address, latitude: stop.latitude, longitude: stop.longitude }} placeholder="Chọn địa chỉ giao hàng..." onChange={value => { setStops(current => current.map(item => item.id === stop.id ? { ...item, address: value.address, latitude: value.latitude, longitude: value.longitude } : item)); setRoute(null); }} />
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                <div className="rounded-lg bg-slate-50 p-2"><span className="block text-[9px] font-black uppercase text-slate-400">Vietmap</span><strong>{stop.apiKm.toFixed(1)} km</strong></div>
-                <label className="rounded-lg bg-amber-50 p-2"><span className="block text-[9px] font-black uppercase text-amber-700">Nhập tay</span><input type="number" min={0} step={0.1} value={stop.manualKm ?? ''} placeholder="—" onChange={event => setStops(current => current.map(item => item.id === stop.id ? { ...item, manualKm: event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0) } : item))} className="mt-0.5 w-full bg-transparent font-black outline-none" /></label>
-                <div className="rounded-lg bg-emerald-50 p-2 text-emerald-800"><span className="block text-[9px] font-black uppercase">KM sử dụng</span><strong>{stop.selectedKm.toFixed(1)} km</strong></div>
-              </div>
-            </article>
-          ))}
-        </div>
+              </article>
+            ))}
+          </div>
 
-        <div className="rounded-xl border border-dashed border-slate-300 p-3">
-          <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500"><UserPlus className="h-3.5 w-3.5" />Thêm điểm giao (chọn khách hàng)</span>
-          <SearchableSelect
-            value=""
-            onChange={() => undefined}
-            options={customers}
-            placeholder={addingCustomer ? 'Đang lấy toạ độ Vietmap...' : 'Tìm và chọn khách hàng...'}
-            isLoading={addingCustomer}
-            getLabel={(item) => (item as CustomerRecord).name}
-            getValue={(item) => (item as CustomerRecord).code}
-            getSearchText={(item) => {
-              const customer = item as CustomerRecord;
-              return `${customer.name} ${customer.code} ${customer.address}`;
-            }}
-            getOptionLabel={(item) => {
-              const customer = item as CustomerRecord;
-              return customer.address ? `${customer.name} — ${customer.address}` : customer.name;
-            }}
-            onSelectOption={(item) => { if (item) void addCustomerStop(item as CustomerRecord); }}
-          />
-        </div>
+          <div className="rounded-xl border border-dashed border-slate-300 p-3">
+            <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500"><UserPlus className="h-3.5 w-3.5" />Thêm điểm giao (chọn khách hàng)</span>
+            <SearchableSelect
+              value=""
+              onChange={() => undefined}
+              options={customers}
+              placeholder={addingCustomer ? 'Đang lấy toạ độ Vietmap...' : 'Tìm và chọn khách hàng...'}
+              isLoading={addingCustomer}
+              getLabel={(item) => (item as CustomerRecord).name}
+              getValue={(item) => (item as CustomerRecord).code}
+              getSearchText={(item) => {
+                const customer = item as CustomerRecord;
+                return `${customer.name} ${customer.code} ${customer.address}`;
+              }}
+              getOptionLabel={(item) => {
+                const customer = item as CustomerRecord;
+                return customer.address ? `${customer.name} — ${customer.address}` : customer.name;
+              }}
+              onSelectOption={(item) => { if (item) void addCustomerStop(item as CustomerRecord); }}
+            />
+          </div>
 
-        {endLegKm > 0 && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">Khách cuối → điểm kết thúc: {endLegKm.toFixed(1)} km</p>}
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-          <div className="grid grid-cols-3 gap-2 text-center"><div><span className="block text-[9px] font-black uppercase text-emerald-700">Vietmap</span><strong>{apiTotalKm.toFixed(1)} km</strong></div><div><span className="block text-[9px] font-black uppercase text-emerald-700">Thời gian</span><strong>{route ? Math.round(route.durationSeconds / 60) : 0} phút</strong></div><div><span className="block text-[9px] font-black uppercase text-emerald-700">KM chốt</span><strong className="text-lg">{finalTotalKm.toFixed(1)} km</strong></div></div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="text-[10px] font-black uppercase text-emerald-800">Tổng KM nhập tay<input type="number" min={0} step={0.1} value={manualTotal ?? ''} onChange={event => setManualTotal(event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0))} className={`${inputClass} mt-1`} /></label><label className="text-[10px] font-black uppercase text-emerald-800">Lý do điều chỉnh<input value={adjustmentReason} onChange={event => setAdjustmentReason(event.target.value)} className={`${inputClass} mt-1`} /></label></div>
+          {endLegKm > 0 && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">Khách cuối → điểm kết thúc: {endLegKm.toFixed(1)} km</p>}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+            <div className="grid grid-cols-3 gap-2 text-center"><div><span className="block text-[9px] font-black uppercase text-emerald-700">Vietmap</span><strong>{apiTotalKm.toFixed(1)} km</strong></div><div><span className="block text-[9px] font-black uppercase text-emerald-700">Thời gian</span><strong>{route ? Math.round(route.durationSeconds / 60) : 0} phút</strong></div><div><span className="block text-[9px] font-black uppercase text-emerald-700">KM chốt</span><strong className="text-lg">{finalTotalKm.toFixed(1)} km</strong></div></div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2"><label className="text-[10px] font-black uppercase text-emerald-800">Tổng KM nhập tay<input type="number" min={0} step={0.1} value={manualTotal ?? ''} onChange={event => setManualTotal(event.target.value === '' ? null : Math.max(0, Number(event.target.value) || 0))} className={`${inputClass} mt-1`} /></label><label className="text-[10px] font-black uppercase text-emerald-800">Lý do điều chỉnh<input value={adjustmentReason} onChange={event => setAdjustmentReason(event.target.value)} className={`${inputClass} mt-1`} /></label></div>
+          </div>
+          <button type="button" onClick={() => void save()} disabled={saving || !route} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 text-xs font-black text-white hover:bg-brand-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Lưu hành trình và số KM</button>
         </div>
-        <button type="button" onClick={() => void save()} disabled={saving || !route} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 text-xs font-black text-white hover:bg-brand-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Lưu hành trình và số KM</button>
+      </aside>
+
+      <div className="relative min-h-[54vh] flex-1 bg-slate-100 lg:min-h-0">
+        <RouteMap tileKey={tileKey} stops={stops} start={start} end={end} route={route} />
+        {legendLegs.length > 0 && (
+          <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-wrap gap-2 lg:right-auto lg:max-w-[70%]">
+            {legendLegs.map(leg => (
+              <span
+                key={leg.index}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-black text-slate-700 shadow-md ring-1 ring-slate-200"
+              >
+                <span className="h-2.5 w-5 rounded-full" style={{ backgroundColor: leg.color }} />
+                {leg.label}
+              </span>
+            ))}
+          </div>
+        )}
+        {!route && (
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3">
+            <p className="rounded-full bg-slate-900/80 px-3 py-1.5 text-[11px] font-bold text-white shadow">
+              Bấm “Tính tuyến” để hiện đường đi trên bản đồ
+            </p>
+          </div>
+        )}
       </div>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><RouteMap tileKey={tileKey} stops={stops} start={start} end={end} route={route} /></div>
     </section>
   );
 }

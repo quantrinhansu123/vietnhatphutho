@@ -984,10 +984,6 @@ export default function ControlBoardBbMachineReportTable({
     () => sumBbDanhGiaMoney(danhGiaGroups, 'tongGiaTriHaoHutLoiHong'),
     [danhGiaGroups]
   );
-  const unmatchedExportCount = useMemo(
-    () => exportRows.filter(row => !row.matchedByOrder).length,
-    [exportRows]
-  );
 
   const activeGroupKeys = useMemo(() => {
     switch (activeTab) {
@@ -1193,15 +1189,11 @@ export default function ControlBoardBbMachineReportTable({
 
   return (
     <>
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-sky-950 to-sky-800 px-3 py-2 text-white">
+    <section className="control-board-report-theme overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-red-800 bg-gradient-to-r from-[#b30d1c] to-[#ef1b2d] px-3 py-2 text-white">
         <div>
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-200/90">Báo cáo máy BB</p>
           <h3 className="text-sm font-black sm:text-base">Báo cáo tổng hợp máy BB</h3>
-          <p className="mt-0.5 hidden text-[11px] font-medium text-sky-100/80 md:block">
-            Gom theo lệnh SX — bấm nút sổ xuống để xem chi tiết từng dòng. Tỉ lệ trộn lấy từ ca trước:
-            12C2 ← 12C1 cùng ngày; 12C1 ← 12C2 ngày hôm trước.
-          </p>
         </div>
         <div className="relative shrink-0">
           <button
@@ -1229,7 +1221,7 @@ export default function ControlBoardBbMachineReportTable({
               onClick={() => setActiveTab(tab.id)}
               className={`group inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg py-1.5 pl-1.5 pr-3 text-[11px] font-extrabold uppercase tracking-wide transition ${
                 activeTab === tab.id
-                  ? 'bg-sky-700 text-white shadow-sm'
+                  ? 'bg-[#ef1b2d] text-white shadow-sm'
                   : 'bg-white text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100'
               }`}
             >
@@ -1258,10 +1250,7 @@ export default function ControlBoardBbMachineReportTable({
       </div>
 
       {activeGroupKeys.length > 0 ? (
-        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <p className="text-xs font-extrabold text-slate-700 sm:text-sm">
-            Bấm mũi tên ở dòng cha để đóng/mở các dòng con
-          </p>
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
           <div className="flex shrink-0 gap-2">
             <button
               type="button"
@@ -1429,12 +1418,8 @@ export default function ControlBoardBbMachineReportTable({
           <section className="overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-sm">
             <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-2.5">
               <h3 className="text-xs font-black uppercase tracking-wider text-emerald-900">
-                Tổng NVL đã xuất (lấy thẳng từ phiếu xuất kho)
+                Tổng NVL đã xuất
               </h3>
-              <p className="mt-0.5 text-[11px] font-semibold text-emerald-800/80">
-                Cộng dồn theo mã NVL từ bảng xuất kho · {exportMaterialTotals.length} mã ·{' '}
-                {formatKg(exportMaterialTotalKg, 2)} kg · bấm từng dòng để xem định mức theo SP (%)
-              </p>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-[720px] w-full text-left text-sm font-semibold">
@@ -2136,10 +2121,7 @@ export default function ControlBoardBbMachineReportTable({
         ) : activeTab === 'bao_cao_loi_hong' ? (
           <>
             {damagedGroupsWithMixing.length > 0 ? (
-              <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                <p className="text-xs font-extrabold text-slate-700 sm:text-sm">
-                  Bấm mũi tên ở dòng cha để đóng/mở các dòng con (NVL từ báo cáo phối trộn cùng ngày/ca)
-                </p>
+              <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                 <div className="flex shrink-0 gap-2">
                   <button
                     type="button"
@@ -2889,10 +2871,7 @@ export default function ControlBoardBbMachineReportTable({
         ) : activeTab === 'tong_dinh_muc_nvl_nhap_kho' ? (
           <>
             {inboundNormGroups.length > 0 ? (
-              <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                <p className="text-xs font-extrabold text-slate-700 sm:text-sm">
-                  Bấm mũi tên ở dòng cha để đóng/mở các dòng con
-                </p>
+              <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                 <div className="flex shrink-0 gap-2">
                   <button
                     type="button"
@@ -3099,9 +3078,6 @@ export default function ControlBoardBbMachineReportTable({
                                     title="kg NVL trên 1 đơn vị thành phẩm (tab Thành phần)"
                                   >
                                     ĐM NVL
-                                    <span className="mt-0.5 block text-[9px] font-bold normal-case tracking-normal text-amber-700/80">
-                                      (kg/1 SP)
-                                    </span>
                                   </td>
                                   <td
                                     className="px-4 py-2.5 text-right font-black"
@@ -3114,9 +3090,6 @@ export default function ControlBoardBbMachineReportTable({
                                     title="= ĐM NVL (kg/1 SP) × SL thành phẩm"
                                   >
                                     TL định mức
-                                    <span className="mt-0.5 block text-[9px] font-bold normal-case tracking-normal text-amber-700/80">
-                                      (= ĐM × SL)
-                                    </span>
                                   </td>
                                 </tr>
                                 {productNvlRows.length === 0 ? (
@@ -3467,11 +3440,6 @@ export default function ControlBoardBbMachineReportTable({
         )}
       </div>
 
-      {activeTab === 'phieu_xuat_kho' && unmatchedExportCount > 0 ? (
-        <p className="border-t border-amber-100 bg-amber-50/70 px-4 py-2 text-[11px] font-semibold text-amber-800">
-          {unmatchedExportCount} dòng xuất kho được gắn theo ngày + ca của lệnh BB (phiếu chưa lưu rõ mã lệnh SX).
-        </p>
-      ) : null}
     </section>
     {selectedExportSummary ? (
       <div

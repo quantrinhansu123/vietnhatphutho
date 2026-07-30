@@ -358,8 +358,8 @@ export default function ControlBoardShiftSummaryTable({
 
   return (
     <>
-      <section className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 bg-gradient-to-r from-sky-950 to-sky-800 px-3 py-2 text-white">
+      <section className="control-board-report-theme min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+        <div className="border-b border-red-800 bg-gradient-to-r from-[#b30d1c] to-[#ef1b2d] px-3 py-2 text-white">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-200/90">Tổng hợp sản xuất</p>
@@ -405,7 +405,7 @@ export default function ControlBoardShiftSummaryTable({
               onClick={() => setActiveTab(tab.id)}
               className={`shrink-0 rounded-md px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide transition ${
                 activeTab === tab.id
-                  ? 'bg-sky-700 text-white shadow-sm'
+                  ? 'bg-[#ef1b2d] text-white shadow-sm'
                   : 'bg-white text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100'
               }`}
             >
