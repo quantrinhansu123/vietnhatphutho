@@ -47,9 +47,10 @@ import { buildAllowedTabSet, hasFullMenuAccess, STAFF_MENU_VIEW_TREE } from './f
 import { VietNhatLogo } from './components/layout/Logo';
 import { HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
 import {
-  MenuCardGrid, MenuPageHeader, SubNav, MAIN_MENU_ITEMS,
+  MenuCardGrid, MainMenuFlow, FourStepMenuFlow, MenuPageHeader, SubNav, MAIN_MENU_ITEMS,
   REPORT_FORM_MENU_ITEMS, PRODUCTION_REPORT_MENU_ITEMS, FACILITY_MENU_ITEMS,
   REPORT_LIST_MENU_ITEMS, HCNS_MENU_ITEMS, BUSINESS_MENU_ITEMS, FACTORY_MENU_ITEMS,
+  FACTORY_QUAN_DOC_MENU_ITEMS, FACTORY_QC_MENU_ITEMS, FACTORY_CONG_NHAN_MENU_ITEMS, FACTORY_KHO_MENU_ITEMS,
   getActivePageMeta
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
@@ -468,9 +469,28 @@ export default function App() {
   // Tab không thuộc cây phân quyền => không bị kiểm soát, luôn hiển thị
   const canSeeTab = (tab: AppTab) =>
     tab === 'settings' || menuFullAccess || !knownPermissionTabs.has(tab) || allowedMenuTabs.has(tab);
+  const canSeeMainMenuTab = (tab: AppTab) => {
+    if (canSeeTab(tab)) return true;
+    if (tab === 'business') {
+      return ['orders', 'customers', 'shipping-orders'].some(child => allowedMenuTabs.has(child));
+    }
+    if (tab === 'factory') {
+      return [
+        'factory-quan-doc',
+        'factory-qc',
+        'factory-cong-nhan',
+        'factory-kho',
+        'production-reports',
+        'facility-management',
+        'production-orders',
+        'production-plan-history'
+      ].some(child => allowedMenuTabs.has(child));
+    }
+    return false;
+  };
   const visibleMainMenuItems = menuFullAccess
     ? MAIN_MENU_ITEMS
-    : MAIN_MENU_ITEMS.filter(item => canSeeTab(item.tab));
+    : MAIN_MENU_ITEMS.filter(item => canSeeMainMenuTab(item.tab));
   const filterMenuItems = <T extends { tab: AppTab }>(items: T[]): T[] =>
     menuFullAccess ? items : items.filter(item => canSeeTab(item.tab));
 
@@ -713,7 +733,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-5"
               >
-                <MenuCardGrid items={visibleMainMenuItems} onNavigate={navigateToTab} />
+                <MainMenuFlow items={visibleMainMenuItems} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'production-reports' ? (
               <motion.div
@@ -818,8 +838,56 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Nhà máy" desc="Lệnh sản xuất và điều phối nhà máy." />
-                <MenuCardGrid items={filterMenuItems(FACTORY_MENU_ITEMS)} onNavigate={navigateToTab} />
+                <MenuPageHeader title="Nhà máy" desc="Chọn vai trò để mở các chức năng tương ứng." />
+                <FourStepMenuFlow items={filterMenuItems(FACTORY_MENU_ITEMS)} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'factory-quan-doc' ? (
+              <motion.div
+                key="factory-quan-doc-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+              >
+                <MenuPageHeader title="Quản Đốc" desc="Lệnh sản xuất, kế hoạch và báo cáo tổng hợp." />
+                <MenuCardGrid items={filterMenuItems(FACTORY_QUAN_DOC_MENU_ITEMS)} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'factory-qc' ? (
+              <motion.div
+                key="factory-qc-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+              >
+                <MenuPageHeader title="QC — Quản lý chất lượng" desc="Theo dõi sản lượng, hàng hỏng và phiếu cân ca." />
+                <MenuCardGrid items={filterMenuItems(FACTORY_QC_MENU_ITEMS)} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'factory-cong-nhan' ? (
+              <motion.div
+                key="factory-cong-nhan-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+              >
+                <MenuPageHeader title="Công nhân" desc="Nhập và xem báo cáo theo ca sản xuất." />
+                <MenuCardGrid items={filterMenuItems(FACTORY_CONG_NHAN_MENU_ITEMS)} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'factory-kho' ? (
+              <motion.div
+                key="factory-kho-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+              >
+                <MenuPageHeader title="Kho" desc="Quản lý NVL và phiếu xuất nhập kho." />
+                <MenuCardGrid items={filterMenuItems(FACTORY_KHO_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'form' ? (
               <motion.div

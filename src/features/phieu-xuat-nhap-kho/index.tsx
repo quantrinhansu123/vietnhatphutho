@@ -1979,43 +1979,6 @@ export function WarehouseHistoryPanel({
 
   return (
     <div className="w-full min-w-0 max-w-none space-y-4">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex items-start justify-end gap-3">
-            <div className="hidden">
-              <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý kho</p>
-              <h2 className="mt-1 text-2xl font-black leading-tight">Lịch sử xuất nhập kho</h2>
-              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Mỗi dòng là một phiếu · bấm Xem để xem chi tiết NVL/SP bên trong.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={onOpenSlip}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Lập phiếu
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
-            {[
-              ['Phiếu', slipGroups.length],
-              [warehouseTab === 'san_pham' ? 'Dòng SP' : 'Dòng NVL', filteredMovements.length],
-              ['Nhập', filteredMovements.filter(row => row.slipType === 'nhap').length]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <span className="block font-bold text-zinc-400">{label}</span>
-                <span className="mt-1 block text-xl font-black text-white">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         <div className="flex gap-1 border-b border-zinc-200 px-4">
           {([
@@ -2057,6 +2020,15 @@ export function WarehouseHistoryPanel({
             </button>
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={onOpenSlip}
+          className="mt-3 flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] lg:mt-0 lg:ml-auto lg:w-auto"
+        >
+          <Plus className="h-4 w-4" />
+          Lập phiếu
+        </button>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:mt-0 lg:w-auto">
           <input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} className={warehouseFieldClass} />

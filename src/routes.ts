@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -9,6 +9,10 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   hcns: '/hcns',
   business: '/kinh-doanh',
   factory: '/nha-may',
+  'factory-quan-doc': '/nha-may/quan-doc',
+  'factory-qc': '/nha-may/qc',
+  'factory-cong-nhan': '/nha-may/cong-nhan',
+  'factory-kho': '/nha-may/kho',
   'control-board': '/bang-dieu-khien',
   form: '/nhap-bao-cao',
   'weighing-summary': '/tong-hop-ca',

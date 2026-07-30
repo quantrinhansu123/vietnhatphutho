@@ -2,13 +2,16 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
   ChevronDown,
+  ChevronUp,
   ExternalLink,
+  HandCoins,
   ImageUp,
   Loader2,
   Pencil,
   Plus,
   Printer,
   ReceiptText,
+  Route,
   Save,
   Trash2,
   X
@@ -97,6 +100,8 @@ type VehicleDeliveryRequest = {
   ten_tai_xe: string;
   trang_thai: string;
   ghi_chu: string;
+  ten_khach_hang: string;
+  thu_tu_giao: number;
 };
 
 type BusinessShippingOrderLine = {
@@ -132,6 +137,57 @@ type VehicleKmLog = {
   anh_public_id: string;
   ghi_chu: string;
 };
+
+type CustomerPayment = {
+  id: string;
+  ngay_thu: string;
+  ma_khach_hang: string;
+  ten_khach_hang: string;
+  so_tien: number;
+  hinh_thuc: string;
+  xe_id: string;
+  bien_so_xe: string;
+  ma_nhan_su: string;
+  nguoi_thu: string;
+  ghi_chu: string;
+  anh_url: string;
+  anh_public_id: string;
+};
+
+export type CustomerOption = {
+  code: string;
+  name: string;
+  debt: number;
+};
+
+const PAYMENT_METHODS = ['Tiền mặt', 'Chuyển khoản'] as const;
+
+/** VietQR chuyển khoản — VietinBank */
+const VIETQR_VIETINBANK = {
+  bankId: '970415',
+  bankLabel: 'VietinBank',
+  accountNo: '100001692967'
+} as const;
+
+function buildVietQrImageUrl(amount: number, addInfo: string) {
+  const params = new URLSearchParams();
+  const rounded = Math.round(Number(amount) || 0);
+  if (rounded > 0) params.set('amount', String(rounded));
+  const info = addInfo
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .replace(/[^a-zA-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 70);
+  if (info) params.set('addInfo', info);
+  const query = params.toString();
+  return `https://img.vietqr.io/image/${VIETQR_VIETINBANK.bankId}-${VIETQR_VIETINBANK.accountNo}-compact2.png${
+    query ? `?${query}` : ''
+  }`;
+}
 
 function escapePrintHtml(value: unknown) {
   return String(value ?? '')
@@ -572,6 +628,81 @@ function normalizeExpenses(data: unknown): VehicleExpense[] {
     }));
 }
 
+function isRemoteImageUrl(url: string) {
+  return /^https?:\/\//i.test(url.trim());
+}
+
+function normalizeCustomerPayments(data: unknown): CustomerPayment[] {
+  const rows = data && typeof data === 'object' && Array.isArray((data as { rows?: unknown }).rows)
+    ? (data as { rows: unknown[] }).rows
+    : [];
+  return rows
+    .filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    .map(row => ({
+      id: text(row.id),
+      ngay_thu: text(row.ngay_thu),
+      ma_khach_hang: text(row.ma_khach_hang),
+      ten_khach_hang: text(row.ten_khach_hang),
+      so_tien: numberValue(row.so_tien),
+      hinh_thuc: text(row.hinh_thuc) || PAYMENT_METHODS[0],
+      xe_id: text(row.xe_id),
+      bien_so_xe: text(row.bien_so_xe),
+      ma_nhan_su: text(row.ma_nhan_su),
+      nguoi_thu: text(row.nguoi_thu),
+      ghi_chu: text(row.ghi_chu),
+      anh_url: text(row.anh_url),
+      anh_public_id: text(row.anh_public_id)
+    }));
+}
+
+function emptyCustomerPaymentForm(): Omit<CustomerPayment, 'id'> {
+  return {
+    ngay_thu: localDateTimeValue(),
+    ma_khach_hang: '',
+    ten_khach_hang: '',
+    so_tien: 0,
+    hinh_thuc: PAYMENT_METHODS[0],
+    xe_id: '',
+    bien_so_xe: '',
+    ma_nhan_su: '',
+    nguoi_thu: '',
+    ghi_chu: '',
+    anh_url: '',
+    anh_public_id: ''
+  };
+}
+
+async function patchCustomerPaymentImage(
+  id: string,
+  image: { imageUrl: string; imagePublicId: string }
+) {
+  await readJson(
+    await fetch(`/api/thu-tien-khach-hang/${encodeURIComponent(id)}/anh`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        anh_url: image.imageUrl,
+        anh_public_id: image.imagePublicId
+      })
+    })
+  );
+}
+
+function normalizeCustomerOptions(data: unknown): CustomerOption[] {
+  const rows = data && typeof data === 'object' && Array.isArray((data as { customers?: unknown }).customers)
+    ? (data as { customers: unknown[] }).customers
+    : [];
+  return rows
+    .filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    .map(row => ({
+      code: text(row.ma_khach_hang),
+      name: text(row.ten_khach_hang),
+      debt: numberValue(row.cong_no)
+    }))
+    .filter(customer => customer.name)
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
+
 function normalizeLogs(data: unknown): VehicleLog[] {
   const rows = data && typeof data === 'object' && Array.isArray((data as { rows?: unknown }).rows)
     ? (data as { rows: unknown[] }).rows
@@ -1003,7 +1134,9 @@ export function VehicleDeliveryRequestsView({
         ma_nhan_su: text(row.ma_nhan_su),
         ten_tai_xe: text(row.ten_tai_xe),
         trang_thai: text(row.trang_thai) || 'Chờ xuất hàng',
-        ghi_chu: text(row.ghi_chu)
+        ghi_chu: text(row.ghi_chu),
+        ten_khach_hang: text(row.ten_khach_hang),
+        thu_tu_giao: numberValue(row.thu_tu_giao)
       })));
       const shippingSource = Array.isArray(shippingData.orders) ? shippingData.orders : [];
       setShippingOrders(
@@ -1068,13 +1201,15 @@ export function VehicleDeliveryRequestsView({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1120px] text-left text-xs">
             <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
-              <tr><th className="px-3 py-2.5">Số yêu cầu</th><th className="px-3 py-2.5">Ngày</th><th className="px-3 py-2.5">Địa điểm giao</th><th className="px-3 py-2.5">Hàng hóa</th><th className="px-3 py-2.5 text-right">Số lượng</th><th className="px-3 py-2.5">BSX</th><th className="px-3 py-2.5">Lái xe</th><th className="px-3 py-2.5">Trạng thái</th><th className="px-3 py-2.5 text-center">Thao tác</th></tr>
+              <tr><th className="px-3 py-2.5">STT</th><th className="px-3 py-2.5">Số yêu cầu</th><th className="px-3 py-2.5">Ngày</th><th className="px-3 py-2.5">Khách hàng</th><th className="px-3 py-2.5">Địa điểm giao</th><th className="px-3 py-2.5">Hàng hóa</th><th className="px-3 py-2.5 text-right">Số lượng</th><th className="px-3 py-2.5">BSX</th><th className="px-3 py-2.5">Lái xe</th><th className="px-3 py-2.5">Trạng thái</th><th className="px-3 py-2.5 text-center">Thao tác</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredRows.map(row => (
                 <tr key={row.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-2.5 font-black text-slate-500">{row.thu_tu_giao > 0 ? row.thu_tu_giao : '—'}</td>
                   <td className="px-3 py-2.5 font-black text-brand-700">{row.so_yeu_cau}</td>
                   <td className="px-3 py-2.5">{row.ngay_yeu_cau}</td>
+                  <td className="px-3 py-2.5 font-semibold">{row.ten_khach_hang || '—'}</td>
                   <td className="px-3 py-2.5 font-semibold">{row.dia_diem_giao}</td>
                   <td className="px-3 py-2.5">{row.hang_hoa}</td>
                   <td className="px-3 py-2.5 text-right font-black">{row.so_luong} {row.don_vi}</td>
@@ -1127,7 +1262,9 @@ function DeliveryRequestModal({
     ma_nhan_su: initial?.ma_nhan_su || '',
     ten_tai_xe: initial?.ten_tai_xe || '',
     trang_thai: initial?.trang_thai || 'Chờ xuất hàng',
-    ghi_chu: initial?.ghi_chu || ''
+    ghi_chu: initial?.ghi_chu || '',
+    ten_khach_hang: initial?.ten_khach_hang || '',
+    thu_tu_giao: initial?.thu_tu_giao || 0
   }));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1155,7 +1292,8 @@ function DeliveryRequestModal({
       hang_hoa: goodsSummary || order.ten_khach_hang || prev.hang_hoa,
       so_luong: totalQuantity > 0 ? totalQuantity : prev.so_luong,
       don_vi: firstUnit || prev.don_vi,
-      ghi_chu: order.ghi_chu || prev.ghi_chu
+      ghi_chu: order.ghi_chu || prev.ghi_chu,
+      ten_khach_hang: order.ten_khach_hang || prev.ten_khach_hang
     }));
   };
 
@@ -2562,7 +2700,781 @@ function KmLogModal({
   );
 }
 
+export function CustomerPaymentsView({
+  vehicles,
+  staff
+}: {
+  vehicles: VehicleOption[];
+  staff: StaffOption[];
+}) {
+  const [rows, setRows] = useState<CustomerPayment[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
+  const [editing, setEditing] = useState<CustomerPayment | null | undefined>(undefined);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
+  const [searchText, setSearchText] = useState('');
+
+  const loadRows = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const [paymentData, customerData] = await Promise.all([
+        readJson(await fetch('/api/thu-tien-khach-hang')),
+        readJson(await fetch('/api/khach-hang'))
+      ]);
+      setRows(normalizeCustomerPayments(paymentData));
+      setWarning(text(paymentData.warning));
+      setCustomers(normalizeCustomerOptions(customerData));
+    } catch (loadError: any) {
+      setRows([]);
+      setError(loadError.message || 'Không thể tải phiếu thu tiền khách hàng.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRows();
+  }, [loadRows]);
+
+  const filteredRows = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLocaleLowerCase('vi');
+    return rows.filter(row => {
+      const date = row.ngay_thu.slice(0, 10);
+      if (fromDate && date < fromDate) return false;
+      if (toDate && date > toDate) return false;
+      if (customerFilter && row.ten_khach_hang !== customerFilter) return false;
+      if (
+        normalizedSearch &&
+        !`${row.ten_khach_hang} ${row.nguoi_thu} ${row.bien_so_xe} ${row.ghi_chu}`
+          .toLocaleLowerCase('vi')
+          .includes(normalizedSearch)
+      ) return false;
+      return true;
+    });
+  }, [customerFilter, fromDate, rows, searchText, toDate]);
+
+  const total = useMemo(() => filteredRows.reduce((sum, row) => sum + row.so_tien, 0), [filteredRows]);
+
+  const deleteRow = async (row: CustomerPayment) => {
+    if (!window.confirm(`Xóa phiếu thu ${formatMoney(row.so_tien)} của ${row.ten_khach_hang}?`)) return;
+    try {
+      await readJson(await fetch(`/api/thu-tien-khach-hang/${encodeURIComponent(row.id)}`, { method: 'DELETE' }));
+      await loadRows();
+    } catch (deleteError: any) {
+      setError(deleteError.message || 'Không thể xóa phiếu thu tiền khách hàng.');
+    }
+  };
+
+  return (
+    <>
+      <ViewHeader title="Thu tiền khách hàng" subtitle={`Tổng thu theo bộ lọc ${formatMoney(total)}`} count={filteredRows.length} buttonLabel="Thêm phiếu thu" onAdd={() => setEditing(null)} />
+      {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      {warning && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{warning}</p>}
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+          <Field label="Từ ngày"><input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} className={inputClass} /></Field>
+          <Field label="Đến ngày"><input type="date" value={toDate} onChange={event => setToDate(event.target.value)} className={inputClass} /></Field>
+          <Field label="Khách hàng">
+            <select value={customerFilter} onChange={event => setCustomerFilter(event.target.value)} className={inputClass}>
+              <option value="">Tất cả khách hàng</option>
+              {customers.map(customer => <option key={customer.code || customer.name} value={customer.name}>{customer.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Tìm kiếm"><input value={searchText} onChange={event => setSearchText(event.target.value)} className={inputClass} placeholder="Khách hàng, người thu, ghi chú..." /></Field>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate('');
+                setToDate('');
+                setCustomerFilter('');
+                setSearchText('');
+              }}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            >
+              Xóa lọc
+            </button>
+          </div>
+        </div>
+      </section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[1100px] text-left text-xs">
+            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-2.5 font-black">Ngày thu</th>
+                <th className="px-3 py-2.5 font-black">Khách hàng</th>
+                <th className="px-3 py-2.5 text-right font-black">Số tiền</th>
+                <th className="px-3 py-2.5 font-black">Hình thức</th>
+                <th className="px-3 py-2.5 font-black">BSX</th>
+                <th className="px-3 py-2.5 font-black">Người thu</th>
+                <th className="px-3 py-2.5 font-black">Ảnh</th>
+                <th className="px-3 py-2.5 font-black">Ghi chú</th>
+                <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRows.map(row => (
+                <tr key={row.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-2.5 font-semibold">{formatDateTime(row.ngay_thu)}</td>
+                  <td className="px-3 py-2.5 font-bold text-slate-800">
+                    {row.ten_khach_hang}
+                    {row.ma_khach_hang && <span className="ml-1 text-[10px] text-slate-400">({row.ma_khach_hang})</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-black text-emerald-700">{formatMoney(row.so_tien)}</td>
+                  <td className="px-3 py-2.5">{row.hinh_thuc}</td>
+                  <td className="px-3 py-2.5 font-mono font-black text-brand-700">{row.bien_so_xe || '—'}</td>
+                  <td className="px-3 py-2.5">{row.nguoi_thu || '—'}</td>
+                  <td className="px-3 py-2.5">
+                    {row.anh_url ? (
+                      <a href={row.anh_url} target="_blank" rel="noreferrer" className="inline-flex h-10 w-14 overflow-hidden rounded-lg border border-slate-200">
+                        <img src={cloudinaryPreviewUrl(row.anh_url, 160)} alt="Ảnh thu tiền" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="max-w-[220px] truncate px-3 py-2.5 text-slate-500" title={row.ghi_chu}>{row.ghi_chu || '—'}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex justify-center gap-1">
+                      <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
+                      <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {filteredRows.length > 0 && (
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-black">
+                <tr>
+                  <td colSpan={2} className="px-3 py-3 text-right uppercase">Tổng</td>
+                  <td className="px-3 py-3 text-right text-emerald-700">{formatMoney(total)}</td>
+                  <td colSpan={6} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        <div className="divide-y divide-slate-100 md:hidden">
+          {filteredRows.map(row => (
+            <article key={row.id} className="p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-bold text-slate-900">{row.ten_khach_hang}</p>
+                  <p className="mt-0.5 text-xs font-semibold text-slate-500">{formatDateTime(row.ngay_thu)} · {row.hinh_thuc}</p>
+                </div>
+                <div className="flex gap-1">
+                  <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
+                  <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
+                </div>
+              </div>
+              <p className="mt-2 text-sm font-black text-emerald-700">{formatMoney(row.so_tien)}</p>
+              <p className="mt-1 text-xs text-slate-500">{row.bien_so_xe || 'Không kèm xe'} · {row.nguoi_thu || 'Chưa ghi người thu'}</p>
+              {row.anh_url ? (
+                <a href={row.anh_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex h-16 w-24 overflow-hidden rounded-lg border border-slate-200">
+                  <img src={cloudinaryPreviewUrl(row.anh_url, 240)} alt="Ảnh thu tiền" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                </a>
+              ) : null}
+            </article>
+          ))}
+        </div>
+        {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải phiếu thu tiền khách hàng...</p>}
+        {!isLoading && filteredRows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Không có phiếu thu phù hợp bộ lọc.</p>}
+      </section>
+      {editing !== undefined && (
+        <CustomerPaymentModal
+          initial={editing || undefined}
+          vehicles={vehicles}
+          staff={staff}
+          customers={customers}
+          onClose={() => setEditing(undefined)}
+          onSaved={async () => {
+            setEditing(undefined);
+            await loadRows();
+          }}
+          onImageSynced={() => {
+            void loadRows();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function CustomerPaymentModal({
+  initial,
+  vehicles,
+  staff,
+  customers,
+  onClose,
+  onSaved,
+  onImageSynced
+}: {
+  initial?: CustomerPayment;
+  vehicles: VehicleOption[];
+  staff: StaffOption[];
+  customers: CustomerOption[];
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+  onImageSynced?: () => void;
+}) {
+  const [form, setForm] = useState<Omit<CustomerPayment, 'id'>>(() => {
+    const base = emptyCustomerPaymentForm();
+    if (!initial) return base;
+    const { id: _id, ...rest } = initial;
+    return { ...base, ...rest, ngay_thu: localDateTimeValue(initial.ngay_thu) };
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPreparingImage, setIsPreparingImage] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [error, setError] = useState('');
+  const pendingUploadRef = useRef<{
+    token: number;
+    promise: Promise<{ imageUrl: string; imagePublicId: string }>;
+  } | null>(null);
+  const savedIdRef = useRef<string | null>(initial?.id || null);
+  const uploadTokenRef = useRef(0);
+
+  const selectedCustomer = customers.find(customer => customer.code === form.ma_khach_hang);
+  const showVietQr = form.hinh_thuc === 'Chuyển khoản';
+  const vietQrUrl = useMemo(
+    () =>
+      showVietQr
+        ? buildVietQrImageUrl(
+            form.so_tien,
+            form.ten_khach_hang ? `Thu ${form.ten_khach_hang}` : 'Thu tien khach hang'
+          )
+        : '',
+    [form.so_tien, form.ten_khach_hang, showVietQr]
+  );
+  const previewSrc = form.anh_url
+    ? isRemoteImageUrl(form.anh_url)
+      ? cloudinaryPreviewUrl(form.anh_url, 400)
+      : form.anh_url
+    : '';
+
+  const clearPhoto = () => {
+    uploadTokenRef.current += 1;
+    pendingUploadRef.current = null;
+    setIsUploadingImage(false);
+    setForm(prev => ({ ...prev, anh_url: '', anh_public_id: '' }));
+  };
+
+  const pickPhoto = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Ảnh thu tiền phải là file ảnh.');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setError('Ảnh không được vượt quá 12 MB.');
+      return;
+    }
+
+    setIsPreparingImage(true);
+    setError('');
+    try {
+      const dataUrl = await fileToOptimizedImageDataUrl(file, { maxEdge: 1600, quality: 0.76 });
+      const token = uploadTokenRef.current + 1;
+      uploadTokenRef.current = token;
+      setForm(prev => ({ ...prev, anh_url: dataUrl, anh_public_id: '' }));
+      setIsUploadingImage(true);
+
+      const promise = uploadImage(dataUrl, 'xe/thu_tien_khach_hang');
+      pendingUploadRef.current = { token, promise };
+
+      void promise
+        .then(async uploaded => {
+          if (uploadTokenRef.current !== token) return;
+          setForm(prev => ({
+            ...prev,
+            anh_url: uploaded.imageUrl,
+            anh_public_id: uploaded.imagePublicId
+          }));
+          const rowId = savedIdRef.current;
+          if (rowId) {
+            try {
+              await patchCustomerPaymentImage(rowId, uploaded);
+              onImageSynced?.();
+            } catch {
+              // Đồng bộ sau — không chặn form; lần tải lại sẽ thiếu ảnh nếu patch lỗi.
+            }
+          }
+        })
+        .catch((uploadError: any) => {
+          if (uploadTokenRef.current !== token) return;
+          setError(uploadError?.message || 'Không thể tải ảnh lên Cloudinary. Phiếu vẫn lưu được, thử chụp lại.');
+        })
+        .finally(() => {
+          if (uploadTokenRef.current === token) {
+            setIsUploadingImage(false);
+            if (pendingUploadRef.current?.token === token) pendingUploadRef.current = null;
+          }
+        });
+    } catch (prepareError: any) {
+      setError(prepareError.message || 'Không thể xử lý ảnh thu tiền.');
+    } finally {
+      setIsPreparingImage(false);
+    }
+  };
+
+  const save = async () => {
+    if (!form.ngay_thu || !form.ten_khach_hang.trim()) {
+      setError('Vui lòng nhập ngày thu và chọn khách hàng.');
+      return;
+    }
+    if (form.so_tien <= 0) {
+      setError('Số tiền thu phải lớn hơn 0.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    try {
+      const remoteUrl = isRemoteImageUrl(form.anh_url) ? form.anh_url : '';
+      const endpoint = initial ? `/api/thu-tien-khach-hang/${encodeURIComponent(initial.id)}` : '/api/thu-tien-khach-hang';
+      const data = await readJson(
+        await fetch(endpoint, {
+          method: initial ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...form,
+            ngay_thu: apiDateTimeValue(form.ngay_thu),
+            anh_url: remoteUrl,
+            anh_public_id: remoteUrl ? form.anh_public_id : ''
+          })
+        })
+      );
+      const rowId = text(data?.row?.id) || initial?.id || '';
+      if (rowId) savedIdRef.current = rowId;
+
+      // Upload còn chạy → đồng bộ ảnh sau, không chờ.
+      const pending = pendingUploadRef.current;
+      if (rowId && pending && !remoteUrl) {
+        void pending.promise
+          .then(async uploaded => {
+            await patchCustomerPaymentImage(rowId, uploaded);
+            onImageSynced?.();
+          })
+          .catch(() => undefined);
+      }
+
+      await onSaved();
+    } catch (saveError: any) {
+      setError(saveError.message || 'Không thể lưu phiếu thu tiền khách hàng.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <OperationModal title={initial ? 'Sửa phiếu thu tiền' : 'Thêm phiếu thu tiền'} subtitle="Ghi nhận thu tiền khách hàng, tự động giảm công nợ" onClose={onClose} onSave={() => void save()} isSaving={isSaving}>
+      {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Ngày thu *"><input type="datetime-local" value={form.ngay_thu} onChange={event => setForm(prev => ({ ...prev, ngay_thu: event.target.value }))} className={inputClass} /></Field>
+        <Field label="Khách hàng *">
+          <SearchableSelect
+            value={form.ma_khach_hang}
+            onChange={value => setForm(prev => ({ ...prev, ma_khach_hang: value }))}
+            options={customers}
+            placeholder="Gõ để tìm khách hàng..."
+            getLabel={item => (item as CustomerOption).name}
+            getValue={item => (item as CustomerOption).code}
+            getOptionLabel={item => {
+              const customer = item as CustomerOption;
+              return customer.debt ? `${customer.name} · Công nợ ${formatMoney(customer.debt)}` : customer.name;
+            }}
+            resolveSelectedItem={(options, value) =>
+              (options as CustomerOption[]).find(customer => customer.code === value) ||
+              (form.ten_khach_hang ? { code: value, name: form.ten_khach_hang, debt: 0 } : null)
+            }
+            onSelectOption={item => {
+              const customer = item as CustomerOption | null;
+              setForm(prev => ({ ...prev, ma_khach_hang: customer?.code || '', ten_khach_hang: customer?.name || prev.ten_khach_hang }));
+            }}
+            inputClassName={inputClass}
+          />
+          {selectedCustomer ? (
+            <p className="mt-1 text-[11px] font-semibold text-slate-400">
+              Công nợ hiện tại: <span className="font-black text-rose-600">{formatMoney(selectedCustomer.debt)}</span>
+            </p>
+          ) : null}
+        </Field>
+        <Field label="Số tiền thu *"><MoneyInput value={form.so_tien} onChange={so_tien => setForm(prev => ({ ...prev, so_tien }))} /></Field>
+        <Field label="Hình thức thu *">
+          <select value={form.hinh_thuc} onChange={event => setForm(prev => ({ ...prev, hinh_thuc: event.target.value }))} className={inputClass}>
+            {PAYMENT_METHODS.map(method => <option key={method} value={method}>{method}</option>)}
+          </select>
+        </Field>
+
+        {showVietQr ? (
+          <div className="sm:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-800">VietQR · Chuyển khoản</p>
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white p-2 shadow-sm">
+                {vietQrUrl ? (
+                  <img
+                    src={vietQrUrl}
+                    alt="VietQR chuyển khoản VietinBank"
+                    className="h-52 w-52 object-contain"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : null}
+              </div>
+              <div className="min-w-[180px] flex-1 space-y-1.5 text-xs font-semibold text-slate-700">
+                <p>
+                  Ngân hàng: <span className="font-black text-slate-900">{VIETQR_VIETINBANK.bankLabel}</span>
+                </p>
+                <p>
+                  STK: <span className="font-mono font-black tracking-wide text-slate-900">{VIETQR_VIETINBANK.accountNo}</span>
+                </p>
+                <p>
+                  Số tiền:{' '}
+                  <span className="font-black text-emerald-700">
+                    {form.so_tien > 0 ? formatMoney(form.so_tien) : 'Nhập số tiền để gắn vào QR'}
+                  </span>
+                </p>
+                {form.ten_khach_hang ? (
+                  <p>
+                    Nội dung gợi ý: <span className="font-bold text-slate-900">Thu {form.ten_khach_hang}</span>
+                  </p>
+                ) : null}
+                <p className="pt-1 text-[11px] font-semibold text-slate-500">
+                  Quét QR bằng app ngân hàng. QR cập nhật khi đổi số tiền / khách hàng.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <Field label="Biển số xe">
+          <select
+            value={form.xe_id}
+            onChange={event => {
+              const vehicle = vehicles.find(item => item.id === event.target.value);
+              setForm(prev => ({ ...prev, xe_id: vehicle?.id || '', bien_so_xe: vehicle?.bien_so_xe || '' }));
+            }}
+            className={inputClass}
+          >
+            <option value="">Không kèm xe</option>
+            {vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.bien_so_xe} · {vehicle.loai_xe}</option>)}
+          </select>
+        </Field>
+        <Field label="Người thu">
+          <input
+            list="customer-payment-collector-suggestions"
+            value={form.nguoi_thu}
+            onChange={event => setForm(prev => ({ ...prev, nguoi_thu: event.target.value }))}
+            className={inputClass}
+            placeholder="Chọn hoặc nhập người thu tiền"
+            autoComplete="off"
+          />
+          <datalist id="customer-payment-collector-suggestions">
+            {staff.map(person => <option key={`${person.code}-${person.name}`} value={person.name} />)}
+          </datalist>
+        </Field>
+
+        <div className="sm:col-span-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+          <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Chụp ảnh</p>
+          <div className="flex flex-wrap items-center gap-3">
+            {previewSrc ? (
+              <a
+                href={isRemoteImageUrl(form.anh_url) ? form.anh_url : previewSrc}
+                target="_blank"
+                rel="noreferrer"
+                className="relative block h-28 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white"
+              >
+                <img src={previewSrc} alt="Ảnh thu tiền" className="h-full w-full object-cover" />
+                {isRemoteImageUrl(form.anh_url) ? (
+                  <ExternalLink className="absolute right-1 top-1 h-4 w-4 rounded bg-white/90 p-0.5 text-slate-700" />
+                ) : null}
+              </a>
+            ) : (
+              <div className="flex h-28 w-40 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-[10px] font-black uppercase text-slate-400">
+                Chưa có ảnh
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <label className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">
+                {isPreparingImage || isUploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
+                {isPreparingImage ? 'Đang nén...' : isUploadingImage ? 'Đang đẩy Cloudinary...' : form.anh_url ? 'Chụp / đổi ảnh' : 'Chụp ảnh'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  disabled={isPreparingImage}
+                  onChange={event => {
+                    void pickPhoto(event.target.files?.[0]);
+                    event.currentTarget.value = '';
+                  }}
+                  className="hidden"
+                />
+              </label>
+              {form.anh_url ? (
+                <button
+                  type="button"
+                  onClick={clearPhoto}
+                  className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-700"
+                >
+                  Xóa ảnh
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] font-semibold text-slate-400">
+            Trên điện thoại mở camera. Ảnh xem trước ngay; đẩy Cloudinary chạy nền, không chặn lưu phiếu.
+          </p>
+        </div>
+
+        <Field label="Ghi chú" wide><textarea value={form.ghi_chu} onChange={event => setForm(prev => ({ ...prev, ghi_chu: event.target.value }))} className={`${inputClass} min-h-20 py-2`} /></Field>
+      </div>
+    </OperationModal>
+  );
+}
+
+export function VehicleDeliveryRouteView() {
+  const [rows, setRows] = useState<VehicleDeliveryRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedPlate, setSelectedPlate] = useState('');
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
+
+  const loadRows = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const data = await readJson(await fetch('/api/yeu-cau-xuat-hang-xe'));
+      const source = Array.isArray(data.rows) ? data.rows : [];
+      const normalized = source.map((row: Record<string, unknown>) => ({
+        id: text(row.id),
+        so_yeu_cau: text(row.so_yeu_cau),
+        ngay_yeu_cau: text(row.ngay_yeu_cau).slice(0, 10),
+        dia_diem_giao: text(row.dia_diem_giao),
+        hang_hoa: text(row.hang_hoa),
+        so_luong: numberValue(row.so_luong),
+        don_vi: text(row.don_vi),
+        xe_id: text(row.xe_id),
+        bien_so_xe: text(row.bien_so_xe),
+        ma_nhan_su: text(row.ma_nhan_su),
+        ten_tai_xe: text(row.ten_tai_xe),
+        trang_thai: text(row.trang_thai) || 'Chờ xuất hàng',
+        ghi_chu: text(row.ghi_chu),
+        ten_khach_hang: text(row.ten_khach_hang),
+        thu_tu_giao: numberValue(row.thu_tu_giao)
+      }));
+      setRows(normalized);
+    } catch (loadError: any) {
+      setRows([]);
+      setError(loadError.message || 'Không thể tải yêu cầu xuất hàng để xếp tuyến.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRows();
+  }, [loadRows]);
+
+  const dateOptions = useMemo(() => {
+    const dates = [...new Set(rows.map(row => row.ngay_yeu_cau).filter(Boolean))];
+    return dates.sort((a, b) => b.localeCompare(a));
+  }, [rows]);
+
+  useEffect(() => {
+    if (!selectedDate && dateOptions.length > 0) setSelectedDate(dateOptions[0]);
+  }, [dateOptions, selectedDate]);
+
+  const plateOptions = useMemo(() => {
+    const plates = [
+      ...new Set(
+        rows
+          .filter(row => !selectedDate || row.ngay_yeu_cau === selectedDate)
+          .map(row => row.bien_so_xe)
+          .filter(Boolean)
+      )
+    ];
+    return plates.sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [rows, selectedDate]);
+
+  useEffect(() => {
+    if (selectedPlate && !plateOptions.includes(selectedPlate)) setSelectedPlate('');
+  }, [plateOptions, selectedPlate]);
+
+  const tripStops = useMemo(() => {
+    if (!selectedDate || !selectedPlate) return [];
+    return rows
+      .filter(row => row.ngay_yeu_cau === selectedDate && row.bien_so_xe === selectedPlate)
+      .sort((a, b) => {
+        const orderA = a.thu_tu_giao > 0 ? a.thu_tu_giao : Number.MAX_SAFE_INTEGER;
+        const orderB = b.thu_tu_giao > 0 ? b.thu_tu_giao : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.so_yeu_cau.localeCompare(b.so_yeu_cau, 'vi');
+      });
+  }, [rows, selectedDate, selectedPlate]);
+
+  useEffect(() => {
+    setOrderedIds(tripStops.map(row => row.id));
+    setMessage('');
+  }, [tripStops]);
+
+  const orderedStops = useMemo(() => {
+    const byId = new Map(tripStops.map(row => [row.id, row]));
+    return orderedIds.map(id => byId.get(id)).filter((row): row is VehicleDeliveryRequest => Boolean(row));
+  }, [orderedIds, tripStops]);
+
+  const moveStop = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= orderedIds.length) return;
+    setOrderedIds(prev => {
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[nextIndex];
+      next[nextIndex] = temp;
+      return next;
+    });
+    setMessage('');
+  };
+
+  const saveOrder = async () => {
+    if (orderedStops.length === 0) {
+      setError('Chọn ngày và biển số xe có yêu cầu xuất hàng để xếp tuyến.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await readJson(
+        await fetch('/api/yeu-cau-xuat-hang-xe/thu-tu', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: orderedStops.map((row, index) => ({
+              id: row.id,
+              thu_tu_giao: index + 1
+            }))
+          })
+        })
+      );
+      setMessage(`Đã lưu thứ tự giao ${orderedStops.length} điểm trên tuyến ${selectedPlate}.`);
+      await loadRows();
+    } catch (saveError: any) {
+      setError(saveError.message || 'Không thể lưu thứ tự tuyến giao hàng.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
+            <Route className="h-4 w-4 text-brand-600" />
+            Tuyến giao hàng
+          </h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            Chọn ngày + xe từ Yêu cầu xuất hàng, rồi sắp thứ tự giao từng khách hàng.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={isSaving || orderedStops.length === 0}
+          onClick={() => void saveOrder()}
+          className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-xs font-extrabold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Lưu thứ tự tuyến
+        </button>
+      </div>
+
+      {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      {message && <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{message}</p>}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Ngày yêu cầu">
+            <select value={selectedDate} onChange={event => setSelectedDate(event.target.value)} className={inputClass}>
+              <option value="">Chọn ngày</option>
+              {dateOptions.map(date => (
+                <option key={date} value={date}>{date}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Biển số xe (tuyến)">
+            <select value={selectedPlate} onChange={event => setSelectedPlate(event.target.value)} className={inputClass}>
+              <option value="">Chọn xe đã có yêu cầu xuất hàng</option>
+              {plateOptions.map(plate => (
+                <option key={plate} value={plate}>{plate}</option>
+              ))}
+            </select>
+          </Field>
+          <div className="flex items-end">
+            <p className="text-[11px] font-semibold text-slate-500">
+              {selectedDate && selectedPlate
+                ? `${orderedStops.length} điểm giao trên tuyến`
+                : 'Chọn ngày và BSX để hiện danh sách khách hàng'}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="divide-y divide-slate-100">
+          {orderedStops.map((row, index) => (
+            <article key={row.id} className="flex flex-wrap items-start gap-3 p-3 sm:flex-nowrap">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-sm font-black text-brand-700">
+                {index + 1}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-slate-900">
+                  {row.ten_khach_hang || row.hang_hoa || 'Khách hàng'}
+                </p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                  {row.so_yeu_cau} · {row.dia_diem_giao || 'Chưa có địa điểm'}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {row.hang_hoa} · {row.so_luong} {row.don_vi} · {row.ten_tai_xe || 'Chưa gán lái xe'} · {row.trang_thai}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <ActionButton label="Lên trên" onClick={() => moveStop(index, -1)}>
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </ActionButton>
+                <ActionButton label="Xuống dưới" onClick={() => moveStop(index, 1)}>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </ActionButton>
+              </div>
+            </article>
+          ))}
+        </div>
+        {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải tuyến giao hàng...</p>}
+        {!isLoading && selectedDate && selectedPlate && orderedStops.length === 0 && (
+          <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">
+            Ngày/xe này chưa có yêu cầu xuất hàng. Tạo ở thẻ Yêu cầu xuất hàng trước.
+          </p>
+        )}
+        {!isLoading && (!selectedDate || !selectedPlate) && (
+          <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">
+            Chọn ngày và biển số xe để xếp thứ tự giao hàng.
+          </p>
+        )}
+      </section>
+    </>
+  );
+}
+
 export const vehicleOperationIcons = {
   expenses: ReceiptText,
-  logs: BookOpen
+  logs: BookOpen,
+  payments: HandCoins,
+  route: Route
 };

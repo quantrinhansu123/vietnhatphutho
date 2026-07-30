@@ -12,6 +12,7 @@ alter table public.danh_sach_xe
   add column if not exists bien_so_xe text,
   add column if not exists ma_tai_xe text,
   add column if not exists tai_xe_phu_trach text,
+  add column if not exists giay_to jsonb not null default '[]'::jsonb,
   add column if not exists trang_thai text not null default 'Đang sử dụng',
   add column if not exists ghi_chu text;
 
@@ -202,10 +203,16 @@ create table if not exists public.yeu_cau_xuat_hang_xe (
   ghi_chu text
 );
 
+alter table public.yeu_cau_xuat_hang_xe
+  add column if not exists thu_tu_giao integer not null default 0,
+  add column if not exists ten_khach_hang text;
+
 create index if not exists yeu_cau_xuat_hang_xe_ngay_idx
   on public.yeu_cau_xuat_hang_xe (ngay_yeu_cau desc);
 create index if not exists yeu_cau_xuat_hang_xe_bsx_idx
   on public.yeu_cau_xuat_hang_xe (bien_so_xe);
+create index if not exists yeu_cau_xuat_hang_xe_tuyen_idx
+  on public.yeu_cau_xuat_hang_xe (ngay_yeu_cau, bien_so_xe, thu_tu_giao);
 
 alter table public.yeu_cau_xuat_hang_xe enable row level security;
 drop policy if exists "yeu_cau_xuat_hang_xe_select_all" on public.yeu_cau_xuat_hang_xe;

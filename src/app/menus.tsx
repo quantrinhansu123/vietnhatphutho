@@ -1,8 +1,27 @@
 ﻿import React from 'react';
+import { Icon as IconifyIcon } from '@iconify/react';
+import type { IconifyIcon as IconifyIconData } from '@iconify/types';
+import gear3d from '@iconify-icons/fluent-emoji/gear';
+import barChart3d from '@iconify-icons/fluent-emoji/bar-chart';
+import people3d from '@iconify-icons/fluent-emoji/busts-in-silhouette';
+import briefcase3d from '@iconify-icons/fluent-emoji/briefcase';
+import factory3d from '@iconify-icons/fluent-emoji/factory';
+import deliveryTruck3d from '@iconify-icons/fluent-emoji/delivery-truck';
+import manager3d from '@iconify-icons/fluent-emoji/man-office-worker';
+import shield3d from '@iconify-icons/fluent-emoji/shield';
+import worker3d from '@iconify-icons/fluent-emoji/factory-worker';
+import warehouse3d from '@iconify-icons/fluent-emoji/package';
+import inventory3d from '@iconify-icons/fluent-emoji/card-file-box';
+import warehouseSlip3d from '@iconify-icons/fluent-emoji/inbox-tray';
+import warehouseHistory3d from '@iconify-icons/fluent-emoji/open-file-folder';
+import facility3d from '@iconify-icons/fluent-emoji/office-building';
+import reportEntry3d from '@iconify-icons/fluent-emoji/memo';
+import reportList3d from '@iconify-icons/fluent-emoji/clipboard';
 import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
-  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck
+  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { pathFromTab } from '../routes';
@@ -12,63 +31,52 @@ export type MenuCardConfig = {
   title: string;
   desc: string;
   icon: React.ComponentType<{ className?: string }>;
+  icon3d?: IconifyIconData;
   tab: AppTab;
 };
 
 export const MAIN_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Bảng điều khiển',
-    desc: 'Nhân sự, đơn hàng, sản phẩm và danh sách máy trên một màn hình.',
-    icon: LayoutDashboard,
-    tab: 'control-board'
+    title: 'Cài đặt',
+    desc: 'Cấu hình hệ thống và phân quyền xem menu theo phòng ban, vị trí.',
+    icon: Settings,
+    icon3d: gear3d,
+    tab: 'settings'
   },
   {
-    title: 'Báo cáo sản xuất',
-    desc: 'Phiếu cân ca, phối trộn, sản lượng và các báo cáo theo ca.',
-    icon: Factory,
-    tab: 'production-reports'
+    title: 'Báo cáo tổng hợp',
+    desc: 'Nhân sự, đơn hàng, sản phẩm và danh sách máy trên một màn hình.',
+    icon: LayoutDashboard,
+    icon3d: barChart3d,
+    tab: 'control-board'
   },
   {
     title: 'HCNS',
     desc: 'Quản lý nhân sự, chi nhánh, bộ phận và ca làm việc.',
     icon: UsersRound,
+    icon3d: people3d,
     tab: 'hcns'
   },
   {
     title: 'Kinh doanh',
     desc: 'Danh sách khách hàng phục vụ lập và tra cứu đơn.',
     icon: BriefcaseBusiness,
+    icon3d: briefcase3d,
     tab: 'business'
   },
   {
-    title: 'Đơn hàng',
-    desc: 'Theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
-    icon: ClipboardList,
-    tab: 'orders'
-  },
-  {
     title: 'Nhà máy',
-    desc: 'Theo dõi lệnh sản xuất và kế hoạch sản xuất.',
+    desc: 'Báo cáo sản xuất, CSVC, lệnh và kế hoạch sản xuất.',
     icon: Factory,
+    icon3d: factory3d,
     tab: 'factory'
   },
   {
-    title: 'Quản lý CSVC',
-    desc: 'Kho NVL, sản phẩm, máy móc và phiếu xuất nhập kho.',
-    icon: Building2,
-    tab: 'facility-management'
-  },
-  {
-    title: 'Danh sách xe',
+    title: 'Vận chuyển',
     desc: 'Quản lý xe, chi phí, nhật ký, đối chiếu lái xe và quy chế.',
     icon: Truck,
+    icon3d: deliveryTruck3d,
     tab: 'vehicles'
-  },
-  {
-    title: 'Cài đặt',
-    desc: 'Cấu hình hệ thống và phân quyền xem menu theo phòng ban, vị trí.',
-    icon: Settings,
-    tab: 'settings'
   }
 ];
 
@@ -131,6 +139,7 @@ export const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
     title: 'Nhập báo cáo',
     desc: 'Mở các phiếu nhập báo cáo theo ca sản xuất.',
     icon: FilePlus2,
+    icon3d: reportEntry3d,
     tab: 'report-forms'
   },
   {
@@ -146,6 +155,7 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     title: 'Kho NVL',
     desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
     icon: Boxes,
+    icon3d: inventory3d,
     tab: 'materials'
   },
   {
@@ -170,6 +180,7 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     title: 'Phiếu xuất nhập kho',
     desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
     icon: ArrowDownToLine,
+    icon3d: warehouseSlip3d,
     tab: 'warehouse-slip'
   },
   {
@@ -242,6 +253,12 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
 
 export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Đơn hàng',
+    desc: 'Theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
+    icon: ClipboardList,
+    tab: 'orders'
+  },
+  {
     title: 'Khách hàng',
     desc: 'Xem danh sách khách hàng phục vụ lập và tra cứu đơn hàng.',
     icon: BriefcaseBusiness,
@@ -257,16 +274,140 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
 
 export const FACTORY_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Quản Đốc',
+    desc: 'Theo dõi lệnh SX, kế hoạch và báo cáo tổng hợp nhà máy.',
+    icon: BriefcaseBusiness,
+    icon3d: manager3d,
+    tab: 'factory-quan-doc'
+  },
+  {
+    title: 'QC',
+    desc: 'Quản lý chất lượng: sản lượng, hàng hỏng và phiếu cân ca.',
+    icon: ShieldCheck,
+    icon3d: shield3d,
+    tab: 'factory-qc'
+  },
+  {
+    title: 'Công nhân',
+    desc: 'Nhập và xem báo cáo sản xuất theo ca làm việc.',
+    icon: UserRound,
+    icon3d: worker3d,
+    tab: 'factory-cong-nhan'
+  },
+  {
+    title: 'Kho',
+    desc: 'Kho NVL, phiếu xuất nhập và lịch sử xuất nhập kho.',
+    icon: Warehouse,
+    icon3d: warehouse3d,
+    tab: 'factory-kho'
+  }
+];
+
+export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Báo cáo tổng hợp',
+    desc: 'Nhân sự, đơn hàng, sản phẩm và danh sách máy trên một màn hình.',
+    icon: LayoutDashboard,
+    tab: 'control-board'
+  },
+  {
     title: 'Lệnh sản xuất',
     desc: 'Xem danh sách lệnh SX, mã hàng, trạng thái và kế hoạch sản xuất.',
     icon: Factory,
     tab: 'production-orders'
   },
   {
-    title: 'Kế hoạch SX theo ngày',
+    title: 'Kế hoạch sản xuất',
     desc: 'Tra cứu snapshot kế hoạch sản xuất đã lưu, lọc theo ngày hoặc khoảng thời gian.',
     icon: CalendarDays,
     tab: 'production-plan-history'
+  },
+  {
+    title: 'Báo cáo sản xuất',
+    desc: 'Phiếu cân ca, phối trộn, sản lượng và các báo cáo theo ca.',
+    icon: BarChart3,
+    tab: 'production-reports'
+  }
+];
+
+export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Danh sách báo cáo sản lượng',
+    desc: 'Xem, sửa và in các phiếu báo cáo sản lượng đã lưu.',
+    icon: ClipboardList,
+    tab: 'acceptance-report-list'
+  },
+  {
+    title: 'Danh sách báo cáo hàng hỏng',
+    desc: 'Xem, sửa và in các phiếu hàng hỏng đã lưu theo ngày, ca và máy.',
+    icon: PackageX,
+    tab: 'damaged-goods-report-list'
+  },
+  {
+    title: 'Phiếu cân ca',
+    desc: 'Xem danh sách phiếu cân và cộng dồn theo ca.',
+    icon: History,
+    tab: 'weighing-summary-list'
+  },
+  {
+    title: 'Báo cáo tổng hợp',
+    desc: 'Đối chiếu chất lượng theo lệnh SX và ca sản xuất.',
+    icon: LayoutDashboard,
+    tab: 'control-board'
+  }
+];
+
+export const FACTORY_CONG_NHAN_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Nhập báo cáo',
+    desc: 'Mở các phiếu nhập báo cáo theo ca sản xuất.',
+    icon: FilePlus2,
+    tab: 'report-forms'
+  },
+  {
+    title: 'Xem báo cáo',
+    desc: 'Mở danh sách phiếu cân, phối trộn và báo cáo sản lượng đã lưu.',
+    icon: ClipboardList,
+    icon3d: reportList3d,
+    tab: 'report-lists'
+  },
+  {
+    title: 'Lệnh sản xuất',
+    desc: 'Xem danh sách lệnh SX phục vụ ca làm việc.',
+    icon: Factory,
+    icon3d: factory3d,
+    tab: 'production-orders'
+  }
+];
+
+export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Kho NVL',
+    desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
+    icon: Boxes,
+    icon3d: inventory3d,
+    tab: 'materials'
+  },
+  {
+    title: 'Phiếu xuất nhập kho',
+    desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
+    icon: ArrowDownToLine,
+    icon3d: warehouseSlip3d,
+    tab: 'warehouse-slip'
+  },
+  {
+    title: 'Lịch sử xuất nhập kho',
+    desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
+    icon: History,
+    icon3d: warehouseHistory3d,
+    tab: 'warehouse-history'
+  },
+  {
+    title: 'Quản lý CSVC',
+    desc: 'Kho NVL, sản phẩm, máy móc và phiếu xuất nhập kho.',
+    icon: Building2,
+    icon3d: facility3d,
+    tab: 'facility-management'
   }
 ];
 
@@ -289,8 +430,16 @@ export function MenuCardGrid({
             className="group relative min-h-[80px] overflow-hidden rounded-xl bg-white border border-slate-200 p-3.5 md:p-4 text-left transition hover:border-brand-200 hover:shadow-elevated active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-brand-500/25"
           >
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 transition group-hover:bg-brand-500 group-hover:text-white">
-                <Icon className="h-[18px] w-[18px]" />
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition ${
+                item.icon3d
+                  ? 'bg-gradient-to-br from-white to-slate-100 shadow-sm ring-1 ring-slate-200/70 group-hover:scale-110'
+                  : 'bg-brand-50 text-brand-500 group-hover:bg-brand-500 group-hover:text-white'
+              }`}>
+                {item.icon3d ? (
+                  <IconifyIcon icon={item.icon3d} className="h-8 w-8 drop-shadow-sm" />
+                ) : (
+                  <Icon className="h-[18px] w-[18px]" />
+                )}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-display font-semibold tracking-tight text-[13.5px] text-slate-900">{item.title}</span>
@@ -305,6 +454,177 @@ export function MenuCardGrid({
   );
 }
 
+function MainMenuFlowCard({
+  item,
+  step,
+  showStep = true,
+  largeIcon = false,
+  onNavigate
+}: {
+  item: MenuCardConfig;
+  step: number;
+  showStep?: boolean;
+  largeIcon?: boolean;
+  onNavigate: (tab: AppTab) => void;
+}) {
+  const Icon = item.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(item.tab)}
+      className="group relative z-10 min-h-[112px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-elevated active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-brand-500/25"
+    >
+      {showStep && (
+        <span className="absolute right-4 top-3 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-300 transition group-hover:text-brand-400">
+          Bước {String(step).padStart(2, '0')}
+        </span>
+      )}
+      <span className={`flex items-start ${largeIcon ? 'gap-4' : 'gap-3.5'} pt-2`}>
+        <span className={`flex shrink-0 items-center justify-center transition ${
+          largeIcon ? 'h-16 w-16 rounded-2xl' : 'h-11 w-11 rounded-xl'
+        } ${
+          item.icon3d
+            ? 'bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-md ring-1 ring-slate-200/80 group-hover:scale-105'
+            : 'bg-brand-50 text-brand-500 group-hover:bg-brand-500 group-hover:text-white'
+        }`}>
+          {item.icon3d ? (
+            <IconifyIcon
+              icon={item.icon3d}
+              className={largeIcon ? 'h-[52px] w-[52px] drop-shadow-md' : 'h-9 w-9 drop-shadow-sm'}
+            />
+          ) : (
+            <Icon className={largeIcon ? 'h-8 w-8' : 'h-5 w-5'} strokeWidth={largeIcon ? 1.8 : 2} />
+          )}
+        </span>
+        <span className="min-w-0 flex-1 pr-2">
+          <span className="block font-display text-[14px] font-semibold tracking-tight text-slate-900">
+            {item.title}
+          </span>
+          <span className="mt-1 block text-[11.5px] leading-snug text-slate-500 line-clamp-2">
+            {item.desc}
+          </span>
+        </span>
+        <ChevronRight className="mt-7 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-500" />
+      </span>
+    </button>
+  );
+}
+
+function FlowArrow({ direction }: { direction: 'right' | 'left' | 'down' }) {
+  if (direction === 'down') {
+    return (
+      <div className="flex items-center justify-center text-brand-400" aria-hidden="true">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 ring-4 ring-slate-50">
+          <ArrowDown className="h-4 w-4" strokeWidth={2.5} />
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center text-brand-400" aria-hidden="true">
+      <span className="h-px flex-1 bg-brand-200" />
+      <ArrowRight
+        className={`h-5 w-5 shrink-0 ${direction === 'left' ? 'rotate-180' : ''}`}
+        strokeWidth={2.5}
+      />
+      <span className="h-px flex-1 bg-brand-200" />
+    </div>
+  );
+}
+
+export function MainMenuFlow({
+  items,
+  onNavigate
+}: {
+  items: MenuCardConfig[];
+  onNavigate: (tab: AppTab) => void;
+}) {
+  if (items.length !== 6 && items.length !== 9) {
+    return <MenuCardGrid items={items} onNavigate={onNavigate} />;
+  }
+
+  const isTwoRowFlow = items.length === 6;
+
+  return (
+    <>
+      <div className="lg:hidden">
+        <MenuCardGrid items={items} onNavigate={onNavigate} />
+      </div>
+
+      <section
+        className={`relative hidden grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)_44px_minmax(0,1fr)] ${
+          isTwoRowFlow ? 'grid-rows-[auto_40px_auto]' : 'grid-rows-[auto_40px_auto_40px_auto]'
+        } lg:grid`}
+        aria-label="Lưu đồ chức năng"
+      >
+        <div className="col-start-1 row-start-1"><MainMenuFlowCard item={items[0]} step={1} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+        <div className="col-start-2 row-start-1"><FlowArrow direction="right" /></div>
+        <div className="col-start-3 row-start-1"><MainMenuFlowCard item={items[1]} step={2} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+        <div className="col-start-4 row-start-1"><FlowArrow direction="right" /></div>
+        <div className="col-start-5 row-start-1"><MainMenuFlowCard item={items[2]} step={3} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+
+        <div className="col-start-5 row-start-2"><FlowArrow direction="down" /></div>
+
+        <div className="col-start-1 row-start-3"><MainMenuFlowCard item={items[5]} step={6} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+        <div className="col-start-2 row-start-3"><FlowArrow direction="left" /></div>
+        <div className="col-start-3 row-start-3"><MainMenuFlowCard item={items[4]} step={5} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+        <div className="col-start-4 row-start-3"><FlowArrow direction="left" /></div>
+        <div className="col-start-5 row-start-3"><MainMenuFlowCard item={items[3]} step={4} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+
+        {!isTwoRowFlow && (
+          <>
+            <div className="col-start-1 row-start-4"><FlowArrow direction="down" /></div>
+            <div className="col-start-1 row-start-5"><MainMenuFlowCard item={items[6]} step={7} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+            <div className="col-start-2 row-start-5"><FlowArrow direction="right" /></div>
+            <div className="col-start-3 row-start-5"><MainMenuFlowCard item={items[7]} step={8} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+            <div className="col-start-4 row-start-5"><FlowArrow direction="right" /></div>
+            <div className="col-start-5 row-start-5"><MainMenuFlowCard item={items[8]} step={9} showStep={false} largeIcon onNavigate={onNavigate} /></div>
+          </>
+        )}
+      </section>
+    </>
+  );
+}
+
+export function FourStepMenuFlow({
+  items,
+  onNavigate
+}: {
+  items: MenuCardConfig[];
+  onNavigate: (tab: AppTab) => void;
+}) {
+  if (items.length !== 4) {
+    return <MenuCardGrid items={items} onNavigate={onNavigate} />;
+  }
+
+  return (
+    <>
+      <div className="lg:hidden">
+        <MenuCardGrid items={items} onNavigate={onNavigate} />
+      </div>
+      <section
+        className="relative hidden grid-cols-[minmax(0,1fr)_38px_minmax(0,1fr)_38px_minmax(0,1fr)_38px_minmax(0,1fr)] lg:grid"
+        aria-label="Lưu đồ chức năng nhà máy"
+      >
+        {items.map((item, index) => (
+          <React.Fragment key={item.tab}>
+            <div style={{ gridColumnStart: index * 2 + 1 }}>
+              <MainMenuFlowCard item={item} step={index + 1} onNavigate={onNavigate} />
+            </div>
+            {index < items.length - 1 && (
+              <div style={{ gridColumnStart: index * 2 + 2 }}>
+                <FlowArrow direction="right" />
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </section>
+    </>
+  );
+}
+
 export const PRIMARY_NAV_GROUPS: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -316,7 +636,7 @@ export const PRIMARY_NAV_GROUPS: {
     icon: Factory,
     tab: 'production-reports',
     children: [
-      { label: 'Bảng điều khiển', tab: 'control-board' },
+      { label: 'Báo cáo tổng hợp', tab: 'control-board' },
       { label: 'Nhập báo cáo', tab: 'report-forms' },
       { label: 'Xem báo cáo', tab: 'report-lists' },
       { label: 'Tổng hợp cân ca', tab: 'weighing-summary' },
@@ -361,8 +681,10 @@ export const PRIMARY_NAV_GROUPS: {
     icon: ClipboardList,
     tab: 'factory',
     children: [
-      { label: 'Lệnh sản xuất', tab: 'production-orders' },
-      { label: 'Kế hoạch SX', tab: 'production-plan-history' }
+      { label: 'Quản Đốc', tab: 'factory-quan-doc' },
+      { label: 'QC', tab: 'factory-qc' },
+      { label: 'Công nhân', tab: 'factory-cong-nhan' },
+      { label: 'Kho', tab: 'factory-kho' }
     ]
   },
   {
@@ -381,7 +703,7 @@ export const PRIMARY_NAV_GROUPS: {
 
 export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'menu': { group: 'Trang chủ', sub: 'Chọn chức năng' },
-  'control-board': { group: 'Sản xuất', sub: 'Bảng điều khiển' },
+  'control-board': { group: 'Sản xuất', sub: 'Báo cáo tổng hợp' },
   'report-forms': { group: 'Sản xuất', sub: 'Nhập báo cáo' },
   'form': { group: 'Sản xuất', sub: 'Nhập báo cáo' },
   'report-lists': { group: 'Sản xuất', sub: 'Xem báo cáo' },
@@ -408,11 +730,15 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'warehouse-history': { group: 'CSVC & Kho', sub: 'Lịch sử XNK' },
   'settings': { group: 'Cài đặt', sub: 'Phân quyền & tham số' },
   'hr': { group: 'HCNS', sub: 'Nhân sự' },
-  'vehicles': { group: 'Trang chủ', sub: 'Danh sách xe' },
+  'vehicles': { group: 'Trang chủ', sub: 'Vận chuyển' },
   'orders': { group: 'Đơn hàng', sub: 'Quản lý đơn' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
   'shipping-orders': { group: 'Kinh doanh', sub: 'Lệnh xuất hàng' },
   'production-orders': { group: 'Nhà máy', sub: 'Lệnh sản xuất' },
+  'factory-quan-doc': { group: 'Nhà máy', sub: 'Quản Đốc' },
+  'factory-qc': { group: 'Nhà máy', sub: 'QC' },
+  'factory-cong-nhan': { group: 'Nhà máy', sub: 'Công nhân' },
+  'factory-kho': { group: 'Nhà máy', sub: 'Kho' },
   'dashboard': { group: 'Phân tích', sub: 'Dashboard' }
 };
 

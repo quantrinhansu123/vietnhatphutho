@@ -16,28 +16,6 @@ export type StaffViewPermissions = StaffViewGroup[];
 /** Cây menu cha / con dùng cấp quyền nhân sự */
 export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
   {
-    menu: 'production-reports',
-    label: 'Sản xuất',
-    children: [
-      { tab: 'control-board', label: 'Bảng điều khiển' },
-      { tab: 'report-forms', label: 'Nhập báo cáo' },
-      { tab: 'report-lists', label: 'Xem báo cáo' },
-      { tab: 'weighing-summary', label: 'Tổng hợp cân ca' },
-      { tab: 'production-plan-history', label: 'Kế hoạch SX' }
-    ]
-  },
-  {
-    menu: 'facility-management',
-    label: 'CSVC & Kho',
-    children: [
-      { tab: 'materials', label: 'Kho NVL' },
-      { tab: 'products', label: 'Sản phẩm' },
-      { tab: 'machine-nvl-report-list', label: 'Báo cáo tồn máy' },
-      { tab: 'warehouse-slip', label: 'Phiếu xuất nhập' },
-      { tab: 'warehouse-history', label: 'Lịch sử XNK' }
-    ]
-  },
-  {
     menu: 'hcns',
     label: 'HCNS',
     children: [{ tab: 'hr', label: 'Nhân sự' }]
@@ -51,21 +29,19 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     menu: 'business',
     label: 'Kinh doanh',
     children: [
+      { tab: 'orders', label: 'Đơn hàng' },
       { tab: 'customers', label: 'Khách hàng' },
       { tab: 'shipping-orders', label: 'Lệnh xuất hàng' }
     ]
   },
   {
-    menu: 'orders',
-    label: 'Đơn hàng',
-    children: [{ tab: 'orders', label: 'Quản lý đơn' }]
-  },
-  {
     menu: 'factory',
     label: 'Nhà máy',
     children: [
-      { tab: 'production-orders', label: 'Lệnh sản xuất' },
-      { tab: 'production-plan-history', label: 'Kế hoạch SX' }
+      { tab: 'factory-quan-doc', label: 'Quản Đốc' },
+      { tab: 'factory-qc', label: 'QC' },
+      { tab: 'factory-cong-nhan', label: 'Công nhân' },
+      { tab: 'factory-kho', label: 'Kho' }
     ]
   },
   {

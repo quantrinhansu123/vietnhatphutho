@@ -36,6 +36,8 @@ const SUPABASE_VEHICLE_LOGS_TABLE = process.env.SUPABASE_VEHICLE_LOGS_TABLE || '
 const SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE =
   process.env.SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE || 'yeu_cau_xuat_hang_xe';
 const SUPABASE_VEHICLE_KM_LOGS_TABLE = process.env.SUPABASE_VEHICLE_KM_LOGS_TABLE || 'nhat_ky_km_xe';
+const SUPABASE_CUSTOMER_PAYMENTS_TABLE =
+  process.env.SUPABASE_CUSTOMER_PAYMENTS_TABLE || 'thu_tien_khach_hang';
 const SUPABASE_ORDERS_TABLE = process.env.SUPABASE_ORDERS_TABLE || 'don_hang';
 const SUPABASE_CUSTOMERS_TABLE = process.env.SUPABASE_CUSTOMERS_TABLE || 'khach_hang';
 const SUPABASE_SHIPPING_ORDERS_TABLE = process.env.SUPABASE_SHIPPING_ORDERS_TABLE || 'lenh_xuat_hang';
@@ -1207,6 +1209,47 @@ function customerWriteError(error: { code?: string; message?: string }, table: s
   return `Không thể lưu khách hàng vào ${table}. ${error.message || ''}`.trim();
 }
 
+function parseVehicleDocuments(value: unknown) {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+  return source
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+    .slice(0, 50)
+    .map((item, index) => {
+      const rawImages = Array.isArray(item.anh)
+        ? item.anh
+        : Array.isArray(item.images)
+          ? item.images
+          : [];
+      const images = rawImages
+        .filter((image): image is Record<string, unknown> => Boolean(image && typeof image === 'object'))
+        .slice(0, 20)
+        .map(image => ({
+          url: String(image.url ?? image.imageUrl ?? '').trim(),
+          public_id: String(image.public_id ?? image.imagePublicId ?? '').trim()
+        }))
+        .filter(image => image.url);
+
+      return {
+        stt: index + 1,
+        ten_giay_to: String(item.ten_giay_to ?? item.name ?? '').trim(),
+        anh: images
+      };
+    })
+    .filter(item => item.ten_giay_to || item.anh.length > 0);
+}
+
 function parseVehicleBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const vehicleType = pickRowField(source, ['loai_xe', 'vehicleType'], '');
@@ -1223,6 +1266,7 @@ function parseVehicleBody(body: unknown): { error: string } | { record: Record<s
       bien_so_xe: plateNumber,
       ma_tai_xe: pickRowField(source, ['ma_tai_xe', 'driverCode'], '') || null,
       tai_xe_phu_trach: pickRowField(source, ['tai_xe_phu_trach', 'driverName'], '') || null,
+      giay_to: parseVehicleDocuments(source.giay_to ?? source.documents),
       ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null,
       trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang sử dụng')
     }
@@ -1314,6 +1358,56 @@ function parseVehicleExpenseBody(
   };
 }
 
+const CUSTOMER_PAYMENT_METHODS = ['Tiền mặt', 'Chuyển khoản'] as const;
+
+function parseCustomerPaymentBody(
+  body: unknown
+): { error: string } | { record: Record<string, unknown> } {
+  const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const dateTime = pickRowField(source, ['ngay_thu', 'dateTime'], '');
+  const customerCode = pickRowField(source, ['ma_khach_hang', 'customerCode'], '');
+  const customerName = pickRowField(source, ['ten_khach_hang', 'customerName'], '');
+  const method = pickRowField(source, ['hinh_thuc', 'paymentMethod'], CUSTOMER_PAYMENT_METHODS[0]);
+  const amount = parseDriverReconciliationNumber(source.so_tien ?? source.amount);
+
+  if (!dateTime || Number.isNaN(Date.parse(dateTime))) return { error: 'Ngày thu tiền không hợp lệ.' };
+  if (!customerName) return { error: 'Vui lòng chọn khách hàng.' };
+  if (!(CUSTOMER_PAYMENT_METHODS as readonly string[]).includes(method)) {
+    return { error: 'Hình thức thu tiền không hợp lệ.' };
+  }
+  if (amount <= 0) return { error: 'Số tiền thu phải lớn hơn 0.' };
+
+  const rawImageUrl = pickRowField(source, ['anh_url', 'imageUrl', 'photoUrl'], '');
+  const imageUrl = /^https?:\/\//i.test(rawImageUrl) ? rawImageUrl : '';
+
+  return {
+    record: {
+      ngay_thu: dateTime,
+      ma_khach_hang: customerCode || null,
+      ten_khach_hang: customerName,
+      so_tien: amount,
+      hinh_thuc: method,
+      xe_id: source.xe_id === null || source.xe_id === undefined || source.xe_id === '' ? null : source.xe_id,
+      bien_so_xe: pickRowField(source, ['bien_so_xe', 'plateNumber'], '').toUpperCase() || null,
+      ma_nhan_su: pickRowField(source, ['ma_nhan_su', 'staffCode'], '') || null,
+      nguoi_thu: pickRowField(source, ['nguoi_thu', 'collectorName'], '') || null,
+      ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null,
+      anh_url: imageUrl || null,
+      anh_public_id: imageUrl ? pickRowField(source, ['anh_public_id', 'imagePublicId', 'photoPublicId'], '') || null : null
+    }
+  };
+}
+
+function customerPaymentWriteError(error: { code?: string; message?: string }, table: string) {
+  if (isMissingTableError(error)) {
+    return `Bảng ${table} chưa tồn tại. Hãy chạy file supabase-thu-tien-khach-hang.sql trong Supabase SQL Editor.`;
+  }
+  if (isMissingColumnError(error)) {
+    return `Bảng ${table} đang thiếu cột. Hãy chạy lại file supabase-thu-tien-khach-hang.sql.`;
+  }
+  return `Không thể lưu phiếu thu tiền khách hàng vào ${table}. ${error.message || ''}`.trim();
+}
+
 function parseVehicleDeliveryRequestBody(
   body: unknown
 ): { error: string } | { record: Record<string, unknown> } {
@@ -1328,6 +1422,8 @@ function parseVehicleDeliveryRequestBody(
   if (!address) return { error: 'Vui lòng nhập địa điểm giao hàng.' };
   if (!goods) return { error: 'Vui lòng nhập hàng hóa.' };
   if (quantity <= 0) return { error: 'Số lượng phải lớn hơn 0.' };
+  const routeOrderRaw = source.thu_tu_giao ?? source.deliveryOrder ?? source.routeOrder;
+  const routeOrder = Number(routeOrderRaw);
   return {
     record: {
       so_yeu_cau: requestNo,
@@ -1341,7 +1437,9 @@ function parseVehicleDeliveryRequestBody(
       ma_nhan_su: pickRowField(source, ['ma_nhan_su', 'staffCode'], '') || null,
       ten_tai_xe: pickRowField(source, ['ten_tai_xe', 'driverName'], '') || null,
       trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Chờ xuất hàng'),
-      ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null
+      ghi_chu: pickRowField(source, ['ghi_chu', 'notes'], '') || null,
+      ten_khach_hang: pickRowField(source, ['ten_khach_hang', 'customerName'], '') || null,
+      thu_tu_giao: Number.isFinite(routeOrder) && routeOrder > 0 ? Math.round(routeOrder) : 0
     }
   };
 }
@@ -7172,6 +7270,163 @@ export function createApp() {
     }
   });
 
+  async function adjustCustomerDebt(customerCode: string | null | undefined, delta: number) {
+    if (!supabase || !customerCode || !delta) return;
+    const { data: customer } = await supabase
+      .from(SUPABASE_CUSTOMERS_TABLE)
+      .select('cong_no')
+      .eq('ma_khach_hang', customerCode)
+      .maybeSingle();
+    if (!customer) return;
+    const nextDebt = Number(customer.cong_no || 0) + delta;
+    await supabase
+      .from(SUPABASE_CUSTOMERS_TABLE)
+      .update({ cong_no: nextDebt })
+      .eq('ma_khach_hang', customerCode);
+  }
+
+  app.get('/api/thu-tien-khach-hang', async (req, res) => {
+    if (!supabase) {
+      return res.json({ rows: [], total: 0, source: 'local', warning: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const customerCode = typeof req.query.ma_khach_hang === 'string' ? req.query.ma_khach_hang.trim() : '';
+      const plateNumber = typeof req.query.bien_so_xe === 'string' ? req.query.bien_so_xe.trim() : '';
+      const fromDate = typeof req.query.tu_ngay === 'string' ? req.query.tu_ngay.trim() : '';
+      const toDate = typeof req.query.den_ngay === 'string' ? req.query.den_ngay.trim() : '';
+      let query = supabase.from(SUPABASE_CUSTOMER_PAYMENTS_TABLE).select('*').order('ngay_thu', { ascending: false });
+
+      if (customerCode) query = query.eq('ma_khach_hang', customerCode);
+      if (plateNumber) query = query.eq('bien_so_xe', plateNumber);
+      if (fromDate) query = query.gte('ngay_thu', fromDate);
+      if (toDate) query = query.lte('ngay_thu', toDate);
+
+      const { data, error } = await query;
+      if (error) {
+        return respondSupabaseReadError(res, error, SUPABASE_CUSTOMER_PAYMENTS_TABLE, { rows: [], total: 0 });
+      }
+      return res.json({ rows: data || [], total: data?.length || 0, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải phiếu thu tiền khách hàng.' });
+    }
+  });
+
+  app.post('/api/thu-tien-khach-hang', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const parsed = parseCustomerPaymentBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { data, error } = await supabase
+        .from(SUPABASE_CUSTOMER_PAYMENTS_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) {
+        return res.status(500).json({ error: customerPaymentWriteError(error, SUPABASE_CUSTOMER_PAYMENTS_TABLE) });
+      }
+      await adjustCustomerDebt(parsed.record.ma_khach_hang as string | null, -Number(parsed.record.so_tien));
+      return res.status(201).json({ success: true, row: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thêm phiếu thu tiền khách hàng.' });
+    }
+  });
+
+  app.put('/api/thu-tien-khach-hang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID phiếu thu tiền.' });
+
+    try {
+      const parsed = parseCustomerPaymentBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const existing = await supabase
+        .from(SUPABASE_CUSTOMER_PAYMENTS_TABLE)
+        .select('ma_khach_hang, so_tien')
+        .eq('id', id)
+        .maybeSingle();
+
+      const { data, error } = await supabase
+        .from(SUPABASE_CUSTOMER_PAYMENTS_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) {
+        return res.status(500).json({ error: customerPaymentWriteError(error, SUPABASE_CUSTOMER_PAYMENTS_TABLE) });
+      }
+
+      if (existing.data) {
+        await adjustCustomerDebt(existing.data.ma_khach_hang, Number(existing.data.so_tien) || 0);
+      }
+      await adjustCustomerDebt(parsed.record.ma_khach_hang as string | null, -Number(parsed.record.so_tien));
+
+      return res.json({ success: true, row: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật phiếu thu tiền khách hàng.' });
+    }
+  });
+
+  // Chỉ cập nhật ảnh (sau khi upload Cloudinary bất đồng bộ) — không đụng công nợ.
+  app.patch('/api/thu-tien-khach-hang/:id/anh', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID phiếu thu tiền.' });
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const anhUrl = pickRowField(source, ['anh_url', 'imageUrl', 'photoUrl'], '');
+      const anhPublicId = pickRowField(source, ['anh_public_id', 'imagePublicId', 'photoPublicId'], '');
+      if (anhUrl && !/^https?:\/\//i.test(anhUrl)) {
+        return res.status(400).json({ error: 'URL ảnh không hợp lệ.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_CUSTOMER_PAYMENTS_TABLE)
+        .update({
+          anh_url: anhUrl || null,
+          anh_public_id: anhPublicId || null
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) {
+        return res.status(500).json({ error: customerPaymentWriteError(error, SUPABASE_CUSTOMER_PAYMENTS_TABLE) });
+      }
+      return res.json({ success: true, row: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật ảnh phiếu thu tiền.' });
+    }
+  });
+
+  app.delete('/api/thu-tien-khach-hang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID phiếu thu tiền.' });
+
+    try {
+      const existing = await supabase
+        .from(SUPABASE_CUSTOMER_PAYMENTS_TABLE)
+        .select('ma_khach_hang, so_tien')
+        .eq('id', id)
+        .maybeSingle();
+
+      const { error } = await supabase.from(SUPABASE_CUSTOMER_PAYMENTS_TABLE).delete().eq('id', id);
+      if (error) {
+        return res.status(500).json({ error: customerPaymentWriteError(error, SUPABASE_CUSTOMER_PAYMENTS_TABLE) });
+      }
+
+      if (existing.data) {
+        await adjustCustomerDebt(existing.data.ma_khach_hang, Number(existing.data.so_tien) || 0);
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa phiếu thu tiền khách hàng.' });
+    }
+  });
+
   const vehicleOperationRoutes = [
     {
       path: 'chi-phi-xe',
@@ -7202,6 +7457,56 @@ export function createApp() {
       dateColumn: 'ngay_gio_di'
     }
   ] as const;
+
+  // Đặt trước /:id để không bị nuốt path "thu-tu".
+  app.put('/api/yeu-cau-xuat-hang-xe/thu-tu', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+      const items = rawItems
+        .filter((item: unknown): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .map((item: Record<string, unknown>) => {
+          const id = String(item.id ?? '').trim();
+          const order = Number(item.thu_tu_giao ?? item.deliveryOrder ?? item.routeOrder);
+          return {
+            id,
+            thu_tu_giao: Number.isFinite(order) && order > 0 ? Math.round(order) : 0
+          };
+        })
+        .filter((item: { id: string }) => item.id);
+
+      if (items.length === 0) {
+        return res.status(400).json({ error: 'Thiếu danh sách thứ tự giao hàng.' });
+      }
+
+      const results = [];
+      for (const item of items) {
+        const { data, error } = await supabase
+          .from(SUPABASE_VEHICLE_DELIVERY_REQUESTS_TABLE)
+          .update({ thu_tu_giao: item.thu_tu_giao })
+          .eq('id', item.id)
+          .select('id, thu_tu_giao')
+          .single();
+        if (error) {
+          if (isMissingColumnError(error)) {
+            return res.status(500).json({
+              error:
+                'Bảng yeu_cau_xuat_hang_xe thiếu cột thu_tu_giao. Hãy chạy lại file supabase-danh-sach-xe.sql.'
+            });
+          }
+          return res.status(500).json({
+            error: `Không thể cập nhật thứ tự giao cho phiếu ${item.id}. ${error.message || ''}`.trim()
+          });
+        }
+        results.push(data);
+      }
+
+      return res.json({ success: true, rows: results, total: results.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu thứ tự tuyến giao hàng.' });
+    }
+  });
 
   app.get('/api/chi-phi-xe/gia-xang', async (req, res) => {
     const date = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';

@@ -1,31 +1,64 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Icon as IconifyIcon } from '@iconify/react';
+import vehicle3d from '@iconify-icons/fluent-emoji/delivery-truck';
+import delivery3d from '@iconify-icons/fluent-emoji/package';
+import expense3d from '@iconify-icons/fluent-emoji/receipt';
+import mileage3d from '@iconify-icons/fluent-emoji/motorway';
+import payment3d from '@iconify-icons/fluent-emoji/money-bag';
+import route3d from '@iconify-icons/fluent-emoji/world-map';
 import {
   BookOpen,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
-  ClipboardCheck,
-  Gauge,
+  Eye,
+  FolderOpen,
+  ImagePlus,
+  Info,
   Loader2,
   Pencil,
   Plus,
-  ReceiptText,
   Save,
   Search,
   Trash2,
-  Truck,
   X
 } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { normalizeHrBranches } from '../_shared/hr';
-import { VehicleDeliveryRequestsView, VehicleExpensesView, VehicleKmLogsView, VehicleLogsView } from './VehicleOperations';
+import {
+  cloudinaryPreviewUrl,
+  fileToOptimizedImageDataUrl,
+  uploadImage
+} from '../_shared/recordHelpers';
+import {
+  CustomerPaymentsView,
+  VehicleDeliveryRequestsView,
+  VehicleDeliveryRouteView,
+  VehicleExpensesView,
+  VehicleKmLogsView,
+  VehicleLogsView
+} from './VehicleOperations';
 type Vehicle = {
   id: string;
   loai_xe: string;
   bien_so_xe: string;
   ma_tai_xe: string;
   tai_xe_phu_trach: string;
+  giay_to: VehicleDocument[];
   trang_thai: string;
   ghi_chu: string;
+};
+
+type VehicleDocumentImage = {
+  url: string;
+  public_id: string;
+};
+
+type VehicleDocument = {
+  stt: number;
+  ten_giay_to: string;
+  anh: VehicleDocumentImage[];
 };
 
 type DriverOption = {
@@ -53,6 +86,47 @@ type DriverReconciliation = {
 };
 
 type VehicleForm = Omit<Vehicle, 'id'>;
+
+type VehicleView = 'vehicles' | 'reconciliation' | 'delivery' | 'route' | 'expenses' | 'logs' | 'km_log' | 'payments';
+
+const VEHICLE_VIEW_CARDS = [
+  {
+    view: 'vehicles',
+    title: 'Danh sách xe',
+    desc: 'Quản lý phương tiện và tài xế phụ trách.',
+    icon3d: vehicle3d
+  },
+  {
+    view: 'delivery',
+    title: 'Yêu cầu xuất hàng',
+    desc: 'Theo dõi yêu cầu giao và xuất hàng theo xe.',
+    icon3d: delivery3d
+  },
+  {
+    view: 'route',
+    title: 'Tuyến',
+    desc: 'Sắp thứ tự giao hàng từng khách theo ngày và xe.',
+    icon3d: route3d
+  },
+  {
+    view: 'expenses',
+    title: 'Chi phí xe',
+    desc: 'Ghi nhận nhiên liệu, sửa chữa và chi phí vận hành.',
+    icon3d: expense3d
+  },
+  {
+    view: 'logs',
+    title: 'Nhật ký KM xe',
+    desc: 'Theo dõi số KM đi, về và hành trình xe.',
+    icon3d: mileage3d
+  },
+  {
+    view: 'payments',
+    title: 'Thu tiền khách hàng',
+    desc: 'Ghi nhận các khoản tiền thu theo chuyến giao hàng.',
+    icon3d: payment3d
+  }
+] as const;
 type ReconciliationForm = Omit<DriverReconciliation, 'id'>;
 
 const currentDate = new Date();
@@ -64,6 +138,10 @@ const emptyVehicleForm = (): VehicleForm => ({
   bien_so_xe: '',
   ma_tai_xe: '',
   tai_xe_phu_trach: '',
+  giay_to: [
+    { stt: 1, ten_giay_to: 'Đăng kiểm', anh: [] },
+    { stt: 2, ten_giay_to: 'Bằng lái', anh: [] }
+  ],
   trang_thai: 'Đang sử dụng',
   ghi_chu: ''
 });
@@ -95,6 +173,26 @@ function numberValue(value: unknown) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function normalizeVehicleDocuments(value: unknown): VehicleDocument[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+    .map((item, index) => {
+      const rawImages = Array.isArray(item.anh) ? item.anh : Array.isArray(item.images) ? item.images : [];
+      return {
+        stt: index + 1,
+        ten_giay_to: text(item.ten_giay_to ?? item.name),
+        anh: rawImages
+          .filter((image): image is Record<string, unknown> => Boolean(image && typeof image === 'object'))
+          .map(image => ({
+            url: text(image.url ?? image.imageUrl),
+            public_id: text(image.public_id ?? image.imagePublicId)
+          }))
+          .filter(image => image.url)
+      };
+    });
+}
+
 function normalizeVehicles(data: unknown): Vehicle[] {
   const rows = data && typeof data === 'object' && Array.isArray((data as { vehicles?: unknown }).vehicles)
     ? (data as { vehicles: unknown[] }).vehicles
@@ -107,6 +205,7 @@ function normalizeVehicles(data: unknown): Vehicle[] {
       bien_so_xe: text(row.bien_so_xe),
       ma_tai_xe: text(row.ma_tai_xe),
       tai_xe_phu_trach: text(row.tai_xe_phu_trach),
+      giay_to: normalizeVehicleDocuments(row.giay_to),
       trang_thai: text(row.trang_thai) || 'Đang sử dụng',
       ghi_chu: text(row.ghi_chu)
     }));
@@ -161,7 +260,7 @@ export function VehiclesPanel({
   onBack: () => void;
   currentUser?: { id: string; name: string } | null;
 }) {
-  const [activeView, setActiveView] = useState<'vehicles' | 'reconciliation' | 'delivery' | 'expenses' | 'logs' | 'km_log'>('vehicles');
+  const [activeView, setActiveView] = useState<VehicleView | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rows, setRows] = useState<DriverReconciliation[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
@@ -174,6 +273,7 @@ export function VehiclesPanel({
   const [error, setError] = useState('');
   const [vehicleWarning, setVehicleWarning] = useState('');
   const [rowWarning, setRowWarning] = useState('');
+  const [viewingVehicle, setViewingVehicle] = useState<Vehicle | null>(null);
   const [vehicleModal, setVehicleModal] = useState<{ mode: 'create' | 'edit'; vehicle?: Vehicle } | null>(null);
   const [rowModal, setRowModal] = useState<{ mode: 'create' | 'edit'; row?: DriverReconciliation } | null>(null);
 
@@ -248,7 +348,7 @@ export function VehiclesPanel({
     const query = search.trim().toLowerCase();
     if (!query) return vehicles;
     return vehicles.filter(vehicle =>
-      `${vehicle.id} ${vehicle.loai_xe} ${vehicle.bien_so_xe} ${vehicle.tai_xe_phu_trach} ${vehicle.trang_thai}`
+      `${vehicle.id} ${vehicle.loai_xe} ${vehicle.bien_so_xe} ${vehicle.tai_xe_phu_trach} ${vehicle.trang_thai} ${vehicle.giay_to.map(document => document.ten_giay_to).join(' ')}`
         .toLowerCase()
         .includes(query)
     );
@@ -304,7 +404,16 @@ export function VehiclesPanel({
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <BackButton onClick={onBack} />
+            <BackButton
+              onClick={() => {
+                if (activeView) {
+                  setActiveView(null);
+                  setError('');
+                  return;
+                }
+                onBack();
+              }}
+            />
             <div className="min-w-0">
               <h2 className="truncate font-display text-base font-bold text-slate-900">Quản lý xe & lái xe</h2>
               <p className="text-[11px] font-medium text-slate-500">Danh mục, chi phí, nhật ký và đối chiếu lái xe</p>
@@ -321,58 +430,40 @@ export function VehiclesPanel({
             </button>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-4 sm:w-[760px]">
-          <button
-            type="button"
-            onClick={() => setActiveView('vehicles')}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
-              activeView === 'vehicles' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Truck className="h-4 w-4" />
-            Danh sách xe
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('delivery')}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
-              activeView === 'delivery' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ClipboardCheck className="h-4 w-4" />
-            Yêu cầu xuất hàng
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('expenses')}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
-              activeView === 'expenses' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ReceiptText className="h-4 w-4" />
-            Chi phí xe
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('logs')}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-xs font-extrabold transition ${
-              activeView === 'logs' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Gauge className="h-4 w-4" />
-            Nhật ký KM xe
-          </button>
-        </div>
+        {!activeView && (
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {VEHICLE_VIEW_CARDS.map(card => (
+                <button
+                  key={card.view}
+                  type="button"
+                  onClick={() => setActiveView(card.view)}
+                  className="group flex min-h-[92px] items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md"
+                >
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-sm ring-1 ring-slate-200/80 transition group-hover:scale-105">
+                    <IconifyIcon icon={card.icon3d} className="h-10 w-10 drop-shadow-sm" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-extrabold text-slate-900">
+                      {card.title}
+                    </span>
+                    <span className="mt-1 block text-[10.5px] font-medium leading-snug text-slate-500">
+                      {card.desc}
+                    </span>
+                  </span>
+                </button>
+              ))}
+          </div>
+        )}
       </section>
 
-      {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
+      {activeView && error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
       {(activeView === 'vehicles' ? vehicleWarning : activeView === 'reconciliation' ? rowWarning : '') && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
           {activeView === 'vehicles' ? vehicleWarning : rowWarning}
         </p>
       )}
 
-      {activeView === 'vehicles' ? (
+      {activeView && (activeView === 'vehicles' ? (
         <>
           <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
             <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 sm:max-w-md">
@@ -389,13 +480,14 @@ export function VehiclesPanel({
 
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[920px] text-left text-xs">
+              <table className="w-full min-w-[1080px] text-left text-xs">
                 <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="px-3 py-2.5 font-black">ID</th>
                     <th className="px-3 py-2.5 font-black">Loại xe</th>
                     <th className="px-3 py-2.5 font-black">BSX</th>
                     <th className="px-3 py-2.5 font-black">Tài xế phụ trách</th>
+                    <th className="px-3 py-2.5 font-black">Giấy tờ</th>
                     <th className="px-3 py-2.5 font-black">Trạng thái</th>
                     <th className="px-3 py-2.5 font-black">Ghi chú</th>
                     <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
@@ -412,6 +504,19 @@ export function VehiclesPanel({
                         {vehicle.ma_tai_xe && <span className="ml-1 text-[10px] text-slate-400">({vehicle.ma_tai_xe})</span>}
                       </td>
                       <td className="px-3 py-2.5">
+                        {vehicle.giay_to.length > 0 ? (
+                          <div className="flex max-w-[240px] flex-wrap gap-1">
+                            {vehicle.giay_to.map(document => (
+                              <span key={`${document.stt}-${document.ten_giay_to}`} className="rounded-md bg-sky-50 px-1.5 py-1 text-[9px] font-bold text-sky-700">
+                                {document.ten_giay_to || `Giấy tờ ${document.stt}`} · {document.anh.length} ảnh
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
                         <span className={`rounded-full px-2 py-1 text-[10px] font-black ${
                           vehicle.trang_thai === 'Đang sử dụng'
                             ? 'bg-emerald-50 text-emerald-700'
@@ -425,6 +530,9 @@ export function VehiclesPanel({
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex justify-center gap-1">
+                          <IconButton label="Xem chi tiết" onClick={() => setViewingVehicle(vehicle)}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </IconButton>
                           <IconButton label="Sửa" onClick={() => setVehicleModal({ mode: 'edit', vehicle })}>
                             <Pencil className="h-3.5 w-3.5" />
                           </IconButton>
@@ -447,6 +555,9 @@ export function VehiclesPanel({
                       <p className="mt-0.5 text-xs font-bold text-slate-700">{vehicle.loai_xe}</p>
                     </div>
                     <div className="flex gap-1">
+                      <IconButton label="Xem chi tiết" onClick={() => setViewingVehicle(vehicle)}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </IconButton>
                       <IconButton label="Sửa" onClick={() => setVehicleModal({ mode: 'edit', vehicle })}>
                         <Pencil className="h-3.5 w-3.5" />
                       </IconButton>
@@ -456,6 +567,11 @@ export function VehiclesPanel({
                     </div>
                   </div>
                   <p className="mt-2 text-xs font-semibold text-slate-600">Tài xế: {vehicle.tai_xe_phu_trach || 'Chưa phân công'}</p>
+                  {vehicle.giay_to.length > 0 && (
+                    <p className="mt-1 text-[11px] font-semibold text-sky-700">
+                      Giấy tờ: {vehicle.giay_to.map(document => `${document.ten_giay_to} (${document.anh.length} ảnh)`).join(' · ')}
+                    </p>
+                  )}
                   <p className="mt-1 text-[11px] text-slate-400">{vehicle.trang_thai} · ID {vehicle.id}</p>
                 </article>
               ))}
@@ -571,12 +687,28 @@ export function VehiclesPanel({
         </>
       ) : activeView === 'delivery' ? (
         <VehicleDeliveryRequestsView vehicles={vehicles} staff={staff} />
+      ) : activeView === 'route' ? (
+        <VehicleDeliveryRouteView />
       ) : activeView === 'expenses' ? (
         <VehicleExpensesView vehicles={vehicles} staff={staff} currentUser={currentUser} />
       ) : activeView === 'km_log' ? (
         <VehicleKmLogsView vehicles={vehicles} staff={staff} />
+      ) : activeView === 'payments' ? (
+        <CustomerPaymentsView vehicles={vehicles} staff={staff} />
       ) : (
         <VehicleLogsView vehicles={vehicles} staff={staff} />
+      ))}
+
+      {viewingVehicle && (
+        <VehicleDetailModal
+          vehicle={viewingVehicle}
+          onClose={() => setViewingVehicle(null)}
+          onDocumentsChanged={loadVehicles}
+          onEdit={() => {
+            setVehicleModal({ mode: 'edit', vehicle: viewingVehicle });
+            setViewingVehicle(null);
+          }}
+        />
       )}
 
       {vehicleModal && (
@@ -682,6 +814,399 @@ function ModalShell({
   );
 }
 
+function VehicleDetailModal({
+  vehicle,
+  onClose,
+  onEdit,
+  onDocumentsChanged
+}: {
+  vehicle: Vehicle;
+  onClose: () => void;
+  onEdit: () => void;
+  onDocumentsChanged: () => void | Promise<void>;
+}) {
+  const [activeTab, setActiveTab] = useState<'info' | 'documents'>('info');
+  const [documents, setDocuments] = useState<VehicleDocument[]>(vehicle.giay_to);
+  const [isAddingDocument, setIsAddingDocument] = useState(false);
+  const [newDocumentName, setNewDocumentName] = useState('');
+  const [newDocumentImages, setNewDocumentImages] = useState<VehicleDocumentImage[]>([]);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [isSavingDocument, setIsSavingDocument] = useState(false);
+  const [documentError, setDocumentError] = useState('');
+  const [viewingImage, setViewingImage] = useState<{
+    documentName: string;
+    images: VehicleDocumentImage[];
+    index: number;
+  } | null>(null);
+  const details = [
+    ['ID', vehicle.id],
+    ['Loại xe', vehicle.loai_xe],
+    ['Biển số xe', vehicle.bien_so_xe],
+    ['Mã tài xế', vehicle.ma_tai_xe],
+    ['Tài xế phụ trách', vehicle.tai_xe_phu_trach],
+    ['Trạng thái', vehicle.trang_thai]
+  ];
+
+  return (
+    <ModalShell
+      title={`Chi tiết xe ${vehicle.bien_so_xe}`}
+      subtitle="Thông tin phương tiện, tài xế và hồ sơ giấy tờ"
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700">
+            Đóng
+          </button>
+          <button type="button" onClick={onEdit} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-brand-500 px-4 text-sm font-extrabold text-white hover:bg-brand-600">
+            <Pencil className="h-4 w-4" />
+            Sửa thông tin
+          </button>
+        </div>
+      }
+    >
+      <div className="mb-4 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('info')}
+          className={`flex h-10 items-center justify-center gap-1.5 rounded-lg text-xs font-extrabold transition ${
+            activeTab === 'info' ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Info className="h-4 w-4" />
+          Thông tin
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('documents')}
+          className={`flex h-10 items-center justify-center gap-1.5 rounded-lg text-xs font-extrabold transition ${
+            activeTab === 'documents' ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <FolderOpen className="h-4 w-4" />
+          Giấy tờ
+          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px]">{documents.length}</span>
+        </button>
+      </div>
+
+      <div className={activeTab === 'info' ? 'block' : 'hidden'}>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {details.map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+            <p className={`mt-1 text-sm font-bold text-slate-800 ${label === 'Biển số xe' ? 'font-mono text-brand-700' : ''}`}>
+              {value || '—'}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2.5">
+        <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Ghi chú</p>
+        <p className="mt-1 whitespace-pre-wrap text-sm font-medium text-slate-700">{vehicle.ghi_chu || '—'}</p>
+      </div>
+      </div>
+
+      <section className={activeTab === 'documents' ? 'block' : 'hidden'}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Hồ sơ giấy tờ</h4>
+            <p className="mt-0.5 text-[10.5px] font-medium text-slate-500">{documents.length} loại giấy tờ</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsAddingDocument(true)}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-xs font-extrabold text-white shadow-sm hover:bg-brand-600"
+          >
+            <Plus className="h-4 w-4" />
+            Thêm giấy tờ
+          </button>
+        </div>
+
+        {documents.length > 0 ? (
+          <div className="space-y-2">
+            {documents.map((document, documentIndex) => (
+              <article key={`${document.stt}-${document.ten_giay_to}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-black text-slate-800">
+                    {documentIndex + 1}. {document.ten_giay_to || 'Chưa đặt tên'}
+                  </p>
+                  <span className="text-[10px] font-bold text-slate-400">{document.anh.length} ảnh</span>
+                </div>
+                {document.anh.length > 0 ? (
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {document.anh.map((image, imageIndex) => (
+                      <button
+                        type="button"
+                        key={`${image.url}-${imageIndex}`}
+                        onClick={() => setViewingImage({
+                          documentName: document.ten_giay_to || 'Giấy tờ',
+                          images: document.anh,
+                          index: imageIndex
+                        })}
+                        className="group overflow-hidden rounded-lg border border-slate-200 bg-white"
+                        title="Xem ảnh"
+                      >
+                        <img
+                          src={cloudinaryPreviewUrl(image.url, 480)}
+                          alt={`${document.ten_giay_to || 'Giấy tờ'} ${imageIndex + 1}`}
+                          className="aspect-[4/3] w-full object-cover transition group-hover:scale-105"
+                        />
+                        <span className="block px-2 py-1.5 text-center text-[9px] font-bold text-slate-500">Ảnh {imageIndex + 1}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-xs font-semibold text-slate-400">
+                    Chưa có ảnh
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-[190px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
+              <FolderOpen className="h-6 w-6" />
+            </span>
+            <p className="mt-3 max-w-sm text-sm font-bold leading-relaxed text-slate-500">
+              Chưa có thông tin đăng kiểm, bằng lái hoặc giấy tờ khác.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsAddingDocument(true)}
+              className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 bg-white px-3 text-xs font-extrabold text-brand-700 shadow-sm hover:bg-brand-50"
+            >
+              <Plus className="h-4 w-4" />
+              Thêm giấy tờ đầu tiên
+            </button>
+          </div>
+        )}
+      </section>
+
+      {isAddingDocument && (
+        <div className="fixed inset-0 z-[85] flex items-end justify-center bg-slate-950/60 sm:items-center sm:p-4">
+          <div className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wide text-slate-900">Thêm giấy tờ</h4>
+                <p className="mt-0.5 text-xs font-semibold text-slate-500">Nhập tên và tải nhiều ảnh lên Cloudinary</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddingDocument(false)}
+                disabled={isUploadingDocument || isSavingDocument}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+              {documentError && (
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                  {documentError}
+                </p>
+              )}
+              <Field label="Tên giấy tờ *">
+                <input
+                  autoFocus
+                  value={newDocumentName}
+                  onChange={event => setNewDocumentName(event.target.value)}
+                  className={inputClass}
+                  placeholder="Ví dụ: Đăng kiểm, Bằng lái..."
+                />
+              </Field>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ảnh giấy tờ</p>
+                  <span className="text-[10px] font-bold text-slate-400">{newDocumentImages.length} ảnh</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {newDocumentImages.map((image, imageIndex) => (
+                    <div key={`${image.url}-${imageIndex}`} className="group/image relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                      <img
+                        src={cloudinaryPreviewUrl(image.url, 320)}
+                        alt={`Ảnh giấy tờ ${imageIndex + 1}`}
+                        className="aspect-[4/3] w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNewDocumentImages(images => images.filter((_, index) => index !== imageIndex))}
+                        className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-white shadow"
+                        aria-label="Xóa ảnh"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100">
+                    {isUploadingDocument ? <Loader2 className="h-6 w-6 animate-spin" /> : <ImagePlus className="h-6 w-6" />}
+                    <span className="mt-1.5 text-[10px] font-black">{isUploadingDocument ? 'Đang tải...' : 'Chọn nhiều ảnh'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={isUploadingDocument || isSavingDocument}
+                      className="sr-only"
+                      onChange={async event => {
+                        const files = Array.from(event.target.files || []);
+                        event.target.value = '';
+                        if (!files.length) return;
+                        if (files.some(file => !file.type.startsWith('image/'))) {
+                          setDocumentError('Giấy tờ chỉ nhận file ảnh.');
+                          return;
+                        }
+                        if (files.some(file => file.size > 12 * 1024 * 1024)) {
+                          setDocumentError('Mỗi ảnh không được vượt quá 12 MB.');
+                          return;
+                        }
+                        setIsUploadingDocument(true);
+                        setDocumentError('');
+                        try {
+                          const uploadedImages: VehicleDocumentImage[] = [];
+                          for (const file of files) {
+                            const dataUrl = await fileToOptimizedImageDataUrl(file, { maxEdge: 1800, quality: 0.8 });
+                            const uploaded = await uploadImage(dataUrl, 'xe/giay_to');
+                            if (uploaded.imageUrl) {
+                              uploadedImages.push({ url: uploaded.imageUrl, public_id: uploaded.imagePublicId });
+                            }
+                          }
+                          setNewDocumentImages(images => [...images, ...uploadedImages]);
+                        } catch (uploadError: any) {
+                          setDocumentError(uploadError.message || 'Không thể tải ảnh lên Cloudinary.');
+                        } finally {
+                          setIsUploadingDocument(false);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setIsAddingDocument(false)}
+                disabled={isUploadingDocument || isSavingDocument}
+                className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                disabled={isUploadingDocument || isSavingDocument}
+                onClick={async () => {
+                  if (!newDocumentName.trim()) {
+                    setDocumentError('Vui lòng nhập tên giấy tờ.');
+                    return;
+                  }
+                  setIsSavingDocument(true);
+                  setDocumentError('');
+                  try {
+                    const nextDocuments = [
+                      ...documents,
+                      {
+                        stt: documents.length + 1,
+                        ten_giay_to: newDocumentName.trim(),
+                        anh: newDocumentImages
+                      }
+                    ];
+                    await readJsonResponse(await fetch(`/api/danh-sach-xe/${encodeURIComponent(vehicle.id)}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ ...vehicle, giay_to: nextDocuments })
+                    }));
+                    setDocuments(nextDocuments);
+                    setNewDocumentName('');
+                    setNewDocumentImages([]);
+                    setIsAddingDocument(false);
+                    await onDocumentsChanged();
+                  } catch (saveError: any) {
+                    setDocumentError(saveError.message || 'Không thể lưu giấy tờ.');
+                  } finally {
+                    setIsSavingDocument(false);
+                  }
+                }}
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-brand-500 px-4 text-sm font-extrabold text-white disabled:opacity-60"
+              >
+                {isSavingDocument ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {isSavingDocument ? 'Đang lưu...' : 'Lưu giấy tờ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingImage && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-3 sm:p-6"
+          onClick={() => setViewingImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Xem ảnh ${viewingImage.documentName}`}
+        >
+          <div
+            className="relative flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div>
+                <p className="text-sm font-black text-slate-900">{viewingImage.documentName}</p>
+                <p className="mt-0.5 text-[10px] font-bold text-slate-400">
+                  Ảnh {viewingImage.index + 1}/{viewingImage.images.length}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingImage(null)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+                aria-label="Đóng ảnh"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="relative flex min-h-0 flex-1 items-center justify-center bg-slate-950 p-2 sm:p-4">
+              <img
+                src={viewingImage.images[viewingImage.index]?.url}
+                alt={`${viewingImage.documentName} ${viewingImage.index + 1}`}
+                className="max-h-[75dvh] max-w-full object-contain"
+              />
+              {viewingImage.images.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setViewingImage(current => current ? ({
+                      ...current,
+                      index: (current.index - 1 + current.images.length) % current.images.length
+                    }) : null)}
+                    className="absolute left-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-800 shadow-lg hover:bg-white"
+                    aria-label="Ảnh trước"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewingImage(current => current ? ({
+                      ...current,
+                      index: (current.index + 1) % current.images.length
+                    }) : null)}
+                    className="absolute right-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-800 shadow-lg hover:bg-white"
+                    aria-label="Ảnh tiếp theo"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
 const DEFAULT_VEHICLE_TYPE_OPTIONS = [
   'Xe tải 1.4T',
   'Xe tải 2.5T',
@@ -775,8 +1300,19 @@ function VehicleModal({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
-  const [form, setForm] = useState<VehicleForm>(initial ? { ...initial } : emptyVehicleForm());
+  const [form, setForm] = useState<VehicleForm>(
+    initial
+      ? {
+          ...initial,
+          giay_to: initial.giay_to.map(document => ({
+            ...document,
+            anh: document.anh.map(image => ({ ...image }))
+          }))
+        }
+      : emptyVehicleForm()
+  );
   const [isSaving, setIsSaving] = useState(false);
+  const [uploadingDocumentIndex, setUploadingDocumentIndex] = useState<number | null>(null);
   const [error, setError] = useState('');
 
   const loaiXeSuggestions = useMemo(() => {
@@ -792,6 +1328,54 @@ function VehicleModal({
     }
     return options.sort((a, b) => a.localeCompare(b, 'vi'));
   }, [vehicleTypeOptions]);
+
+  const updateDocuments = (documents: VehicleDocument[]) => {
+    setForm(prev => ({
+      ...prev,
+      giay_to: documents.map((document, index) => ({ ...document, stt: index + 1 }))
+    }));
+  };
+
+  const uploadDocumentImages = async (documentIndex: number, files: FileList | null) => {
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+    if (selectedFiles.some(file => !file.type.startsWith('image/'))) {
+      setError('Giấy tờ chỉ nhận file ảnh.');
+      return;
+    }
+    if (selectedFiles.some(file => file.size > 12 * 1024 * 1024)) {
+      setError('Mỗi ảnh giấy tờ không được vượt quá 12 MB.');
+      return;
+    }
+
+    setUploadingDocumentIndex(documentIndex);
+    setError('');
+    try {
+      const uploadedImages: VehicleDocumentImage[] = [];
+      for (const file of selectedFiles) {
+        const dataUrl = await fileToOptimizedImageDataUrl(file, { maxEdge: 1800, quality: 0.8 });
+        const uploaded = await uploadImage(dataUrl, 'xe/giay_to');
+        if (uploaded.imageUrl) {
+          uploadedImages.push({
+            url: uploaded.imageUrl,
+            public_id: uploaded.imagePublicId
+          });
+        }
+      }
+      setForm(prev => ({
+        ...prev,
+        giay_to: prev.giay_to.map((document, index) =>
+          index === documentIndex
+            ? { ...document, anh: [...document.anh, ...uploadedImages] }
+            : document
+        )
+      }));
+    } catch (uploadError: any) {
+      setError(uploadError.message || 'Không thể tải ảnh giấy tờ lên Cloudinary.');
+    } finally {
+      setUploadingDocumentIndex(null);
+    }
+  };
 
   const save = async () => {
     if (!form.loai_xe.trim() || !form.bien_so_xe.trim()) {
@@ -822,8 +1406,8 @@ function VehicleModal({
       onClose={onClose}
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={isSaving} className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700">Huỷ</button>
-          <button type="button" onClick={() => void save()} disabled={isSaving} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-brand-500 px-4 text-sm font-extrabold text-white disabled:opacity-60">
+          <button type="button" onClick={onClose} disabled={isSaving || uploadingDocumentIndex !== null} className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-700">Huỷ</button>
+          <button type="button" onClick={() => void save()} disabled={isSaving || uploadingDocumentIndex !== null} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-brand-500 px-4 text-sm font-extrabold text-white disabled:opacity-60">
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {isSaving ? 'Đang lưu...' : 'Lưu xe'}
           </button>
@@ -867,6 +1451,103 @@ function VehicleModal({
             {['Đang sử dụng', 'Bảo dưỡng', 'Tạm ngưng', 'Thanh lý'].map(status => <option key={status}>{status}</option>)}
           </select>
         </Field>
+        <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">Đăng kiểm, bằng lái và giấy tờ</h3>
+              <p className="mt-0.5 text-[10.5px] font-medium text-slate-500">Mỗi giấy tờ có thể lưu nhiều ảnh trên Cloudinary.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => updateDocuments([
+                ...form.giay_to,
+                { stt: form.giay_to.length + 1, ten_giay_to: '', anh: [] }
+              ])}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-brand-200 bg-white px-2.5 text-[11px] font-extrabold text-brand-700 hover:bg-brand-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm giấy tờ
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {form.giay_to.map((document, documentIndex) => (
+              <div key={documentIndex} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                <div className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-2">
+                  <span className="text-center text-xs font-black text-slate-500">{documentIndex + 1}</span>
+                  <input
+                    value={document.ten_giay_to}
+                    onChange={event => {
+                      const documents = [...form.giay_to];
+                      documents[documentIndex] = { ...document, ten_giay_to: event.target.value };
+                      updateDocuments(documents);
+                    }}
+                    className={inputClass}
+                    placeholder="Tên giấy tờ, ví dụ: Đăng kiểm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateDocuments(form.giay_to.filter((_, index) => index !== documentIndex))}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50"
+                    aria-label={`Xóa giấy tờ ${documentIndex + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {document.anh.map((image, imageIndex) => (
+                    <div key={`${image.url}-${imageIndex}`} className="group/image relative h-20 w-24 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                      <a href={image.url} target="_blank" rel="noreferrer" title="Mở ảnh gốc">
+                        <img
+                          src={cloudinaryPreviewUrl(image.url, 240)}
+                          alt={`${document.ten_giay_to || 'Giấy tờ'} ${imageIndex + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const documents = [...form.giay_to];
+                          documents[documentIndex] = {
+                            ...document,
+                            anh: document.anh.filter((_, index) => index !== imageIndex)
+                          };
+                          updateDocuments(documents);
+                        }}
+                        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-rose-600 text-white shadow opacity-100 sm:opacity-0 sm:group-hover/image:opacity-100"
+                        aria-label="Xóa ảnh"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <label className="flex h-20 w-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-brand-300 bg-brand-50 text-brand-700 transition hover:bg-brand-100">
+                    {uploadingDocumentIndex === documentIndex ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <ImagePlus className="h-5 w-5" />
+                    )}
+                    <span className="mt-1 text-[9px] font-black">
+                      {uploadingDocumentIndex === documentIndex ? 'Đang tải...' : 'Thêm ảnh'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={uploadingDocumentIndex !== null}
+                      onChange={event => {
+                        void uploadDocumentImages(documentIndex, event.target.files);
+                        event.target.value = '';
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
         <div className="sm:col-span-2">
           <Field label="Ghi chú">
             <textarea value={form.ghi_chu} onChange={event => setForm(prev => ({ ...prev, ghi_chu: event.target.value }))} className={`${inputClass} min-h-20 py-2`} />
