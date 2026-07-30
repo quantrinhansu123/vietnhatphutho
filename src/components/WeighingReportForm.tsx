@@ -1635,7 +1635,7 @@ export default function WeighingReportForm({
 
         {weighingRows.length === 0 ? (
           <p className="px-3 py-8 text-center text-xs font-semibold text-zinc-400 sm:py-10 sm:text-sm">
-            Chưa có dòng cân. Bấm Nhập liệu để thêm lần cân.
+            Chưa có dòng cân.
           </p>
         ) : (
           <>
@@ -2165,14 +2165,6 @@ export default function WeighingReportForm({
               className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#ef1b2d]/30 bg-white px-2 text-[10px] font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 sm:rounded-lg sm:px-2.5 sm:text-[11px]"
             >
               Lần mới
-            </button>
-            <button
-              type="button"
-              onClick={() => openAddForm()}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-red-50 px-2 text-[10px] font-extrabold text-[#ef1b2d] shadow-sm transition hover:bg-red-100 sm:gap-1.5 sm:rounded-lg sm:px-2.5 sm:text-[11px]"
-            >
-              <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              Nhập liệu
             </button>
             <button
               type="button"

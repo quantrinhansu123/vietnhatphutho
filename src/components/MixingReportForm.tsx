@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { openCameraImagePicker, compressImageDataUrl } from '../utils/cameraCapture';
-import { createPortal } from 'react-dom';
 import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
-  ClipboardCheck,
   ClipboardList,
   Clock3,
   Cpu,
@@ -22,16 +20,12 @@ import {
 } from 'lucide-react';
 import { formatNumber, parseMoneyInput } from '../utils';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
-import MixingProductionOrderAutofillModal from './MixingProductionOrderAutofillModal';
 import SearchableMultiSelect from './SearchableMultiSelect';
 import {
-  normalizeMixingCatalogProducts,
   normalizeMixingProductionOrders,
-  type MixingCatalogProduct,
   type MixingProductionOrder
 } from '../utils/mixingOrderAutofill';
 import {
-  applyMixingRoundAutofill,
   calcNormQuantityFromPercent,
   computeNextMixingSessionStart,
   deriveLineUnit,
@@ -481,12 +475,16 @@ function MixingRoundItemFormModal({
   const [soLuongText, setSoLuongText] = useState('');
   const [klThucTeText, setKlThucTeText] = useState('');
   const [percentText, setPercentText] = useState('');
+  const [materialSearch, setMaterialSearch] = useState('');
+  const [materialSuggestionsOpen, setMaterialSuggestionsOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
       setPercentText(quantityInputText(draft.ti_le_phan_tram));
       setSoLuongText(quantityInputText(draft.so_luong));
       setKlThucTeText(quantityInputText(draft.kl_thuc_te));
+      setMaterialSearch([draft.ma_nvl, draft.ten_vat_tu].filter(Boolean).join(' · '));
+      setMaterialSuggestionsOpen(false);
     }
   }, [open, draft.so_luong, draft.kl_thuc_te, draft.ti_le_phan_tram]);
 
@@ -497,18 +495,24 @@ function MixingRoundItemFormModal({
     if (kg !== null) setSoLuongText(String(kg));
   }, [open, percentText, batchWeight]);
 
-  const pickMaterial = (code: string) => {
-    if (!code) {
-      onChange({ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg' });
-      return;
-    }
-    const material = materials.find(item => item.code === code);
-    if (!material) return;
+  const materialSuggestions = useMemo(() => {
+    const keyword = materialSearch.trim().toLocaleLowerCase('vi');
+    if (!keyword) return materials.slice(0, 12);
+    return materials
+      .filter(material =>
+        `${material.code} ${material.name}`.toLocaleLowerCase('vi').includes(keyword)
+      )
+      .slice(0, 12);
+  }, [materialSearch, materials]);
+
+  const pickMaterial = (material: MaterialOption) => {
     onChange({
       ma_nvl: material.code,
       ten_vat_tu: material.name,
       don_vi: material.unit || 'kg'
     });
+    setMaterialSearch(`${material.code} · ${material.name}`);
+    setMaterialSuggestionsOpen(false);
   };
 
   const handleSave = () => {
@@ -551,19 +555,41 @@ function MixingRoundItemFormModal({
           )}
           <div className="grid grid-cols-1 gap-3">
             <label className="space-y-1">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã NVL</span>
-              <select
-                value={draft.ma_nvl}
-                onChange={e => pickMaterial(e.target.value)}
-                className={modalInputClass}
-              >
-                <option value="">Chọn mã NVL...</option>
-                {materials.map(material => (
-                  <option key={material.code} value={material.code}>
-                    {material.code} · {material.name}
-                  </option>
-                ))}
-              </select>
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tìm nguyên vật liệu</span>
+              <div className="relative">
+                <input
+                  value={materialSearch}
+                  onFocus={() => setMaterialSuggestionsOpen(true)}
+                  onChange={event => {
+                    setMaterialSearch(event.target.value);
+                    setMaterialSuggestionsOpen(true);
+                    onChange({ ma_nvl: '', ten_vat_tu: '', don_vi: 'kg' });
+                  }}
+                  className={modalInputClass}
+                  placeholder="Gõ mã hoặc tên NVL..."
+                  autoComplete="off"
+                />
+                {materialSuggestionsOpen ? (
+                  <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg">
+                    {materialSuggestions.length > 0 ? materialSuggestions.map(material => (
+                      <button
+                        key={`${material.code}-${material.name}`}
+                        type="button"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => pickMaterial(material)}
+                        className="block w-full px-3 py-2 text-left text-sm transition hover:bg-red-50"
+                      >
+                        <span className="font-mono font-bold text-zinc-800">{material.code}</span>
+                        <span className="ml-2 font-medium text-zinc-600">{material.name}</span>
+                        <span className="ml-2 text-xs text-zinc-400">{material.unit}</span>
+                      </button>
+                    )) : (
+                      <p className="px-3 py-2 text-sm font-medium text-zinc-500">Không tìm thấy nguyên vật liệu phù hợp.</p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+              <p className="text-[11px] font-medium text-zinc-400">Gõ mã hoặc tên, rồi chọn nguyên vật liệu từ danh sách gợi ý.</p>
             </label>
             <label className="space-y-1">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên vật tư</span>
@@ -955,12 +981,10 @@ export default function MixingReportForm({
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
-  const [catalogProducts, setCatalogProducts] = useState<MixingCatalogProduct[]>([]);
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [activeRoundCount, setActiveRoundCount] = useState(1);
   const [sessionRoundStart, setSessionRoundStart] = useState(1);
   const [roundBatchWeightDrafts, setRoundBatchWeightDrafts] = useState<Partial<Record<RoundKey, string>>>({});
-  const [productionAutofillRoundKey, setProductionAutofillRoundKey] = useState<RoundKey | null>(null);
   const [roundItemModal, setRoundItemModal] = useState<{
     roundKey: RoundKey;
     edit?: { lineIndex: number; itemIndex: number };
@@ -995,17 +1019,15 @@ export default function MixingReportForm({
   }, [reasonOptions, form.ly_do_theo_lan]);
 
   const loadReferenceData = async () => {
-    const [machineRes, materialRes, productionRes, productRes, settingRes] = await Promise.all([
+    const [machineRes, materialRes, productionRes, settingRes] = await Promise.all([
       fetch('/api/danh-sach-may'),
       fetch('/api/kho-nvl'),
       fetch('/api/lenh-sx'),
-      fetch('/api/san-pham?format=table'),
       fetch('/api/cai-dat')
     ]);
     const machineData = await machineRes.json().catch(() => ({}));
     const materialData = await materialRes.json().catch(() => ({}));
     const productionData = await productionRes.json().catch(() => ({}));
-    const productData = await productRes.json().catch(() => ({}));
     const settingData = await settingRes.json().catch(() => ({}));
     if (!machineRes.ok) throw new Error(machineData.error || 'Không thể tải danh sách máy.');
     if (!materialRes.ok) throw new Error(materialData.error || 'Không thể tải kho NVL.');
@@ -1033,7 +1055,6 @@ export default function MixingReportForm({
     );
 
     setProductionOrders(normalizeMixingProductionOrders(productionData));
-    if (productRes.ok) setCatalogProducts(normalizeMixingCatalogProducts(productData));
     if (settingRes.ok) setShiftSettings(normalizeShiftSettings(settingData));
   };
 
@@ -1454,20 +1475,6 @@ export default function MixingReportForm({
       );
     }, lines);
 
-  const openProductionOrderAutofill = (roundKey: RoundKey) => {
-    setMessage('');
-    if (!form.ca.trim()) {
-      setError('Vui lòng chọn ca trước khi lấy NVL theo Lệnh sản xuất.');
-      return;
-    }
-    if (!form.ma_may.trim() && !form.ten_may.trim()) {
-      setError('Vui lòng chọn máy ở phần thông tin phía trên trước khi lấy NVL theo Lệnh sản xuất.');
-      return;
-    }
-    setError('');
-    setProductionAutofillRoundKey(roundKey);
-  };
-
   const openRoundMaterialModal = (roundKey: RoundKey, edit?: { lineIndex: number; itemIndex: number }) => {
     const existing =
       edit &&
@@ -1498,30 +1505,6 @@ export default function MixingReportForm({
       )
     }));
     setRoundItemModal(null);
-  };
-
-  const applyProductionOrderAutofill = (items: MixingRoundItem[]) => {
-    if (!productionAutofillRoundKey) return;
-    if (items.length === 0) {
-      setError(
-        'Sản phẩm đã chọn chưa có định mức NPL (% phối trộn). Vui lòng khai báo định mức trong danh mục sản phẩm trước.'
-      );
-      setProductionAutofillRoundKey(null);
-      return;
-    }
-    const roundKey = productionAutofillRoundKey;
-    setForm(prev => ({
-      ...prev,
-      chi_tiet: applyMixingRoundAutofill(
-        prev.chi_tiet,
-        roundKey,
-        items,
-        resolveRoundBatchWeight(prev.chi_tiet, roundKey)
-      )
-    }));
-    setMessage(`Đã điền ${items.length} NVL vào ${roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(roundKey))}.`);
-    setError('');
-    setProductionAutofillRoundKey(null);
   };
 
   const openEditLineModal = (index: number) => {
@@ -1699,7 +1682,7 @@ export default function MixingReportForm({
 
   const handleSave = async () => {
     if (!form.ca.trim()) {
-      setError(showSaveFailure('Vui lòng chọn ca từ lệnh sản xuất.'));
+      setError(showSaveFailure('Vui lòng chọn ca.'));
       return;
     }
     if (!form.ngay.trim()) {
@@ -2074,16 +2057,7 @@ export default function MixingReportForm({
                       </div>
                     </div>
                     {!isCollapsed ? (
-                      <div className="mt-1.5 grid grid-cols-2 gap-1 sm:mt-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openProductionOrderAutofill(roundKey)}
-                          className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 text-[9px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 sm:h-8 sm:justify-start sm:rounded-lg sm:px-3 sm:text-[11px]"
-                        >
-                          <ClipboardCheck className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
-                          <span className="truncate sm:hidden">Theo LSX</span>
-                          <span className="hidden truncate sm:inline">NVL theo Lệnh sản xuất</span>
-                        </button>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 sm:mt-2">
                         <button
                           type="button"
                           onClick={() => openRoundMaterialModal(roundKey)}
@@ -2570,30 +2544,6 @@ export default function MixingReportForm({
         onSave={saveRoundMaterialModal}
       />
 
-      {typeof document !== 'undefined' &&
-        createPortal(
-          <MixingProductionOrderAutofillModal
-            open={productionAutofillRoundKey !== null}
-            roundLabel={
-              productionAutofillRoundKey
-                ? roundColumnLabel(sessionRoundStart, ROUND_KEYS.indexOf(productionAutofillRoundKey))
-                : ''
-            }
-            orders={productionOrders}
-            catalogProducts={catalogProducts}
-            materials={materials}
-            filters={{
-              ngay: form.ngay,
-              ca: form.ca,
-              maMay: form.ma_may,
-              tenMay: form.ten_may
-            }}
-            machines={machines.map(machine => ({ code: machine.code, name: machine.name }))}
-            onClose={() => setProductionAutofillRoundKey(null)}
-            onApply={applyProductionOrderAutofill}
-          />,
-          document.body
-        )}
     </>
   );
 
