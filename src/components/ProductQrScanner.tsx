@@ -72,6 +72,26 @@ function sleep(ms: number) {
   });
 }
 
+/** Phát tiếng "tích" ngắn khi quét thành công — không cần file audio, dùng thẳng Web Audio API. */
+function playScanBeep(ctx: AudioContext | null) {
+  if (!ctx) return;
+  try {
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = 'square';
+    oscillator.frequency.value = 1800;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.13);
+  } catch {
+    // Bỏ qua nếu trình duyệt chặn audio.
+  }
+}
+
 /** Trả focus về ô nhập mã sau khi DOM/portal đã gắn xong, để đầu đọc laser (keyboard wedge) có nơi "gõ" mã vào mà không cần chạm tay. */
 function focusManualInput(ref: React.RefObject<HTMLInputElement>) {
   window.requestAnimationFrame(() => {
@@ -215,6 +235,7 @@ export default function ProductQrScanner({
   const regionId = `product-qr-${reactId.replace(/:/g, '')}`;
   const scannerRef = useRef<Html5QrcodeInstance | null>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const autoSubmitTimerRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
   const onScanRef = useRef(onScan);
@@ -233,6 +254,20 @@ export default function ProductQrScanner({
       window.clearTimeout(autoSubmitTimerRef.current);
       autoSubmitTimerRef.current = null;
     }
+  };
+
+  /** Khởi tạo/mở khoá AudioContext trong lúc bấm nút mở scanner (user gesture) để phát beep được ngay khi quét. */
+  const ensureAudioContext = () => {
+    if (typeof window === 'undefined') return null;
+    const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) return null;
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContextCtor();
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      void audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
   };
 
   const toggleCameraEnabled = () => {
@@ -297,6 +332,7 @@ export default function ProductQrScanner({
     }
 
     if (scanResult === 'incremented') {
+      playScanBeep(audioCtxRef.current);
       setFeedback({ type: 'success', text: `Đã tăng SL mã ${code}` });
       if (closeAfterScan) {
         void stopScannerSafely(scannerRef.current);
@@ -305,6 +341,7 @@ export default function ProductQrScanner({
       return true;
     }
 
+    playScanBeep(audioCtxRef.current);
     setFeedback({ type: 'success', text: `Đã thêm mã SP: ${code}` });
     if (closeAfterScan) {
       void stopScannerSafely(scannerRef.current);
@@ -367,6 +404,7 @@ export default function ProductQrScanner({
     setFeedback(null);
     setFeedbackPulse(0);
     setPendingScan(null);
+    ensureAudioContext();
     focusManualInput(manualInputRef);
 
     if (!cameraEnabled) {
@@ -672,6 +710,10 @@ export default function ProductQrScanner({
           aria-hidden="true"
           tabIndex={-1}
           data-testid="manual-scan-input"
+          // inputMode="none" chặn bàn phím ảo bật lên trên mobile — máy quét laser vẫn bắn
+          // ký tự vào được vì nó hoạt động như bàn phím vật lý (HID), không cần bàn phím ảo.
+          inputMode="none"
+          autoComplete="off"
           className="sr-only"
         />
       </div>

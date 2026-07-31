@@ -1019,8 +1019,8 @@ export default function AcceptanceReportForm({
                   aria-label="Quét QR mã SP"
                   title="Quét QR mã SP (camera hoặc máy quét laser)"
                 >
-                  <ScanBarcode className="h-3.5 w-3.5" />
-                  Quét QR
+                  <ScanBarcode className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden min-[380px]:inline">Quét QR</span>
                 </button>
               ) : undefined
             }
