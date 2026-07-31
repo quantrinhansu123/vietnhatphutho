@@ -14,6 +14,7 @@ import {
 } from '../utils/warehouseWeight';
 import {
   buildBbMaterialKgMapsFromTabLines,
+  isBbMachineText,
   isNnsTronMaterial,
   lookupBbMaterialKgByCodeOrName,
   lookupNnsTronTonDauKg,
@@ -26,6 +27,7 @@ import {
   type BbProductionOrderGroup,
   type BbWarehouseExportGroup
 } from '../utils/controlBoardBbMachineReport';
+import { machineValueMatchesFilter } from '../utils/controlBoardShiftSummary';
 
 type PrintProps = {
   orderGroups: BbProductionOrderGroup[];
@@ -148,10 +150,17 @@ function acceptanceQuantityForProduct(
   return reports.reduce((sum, report) => {
     const reportDate = parseProductionOrderFilterDate(report.ngay) || report.ngay;
     if (reportDate !== order.ngay || !shiftNamesMatch(report.ca, order.shift)) return sum;
+    // Khớp máy BB với lệnh — tránh cộng nhầm sản lượng máy khác cùng ngày/ca.
+    if (
+      !machineValueMatchesFilter(order.machine, null, report.ma_may, report.ten_may) &&
+      !(isBbMachineText(order.machine) && isBbMachineText(report.ma_may, report.ten_may))
+    ) {
+      return sum;
+    }
     const itemKey = normalizeProductCodeKey(report.mat_hang);
     const productMatched =
-      (codeKey && (itemKey === codeKey || itemKey.includes(codeKey))) ||
-      (nameKey && (itemKey === nameKey || itemKey.includes(nameKey)));
+      (codeKey && (itemKey === codeKey || itemKey.includes(codeKey) || codeKey.includes(itemKey))) ||
+      (nameKey && (itemKey === nameKey || itemKey.includes(nameKey) || nameKey.includes(itemKey)));
     if (!productMatched) return sum;
     return sum + (Number.isFinite(report.so_luong) ? Number(report.so_luong) : 0);
   }, 0);
@@ -159,7 +168,8 @@ function acceptanceQuantityForProduct(
 
 function buildMaterialRows(
   order: BbProductionOrderGroup,
-  props: PrintProps
+  props: PrintProps,
+  finishedGoodsInboundKg: number | null | undefined
 ) {
   const rows = new Map<string, MaterialPrintRow>();
   const round4 = (value: number) => Math.round(value * 10000) / 10000;
@@ -251,7 +261,7 @@ function buildMaterialRows(
   }
 
   // Nếu có NNS-TRON tồn đầu ca (hỗn hợp chưa tách), phân bổ tồn đầu của NNS-TRON cho từng NVL
-  // theo "Tỉ lệ trộn Thực tế" (phiếu trộn ca liền trước).
+  // theo "Tỉ lệ trộn Thực tế" (phiếu trộn ca liền trước) — khớp logic tab thực dùng.
   if (nnsTronTonDauKg > 0) {
     for (const row of rows.values()) {
       if (isNnsTronMaterial(row.code, row.name)) continue;
@@ -271,9 +281,29 @@ function buildMaterialRows(
     row.closingKg = lookupBbMaterialKgByCodeOrName(tonCuoiMaps, line.itemCode, line.itemName);
   }
 
-  return [...rows.values()]
+  const result = [...rows.values()]
     .filter(row => !(isNnsTronMaterial(row.code, row.name) && nnsTronTonDauKg > 0))
     .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+
+  // Căn tổng "NVL trong thành phẩm" theo TL nhập kho TP thực tế (nếu có) để khớp mục 2.
+  const inboundKg =
+    finishedGoodsInboundKg !== null &&
+    finishedGoodsInboundKg !== undefined &&
+    Number.isFinite(finishedGoodsInboundKg) &&
+    finishedGoodsInboundKg > 0
+      ? finishedGoodsInboundKg
+      : 0;
+  if (inboundKg > 0) {
+    const finishedSum = result.reduce((sum, row) => sum + (row.finishedKg > 0 ? row.finishedKg : 0), 0);
+    if (finishedSum > 0) {
+      const scale = inboundKg / finishedSum;
+      for (const row of result) {
+        if (row.finishedKg > 0) row.finishedKg = round4(row.finishedKg * scale);
+      }
+    }
+  }
+
+  return result;
 }
 
 function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGroup; props: PrintProps }) {
@@ -281,7 +311,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
   const evaluation = findOrderGroup(props.danhGiaGroups, order);
   const analysisNote = props.phanTichMap[order.groupKey] || '';
   const ghiChu = (props.noteByOrder?.[order.groupKey] || '').trim();
-  const materialRows = buildMaterialRows(order, props);
+  const materialRows = buildMaterialRows(order, props, inbound?.finishedGoodsInboundKg);
   const productRows = order.lines.map(line => {
     const actualQuantity = acceptanceQuantityForProduct(
       order,
@@ -296,7 +326,12 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
   const requiredQtyTotal = productRows.reduce((sum, row) => sum + row.quantity, 0);
   const requiredWeightTotal = productRows.reduce((sum, row) => sum + (row.requiredWeight || 0), 0);
   const actualQtyTotal = productRows.reduce((sum, row) => sum + row.actualQuantity, 0) || inbound?.acceptedRolls || 0;
-  const actualWeightTotal = productRows.reduce((sum, row) => sum + (row.actualWeight || 0), 0);
+  const theoreticalWeightTotal = productRows.reduce((sum, row) => sum + (row.actualWeight || 0), 0);
+  // Ưu tiên TL nhập kho TP thực tế trên bảng điều khiển khi có số liệu.
+  const actualWeightTotal =
+    inbound?.finishedGoodsInboundKg && inbound.finishedGoodsInboundKg > 0
+      ? inbound.finishedGoodsInboundKg
+      : theoreticalWeightTotal;
   const damagedQuantity = evaluation
     ? evaluation.soLuongNhuaLoiHong + evaluation.soLuongMangLoiHong + evaluation.soLuongLoiLoiHong
     : 0;
@@ -391,7 +426,7 @@ function BbMachineOrderPrintSheet({ order, props }: { order: BbProductionOrderGr
                 <td className="shift-summary-print-num">{printNumber(requiredWeightTotal, 2)}</td>
                 <td className="shift-summary-print-num">{printNumber(actualQtyTotal, 2)}</td>
                 <td className="shift-summary-print-num">
-                  {printNumber(actualWeightTotal || inbound?.finishedGoodsInboundKg, 2)}
+                  {printNumber(actualWeightTotal, 2)}
                 </td>
                 <td>&nbsp;</td>
                 <td>&nbsp;</td>

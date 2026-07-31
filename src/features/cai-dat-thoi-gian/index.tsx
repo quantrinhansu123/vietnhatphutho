@@ -12,7 +12,20 @@ import { StaffViewPermissionsPicker } from '../nhan-su';
 import type { StaffViewPermissions } from '../nhan-su/menuViews';
 import { summarizeStaffViewPermissions } from '../nhan-su/menuViews';
 import { buildPermissionKey, parsePermissionSettings } from './permissionKeys';
-import { Eye, Loader2, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react';
+import {
+  ChevronRight,
+  Clock3,
+  Eye,
+  KeyRound,
+  LayoutGrid,
+  Loader2,
+  Pencil,
+  Plus,
+  Save,
+  Search,
+  ShieldCheck,
+  Trash2
+} from 'lucide-react';
 
 export interface SettingRow {
   id: string;
@@ -141,8 +154,8 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
-  const [activeTab, setActiveTab] = useState<'settings' | 'permissions'>('settings');
-  const [permissionTab, setPermissionTab] = useState<'keys' | 'tabs'>('keys');
+  const [activeSection, setActiveSection] = useState<'settings' | 'permissions'>('settings');
+  const [permissionSection, setPermissionSection] = useState<'keys' | 'menus'>('keys');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [settingsError, setSettingsError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -706,32 +719,60 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      <section className="flex flex-wrap gap-2 rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+      <section className="grid gap-3 md:grid-cols-2">
         <button
           type="button"
-          onClick={() => setActiveTab('settings')}
-          className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
-            activeTab === 'settings'
-              ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
-              : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
+          onClick={() => setActiveSection('settings')}
+          aria-pressed={activeSection === 'settings'}
+          className={`group flex min-h-28 items-center gap-4 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
+            activeSection === 'settings'
+              ? 'border-[#ef1b2d] bg-red-50 shadow-red-100'
+              : 'border-zinc-900/10 bg-white hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md'
           }`}
         >
-          Cài đặt hệ thống
+          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+            activeSection === 'settings' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
+          }`}>
+            <Clock3 className="h-6 w-6" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-black text-zinc-950">Cài đặt hệ thống</span>
+            <span className="mt-1 block text-xs font-semibold leading-5 text-zinc-500">
+              Quản lý ca máy, thời gian và các tham số vận hành.
+            </span>
+          </span>
+          <ChevronRight className={`h-5 w-5 shrink-0 transition ${
+            activeSection === 'settings' ? 'text-[#ef1b2d]' : 'text-zinc-300 group-hover:text-zinc-600'
+          }`} />
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('permissions')}
-          className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
-            activeTab === 'permissions'
-              ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
-              : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
+          onClick={() => setActiveSection('permissions')}
+          aria-pressed={activeSection === 'permissions'}
+          className={`group flex min-h-28 items-center gap-4 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
+            activeSection === 'permissions'
+              ? 'border-[#ef1b2d] bg-red-50 shadow-red-100'
+              : 'border-zinc-900/10 bg-white hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md'
           }`}
         >
-          Phân quyền
+          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+            activeSection === 'permissions' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
+          }`}>
+            <ShieldCheck className="h-6 w-6" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-black text-zinc-950">Phân quyền</span>
+            <span className="mt-1 block text-xs font-semibold leading-5 text-zinc-500">
+              Tạo key và cấp quyền truy cập menu theo phòng ban, vị trí.
+            </span>
+          </span>
+          <ChevronRight className={`h-5 w-5 shrink-0 transition ${
+            activeSection === 'permissions' ? 'text-[#ef1b2d]' : 'text-zinc-300 group-hover:text-zinc-600'
+          }`} />
         </button>
       </section>
 
-      {activeTab === 'settings' ? (
+      {activeSection === 'settings' ? (
         <>
       <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
         <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-1 lg:pb-0">
@@ -876,31 +917,47 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         </>
       ) : (
         <>
-          <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
-            <div className="flex flex-wrap gap-2">
+          <section className="grid gap-3 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={() => setPermissionTab('keys')}
-                className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
-                  permissionTab === 'keys'
-                    ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
-                    : 'border-zinc-200 bg-white text-zinc-700'
+                onClick={() => setPermissionSection('keys')}
+                aria-pressed={permissionSection === 'keys'}
+                className={`flex min-h-20 items-center gap-3 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
+                  permissionSection === 'keys'
+                    ? 'border-[#ef1b2d] bg-red-50'
+                    : 'border-zinc-900/10 bg-white hover:border-zinc-300 hover:shadow-md'
                 }`}
               >
-                Key phân quyền
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  permissionSection === 'keys' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
+                }`}>
+                  <KeyRound className="h-5 w-5" />
+                </span>
+                <span>
+                  <span className="block text-sm font-black text-zinc-950">Key phân quyền</span>
+                  <span className="mt-0.5 block text-xs font-semibold text-zinc-500">Tạo và quản lý key truy cập.</span>
+                </span>
               </button>
               <button
                 type="button"
-                onClick={() => setPermissionTab('tabs')}
-                className={`h-11 rounded-xl border px-4 text-sm font-black transition ${
-                  permissionTab === 'tabs'
-                    ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
-                    : 'border-zinc-200 bg-white text-zinc-700'
+                onClick={() => setPermissionSection('menus')}
+                aria-pressed={permissionSection === 'menus'}
+                className={`flex min-h-20 items-center gap-3 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
+                  permissionSection === 'menus'
+                    ? 'border-[#ef1b2d] bg-red-50'
+                    : 'border-zinc-900/10 bg-white hover:border-zinc-300 hover:shadow-md'
                 }`}
               >
-                Tab phân quyền
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  permissionSection === 'menus' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
+                }`}>
+                  <LayoutGrid className="h-5 w-5" />
+                </span>
+                <span>
+                  <span className="block text-sm font-black text-zinc-950">Menu được truy cập</span>
+                  <span className="mt-0.5 block text-xs font-semibold text-zinc-500">Chọn các khu vực key được phép xem.</span>
+                </span>
               </button>
-            </div>
           </section>
 
           <section className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
@@ -1070,10 +1127,10 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                 </div>
               </section>
 
-              {permissionTab === 'tabs' && (
+              {permissionSection === 'menus' && (
                 <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
                   <div className="mb-3">
-                    <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tab phân quyền</h3>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Menu được truy cập</h3>
                     <p className="mt-1 text-xs font-semibold text-zinc-500">
                       Chọn menu cha và menu con được phép xem cho key hiện tại.
                     </p>

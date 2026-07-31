@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -69,10 +69,10 @@
   --shadow-elevated:0 10px 28px rgba(15,23,42,.08);
   --shadow-soft:    0 1px 0 rgba(15,23,42,.03);
 
-  /* Fonts — Industrial / Utilitarian pairing */
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  /* Font Việt hóa đồng nhất cho toàn bộ giao diện quản trị. */
+  --font-sans: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Custom enhancements for the mobile touch layouts */
@@ -114,6 +114,58 @@
   .menu-icon {
     @apply h-[18px] w-[18px];
   }
+}
+
+/* Bảng báo cáo tại Bảng điều khiển: đồng bộ với bảng quản trị của ứng dụng. */
+.control-board-report-theme,
+.control-board-report-table {
+  font-family: var(--font-sans);
+  color: var(--color-ink-700);
+}
+
+.control-board-report-theme table,
+table.control-board-report-table {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.control-board-report-theme table thead,
+table.control-board-report-table thead {
+  background: var(--color-ink-50) !important;
+  background-image: none !important;
+  border-bottom: 1px solid var(--color-ink-200) !important;
+  color: var(--color-ink-700) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.control-board-report-theme table thead th,
+table.control-board-report-table thead th {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600 !important;
+  line-height: 1.35;
+}
+
+.control-board-report-theme table tbody,
+table.control-board-report-table tbody {
+  color: var(--color-ink-700);
+}
+
+.control-board-report-theme table tbody > tr,
+table.control-board-report-table tbody > tr {
+  border-color: var(--color-ink-200) !important;
+  transition: background-color 150ms ease;
+}
+
+.control-board-report-theme table tbody > tr:hover,
+table.control-board-report-table tbody > tr:hover {
+  background-color: var(--color-brand-50) !important;
+}
+
+.control-board-report-theme table tbody > tr:hover > td,
+table.control-board-report-table tbody > tr:hover > td {
+  background-color: transparent;
 }
 
 /* Responsive table: desktop giữ table; mobile (<768px) chuyển từng dòng <tr> thành card stack.

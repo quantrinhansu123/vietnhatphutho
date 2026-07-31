@@ -880,7 +880,6 @@ export function ControlBoardPanel({
       <div className="order-[-20] grid grid-cols-1 gap-3">
         <DashboardWindow
           title="Lệnh sản xuất"
-          subtitle="Các dòng lệnh mới nhất từ bảng lenh_sx"
           icon={Factory}
           accentClass="bg-gradient-to-r from-emerald-900 to-emerald-700"
           count={recentProductionOrders.length}
@@ -957,7 +956,7 @@ export function ControlBoardPanel({
             </div>
           </div>
           <div className="min-w-0 overflow-x-auto">
-          <table className="w-full min-w-[880px] text-left text-[11px]">
+          <table className="control-board-report-table w-full min-w-[880px] text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
               <tr>
                 <th className="px-2 py-1.5 text-center font-black">
