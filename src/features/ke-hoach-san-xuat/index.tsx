@@ -1179,21 +1179,66 @@ export type ProductionPlanQrLabel = {
   displayName: string;
   orderCode: string;
   quantity: number;
+  shift: string;
+  staff: string;
+  productionDate: string;
 };
 
-export function buildProductionPlanQrPayload(productCode: string, orderCode: string) {
+/** Phần ngày trong serial QR: ddmmyy (theo ngày kế hoạch / hôm nay). */
+export function buildProductionPlanQrDateSerial(dateInput?: string) {
+  const source = String(dateInput || '').trim();
+  let date = new Date();
+  if (/^\d{4}-\d{2}-\d{2}/.test(source)) {
+    const [y, m, d] = source.slice(0, 10).split('-').map(Number);
+    if (y && m && d) date = new Date(y, m - 1, d);
+  } else if (/^\d{2}\/\d{2}\/\d{4}/.test(source)) {
+    const [d, m, y] = source.slice(0, 10).split('/').map(Number);
+    if (y && m && d) date = new Date(y, m - 1, d);
+  }
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${dd}${mm}${yy}`;
+}
+
+function randomProductionPlanQrSerial(length = 4) {
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += String(Math.floor(Math.random() * 10));
+  }
+  return out;
+}
+
+/** Nội dung QR: MãSP_ddmmyy + số serial random (vd MT-MN009_3107268472). */
+export function buildProductionPlanQrPayload(
+  productCode: string,
+  dateInput?: string,
+  randomSerial?: string
+) {
   const maSp = productCode.trim();
-  const maLenh = orderCode.trim();
-  if (maSp && maLenh) return `${maSp}+${maLenh}`;
-  return maSp || maLenh;
+  if (!maSp || maSp === '-') return '';
+  const datePart = buildProductionPlanQrDateSerial(dateInput);
+  const serialPart = (randomSerial || randomProductionPlanQrSerial(4)).replace(/\D/g, '') || randomProductionPlanQrSerial(4);
+  return `${maSp}_${datePart}${serialPart}`;
+}
+
+/** Mẫu hiển thị preview (không dùng để in). */
+export function buildProductionPlanQrPayloadPreview(productCode: string, dateInput?: string) {
+  const maSp = productCode.trim();
+  if (!maSp || maSp === '-') return '—';
+  return `${maSp}_${buildProductionPlanQrDateSerial(dateInput)}****`;
 }
 
 export function buildProductionPlanQrLabels(
   lines: ProductionPlanLine[],
   selectedShift: string,
-  products: ProductRow[]
+  products: ProductRow[],
+  planDate = ''
 ): ProductionPlanQrLabel[] {
   const labels: ProductionPlanQrLabel[] = [];
+  const usedPayloads = new Set<string>();
+  const productionDate = formatProductionPlanPrintDate(planDate);
+  const datePart = buildProductionPlanQrDateSerial(planDate);
 
   lines
     .filter(line => line.shift === selectedShift)
@@ -1204,16 +1249,34 @@ export function buildProductionPlanQrLabels(
       const product = findProductByCode(products, line.productCode);
       const displayCode = product?.code || line.productCode || '-';
       const displayName = product?.name || line.productName || line.name || '-';
-      const qrPayload = buildProductionPlanQrPayload(displayCode, line.code);
+      const shift = line.shift && line.shift !== '-' ? line.shift : selectedShift;
+      const staff = line.staff && line.staff !== '-' ? line.staff : '—';
 
       for (let index = 0; index < quantity; index += 1) {
+        let qrPayload = '';
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const candidate = buildProductionPlanQrPayload(displayCode, planDate, randomProductionPlanQrSerial(4));
+          if (candidate && !usedPayloads.has(candidate)) {
+            qrPayload = candidate;
+            usedPayloads.add(candidate);
+            break;
+          }
+        }
+        if (!qrPayload) {
+          qrPayload = `${displayCode}_${datePart}${String(index).padStart(4, '0')}${randomProductionPlanQrSerial(2)}`;
+          usedPayloads.add(qrPayload);
+        }
+
         labels.push({
           id: `${line.id}-${index}`,
           qrPayload,
           displayCode,
           displayName,
           orderCode: line.code,
-          quantity: 1
+          quantity: 1,
+          shift,
+          staff,
+          productionDate
         });
       }
     });
@@ -1228,38 +1291,40 @@ export function ProductionPlanQrPrintSheet({
   labels: ProductionPlanQrLabel[];
   qrImages: Record<string, string>;
 }) {
-  const footerRows: Array<{ label: string; value: string }> = [
-    { label: 'Ca sản xuất', value: '' },
-    { label: 'Công nhân sx', value: '' },
-    { label: 'Ngày sản xuất', value: '' }
-  ];
-
   return (
     <div className="production-plan-qr-print-sheet">
       <div className="production-plan-qr-print-page">
-        {labels.map(label => (
-          <div key={label.id} className="production-plan-qr-print-card">
-            <p className="production-plan-qr-print-code">{label.displayCode}</p>
-            <p className="production-plan-qr-print-name">{label.displayName}</p>
-            <div className="production-plan-qr-print-code-wrap">
-              {qrImages[label.qrPayload] && (
-                <img src={qrImages[label.qrPayload]} alt={`QR ${label.qrPayload}`} />
-              )}
+        {labels.map(label => {
+          const footerRows: Array<{ label: string; value: string }> = [
+            { label: 'Ca sản xuất', value: label.shift || '—' },
+            { label: 'Công nhân sx', value: label.staff || '—' },
+            { label: 'Ngày sản xuất', value: label.productionDate || '—' }
+          ];
+          return (
+            <div key={label.id} className="production-plan-qr-print-card">
+              <p className="production-plan-qr-print-code">{label.displayCode}</p>
+              <p className="production-plan-qr-print-name">{label.displayName}</p>
+              <div className="production-plan-qr-print-code-wrap">
+                {qrImages[label.qrPayload] && (
+                  <img src={qrImages[label.qrPayload]} alt={`QR ${label.qrPayload}`} />
+                )}
+              </div>
+              <p className="production-plan-qr-print-payload">{label.qrPayload}</p>
+              <table className="production-plan-qr-print-footer">
+                <tbody>
+                  {footerRows.map(row => (
+                    <tr key={row.label}>
+                      <th>{row.label}</th>
+                      <td>
+                        <span className="production-plan-qr-print-footer-field">{row.value}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <table className="production-plan-qr-print-footer">
-              <tbody>
-                {footerRows.map(row => (
-                  <tr key={row.label}>
-                    <th>{row.label}</th>
-                    <td>
-                      <span className="production-plan-qr-print-footer-field">{row.value}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1268,11 +1333,13 @@ export function ProductionPlanQrPrintSheet({
 export function ProductionPlanQrPrintModal({
   open,
   onClose,
-  lines
+  lines,
+  planDate = ''
 }: {
   open: boolean;
   onClose: () => void;
   lines: ProductionPlanLine[];
+  planDate?: string;
 }) {
   const shiftOptions = useMemo(
     () =>
@@ -1336,6 +1403,7 @@ export function ProductionPlanQrPrintModal({
         const displayCode = product?.code || line.productCode || '-';
         const displayName = product?.name || line.productName || line.name || '-';
         const quantity = Math.max(0, Math.floor(parseProductionOrderQuantity(line.quantity)));
+        const staff = line.staff && line.staff !== '-' ? line.staff : '—';
 
         return {
           id: line.id,
@@ -1343,11 +1411,14 @@ export function ProductionPlanQrPrintModal({
           displayCode,
           displayName,
           quantity,
-          qrPayload: buildProductionPlanQrPayload(displayCode, line.code)
+          staff,
+          shift: selectedShift,
+          productionDate: formatProductionPlanPrintDate(planDate),
+          qrPayload: buildProductionPlanQrPayloadPreview(displayCode, planDate)
         };
       })
       .filter(group => group.quantity > 0);
-  }, [lines, selectedShift, products]);
+  }, [lines, selectedShift, products, planDate]);
 
   const totalQrCount = useMemo(
     () => previewGroups.reduce((sum, group) => sum + group.quantity, 0),
@@ -1376,7 +1447,7 @@ export function ProductionPlanQrPrintModal({
       return;
     }
 
-    const labels = buildProductionPlanQrLabels(lines, selectedShift, products);
+    const labels = buildProductionPlanQrLabels(lines, selectedShift, products, planDate);
     if (labels.length === 0) {
       setFormError('Không có sản phẩm nào trong ca đã chọn để in QR.');
       return;
@@ -1390,7 +1461,7 @@ export function ProductionPlanQrPrintModal({
       const imageEntries = await Promise.all(
         uniquePayloads.map(async payload => {
           const url = await QRCode.toDataURL(payload, {
-            errorCorrectionLevel: 'H',
+            errorCorrectionLevel: 'M',
             margin: 1,
             width: 220,
             color: {
@@ -1422,7 +1493,7 @@ export function ProductionPlanQrPrintModal({
             <div>
               <h3 className="text-lg font-black text-zinc-950">In QR sản phẩm theo ca</h3>
               <p className="mt-1 text-sm font-medium text-zinc-500">
-                Số lượng tem QR = số lượng SP. Nội dung QR: mã SP + mã lệnh SX.
+                Số lượng tem QR = số lượng SP. Nội dung QR: mã SP_ddmmyy + số serial random (mỗi tem một mã).
               </p>
             </div>
             <button
@@ -2887,6 +2958,7 @@ export function ProductionPlanModal({
         open={showQrPrintModal}
         onClose={() => setShowQrPrintModal(false)}
         lines={displayLines}
+        planDate={planDate}
       />
     </>
   );

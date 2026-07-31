@@ -938,6 +938,15 @@ input[type="number"] {
     height: 100%;
   }
 
+  .production-plan-qr-print-payload {
+    margin: 0;
+    font-size: 6.5pt;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    line-height: 1.2;
+    word-break: break-all;
+  }
+
   .production-plan-qr-print-footer {
     width: 100%;
     margin: 1mm 0 0;
