@@ -1,7 +1,43 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import type { Html5Qrcode as Html5QrcodeInstance } from 'html5-qrcode';
 import { ScanBarcode, X } from 'lucide-react';
+
+/**
+ * html5-qrcode là thư viện decode khá nặng (kèm engine zxing). Chỉ tải nó khi thực sự bật
+ * camera để giảm dung lượng bundle/RAM lúc khởi động trên máy cấu hình thấp (VD BT-A700).
+ */
+let html5QrcodeModulePromise: Promise<typeof import('html5-qrcode')> | null = null;
+function loadHtml5Qrcode() {
+  if (!html5QrcodeModulePromise) {
+    html5QrcodeModulePromise = import('html5-qrcode');
+  }
+  return html5QrcodeModulePromise;
+}
+
+type CameraDevice = { id: string; label: string };
+type Html5QrcodeStatic = { getCameras: () => Promise<CameraDevice[]> };
+
+const CAMERA_PREF_KEY = 'productQrScanner.cameraEnabled';
+
+function loadCameraPreference(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const stored = window.localStorage.getItem(CAMERA_PREF_KEY);
+    return stored === null ? true : stored === '1';
+  } catch {
+    return true;
+  }
+}
+
+function saveCameraPreference(enabled: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(CAMERA_PREF_KEY, enabled ? '1' : '0');
+  } catch {
+    // Bỏ qua (chế độ ẩn danh / storage đầy) — chỉ mất phần nhớ tuỳ chọn, không ảnh hưởng chức năng.
+  }
+}
 
 interface ProductQrScannerProps {
   open: boolean;
@@ -63,7 +99,13 @@ async function ensureCameraPermission() {
   stream.getTracks().forEach(track => track.stop());
 }
 
-async function pickCameraConfig(): Promise<string | MediaTrackConstraints> {
+/**
+ * QUAN TRỌNG: html5-qrcode's `start(cameraIdOrConfig, ...)` chỉ chấp nhận một device id dạng
+ * string, HOẶC một object đúng 1 key (`{ facingMode }` hoặc `{ deviceId }`) — object có thêm
+ * width/height sẽ bị nó throw "should have exactly 1 key" và camera không mở được. Độ phân giải
+ * phải giới hạn SAU khi start() thành công, qua applyVideoConstraints() (xem sau scanner.start()).
+ */
+async function pickCameraConfig(Html5QrcodeCtor: Html5QrcodeStatic): Promise<string | MediaTrackConstraints> {
   try {
     await ensureCameraPermission();
   } catch (err) {
@@ -79,7 +121,7 @@ async function pickCameraConfig(): Promise<string | MediaTrackConstraints> {
   }
 
   try {
-    const cameras = await Html5Qrcode.getCameras();
+    const cameras = await Html5QrcodeCtor.getCameras();
     if (!cameras?.length) {
       return { facingMode: 'environment' };
     }
@@ -99,29 +141,20 @@ async function pickCameraConfig(): Promise<string | MediaTrackConstraints> {
   }
 }
 
-function parseQrProductCode(raw: string) {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  const plusIdx = trimmed.indexOf('+');
-  if (plusIdx > 0) return trimmed.slice(0, plusIdx).trim();
-  return trimmed;
+/** Giới hạn độ phân giải khung hình sau khi stream đã chạy, để đỡ tải CPU decode trên máy cấu hình thấp. */
+async function applyLowPowerResolution(scanner: Html5QrcodeInstance) {
+  try {
+    await scanner.applyVideoConstraints({ width: { ideal: 640 }, height: { ideal: 480 } });
+  } catch {
+    // Một số camera/trình duyệt không cho đổi constraint sau khi start — bỏ qua, vẫn quét bình thường.
+  }
 }
-
-const supportedProductCodeFormats = [
-  Html5QrcodeSupportedFormats.QR_CODE,
-  Html5QrcodeSupportedFormats.EAN_13,
-  Html5QrcodeSupportedFormats.EAN_8,
-  Html5QrcodeSupportedFormats.CODE_128,
-  Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.UPC_A,
-  Html5QrcodeSupportedFormats.UPC_E
-];
 
 function buildScannerConfig() {
   const apple = isAppleMobile();
   return {
-    // iOS: fps thấp hơn giúp ổn định decode
-    fps: apple ? 10 : 15,
+    // fps thấp giúp đỡ tải CPU decode — quan trọng với máy cấu hình thấp (VD BT-A700).
+    fps: apple ? 8 : 10,
     // aspectRatio 16:9 hay làm camera/portrait iPhone dừng quét
     ...(apple ? {} : { aspectRatio: 16 / 9 }),
     qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
@@ -141,7 +174,7 @@ function buildScannerConfig() {
   };
 }
 
-async function stopScannerSafely(scanner: Html5Qrcode | null) {
+async function stopScannerSafely(scanner: Html5QrcodeInstance | null) {
   if (!scanner) return;
   try {
     await scanner.stop();
@@ -150,7 +183,7 @@ async function stopScannerSafely(scanner: Html5Qrcode | null) {
   }
 }
 
-async function improveIosFocus(scanner: Html5Qrcode) {
+async function improveIosFocus(scanner: Html5QrcodeInstance) {
   if (!isAppleMobile()) return;
   try {
     await sleep(800);
@@ -160,6 +193,14 @@ async function improveIosFocus(scanner: Html5Qrcode) {
   } catch {
     // Một số máy không hỗ trợ focusMode — bỏ qua.
   }
+}
+
+function parseQrProductCode(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const plusIdx = trimmed.indexOf('+');
+  if (plusIdx > 0) return trimmed.slice(0, plusIdx).trim();
+  return trimmed;
 }
 
 export default function ProductQrScanner({
@@ -172,8 +213,9 @@ export default function ProductQrScanner({
 }: ProductQrScannerProps) {
   const reactId = useId();
   const regionId = `product-qr-${reactId.replace(/:/g, '')}`;
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerRef = useRef<Html5QrcodeInstance | null>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
+  const autoSubmitTimerRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
   const onScanRef = useRef(onScan);
   const getConfirmMessageRef = useRef(getConfirmMessage);
@@ -184,6 +226,22 @@ export default function ProductQrScanner({
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
   const [feedbackPulse, setFeedbackPulse] = useState(0);
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
+  const [cameraEnabled, setCameraEnabled] = useState(loadCameraPreference);
+
+  const clearAutoSubmitTimer = () => {
+    if (autoSubmitTimerRef.current !== null) {
+      window.clearTimeout(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = null;
+    }
+  };
+
+  const toggleCameraEnabled = () => {
+    setCameraEnabled(prev => {
+      const next = !prev;
+      saveCameraPreference(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -203,6 +261,22 @@ export default function ProductQrScanner({
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  // Camera chạy nền tốn pin/CPU/RAM — tắt hẳn khi màn hình ẩn (khoá máy, chuyển app) thay vì
+  // để nó tiếp tục decode trong nền, tránh dồn tải khiến máy cấu hình thấp bị treo/sập sau
+  // một ca quét dài. Người dùng chỉ cần bấm "Quét QR" lại khi quay lại.
+  useEffect(() => {
+    if (!open) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        onCloseRef.current();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [open]);
 
@@ -278,6 +352,7 @@ export default function ProductQrScanner({
 
   useEffect(() => {
     if (!open) {
+      clearAutoSubmitTimer();
       setManualCode('');
       setError('');
       setFeedback(null);
@@ -292,8 +367,18 @@ export default function ProductQrScanner({
     setFeedback(null);
     setFeedbackPulse(0);
     setPendingScan(null);
-    setIsStarting(true);
     focusManualInput(manualInputRef);
+
+    if (!cameraEnabled) {
+      // Camera tắt (máy cấu hình thấp / chỉ dùng đầu đọc laser): không chạm tới camera/thư
+      // viện decode — không tốn CPU/RAM, chỉ chờ dữ liệu bắn ra từ máy quét laser.
+      setIsStarting(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setIsStarting(true);
 
     const handleDecoded = (decodedText: string) => {
       const value = decodedText.trim();
@@ -334,6 +419,19 @@ export default function ProductQrScanner({
         }
       }
 
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await loadHtml5Qrcode();
+      if (cancelled) return;
+
+      const supportedProductCodeFormats = [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E
+      ];
+
       const scanner = new Html5Qrcode(regionId, {
         verbose: false,
         formatsToSupport: supportedProductCodeFormats,
@@ -344,14 +442,14 @@ export default function ProductQrScanner({
 
       let preferred: string | MediaTrackConstraints;
       try {
-        preferred = await pickCameraConfig();
+        preferred = await pickCameraConfig(Html5Qrcode);
       } catch (err) {
         if (!cancelled) {
           setIsStarting(false);
           setError(
             err instanceof Error
-              ? `${err.message} Bạn vẫn có thể nhập mã SP bên dưới.`
-              : 'Không mở được camera. Hãy nhập mã SP bên dưới.'
+              ? `${err.message} Bạn vẫn có thể dùng máy quét laser để bắn mã.`
+              : 'Không mở được camera. Hãy dùng máy quét laser để bắn mã.'
           );
         }
         return;
@@ -381,6 +479,7 @@ export default function ProductQrScanner({
             video.muted = true;
             void video.play().catch(() => {});
           }
+          void applyLowPowerResolution(scanner);
           void improveIosFocus(scanner);
           setIsStarting(false);
           return;
@@ -392,7 +491,7 @@ export default function ProductQrScanner({
 
       if (!cancelled) {
         setIsStarting(false);
-        setError(`${lastError} Hãy cấp quyền camera trong Cài đặt → Safari, hoặc nhập mã SP bên dưới.`);
+        setError(`${lastError} Hãy cấp quyền camera trong Cài đặt → Safari, hoặc dùng máy quét laser để bắn mã.`);
       }
     };
 
@@ -401,6 +500,7 @@ export default function ProductQrScanner({
     return () => {
       cancelled = true;
       setIsStarting(false);
+      clearAutoSubmitTimer();
       const scanner = scannerRef.current;
       scannerRef.current = null;
       if (!scanner) return;
@@ -412,12 +512,13 @@ export default function ProductQrScanner({
         }
       });
     };
-  }, [open, closeAfterScan, regionId]);
+  }, [open, closeAfterScan, regionId, cameraEnabled]);
 
-  const submitManualCode = () => {
-    const value = manualCode.trim();
+  const submitManualCode = (overrideValue?: string) => {
+    clearAutoSubmitTimer();
+    const value = (overrideValue ?? manualCode).trim();
     if (!value) {
-      setFeedback({ type: 'error', text: 'Vui lòng nhập mã SP.' });
+      setFeedback({ type: 'error', text: 'Chưa quét được mã hợp lệ.' });
       setFeedbackPulse(prev => prev + 1);
       focusManualInput(manualInputRef);
       return;
@@ -429,6 +530,21 @@ export default function ProductQrScanner({
     }
     // Giữ focus ở ô nhập để đầu đọc laser (keyboard wedge) bắn liên tục không cần chạm tay.
     focusManualInput(manualInputRef);
+  };
+
+  /**
+   * Đầu đọc laser xuất mã qua InputConnection.commitText() nên ký tự vào ô rất nhanh,
+   * nhưng phím kết thúc (Enter) không phải máy nào cũng phát đúng sự kiện keydown cho
+   * trình duyệt bắt được. Debounce theo khoảng dừng gõ để tự xử lý kể cả khi không có Enter.
+   */
+  const handleManualCodeChange = (value: string) => {
+    setManualCode(value);
+    clearAutoSubmitTimer();
+    if (value.trim().length < 3) return;
+    autoSubmitTimerRef.current = window.setTimeout(() => {
+      autoSubmitTimerRef.current = null;
+      submitManualCode(value);
+    }, 150);
   };
 
   const feedbackClass =
@@ -461,10 +577,35 @@ export default function ProductQrScanner({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-          <div
-            id={regionId}
-            className="qr-scanner-region min-h-[220px] overflow-hidden rounded-xl bg-zinc-950 sm:min-h-[240px]"
-          />
+          <div className="mb-2.5 flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2">
+            <span className="text-[11px] font-bold text-zinc-600">
+              {cameraEnabled ? 'Camera đang bật' : 'Camera đang tắt — dùng máy quét laser'}
+            </span>
+            <button
+              type="button"
+              onClick={toggleCameraEnabled}
+              className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-extrabold transition ${
+                cameraEnabled ? 'bg-[#ef1b2d] text-white hover:bg-[#b30d1c]' : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300'
+              }`}
+              title="Tắt camera giúp mượt hơn trên máy cấu hình thấp, đặc biệt khi dùng máy quét laser"
+            >
+              {cameraEnabled ? 'Tắt camera' : 'Bật camera'}
+            </button>
+          </div>
+
+          {cameraEnabled ? (
+            <div
+              id={regionId}
+              className="qr-scanner-region min-h-[220px] overflow-hidden rounded-xl bg-zinc-950 sm:min-h-[240px]"
+            />
+          ) : (
+            <div className="flex min-h-[140px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50 px-4 text-center">
+              <ScanBarcode className="h-8 w-8 text-zinc-300" />
+              <p className="mt-2 text-xs font-semibold text-zinc-500">
+                Camera đang tắt để đỡ tải máy. Bấm cò máy quét laser để quét mã.
+              </p>
+            </div>
+          )}
           {isStarting && (
             <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Đang mở camera...</p>
           )}
@@ -485,10 +626,10 @@ export default function ProductQrScanner({
             </p>
           )}
           {error && <p className="mt-3 text-xs font-bold text-rose-600">{error}</p>}
-          {!pendingScan && (
+          {!pendingScan && cameraEnabled && (
             <>
               <p className="mt-2.5 text-center text-xs font-semibold text-zinc-500 sm:mt-3">
-                Đưa trọn mã vào khung, giữ rõ hai đầu vạch hoặc nhập mã SP thủ công.
+                Đưa trọn mã vào khung, giữ rõ hai đầu vạch — hoặc bấm cò máy quét laser.
               </p>
               <p className="mt-1 text-center text-[11px] font-medium text-zinc-400">
                 Hỗ trợ QR, EAN-13, EAN-8, Code 128 và UPC.
@@ -497,8 +638,8 @@ export default function ProductQrScanner({
             </>
           )}
         </div>
-        <div className="shrink-0 border-t border-zinc-200 bg-white p-3 sm:p-4">
-          {pendingScan ? (
+        {pendingScan && (
+          <div className="shrink-0 border-t border-zinc-200 bg-white p-3 sm:p-4">
             <div className="flex gap-2">
               <button
                 type="button"
@@ -515,31 +656,24 @@ export default function ProductQrScanner({
                 Xác nhận
               </button>
             </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                ref={manualInputRef}
-                value={manualCode}
-                onChange={e => setManualCode(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submitManualCode();
-                  }
-                }}
-                placeholder="Nhập mã SP"
-                className="h-10 min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
-              />
-              <button
-                type="button"
-                onClick={submitManualCode}
-                className="h-10 shrink-0 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                {requireConfirm ? 'Kiểm tra' : 'Thêm'}
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+        {/* Ô ẩn — không cho gõ tay, chỉ để bắt dữ liệu bàn phím ảo do đầu đọc laser bắn ra. */}
+        <input
+          ref={manualInputRef}
+          value={manualCode}
+          onChange={e => handleManualCodeChange(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              submitManualCode();
+            }
+          }}
+          aria-hidden="true"
+          tabIndex={-1}
+          data-testid="manual-scan-input"
+          className="sr-only"
+        />
       </div>
     </div>,
     document.body
