@@ -607,72 +607,69 @@ export default function AcceptanceReportForm({
         return false;
       }
 
-      const unit = findProductOption(code, productSelectOptions)?.unit ?? '';
-
-      let targetLineId = '';
-      let result: boolean | 'incremented' = false;
-
-      setForm(prev => {
-        const existingIndex = prev.lines.findIndex(line => lineHasProductCode(line, code));
-        if (existingIndex >= 0) {
-          const existingLine = prev.lines[existingIndex];
-          targetLineId = existingLine.id;
-          result = 'incremented';
-          return {
-            ...prev,
-            lines: prev.lines.map((line, index) =>
-              index === existingIndex
-                ? { ...line, so_luong: incrementQuantityString(line.so_luong) }
-                : line
-            )
-          };
-        }
-
-        const emptyLineIndex = prev.lines.findIndex(line => isBlankProductLine(line));
-        if (emptyLineIndex >= 0) {
-          const targetLine = prev.lines[emptyLineIndex];
-          targetLineId = targetLine.id;
-          result = true;
-          return {
-            ...prev,
-            lines: prev.lines.map((line, index) =>
-              index === emptyLineIndex
-                ? { ...line, mat_hang: code, don_vi: unit || line.don_vi, so_luong: '1' }
-                : line
-            )
-          };
-        }
-
-        const nextLine = {
-          ...newProductLine(),
-          mat_hang: code,
-          don_vi: unit,
-          so_luong: '1'
-        };
-        targetLineId = nextLine.id;
-        result = true;
-        return {
-          ...prev,
-          lines: [...prev.lines, nextLine]
-        };
-      });
-
-      if (!result) {
-        setError('Không thể thêm mã SP.');
+      if (isLoadingProducts) {
+        setError('Danh mục sản phẩm đang tải. Vui lòng quét lại sau ít giây.');
         return false;
       }
 
-      setError('');
-      setHighlightLineId(targetLineId);
-      if (result === 'incremented') {
-        setMessage(`Đã tăng số lượng mã SP: ${code}`);
+      const matchedProduct = findProductOption(code, productSelectOptions);
+      if (!matchedProduct) {
+        setError(`Không tìm thấy mã SP "${code}" trong danh mục.`);
+        return false;
+      }
+
+      // Dùng mã chuẩn trong danh mục sau khi đã tách phần ngày + serial của tem QR.
+      const productCode = matchedProduct.code;
+      const unit = matchedProduct.unit;
+      const currentLines = formLinesRef.current;
+      const existingIndex = currentLines.findIndex(line => lineHasProductCode(line, productCode));
+
+      if (existingIndex >= 0) {
+        const targetLine = currentLines[existingIndex];
+        const nextLines = currentLines.map((line, index) =>
+          index === existingIndex
+            ? { ...line, so_luong: incrementQuantityString(line.so_luong) }
+            : line
+        );
+        formLinesRef.current = nextLines;
+        setForm(prev => ({ ...prev, lines: nextLines }));
+        setError('');
+        setHighlightLineId(targetLine.id);
+        setMessage(`Đã tăng số lượng mã SP: ${productCode}`);
         return 'incremented';
       }
 
-      setMessage(`Đã thêm mã SP: ${code}`);
+      const emptyLineIndex = currentLines.findIndex(line => isBlankProductLine(line));
+      if (emptyLineIndex >= 0) {
+        const targetLine = currentLines[emptyLineIndex];
+        const nextLines = currentLines.map((line, index) =>
+          index === emptyLineIndex
+            ? { ...line, mat_hang: productCode, don_vi: unit || line.don_vi, so_luong: '1' }
+            : line
+        );
+        formLinesRef.current = nextLines;
+        setForm(prev => ({ ...prev, lines: nextLines }));
+        setError('');
+        setHighlightLineId(targetLine.id);
+        setMessage(`Đã thêm mã SP: ${productCode}`);
+        return true;
+      }
+
+      const nextLine = {
+        ...newProductLine(),
+        mat_hang: productCode,
+        don_vi: unit,
+        so_luong: '1'
+      };
+      const nextLines = [...currentLines, nextLine];
+      formLinesRef.current = nextLines;
+      setForm(prev => ({ ...prev, lines: nextLines }));
+      setError('');
+      setHighlightLineId(nextLine.id);
+      setMessage(`Đã thêm mã SP: ${productCode}`);
       return true;
     },
-    [productSelectOptions]
+    [isLoadingProducts, productSelectOptions]
   );
 
   const getQrConfirmMessage = useCallback((code: string) => {

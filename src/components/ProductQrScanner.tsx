@@ -579,9 +579,9 @@ export default function ProductQrScanner({
     }
 
     setError('');
-    if (applyScanResult(value)) {
-      setManualCode('');
-    }
+    applyScanResult(value);
+    // Luôn làm rỗng ô nhận sau mỗi lần quét; mã lỗi vẫn được giữ ở vùng "Mã vừa quét".
+    setManualCode('');
     // Giữ focus ở ô nhập để đầu đọc laser (keyboard wedge) bắn liên tục không cần chạm tay.
     focusManualInput(manualInputRef);
   };
