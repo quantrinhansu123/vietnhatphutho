@@ -891,7 +891,7 @@ export default function WeighingReportForm({
     setAddFormError('');
     setEditingRow(null);
     if (!currentWeigherName) {
-      setCurrentWeigherName(readStoredWeigherName());
+      setCurrentWeigherName(readStoredWeigherName(config.weigherStorageKey));
     }
     setIsAddFormOpen(true);
   };
@@ -1409,7 +1409,7 @@ export default function WeighingReportForm({
       if (roundCmp !== 0) return roundCmp;
       const timeCmp = (a.weighTime || '').localeCompare(b.weighTime || '');
       if (timeCmp !== 0) return timeCmp;
-      return a.id - b.id;
+      return Number(a.id ?? 0) - Number(b.id ?? 0);
     });
   }, [rows]);
   const weighRoundCount = useMemo(() => countWeighingRounds(rows), [rows]);

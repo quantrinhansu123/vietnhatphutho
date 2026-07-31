@@ -8,7 +8,7 @@ import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/con
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
-import ProductionPlanNvlPrintSheet from '../../components/ProductionPlanNvlPrintSheet';
+import ProductionPlanNvlPrintSheet, { type ProductionPlanNvlPrintShiftGroup } from '../../components/ProductionPlanNvlPrintSheet';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import {
   loadProductionPlanRelatedReports,
@@ -20,6 +20,7 @@ import {
 import OrderPrintSheet from '../../components/OrderPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, type ShiftOption } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storageKeys';
+import type { WarehouseSlipPrefillDraft } from '../phieu-xuat-nhap-kho';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
 import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';
@@ -76,7 +77,8 @@ import {
   Save,
   Search,
   Trash2,
-  Users
+  Users,
+  X
 } from 'lucide-react';
 
 export {
@@ -4009,7 +4011,7 @@ export function AddProductionOrderModal({
 
   const orderCodeOptions = useMemo(() => {
     return [...new Set(ordersForSelectedDate.map(order => order.orderCode).filter(code => code && code !== '-'))].sort(
-      (a, b) => a.localeCompare(b, 'vi')
+      (a, b) => String(a).localeCompare(String(b), 'vi')
     );
   }, [ordersForSelectedDate]);
 

@@ -3298,7 +3298,7 @@ export function VehicleDeliveryRouteView() {
 
   const dateOptions = useMemo(() => {
     const dates = [...new Set(rows.map(row => row.ngay_yeu_cau).filter((value): value is string => Boolean(value)))];
-    return dates.sort((a, b) => b.localeCompare(a));
+    return dates.sort((a, b) => String(b).localeCompare(String(a)));
   }, [rows]);
 
   useEffect(() => {
@@ -3314,7 +3314,7 @@ export function VehicleDeliveryRouteView() {
           .filter((value): value is string => Boolean(value))
       )
     ];
-    return plates.sort((a, b) => a.localeCompare(b, 'vi'));
+    return plates.sort((a, b) => String(a).localeCompare(String(b), 'vi'));
   }, [rows, selectedDate]);
 
   useEffect(() => {

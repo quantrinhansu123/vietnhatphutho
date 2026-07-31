@@ -851,7 +851,7 @@ export function WarehouseSlipPanel({
 
   useEffect(() => {
     if (!isNvlExport) return;
-    const codes = [...new Set(lines.map(line => line.code.trim()).filter(Boolean))];
+    const codes = [...new Set(lines.map(line => String(line.code ?? '').trim()).filter(Boolean))] as string[];
     for (const code of codes) {
       const cacheKey = avgPriceCacheKey(code, slipDate);
       if (avgInboundPriceByKey[cacheKey] === undefined) {

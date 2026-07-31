@@ -91,6 +91,7 @@ export type MixingReportLine = {
   stt: number;
   ma_nvl: string;
   ten_vat_tu: string;
+  don_vi?: string;
   lan_su_dung: MixingPhoiTron;
   tong_nhua_tron: number | null;
   /** KL thực tế tổng theo dòng — lưu kèm để xem/lịch sử khi cần */
@@ -1471,7 +1472,7 @@ export default function MixingReportForm({
         parsed.roundKey,
         parsed.lineIndex,
         parsed.itemIndex,
-        text
+        String(text)
       );
     }, lines);
 
@@ -1723,7 +1724,7 @@ export default function MixingReportForm({
         ...line,
         tong_nhua_tron: sumMixingRounds(line.lan_su_dung)
       }));
-    let chi_tiet = prepareMixingChiTietForSave(linesToSave);
+    let chi_tiet: MixingReportLine[] = prepareMixingChiTietForSave(linesToSave);
     if (chi_tiet.length === 0) {
       setError(showSaveFailure('Vui lòng thêm ít nhất một lần trộn và nhập NVL.'));
       return;

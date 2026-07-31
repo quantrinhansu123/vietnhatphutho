@@ -806,7 +806,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   }, []);
 
   const units = useMemo(
-    () => ['all', ...Array.from(new Set(materials.map(material => material.unit).filter(unit => unit !== '-'))).sort((a, b) => a.localeCompare(b, 'vi'))],
+    () => ['all', ...Array.from(new Set(materials.map(material => material.unit).filter(unit => unit !== '-'))).sort((a, b) => String(a).localeCompare(String(b), 'vi'))],
     [materials]
   );
   const materialUnitSuggestions = useMemo(() => {

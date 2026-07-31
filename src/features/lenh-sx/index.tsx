@@ -58,7 +58,7 @@ export function ProductionOrdersPanel({ onBack }: { onBack: () => void }) {
     const statuses = rows
       .map(row => row.status)
       .filter((status): status is string => status !== '-' && status.length > 0);
-    return ['all', ...[...new Set(statuses)].sort((a, b) => a.localeCompare(b, 'vi'))];
+    return ['all', ...[...new Set(statuses)].sort((a, b) => String(a).localeCompare(String(b), 'vi'))];
   }, [rows]);
 
   const normalizedSearch = searchText.trim().toLowerCase();

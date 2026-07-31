@@ -1050,7 +1050,7 @@ function VehicleDetailModal({
                       disabled={isUploadingDocument || isSavingDocument}
                       className="sr-only"
                       onChange={async event => {
-                        const files = Array.from(event.target.files || []);
+                        const files = Array.from(event.target.files || []) as File[];
                         event.target.value = '';
                         if (!files.length) return;
                         if (files.some(file => !file.type.startsWith('image/'))) {

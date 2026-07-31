@@ -332,7 +332,7 @@ export function buildBbProductionOrderLineRows(input: {
   productionOrders: ProductionOrderRow[];
   products: ProductRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -601,7 +601,7 @@ export function buildBbWarehouseExportLineRows(input: {
   warehouseMovements: ShiftSummaryWarehouseMovement[];
   materials: MaterialRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -1106,7 +1106,7 @@ export function buildBbInboundMaterialNormGroups(input: {
   warehouseMovements: ShiftSummaryWarehouseMovement[];
   damagedRecords: WeighingRecord[];
   mixingReports: MixingReport[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -2103,7 +2103,7 @@ export type BbOrderCodeOption = {
 export function buildBbOrderCodeOptions(input: {
   productionOrders: ProductionOrderRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -2158,7 +2158,7 @@ export function buildBbDamagedGoodsLineRows(input: {
   productionOrders: ProductionOrderRow[];
   damagedRecords: WeighingRecord[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -2301,7 +2301,7 @@ export function buildBbMixingMaterialLinesForShift(input: {
   ngay: string;
   shift: string;
   machine: string;
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
 }): BbDamagedMixingChildRow[] {
   const shiftOptions = getProductionShiftOptions((input.shiftSettings || []) as ShiftSetting[]);
   const stats = buildBbMixingShiftStats({
@@ -2450,7 +2450,7 @@ export function buildBbTongHopVatTuThucXuatDungGroups(input: {
   machineNvlReports: MachineNvlSavedReport[];
   materials: MaterialRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -2742,7 +2742,7 @@ export function buildBbCuoiCaLineRows(input: {
   productionOrders: ProductionOrderRow[];
   machineNvlReports: MachineNvlSavedReport[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -2933,7 +2933,7 @@ export function buildBbDauCaLineRows(input: {
   productionOrders: ProductionOrderRow[];
   machineNvlReports: MachineNvlSavedReport[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -3024,7 +3024,7 @@ function buildBbDauCaMaterialLinesForOrder(input: {
   materials: MaterialRow[];
   machines?: MachineRow[];
   mixingReports?: MixingReport[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
 }): { lines: BbDauCaProductLine[]; productCount: number } {
   const { group, productionOrders, products } = input;
   const shiftOptions = getProductionShiftOptions((input.shiftSettings || []) as ShiftSetting[]);
@@ -3300,7 +3300,7 @@ export function groupBbDauCaLines(
   options?: {
     machines?: MachineRow[];
     mixingReports?: MixingReport[];
-    shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+    shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   }
 ): BbDauCaGroup[] {
   const map = new Map<string, Omit<BbDauCaGroup, 'materialLines' | 'productCount'>>();
@@ -3450,7 +3450,7 @@ export function buildBbSanLuongGroups(input: {
   warehouseMovements?: ShiftSummaryWarehouseMovement[];
   damagedRecords?: WeighingRecord[];
   mixingReports?: MixingReport[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -4347,7 +4347,7 @@ function sumBbDamagedGoodsTabTotalKgForHeader(
 function buildMixingTiLeTronMapsForHeader(
   mixingReports: MixingReport[],
   header: { ngay: string; shift: string; machine: string },
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[]
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[]
 ) {
   const lines = buildBbMixingMaterialLinesForShift({
     mixingReports,
@@ -4731,7 +4731,7 @@ export function buildBbInboundBalanceMetricDetail(input: {
   warehouseMovements: ShiftSummaryWarehouseMovement[];
   damagedRecords: WeighingRecord[];
   materials: MaterialRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
 }): BbInboundBalanceDetailBag {
   const shiftOptions = getProductionShiftOptions((input.shiftSettings || []) as ShiftSetting[]);
   const header = { ngay: input.ngay, shift: input.shift, orderCode: input.orderCode, machine: input.machine };
@@ -5010,7 +5010,7 @@ export function buildBbThucDungLineRows(input: {
   machineNvlReports: MachineNvlSavedReport[];
   materials: MaterialRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -5325,8 +5325,8 @@ export function buildBbThucDungMetricDetail(input: {
   machineNvlReports: MachineNvlSavedReport[];
   warehouseMovements?: ShiftSummaryWarehouseMovement[];
   materials?: MaterialRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
-}): BbThucDungDetailBag {
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
+}): BbThucDungDetailRow {
   const shiftOptions = getProductionShiftOptions((input.shiftSettings || []) as ShiftSetting[]);
   const header = {
     ngay: input.line.ngay,
@@ -5738,7 +5738,7 @@ export function buildBbTongHopThucXuatMetricDetail(input: {
   machineNvlReports: MachineNvlSavedReport[];
   warehouseMovements?: ShiftSummaryWarehouseMovement[];
   materials?: MaterialRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
 }): BbThucDungDetailView {
   const shiftOptions = getProductionShiftOptions((input.shiftSettings || []) as ShiftSetting[]);
   const header = {
@@ -6128,7 +6128,7 @@ export function buildBbTongGroups(input: {
   damagedRecords: WeighingRecord[];
   materials: MaterialRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -6357,7 +6357,7 @@ export function buildBbMixingRatioGroups(input: {
   productionOrders: ProductionOrderRow[];
   mixingReports: MixingReport[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -6467,7 +6467,7 @@ export function buildBbDanhGiaHaoHutGroups(input: {
   damagedRecords: WeighingRecord[];
   materials: MaterialRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;
@@ -6743,7 +6743,7 @@ export function buildBbInboundReportRows(input: {
   mixingReports: MixingReport[];
   materials: MaterialRow[];
   machines: MachineRow[];
-  shiftSettings?: ShiftSetting[] | ProductionOrderLookupSetting[];
+  shiftSettings?: (ShiftSetting | ProductionOrderLookupSetting)[];
   dateFrom: string;
   dateTo: string;
   shiftFilter?: string;

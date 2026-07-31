@@ -67,7 +67,8 @@ function backfillLegacyLinePhoiTron(
         ten_vat_tu,
         don_vi,
         so_luong: tong_nhua_tron,
-        ti_le_phan_tram
+        ti_le_phan_tram,
+        kl_thuc_te: null
       }
     ]
   };

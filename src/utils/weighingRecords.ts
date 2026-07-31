@@ -253,6 +253,7 @@ export function sumDamagedGoodsRowPlasticWeight(
     WeighingRecord,
     | 'weight'
     | 'shellWeight'
+    | 'coreWeight'
     | 'note'
     | 'plasticNoFilmWeight'
     | 'plasticNozzleWeight'
@@ -358,7 +359,7 @@ export function normalizeWeighingRecords(data: unknown): WeighingRecord[] {
   if (!Array.isArray(data)) return [];
 
   return data
-    .map(item => {
+    .map((item): WeighingRecord | null => {
       if (!item || typeof item !== 'object') return null;
       const row = item as Record<string, unknown>;
       return {
@@ -398,9 +399,9 @@ export function normalizeWeighingRecords(data: unknown): WeighingRecord[] {
         imageUrl: String(row.imageUrl ?? row.anh_url ?? '').trim() || undefined,
         coreWeightImageUrl: String(row.coreWeightImageUrl ?? row.anh_trong_luong_loi_url ?? '').trim() || undefined,
         createdAt: String(row.createdAt ?? row.created_at ?? '').trim() || undefined
-      } satisfies WeighingRecord;
+      };
     })
-    .filter((item): item is WeighingRecord => Boolean(item));
+    .filter((item): item is WeighingRecord => item !== null);
 }
 
 export function generateWeighingDocumentNo(productionDate?: string) {

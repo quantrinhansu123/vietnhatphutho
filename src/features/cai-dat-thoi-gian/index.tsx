@@ -7,7 +7,7 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage, formatCell, formatTimeCell } from '../_shared/recordHelpers';
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
-import { normalizeHrBranches, type HrBranch } from '../_shared/hr';
+import { normalizeHrBranches, type HrBranch, type HrMember } from '../_shared/hr';
 import { StaffViewPermissionsPicker } from '../nhan-su';
 import type { StaffViewPermissions } from '../nhan-su/menuViews';
 import { summarizeStaffViewPermissions } from '../nhan-su/menuViews';
@@ -344,7 +344,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     const groups = settings
       .map(setting => setting.group)
       .filter((group): group is string => group !== '-' && group.length > 0);
-    return ['all', ...[...new Set(groups)].sort((a, b) => a.localeCompare(b, 'vi'))];
+    return ['all', ...[...new Set(groups)].sort((a, b) => String(a).localeCompare(String(b), 'vi'))];
   }, [settings]);
 
   const normalizedSearch = searchText.trim().toLowerCase();
