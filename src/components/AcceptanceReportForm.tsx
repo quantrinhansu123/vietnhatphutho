@@ -153,6 +153,11 @@ function parseQrProductCode(raw: string) {
   return trimmed;
 }
 
+/** Khoá nhận diện toàn bộ tem: cùng Mã SP nhưng hậu tố khác vẫn là hai tem khác nhau. */
+function getQrLabelKey(raw: string) {
+  return normalizeKey(raw);
+}
+
 function productCodeFromOrder(order: ProductionOrderOption) {
   return order.productCode.trim() || order.productName.trim();
 }
@@ -346,6 +351,7 @@ export default function AcceptanceReportForm({
   const [form, setForm] = useState(newReportForm());
   const formLinesRef = useRef(form.lines);
   formLinesRef.current = form.lines;
+  const scannedQrLabelsRef = useRef(new Set<string>());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -402,6 +408,7 @@ export default function AcceptanceReportForm({
 
   useEffect(() => {
     if (!createPrefill) return;
+    scannedQrLabelsRef.current.clear();
     setForm(newReportForm({ ngay: createPrefill.ngay, ca: createPrefill.ca }));
     setEditingId(null);
     setError('');
@@ -515,6 +522,7 @@ export default function AcceptanceReportForm({
   }, [catalogProducts, orderProductOptions]);
 
   const handleDateChange = (ngay: string) => {
+    scannedQrLabelsRef.current.clear();
     setForm(prev => ({
       ...prev,
       ngay,
@@ -528,6 +536,7 @@ export default function AcceptanceReportForm({
   };
 
   const handleShiftChange = (ca: string) => {
+    scannedQrLabelsRef.current.clear();
     setForm(prev => ({
       ...prev,
       ca,
@@ -536,6 +545,7 @@ export default function AcceptanceReportForm({
   };
 
   const handleTeamChange = (teamId: string) => {
+    scannedQrLabelsRef.current.clear();
     const team = machines.find(machine => machine.id === teamId);
     if (!team) {
       setForm(prev => ({
@@ -598,7 +608,7 @@ export default function AcceptanceReportForm({
   };
 
   const handleQrScan = useCallback(
-    (raw: string): boolean | 'incremented' => {
+    (raw: string): boolean | 'incremented' | 'duplicate' => {
       setMessage('');
 
       const code = parseQrProductCode(raw);
@@ -618,6 +628,13 @@ export default function AcceptanceReportForm({
         return false;
       }
 
+      const qrLabelKey = getQrLabelKey(raw);
+      if (scannedQrLabelsRef.current.has(qrLabelKey)) {
+        setError('');
+        setMessage(`Mã tem đã được quét, không tăng số lượng: ${raw.trim()}`);
+        return 'duplicate';
+      }
+
       // Dùng mã chuẩn trong danh mục sau khi đã tách phần ngày + serial của tem QR.
       const productCode = matchedProduct.code;
       const unit = matchedProduct.unit;
@@ -632,6 +649,7 @@ export default function AcceptanceReportForm({
             : line
         );
         formLinesRef.current = nextLines;
+        scannedQrLabelsRef.current.add(qrLabelKey);
         setForm(prev => ({ ...prev, lines: nextLines }));
         setError('');
         setHighlightLineId(targetLine.id);
@@ -648,6 +666,7 @@ export default function AcceptanceReportForm({
             : line
         );
         formLinesRef.current = nextLines;
+        scannedQrLabelsRef.current.add(qrLabelKey);
         setForm(prev => ({ ...prev, lines: nextLines }));
         setError('');
         setHighlightLineId(targetLine.id);
@@ -663,6 +682,7 @@ export default function AcceptanceReportForm({
       };
       const nextLines = [...currentLines, nextLine];
       formLinesRef.current = nextLines;
+      scannedQrLabelsRef.current.add(qrLabelKey);
       setForm(prev => ({ ...prev, lines: nextLines }));
       setError('');
       setHighlightLineId(nextLine.id);
@@ -740,6 +760,7 @@ export default function AcceptanceReportForm({
   };
 
   const resetForm = () => {
+    scannedQrLabelsRef.current.clear();
     setEditingId(null);
     setForm(newReportForm());
     setMessage('');
@@ -747,6 +768,7 @@ export default function AcceptanceReportForm({
   };
 
   const startEdit = (report: AcceptanceReport) => {
+    scannedQrLabelsRef.current.clear();
     const linked =
       machines.find(machine => machine.code === report.ma_may) ??
       machines.find(machine => machine.name === report.ten_may) ??

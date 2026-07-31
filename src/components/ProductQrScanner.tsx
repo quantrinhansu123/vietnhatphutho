@@ -42,7 +42,7 @@ function saveCameraPreference(enabled: boolean) {
 interface ProductQrScannerProps {
   open: boolean;
   onClose: () => void;
-  onScan: (value: string) => boolean | 'incremented' | void;
+  onScan: (value: string) => boolean | 'incremented' | 'duplicate' | void;
   hardwareOnly?: boolean;
   closeAfterScan?: boolean;
   requireConfirm?: boolean;
@@ -94,10 +94,19 @@ function playScanBeep(ctx: AudioContext | null) {
 }
 
 /** Trả focus về ô nhập mã sau khi DOM/portal đã gắn xong, để đầu đọc laser (keyboard wedge) có nơi "gõ" mã vào mà không cần chạm tay. */
+function hideVirtualKeyboard() {
+  try {
+    (navigator as Navigator & { virtualKeyboard?: { hide?: () => void } }).virtualKeyboard?.hide?.();
+  } catch {
+    // Trình duyệt không hỗ trợ VirtualKeyboard API — inputMode="none" vẫn là lớp bảo vệ chính.
+  }
+}
+
 function focusManualInput(ref: React.RefObject<HTMLInputElement>) {
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
-      ref.current?.focus();
+      ref.current?.focus({ preventScroll: true });
+      hideVirtualKeyboard();
     });
   });
 }
@@ -340,6 +349,11 @@ export default function ProductQrScanner({
     if (scanResult === false) {
       setFeedback({ type: 'error', text: `Không thể thêm mã SP: ${code}` });
       return false;
+    }
+
+    if (scanResult === 'duplicate') {
+      setFeedback({ type: 'duplicate', text: `Mã tem đã quét — không tăng SL: ${raw.trim()}` });
+      return true;
     }
 
     if (scanResult === 'incremented') {
@@ -750,7 +764,7 @@ export default function ProductQrScanner({
               </p>
               {hardwareOnly && (
                 <p className="mt-1 text-[11px] font-medium text-zinc-400">
-                  Có thể quét liên tục nhiều mã. Quét lại cùng mã sẽ tăng số lượng.
+                  Có thể quét liên tục. Tem khác cùng Mã SP sẽ tăng số lượng; quét trùng đúng tem sẽ được bỏ qua.
                 </p>
               )}
             </div>
@@ -830,6 +844,8 @@ export default function ProductQrScanner({
           }}
           aria-hidden="true"
           tabIndex={-1}
+          inputMode="none"
+          onFocus={hideVirtualKeyboard}
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
