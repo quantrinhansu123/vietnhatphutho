@@ -43,15 +43,15 @@ export function RepeatableLinesBlock({
     'flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-100';
 
   const actionButtons = !hideAddButton ? (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {extraHeaderButtons}
       <button type="button" onClick={onAdd} className={addButtonClassName || defaultAddClass}>
-        <Plus className="h-3.5 w-3.5" />
-        {addLabel}
+        <Plus className="h-3.5 w-3.5 shrink-0" />
+        <span className="hidden min-[380px]:inline">{addLabel}</span>
       </button>
     </div>
   ) : extraHeaderButtons ? (
-    <div className="flex shrink-0 items-center gap-2">{extraHeaderButtons}</div>
+    <div className="flex flex-wrap items-center gap-2">{extraHeaderButtons}</div>
   ) : null;
 
   const headerLayout = gridTemplateClass
@@ -72,7 +72,7 @@ export function RepeatableLinesBlock({
           className={
             actionsAtBottom
               ? 'border-b border-zinc-200/80 pb-2'
-              : 'flex items-center justify-between gap-2'
+              : 'flex flex-wrap items-center justify-between gap-2'
           }
         >
           <span className="whitespace-nowrap text-xs font-black uppercase tracking-wider text-zinc-700">

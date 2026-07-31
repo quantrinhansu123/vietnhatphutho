@@ -1014,6 +1014,20 @@ export default function AcceptanceReportForm({
             addLabel="Thêm dòng"
             hideAddButton={Boolean(editingId)}
             addButtonClassName="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
+            extraHeaderButtons={
+              !editingId ? (
+                <button
+                  type="button"
+                  onClick={() => setIsQrScannerOpen(true)}
+                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
+                  aria-label="Quét QR mã SP"
+                  title="Quét QR mã SP (camera hoặc máy quét laser)"
+                >
+                  <ScanBarcode className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden min-[380px]:inline">Quét QR</span>
+                </button>
+              ) : undefined
+            }
             columns={[
               { key: 'stt', label: 'STT', className: 'text-center' },
               { key: 'mat_hang', label: 'Mã SP', required: true },
@@ -1025,7 +1039,6 @@ export default function AcceptanceReportForm({
           >
             {form.lines.map((line, index) => {
               const matchedProduct = findProductOption(line.mat_hang, productSelectOptions);
-              const isLastLine = index === form.lines.length - 1;
               const productName = matchedProduct?.name || '';
               return (
               <RepeatableLineRow
@@ -1043,41 +1056,25 @@ export default function AcceptanceReportForm({
                     </div>
                     <div className="min-w-0 flex-[1.4] sm:col-start-2 sm:flex-none">
                       <span className={mobileFieldLabelClass}>Mã SP *</span>
-                      <div className="flex min-w-0 items-center gap-1">
-                        <div className="min-w-0 flex-1">
-                          <SearchableSelect
-                            value={line.mat_hang}
-                            onChange={code => handleLineProductChange(line.id, code)}
-                            options={productSelectOptions}
-                            placeholder="Mã SP"
-                            isLoading={isLoadingProducts}
-                            inputClassName={inputClass}
-                            getValue={item => (item as ProductSelectOption).code}
-                            getLabel={item => {
-                              const product = item as ProductSelectOption;
-                              return product.name ? `${product.code} · ${product.name}` : product.code;
-                            }}
-                            getDisplayLabel={item => (item as ProductSelectOption).code}
-                            getSearchText={item => {
-                              const product = item as ProductSelectOption;
-                              return `${product.code} ${product.name}`.trim();
-                            }}
-                            renderOption={item => renderProductOption(item as ProductSelectOption)}
-                          />
-                        </div>
-                        {!editingId && isLastLine ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsQrScannerOpen(true)}
-                            className="inline-flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-[#ef1b2d] bg-red-50 text-[#ef1b2d] transition hover:bg-red-100 sm:w-auto sm:gap-1 sm:px-2.5"
-                            aria-label="Quét QR mã SP"
-                            title="Quét QR mã SP"
-                          >
-                            <ScanBarcode className="h-4 w-4" />
-                            <span className="hidden text-[11px] font-extrabold sm:inline">Quét QR</span>
-                          </button>
-                        ) : null}
-                      </div>
+                      <SearchableSelect
+                        value={line.mat_hang}
+                        onChange={code => handleLineProductChange(line.id, code)}
+                        options={productSelectOptions}
+                        placeholder="Mã SP"
+                        isLoading={isLoadingProducts}
+                        inputClassName={inputClass}
+                        getValue={item => (item as ProductSelectOption).code}
+                        getLabel={item => {
+                          const product = item as ProductSelectOption;
+                          return product.name ? `${product.code} · ${product.name}` : product.code;
+                        }}
+                        getDisplayLabel={item => (item as ProductSelectOption).code}
+                        getSearchText={item => {
+                          const product = item as ProductSelectOption;
+                          return `${product.code} ${product.name}`.trim();
+                        }}
+                        renderOption={item => renderProductOption(item as ProductSelectOption)}
+                      />
                     </div>
                     <div className="w-12 shrink-0 sm:col-start-4 sm:w-auto sm:shrink">
                       <span className={mobileFieldLabelClass}>ĐVT</span>
