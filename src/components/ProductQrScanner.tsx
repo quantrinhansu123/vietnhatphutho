@@ -571,6 +571,7 @@ export default function ProductQrScanner({
     clearAutoSubmitTimer();
     const value = (overrideValue ?? manualCode).trim();
     if (!value) {
+      setLastScannedValue('(không nhận được dữ liệu từ máy)');
       setFeedback({ type: 'error', text: 'Chưa quét được mã hợp lệ.' });
       setFeedbackPulse(prev => prev + 1);
       focusManualInput(manualInputRef);
@@ -593,6 +594,8 @@ export default function ProductQrScanner({
   const handleManualCodeChange = (value: string) => {
     ensureAudioContext();
     setManualCode(value);
+    const receivedValue = value.trim();
+    if (receivedValue) setLastScannedValue(receivedValue);
     clearAutoSubmitTimer();
     if (value.trim().length < 3) return;
     autoSubmitTimerRef.current = window.setTimeout(() => {
@@ -821,13 +824,12 @@ export default function ProductQrScanner({
           onKeyDown={e => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              submitManualCode();
+              // Đọc trực tiếp giá trị DOM: BT-A700 có thể bắn chuỗi + Enter nhanh hơn một nhịp cập nhật state React.
+              submitManualCode(e.currentTarget.value);
             }
           }}
           aria-hidden="true"
           tabIndex={-1}
-          inputMode="none"
-          autoComplete="off"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
