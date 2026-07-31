@@ -102,8 +102,12 @@ async function pickCameraConfig(): Promise<string | MediaTrackConstraints> {
 function parseQrProductCode(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed) return '';
+  // Legacy: MãSP+LSX...
   const plusIdx = trimmed.indexOf('+');
   if (plusIdx > 0) return trimmed.slice(0, plusIdx).trim();
+  // Mới: MãSP_ddmmyy + serial random (vd MT-MN009_3107268472); vẫn nhận bản cũ dùng -
+  const serialMatch = trimmed.match(/^(.+)[_-](\d{6})([0-9A-Za-z]{2,})$/);
+  if (serialMatch?.[1]) return serialMatch[1].trim();
   return trimmed;
 }
 
