@@ -256,6 +256,7 @@ export default function ProductQrScanner({
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
   const [feedbackPulse, setFeedbackPulse] = useState(0);
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
+  const [lastScannedValue, setLastScannedValue] = useState('');
   const [cameraEnabled, setCameraEnabled] = useState(loadCameraPreference);
   const useCamera = !hardwareOnly && cameraEnabled;
 
@@ -361,6 +362,8 @@ export default function ProductQrScanner({
   };
 
   const queueScanResult = (raw: string) => {
+    // Hiển thị ngay dữ liệu thô thiết bị vừa gửi, độc lập với kết quả xử lý thành công/thất bại.
+    setLastScannedValue(raw.trim() || '(không có dữ liệu)');
     const code = parseQrProductCode(raw);
     if (!code) {
       setFeedback({ type: 'error', text: 'Mã QR / mã vạch không hợp lệ.' });
@@ -405,6 +408,7 @@ export default function ProductQrScanner({
       setFeedback(null);
       setFeedbackPulse(0);
       setPendingScan(null);
+      setLastScannedValue('');
       return;
     }
 
@@ -414,6 +418,7 @@ export default function ProductQrScanner({
     setFeedback(null);
     setFeedbackPulse(0);
     setPendingScan(null);
+    setLastScannedValue('');
     ensureAudioContext();
     focusManualInput(manualInputRef);
 
@@ -749,6 +754,15 @@ export default function ProductQrScanner({
           )}
           {isStarting && (
             <p className="mt-3 text-center text-xs font-semibold text-zinc-500">Đang mở camera...</p>
+          )}
+          {lastScannedValue && (
+            <div
+              data-testid="last-scanned-value"
+              className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-center"
+            >
+              <p className="text-[10px] font-black uppercase tracking-wider text-sky-700">Mã vừa quét</p>
+              <p className="mt-1 break-all font-mono text-base font-black text-zinc-900">{lastScannedValue}</p>
+            </div>
           )}
           {feedback && (
             <p
