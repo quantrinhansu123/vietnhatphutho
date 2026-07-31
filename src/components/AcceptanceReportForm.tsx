@@ -348,6 +348,7 @@ export default function AcceptanceReportForm({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<'hardware' | 'camera'>('hardware');
   const [highlightLineId, setHighlightLineId] = useState('');
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -1012,16 +1013,34 @@ export default function AcceptanceReportForm({
             addButtonClassName="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
             extraHeaderButtons={
               !editingId ? (
-                <button
-                  type="button"
-                  onClick={() => setIsQrScannerOpen(true)}
-                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
-                  aria-label="Quét QR mã SP"
-                  title="Quét QR mã SP (camera hoặc máy quét laser)"
-                >
-                  <ScanBarcode className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden min-[380px]:inline">Quét QR</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScannerMode('hardware');
+                      setIsQrScannerOpen(true);
+                    }}
+                    className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
+                    aria-label="Quét mã bằng máy BT-A700"
+                    title="Bật đầu đọc laser trên máy BT-A700"
+                  >
+                    <ScanBarcode className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden min-[380px]:inline">Quét máy</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScannerMode('camera');
+                      setIsQrScannerOpen(true);
+                    }}
+                    className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
+                    aria-label="Quét QR mã SP bằng camera"
+                    title="Quét QR mã SP bằng camera"
+                  >
+                    <ScanBarcode className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden min-[380px]:inline">Quét QR</span>
+                  </button>
+                </div>
               ) : undefined
             }
             columns={[
@@ -1194,6 +1213,7 @@ export default function AcceptanceReportForm({
         open={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
         onScan={handleQrScan}
+        hardwareOnly={scannerMode === 'hardware'}
         getConfirmMessage={getQrConfirmMessage}
         requireConfirm={false}
       />

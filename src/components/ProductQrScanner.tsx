@@ -43,6 +43,7 @@ interface ProductQrScannerProps {
   open: boolean;
   onClose: () => void;
   onScan: (value: string) => boolean | 'incremented' | void;
+  hardwareOnly?: boolean;
   closeAfterScan?: boolean;
   requireConfirm?: boolean;
   getConfirmMessage?: (code: string) => string;
@@ -227,6 +228,7 @@ export default function ProductQrScanner({
   open,
   onClose,
   onScan,
+  hardwareOnly = false,
   closeAfterScan = false,
   requireConfirm = true,
   getConfirmMessage
@@ -237,6 +239,9 @@ export default function ProductQrScanner({
   const manualInputRef = useRef<HTMLInputElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const autoSubmitTimerRef = useRef<number | null>(null);
+  const hardwareScanTimerRef = useRef<number | null>(null);
+  const hardwareScanBufferRef = useRef('');
+  const hardwareScanLastKeyAtRef = useRef(0);
   const onCloseRef = useRef(onClose);
   const onScanRef = useRef(onScan);
   const getConfirmMessageRef = useRef(getConfirmMessage);
@@ -248,6 +253,7 @@ export default function ProductQrScanner({
   const [feedbackPulse, setFeedbackPulse] = useState(0);
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(loadCameraPreference);
+  const useCamera = !hardwareOnly && cameraEnabled;
 
   const clearAutoSubmitTimer = () => {
     if (autoSubmitTimerRef.current !== null) {
@@ -407,7 +413,7 @@ export default function ProductQrScanner({
     ensureAudioContext();
     focusManualInput(manualInputRef);
 
-    if (!cameraEnabled) {
+    if (!useCamera) {
       // Camera tắt (máy cấu hình thấp / chỉ dùng đầu đọc laser): không chạm tới camera/thư
       // viện decode — không tốn CPU/RAM, chỉ chờ dữ liệu bắn ra từ máy quét laser.
       setIsStarting(false);
@@ -550,7 +556,7 @@ export default function ProductQrScanner({
         }
       });
     };
-  }, [open, closeAfterScan, regionId, cameraEnabled]);
+  }, [open, closeAfterScan, regionId, useCamera]);
 
   const submitManualCode = (overrideValue?: string) => {
     clearAutoSubmitTimer();
@@ -576,6 +582,7 @@ export default function ProductQrScanner({
    * trình duyệt bắt được. Debounce theo khoảng dừng gõ để tự xử lý kể cả khi không có Enter.
    */
   const handleManualCodeChange = (value: string) => {
+    ensureAudioContext();
     setManualCode(value);
     clearAutoSubmitTimer();
     if (value.trim().length < 3) return;
@@ -584,6 +591,78 @@ export default function ProductQrScanner({
       submitManualCode(value);
     }, 150);
   };
+
+  /**
+   * BT-A700 có thể xuất dữ liệu theo hai kiểu:
+   * - INPUT_CONNECTION: chuỗi đi thẳng vào ô input ẩn ở cuối component.
+   * - KEY_EVENT: từng ký tự được phát như bàn phím vật lý.
+   *
+   * Listener này là đường dự phòng cho KEY_EVENT khi người dùng vừa bấm một nút làm ô input ẩn mất focus.
+   * Chỉ thu ký tự khi hộp quét đang mở; Enter/Tab hoặc một khoảng dừng ngắn sẽ chốt mã.
+   */
+  useEffect(() => {
+    const clearHardwareScanTimer = () => {
+      if (hardwareScanTimerRef.current !== null) {
+        window.clearTimeout(hardwareScanTimerRef.current);
+        hardwareScanTimerRef.current = null;
+      }
+    };
+
+    const resetHardwareScan = () => {
+      clearHardwareScanTimer();
+      hardwareScanBufferRef.current = '';
+      hardwareScanLastKeyAtRef.current = 0;
+    };
+
+    if (!open) {
+      resetHardwareScan();
+      return;
+    }
+
+    const flushHardwareScan = () => {
+      clearHardwareScanTimer();
+      const value = hardwareScanBufferRef.current.trim();
+      hardwareScanBufferRef.current = '';
+      hardwareScanLastKeyAtRef.current = 0;
+      if (value.length >= 3) submitManualCode(value);
+    };
+
+    const handleHardwareKeyDown = (event: KeyboardEvent) => {
+      // Khi input ẩn vẫn có focus, onChange/onKeyDown của chính input đã xử lý để tránh nhận trùng mã.
+      if (event.target === manualInputRef.current) return;
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      ensureAudioContext();
+
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        if (!hardwareScanBufferRef.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+        flushHardwareScan();
+        return;
+      }
+
+      if (event.key.length !== 1) return;
+
+      const now = window.performance.now();
+      // Máy quét phát ký tự rất nhanh; khoảng nghỉ dài được xem là bắt đầu một mã mới.
+      if (now - hardwareScanLastKeyAtRef.current > 120) {
+        hardwareScanBufferRef.current = '';
+      }
+      hardwareScanLastKeyAtRef.current = now;
+      hardwareScanBufferRef.current += event.key;
+      event.preventDefault();
+      event.stopPropagation();
+
+      clearHardwareScanTimer();
+      hardwareScanTimerRef.current = window.setTimeout(flushHardwareScan, 180);
+    };
+
+    document.addEventListener('keydown', handleHardwareKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', handleHardwareKeyDown, true);
+      resetHardwareScan();
+    };
+  }, [open]);
 
   const feedbackClass =
     feedback?.type === 'success'
@@ -604,7 +683,9 @@ export default function ProductQrScanner({
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="flex items-center gap-2">
             <ScanBarcode className="h-5 w-5 text-[#ef1b2d]" />
-            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">Quét QR / mã vạch sản phẩm</h3>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">
+              {hardwareOnly ? 'Quét máy BT-A700' : 'Quét QR / mã vạch sản phẩm'}
+            </h3>
           </div>
           <button
             type="button"
@@ -616,22 +697,33 @@ export default function ProductQrScanner({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
           <div className="mb-2.5 flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2">
-            <span className="text-[11px] font-bold text-zinc-600">
-              {cameraEnabled ? 'Camera đang bật' : 'Camera đang tắt — dùng máy quét laser'}
-            </span>
-            <button
-              type="button"
-              onClick={toggleCameraEnabled}
-              className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-extrabold transition ${
-                cameraEnabled ? 'bg-[#ef1b2d] text-white hover:bg-[#b30d1c]' : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300'
-              }`}
-              title="Tắt camera giúp mượt hơn trên máy cấu hình thấp, đặc biệt khi dùng máy quét laser"
-            >
-              {cameraEnabled ? 'Tắt camera' : 'Bật camera'}
-            </button>
+            <div>
+              <span className="block text-[11px] font-bold text-zinc-600">
+                {hardwareOnly
+                  ? 'Đầu đọc laser của máy'
+                  : useCamera
+                    ? 'Camera đang bật'
+                    : 'Camera đang tắt — dùng máy quét laser'}
+              </span>
+              <span className="mt-0.5 block text-[10px] font-semibold text-emerald-700">
+                BT-A700: đã sẵn sàng — hãy bấm cò quét
+              </span>
+            </div>
+            {!hardwareOnly && (
+              <button
+                type="button"
+                onClick={toggleCameraEnabled}
+                className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-extrabold transition ${
+                  cameraEnabled ? 'bg-[#ef1b2d] text-white hover:bg-[#b30d1c]' : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300'
+                }`}
+                title="Tắt camera giúp mượt hơn trên máy cấu hình thấp, đặc biệt khi dùng máy quét laser"
+              >
+                {cameraEnabled ? 'Tắt camera' : 'Bật camera'}
+              </button>
+            )}
           </div>
 
-          {cameraEnabled ? (
+          {useCamera ? (
             <div
               id={regionId}
               className="qr-scanner-region min-h-[220px] overflow-hidden rounded-xl bg-zinc-950 sm:min-h-[240px]"
@@ -640,8 +732,15 @@ export default function ProductQrScanner({
             <div className="flex min-h-[140px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50 px-4 text-center">
               <ScanBarcode className="h-8 w-8 text-zinc-300" />
               <p className="mt-2 text-xs font-semibold text-zinc-500">
-                Camera đang tắt để đỡ tải máy. Bấm cò máy quét laser để quét mã.
+                {hardwareOnly
+                  ? 'Bấm cò trên BT-A700. Máy sẽ dùng laser, phát tiếng báo và điền dữ liệu vào dòng sản phẩm.'
+                  : 'Camera đang tắt để đỡ tải máy. Bấm cò máy quét laser để quét mã.'}
               </p>
+              {hardwareOnly && (
+                <p className="mt-1 text-[11px] font-medium text-zinc-400">
+                  Có thể quét liên tục nhiều mã. Quét lại cùng mã sẽ tăng số lượng.
+                </p>
+              )}
             </div>
           )}
           {isStarting && (
@@ -664,7 +763,7 @@ export default function ProductQrScanner({
             </p>
           )}
           {error && <p className="mt-3 text-xs font-bold text-rose-600">{error}</p>}
-          {!pendingScan && cameraEnabled && (
+          {!pendingScan && useCamera && (
             <>
               <p className="mt-2.5 text-center text-xs font-semibold text-zinc-500 sm:mt-3">
                 Đưa trọn mã vào khung, giữ rõ hai đầu vạch — hoặc bấm cò máy quét laser.
@@ -709,6 +808,11 @@ export default function ProductQrScanner({
           }}
           aria-hidden="true"
           tabIndex={-1}
+          inputMode="none"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           data-testid="manual-scan-input"
           className="sr-only"
         />
