@@ -2965,9 +2965,9 @@ input[type="number"] {
   .bb-machine-report-print-product-table th:nth-child(1),
   .bb-machine-report-print-product-table td:nth-child(1) { width: 12%; }
   .bb-machine-report-print-product-table th:nth-child(2),
-  .bb-machine-report-print-product-table td:nth-child(2) { width: 26%; }
+  .bb-machine-report-print-product-table td:nth-child(2) { width: 24%; }
   .bb-machine-report-print-product-table th:nth-child(3),
-  .bb-machine-report-print-product-table td:nth-child(3) { width: 5%; }
+  .bb-machine-report-print-product-table td:nth-child(3) { width: 7%; }
   .bb-machine-report-print-product-table th:nth-child(4),
   .bb-machine-report-print-product-table td:nth-child(4) { width: 7%; }
   .bb-machine-report-print-product-table th:nth-child(5),
@@ -2986,9 +2986,9 @@ input[type="number"] {
   .bb-machine-report-print-material-table th:nth-child(1),
   .bb-machine-report-print-material-table td:nth-child(1) { width: 8%; }
   .bb-machine-report-print-material-table th:nth-child(2),
-  .bb-machine-report-print-material-table td:nth-child(2) { width: 14%; }
+  .bb-machine-report-print-material-table td:nth-child(2) { width: 12.5%; }
   .bb-machine-report-print-material-table th:nth-child(3),
-  .bb-machine-report-print-material-table td:nth-child(3) { width: 4%; }
+  .bb-machine-report-print-material-table td:nth-child(3) { width: 5.5%; }
   .bb-machine-report-print-material-table th:nth-child(4),
   .bb-machine-report-print-material-table td:nth-child(4),
   .bb-machine-report-print-material-table th:nth-child(5),
@@ -3025,6 +3025,33 @@ input[type="number"] {
     padding-right: 0.05mm !important;
     text-align: center !important;
     white-space: nowrap;
+  }
+
+  .bb-machine-report-print-evaluation-table th:nth-child(2),
+  .bb-machine-report-print-evaluation-table td:nth-child(2) {
+    width: 34%;
+  }
+
+  .bb-machine-report-print-evaluation-table th:nth-child(3),
+  .bb-machine-report-print-evaluation-table td:nth-child(3),
+  .bb-machine-report-print-evaluation-table th:nth-child(4),
+  .bb-machine-report-print-evaluation-table td:nth-child(4) {
+    width: 10%;
+  }
+
+  .bb-machine-report-print-evaluation-table th:nth-child(5),
+  .bb-machine-report-print-evaluation-table td:nth-child(5) {
+    width: 13%;
+  }
+
+  .bb-machine-report-print-evaluation-table th:nth-child(6),
+  .bb-machine-report-print-evaluation-table td:nth-child(6) {
+    width: 14%;
+  }
+
+  .bb-machine-report-print-evaluation-table th:nth-child(7),
+  .bb-machine-report-print-evaluation-table td:nth-child(7) {
+    width: 14.5%;
   }
 
   .bb-machine-report-print-doc .bb-machine-report-print-info th,
