@@ -30,7 +30,8 @@ import {
   normalizeAcceptanceReports,
   type AcceptanceReport
 } from '../../components/AcceptanceReportForm';
-import { findProductByCode, normalizeProductCodeKey, type ProductRow } from '../san-pham';
+import { findProductByCode, normalizeProductCodeKey } from '../san-pham';
+import type { ProductRow } from '../san-pham/types';
 import { MachineNvlPrintSheet, savedReportToMachineNvlPrintReport } from '../../components/MachineNvlPrintSheet';
 import { MixingReportPrintSheet } from '../../components/MixingReportPrintSheet';
 import { WeighingSlipPrintSheet, type WeighingSlipPrintData } from '../../components/WeighingSlipPrintSheet';

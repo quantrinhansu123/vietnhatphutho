@@ -504,7 +504,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
   };
 
   const machineTypes = useMemo(
-    () => ['all', ...Array.from(new Set(machines.map(machine => machine.type))).sort((a, b) => a.localeCompare(b, 'vi'))],
+    () => ['all', ...Array.from(new Set(machines.map(machine => machine.type))).sort((a, b) => String(a).localeCompare(String(b), 'vi'))],
     [machines]
   );
   const normalizedSearch = searchText.trim().toLowerCase();

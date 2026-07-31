@@ -24,6 +24,7 @@
     "noEmit": true
   },
   "exclude": [
-    "scripts/**/*.mjs"
+    "scripts/**/*.mjs",
+    "src/App.monolith.backup.tsx"
   ]
 }

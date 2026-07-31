@@ -36,6 +36,8 @@ export type AcceptanceReport = {
   ma_may: string;
   ten_may: string;
   mat_hang: string;
+  /** Tên SP — điền thêm khi in / hiển thị nếu khác mat_hang */
+  ten_sp?: string;
   don_vi: string;
   so_luong: number | null;
   hinh_anh: string;
@@ -456,7 +458,7 @@ export default function AcceptanceReportForm({
     const shifts = ordersForSelectedDay
       .map(order => order.shift)
       .filter(shift => shift && shift !== '-');
-    return [...new Set(shifts)].sort((a, b) => a.localeCompare(b, 'vi'));
+    return [...new Set(shifts)].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
   }, [ordersForSelectedDay]);
 
   const teamOptions = useMemo(

@@ -63,7 +63,7 @@ import {
   type BbMachineReportTabId,
   type BbDauCaTonDauFormula,
   type BbThucDungDetailMetric,
-  type BbThucDungDetailBag,
+  type BbThucDungDetailView,
   type BbThucDungLineRow,
   type BbTongHopThucXuatDetailMetric,
   type BbTongHopThucXuatLineRow
@@ -1077,7 +1077,7 @@ export default function ControlBoardBbMachineReportTable({
               )
               .filter(Boolean)
           )
-        ].sort((a, b) => a.localeCompare(b, 'vi'));
+        ].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
         setHrStaffNames(names);
       } catch {
         /* giữ danh sách từ lệnh SX */
@@ -1101,7 +1101,7 @@ export default function ControlBoardBbMachineReportTable({
           .forEach(part => names.add(part));
       });
     });
-    Object.values(printStaffByOrder).forEach(selection => {
+    Object.values(printStaffByOrder).forEach((selection: BbPrintConfirmSelection) => {
       [selection.staffMain, selection.staffAssistant, selection.staffSupport].forEach(name => {
         if (name.trim()) names.add(name.trim());
       });

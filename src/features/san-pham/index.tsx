@@ -489,7 +489,7 @@ export function ProductViewModal({
     }
   };
 
-  const compactInfoRows: Array<[string, string]> = [
+  const compactInfoRows = ([
     ['Mã SP', product.code || '-'],
     ['Mã AMIS', productAmisDisplayCode(product)],
     ...(product.newCode && product.newCode !== '-' && product.newCode !== product.code
@@ -503,7 +503,7 @@ export function ProductViewModal({
     ['Tồn kho', product.stock],
     ['Tồn TT', product.minStock],
     ['Nguồn gốc', product.origin]
-  ].filter(([, value]) => value && value !== '-');
+  ] as [string, string][]).filter(([, value]) => value && value !== '-');
 
   const productDescription =
     product.description && product.description !== '-' ? product.description.trim() : '';
@@ -1489,11 +1489,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   };
 
   const productGroups = useMemo(
-    () => ['all', ...Array.from(new Set(products.map(product => product.group))).sort((a, b) => a.localeCompare(b, 'vi'))],
+    () => ['all', ...Array.from(new Set(products.map(product => product.group))).sort((a, b) => String(a).localeCompare(String(b), 'vi'))],
     [products]
   );
   const productNatures = useMemo(
-    () => Array.from(new Set(products.map(product => product.nature))).sort((a, b) => a.localeCompare(b, 'vi')),
+    () => Array.from(new Set(products.map(product => product.nature))).sort((a, b) => String(a).localeCompare(String(b), 'vi')),
     [products]
   );
   const normalizedSearch = searchText.trim().toLowerCase();

@@ -537,7 +537,7 @@ export function ControlBoardPanel({
     ].filter(Boolean);
 
     return [...new Set(fromSettings.length > 0 ? fromSettings : fromData)].sort((a, b) =>
-      a.localeCompare(b, 'vi', { numeric: true })
+      String(a).localeCompare(String(b), 'vi', { numeric: true })
     );
   }, [
     productionOrderSettings,
@@ -641,7 +641,7 @@ export function ControlBoardPanel({
   const productionOrderStaffOptions = useMemo(() => {
     return [
       ...new Set(productionOrders.flatMap(row => splitProductionOrderStaffNames(row.staff)))
-    ].sort((a, b) => a.localeCompare(b, 'vi'));
+    ].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
   }, [productionOrders]);
   const recentProductionOrders = useMemo(() => {
     const sorted = [...productionOrders].sort(compareProductionOrderByRecentDate);

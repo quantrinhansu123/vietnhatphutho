@@ -23,6 +23,7 @@ export interface OrderRow {
   note: string;
   orderDate: string;
   createdAt: string;
+  productionOrder?: string;
 }
 
 export function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderProductLine[] {

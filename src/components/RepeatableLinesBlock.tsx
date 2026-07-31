@@ -118,6 +118,7 @@ export function RepeatableLineRow({
   children: React.ReactNode;
   className?: string;
   gridTemplateClass?: string;
+  key?: React.Key;
 }) {
   const layout = gridTemplateClass
     ? `grid ${gridTemplateClass} items-end gap-x-2 gap-y-1.5 sm:gap-2`

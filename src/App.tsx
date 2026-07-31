@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   ProductionReport, ShiftInfo, ProductEntry, MaterialBatches, STANDARD_SHIFTS
 } from './types';
-import { computeReportMetrics } from './utils';
+import { computeReportMetrics, formatNumber } from './utils';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ShiftInfoForm from './components/ShiftInfoForm';
 import ProductEntryForm from './components/ProductEntryForm';
 import MaterialsForm from './components/MaterialsForm';
@@ -502,7 +503,7 @@ export default function App() {
       <aside className="hidden shrink-0 flex-col items-center gap-1 border-r border-slate-800/60 bg-gradient-to-b from-slate-900 to-slate-950 py-3 pt-safe sm:flex sm:w-16">
         {BACK_TAB_MAP[activeTab] && (
           <MobileBackNavButton
-            onClick={() => navigateToTab(BACK_TAB_MAP[activeTab])}
+            onClick={() => navigateToTab(BACK_TAB_MAP[activeTab] as AppTab)}
             variant="sidebar"
           />
         )}
@@ -1378,7 +1379,7 @@ export default function App() {
           <div className="mx-auto flex max-w-sm items-stretch rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-xl shadow-elevated px-1.5 py-1">
             {BACK_TAB_MAP[activeTab] && (
               <MobileBackNavButton
-                onClick={() => navigateToTab(BACK_TAB_MAP[activeTab])}
+                onClick={() => navigateToTab(BACK_TAB_MAP[activeTab] as AppTab)}
                 variant="bottom"
               />
             )}

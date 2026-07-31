@@ -17,7 +17,10 @@ import {
   findOrderProductByCode,
   resolveOrderProductFields,
   readUnitSuggestions,
-  saveUnitSuggestion
+  saveUnitSuggestion,
+  type OrderProductOption,
+  type StaffOption,
+  type CustomerOption
 } from '../_shared/orderHelpers';
 import {
   parseOrderProductsFromRecord,
@@ -95,6 +98,7 @@ export function normalizeOrders(data: unknown): OrderRow[] {
         unit: summary.unit,
         quantity: summary.quantity,
         note: pickText(record, ['ghi_chu', 'note'], ''),
+        productionOrder: pickText(record, ['lenh_sx', 'production_order', 'productionOrder'], '-'),
         orderDate: (() => {
           const raw =
             pickText(record, ['ngay_don_hang', 'ngay_dat_hang', 'order_date', 'ngay'], '') ||
@@ -508,7 +512,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const types = orders
       .map(order => order.orderType)
       .filter((type): type is string => type !== '-' && type.length > 0);
-    return ['all', ...[...new Set(types)].sort((a, b) => a.localeCompare(b, 'vi'))];
+    return ['all', ...[...new Set(types)].sort((a, b) => String(a).localeCompare(String(b), 'vi'))];
   }, [orders]);
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredOrders = useMemo(() => {
