@@ -710,10 +710,6 @@ export default function ProductQrScanner({
           aria-hidden="true"
           tabIndex={-1}
           data-testid="manual-scan-input"
-          // inputMode="none" chặn bàn phím ảo bật lên trên mobile — máy quét laser vẫn bắn
-          // ký tự vào được vì nó hoạt động như bàn phím vật lý (HID), không cần bàn phím ảo.
-          inputMode="none"
-          autoComplete="off"
           className="sr-only"
         />
       </div>
