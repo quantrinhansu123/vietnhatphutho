@@ -1196,6 +1196,7 @@ export default function AcceptanceReportForm({
         onClose={() => setIsQrScannerOpen(false)}
         onScan={handleQrScan}
         getConfirmMessage={getQrConfirmMessage}
+        requireConfirm={false}
       />
       <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
     </div>

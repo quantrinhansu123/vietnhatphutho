@@ -36,6 +36,15 @@ function sleep(ms: number) {
   });
 }
 
+/** Trả focus về ô nhập mã sau khi DOM/portal đã gắn xong, để đầu đọc laser (keyboard wedge) có nơi "gõ" mã vào mà không cần chạm tay. */
+function focusManualInput(ref: React.RefObject<HTMLInputElement>) {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      ref.current?.focus();
+    });
+  });
+}
+
 /** iOS cần xin quyền trước rồi mới enumerate được camera ổn định. */
 async function ensureCameraPermission() {
   if (typeof window !== 'undefined' && !window.isSecureContext) {
@@ -164,6 +173,7 @@ export default function ProductQrScanner({
   const reactId = useId();
   const regionId = `product-qr-${reactId.replace(/:/g, '')}`;
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const manualInputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   const onScanRef = useRef(onScan);
   const getConfirmMessageRef = useRef(getConfirmMessage);
@@ -254,12 +264,14 @@ export default function ProductQrScanner({
     setPendingScan(null);
     lastScanRef.current = { value: '', time: 0 };
     commitScanResult(raw);
+    focusManualInput(manualInputRef);
   };
 
   const cancelPendingScan = () => {
     setPendingScan(null);
     lastScanRef.current = { value: '', time: 0 };
     setFeedback(null);
+    focusManualInput(manualInputRef);
   };
 
   const applyScanResult = (raw: string) => queueScanResult(raw);
@@ -281,6 +293,7 @@ export default function ProductQrScanner({
     setFeedbackPulse(0);
     setPendingScan(null);
     setIsStarting(true);
+    focusManualInput(manualInputRef);
 
     const handleDecoded = (decodedText: string) => {
       const value = decodedText.trim();
@@ -406,16 +419,16 @@ export default function ProductQrScanner({
     if (!value) {
       setFeedback({ type: 'error', text: 'Vui lòng nhập mã SP.' });
       setFeedbackPulse(prev => prev + 1);
+      focusManualInput(manualInputRef);
       return;
     }
 
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
     setError('');
     if (applyScanResult(value)) {
       setManualCode('');
     }
+    // Giữ focus ở ô nhập để đầu đọc laser (keyboard wedge) bắn liên tục không cần chạm tay.
+    focusManualInput(manualInputRef);
   };
 
   const feedbackClass =
@@ -505,6 +518,7 @@ export default function ProductQrScanner({
           ) : (
             <div className="flex gap-2">
               <input
+                ref={manualInputRef}
                 value={manualCode}
                 onChange={e => setManualCode(e.target.value)}
                 onKeyDown={e => {
