@@ -98,7 +98,7 @@ function hideVirtualKeyboard() {
   try {
     (navigator as Navigator & { virtualKeyboard?: { hide?: () => void } }).virtualKeyboard?.hide?.();
   } catch {
-    // Trình duyệt không hỗ trợ VirtualKeyboard API — inputMode="none" vẫn là lớp bảo vệ chính.
+    // Trình duyệt không hỗ trợ VirtualKeyboard API — bỏ qua để không cản InputConnection của BT-A700.
   }
 }
 
@@ -835,7 +835,6 @@ export default function ProductQrScanner({
           }}
           aria-hidden="true"
           tabIndex={-1}
-          inputMode="none"
           onFocus={hideVirtualKeyboard}
           autoCapitalize="none"
           autoCorrect="off"
