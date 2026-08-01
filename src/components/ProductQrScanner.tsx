@@ -42,7 +42,7 @@ function saveCameraPreference(enabled: boolean) {
 interface ProductQrScannerProps {
   open: boolean;
   onClose: () => void;
-  onScan: (value: string) => boolean | 'incremented' | 'duplicate' | void;
+  onScan: (value: string) => boolean | 'duplicate' | void;
   hardwareOnly?: boolean;
   closeAfterScan?: boolean;
   requireConfirm?: boolean;
@@ -353,17 +353,7 @@ export default function ProductQrScanner({
     }
 
     if (scanResult === 'duplicate') {
-      setFeedback({ type: 'duplicate', text: `Mã tem đã quét — không tăng SL: ${raw.trim()}` });
-      return true;
-    }
-
-    if (scanResult === 'incremented') {
-      playScanBeep(audioCtxRef.current);
-      setFeedback({ type: 'success', text: `Đã tăng SL mã ${code}` });
-      if (closeAfterScan) {
-        void stopScannerSafely(scannerRef.current);
-        onCloseRef.current();
-      }
+      setFeedback({ type: 'duplicate', text: `Mã SP đã có — không tăng SL: ${code}` });
       return true;
     }
 
@@ -765,7 +755,7 @@ export default function ProductQrScanner({
               </p>
               {hardwareOnly && (
                 <p className="mt-1 text-[11px] font-medium text-zinc-400">
-                  Có thể quét liên tục. Tem khác cùng Mã SP sẽ tăng số lượng; quét trùng đúng tem sẽ được bỏ qua.
+                  Có thể quét liên tục. Mỗi Mã SP chỉ được nhận một lần; quét tem khác cùng Mã SP sẽ được báo trùng.
                 </p>
               )}
             </div>

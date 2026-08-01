@@ -154,11 +154,6 @@ function parseQrProductCode(raw: string) {
   return trimmed;
 }
 
-/** Khoá nhận diện toàn bộ tem: cùng Mã SP nhưng hậu tố khác vẫn là hai tem khác nhau. */
-function getQrLabelKey(raw: string) {
-  return normalizeKey(raw);
-}
-
 function productCodeFromOrder(order: ProductionOrderOption) {
   return order.productCode.trim() || order.productName.trim();
 }
@@ -201,12 +196,6 @@ function normalizeCatalogProducts(data: unknown): ProductSelectOption[] {
 
 function isBlankProductLine(line: ProductLine) {
   return !line.mat_hang.trim() && !line.so_luong.trim();
-}
-
-function incrementQuantityString(current: string) {
-  const num = Number(String(current).replace(',', '.'));
-  if (!Number.isFinite(num) || num <= 0) return '1';
-  return String(num + 1);
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -352,7 +341,6 @@ export default function AcceptanceReportForm({
   const [form, setForm] = useState(newReportForm());
   const formLinesRef = useRef(form.lines);
   formLinesRef.current = form.lines;
-  const scannedQrLabelsRef = useRef(new Set<string>());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -409,7 +397,6 @@ export default function AcceptanceReportForm({
 
   useEffect(() => {
     if (!createPrefill) return;
-    scannedQrLabelsRef.current.clear();
     setForm(newReportForm({ ngay: createPrefill.ngay, ca: createPrefill.ca }));
     setEditingId(null);
     setError('');
@@ -523,7 +510,6 @@ export default function AcceptanceReportForm({
   }, [catalogProducts, orderProductOptions]);
 
   const handleDateChange = (ngay: string) => {
-    scannedQrLabelsRef.current.clear();
     setForm(prev => ({
       ...prev,
       ngay,
@@ -537,7 +523,6 @@ export default function AcceptanceReportForm({
   };
 
   const handleShiftChange = (ca: string) => {
-    scannedQrLabelsRef.current.clear();
     setForm(prev => ({
       ...prev,
       ca,
@@ -546,7 +531,6 @@ export default function AcceptanceReportForm({
   };
 
   const handleTeamChange = (teamId: string) => {
-    scannedQrLabelsRef.current.clear();
     const team = machines.find(machine => machine.id === teamId);
     if (!team) {
       setForm(prev => ({
@@ -609,7 +593,7 @@ export default function AcceptanceReportForm({
   };
 
   const handleQrScan = useCallback(
-    (raw: string): boolean | 'incremented' | 'duplicate' => {
+    (raw: string): boolean | 'duplicate' => {
       setMessage('');
 
       const code = parseQrProductCode(raw);
@@ -629,13 +613,6 @@ export default function AcceptanceReportForm({
         return false;
       }
 
-      const qrLabelKey = getQrLabelKey(raw);
-      if (scannedQrLabelsRef.current.has(qrLabelKey)) {
-        setError('');
-        setMessage(`Mã tem đã được quét, không tăng số lượng: ${raw.trim()}`);
-        return 'duplicate';
-      }
-
       // Dùng mã chuẩn trong danh mục sau khi đã tách phần ngày + serial của tem QR.
       const productCode = matchedProduct.code;
       const unit = matchedProduct.unit;
@@ -644,18 +621,9 @@ export default function AcceptanceReportForm({
 
       if (existingIndex >= 0) {
         const targetLine = currentLines[existingIndex];
-        const nextLines = currentLines.map((line, index) =>
-          index === existingIndex
-            ? { ...line, so_luong: incrementQuantityString(line.so_luong) }
-            : line
-        );
-        formLinesRef.current = nextLines;
-        scannedQrLabelsRef.current.add(qrLabelKey);
-        setForm(prev => ({ ...prev, lines: nextLines }));
-        setError('');
         setHighlightLineId(targetLine.id);
-        setMessage(`Đã tăng số lượng mã SP: ${productCode}`);
-        return 'incremented';
+        setError(`Mã SP "${productCode}" đã có trên form, không tăng số lượng.`);
+        return 'duplicate';
       }
 
       const emptyLineIndex = currentLines.findIndex(line => isBlankProductLine(line));
@@ -667,7 +635,6 @@ export default function AcceptanceReportForm({
             : line
         );
         formLinesRef.current = nextLines;
-        scannedQrLabelsRef.current.add(qrLabelKey);
         setForm(prev => ({ ...prev, lines: nextLines }));
         setError('');
         setHighlightLineId(targetLine.id);
@@ -683,7 +650,6 @@ export default function AcceptanceReportForm({
       };
       const nextLines = [...currentLines, nextLine];
       formLinesRef.current = nextLines;
-      scannedQrLabelsRef.current.add(qrLabelKey);
       setForm(prev => ({ ...prev, lines: nextLines }));
       setError('');
       setHighlightLineId(nextLine.id);
@@ -696,7 +662,7 @@ export default function AcceptanceReportForm({
   const getQrConfirmMessage = useCallback((code: string) => {
     const exists = formLinesRef.current.some(line => lineHasProductCode(line, code));
     if (exists) {
-      return `Đã quét mã ${code}. Mã này đã có — bấm Xác nhận để tăng thêm 1 SL.`;
+      return `Mã SP ${code} đã có trên form — hệ thống sẽ không thêm và không tăng SL.`;
     }
     const hasBlankLine = formLinesRef.current.some(line => isBlankProductLine(line));
     if (hasBlankLine) {
@@ -761,7 +727,6 @@ export default function AcceptanceReportForm({
   };
 
   const resetForm = () => {
-    scannedQrLabelsRef.current.clear();
     setEditingId(null);
     setForm(newReportForm());
     setMessage('');
@@ -769,7 +734,6 @@ export default function AcceptanceReportForm({
   };
 
   const startEdit = (report: AcceptanceReport) => {
-    scannedQrLabelsRef.current.clear();
     const linked =
       machines.find(machine => machine.code === report.ma_may) ??
       machines.find(machine => machine.name === report.ten_may) ??
