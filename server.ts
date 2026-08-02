@@ -7953,6 +7953,7 @@ export function createApp() {
     });
   }
 
+  // Phiếu cân định kỳ dùng DB chính (he-thong) — bảng phieu_can_dinh_ki đã có sẵn.
   registerWeighingSlipRoutes(app, '/api/phieu-can-dinh-ki', {
     localFilePath: WEIGHING_DB_FILE_PATH,
     supabaseTable: SUPABASE_WEIGHING_TABLE,
@@ -7960,8 +7961,8 @@ export function createApp() {
     entityLabel: 'phiếu cân',
     localEntryPrefix: 'pcdk_',
     requireAcceptanceStatus: true,
-    client: supabaseWeighing ?? supabase,
-    dbLabel: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+    client: supabase,
+    dbLabel: SUPABASE_MAIN_DB_LABEL
   });
 
   app.get('/api/can-tu-dong', async (req, res) => {

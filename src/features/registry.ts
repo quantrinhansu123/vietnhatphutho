@@ -61,7 +61,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     label: 'Phiếu cân định kỳ',
     sql: ['supabase-phieu-can-dinh-ki.sql'],
     apiPrefix: '/api/phieu-can-dinh-ki',
-    serverLines: '5268–5274 (registerWeighingSlipRoutes)',
+    serverLines: 'registerWeighingSlipRoutes — client supabase (he-thong)',
     appTab: 'weighing-summary',
     appLines: 'src/components/WeighingShiftSummary.tsx',
     components: ['src/components/WeighingShiftSummary.tsx', 'src/components/WeighingReportForm.tsx', 'src/components/WeighingSlipPrintSheet.tsx', 'src/components/WeighingImagePreviewModal.tsx', 'src/lib/weighingSlipConfig.ts'],
