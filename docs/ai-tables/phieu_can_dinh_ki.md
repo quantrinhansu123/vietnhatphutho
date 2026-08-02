@@ -5,12 +5,20 @@
 | **Bảng** | `phieu_can_dinh_ki` |
 | **Tab** | `weighing-summary` → `/tong-hop-ca` |
 | **SQL** | `supabase-phieu-can-dinh-ki.sql` |
+| **DB** | Riêng — label `phieu-can` (`SUPABASE_WEIGHING_*`, project `njdlkyxdieefeebcyaov`). Không dùng DB `he-thong`. |
+
+## Env (phân biệt 2 DB)
+
+| Label | Biến | Dùng cho |
+|-------|------|----------|
+| `he-thong` | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Hệ thống còn lại |
+| `phieu-can` | `SUPABASE_WEIGHING_URL` / `SUPABASE_WEIGHING_SERVICE_KEY` (+ publishable/anon) | Chỉ `/api/phieu-can-dinh-ki` |
 
 ## API (`server.ts`)
 
 | Path | Dòng |
 |------|------|
-| `/api/phieu-can-dinh-ki/*` | 5268–5274 (`registerWeighingSlipRoutes`) |
+| `/api/phieu-can-dinh-ki/*` | ~7918 (`registerWeighingSlipRoutes`, client `supabaseWeighing`) |
 
 ## Frontend
 

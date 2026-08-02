@@ -131,6 +131,12 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Ghi nhận mặt hàng, số lượng và ảnh sản lượng theo ca.',
     icon: ClipboardCheck,
     tab: 'acceptance-report'
+  },
+  {
+    title: 'Báo cáo kiểm kho',
+    desc: 'Quét mã SP bằng máy BT-A700 / camera và lưu vào bảng kiểm kho.',
+    icon: ClipboardList,
+    tab: 'kiem-kho'
   }
 ];
 
@@ -188,6 +194,12 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
     tab: 'warehouse-history'
+  },
+  {
+    title: 'Quản lý kho',
+    desc: 'Danh mục kho: tên kho, vị trí, tên vị trí và người phụ trách.',
+    icon: Warehouse,
+    tab: 'quan-ly-kho'
   }
 ];
 
@@ -209,6 +221,18 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Xem danh sách phiếu cân và cộng dồn theo ca.',
     icon: History,
     tab: 'weighing-summary-list'
+  },
+  {
+    title: 'Cân tự động',
+    desc: 'Xem dữ liệu cân tự động (can_tu_dong); bấm ảnh để mở modal.',
+    icon: Scale,
+    tab: 'can-tu-dong'
+  },
+  {
+    title: 'Báo cáo kiểm kho',
+    desc: 'Nhập và xem các dòng kiểm kho đã quét mã SP.',
+    icon: ClipboardList,
+    tab: 'kiem-kho'
   },
   {
     title: 'Danh sách báo cáo hàng hỏng',
@@ -350,6 +374,18 @@ export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'weighing-summary-list'
   },
   {
+    title: 'Cân tự động',
+    desc: 'Xem dữ liệu cân tự động (can_tu_dong); bấm ảnh để mở modal.',
+    icon: Scale,
+    tab: 'can-tu-dong'
+  },
+  {
+    title: 'Báo cáo kiểm kho',
+    desc: 'Quét mã SP bằng máy BT-A700 và lưu kiểm kho.',
+    icon: ClipboardList,
+    tab: 'kiem-kho'
+  },
+  {
     title: 'Báo cáo tổng hợp',
     desc: 'Đối chiếu chất lượng theo lệnh SX và ca sản xuất.',
     icon: LayoutDashboard,
@@ -382,6 +418,12 @@ export const FACTORY_CONG_NHAN_MENU_ITEMS: MenuCardConfig[] = [
 
 export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Quản lý kho',
+    desc: 'Danh mục kho: tên kho, vị trí, tên vị trí và người phụ trách.',
+    icon: Warehouse,
+    tab: 'quan-ly-kho'
+  },
+  {
     title: 'Kho NVL',
     desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
     icon: Boxes,
@@ -401,6 +443,12 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     icon: History,
     icon3d: warehouseHistory3d,
     tab: 'warehouse-history'
+  },
+  {
+    title: 'Báo cáo kiểm kho',
+    desc: 'Quét mã SP bằng máy BT-A700 / camera và lưu kiểm kho.',
+    icon: ClipboardList,
+    tab: 'kiem-kho'
   },
   {
     title: 'Quản lý CSVC',
@@ -710,6 +758,9 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'acceptance-report-list': { group: 'Sản xuất', sub: 'DS phiếu nghiệm thu' },
   'weighing-summary': { group: 'Sản xuất', sub: 'Bảng báo cáo Cân' },
   'weighing-summary-list': { group: 'Sản xuất', sub: 'DS phiếu cân' },
+  'can-tu-dong': { group: 'Sản xuất', sub: 'Cân tự động' },
+  'kiem-kho': { group: 'Sản xuất', sub: 'Báo cáo kiểm kho' },
+  'quan-ly-kho': { group: 'CSVC & Kho', sub: 'Quản lý kho' },
   'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
   'damaged-goods-report-list': { group: 'Sản xuất', sub: 'DS báo cáo hàng hư' },
   'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },

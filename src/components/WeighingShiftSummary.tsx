@@ -28,12 +28,14 @@ import {
 } from '../utils/shiftSettings';
 import {
   countWeighingRounds,
+  damagedGoodsMaterialTypeLabel,
   formatDamagedGoodsRowTotalWeight,
   formatWeighingRowTotalWeight,
   formatWeighingNetWeight,
   formatWeighingWeightField,
   generateWeighingDocumentNo,
   getWeighingDataRows,
+  isDamagedOtherMaterial,
   normalizeWeighingRecords,
   parseWeighRoundNumber,
   slipKey,
@@ -241,6 +243,7 @@ export default function WeighingShiftSummary({
   defaultShowForm?: boolean;
 } = {}) {
   const splitPlasticFilmWeights = Boolean(config.splitPlasticFilmWeights);
+  const splitDamagedPlasticDefectWeights = Boolean(config.splitDamagedPlasticDefectWeights);
   const hideProductFields = Boolean(config.hideProductFields);
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [dateFrom, setDateFrom] = useState(today);
@@ -622,13 +625,15 @@ export default function WeighingShiftSummary({
               ? resolveMachineName(primarySlip.machineName, ...primarySlip.rows.map(row => row.machineName))
               : '—';
             const isMultiDayRange = dateFrom !== dateTo;
-            const tableColSpan = splitPlasticFilmWeights
-              ? isMultiDayRange
-                ? 8
-                : 7
-              : isMultiDayRange
-                ? 13
-                : 12;
+            const tableColSpan = splitDamagedPlasticDefectWeights
+              ? (isMultiDayRange ? 14 : 13) - (hideProductFields ? 1 : 0) - (config.hideAcceptanceStatus ? 1 : 0)
+              : splitPlasticFilmWeights
+                ? isMultiDayRange
+                  ? 8
+                  : 7
+                : isMultiDayRange
+                  ? 13
+                  : 12;
 
             return (
             <section key={shift.shiftKey} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
@@ -704,13 +709,26 @@ export default function WeighingShiftSummary({
               ) : (
                 <div className="p-3">
                   <div className="overflow-x-auto rounded-xl border border-zinc-200">
-                    <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
+                    <table className="w-full min-w-[1280px] border-collapse text-left text-xs">
                       <thead>
                         <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
                           {isMultiDayRange && <th className="px-3 py-2">Ngày</th>}
                           {!hideProductFields && <th className="px-3 py-2">Sản phẩm</th>}
                           <th className="px-3 py-2">Người cân</th>
-                          {splitPlasticFilmWeights ? (
+                          {splitDamagedPlasticDefectWeights ? (
+                            <>
+                              <th className="px-3 py-2">Loại</th>
+                              <th className="px-3 py-2">Mã VT</th>
+                              <th className="px-3 py-2">SL</th>
+                              <th className="px-3 py-2">NVL khác</th>
+                              <th className="px-3 py-2">Nhựa KM</th>
+                              <th className="px-3 py-2">Nhựa ĐN</th>
+                              <th className="px-3 py-2">Nhựa DM</th>
+                              <th className="px-3 py-2">Màng</th>
+                              <th className="px-3 py-2">Lõi</th>
+                              <th className="px-3 py-2">Tổng</th>
+                            </>
+                          ) : splitPlasticFilmWeights ? (
                             <>
                               <th className="px-3 py-2">KL nhựa</th>
                               <th className="px-3 py-2">KL màng</th>
@@ -774,7 +792,49 @@ export default function WeighingShiftSummary({
                                     </td>
                                     )}
                                     <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weigherName || '—'}</td>
-                                    {splitPlasticFilmWeights ? (
+                                    {splitDamagedPlasticDefectWeights ? (
+                                      (() => {
+                                        const isOther = isDamagedOtherMaterial(entry.row);
+                                        return (
+                                          <>
+                                            <td className="px-3 py-2 font-semibold text-zinc-800">
+                                              {damagedGoodsMaterialTypeLabel(entry.row.materialType)}
+                                            </td>
+                                            <td className="px-3 py-2 font-mono font-bold text-zinc-900">
+                                              {isOther ? entry.row.materialCode || '—' : '—'}
+                                            </td>
+                                            <td className="px-3 py-2 font-bold text-zinc-900">
+                                              {isOther ? entry.row.materialQuantity || '—' : '—'}
+                                            </td>
+                                            <td className="px-3 py-2 font-bold text-zinc-900">
+                                              {isOther ? formatWeighingWeightField(entry.row.weight) : '—'}
+                                            </td>
+                                            <td className="px-3 py-2 font-bold text-zinc-900">
+                                              {isOther ? '—' : formatWeighingWeightField(entry.row.plasticNoFilmWeight)}
+                                            </td>
+                                            <td className="px-3 py-2 font-bold text-zinc-900">
+                                              {isOther ? '—' : formatWeighingWeightField(entry.row.plasticNozzleWeight)}
+                                            </td>
+                                            <td className="px-3 py-2 font-bold text-zinc-900">
+                                              {isOther
+                                                ? '—'
+                                                : formatWeighingWeightField(entry.row.plasticFilmAdhesionWeight)}
+                                            </td>
+                                            <td className="px-3 py-2 font-semibold text-zinc-700">
+                                              {isOther ? '—' : formatWeighingWeightField(entry.row.shellWeight)}
+                                            </td>
+                                            <td className="px-3 py-2 font-semibold text-zinc-700">
+                                              {isOther
+                                                ? formatWeighingWeightField(entry.row.weight)
+                                                : formatWeighingWeightField(entry.row.coreWeight)}
+                                            </td>
+                                            <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                                              {formatDamagedGoodsRowTotalWeight(entry.row)}
+                                            </td>
+                                          </>
+                                        );
+                                      })()
+                                    ) : splitPlasticFilmWeights ? (
                                       <>
                                         <td className="px-3 py-2 font-bold text-zinc-900">
                                           {formatWeighingWeightField(entry.row.weight)}
@@ -930,7 +990,71 @@ export default function WeighingShiftSummary({
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3 p-4 text-xs">
-              {splitPlasticFilmWeights ? (
+              {splitDamagedPlasticDefectWeights ? (
+                isDamagedOtherMaterial(viewingRow) ? (
+                <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Loại hàng hỏng</span>
+                    <p className="mt-1 font-bold text-zinc-800">
+                      {damagedGoodsMaterialTypeLabel(viewingRow.materialType)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Mã vật tư</span>
+                    <p className="mt-1 font-bold text-zinc-800">{viewingRow.materialCode || '—'}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Số lượng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{viewingRow.materialQuantity || '—'}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">NVL khác (kg)</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.weight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Lõi (kg)</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.weight)}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-red-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
+                    <p className="mt-1 font-black text-[#ef1b2d]">{formatDamagedGoodsRowTotalWeight(viewingRow)}</p>
+                  </div>
+                </>
+                ) : (
+                <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Loại hàng hỏng</span>
+                    <p className="mt-1 font-bold text-zinc-800">
+                      {damagedGoodsMaterialTypeLabel(viewingRow.materialType)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Nhựa không mảng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.plasticNoFilmWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Nhựa đầu nòng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.plasticNozzleWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Nhựa dính màng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.plasticFilmAdhesionWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">KL màng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.shellWeight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">TL lõi</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.coreWeight)}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-red-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng</span>
+                    <p className="mt-1 font-black text-[#ef1b2d]">{formatDamagedGoodsRowTotalWeight(viewingRow)}</p>
+                  </div>
+                </>
+                )
+              ) : splitPlasticFilmWeights ? (
                 <>
                   <div className="rounded-lg bg-zinc-50 px-3 py-2">
                     <span className="font-black uppercase tracking-wider text-zinc-400">KL nhựa</span>

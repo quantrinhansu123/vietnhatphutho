@@ -64,6 +64,38 @@ function isDamagedGoodsNozzleNote(note: string) {
   return /đầu\s*n[oô]ng|cục\s*đầu|dau\s*nong|cuc\s*dau/.test(normalized);
 }
 
+export function isDamagedOtherMaterial(
+  row: Pick<WeighingRecord, 'materialType'> | { materialType?: string }
+) {
+  return String(row.materialType || '')
+    .trim()
+    .toLowerCase() === 'vat_tu_khac';
+}
+
+export function damagedGoodsMaterialTypeLabel(materialType?: string) {
+  const raw = String(materialType || '')
+    .trim()
+    .toLowerCase();
+  if (raw === 'vat_tu_khac') return 'Vật tư khác';
+  if (raw === 'nhua') return 'Nhựa';
+  return String(materialType || '').trim() || '—';
+}
+
+/**
+ * KL (kg) vật tư khác: ưu tiên ô «Khối lượng vật tư khác» (weight),
+ * không có thì dùng Số lượng (materialQuantity) khi người dùng nhập số.
+ */
+export function resolveDamagedOtherMaterialKg(
+  row: Pick<WeighingRecord, 'materialType' | 'weight' | 'materialQuantity'>
+): number {
+  if (!isDamagedOtherMaterial(row)) return 0;
+  const fromWeight = parseWeighingWeight(row.weight ?? '');
+  if (fromWeight !== null && fromWeight > 0) return fromWeight;
+  const fromQty = parseWeighingWeight(row.materialQuantity ?? '');
+  if (fromQty !== null && fromQty > 0) return fromQty;
+  return 0;
+}
+
 /** Phân tách trọng lượng lỗi hỏng theo loại vật liệu */
 export function splitDamagedGoodsDefectWeights(
   row: Pick<
@@ -75,8 +107,14 @@ export function splitDamagedGoodsDefectWeights(
     | 'plasticNoFilmWeight'
     | 'plasticNozzleWeight'
     | 'plasticFilmAdhesionWeight'
+    | 'materialType'
   >
 ): DamagedGoodsDefectSplit {
+  // Vật tư khác không cộng vào các cột nhựa/màng/lõi — xử lý riêng.
+  if (isDamagedOtherMaterial(row)) {
+    return { nhuaKhongMang: 0, nhuaCucDauNong: 0, nhuaDinhMang: 0, mang: 0, loi: 0, tong: 0 };
+  }
+
   const mang = parseWeighingWeight(row.shellWeight) ?? 0;
   const loi = parseWeighingWeight(row.coreWeight) ?? 0;
 
@@ -161,6 +199,12 @@ export function isSlipHeaderRow(
     | 'note'
     | 'imageUrl'
     | 'coreWeightImageUrl'
+    | 'materialType'
+    | 'materialCode'
+    | 'materialQuantity'
+    | 'plasticNoFilmWeight'
+    | 'plasticNozzleWeight'
+    | 'plasticFilmAdhesionWeight'
   >
 ) {
   return (
@@ -173,7 +217,13 @@ export function isSlipHeaderRow(
     !row.acceptanceStatus?.trim() &&
     !row.note?.trim() &&
     !row.imageUrl &&
-    !row.coreWeightImageUrl
+    !row.coreWeightImageUrl &&
+    !row.materialType?.trim() &&
+    !row.materialCode?.trim() &&
+    !row.materialQuantity?.trim() &&
+    !row.plasticNoFilmWeight?.trim() &&
+    !row.plasticNozzleWeight?.trim() &&
+    !row.plasticFilmAdhesionWeight?.trim()
   );
 }
 
@@ -232,7 +282,7 @@ export function sumWeighingRowTotalWeight(
   return parseWeighingWeight(row.weight) ?? 0;
 }
 
-/** Báo cáo hàng hỏng: tổng trọng lượng lỗi hỏng (kg) */
+/** Báo cáo hàng hỏng: tổng trọng lượng lỗi hỏng (kg) — gồm cả vật tư khác */
 export function sumDamagedGoodsRowWeight(
   row: Pick<
     WeighingRecord,
@@ -243,8 +293,13 @@ export function sumDamagedGoodsRowWeight(
     | 'plasticNoFilmWeight'
     | 'plasticNozzleWeight'
     | 'plasticFilmAdhesionWeight'
+    | 'materialType'
+    | 'materialQuantity'
   >
 ): number {
+  if (isDamagedOtherMaterial(row)) {
+    return resolveDamagedOtherMaterialKg(row);
+  }
   return splitDamagedGoodsDefectWeights(row).tong;
 }
 
@@ -305,9 +360,11 @@ export function formatDamagedGoodsRowTotalWeight(
     | 'plasticNoFilmWeight'
     | 'plasticNozzleWeight'
     | 'plasticFilmAdhesionWeight'
+    | 'materialType'
+    | 'materialQuantity'
   >
 ): string {
-  const total = splitDamagedGoodsDefectWeights(row).tong;
+  const total = sumDamagedGoodsRowWeight(row);
   if (total <= 0) return '—';
   return formatWeighingWeightNumber(total);
 }

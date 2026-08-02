@@ -1,12 +1,12 @@
 ---
 description: Xem ảnh phiếu cân / tổng hợp ca phải mở modal trong app, không mở tab mới
-globs: src/components/Weighing*.tsx
+globs: src/components/Weighing*.tsx, src/features/can-tu-dong/**/*.tsx
 alwaysApply: false
 ---
 
-# Xem ảnh trong phiếu cân (tong-hop-ca)
+# Xem ảnh trong phiếu cân / cân tự động
 
-Trước khi sửa UI liên quan `WeighingReportForm`, `WeighingShiftSummary` hoặc trang `/tong-hop-ca`, **đọc rule này trước**.
+Trước khi sửa UI liên quan `WeighingReportForm`, `WeighingShiftSummary`, trang `/tong-hop-ca`, hoặc `src/features/can-tu-dong`, **đọc rule này trước**.
 
 ## Bắt buộc
 

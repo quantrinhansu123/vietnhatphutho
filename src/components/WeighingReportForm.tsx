@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronLeft, ClipboardList, Eye, Factory, FileText, Hash, ImagePlus, Loader2, Pencil, Plus, Save, Trash2, UserCheck, Users } from 'lucide-react';
 import type { WeighingPendingAdd, WeighingRecord } from '../utils/weighingRecords';
-import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, formatDamagedGoodsRowTotalWeight, formatWeighingWeightField, isSlipHeaderRow, splitDamagedGoodsDefectWeights } from '../utils/weighingRecords';
+import { generateWeighingDocumentNo, getWeighingDataRows, getCurrentWeighRound, getNextWeighRoundNumber, countWeighingRounds, formatWeighingRowTotalWeight, formatWeighingNetWeight, formatDamagedGoodsRowTotalWeight, formatWeighingWeightField, isDamagedOtherMaterial, damagedGoodsMaterialTypeLabel, isSlipHeaderRow, parseWeighingWeight, splitDamagedGoodsDefectWeights } from '../utils/weighingRecords';
+import {
+  convertWarehouseQuantityToKg,
+  mapMaterialToWeightCatalogItem
+} from '../utils/warehouseWeight';
 import SearchableSelect from './SearchableSelect';
 import WeighingImagePreviewModal, {
   WeighingImageThumbnail,
@@ -74,6 +78,17 @@ import { sanitizeDecimalTyping } from '../lib/mixingReportModel';
 
 const DEFAULT_SHELL_WEIGHT = '0,16';
 const ACCEPTANCE_STATUS_OPTIONS = ['Đạt', 'Không đạt'] as const;
+/** Chọn «Khác» ở ô Lệnh SX khi sản phẩm phát sinh ngoài lệnh. */
+const WEIGHING_OTHER_ORDER_CODE = '__KHAC__';
+const WEIGHING_OTHER_ORDER_OPTION: MixingProductionOrder = {
+  id: WEIGHING_OTHER_ORDER_CODE,
+  orderCode: WEIGHING_OTHER_ORDER_CODE,
+  shift: '',
+  machine: '',
+  startDate: '',
+  staff: '',
+  productLines: []
+};
 
 function readStoredWeigherName(storageKey: string) {
   try {
@@ -151,6 +166,10 @@ interface MaterialOption {
   code: string;
   name: string;
   unit: string;
+  totalWeight?: string;
+  coreWeight?: string;
+  bagWeight?: string;
+  plasticWeight?: string;
 }
 
 function normalizeMaterials(data: unknown): MaterialOption[] {
@@ -161,9 +180,58 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
     .map(row => ({
       code: String(row.ma_npl ?? '').trim(),
       name: String(row.ten_npl ?? '').trim(),
-      unit: String(row.don_vi ?? '').trim()
+      unit: String(row.don_vi ?? '').trim(),
+      totalWeight:
+        row.tong_trong_luong === null || row.tong_trong_luong === undefined || row.tong_trong_luong === ''
+          ? ''
+          : String(row.tong_trong_luong),
+      coreWeight:
+        row.trong_luong_loi === null || row.trong_luong_loi === undefined || row.trong_luong_loi === ''
+          ? ''
+          : String(row.trong_luong_loi),
+      bagWeight:
+        row.trong_luong_tui === null || row.trong_luong_tui === undefined || row.trong_luong_tui === ''
+          ? ''
+          : String(row.trong_luong_tui),
+      plasticWeight:
+        row.trong_luong_nhua === null || row.trong_luong_nhua === undefined || row.trong_luong_nhua === ''
+          ? ''
+          : String(row.trong_luong_nhua)
     }))
     .filter(row => row.code);
+}
+
+function formatDamagedOtherMaterialWeightInput(value: number): string {
+  return new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3
+  }).format(value);
+}
+
+/** KL vật tư khác (kg) = Số lượng × Tổng kg/đvt trong kho NVL. */
+function computeDamagedOtherMaterialWeightKg(
+  materialCode: string,
+  quantityText: string,
+  materials: MaterialOption[]
+): string {
+  const code = materialCode.trim();
+  const quantity = parseWeighingWeight(quantityText);
+  if (!code || quantity === null || quantity <= 0) return '';
+
+  const material = materials.find(item => item.code === code);
+  if (!material) return '';
+
+  const kg = convertWarehouseQuantityToKg({
+    quantity,
+    unit: material.unit || 'cái',
+    itemCode: material.code,
+    warehouseKind: 'nvl',
+    materials: [mapMaterialToWeightCatalogItem(material)],
+    // Ưu tiên Tổng kg; thiếu thì suy từ tên/mã (vd. L1.5m-1kg).
+    preferTongKgOnly: false
+  });
+  if (kg === null || !Number.isFinite(kg) || kg <= 0) return '';
+  return formatDamagedOtherMaterialWeightInput(kg);
 }
 
 function normalizeProducts(data: unknown): ProductOption[] {
@@ -523,6 +591,7 @@ export default function WeighingReportForm({
   const [staffError, setStaffError] = useState('');
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
+  const [isLoadingMaterials, setIsLoadingMaterials] = useState(false);
   const [isLoadingMachines, setIsLoadingMachines] = useState(true);
   const [machinesError, setMachinesError] = useState('');
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
@@ -805,8 +874,10 @@ export default function WeighingReportForm({
   }, []);
 
   useEffect(() => {
-    if (!splitDamagedPlasticDefectWeights) return;
+    // Phiếu cân: cần NVL khi chọn «Khác» ngoài lệnh. Báo cáo hàng hỏng: chọn vật tư khác.
+    if (!splitDamagedPlasticDefectWeights && hideProductFields) return;
     let cancelled = false;
+    setIsLoadingMaterials(true);
     fetch('/api/kho-nvl')
       .then(async res => {
         const data = await res.json().catch(() => ({}));
@@ -815,11 +886,14 @@ export default function WeighingReportForm({
       })
       .catch(() => {
         if (!cancelled) setMaterials([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingMaterials(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [splitDamagedPlasticDefectWeights]);
+  }, [splitDamagedPlasticDefectWeights, hideProductFields]);
 
   useEffect(() => {
     if (isLoadingStaff || staff.length === 0) return;
@@ -834,6 +908,28 @@ export default function WeighingReportForm({
 
     setCurrentWeigherName(prev => (prev && validNames.has(prev) ? prev : ''));
   }, [isLoadingStaff, staff]);
+
+  // Vật tư khác: nếu KL trống/0 thì tự nhân SL × Tổng kg kho NVL.
+  useEffect(() => {
+    if (newRow.materialType !== 'vat_tu_khac') return;
+    if (!newRow.materialCode?.trim() || !newRow.materialQuantity?.trim()) return;
+    if (materials.length === 0) return;
+    const currentKg = parseWeighingWeight(newRow.weight ?? '');
+    if (currentKg !== null && currentKg > 0) return;
+    const computed = computeDamagedOtherMaterialWeightKg(
+      newRow.materialCode,
+      newRow.materialQuantity,
+      materials
+    );
+    if (!computed) return;
+    setNewRow(prev => (prev.weight === computed ? prev : { ...prev, weight: computed }));
+  }, [
+    materials,
+    newRow.materialType,
+    newRow.materialCode,
+    newRow.materialQuantity,
+    newRow.weight
+  ]);
 
 
   const openAddForm = (options?: {
@@ -1416,6 +1512,7 @@ export default function WeighingReportForm({
   const showSlipFields = !editingRow && weighingRows.length === 0 && rows.length === 0;
   const slipContext = rows.length > 0 ? getSlipContextFromRows(rows) : null;
   const restrictProductsToOrders = config.restrictProductsToOrders !== false;
+  const isOtherOrderSelected = selectedProductionOrderCode === WEIGHING_OTHER_ORDER_CODE;
 
   const productionOrderOptions = useMemo(() => {
     if (!newRow.productionDate || !newRow.shiftName) return [];
@@ -1425,13 +1522,32 @@ export default function WeighingReportForm({
     });
   }, [productionOrders, newRow.productionDate, newRow.shiftName]);
 
+  const productionOrderSelectOptions = useMemo(() => {
+    // Luôn có «Khác» dù không có lệnh SX / chưa chọn ca.
+    return [WEIGHING_OTHER_ORDER_OPTION, ...productionOrderOptions];
+  }, [productionOrderOptions]);
+
+  const materialProductOptions = useMemo<ProductOption[]>(
+    () =>
+      materials
+        .filter(material => material.code.trim())
+        .map(material => ({
+          productCode: material.code,
+          productName: material.name || material.code
+        }))
+        .sort((a, b) => a.productCode.localeCompare(b.productCode, 'vi')),
+    [materials]
+  );
+
   useEffect(() => {
     if (!selectedProductionOrderCode) return;
+    if (selectedProductionOrderCode === WEIGHING_OTHER_ORDER_CODE) return;
     if (productionOrderOptions.some(order => order.orderCode === selectedProductionOrderCode)) return;
     setSelectedProductionOrderCode('');
   }, [productionOrderOptions, selectedProductionOrderCode]);
 
   useEffect(() => {
+    if (selectedProductionOrderCode === WEIGHING_OTHER_ORDER_CODE) return;
     const order = productionOrderOptions.find(item => item.orderCode === selectedProductionOrderCode);
     if (!order) return;
     const machineRef = order.machine.trim();
@@ -1469,6 +1585,7 @@ export default function WeighingReportForm({
   ]);
 
   const orderProductOptions = useMemo(() => {
+    if (isOtherOrderSelected) return [];
     const selectedOrder = productionOrderOptions.find(
       order => order.orderCode === selectedProductionOrderCode
     );
@@ -1490,9 +1607,28 @@ export default function WeighingReportForm({
       machines,
       products
     );
-  }, [productionOrders, productionOrderOptions, selectedProductionOrderCode, productFilterContext, machines, products]);
+  }, [
+    isOtherOrderSelected,
+    productionOrders,
+    productionOrderOptions,
+    selectedProductionOrderCode,
+    productFilterContext,
+    machines,
+    products
+  ]);
 
   const productSelectOptions = useMemo(() => {
+    if (isOtherOrderSelected) {
+      const options = [...materialProductOptions];
+      const currentCode = newRow.productCode.trim();
+      if (currentCode && !options.some(item => item.productCode === currentCode)) {
+        options.push({
+          productCode: currentCode,
+          productName: newRow.productName || currentCode
+        });
+      }
+      return options;
+    }
     const options = restrictProductsToOrders ? [...orderProductOptions] : [...products];
     const currentCode = newRow.productCode.trim();
     if (currentCode && !options.some(item => item.productCode === currentCode)) {
@@ -1504,9 +1640,22 @@ export default function WeighingReportForm({
       });
     }
     return options.sort((a, b) => a.productCode.localeCompare(b.productCode, 'vi'));
-  }, [orderProductOptions, newRow.productCode, newRow.productName, products, restrictProductsToOrders]);
+  }, [
+    isOtherOrderSelected,
+    materialProductOptions,
+    orderProductOptions,
+    newRow.productCode,
+    newRow.productName,
+    products,
+    restrictProductsToOrders
+  ]);
 
   const productCodePlaceholder = useMemo(() => {
+    if (isOtherOrderSelected) {
+      if (isLoadingMaterials) return 'Đang tải kho NVL...';
+      if (productSelectOptions.length === 0) return 'Không có NVL trong kho';
+      return 'Gõ để tìm mã NVL';
+    }
     if (!restrictProductsToOrders) return 'Gõ để tìm mã SP';
     if (isLoadingProductionOrders) return 'Đang tải lệnh SX...';
     if (!productFilterContext.ngay || !productFilterContext.ca || !productFilterContext.machineName) {
@@ -1516,23 +1665,39 @@ export default function WeighingReportForm({
       return 'Không có SP trong lệnh SX phù hợp';
     }
     return 'Gõ để tìm mã SP';
-  }, [isLoadingProductionOrders, productFilterContext, productSelectOptions.length, restrictProductsToOrders]);
+  }, [
+    isOtherOrderSelected,
+    isLoadingMaterials,
+    isLoadingProductionOrders,
+    productFilterContext,
+    productSelectOptions.length,
+    restrictProductsToOrders
+  ]);
 
   const productCodeSelectDisabled =
-    (!restrictProductsToOrders && (isLoadingProducts || productSelectOptions.length === 0)) ||
-    (restrictProductsToOrders &&
-      (isLoadingProductionOrders ||
-        !productFilterContext.ngay ||
-        !productFilterContext.ca ||
-        !productFilterContext.machineName ||
-        productSelectOptions.length === 0));
+    isOtherOrderSelected
+      ? isLoadingMaterials || productSelectOptions.length === 0
+      : (!restrictProductsToOrders && (isLoadingProducts || productSelectOptions.length === 0)) ||
+        (restrictProductsToOrders &&
+          (isLoadingProductionOrders ||
+            !productFilterContext.ngay ||
+            !productFilterContext.ca ||
+            !productFilterContext.machineName ||
+            productSelectOptions.length === 0));
 
   useEffect(() => {
     if (!newRow.productCode?.trim() || isLoadingProductionOrders) return;
+    if (isOtherOrderSelected && isLoadingMaterials) return;
     const resolvedName = resolveProductNameFromCode(productSelectOptions, newRow.productCode);
     if (!resolvedName) return;
     setNewRow(prev => (prev.productName === resolvedName ? prev : { ...prev, productName: resolvedName }));
-  }, [productSelectOptions, isLoadingProductionOrders, newRow.productCode]);
+  }, [
+    productSelectOptions,
+    isLoadingProductionOrders,
+    isLoadingMaterials,
+    isOtherOrderSelected,
+    newRow.productCode
+  ]);
 
   return (
     <div className="space-y-3">
@@ -1745,6 +1910,56 @@ export default function WeighingReportForm({
                     }`}
                   >
                     {splitDamagedPlasticDefectWeights ? (
+                      isDamagedOtherMaterial(row) ? (
+                      <>
+                        <div className="col-span-3">
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Loại
+                          </span>
+                          <p className="text-[10px] font-bold text-zinc-800">
+                            {damagedGoodsMaterialTypeLabel(row.materialType)}
+                          </p>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Mã VT
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">{row.materialCode || '—'}</p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            SL
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {row.materialQuantity || '—'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            NVL khác
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.weight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Lõi
+                          </span>
+                          <p className="font-mono text-[10px] font-bold text-zinc-800">
+                            {formatWeighingWeightField(row.weight)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
+                            Tổng
+                          </span>
+                          <p className="font-mono text-[10px] font-black text-[#ef1b2d]">
+                            {formatDamagedGoodsRowTotalWeight(row)}
+                          </p>
+                        </div>
+                      </>
+                      ) : (
                       <>
                         <div>
                           <span className="block text-[8px] font-extrabold uppercase tracking-wide text-zinc-500 leading-none">
@@ -1795,6 +2010,7 @@ export default function WeighingReportForm({
                           </p>
                         </div>
                       </>
+                      )
                     ) : splitPlasticFilmWeights ? (
                       <>
                         <div>
@@ -1860,11 +2076,15 @@ export default function WeighingReportForm({
 
             <div className="hidden md:block md:overflow-x-auto">
           {splitDamagedPlasticDefectWeights ? (
-          <table className="responsive-table w-full md:min-w-[960px] border-collapse text-left">
+          <table className="responsive-table w-full md:min-w-[1180px] border-collapse text-left">
             <thead className="table-header-group">
               <tr className="bg-zinc-950 text-xs font-black uppercase tracking-wider text-white">
                 <th className="w-20 px-3 py-3 text-center">Lần cân</th>
                 <th className="px-3 py-3">Người cân</th>
+                <th className="px-3 py-3">Loại</th>
+                <th className="px-3 py-3">Mã VT</th>
+                <th className="px-3 py-3">SL</th>
+                <th className="px-3 py-3">NVL khác</th>
                 <th className="px-3 py-3">Nhựa KM</th>
                 <th className="px-3 py-3">Nhựa ĐN</th>
                 <th className="px-3 py-3">Nhựa DM</th>
@@ -1877,26 +2097,42 @@ export default function WeighingReportForm({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {weighingRows.map(row => (
+              {weighingRows.map(row => {
+                const isOther = isDamagedOtherMaterial(row);
+                return (
                 <tr key={row.id} className="transition hover:bg-red-50/40">
                   <td className="border-r border-zinc-100 px-3 py-2 text-center text-sm font-black text-[#ef1b2d]">
                     {row.weighNo ? formatWeighRound(row.weighNo) : '—'}
                   </td>
                   <td className="px-2 py-2 text-sm font-semibold text-zinc-600">{row.weigherName || '—'}</td>
-                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
-                    {formatWeighingWeightField(row.plasticNoFilmWeight)}
+                  <td className="px-2 py-2 text-sm font-semibold text-zinc-800">
+                    {damagedGoodsMaterialTypeLabel(row.materialType)}
+                  </td>
+                  <td className="px-2 py-2 font-mono text-sm font-bold text-zinc-900">
+                    {isOther ? row.materialCode || '—' : '—'}
                   </td>
                   <td className="px-2 py-2 text-sm font-bold text-zinc-900">
-                    {formatWeighingWeightField(row.plasticNozzleWeight)}
+                    {isOther ? row.materialQuantity || '—' : '—'}
                   </td>
                   <td className="px-2 py-2 text-sm font-bold text-zinc-900">
-                    {formatWeighingWeightField(row.plasticFilmAdhesionWeight)}
+                    {isOther ? formatWeighingWeightField(row.weight) : '—'}
                   </td>
                   <td className="px-2 py-2 text-sm font-bold text-zinc-900">
-                    {formatWeighingWeightField(row.shellWeight)}
+                    {isOther ? '—' : formatWeighingWeightField(row.plasticNoFilmWeight)}
                   </td>
                   <td className="px-2 py-2 text-sm font-bold text-zinc-900">
-                    {formatWeighingWeightField(row.coreWeight)}
+                    {isOther ? '—' : formatWeighingWeightField(row.plasticNozzleWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {isOther ? '—' : formatWeighingWeightField(row.plasticFilmAdhesionWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {isOther ? '—' : formatWeighingWeightField(row.shellWeight)}
+                  </td>
+                  <td className="px-2 py-2 text-sm font-bold text-zinc-900">
+                    {isOther
+                      ? formatWeighingWeightField(row.weight)
+                      : formatWeighingWeightField(row.coreWeight)}
                   </td>
                   <td className="px-2 py-2 text-sm font-black text-[#ef1b2d]">
                     {formatDamagedGoodsRowTotalWeight(row)}
@@ -1939,7 +2175,8 @@ export default function WeighingReportForm({
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           ) : splitPlasticFilmWeights ? (
@@ -2309,23 +2546,33 @@ export default function WeighingReportForm({
                 </span>
                 <SearchableSelect
                   value={selectedProductionOrderCode}
-                  onChange={setSelectedProductionOrderCode}
-                  options={productionOrderOptions}
+                  onChange={value => {
+                    setSelectedProductionOrderCode(value);
+                    if (value === WEIGHING_OTHER_ORDER_CODE) {
+                      setNewRow(prev => ({
+                        ...prev,
+                        productCode: '',
+                        productName: ''
+                      }));
+                    }
+                  }}
+                  options={productionOrderSelectOptions}
                   placeholder={
-                    !newRow.productionDate || !newRow.shiftName
-                      ? 'Chọn ngày và ca trước'
-                      : isLoadingProductionOrders
-                        ? 'Đang tải lệnh SX...'
-                        : productionOrderOptions.length === 0
-                          ? 'Không có lệnh SX phù hợp'
-                          : 'Chọn hoặc nhập lệnh SX'
+                    isLoadingProductionOrders
+                      ? 'Đang tải lệnh SX...'
+                      : productionOrderOptions.length === 0
+                        ? 'Không có lệnh SX — chọn Khác'
+                        : 'Chọn lệnh SX hoặc Khác'
                   }
                   isLoading={isLoadingProductionOrders}
-                  disabled={!newRow.productionDate || !newRow.shiftName || isLoadingProductionOrders}
+                  disabled={isLoadingProductionOrders}
                   inputClassName={modalInputClass}
                   getValue={item => (item as MixingProductionOrder).orderCode}
                   getLabel={item => {
                     const order = item as MixingProductionOrder;
+                    if (order.orderCode === WEIGHING_OTHER_ORDER_CODE) {
+                      return 'Khác — sản phẩm ngoài lệnh SX';
+                    }
                     return order.machine ? `${order.orderCode} · ${order.machine}` : order.orderCode;
                   }}
                   resolveSelectedItem={(options, value) =>
@@ -2334,6 +2581,10 @@ export default function WeighingReportForm({
                 />
                 {productionOrdersError ? (
                   <p className="text-[10px] font-semibold text-rose-600">{productionOrdersError}</p>
+                ) : isOtherOrderSelected ? (
+                  <p className="text-[10px] font-semibold text-amber-700">
+                    Đã chọn Khác — chọn NVL bên dưới từ kho.
+                  </p>
                 ) : null}
               </label>
               {!config.hideWorkersInEntry && (
@@ -2388,10 +2639,35 @@ export default function WeighingReportForm({
               )}
               {!hideProductFields && (
               <>
+              {!showSlipFields && restrictProductsToOrders ? (
+                <label className="field-cell col-span-2">
+                  <span className={`flex items-center gap-1 ${modalLabelClass}`}>
+                    <ClipboardList className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                    Nguồn SP
+                  </span>
+                  <select
+                    value={isOtherOrderSelected ? WEIGHING_OTHER_ORDER_CODE : 'order'}
+                    onChange={e => {
+                      const value = e.target.value;
+                      if (value === WEIGHING_OTHER_ORDER_CODE) {
+                        setSelectedProductionOrderCode(WEIGHING_OTHER_ORDER_CODE);
+                        setNewRow(prev => ({ ...prev, productCode: '', productName: '' }));
+                      } else {
+                        setSelectedProductionOrderCode('');
+                        setNewRow(prev => ({ ...prev, productCode: '', productName: '' }));
+                      }
+                    }}
+                    className={modalInputClass}
+                  >
+                    <option value="order">Theo lệnh SX</option>
+                    <option value={WEIGHING_OTHER_ORDER_CODE}>Khác — chọn NVL ngoài lệnh</option>
+                  </select>
+                </label>
+              ) : null}
               <label className="field-cell col-span-2">
                 <span className={`flex items-center gap-1 ${modalLabelClass}`}>
                   <Hash className="h-3.5 w-3.5 text-[#ef1b2d]" />
-                  Mã SP
+                  {isOtherOrderSelected ? 'Mã NVL' : 'Mã SP'}
                 </span>
                 <div>
                     <SearchableSelect
@@ -2414,7 +2690,7 @@ export default function WeighingReportForm({
                       }}
                       options={productSelectOptions}
                       placeholder={productCodePlaceholder}
-                      isLoading={isLoadingProductionOrders}
+                      isLoading={isOtherOrderSelected ? isLoadingMaterials : isLoadingProductionOrders}
                       disabled={productCodeSelectDisabled}
                       inputClassName={modalInputClass}
                       getValue={item => (item as ProductOption).productCode}
@@ -2431,26 +2707,29 @@ export default function WeighingReportForm({
                       }
                     />
                 </div>
-                {(productionOrdersError || productFilterContext.ngay) && (
+                {(productionOrdersError || productFilterContext.ngay || isOtherOrderSelected) && (
                   <p className="text-[10px] font-semibold text-zinc-400">
                     {productionOrdersError ||
-                      (productFilterContext.ngay && productFilterContext.ca && productFilterContext.machineName
-                        ? `${productSelectOptions.length} mã từ lệnh SX`
-                        : 'Lọc theo ngày, ca, máy')}
+                      (isOtherOrderSelected
+                        ? `${productSelectOptions.length} mã NVL từ kho`
+                        : productFilterContext.ngay && productFilterContext.ca && productFilterContext.machineName
+                          ? `${productSelectOptions.length} mã từ lệnh SX`
+                          : 'Lọc theo ngày, ca, máy')}
                   </p>
                 )}
               </label>
               <label className="field-cell col-span-2">
-                <span className={modalLabelClass}>Tên SP</span>
+                <span className={modalLabelClass}>{isOtherOrderSelected ? 'Tên NVL' : 'Tên SP'}</span>
                 {(() => {
                   const codeMatch = findProductByCode(productSelectOptions, newRow.productCode ?? '');
-                  if (codeMatch) {
+                  if (codeMatch || isOtherOrderSelected) {
                     return (
                       <input
                         type="text"
                         readOnly
-                        value={codeMatch.productName}
+                        value={codeMatch?.productName || newRow.productName || ''}
                         className={`${modalInputClass} bg-zinc-50 text-zinc-800`}
+                        placeholder={isOtherOrderSelected ? 'Chọn mã NVL trước' : ''}
                       />
                     );
                   }
@@ -2485,7 +2764,26 @@ export default function WeighingReportForm({
                     </span>
                     <select
                       value={newRow.materialType ?? ''}
-                      onChange={e => setNewRow(prev => ({ ...prev, materialType: e.target.value }))}
+                      onChange={e => {
+                        const materialType = e.target.value;
+                        setNewRow(prev => ({
+                          ...prev,
+                          materialType,
+                          ...(materialType === 'vat_tu_khac'
+                            ? {
+                                plasticNoFilmWeight: '',
+                                plasticNozzleWeight: '',
+                                plasticFilmAdhesionWeight: '',
+                                shellWeight: '',
+                                coreWeight: ''
+                              }
+                            : {
+                                materialCode: '',
+                                materialQuantity: '',
+                                weight: materialType === 'nhua' ? '' : prev.weight
+                              })
+                        }));
+                      }}
                       className={modalInputClass}
                       required
                     >
@@ -2502,7 +2800,18 @@ export default function WeighingReportForm({
                         </span>
                         <select
                           value={newRow.materialCode ?? ''}
-                          onChange={e => setNewRow(prev => ({ ...prev, materialCode: e.target.value }))}
+                          onChange={e => {
+                            const materialCode = e.target.value;
+                            setNewRow(prev => ({
+                              ...prev,
+                              materialCode,
+                              weight: computeDamagedOtherMaterialWeightKg(
+                                materialCode,
+                                prev.materialQuantity ?? '',
+                                materials
+                              )
+                            }));
+                          }}
                           className={modalInputClass}
                           required
                         >
@@ -2510,6 +2819,9 @@ export default function WeighingReportForm({
                           {materials.map(material => (
                             <option key={material.code} value={material.code}>
                               {material.code}{material.name ? ` — ${material.name}` : ''}
+                              {material.totalWeight
+                                ? ` (${material.totalWeight} kg/${material.unit || 'đvt'})`
+                                : ''}
                             </option>
                           ))}
                         </select>
@@ -2520,27 +2832,48 @@ export default function WeighingReportForm({
                         </span>
                         <input
                           value={newRow.materialQuantity ?? ''}
-                          onChange={e =>
+                          onChange={e => {
+                            const materialQuantity = sanitizeDecimalTyping(e.target.value);
                             setNewRow(prev => ({
                               ...prev,
-                              materialQuantity: sanitizeDecimalTyping(e.target.value)
-                            }))
-                          }
+                              materialQuantity,
+                              weight: computeDamagedOtherMaterialWeightKg(
+                                prev.materialCode ?? '',
+                                materialQuantity,
+                                materials
+                              )
+                            }));
+                          }}
                           className={modalInputClass}
                           placeholder="0"
                           required
                         />
                       </label>
                       <label className="field-cell col-span-1 sm:col-span-2">
-                        <span className={modalCompactLabelClass}>Khối lượng vật tư khác</span>
+                        <span className={modalCompactLabelClass}>Khối lượng vật tư khác (kg)</span>
                         <input
                           value={newRow.weight ?? ''}
                           onChange={e =>
                             setNewRow(prev => ({ ...prev, weight: sanitizeDecimalTyping(e.target.value) }))
                           }
                           className={modalInputClass}
-                          placeholder="0"
+                          placeholder="Tự tính = SL × Tổng kg NVL"
                         />
+                        {(() => {
+                          const material = materials.find(item => item.code === (newRow.materialCode || ''));
+                          const qty = parseWeighingWeight(newRow.materialQuantity ?? '');
+                          if (!material || qty === null || qty <= 0) return null;
+                          const perUnitHint = material.totalWeight
+                            ? `${material.totalWeight} kg/${material.unit || 'đvt'}`
+                            : null;
+                          return (
+                            <p className="mt-0.5 text-[9px] font-semibold text-zinc-400">
+                              {perUnitHint
+                                ? `Tự nhân: ${newRow.materialQuantity} × ${perUnitHint}`
+                                : 'Tự nhân theo Tổng kg kho NVL (hoặc suy từ tên/mã nếu thiếu cột Tổng kg)'}
+                            </p>
+                          );
+                        })()}
                       </label>
                     </>
                   ) : (
@@ -2872,7 +3205,43 @@ export default function WeighingReportForm({
               </>
               )}
               {splitDamagedPlasticDefectWeights ? (
+                isDamagedOtherMaterial(viewingRow) ? (
                 <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Loại hàng hỏng</span>
+                    <p className="mt-1 font-bold text-zinc-800">
+                      {damagedGoodsMaterialTypeLabel(viewingRow.materialType)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Mã vật tư</span>
+                    <p className="mt-1 font-bold text-zinc-800">{viewingRow.materialCode || '—'}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Số lượng</span>
+                    <p className="mt-1 font-bold text-zinc-800">{viewingRow.materialQuantity || '—'}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">NVL khác (kg)</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.weight)}</p>
+                  </div>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Lõi (kg)</span>
+                    <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.weight)}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-red-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-red-400">Tổng trọng lượng lỗi hỏng</span>
+                    <p className="mt-1 font-black text-[#ef1b2d]">{formatDamagedGoodsRowTotalWeight(viewingRow)}</p>
+                  </div>
+                </>
+                ) : (
+                <>
+                  <div className="rounded-lg bg-zinc-50 px-3 py-2">
+                    <span className="font-black uppercase tracking-wider text-zinc-400">Loại hàng hỏng</span>
+                    <p className="mt-1 font-bold text-zinc-800">
+                      {damagedGoodsMaterialTypeLabel(viewingRow.materialType)}
+                    </p>
+                  </div>
                   <div className="rounded-lg bg-zinc-50 px-3 py-2">
                     <span className="font-black uppercase tracking-wider text-zinc-400">Nhựa không mảng</span>
                     <p className="mt-1 font-bold text-zinc-800">{formatWeighingWeightField(viewingRow.plasticNoFilmWeight)}</p>
@@ -2898,6 +3267,7 @@ export default function WeighingReportForm({
                     <p className="mt-1 font-black text-[#ef1b2d]">{formatDamagedGoodsRowTotalWeight(viewingRow)}</p>
                   </div>
                 </>
+                )
               ) : splitPlasticFilmWeights ? (
                 <>
                   <div className="rounded-lg bg-zinc-50 px-3 py-2">

@@ -54,6 +54,8 @@ import {
 } from './warehouseWeight';
 import {
   getWeighingDataRows,
+  isDamagedOtherMaterial,
+  resolveDamagedOtherMaterialKg,
   splitDamagedGoodsDefectWeights,
   type WeighingRecord
 } from './weighingRecords';
@@ -2211,9 +2213,33 @@ export function buildBbDamagedGoodsLineRows(input: {
     const machine =
       String(record.machineName || '').trim() ||
       [...new Set(matchedOrders.map(order => order.machine).filter(Boolean))].join(', ');
+    const shiftLabel = formatProductionOrderShiftLabel(record.shiftName, lookupSettings);
+
+    if (isDamagedOtherMaterial(record)) {
+      const materialCode = String(record.materialCode || '').trim();
+      const weightKg = resolveDamagedOtherMaterialKg(record);
+      if (!materialCode && !(Number.isFinite(weightKg) && weightKg > 0)) continue;
+      rows.push({
+        key: `${record.id || record.documentNo}|other|${materialCode}|${ngay}|${record.shiftName}`,
+        ngay: ngay || '',
+        shift: record.shiftName,
+        shiftLabel,
+        orderCode,
+        machine,
+        documentNo: record.documentNo || '',
+        productCode: record.productCode || '',
+        productName: record.productName || '',
+        materialCode,
+        materialName: materialCode || 'Vật tư khác',
+        unit: 'kg',
+        weightKg: roundQty(weightKg > 0 ? weightKg : 0, 4),
+        matchedByOrder: true
+      });
+      continue;
+    }
+
     const split = splitDamagedGoodsDefectWeights(record);
     if (!Number.isFinite(split.tong) || split.tong <= 0) continue;
-    const shiftLabel = formatProductionOrderShiftLabel(record.shiftName, lookupSettings);
 
     for (const item of DAMAGED_NVL_LABELS) {
       const weightKg = split[item.field];
@@ -4336,6 +4362,11 @@ function sumBbDamagedGoodsTabTotalKgForHeader(
       // Giống tab: phiếu máy BB không khớp tên máy vẫn gắn các lệnh cùng ngày+ca.
       if (!isBbMachineText(record.machineName)) continue;
     }
+    if (isDamagedOtherMaterial(record)) {
+      const otherKg = resolveDamagedOtherMaterialKg(record);
+      if (Number.isFinite(otherKg) && otherKg > 0) total += otherKg;
+      continue;
+    }
     const split = splitDamagedGoodsDefectWeights(record);
     if (!Number.isFinite(split.tong) || split.tong <= 0) continue;
     total += split.tong;
@@ -4950,6 +4981,18 @@ export function buildBbInboundBalanceMetricDetail(input: {
       machineValueMatchesFilter(header.machine, null, record.machineName) ||
       (isBbMachineText(record.machineName) && isBbMachineText(header.machine));
     if (!machineMatched && !isBbMachineText(record.machineName)) continue;
+    if (isDamagedOtherMaterial(record)) {
+      const otherKg = resolveDamagedOtherMaterialKg(record);
+      if (!(Number.isFinite(otherKg) && otherKg > 0) && !String(record.materialCode || '').trim()) continue;
+      rows.push({
+        ngay: record.productionDate || record.reportDate,
+        ca: record.shiftName,
+        documentNo: record.documentNo || '',
+        productCode: record.materialCode || record.productCode || '',
+        weightKg: roundQty(otherKg > 0 ? otherKg : 0, 4)
+      });
+      continue;
+    }
     const split = splitDamagedGoodsDefectWeights(record);
     if (!Number.isFinite(split.tong) || split.tong <= 0) continue;
     rows.push({
@@ -6205,6 +6248,10 @@ export function buildBbTongGroups(input: {
         machineValueMatchesFilter(header.machine, null, record.machineName) ||
         (isBbMachineText(record.machineName) && isBbMachineText(header.machine));
       if (!machineOk && !isBbMachineText(record.machineName)) continue;
+      if (isDamagedOtherMaterial(record)) {
+        tongTrongLuongLoiHong += resolveDamagedOtherMaterialKg(record);
+        continue;
+      }
       const split = splitDamagedGoodsDefectWeights(record);
       tlNhuaKhongMangLoiHong += split.nhuaKhongMang;
       tlNhuaCucDauNongLoiHong += split.nhuaCucDauNong;

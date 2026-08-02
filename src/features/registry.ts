@@ -5,6 +5,9 @@
 export type TableId =
   | 'reports'
   | 'phieu_can_dinh_ki'
+  | 'can_tu_dong'
+  | 'kiem_kho'
+  | 'quan_ly_kho'
   | 'bao_cao_hang_hong'
   | 'san_pham'
   | 'danh_sach_may'
@@ -62,6 +65,39 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appTab: 'weighing-summary',
     appLines: 'src/components/WeighingShiftSummary.tsx',
     components: ['src/components/WeighingShiftSummary.tsx', 'src/components/WeighingReportForm.tsx', 'src/components/WeighingSlipPrintSheet.tsx', 'src/components/WeighingImagePreviewModal.tsx', 'src/lib/weighingSlipConfig.ts'],
+    utils: []
+  },
+  can_tu_dong: {
+    table: 'can_tu_dong',
+    label: 'Cân tự động',
+    sql: [],
+    apiPrefix: '/api/can-tu-dong',
+    serverLines: 'GET /api/can-tu-dong (client supabaseWeighing)',
+    appTab: 'can-tu-dong',
+    appLines: 'src/features/can-tu-dong/index.tsx',
+    components: ['src/components/WeighingImagePreviewModal.tsx'],
+    utils: []
+  },
+  kiem_kho: {
+    table: 'kiem_kho',
+    label: 'Báo cáo kiểm kho',
+    sql: ['supabase-kiem-kho.sql'],
+    apiPrefix: '/api/kiem-kho',
+    serverLines: 'GET/POST/DELETE /api/kiem-kho (client supabaseWeighing)',
+    appTab: 'kiem-kho',
+    appLines: 'src/features/kiem-kho/index.tsx',
+    components: ['src/components/ProductQrScanner.tsx'],
+    utils: []
+  },
+  quan_ly_kho: {
+    table: 'quan_ly_kho',
+    label: 'Quản lý kho',
+    sql: ['supabase-quan-ly-kho.sql'],
+    apiPrefix: '/api/quan-ly-kho',
+    serverLines: 'GET/POST/PUT/DELETE /api/quan-ly-kho (client supabase / he-thong)',
+    appTab: 'quan-ly-kho',
+    appLines: 'src/features/quan-ly-kho/index.tsx',
+    components: [],
     utils: []
   },
   bao_cao_hang_hong: {

@@ -68,6 +68,9 @@ import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
 import { VehiclesPanel } from './features/danh-sach-xe';
+import { CanTuDongPanel } from './features/can-tu-dong';
+import { KiemKhoPanel } from './features/kiem-kho';
+import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -987,6 +990,36 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WeighingShiftSummary onBackToMenu={() => navigateToTab('report-lists')} />
+              </motion.div>
+            ) : resolvedTab === 'can-tu-dong' ? (
+              <motion.div
+                key="can-tu-dong"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <CanTuDongPanel onBack={() => navigateToTab('report-lists')} />
+              </motion.div>
+            ) : resolvedTab === 'kiem-kho' ? (
+              <motion.div
+                key="kiem-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <KiemKhoPanel onBack={() => navigateToTab('report-forms')} currentUser={authUser} />
+              </motion.div>
+            ) : resolvedTab === 'quan-ly-kho' ? (
+              <motion.div
+                key="quan-ly-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <QuanLyKhoPanel onBack={() => navigateToTab('factory-kho')} />
               </motion.div>
             ) : resolvedTab === 'weighing-summary' ? (
               <motion.div
