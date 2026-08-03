@@ -44,7 +44,20 @@ const SUPABASE_KIEM_KHO_TABLE = process.env.SUPABASE_KIEM_KHO_TABLE || 'kiem_kho
 const SUPABASE_QUAN_LY_KHO_TABLE = process.env.SUPABASE_QUAN_LY_KHO_TABLE || 'quan_ly_kho';
 const SUPABASE_DAMAGED_GOODS_TABLE = process.env.SUPABASE_DAMAGED_GOODS_TABLE || 'bao_cao_hang_hong';
 const SUPABASE_PRODUCTS_TABLE = process.env.SUPABASE_PRODUCTS_TABLE || 'san_pham';
-const SUPABASE_MACHINES_TABLE = process.env.SUPABASE_MACHINES_TABLE || 'danh_sach_may';
+/** Sửa typo env phổ biến: anh_sach_may → danh_sach_may */
+const SUPABASE_MACHINES_TABLE = (() => {
+  const raw = String(process.env.SUPABASE_MACHINES_TABLE || '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  if (!raw) return 'danh_sach_may';
+  if (raw === 'anh_sach_may') {
+    console.warn(
+      '[SUPABASE] SUPABASE_MACHINES_TABLE=anh_sach_may (thiếu chữ d) — tự dùng danh_sach_may. Hãy sửa env trên Vercel.'
+    );
+    return 'danh_sach_may';
+  }
+  return raw;
+})();
 const SUPABASE_MATERIALS_TABLE = process.env.SUPABASE_MATERIALS_TABLE || 'kho_nvl';
 const SUPABASE_STAFF_TABLE = process.env.SUPABASE_STAFF_TABLE || 'nhan_su';
 const SUPABASE_VEHICLES_TABLE = process.env.SUPABASE_VEHICLES_TABLE || 'danh_sach_xe';
