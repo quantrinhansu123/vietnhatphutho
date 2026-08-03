@@ -1026,7 +1026,7 @@ export default function AcceptanceReportForm({
                     title="Quét QR mã SP bằng camera"
                   >
                     <ScanBarcode className="h-3.5 w-3.5 shrink-0" />
-                    <span className="hidden min-[380px]:inline">Quét QR</span>
+                    <span className="hidden min-[380px]:inline">Quét ĐT</span>
                   </button>
                 </div>
               ) : undefined

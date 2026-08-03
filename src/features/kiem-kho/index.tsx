@@ -484,10 +484,10 @@ export function KiemKhoPanel({
                 setIsQrScannerOpen(true);
               }}
               className="flex h-9 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
-              title="Quét QR bằng camera"
+              title="Quét QR bằng camera ĐT"
             >
               <ScanBarcode className="h-3.5 w-3.5" />
-              Quét QR
+              Quét ĐT
             </button>
           </div>
         </div>
