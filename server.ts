@@ -8151,6 +8151,111 @@ export function createApp() {
     }
   });
 
+  app.post('/api/kiem-kho/dong-bo-ton-dau', async (_req, res) => {
+    const weighingDb = supabaseWeighing ?? supabase;
+    if (!weighingDb || !supabase) {
+      return res.status(503).json({
+        error: 'Cần cấu hình cả Supabase phiếu cân và Supabase chính để đồng bộ tồn đầu.'
+      });
+    }
+
+    try {
+      const { data, error, count } = await weighingDb
+        .from(SUPABASE_KIEM_KHO_TABLE)
+        .select('id, ma_nvl, ma_sp', { count: 'exact' })
+        .or('da_dong_bo.eq.false,da_dong_bo.is.null')
+        .order('id', { ascending: true })
+        .limit(2000);
+
+      if (error) {
+        const missingSyncColumn = String(error.message || '').toLowerCase().includes('da_dong_bo');
+        return res.status(500).json({
+          error: missingSyncColumn
+            ? 'Bảng kiem_kho chưa có cột đồng bộ. Hãy chạy lại file supabase-kiem-kho.sql trên DB phiếu cân.'
+            : error.message || 'Không tải được các dòng kiểm kho chưa đồng bộ.'
+        });
+      }
+
+      const pendingRows = Array.isArray(data) ? data : [];
+      if (pendingRows.length === 0) {
+        return res.json({ success: true, updated: 0, completed: 0, unmatched: 0, pending: 0 });
+      }
+
+      const completedIds: Array<string | number> = [];
+      const unmatchedCodes = new Set<string>();
+      let updated = 0;
+
+      // RPC tren DB chinh ghi so cai va cong ton trong cung mot transaction, nen bam lai khong cong trung.
+      for (let start = 0; start < pendingRows.length; start += 10) {
+        const batch = pendingRows.slice(start, start + 10);
+        const results = await Promise.all(
+          batch.map(async row => {
+            const catalogCode = String(row.ma_nvl ?? row.ma_sp ?? '').trim();
+            if (!catalogCode) return { row, catalogCode, result: null, error: null };
+            const rpc = await supabase.rpc('dong_bo_kiem_kho_ton_dau', {
+              p_kiem_kho_id: String(row.id),
+              p_ma_sp: catalogCode,
+              p_so_luong: 1
+            });
+            return { row, catalogCode, result: rpc.data as any, error: rpc.error };
+          })
+        );
+
+        for (const item of results) {
+          if (item.error) {
+            const message = String(item.error.message || '');
+            const missingRpc =
+              message.toLowerCase().includes('dong_bo_kiem_kho_ton_dau') ||
+              message.toLowerCase().includes('schema cache');
+            return res.status(500).json({
+              error: missingRpc
+                ? 'DB chính chưa có hàm đồng bộ. Hãy chạy file supabase-san-pham-kiem-kho-dong-bo.sql.'
+                : `Không đồng bộ được mã ${item.catalogCode || item.row.id}. ${message}`,
+              updated,
+              completed: completedIds.length
+            });
+          }
+
+          const result = item.result && typeof item.result === 'object' ? item.result : {};
+          if (result.matched) {
+            completedIds.push(item.row.id);
+            if (result.applied) updated += 1;
+          } else if (item.catalogCode) {
+            unmatchedCodes.add(item.catalogCode);
+          }
+        }
+      }
+
+      let markWarning = '';
+      const syncedAt = new Date().toISOString();
+      for (let start = 0; start < completedIds.length; start += 200) {
+        const ids = completedIds.slice(start, start + 200);
+        const { error: markError } = await weighingDb
+          .from(SUPABASE_KIEM_KHO_TABLE)
+          .update({ da_dong_bo: true, dong_bo_luc: syncedAt })
+          .in('id', ids);
+        if (markError) {
+          markWarning =
+            'Tồn đầu đã được cộng an toàn nhưng chưa đánh dấu hết nguồn; lần đồng bộ sau sẽ tự đối chiếu và không cộng trùng.';
+          break;
+        }
+      }
+
+      return res.json({
+        success: true,
+        updated,
+        completed: completedIds.length,
+        unmatched: unmatchedCodes.size,
+        unmatched_codes: [...unmatchedCodes].slice(0, 20),
+        pending: Math.max((count ?? pendingRows.length) - completedIds.length, 0),
+        has_more: (count ?? pendingRows.length) > pendingRows.length,
+        warning: markWarning || undefined
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi đồng bộ kiểm kho vào tồn đầu.' });
+    }
+  });
+
   app.delete('/api/kiem-kho/:id', async (req, res) => {
     const db = supabaseWeighing ?? supabase;
     if (!db) {

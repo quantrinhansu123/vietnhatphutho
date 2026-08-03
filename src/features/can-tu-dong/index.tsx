@@ -98,7 +98,8 @@ export function CanTuDongPanel({ onBack }: { onBack: () => void }) {
 
       const res = await fetch(`/api/can-tu-dong?${params.toString()}`);
       if (!res.ok) {
-        throw new Error(await readApiErrorMessage(res, 'Không tải được cân tự động.'));
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(readApiErrorMessage(res, errorData, 'Không tải được cân tự động.'));
       }
       const payload = await res.json();
       setRecords(Array.isArray(payload?.records) ? payload.records : []);

@@ -11,7 +11,9 @@ create table if not exists public.kiem_kho (
   ten_sp text,
   loai_sp text,
   ngay_gio_kiem_kho timestamptz not null default now(),
-  nguoi_kiem_kho text
+  nguoi_kiem_kho text,
+  da_dong_bo boolean not null default false,
+  dong_bo_luc timestamptz
 );
 
 alter table public.kiem_kho
@@ -22,12 +24,15 @@ alter table public.kiem_kho
   add column if not exists ten_sp text,
   add column if not exists loai_sp text,
   add column if not exists ngay_gio_kiem_kho timestamptz not null default now(),
-  add column if not exists nguoi_kiem_kho text;
+  add column if not exists nguoi_kiem_kho text,
+  add column if not exists da_dong_bo boolean not null default false,
+  add column if not exists dong_bo_luc timestamptz;
 
 create index if not exists kiem_kho_ngay_gio_idx on public.kiem_kho (ngay_gio_kiem_kho desc);
 create index if not exists kiem_kho_ma_sp_idx on public.kiem_kho (ma_sp);
 create index if not exists kiem_kho_ma_nvl_idx on public.kiem_kho (ma_nvl);
 create index if not exists kiem_kho_ten_kho_idx on public.kiem_kho (ten_kho);
+create index if not exists kiem_kho_da_dong_bo_idx on public.kiem_kho (da_dong_bo, id);
 
 alter table public.kiem_kho enable row level security;
 
@@ -63,3 +68,5 @@ comment on column public.kiem_kho.ten_sp is 'Ten san pham.';
 comment on column public.kiem_kho.loai_sp is 'Loai san pham.';
 comment on column public.kiem_kho.ngay_gio_kiem_kho is 'Thoi diem kiem kho.';
 comment on column public.kiem_kho.nguoi_kiem_kho is 'Nguoi thuc hien kiem kho.';
+comment on column public.kiem_kho.da_dong_bo is 'Da cong dong kiem kho nay vao san_pham.ton_dau_ky.';
+comment on column public.kiem_kho.dong_bo_luc is 'Thoi diem dong bo vao ton dau.';
