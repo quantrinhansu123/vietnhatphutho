@@ -23,6 +23,7 @@ type KiemKhoLine = {
 type KiemKhoRecord = {
   id: number | string;
   ten_kho?: string | null;
+  dot_kiem_kho?: string | null;
   ma_nvl?: string | null;
   ma_sp?: string | null;
   ten_sp?: string | null;
@@ -138,6 +139,7 @@ export function KiemKhoPanel({
 }) {
   const loginName = String(currentUser?.name ?? '').trim();
   const [tenKho, setTenKho] = useState('');
+  const [dotKiemKho, setDotKiemKho] = useState('');
   const [nguoiKiemKho, setNguoiKiemKho] = useState(loginName);
   const [ngayGioKiemKho, setNgayGioKiemKho] = useState(nowLocalDateTimeValue);
 
@@ -341,6 +343,10 @@ export function KiemKhoPanel({
       setError('Nhập tên kho.');
       return;
     }
+    if (!dotKiemKho.trim()) {
+      setError('Nhập đợt kiểm kho.');
+      return;
+    }
     if (!nguoiKiemKho.trim()) {
       setError('Nhập người kiểm kho.');
       return;
@@ -357,6 +363,7 @@ export function KiemKhoPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ten_kho: tenKho.trim(),
+          dot_kiem_kho: dotKiemKho.trim(),
           nguoi_kiem_kho: nguoiKiemKho.trim(),
           ngay_gio_kiem_kho: toIsoFromLocalDateTime(ngayGioKiemKho),
           lines: lines.map(line => ({
@@ -429,21 +436,52 @@ export function KiemKhoPanel({
         </button>
       </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white px-3 py-2.5 shadow-sm sm:px-4">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-zinc-600">
-          <span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Kho </span>
-            {tenKho.trim() || '—'}
-          </span>
-          <span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Người kiểm </span>
-            {nguoiKiemKho.trim() || '—'}
-          </span>
-          <span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Thời điểm </span>
-            {ngayGioKiemKho ? new Date(ngayGioKiemKho).toLocaleString('vi-VN') : '—'}
-          </span>
-          <span className="text-[11px] font-medium text-zinc-400">Nhập trong form Thêm</span>
+      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-4">
+        <h2 className="mb-3 text-sm font-black text-zinc-900">Thông tin phiếu</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
+            Tên kho *
+            <input
+              list="kiem-kho-ten-kho"
+              value={tenKho}
+              onChange={e => setTenKho(e.target.value)}
+              className={`mt-1 ${inputClass}`}
+              placeholder="VD: Kho văn phòng"
+            />
+            <datalist id="kiem-kho-ten-kho">
+              {warehouseNames.map(name => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+          </label>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
+            Đợt kiểm kho *
+            <input
+              value={dotKiemKho}
+              onChange={e => setDotKiemKho(e.target.value)}
+              className={`mt-1 ${inputClass}`}
+              placeholder="VD: Đợt 1 — 03/08/2026"
+            />
+          </label>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
+            Người kiểm kho *
+            <input
+              value={nguoiKiemKho}
+              readOnly
+              className={`mt-1 ${inputClass} cursor-default bg-zinc-50 text-zinc-700`}
+              placeholder="Theo tên đăng nhập"
+              title="Tự động theo tên đăng nhập"
+            />
+          </label>
+          <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
+            Ngày giờ kiểm kho
+            <input
+              type="datetime-local"
+              value={ngayGioKiemKho}
+              onChange={e => setNgayGioKiemKho(e.target.value)}
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
         </div>
       </section>
 
@@ -572,6 +610,7 @@ export function KiemKhoPanel({
               <tr>
                 <th className="px-3 py-2.5">Thời điểm</th>
                 <th className="px-3 py-2.5">Kho</th>
+                <th className="px-3 py-2.5">Đợt</th>
                 <th className="px-3 py-2.5">Mã NVL</th>
                 <th className="px-3 py-2.5">Mã quét</th>
                 <th className="px-3 py-2.5">Tên SP</th>
@@ -583,7 +622,7 @@ export function KiemKhoPanel({
             <tbody>
               {recent.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm font-semibold text-zinc-500">
+                  <td colSpan={9} className="px-3 py-8 text-center text-sm font-semibold text-zinc-500">
                     Chưa có dữ liệu kiểm kho.
                   </td>
                 </tr>
@@ -594,6 +633,7 @@ export function KiemKhoPanel({
                       {formatDateTime(row.ngay_gio_kiem_kho || row.created_at)}
                     </td>
                     <td className="px-3 py-2 font-semibold text-zinc-800">{row.ten_kho || '—'}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.dot_kiem_kho || '—'}</td>
                     <td className="px-3 py-2 font-mono font-bold text-zinc-800">{row.ma_nvl || '—'}</td>
                     <td className="px-3 py-2 font-mono font-bold text-zinc-900">{row.ma_sp || '—'}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-700">{row.ten_sp || '—'}</td>
@@ -654,40 +694,19 @@ export function KiemKhoPanel({
                 </div>
 
                 <div className="space-y-3 overflow-y-auto px-4 py-4">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                    Tên kho *
-                    <input
-                      list="kiem-kho-ten-kho"
-                      value={tenKho}
-                      onChange={e => setTenKho(e.target.value)}
-                      className={`mt-1 ${inputClass}`}
-                      placeholder="VD: Kho văn phòng"
-                    />
-                    <datalist id="kiem-kho-ten-kho">
-                      {warehouseNames.map(name => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
-                  </label>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                    Người kiểm kho *
-                    <input
-                      value={nguoiKiemKho}
-                      readOnly
-                      className={`mt-1 ${inputClass} cursor-default bg-zinc-50 text-zinc-700`}
-                      placeholder="Theo tên đăng nhập"
-                      title="Tự động theo tên đăng nhập"
-                    />
-                  </label>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                    Ngày giờ kiểm kho
-                    <input
-                      type="datetime-local"
-                      value={ngayGioKiemKho}
-                      onChange={e => setNgayGioKiemKho(e.target.value)}
-                      className={`mt-1 ${inputClass}`}
-                    />
-                  </label>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-[11px] font-semibold text-zinc-600">
+                    <p>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Kho </span>
+                      {tenKho.trim() || '—'}
+                    </p>
+                    <p className="mt-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Đợt </span>
+                      {dotKiemKho.trim() || '—'}
+                    </p>
+                    <p className="mt-1 text-[10px] font-medium text-zinc-400">
+                      Sửa thông tin phiếu ở form phía trên trang
+                    </p>
+                  </div>
                   <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
                     Mã SP / mã quét
                     <input

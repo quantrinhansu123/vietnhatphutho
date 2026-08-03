@@ -13,7 +13,6 @@ import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType }
 import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber } from './types';
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseBulkProductNplComponentsExcel, parseProductNplComponentsExcel } from '../../utils/productNplComponentsExcel';
 import { waitForPrintImagesReady } from '../../utils/printReady';
-import { vietNhatLogoUrl } from '../../components/layout/constants';
 
 const PRODUCT_QR_LABEL_FOOTER_ROWS = ['Cơ sở sản xuất', 'Công nhân sx', 'Ngày sản xuất'] as const;
 
@@ -2061,9 +2060,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                     {qrImages[product.id] ? (
                       <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
                         <img src={qrImages[product.id]} alt={`QR ${product.code}`} className="h-full w-full" />
-                        <span className="absolute left-1/2 top-1/2 flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded bg-white p-0.5 shadow-sm">
-                          <img src={vietNhatLogoUrl} alt="Logo Viet Nhat" className="max-h-full max-w-full object-contain" />
-                        </span>
                       </div>
                     ) : (
                       <span className="text-xs font-semibold text-zinc-300">Đang tạo</span>
@@ -2296,9 +2292,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                   {printQrImages[label.qrPayload] && (
                     <img src={printQrImages[label.qrPayload]} alt={`QR ${label.qrPayload}`} />
                   )}
-                  <span>
-                    <img src={vietNhatLogoUrl} alt="Logo Viet Nhat" />
-                  </span>
                 </div>
                 <p className="qr-print-payload">{label.qrPayload}</p>
               </div>

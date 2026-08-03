@@ -46,7 +46,7 @@ import { readCachedReports, STORAGE_DRAFT_KEY, STORAGE_OFFLINE_KEY, STORAGE_REPO
 import LoginPage, { type AuthUser } from './components/LoginPage';
 import { buildAllowedTabSet, hasFullMenuAccess, STAFF_MENU_VIEW_TREE } from './features/nhan-su/menuViews';
 import { VietNhatLogo } from './components/layout/Logo';
-import { HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
+import { BackButton, HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
 import {
   MenuCardGrid, MainMenuFlow, FourStepMenuFlow, MenuPageHeader, SubNav, MAIN_MENU_ITEMS,
   REPORT_FORM_MENU_ITEMS, PRODUCTION_REPORT_MENU_ITEMS, FACILITY_MENU_ITEMS,
@@ -806,7 +806,12 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Quản lý CSVC" desc="Cơ sở vật chất, kho hàng và thiết bị sản xuất." />
+                <div className="flex items-start gap-3">
+                  <BackButton onClick={() => navigateToTab('factory')} />
+                  <div className="min-w-0 flex-1">
+                    <MenuPageHeader title="Quản lý CSVC" desc="Cơ sở vật chất, kho hàng và thiết bị sản xuất." />
+                  </div>
+                </div>
                 <MenuCardGrid items={filterMenuItems(FACILITY_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'hcns' ? (
@@ -1009,7 +1014,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <KiemKhoPanel onBack={() => navigateToTab('report-forms')} currentUser={authUser} />
+                <KiemKhoPanel onBack={() => navigateToTab('factory-kho')} currentUser={authUser} />
               </motion.div>
             ) : resolvedTab === 'quan-ly-kho' ? (
               <motion.div
@@ -1218,7 +1223,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ProductsPanel onBack={() => navigateToTab('facility-management')} />
+                <ProductsPanel onBack={() => navigateToTab('factory-kho')} />
               </motion.div>
             ) : activeTab === 'machines' ? (
               <motion.div
@@ -1238,7 +1243,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MaterialsInventoryPanel onBack={() => navigateToTab('facility-management')} />
+                <MaterialsInventoryPanel onBack={() => navigateToTab('factory-kho')} />
               </motion.div>
             ) : activeTab === 'warehouse-slip' ? (
               <motion.div
@@ -1249,7 +1254,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WarehouseSlipPanel
-                  onBack={() => navigateToTab('facility-management')}
+                  onBack={() => navigateToTab('factory-kho')}
                   onOpenHistory={() => navigateToTab('warehouse-history')}
                 />
               </motion.div>
@@ -1262,7 +1267,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WarehouseHistoryPanel
-                  onBack={() => navigateToTab('facility-management')}
+                  onBack={() => navigateToTab('factory-kho')}
                   onOpenSlip={() => navigateToTab('warehouse-slip')}
                 />
               </motion.div>

@@ -834,28 +834,6 @@ input[type="number"] {
     height: 100%;
   }
 
-  .qr-print-code > span {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 9mm;
-    height: 9mm;
-    transform: translate(-50%, -50%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 1.2mm;
-    background: #ffffff;
-    padding: 0.8mm;
-    box-shadow: 0 0 0 0.3mm #ffffff;
-  }
-
-  .qr-print-code > span > img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
   .qr-print-payload {
     margin: 0;
     max-width: 42mm;
@@ -877,11 +855,14 @@ input[type="number"] {
 
   .qr-print-product-code {
     margin: 0;
-    font-size: 18pt;
+    font-size: 11pt;
     font-weight: 900;
-    line-height: 1.1;
+    line-height: 1.15;
     text-align: left;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .qr-print-footer {
