@@ -7,13 +7,76 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { normalizeMaterialsInventory } from '../kho-nvl';
-import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, Search } from 'lucide-react';
+import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, Search, QrCode, X } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
 import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType } from './types';
 import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber } from './types';
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseBulkProductNplComponentsExcel, parseProductNplComponentsExcel } from '../../utils/productNplComponentsExcel';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { vietNhatLogoUrl } from '../../components/layout/constants';
+
+const PRODUCT_QR_LABEL_FOOTER_ROWS = ['Cơ sở sản xuất', 'Công nhân sx', 'Ngày sản xuất'] as const;
+
+type ProductQrPrintLabel = {
+  key: string;
+  product: ProductRow;
+  qrPayload: string;
+};
+
+function parsePrintCopyCount(raw: string) {
+  const value = Math.floor(Number(String(raw ?? '').trim().replace(',', '.')));
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return Math.min(value, 999);
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+/** Phần thời gian QR: ssmmhhddmm (giây-phút-giờ-ngày-tháng). */
+function buildProductQrTimeSerial(date = new Date()) {
+  return `${pad2(date.getSeconds())}${pad2(date.getMinutes())}${pad2(date.getHours())}${pad2(date.getDate())}${pad2(date.getMonth() + 1)}`;
+}
+
+function randomProductQrCode(length = 1) {
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
+/** Nội dung QR: MãSP_ssmmhhddmm + 1 mã random (vd MT-MN009_3045150107K). */
+function buildProductLabelQrPayload(productCode: string, usedPayloads: Set<string>) {
+  const maSp = String(productCode ?? '').trim();
+  if (!maSp) return '';
+
+  for (let attempt = 0; attempt < 48; attempt += 1) {
+    const randomLen = attempt < 24 ? 1 : 2;
+    const payload = `${maSp}_${buildProductQrTimeSerial()}${randomProductQrCode(randomLen)}`;
+    if (!usedPayloads.has(payload)) {
+      usedPayloads.add(payload);
+      return payload;
+    }
+  }
+
+  const fallback = `${maSp}_${buildProductQrTimeSerial()}${randomProductQrCode(1)}${Date.now().toString(36).slice(-3).toUpperCase()}`;
+  usedPayloads.add(fallback);
+  return fallback;
+}
+
+async function createQrDataUrl(payload: string) {
+  return QRCode.toDataURL(payload, {
+    errorCorrectionLevel: 'H',
+    margin: 1,
+    width: 220,
+    color: {
+      dark: '#111111',
+      light: '#ffffff'
+    }
+  });
+}
 
 export type ProductViewTab = 'info' | 'components';
 
@@ -1127,6 +1190,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [productError, setProductError] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
+  const [printQrLabels, setPrintQrLabels] = useState<ProductQrPrintLabel[]>([]);
+  const [printQrImages, setPrintQrImages] = useState<Record<string, string>>({});
+  const [isGeneratingPrintQr, setIsGeneratingPrintQr] = useState(false);
+  const [showPrintQtyModal, setShowPrintQtyModal] = useState(false);
+  const [printQtyById, setPrintQtyById] = useState<Record<string, string>>({});
+  const [printQtyError, setPrintQtyError] = useState('');
+  const [bulkPrintQty, setBulkPrintQty] = useState('1');
   const [isDeletingProducts, setIsDeletingProducts] = useState(false);
   const [productActionMessage, setProductActionMessage] = useState('');
   const [viewingProduct, setViewingProduct] = useState<ProductRow | null>(null);
@@ -1593,10 +1663,83 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     });
   };
 
-  const handlePrintSelectedQr = () => {
-    if (selectedProducts.length === 0) return;
-    waitForPrintImagesReady().then(() => window.print());
+  const handleOpenPrintQtyModal = () => {
+    const printable = selectedProducts.filter(product => String(product.code || '').trim());
+    if (printable.length === 0) return;
+    const next: Record<string, string> = {};
+    printable.forEach(product => {
+      next[product.id] = printQtyById[product.id] || '1';
+    });
+    setPrintQtyById(next);
+    setBulkPrintQty('1');
+    setPrintQtyError('');
+    setShowPrintQtyModal(true);
   };
+
+  const handleApplyBulkPrintQty = () => {
+    const qty = String(Math.max(1, parsePrintCopyCount(bulkPrintQty) || 1));
+    setBulkPrintQty(qty);
+    setPrintQtyById(prev => {
+      const next = { ...prev };
+      selectedProducts.forEach(product => {
+        if (!String(product.code || '').trim()) return;
+        next[product.id] = qty;
+      });
+      return next;
+    });
+  };
+
+  const handleConfirmPrintQrLabels = async () => {
+    const usedPayloads = new Set<string>();
+    const labels: ProductQrPrintLabel[] = [];
+
+    selectedProducts.forEach(product => {
+      const code = String(product.code || '').trim();
+      if (!code) return;
+      const copies = parsePrintCopyCount(printQtyById[product.id] ?? '0');
+      for (let index = 0; index < copies; index += 1) {
+        const qrPayload = buildProductLabelQrPayload(code, usedPayloads);
+        if (!qrPayload) continue;
+        labels.push({
+          key: `${product.id}-${index}-${qrPayload}`,
+          product,
+          qrPayload
+        });
+      }
+    });
+
+    if (labels.length === 0) {
+      setPrintQtyError('Nhập số bản (> 0) cho ít nhất một mã SP.');
+      return;
+    }
+
+    setPrintQtyError('');
+    setIsGeneratingPrintQr(true);
+    try {
+      const imageEntries = await Promise.all(
+        labels.map(async label => [label.qrPayload, await createQrDataUrl(label.qrPayload)] as const)
+      );
+      setPrintQrImages(Object.fromEntries(imageEntries));
+      setPrintQrLabels(labels);
+      setShowPrintQtyModal(false);
+      window.setTimeout(() => {
+        void waitForPrintImagesReady().then(() => window.print());
+      }, 80);
+    } catch (error: any) {
+      setPrintQtyError(error?.message || 'Không tạo được mã QR để in.');
+    } finally {
+      setIsGeneratingPrintQr(false);
+    }
+  };
+
+  const totalPrintCopies = useMemo(
+    () =>
+      selectedProducts.reduce((sum, product) => {
+        if (!String(product.code || '').trim()) return sum;
+        return sum + parsePrintCopyCount(printQtyById[product.id] ?? '0');
+      }, 0),
+    [printQtyById, selectedProducts]
+  );
 
   const handleBulkDeleteProducts = async () => {
     if (selectedProducts.length === 0) return;
@@ -1754,7 +1897,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         <div className="min-w-0">
           <p className="text-sm font-black text-zinc-950">Thao tác hàng loạt</p>
           <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-            Đã chọn {selectedProducts.length} dòng. Có thể nhập Excel thành phần cho nhiều sản phẩm, in QR hoặc xóa các sản phẩm đã tick.
+            Đã tick {selectedProducts.length} dòng. In QR theo tickbox (hỏi số bản từng mã), nhập Excel thành phần hoặc xóa.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -1802,10 +1945,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           </button>
           <button
             type="button"
-            onClick={handlePrintSelectedQr}
+            onClick={handleOpenPrintQtyModal}
             disabled={selectedProducts.length === 0}
-            className="h-11 rounded-xl bg-[#ef1b2d] px-5 text-xs font-black text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-11 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-5 text-xs font-black text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <QrCode className="h-4 w-4" />
             In QR đã chọn
           </button>
         </div>
@@ -1972,19 +2116,162 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         />
       )}
 
+      {showPrintQtyModal
+        ? createPortal(
+            <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/45 p-0 sm:items-center sm:p-4">
+              <button
+                type="button"
+                className="absolute inset-0 cursor-default"
+                aria-label="Đóng"
+                onClick={() => setShowPrintQtyModal(false)}
+              />
+              <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-zinc-200 bg-gradient-to-r from-zinc-50 to-white px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#ef1b2d]">In tem QR</p>
+                    <h3 className="mt-0.5 text-base font-black text-zinc-900">Số bản theo mã SP</h3>
+                    <p className="mt-1 text-[11px] font-semibold text-zinc-500">
+                      Mỗi tem: MãSP_ssmmhhddmm + 1 mã random · nhập số bản từng mã
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintQtyModal(false)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50"
+                    title="Đóng"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 overflow-y-auto px-4 py-4">
+                  <div className="flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                    <label className="min-w-[120px] flex-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                      Áp dụng tất cả
+                      <input
+                        type="number"
+                        min={1}
+                        max={999}
+                        value={bulkPrintQty}
+                        onChange={e => setBulkPrintQty(e.target.value)}
+                        className="mt-1 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkPrintQty}
+                      className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950"
+                    >
+                      Áp dụng
+                    </button>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-zinc-200">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                        <tr>
+                          <th className="px-3 py-2.5 font-black">Mã SP</th>
+                          <th className="w-28 px-3 py-2.5 text-center font-black">Số bản</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {selectedProducts
+                          .filter(product => String(product.code || '').trim())
+                          .map(product => (
+                            <tr key={product.id}>
+                              <td className="px-3 py-2.5">
+                                <p className="font-black text-zinc-900">{product.code}</p>
+                                <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-zinc-500">
+                                  {product.name || '—'}
+                                </p>
+                              </td>
+                              <td className="px-3 py-2.5 text-center">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={999}
+                                  value={printQtyById[product.id] ?? '1'}
+                                  onChange={e =>
+                                    setPrintQtyById(prev => ({
+                                      ...prev,
+                                      [product.id]: e.target.value
+                                    }))
+                                  }
+                                  className="mx-auto h-10 w-20 rounded-lg border border-zinc-200 bg-white px-2 text-center text-sm font-black text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {printQtyError ? (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                      {printQtyError}
+                    </div>
+                  ) : null}
+
+                  <p className="text-xs font-semibold text-zinc-500">
+                    Tổng sẽ in: <span className="font-black text-[#ef1b2d]">{totalPrintCopies}</span> tem
+                  </p>
+                </div>
+
+                <div className="flex gap-2 border-t border-zinc-200 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintQtyModal(false)}
+                    className="inline-flex h-10 flex-1 items-center justify-center rounded-xl border border-zinc-200 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmPrintQrLabels()}
+                    disabled={totalPrintCopies <= 0 || isGeneratingPrintQr}
+                    className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] text-xs font-bold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isGeneratingPrintQr ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                    {isGeneratingPrintQr
+                      ? 'Đang tạo QR...'
+                      : `In ${totalPrintCopies > 0 ? `${totalPrintCopies} tem` : 'QR'}`}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
       <div className="qr-print-sheet">
         <div className="qr-print-page">
-          {selectedProducts.map(product => (
-            <div key={`print-${product.id}`} className="qr-print-card">
-              <div className="qr-print-code">
-                {qrImages[product.id] && <img src={qrImages[product.id]} alt={`QR ${product.code}`} />}
-                <span>
-                  <img src={vietNhatLogoUrl} alt="Logo Viet Nhat" />
-                </span>
+          {printQrLabels.map(label => (
+            <div key={label.key} className="qr-print-card">
+              <div className="qr-print-left">
+                <div className="qr-print-code">
+                  {printQrImages[label.qrPayload] && (
+                    <img src={printQrImages[label.qrPayload]} alt={`QR ${label.qrPayload}`} />
+                  )}
+                  <span>
+                    <img src={vietNhatLogoUrl} alt="Logo Viet Nhat" />
+                  </span>
+                </div>
+                <p className="qr-print-payload">{label.qrPayload}</p>
               </div>
-              <div className="qr-print-meta">
-                <strong>{product.code || '-'}</strong>
-                <p>{product.name || '-'}</p>
+              <div className="qr-print-right">
+                <p className="qr-print-product-code">{label.product.code || '-'}</p>
+                <table className="qr-print-footer">
+                  <tbody>
+                    {PRODUCT_QR_LABEL_FOOTER_ROWS.map(rowLabel => (
+                      <tr key={rowLabel}>
+                        <th>{rowLabel}</th>
+                        <td>
+                          <span className="qr-print-footer-field" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           ))}
