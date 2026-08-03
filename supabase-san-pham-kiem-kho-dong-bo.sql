@@ -5,7 +5,9 @@ create table if not exists public.kiem_kho_dong_bo_ton_dau (
   kiem_kho_id text primary key,
   ma_sp text not null,
   so_luong numeric not null default 1,
-  san_pham_id uuid not null references public.san_pham(id) on delete restrict,
+  -- DB san_pham cu co the co cot id nhung chua khai bao PK/UNIQUE.
+  -- Luu ID de truy vet, khong dung FK de migration chay duoc tren schema cu.
+  san_pham_id uuid not null,
   created_at timestamptz not null default now()
 );
 
