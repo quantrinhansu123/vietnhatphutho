@@ -1758,6 +1758,84 @@ function isMissingTableError(error: { code?: string; message?: string } | null) 
   return /could not find the table/i.test(error.message || '');
 }
 
+type SupabaseDbRef = { client: SupabaseClient; label: string };
+
+/** Ưu tiên DB mới (phieu-can), rồi DB cũ (he-thong). */
+function listSupabaseDbRefsPreferNew(): SupabaseDbRef[] {
+  const refs: SupabaseDbRef[] = [];
+  const seenUrls = new Set<string>();
+
+  const push = (client: SupabaseClient | null, label: string, url: string) => {
+    if (!client) return;
+    const key = (url || label).trim().toLowerCase();
+    if (key && seenUrls.has(key)) return;
+    if (key) seenUrls.add(key);
+    refs.push({ client, label });
+  };
+
+  push(supabaseWeighing, SUPABASE_WEIGHING_DB_LABEL, SUPABASE_WEIGHING_URL);
+  push(supabase, SUPABASE_MAIN_DB_LABEL, SUPABASE_URL || '');
+  return refs;
+}
+
+const supabaseTableClientCache = new Map<string, SupabaseDbRef>();
+
+/**
+ * Nếu bảng không có trên Supabase mới → tự dùng Supabase cũ.
+ * Cache theo tên bảng sau lần resolve đầu.
+ */
+async function resolveSupabaseClientForTable(table: string): Promise<SupabaseDbRef | null> {
+  const cached = supabaseTableClientCache.get(table);
+  if (cached) return cached;
+
+  const refs = listSupabaseDbRefsPreferNew();
+  for (const ref of refs) {
+    const { error } = await ref.client.from(table).select('*').limit(1);
+    if (!error) {
+      supabaseTableClientCache.set(table, ref);
+      console.log(`[SUPABASE] Bảng ${table} dùng DB ${ref.label}`);
+      return ref;
+    }
+    if (!isMissingTableError(error)) {
+      // Bảng có thể tồn tại nhưng lỗi khác (RLS/cột...) — vẫn gắn DB này.
+      supabaseTableClientCache.set(table, ref);
+      console.warn(`[SUPABASE] Bảng ${table} trên ${ref.label}: ${error.message}`);
+      return ref;
+    }
+    console.warn(`[SUPABASE] Không thấy bảng ${table} trên ${ref.label}, thử DB tiếp theo...`);
+  }
+
+  return null;
+}
+
+async function runOnSupabaseTableWithFallback<T>(
+  table: string,
+  run: (client: SupabaseClient) => Promise<{ data: T; error: { code?: string; message?: string } | null }>
+): Promise<{ data: T | null; error: { code?: string; message?: string } | null; dbLabel: string | null }> {
+  const refs = listSupabaseDbRefsPreferNew();
+  if (refs.length === 0) {
+    return { data: null, error: { message: 'Supabase chưa được cấu hình.' }, dbLabel: null };
+  }
+
+  let lastMissing: { code?: string; message?: string } | null = null;
+
+  for (const ref of refs) {
+    const { data, error } = await run(ref.client);
+    if (!error) {
+      supabaseTableClientCache.set(table, ref);
+      return { data, error: null, dbLabel: ref.label };
+    }
+    if (isMissingTableError(error)) {
+      lastMissing = error;
+      console.warn(`[SUPABASE] ${table} không có trên ${ref.label}, fallback DB khác...`);
+      continue;
+    }
+    return { data: null, error, dbLabel: ref.label };
+  }
+
+  return { data: null, error: lastMissing, dbLabel: null };
+}
+
 function respondSupabaseReadError(
   res: express.Response,
   error: { code?: string; message?: string },
@@ -1768,7 +1846,8 @@ function respondSupabaseReadError(
     return res.json({
       ...emptyPayload,
       source: 'local',
-      warning: `Bảng ${table} chưa có trên Supabase (DB ${SUPABASE_MAIN_DB_LABEL}). ${error.message || ''}`.trim()
+      warning:
+        `Bảng ${table} chưa có trên Supabase mới (${SUPABASE_WEIGHING_DB_LABEL}) lẫn cũ (${SUPABASE_MAIN_DB_LABEL}). ${error.message || ''}`.trim()
     });
   }
   console.error(`Supabase ${table} error:`, error);
@@ -3328,10 +3407,21 @@ function machineKeyFilters(key: string): Array<{ column: string; value: string |
 }
 
 async function updateMachineByKey(key: string, record: Record<string, unknown>) {
+  const resolved = await resolveSupabaseClientForTable(SUPABASE_MACHINES_TABLE);
+  if (!resolved) {
+    return {
+      data: null,
+      error: {
+        code: 'PGRST205',
+        message: `Could not find the table 'public.${SUPABASE_MACHINES_TABLE}' in the schema cache`
+      }
+    };
+  }
+
   let lastError: { code?: string; message?: string } | null = null;
 
   for (const filter of machineKeyFilters(key)) {
-    const { data, error } = await supabase!
+    const { data, error } = await resolved.client
       .from(SUPABASE_MACHINES_TABLE)
       .update(record)
       .eq(filter.column, filter.value)
@@ -3351,10 +3441,21 @@ async function updateMachineByKey(key: string, record: Record<string, unknown>) 
 }
 
 async function deleteMachineByKey(key: string) {
+  const resolved = await resolveSupabaseClientForTable(SUPABASE_MACHINES_TABLE);
+  if (!resolved) {
+    return {
+      data: null,
+      error: {
+        code: 'PGRST205',
+        message: `Could not find the table 'public.${SUPABASE_MACHINES_TABLE}' in the schema cache`
+      }
+    };
+  }
+
   let lastError: { code?: string; message?: string } | null = null;
 
   for (const filter of machineKeyFilters(key)) {
-    const { data, error } = await supabase!
+    const { data, error } = await resolved.client
       .from(SUPABASE_MACHINES_TABLE)
       .delete()
       .eq(filter.column, filter.value)
@@ -5213,23 +5314,28 @@ export function createApp() {
   });
 
   app.get('/api/danh-sach-may', async (_req, res) => {
-    if (!supabase) {
+    if (!supabase && !supabaseWeighing) {
       return res.json({ machines: [], total: 0, source: 'local' });
     }
 
     try {
-      const { data, error } = await supabase
-        .from(SUPABASE_MACHINES_TABLE)
-        .select('*');
+      const result = await runOnSupabaseTableWithFallback(SUPABASE_MACHINES_TABLE, async client => {
+        const { data, error } = await client.from(SUPABASE_MACHINES_TABLE).select('*');
+        return { data, error };
+      });
 
-      if (error) {
-        return respondSupabaseReadError(res, error, SUPABASE_MACHINES_TABLE, { machines: [], total: 0 });
+      if (result.error) {
+        return respondSupabaseReadError(res, result.error, SUPABASE_MACHINES_TABLE, {
+          machines: [],
+          total: 0
+        });
       }
 
       return res.json({
-        machines: data || [],
-        total: data?.length || 0,
-        source: 'supabase'
+        machines: result.data || [],
+        total: result.data?.length || 0,
+        source: 'supabase',
+        db: result.dbLabel
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách máy.' });
@@ -5237,7 +5343,7 @@ export function createApp() {
   });
 
   app.post('/api/danh-sach-may', async (req, res) => {
-    if (!supabase) {
+    if (!supabase && !supabaseWeighing) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
 
@@ -5261,7 +5367,14 @@ export function createApp() {
         ty_le_tron: parseMachineMixingRatios(req.body?.mixingRatios ?? req.body?.ty_le_tron)
       };
 
-      const { data, error } = await supabase
+      const resolved = await resolveSupabaseClientForTable(SUPABASE_MACHINES_TABLE);
+      if (!resolved) {
+        return res.status(500).json({
+          error: `Bảng ${SUPABASE_MACHINES_TABLE} chưa tồn tại trên Supabase mới lẫn cũ. Hãy chạy file supabase-danh-sach-may.sql.`
+        });
+      }
+
+      const { data, error } = await resolved.client
         .from(SUPABASE_MACHINES_TABLE)
         .insert(record)
         .select('*')
@@ -5280,14 +5393,14 @@ export function createApp() {
         });
       }
 
-      return res.status(201).json({ success: true, machine: data });
+      return res.status(201).json({ success: true, machine: data, db: resolved.label });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi thêm máy mới.' });
     }
   });
 
   app.patch('/api/danh-sach-may/:id', async (req, res) => {
-    if (!supabase) {
+    if (!supabase && !supabaseWeighing) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
 
@@ -5320,7 +5433,7 @@ export function createApp() {
   });
 
   app.delete('/api/danh-sach-may/:id', async (req, res) => {
-    if (!supabase) {
+    if (!supabase && !supabaseWeighing) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
 
@@ -5348,7 +5461,7 @@ export function createApp() {
   });
 
   app.patch('/api/danh-sach-may/:id/image', async (req, res) => {
-    if (!supabase) {
+    if (!supabase && !supabaseWeighing) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
 
@@ -7974,10 +8087,14 @@ export function createApp() {
   });
 
   app.get('/api/can-tu-dong', async (req, res) => {
-    const db = supabaseWeighing ?? supabase;
-    if (!db) {
-      return res.status(503).json({ error: 'Supabase phiếu cân chưa được cấu hình.' });
+    const resolved = await resolveSupabaseClientForTable(SUPABASE_CAN_TU_DONG_TABLE);
+    if (!resolved) {
+      return res.status(503).json({
+        error: `Bảng ${SUPABASE_CAN_TU_DONG_TABLE} chưa có trên Supabase mới lẫn cũ.`
+      });
     }
+    const db = resolved.client;
+    const dbLabel = resolved.label;
 
     const limitRaw = Number(req.query.limit ?? 200);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 200;
@@ -8004,7 +8121,7 @@ export function createApp() {
       if (error) {
         return res.status(500).json({
           error: error.message || 'Không đọc được bảng can_tu_dong.',
-          db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+          db: dbLabel
         });
       }
 
@@ -8020,22 +8137,26 @@ export function createApp() {
         records,
         total: records.length,
         source: 'supabase',
-        db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL,
+        db: dbLabel,
         table: SUPABASE_CAN_TU_DONG_TABLE
       });
     } catch (err: any) {
       return res.status(500).json({
         error: err?.message || 'Lỗi khi tải cân tự động.',
-        db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+        db: dbLabel
       });
     }
   });
 
   app.get('/api/kiem-kho', async (req, res) => {
-    const db = supabaseWeighing ?? supabase;
-    if (!db) {
-      return res.status(503).json({ error: 'Supabase phiếu cân chưa được cấu hình.' });
+    const resolved = await resolveSupabaseClientForTable(SUPABASE_KIEM_KHO_TABLE);
+    if (!resolved) {
+      return res.status(503).json({
+        error: `Bảng ${SUPABASE_KIEM_KHO_TABLE} chưa có trên Supabase mới lẫn cũ.`
+      });
     }
+    const db = resolved.client;
+    const dbLabel = resolved.label;
 
     const limitRaw = Number(req.query.limit ?? 200);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 200;
@@ -8060,7 +8181,7 @@ export function createApp() {
       if (error) {
         return res.status(500).json({
           error: error.message || 'Không đọc được bảng kiem_kho.',
-          db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+          db: dbLabel
         });
       }
 
@@ -8069,22 +8190,26 @@ export function createApp() {
         records,
         total: records.length,
         source: 'supabase',
-        db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL,
+        db: dbLabel,
         table: SUPABASE_KIEM_KHO_TABLE
       });
     } catch (err: any) {
       return res.status(500).json({
         error: err?.message || 'Lỗi khi tải kiểm kho.',
-        db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+        db: dbLabel
       });
     }
   });
 
   app.post('/api/kiem-kho', async (req, res) => {
-    const db = supabaseWeighing ?? supabase;
-    if (!db) {
-      return res.status(503).json({ error: 'Supabase phiếu cân chưa được cấu hình.' });
+    const resolved = await resolveSupabaseClientForTable(SUPABASE_KIEM_KHO_TABLE);
+    if (!resolved) {
+      return res.status(503).json({
+        error: `Bảng ${SUPABASE_KIEM_KHO_TABLE} chưa có trên Supabase mới lẫn cũ.`
+      });
     }
+    const db = resolved.client;
+    const dbLabel = resolved.label;
 
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const tenKho = String(body.ten_kho ?? body.tenKho ?? '').trim();
@@ -8139,7 +8264,7 @@ export function createApp() {
       if (error) {
         return res.status(500).json({
           error: error.message || 'Không lưu được kiểm kho.',
-          db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+          db: dbLabel
         });
       }
 
@@ -8148,13 +8273,13 @@ export function createApp() {
         records,
         total: records.length,
         source: 'supabase',
-        db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL,
+        db: dbLabel,
         table: SUPABASE_KIEM_KHO_TABLE
       });
     } catch (err: any) {
       return res.status(500).json({
         error: err?.message || 'Lỗi khi lưu kiểm kho.',
-        db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+        db: dbLabel
       });
     }
   });
@@ -8265,38 +8390,43 @@ export function createApp() {
   });
 
   app.delete('/api/kiem-kho/:id', async (req, res) => {
-    const db = supabaseWeighing ?? supabase;
-    if (!db) {
-      return res.status(503).json({ error: 'Supabase phiếu cân chưa được cấu hình.' });
+    const resolved = await resolveSupabaseClientForTable(SUPABASE_KIEM_KHO_TABLE);
+    if (!resolved) {
+      return res.status(503).json({
+        error: `Bảng ${SUPABASE_KIEM_KHO_TABLE} chưa có trên Supabase mới lẫn cũ.`
+      });
     }
 
     const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ error: 'Thiếu ID kiểm kho.' });
 
     try {
-      const { error } = await db.from(SUPABASE_KIEM_KHO_TABLE).delete().eq('id', id);
+      const { error } = await resolved.client.from(SUPABASE_KIEM_KHO_TABLE).delete().eq('id', id);
       if (error) {
         return res.status(500).json({
           error: error.message || 'Không xóa được dòng kiểm kho.',
-          db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+          db: resolved.label
         });
       }
-      return res.json({ success: true });
+      return res.json({ success: true, db: resolved.label });
     } catch (err: any) {
       return res.status(500).json({
         error: err?.message || 'Lỗi khi xóa kiểm kho.',
-        db: supabaseWeighing ? SUPABASE_WEIGHING_DB_LABEL : SUPABASE_MAIN_DB_LABEL
+        db: resolved.label
       });
     }
   });
 
   app.get('/api/quan-ly-kho', async (_req, res) => {
-    if (!supabase) {
-      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const resolved = await resolveSupabaseClientForTable(SUPABASE_QUAN_LY_KHO_TABLE);
+    if (!resolved) {
+      return res.status(503).json({
+        error: `Bảng ${SUPABASE_QUAN_LY_KHO_TABLE} chưa có trên Supabase mới lẫn cũ.`
+      });
     }
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await resolved.client
         .from(SUPABASE_QUAN_LY_KHO_TABLE)
         .select('*')
         .order('ten_kho', { ascending: true })
@@ -8305,7 +8435,7 @@ export function createApp() {
       if (error) {
         return res.status(500).json({
           error: error.message || 'Không đọc được bảng quan_ly_kho.',
-          db: SUPABASE_MAIN_DB_LABEL
+          db: resolved.label
         });
       }
 
@@ -8314,13 +8444,13 @@ export function createApp() {
         records,
         total: records.length,
         source: 'supabase',
-        db: SUPABASE_MAIN_DB_LABEL,
+        db: resolved.label,
         table: SUPABASE_QUAN_LY_KHO_TABLE
       });
     } catch (err: any) {
       return res.status(500).json({
         error: err?.message || 'Lỗi khi tải quản lý kho.',
-        db: SUPABASE_MAIN_DB_LABEL
+        db: resolved.label
       });
     }
   });
