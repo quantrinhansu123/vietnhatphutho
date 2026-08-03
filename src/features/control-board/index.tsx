@@ -245,12 +245,18 @@ export function ControlBoardPanel({
         setShiftSummaryWarehouseMovements([]);
       }
 
-      const usingLocalFallback = [machineData, orderData, materialData, productionData].some(
+      const localPayloads = [machineData, orderData, materialData, productionData].filter(
         payload => payload && typeof payload === 'object' && (payload as { source?: string }).source === 'local'
-      );
-      if (usingLocalFallback) {
+      ) as Array<{ source?: string; warning?: string }>;
+
+      if (localPayloads.length > 0) {
+        const warnings = localPayloads
+          .map(payload => String(payload.warning || '').trim())
+          .filter(Boolean);
         setLoadError(
-          'Chưa kết nối Supabase — dữ liệu đang rỗng. Kiểm tra file .env (SUPABASE_URL, SUPABASE_SERVICE_KEY) rồi khởi động lại server: npm run dev.'
+          warnings.length > 0
+            ? warnings.join(' ')
+            : 'Chưa kết nối Supabase — dữ liệu đang rỗng. Trên Vercel: Project Settings → Environment Variables cần SUPABASE_URL và SUPABASE_SERVICE_KEY, rồi Redeploy. Local: kiểm tra .env rồi npm run dev.'
         );
       }
     } catch (error: any) {

@@ -777,11 +777,12 @@ input[type="number"] {
     padding: 0;
   }
 
-  /* Tem QR ngang: 2 cột / tờ A4 — QR trái, bảng phải (ô giá trị trống) */
+  /* Tem QR ngang: 2 cột × 4 dòng / tờ A4 — mã SP to */
   .qr-print-page {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 5mm 6mm;
+    grid-auto-rows: 66mm;
+    gap: 4mm 5mm;
     width: 194mm;
     margin: 0 auto;
   }
@@ -789,14 +790,27 @@ input[type="number"] {
   .qr-print-card {
     break-inside: avoid;
     page-break-inside: avoid;
-    min-height: 42mm;
-    border: 1px solid #111111;
+    height: 66mm;
+    min-height: 66mm;
+    max-height: 66mm;
+    box-sizing: border-box;
+    border: 1.2px solid #111111;
     border-radius: 3mm;
-    padding: 3mm;
+    padding: 3.5mm;
     display: grid;
-    grid-template-columns: 36mm minmax(0, 1fr);
-    gap: 3mm;
+    grid-template-columns: 42mm minmax(0, 1fr);
+    gap: 3.5mm;
     align-items: center;
+  }
+
+  .qr-print-card:nth-child(8n) {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .qr-print-card:nth-child(8n):last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 
   .qr-print-left {
@@ -804,14 +818,14 @@ input[type="number"] {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.2mm;
+    gap: 1.5mm;
     min-width: 0;
   }
 
   .qr-print-code {
     position: relative;
-    width: 32mm;
-    height: 32mm;
+    width: 38mm;
+    height: 38mm;
     flex-shrink: 0;
   }
 
@@ -824,8 +838,8 @@ input[type="number"] {
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 8mm;
-    height: 8mm;
+    width: 9mm;
+    height: 9mm;
     transform: translate(-50%, -50%);
     display: flex;
     align-items: center;
@@ -844,8 +858,8 @@ input[type="number"] {
 
   .qr-print-payload {
     margin: 0;
-    max-width: 36mm;
-    font-size: 6.5pt;
+    max-width: 42mm;
+    font-size: 7.5pt;
     font-weight: 700;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     line-height: 1.15;
@@ -857,16 +871,17 @@ input[type="number"] {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 2mm;
+    gap: 3mm;
     min-width: 0;
   }
 
   .qr-print-product-code {
     margin: 0;
-    font-size: 11pt;
+    font-size: 18pt;
     font-weight: 900;
-    line-height: 1.15;
+    line-height: 1.1;
     text-align: left;
+    letter-spacing: 0.01em;
   }
 
   .qr-print-footer {
@@ -883,22 +898,22 @@ input[type="number"] {
   }
 
   .qr-print-footer th {
-    width: 28mm;
-    padding: 2mm 2.2mm;
-    font-size: 7.5pt;
+    width: 30mm;
+    padding: 2.4mm 2.4mm;
+    font-size: 9pt;
     font-weight: 900;
     text-align: left;
     white-space: nowrap;
   }
 
   .qr-print-footer td {
-    height: 7.5mm;
-    padding: 1.5mm 2mm;
+    height: 9mm;
+    padding: 2mm 2.4mm;
   }
 
   .qr-print-footer-field {
     display: block;
-    min-height: 4mm;
+    min-height: 5mm;
   }
 
   .order-print-sheet,

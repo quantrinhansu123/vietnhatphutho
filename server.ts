@@ -1765,7 +1765,11 @@ function respondSupabaseReadError(
   emptyPayload: Record<string, unknown>
 ) {
   if (isMissingTableError(error)) {
-    return res.json({ ...emptyPayload, source: 'local', warning: `Bảng ${table} chưa có trên Supabase.` });
+    return res.json({
+      ...emptyPayload,
+      source: 'local',
+      warning: `Bảng ${table} chưa có trên Supabase (DB ${SUPABASE_MAIN_DB_LABEL}). ${error.message || ''}`.trim()
+    });
   }
   console.error(`Supabase ${table} error:`, error);
   return res.status(500).json({ error: `Không thể tải từ ${table}. ${error.message}` });
@@ -4822,6 +4826,10 @@ export function createApp() {
       },
       tables: {
         reports: SUPABASE_TABLE,
+        machines: SUPABASE_MACHINES_TABLE,
+        materials: SUPABASE_MATERIALS_TABLE,
+        orders: SUPABASE_ORDERS_TABLE,
+        productionOrders: SUPABASE_PRODUCTION_ORDERS_TABLE,
         productionPlans: SUPABASE_PRODUCTION_PLANS_TABLE,
         weighing: SUPABASE_WEIGHING_TABLE,
         canTuDong: SUPABASE_CAN_TU_DONG_TABLE,
