@@ -8174,6 +8174,7 @@ export function createApp() {
     const limitRaw = Number(req.query.limit ?? 200);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 200;
     const tenKho = String(req.query.tenKho ?? req.query.ten_kho ?? '').trim();
+    const dotKiemKho = String(req.query.dotKiemKho ?? req.query.dot_kiem_kho ?? '').trim();
     const maSp = String(req.query.maSp ?? req.query.ma_sp ?? '').trim();
     const from = String(req.query.from ?? '').trim();
     const to = String(req.query.to ?? '').trim();
@@ -8186,6 +8187,7 @@ export function createApp() {
         .limit(limit);
 
       if (tenKho) query = query.eq('ten_kho', tenKho);
+      if (dotKiemKho) query = query.eq('dot_kiem_kho', dotKiemKho);
       if (maSp) query = query.eq('ma_sp', maSp);
       if (from) query = query.gte('ngay_gio_kiem_kho', `${from}T00:00:00`);
       if (to) query = query.lte('ngay_gio_kiem_kho', `${to}T23:59:59.999`);
@@ -8226,6 +8228,7 @@ export function createApp() {
 
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const tenKho = String(body.ten_kho ?? body.tenKho ?? '').trim();
+    const dotKiemKho = String(body.dot_kiem_kho ?? body.dotKiemKho ?? '').trim();
     const nguoiKiemKho = String(body.nguoi_kiem_kho ?? body.nguoiKiemKho ?? '').trim();
     const ngayGio =
       String(body.ngay_gio_kiem_kho ?? body.ngayGioKiemKho ?? '').trim() || new Date().toISOString();
@@ -8240,6 +8243,9 @@ export function createApp() {
 
     if (!tenKho) {
       return res.status(400).json({ error: 'Thiếu tên kho.' });
+    }
+    if (!dotKiemKho) {
+      return res.status(400).json({ error: 'Thiếu đợt kiểm kho.' });
     }
     if (!nguoiKiemKho) {
       return res.status(400).json({ error: 'Thiếu người kiểm kho.' });
@@ -8258,6 +8264,7 @@ export function createApp() {
           (maSp.includes('_') ? maSp.slice(0, maSp.indexOf('_')).trim() : maSp);
         return {
           ten_kho: tenKho,
+          dot_kiem_kho: dotKiemKho,
           ma_nvl: maNvl || null,
           ma_sp: maSp,
           ten_sp: String(item?.ten_sp ?? item?.tenSp ?? '').trim() || null,
@@ -8275,8 +8282,12 @@ export function createApp() {
     try {
       const { data, error } = await db.from(SUPABASE_KIEM_KHO_TABLE).insert(rows).select('*');
       if (error) {
+        const missingColumn =
+          error.code === 'PGRST204' || /dot_kiem_kho/i.test(error.message || '');
         return res.status(500).json({
-          error: error.message || 'Không lưu được kiểm kho.',
+          error: missingColumn
+            ? `Bảng ${SUPABASE_KIEM_KHO_TABLE} thiếu cột dot_kiem_kho. Hãy chạy lại file supabase-kiem-kho.sql.`
+            : error.message || 'Không lưu được kiểm kho.',
           db: dbLabel
         });
       }

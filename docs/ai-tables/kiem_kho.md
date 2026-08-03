@@ -13,6 +13,7 @@
 |-----|------|--------|
 | `id` | `bigint` identity PK | |
 | `ten_kho` | `text` | |
+| `dot_kiem_kho` | `text` | Đợt kiểm kho — phân biệt các lần kiểm |
 | `ma_nvl` | `text` | Auto = tiền tố trước `_` của mã quét |
 | `ma_sp` | `text` | Nguyên mã vừa quét (tiền tố + hậu tố) |
 | `ten_sp` | `text` | autofill từ `san_pham` theo `ma_nvl` |
@@ -27,8 +28,8 @@
 
 | Path | Ghi chú |
 |------|---------|
-| `GET /api/kiem-kho` | Client `supabaseWeighing` |
-| `POST /api/kiem-kho` | Body: `ten_kho`, `nguoi_kiem_kho`, `ngay_gio_kiem_kho`, `lines[]` (`ma_nvl`, `ma_sp`, …) |
+| `GET /api/kiem-kho` | Query: `tenKho`, `dotKiemKho`, `maSp`, `from`, `to` |
+| `POST /api/kiem-kho` | Body: `ten_kho`, `dot_kiem_kho`, `nguoi_kiem_kho`, `ngay_gio_kiem_kho`, `lines[]` |
 | `DELETE /api/kiem-kho/:id` | Xóa một dòng |
 | `POST /api/kiem-kho/dong-bo-ton-dau` | Cộng mỗi dòng chưa đồng bộ +1 vào tồn đầu sản phẩm theo `ma_nvl` |
 
@@ -36,10 +37,10 @@
 
 | File | Nội dung |
 |------|----------|
-| `src/features/kiem-kho/index.tsx` | Form + quét máy; `ma_nvl` auto từ tiền tố |
+| `src/features/kiem-kho/index.tsx` | Form thông tin phiếu (kho / đợt / người / giờ) + quét máy; `ma_nvl` auto từ tiền tố |
 | `src/components/ProductQrScanner.tsx` | INPUT_CONNECTION + KEY_EVENT |
 
 ## Thêm cột trên DB đã có
 
-Chạy lại `supabase-kiem-kho.sql` (có `add column if not exists ma_nvl`) trên:
+Chạy lại `supabase-kiem-kho.sql` (có `add column if not exists dot_kiem_kho`) trên:
 https://supabase.com/dashboard/project/njdlkyxdieefeebcyaov/sql/new

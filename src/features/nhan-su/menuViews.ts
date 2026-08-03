@@ -41,7 +41,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'factory-quan-doc', label: 'Quản Đốc' },
       { tab: 'factory-qc', label: 'QC' },
       { tab: 'factory-cong-nhan', label: 'Công nhân' },
-      { tab: 'factory-kho', label: 'Kho' }
+      { tab: 'factory-kho', label: 'Kho' },
+      { tab: 'facility-management', label: 'Quản lý CSVC' }
     ]
   },
   {

@@ -324,6 +324,13 @@ export const FACTORY_MENU_ITEMS: MenuCardConfig[] = [
     icon: Warehouse,
     icon3d: warehouse3d,
     tab: 'factory-kho'
+  },
+  {
+    title: 'Quản lý CSVC',
+    desc: 'Kho NVL, sản phẩm, máy móc và phiếu xuất nhập kho.',
+    icon: Building2,
+    icon3d: facility3d,
+    tab: 'facility-management'
   }
 ];
 
@@ -431,6 +438,12 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'materials'
   },
   {
+    title: 'Kho SP',
+    desc: 'Danh mục sản phẩm, mã hàng, đơn vị và tồn kho.',
+    icon: Package,
+    tab: 'products'
+  },
+  {
     title: 'Phiếu xuất nhập kho',
     desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
     icon: ArrowDownToLine,
@@ -449,13 +462,6 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     desc: 'Quét mã SP bằng máy BT-A700 / camera và lưu kiểm kho.',
     icon: ClipboardList,
     tab: 'kiem-kho'
-  },
-  {
-    title: 'Quản lý CSVC',
-    desc: 'Kho NVL, sản phẩm, máy móc và phiếu xuất nhập kho.',
-    icon: Building2,
-    icon3d: facility3d,
-    tab: 'facility-management'
   }
 ];
 
@@ -732,7 +738,8 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Quản Đốc', tab: 'factory-quan-doc' },
       { label: 'QC', tab: 'factory-qc' },
       { label: 'Công nhân', tab: 'factory-cong-nhan' },
-      { label: 'Kho', tab: 'factory-kho' }
+      { label: 'Kho', tab: 'factory-kho' },
+      { label: 'Quản lý CSVC', tab: 'facility-management' }
     ]
   },
   {
@@ -760,25 +767,27 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'weighing-summary-list': { group: 'Sản xuất', sub: 'DS phiếu cân' },
   'can-tu-dong': { group: 'Sản xuất', sub: 'Cân tự động' },
   'kiem-kho': { group: 'Sản xuất', sub: 'Báo cáo kiểm kho' },
-  'quan-ly-kho': { group: 'CSVC & Kho', sub: 'Quản lý kho' },
+  'quan-ly-kho': { group: 'Nhà máy', sub: 'Quản lý kho' },
   'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
   'damaged-goods-report-list': { group: 'Sản xuất', sub: 'DS báo cáo hàng hư' },
   'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },
   'mixing-report-list': { group: 'Sản xuất', sub: 'DS phiếu trộn' },
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
-  'machine-nvl-report-list': { group: 'CSVC & Kho', sub: 'Báo cáo tồn máy' },
+  'machine-nvl-report-list': { group: 'Nhà máy', sub: 'Báo cáo tồn máy' },
   'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
   'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },
   'machine-downtime-list': { group: 'Sản xuất', sub: 'DS máy dừng' },
   'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
   'machine-run-log-list': { group: 'Sản xuất', sub: 'DS nhật ký chạy máy' },
   'production-plan-history': { group: 'Sản xuất', sub: 'Kế hoạch SX' },
-  'materials': { group: 'CSVC & Kho', sub: 'Kho NVL' },
-  'materials-inventory': { group: 'CSVC & Kho', sub: 'Kho NVL' },
-  'products': { group: 'CSVC & Kho', sub: 'Sản phẩm' },
-  'machines': { group: 'CSVC & Kho', sub: 'Danh sách máy' },
-  'warehouse-slip': { group: 'CSVC & Kho', sub: 'Phiếu xuất nhập kho' },
-  'warehouse-history': { group: 'CSVC & Kho', sub: 'Lịch sử XNK' },
+  'facility-management': { group: 'Nhà máy', sub: 'Quản lý CSVC' },
+  'factory': { group: 'Nhà máy', sub: 'Chọn vai trò' },
+  'materials': { group: 'Nhà máy', sub: 'Kho NVL' },
+  'materials-inventory': { group: 'Nhà máy', sub: 'Kho NVL' },
+  'products': { group: 'Nhà máy', sub: 'Kho SP' },
+  'machines': { group: 'Nhà máy', sub: 'Danh sách máy' },
+  'warehouse-slip': { group: 'Nhà máy', sub: 'Phiếu xuất nhập kho' },
+  'warehouse-history': { group: 'Nhà máy', sub: 'Lịch sử XNK' },
   'settings': { group: 'Cài đặt', sub: 'Phân quyền & tham số' },
   'hr': { group: 'HCNS', sub: 'Nhân sự' },
   'vehicles': { group: 'Trang chủ', sub: 'Vận chuyển' },
