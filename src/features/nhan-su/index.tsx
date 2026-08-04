@@ -23,6 +23,7 @@ import {
   type StaffViewPermissions
 } from './menuViews';
 import {
+  RefreshCw,
   Eye,
   ExternalLink,
   ImageUp,
@@ -48,6 +49,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [staffError, setStaffError] = useState('');
   const [showAddStaffForm, setShowAddStaffForm] = useState(false);
+  const [isSyncingViTri, setIsSyncingViTri] = useState(false);
+  const [syncViTriMessage, setSyncViTriMessage] = useState('');
   const [addStaffDefaults, setAddStaffDefaults] = useState<{ branchId: string; department: string }>({
     branchId: '',
     department: ''
@@ -103,6 +106,38 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
       window.alert(error.message || 'Không thể xóa nhân sự.');
     } finally {
       setDeletingCode('');
+    }
+  };
+
+  const handleSyncViTri = async () => {
+    if (
+      !window.confirm(
+        'Cập nhật cột vi_tri = Phòng_ban_Chức_vụ (dấu cách → _) cho toàn bộ nhân sự?\n\nVí dụ: Phòng_Kinh_Doanh_Giám_đốc_kinh_doanh'
+      )
+    ) {
+      return;
+    }
+
+    setIsSyncingViTri(true);
+    setSyncViTriMessage('');
+    try {
+      const res = await fetch('/api/nhan-su/sync-vi-tri', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onlyEmpty: false, force: true })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể cập nhật vi_tri.');
+      }
+      setSyncViTriMessage(
+        String(data.message || `Đã cập nhật ${data.updated ?? 0} nhân sự.`)
+      );
+      await loadStaffGroups();
+    } catch (error: any) {
+      setSyncViTriMessage(error.message || 'Không thể cập nhật vi_tri.');
+    } finally {
+      setIsSyncingViTri(false);
     }
   };
 
@@ -184,15 +219,40 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
               <button
                 type="button"
+                onClick={() => void handleSyncViTri()}
+                disabled={isSyncingViTri || isLoadingStaff}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:border-[#ef1b2d] hover:bg-red-50 hover:text-[#ef1b2d] disabled:cursor-not-allowed disabled:opacity-60"
+                title="Ghi cột vi_tri = Phòng_ban_Chức_vụ (dấu cách → _)"
+              >
+                {isSyncingViTri ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                {isSyncingViTri ? 'Đang cập nhật...' : 'Cập nhật vị trí'}
+              </button>
+              <button
+                type="button"
                 onClick={() => openAddStaffForm()}
                 className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
               >
                 <Plus className="h-4 w-4" />
                 Thêm mới
               </button>
-
             </div>
           </div>
+
+          {syncViTriMessage && (
+            <p
+              className={`mt-3 rounded-xl border px-3 py-2 text-xs font-bold ${
+                /không thể|lỗi|thiếu/i.test(syncViTriMessage)
+                  ? 'border-rose-200 bg-rose-50 text-rose-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              }`}
+            >
+              {syncViTriMessage}
+            </p>
+          )}
 
           <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
             {[
@@ -283,6 +343,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                   <th className="px-3 py-2.5 font-black">Mã NV</th>
                   <th className="px-3 py-2.5 font-black">Phòng ban</th>
                   <th className="px-3 py-2.5 font-black">Chức vụ</th>
+                  <th className="px-3 py-2.5 font-black">Vị trí</th>
                   <th className="px-3 py-2.5 font-black">Ca</th>
                   <th className="px-3 py-2.5 font-black">Tên đăng nhập</th>
                   <th className="px-3 py-2.5 font-black">Mật khẩu</th>
@@ -301,6 +362,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-700">{departmentName}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.role || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.position || '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.shift || '—'}</td>
                     <td className="max-w-[200px] truncate px-3 py-2.5 font-mono text-zinc-700" title={member.username}>
                       {member.username || '—'}
@@ -468,6 +530,7 @@ function StaffDetailModal({
     ['Chi nhánh', branchName || '—'],
     ['Phòng ban', departmentName || '—'],
     ['Chức vụ', member.role || '—'],
+    ['Vị trí', member.position || '—'],
     ['Ca làm', member.shift || '—'],
     ['Tên đăng nhập', member.username || '—'],
     ['Mật khẩu', member.password || '—'],
@@ -829,6 +892,7 @@ export function AddStaffModal({
         chi_nhanh: form.branch.trim(),
         phong_ban: form.department.trim(),
         cong_viec: form.role.trim(),
+        vi_tri: `${form.department.trim()}_${form.role.trim()}`.replace(/\s+/g, '_').replace(/_+/g, '_'),
         ca_lam: form.shift.trim(),
         trang_thai: form.status.trim(),
         ten_dang_nhap: form.username.trim(),

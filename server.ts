@@ -1136,7 +1136,7 @@ function mapStaffRecord(row: Record<string, unknown>) {
   const name = pickStaffName(row);
   const department = pickStaffField(row, ['phong_ban', 'phongban', 'department'], 'Chưa phân phòng ban');
   const branch = pickStaffField(row, ['chi_nhanh', 'chi_nhanh_lam_viec', 'branch', 'co_so'], 'Chưa phân chi nhánh');
-  const role = pickStaffField(row, ['Cong_Viec', 'cong_viec', 'chuc_vu', 'vi_tri', 'role'], 'Nhân sự');
+  const role = pickStaffField(row, ['Cong_Viec', 'cong_viec', 'chuc_vu', 'role'], 'Nhân sự');
   const position = pickStaffField(row, ['vi_tri', 'ma_vi_tri'], '');
   const shift = pickStaffField(row, ['ca_lam', 'ca', 'shift'], 'Theo phân công');
   const status = pickStaffField(row, ['trang_thai', 'status'], 'Đang làm');
@@ -1238,6 +1238,22 @@ function parseStaffQuyenXem(source: Record<string, unknown>) {
   return normalizeStaffViewPermissions(source.quyen_xem ?? source.viewPermissions);
 }
 
+/** Vị trí = Phòng ban + Chức vụ, mọi dấu cách → `_`. VD: Phòng_Kinh_Doanh_Giám_đốc */
+function buildStaffViTriLabel(department: string, jobTitle: string) {
+  const normalize = (value: string) =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '');
+  const dept = normalize(department);
+  const job = normalize(jobTitle);
+  if (!dept && !job) return '';
+  if (!dept) return job;
+  if (!job) return dept;
+  return `${dept}_${job}`;
+}
+
 function parseStaffBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
   if (!body || typeof body !== 'object') {
     return { error: 'Dữ liệu không hợp lệ.' };
@@ -1256,13 +1272,18 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
 
   const branch = pickRowField(source, ['chi_nhanh', 'branch', 'chi_nhanh_lam_viec'], SUPABASE_STAFF_BRANCH);
   const code = pickRowField(source, ['ma_nhan_su', 'ma_nv', 'code'], '');
+  const congViec = pickRowField(source, ['cong_viec', 'Cong_Viec', 'chuc_vu', 'role'], 'Nhân sự');
+  // Vị trí = Phòng ban_Chức vụ (dấu cách → _)
+  const explicitViTri = pickRowField(source, ['vi_tri', 'position', 'ma_vi_tri'], '');
+  const viTri = explicitViTri || buildStaffViTriLabel(department, congViec);
 
   return {
     record: {
       nhan_su: name,
       phong_ban: department,
       chi_nhanh: branch,
-      cong_viec: pickRowField(source, ['cong_viec', 'Cong_Viec', 'chuc_vu', 'role'], 'Nhân sự'),
+      cong_viec: congViec,
+      vi_tri: viTri,
       ca_lam: pickRowField(source, ['ca_lam', 'ca', 'shift'], 'Theo phân công'),
       trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang làm'),
       ma_nhan_su: code || null,
@@ -7399,6 +7420,132 @@ export function createApp() {
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi thêm nhân sự.' });
+    }
+  });
+
+  /** Đồng bộ cột vi_tri = Phòng ban + "_" + Chức vụ. */
+  app.post('/api/nhan-su/sync-vi-tri', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    const onlyEmpty = Boolean(body.onlyEmpty);
+    const force = Boolean(body.force);
+
+    try {
+      // Lấy đủ cột có thể chứa chức vụ (schema thực tế có thể là Cong_Viec / chuc_vu…).
+      const { data: rows, error: readError } = await supabase.from(SUPABASE_STAFF_TABLE).select('*');
+
+      if (readError) {
+        console.error('Supabase nhan_su sync-vi-tri read error:', readError);
+        const hint = /vi_tri/i.test(readError.message || '')
+          ? ' Thiếu cột vi_tri — chạy supabase-nhan-su-vi-tri.sql trong Supabase SQL Editor.'
+          : '';
+        return res.status(500).json({
+          error: `${staffWriteErrorMessage(readError)}${hint}`.trim()
+        });
+      }
+
+      const list = Array.isArray(rows) ? rows : [];
+      let updated = 0;
+      let skipped = 0;
+      let alreadyMatched = 0;
+      let missingCode = 0;
+      let missingCongViec = 0;
+      let missingDepartment = 0;
+      const errors: string[] = [];
+
+      for (const row of list) {
+        const record = row as Record<string, unknown>;
+        // Không lấy từ vi_tri (đã là Phòng ban_Chức vụ sau sync).
+        const congViec = pickStaffField(record, ['Cong_Viec', 'cong_viec', 'chuc_vu', 'role'], '');
+        const department = pickStaffField(record, ['phong_ban', 'phongban', 'department'], '');
+        const currentViTri = pickStaffField(record, ['vi_tri', 'ma_vi_tri'], '');
+        const code = pickStaffField(record, ['ma_nhan_su', 'ma_nv'], '');
+        if (!code) {
+          skipped += 1;
+          missingCode += 1;
+          continue;
+        }
+        if (!congViec) {
+          skipped += 1;
+          missingCongViec += 1;
+          continue;
+        }
+        if (!department) {
+          skipped += 1;
+          missingDepartment += 1;
+          continue;
+        }
+
+        const nextViTri = buildStaffViTriLabel(department, congViec);
+
+        if (onlyEmpty && currentViTri) {
+          skipped += 1;
+          continue;
+        }
+        if (!force && currentViTri === nextViTri) {
+          skipped += 1;
+          alreadyMatched += 1;
+          continue;
+        }
+
+        const { error: updateError } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .update({ vi_tri: nextViTri })
+          .eq('ma_nhan_su', code);
+
+        if (updateError) {
+          errors.push(
+            `${code}: ${
+              isMissingColumnError(updateError) && /vi_tri/i.test(updateError.message || '')
+                ? 'Thiếu cột vi_tri — chạy supabase-nhan-su-vi-tri.sql'
+                : updateError.message
+            }`
+          );
+          continue;
+        }
+        updated += 1;
+      }
+
+      if (errors.length && updated === 0) {
+        return res.status(500).json({
+          error: errors[0] || 'Không thể cập nhật vi_tri.',
+          updated,
+          skipped,
+          errors
+        });
+      }
+
+      const detailParts = [
+        alreadyMatched ? `${alreadyMatched} đã khớp` : '',
+        missingCongViec ? `${missingCongViec} thiếu chức vụ` : '',
+        missingDepartment ? `${missingDepartment} thiếu phòng ban` : '',
+        missingCode ? `${missingCode} thiếu mã NV` : ''
+      ].filter(Boolean);
+
+      return res.json({
+        success: true,
+        updated,
+        skipped,
+        alreadyMatched,
+        missingCongViec,
+        missingDepartment,
+        missingCode,
+        total: list.length,
+        errors: errors.length ? errors.slice(0, 10) : undefined,
+        message:
+          updated > 0
+            ? `Đã cập nhật vi_tri = Phòng ban_Chức vụ cho ${updated}/${list.length} nhân sự.${
+                detailParts.length ? ` (Bỏ qua: ${detailParts.join(', ')})` : ''
+              }`
+            : `Không có dòng nào cần sửa (${updated}/${list.length}).${
+                detailParts.length ? ` ${detailParts.join(' · ')}.` : ''
+              }`
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi đồng bộ vi_tri.' });
     }
   });
 

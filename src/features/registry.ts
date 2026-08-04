@@ -213,13 +213,13 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   nhan_su: {
     table: 'nhan_su',
     label: 'Nhân sự',
-    sql: ['supabase-nhan-su.sql'],
+    sql: ['supabase-nhan-su.sql', 'supabase-nhan-su-dang-nhap.sql', 'supabase-nhan-su-vi-tri.sql'],
     apiPrefix: '/api/nhan-su',
-    serverLines: '5120–5266',
+    serverLines: '7252–7590',
     appTab: 'hr',
     appLines: 'src/features/nhan-su/index.tsx',
     components: ['src/components/ShiftInfoForm.tsx'],
-    utils: ['src/utils/shiftSettings.ts']
+    utils: ['src/utils/shiftSettings.ts', 'src/features/nhan-su/menuViews.ts']
   },
   danh_sach_xe: {
     table: 'danh_sach_xe',
