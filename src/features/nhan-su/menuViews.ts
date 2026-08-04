@@ -13,42 +13,86 @@ export type StaffViewGroup = {
 
 export type StaffViewPermissions = StaffViewGroup[];
 
-/** Cây menu cha / con dùng cấp quyền nhân sự */
+/** Cây menu cha / con dùng cấp quyền (đồng bộ cấu trúc menu app) */
 export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
+  {
+    menu: 'quan-tri',
+    label: 'Quản trị',
+    children: [
+      { tab: 'dashboard', label: 'Dashboard' },
+      { tab: 'settings', label: 'Cài đặt / phân quyền' }
+    ]
+  },
   {
     menu: 'hcns',
     label: 'HCNS',
-    children: [{ tab: 'hr', label: 'Nhân sự' }]
-  },
-  {
-    menu: 'settings',
-    label: 'Cài đặt',
-    children: [{ tab: 'settings', label: 'Phân quyền & tham số' }]
+    children: [{ tab: 'hr', label: 'Hồ sơ nhân sự' }]
   },
   {
     menu: 'business',
     label: 'Kinh doanh',
     children: [
-      { tab: 'orders', label: 'Đơn hàng' },
       { tab: 'customers', label: 'Khách hàng' },
-      { tab: 'shipping-orders', label: 'Lệnh xuất hàng' }
+      { tab: 'orders', label: 'Đơn đặt hàng' },
+      { tab: 'shipping-orders', label: 'Lệnh giao / xuất hàng' }
     ]
   },
   {
-    menu: 'factory',
-    label: 'Nhà máy',
+    menu: 'factory-quan-doc',
+    label: 'Quản Đốc',
     children: [
-      { tab: 'factory-quan-doc', label: 'Quản Đốc' },
-      { tab: 'factory-qc', label: 'QC' },
-      { tab: 'factory-cong-nhan', label: 'Công nhân' },
-      { tab: 'factory-kho', label: 'Kho' },
-      { tab: 'facility-management', label: 'Quản lý CSVC' }
+      { tab: 'production-plan-history', label: 'Kế hoạch sản xuất' },
+      { tab: 'production-orders', label: 'Lệnh sản xuất' },
+      { tab: 'control-board', label: 'Theo dõi sản xuất' },
+      { tab: 'production-reports', label: 'Báo cáo sản xuất' }
     ]
   },
   {
-    menu: 'dashboard',
-    label: 'Phân tích',
-    children: [{ tab: 'dashboard', label: 'Dashboard' }]
+    menu: 'factory-qc',
+    label: 'QC',
+    children: [
+      { tab: 'mixing-report-list', label: 'BOM và tỷ lệ phối trộn' },
+      { tab: 'damaged-goods-report-list', label: 'Kiểm soát hàng hỏng' },
+      { tab: 'weighing-summary-list', label: 'Phiếu cân ca' },
+      { tab: 'can-tu-dong', label: 'Dữ liệu cân tự động' },
+      { tab: 'kiem-kho', label: 'Kiểm tra kho thành phẩm' }
+    ]
+  },
+  {
+    menu: 'factory-cong-nhan',
+    label: 'Công nhân',
+    children: [
+      { tab: 'production-orders', label: 'Công việc được giao' },
+      { tab: 'report-forms', label: 'Nhập báo cáo ca' },
+      { tab: 'report-lists', label: 'Lịch sử công việc' }
+    ]
+  },
+  {
+    menu: 'factory-kho',
+    label: 'Kho',
+    children: [
+      { tab: 'quan-ly-kho', label: 'Danh mục kho' },
+      { tab: 'materials', label: 'Kho nguyên vật liệu' },
+      { tab: 'products', label: 'Kho thành phẩm' },
+      { tab: 'warehouse-slip', label: 'Phiếu xuất nhập kho' },
+      { tab: 'kiem-kho', label: 'Kiểm kho' },
+      { tab: 'warehouse-history', label: 'Lịch sử xuất nhập' }
+    ]
+  },
+  {
+    menu: 'vehicles',
+    label: 'Lái xe',
+    children: [{ tab: 'vehicles', label: 'Lái xe' }]
+  },
+  {
+    menu: 'facility-management',
+    label: 'Quản lý CSVC',
+    children: [
+      { tab: 'materials', label: 'Kho NVL' },
+      { tab: 'products', label: 'Sản phẩm' },
+      { tab: 'machines', label: 'Máy móc' },
+      { tab: 'warehouse-slip', label: 'Phiếu xuất nhập kho' }
+    ]
   }
 ];
 
@@ -150,6 +194,24 @@ export function isStaffChildViewSelected(
   return group.children.some(child => child.tab === childTab);
 }
 
+export function isStaffParentViewSelected(permissions: StaffViewPermissions, group: StaffViewGroup): boolean {
+  if (group.children.length === 0) {
+    return permissions.some(item => item.menu === group.menu);
+  }
+  return group.children.every(child => isStaffChildViewSelected(permissions, group.menu, child.tab));
+}
+
+export function isStaffParentViewIndeterminate(
+  permissions: StaffViewPermissions,
+  group: StaffViewGroup
+): boolean {
+  if (group.children.length === 0) return false;
+  const selectedCount = group.children.filter(child =>
+    isStaffChildViewSelected(permissions, group.menu, child.tab)
+  ).length;
+  return selectedCount > 0 && selectedCount < group.children.length;
+}
+
 export function toggleStaffChildView(
   permissions: StaffViewPermissions,
   parentMenu: string,
@@ -182,4 +244,25 @@ export function toggleStaffChildView(
       children: item.children.filter(childItem => childItem.tab)
     }))
     .filter(item => item.children.length > 0);
+}
+
+/** Tick menu cha → chọn / bỏ toàn bộ menu con */
+export function toggleStaffParentView(
+  permissions: StaffViewPermissions,
+  group: StaffViewGroup,
+  checked: boolean
+): StaffViewPermissions {
+  if (!checked) {
+    return permissions.filter(item => item.menu !== group.menu);
+  }
+
+  const without = permissions.filter(item => item.menu !== group.menu);
+  return [
+    ...without,
+    {
+      menu: group.menu,
+      label: group.label,
+      children: group.children.map(child => ({ ...child }))
+    }
+  ];
 }

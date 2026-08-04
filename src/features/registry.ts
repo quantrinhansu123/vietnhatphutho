@@ -284,8 +284,8 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '4481–4603',
     appTab: 'settings',
     appLines: 'src/features/cai-dat-thoi-gian/index.tsx',
-    components: [],
-    utils: ['src/utils/shiftSettings.ts']
+    components: ['src/features/cai-dat-thoi-gian/RolePermissionsMatrix.tsx'],
+    utils: ['src/utils/shiftSettings.ts', 'src/features/cai-dat-thoi-gian/permissionKeys.ts', 'src/features/nhan-su/menuViews.ts']
   },
   bao_cao_phoi_tron: {
     table: 'bao_cao_phoi_tron',

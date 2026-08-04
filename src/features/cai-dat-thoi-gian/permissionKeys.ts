@@ -20,6 +20,8 @@ export type PermissionKeySetting = {
   position: string;
   permissionKey: string;
   viewPermissions: StaffViewPermissions;
+  editPermissions: StaffViewPermissions;
+  deletePermissions: StaffViewPermissions;
   note: string;
 };
 
@@ -27,9 +29,11 @@ function slugKeyPart(value: string) {
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
 }
 
 export function buildPermissionKey(department: string, position: string) {
@@ -69,6 +73,12 @@ export function parsePermissionSettings(settings: PermissionSettingLike[]): Perm
         position,
         permissionKey,
         viewPermissions: normalizeStaffViewPermissions(parsedNote.viewPermissions),
+        editPermissions: normalizeStaffViewPermissions(
+          parsedNote.editPermissions ?? parsedNote.quyen_sua
+        ),
+        deletePermissions: normalizeStaffViewPermissions(
+          parsedNote.deletePermissions ?? parsedNote.quyen_xoa
+        ),
         note: setting.note || ''
       };
     })

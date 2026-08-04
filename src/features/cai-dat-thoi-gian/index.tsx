@@ -8,23 +8,22 @@ import { pickText, fileToDataUrl, uploadImage, formatCell, formatTimeCell } from
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { normalizeHrBranches, type HrBranch, type HrMember } from '../_shared/hr';
-import { StaffViewPermissionsPicker } from '../nhan-su';
 import type { StaffViewPermissions } from '../nhan-su/menuViews';
 import { summarizeStaffViewPermissions } from '../nhan-su/menuViews';
 import { buildPermissionKey, parsePermissionSettings } from './permissionKeys';
+import { RolePermissionsMatrix } from './RolePermissionsMatrix';
 import {
   ChevronRight,
   Clock3,
   Eye,
-  KeyRound,
-  LayoutGrid,
   Loader2,
   Pencil,
   Plus,
   Save,
   Search,
   ShieldCheck,
-  Trash2
+  Trash2,
+  UsersRound
 } from 'lucide-react';
 
 export interface SettingRow {
@@ -154,8 +153,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
-  const [activeSection, setActiveSection] = useState<'settings' | 'permissions'>('settings');
-  const [permissionSection, setPermissionSection] = useState<'keys' | 'menus'>('keys');
+  const [activeSection, setActiveSection] = useState<'settings' | 'permissions' | 'role-permissions'>('settings');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [settingsError, setSettingsError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -171,11 +169,15 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     department: string;
     position: string;
     viewPermissions: StaffViewPermissions;
+    editPermissions: StaffViewPermissions;
+    deletePermissions: StaffViewPermissions;
   }>({
     id: '',
     department: '',
     position: '',
-    viewPermissions: []
+    viewPermissions: [],
+    editPermissions: [],
+    deletePermissions: []
   });
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const [deletingPermissionId, setDeletingPermissionId] = useState('');
@@ -442,7 +444,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       id: selected.id,
       department: selected.department,
       position: selected.position,
-      viewPermissions: selected.viewPermissions
+      viewPermissions: selected.viewPermissions,
+      editPermissions: selected.editPermissions,
+      deletePermissions: selected.deletePermissions
     });
     setPermissionError('');
     setPermissionMessage('');
@@ -453,7 +457,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       id: '',
       department: departmentOptions[0] || '',
       position: '',
-      viewPermissions: []
+      viewPermissions: [],
+      editPermissions: [],
+      deletePermissions: []
     });
     setPermissionError('');
     setPermissionMessage('');
@@ -491,7 +497,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           department: permissionForm.department,
           position: permissionForm.position,
           permissionKey: currentPermissionKey,
-          viewPermissions: permissionForm.viewPermissions
+          viewPermissions: permissionForm.viewPermissions,
+          editPermissions: permissionForm.editPermissions,
+          deletePermissions: permissionForm.deletePermissions
         })
       };
       const res = await fetch(targetId ? `/api/cai-dat/${targetId}` : '/api/cai-dat', {
@@ -537,7 +545,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1680px] space-y-4">
+    <div className="mx-auto w-full max-w-none space-y-4">
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="w-full max-w-lg rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
@@ -719,7 +727,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      <section className="grid gap-3 md:grid-cols-2">
+      <section className="grid gap-3 md:grid-cols-3">
         <button
           type="button"
           onClick={() => setActiveSection('settings')}
@@ -768,6 +776,31 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           </span>
           <ChevronRight className={`h-5 w-5 shrink-0 transition ${
             activeSection === 'permissions' ? 'text-[#ef1b2d]' : 'text-zinc-300 group-hover:text-zinc-600'
+          }`} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection('role-permissions')}
+          aria-pressed={activeSection === 'role-permissions'}
+          className={`group flex min-h-28 items-center gap-4 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
+            activeSection === 'role-permissions'
+              ? 'border-[#ef1b2d] bg-red-50 shadow-red-100'
+              : 'border-zinc-900/10 bg-white hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md'
+          }`}
+        >
+          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+            activeSection === 'role-permissions' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
+          }`}>
+            <UsersRound className="h-6 w-6" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-black text-zinc-950">Phân quyền các Vai trò</span>
+            <span className="mt-1 block text-xs font-semibold leading-5 text-zinc-500">
+              Tick quyền xem / sửa / xóa theo menu cha và menu con.
+            </span>
+          </span>
+          <ChevronRight className={`h-5 w-5 shrink-0 transition ${
+            activeSection === 'role-permissions' ? 'text-[#ef1b2d]' : 'text-zinc-300 group-hover:text-zinc-600'
           }`} />
         </button>
       </section>
@@ -915,52 +948,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </section>
         </>
-      ) : (
+      ) : activeSection === 'permissions' ? (
         <>
-          <section className="grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setPermissionSection('keys')}
-                aria-pressed={permissionSection === 'keys'}
-                className={`flex min-h-20 items-center gap-3 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
-                  permissionSection === 'keys'
-                    ? 'border-[#ef1b2d] bg-red-50'
-                    : 'border-zinc-900/10 bg-white hover:border-zinc-300 hover:shadow-md'
-                }`}
-              >
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  permissionSection === 'keys' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
-                }`}>
-                  <KeyRound className="h-5 w-5" />
-                </span>
-                <span>
-                  <span className="block text-sm font-black text-zinc-950">Key phân quyền</span>
-                  <span className="mt-0.5 block text-xs font-semibold text-zinc-500">Tạo và quản lý key truy cập.</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPermissionSection('menus')}
-                aria-pressed={permissionSection === 'menus'}
-                className={`flex min-h-20 items-center gap-3 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
-                  permissionSection === 'menus'
-                    ? 'border-[#ef1b2d] bg-red-50'
-                    : 'border-zinc-900/10 bg-white hover:border-zinc-300 hover:shadow-md'
-                }`}
-              >
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  permissionSection === 'menus' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
-                }`}>
-                  <LayoutGrid className="h-5 w-5" />
-                </span>
-                <span>
-                  <span className="block text-sm font-black text-zinc-950">Menu được truy cập</span>
-                  <span className="mt-0.5 block text-xs font-semibold text-zinc-500">Chọn các khu vực key được phép xem.</span>
-                </span>
-              </button>
-          </section>
-
-          <section className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <section className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
             <div className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -987,7 +977,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                         id: '',
                         department: event.target.value,
                         position: '',
-                        viewPermissions: prev.id ? [] : prev.viewPermissions
+                        viewPermissions: prev.id ? [] : prev.viewPermissions,
+                        editPermissions: prev.id ? [] : prev.editPermissions,
+                        deletePermissions: prev.id ? [] : prev.deletePermissions
                       }))
                     }
                     disabled={isLoadingStaffOptions || departmentOptions.length === 0}
@@ -1066,14 +1058,14 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             <div className="space-y-4">
               <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="min-w-[760px] w-full text-left text-sm">
+                  <table className="min-w-max w-full text-left text-sm">
                     <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
                       <tr>
-                        <th className="px-4 py-3 font-black">Phòng ban</th>
-                        <th className="px-4 py-3 font-black">Vị trí</th>
-                        <th className="px-4 py-3 font-black">Key</th>
-                        <th className="px-4 py-3 font-black">Menu đã cấp</th>
-                        <th className="px-4 py-3 text-center font-black">Thao tác</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-black">Phòng ban</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-black">Vị trí</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-black">Key</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-black">Menu đã cấp</th>
+                        <th className="whitespace-nowrap px-4 py-3 text-center font-black">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
@@ -1082,13 +1074,16 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                           key={item.id}
                           className={`transition ${permissionForm.id === item.id ? 'bg-red-50/70' : 'hover:bg-red-50/40'}`}
                         >
-                          <td className="px-4 py-3 font-semibold text-zinc-900">{item.department}</td>
-                          <td className="px-4 py-3 font-semibold text-zinc-700">{item.position}</td>
-                          <td className="px-4 py-3 font-black text-[#ef1b2d]">{item.permissionKey}</td>
-                          <td className="px-4 py-3 text-xs font-semibold text-zinc-600">
+                          <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-900">{item.department}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">{item.position}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-black text-[#ef1b2d]">{item.permissionKey}</td>
+                          <td
+                            className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-zinc-600"
+                            title={summarizeStaffViewPermissions(item.viewPermissions)}
+                          >
                             {summarizeStaffViewPermissions(item.viewPermissions)}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="whitespace-nowrap px-4 py-3">
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 type="button"
@@ -1126,29 +1121,176 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   </table>
                 </div>
               </section>
-
-              {permissionSection === 'menus' && (
-                <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Menu được truy cập</h3>
-                    <p className="mt-1 text-xs font-semibold text-zinc-500">
-                      Chọn menu cha và menu con được phép xem cho key hiện tại.
-                    </p>
-                  </div>
-                  <div className="mb-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs font-semibold text-zinc-700">
-                    Đang cấu hình: <span className="font-black text-zinc-950">{permissionForm.department || '-'}</span>
-                    {' / '}
-                    <span className="font-black text-zinc-950">{permissionForm.position || '-'}</span>
-                    {' / '}
-                    <span className="font-black text-[#ef1b2d]">{currentPermissionKey || '-'}</span>
-                  </div>
-                  <StaffViewPermissionsPicker
-                    value={permissionForm.viewPermissions}
-                    onChange={viewPermissions => setPermissionForm(prev => ({ ...prev, viewPermissions }))}
-                  />
-                </section>
-              )}
             </div>
+          </section>
+        </>
+      ) : (
+        <>
+          <section className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+            <div className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Vai trò</h3>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">
+                    Mỗi vai trò = Phòng ban + Vị trí (cùng key phân quyền).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetPermissionForm}
+                  className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                >
+                  Tạo mới
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Phòng ban</span>
+                  <select
+                    value={permissionForm.department}
+                    onChange={event =>
+                      setPermissionForm(prev => ({
+                        ...prev,
+                        id: '',
+                        department: event.target.value,
+                        position: '',
+                        viewPermissions: [],
+                        editPermissions: [],
+                        deletePermissions: []
+                      }))
+                    }
+                    disabled={isLoadingStaffOptions || departmentOptions.length === 0}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10 disabled:bg-zinc-50 disabled:text-zinc-400"
+                  >
+                    {departmentOptions.length === 0 ? (
+                      <option value="">
+                        {isLoadingStaffOptions ? 'Đang tải từ nhan_su...' : 'Chưa có phòng ban'}
+                      </option>
+                    ) : (
+                      departmentOptions.map(department => (
+                        <option key={department} value={department}>
+                          {department}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Vị trí / chức vụ</span>
+                  <select
+                    value={permissionForm.position}
+                    onChange={event => {
+                      const position = event.target.value;
+                      const existed = permissionSettings.find(
+                        item =>
+                          item.department === permissionForm.department && item.position === position
+                      );
+                      if (existed) {
+                        handleSelectPermission(existed.id);
+                        return;
+                      }
+                      setPermissionForm(prev => ({
+                        ...prev,
+                        id: '',
+                        position,
+                        viewPermissions: [],
+                        editPermissions: [],
+                        deletePermissions: []
+                      }));
+                    }}
+                    disabled={isLoadingStaffOptions || positionOptions.length === 0}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10 disabled:bg-zinc-50 disabled:text-zinc-400"
+                  >
+                    {positionOptions.length === 0 ? (
+                      <option value="">
+                        {isLoadingStaffOptions ? 'Đang tải từ nhan_su...' : 'Chưa có vị trí / chức vụ'}
+                      </option>
+                    ) : (
+                      positionOptions.map(position => (
+                        <option key={position} value={position}>
+                          {position}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Key vai trò</p>
+                  <p className="mt-1 break-all text-sm font-black text-[#ef1b2d]">{currentPermissionKey || '-'}</p>
+                </div>
+
+                <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-zinc-200 p-2">
+                  {permissionSettings.length === 0 ? (
+                    <p className="px-2 py-4 text-center text-xs font-semibold text-zinc-500">
+                      Chưa có vai trò nào được lưu.
+                    </p>
+                  ) : (
+                    permissionSettings.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSelectPermission(item.id)}
+                        className={`flex w-full flex-col rounded-lg px-3 py-2 text-left transition ${
+                          permissionForm.id === item.id
+                            ? 'bg-red-50 ring-1 ring-[#ef1b2d]/40'
+                            : 'hover:bg-zinc-50'
+                        }`}
+                      >
+                        <span className="text-sm font-black text-zinc-900">
+                          {item.department} · {item.position}
+                        </span>
+                        <span className="text-[11px] font-semibold text-zinc-500">
+                          Xem {summarizeStaffViewPermissions(item.viewPermissions)} · Sửa{' '}
+                          {summarizeStaffViewPermissions(item.editPermissions)} · Xóa{' '}
+                          {summarizeStaffViewPermissions(item.deletePermissions)}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                {permissionError && (
+                  <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                    {permissionError}
+                  </p>
+                )}
+                {permissionMessage && (
+                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+                    {permissionMessage}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSavePermission}
+                  disabled={isSavingPermission}
+                  className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+                >
+                  {isSavingPermission ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {isSavingPermission ? 'Đang lưu...' : permissionForm.id ? 'Cập nhật quyền vai trò' : 'Lưu quyền vai trò'}
+                </button>
+              </div>
+            </div>
+
+            <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
+              <RolePermissionsMatrix
+                value={{
+                  viewPermissions: permissionForm.viewPermissions,
+                  editPermissions: permissionForm.editPermissions,
+                  deletePermissions: permissionForm.deletePermissions
+                }}
+                onChange={next =>
+                  setPermissionForm(prev => ({
+                    ...prev,
+                    viewPermissions: next.viewPermissions,
+                    editPermissions: next.editPermissions,
+                    deletePermissions: next.deletePermissions
+                  }))
+                }
+              />
+            </section>
           </section>
         </>
       )}

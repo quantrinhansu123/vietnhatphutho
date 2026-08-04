@@ -689,7 +689,8 @@ export default function App() {
                     activeTab === 'warehouse-history' ||
                     activeTab === 'products' ||
                     activeTab === 'machines' ||
-                    activeTab === 'acceptance-report-list'
+                    activeTab === 'acceptance-report-list' ||
+                    activeTab === 'settings'
                   ? 'mx-auto w-full min-w-0 max-w-none'
                   : 'mx-auto w-full min-w-0 max-w-[1280px]'
             }
