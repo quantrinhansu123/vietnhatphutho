@@ -8241,9 +8241,6 @@ export function createApp() {
           ? [body]
           : [];
 
-    if (!tenKho) {
-      return res.status(400).json({ error: 'Thiếu tên kho.' });
-    }
     if (!dotKiemKho) {
       return res.status(400).json({ error: 'Thiếu đợt kiểm kho.' });
     }

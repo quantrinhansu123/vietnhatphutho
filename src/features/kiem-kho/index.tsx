@@ -33,7 +33,7 @@ type KiemKhoRecord = {
   created_at?: string | null;
 };
 
-const WAREHOUSE_SUGGESTIONS = ['Kho thành phẩm', 'Kho NVL', 'Kho phụ liệu', 'Kho phế'];
+const KIEM_KHO_PERIODS = ['Đợt kiểm kho 1', 'Đợt kiểm kho 2', 'Đợt kiểm kho 3', 'Đợt kiểm kho 4'];
 
 const inputClass =
   'h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
@@ -138,7 +138,6 @@ export function KiemKhoPanel({
   currentUser?: { name?: string | null } | null;
 }) {
   const loginName = String(currentUser?.name ?? '').trim();
-  const [tenKho, setTenKho] = useState('');
   const [dotKiemKho, setDotKiemKho] = useState('');
   const [nguoiKiemKho, setNguoiKiemKho] = useState(loginName);
   const [ngayGioKiemKho, setNgayGioKiemKho] = useState(nowLocalDateTimeValue);
@@ -149,7 +148,6 @@ export function KiemKhoPanel({
   const [lines, setLines] = useState<KiemKhoLine[]>([]);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
-  const [warehouseNames, setWarehouseNames] = useState<string[]>(WAREHOUSE_SUGGESTIONS);
   const [recent, setRecent] = useState<KiemKhoRecord[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -207,26 +205,10 @@ export function KiemKhoPanel({
     }
   }, []);
 
-  const loadWarehouses = useCallback(async () => {
-    try {
-      const res = await fetch('/api/quan-ly-kho');
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return;
-      const names = (Array.isArray(data?.records) ? data.records : [])
-        .map((row: { ten_kho?: unknown }) => String(row?.ten_kho ?? '').trim())
-        .filter(Boolean);
-      const unique = Array.from(new Set([...names, ...WAREHOUSE_SUGGESTIONS]));
-      setWarehouseNames(unique);
-    } catch {
-      setWarehouseNames(WAREHOUSE_SUGGESTIONS);
-    }
-  }, []);
-
   useEffect(() => {
     void loadProducts();
     void loadRecent();
-    void loadWarehouses();
-  }, [loadProducts, loadRecent, loadWarehouses]);
+  }, [loadProducts, loadRecent]);
 
   const addLineFromCode = useCallback(
     (raw: string): boolean | 'duplicate' => {
@@ -339,12 +321,8 @@ export function KiemKhoPanel({
   const handleSave = async () => {
     setError('');
     setMessage('');
-    if (!tenKho.trim()) {
-      setError('Nhập tên kho.');
-      return;
-    }
     if (!dotKiemKho.trim()) {
-      setError('Nhập đợt kiểm kho.');
+      setError('Chọn đợt kiểm kho.');
       return;
     }
     if (!nguoiKiemKho.trim()) {
@@ -358,14 +336,15 @@ export function KiemKhoPanel({
 
     setSaving(true);
     try {
+      const thoiDiemLuu = nowLocalDateTimeValue();
+      setNgayGioKiemKho(thoiDiemLuu);
       const res = await fetch('/api/kiem-kho', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ten_kho: tenKho.trim(),
           dot_kiem_kho: dotKiemKho.trim(),
           nguoi_kiem_kho: nguoiKiemKho.trim(),
-          ngay_gio_kiem_kho: toIsoFromLocalDateTime(ngayGioKiemKho),
+          ngay_gio_kiem_kho: toIsoFromLocalDateTime(thoiDiemLuu),
           lines: lines.map(line => ({
             ma_nvl: line.maNvl,
             ma_sp: line.maSp,
@@ -438,48 +417,28 @@ export function KiemKhoPanel({
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-4">
         <h2 className="mb-3 text-sm font-black text-zinc-900">Thông tin phiếu</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-            Tên kho *
-            <input
-              list="kiem-kho-ten-kho"
-              value={tenKho}
-              onChange={e => setTenKho(e.target.value)}
-              className={`mt-1 ${inputClass}`}
-              placeholder="VD: Kho văn phòng"
-            />
-            <datalist id="kiem-kho-ten-kho">
-              {warehouseNames.map(name => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-          </label>
+        <div className="grid grid-cols-1 gap-3">
           <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
             Đợt kiểm kho *
-            <input
+            <select
               value={dotKiemKho}
               onChange={e => setDotKiemKho(e.target.value)}
               className={`mt-1 ${inputClass}`}
-              placeholder="VD: Đợt 1 — 03/08/2026"
-            />
+            >
+              <option value="">Chọn đợt kiểm kho</option>
+              {KIEM_KHO_PERIODS.map(period => (
+                <option key={period} value={period}>{period}</option>
+              ))}
+            </select>
           </label>
           <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-            Người kiểm kho *
-            <input
-              value={nguoiKiemKho}
-              readOnly
-              className={`mt-1 ${inputClass} cursor-default bg-zinc-50 text-zinc-700`}
-              placeholder="Theo tên đăng nhập"
-              title="Tự động theo tên đăng nhập"
-            />
-          </label>
-          <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-            Ngày giờ kiểm kho
+            Ngày giờ kiểm kho (tự động)
             <input
               type="datetime-local"
               value={ngayGioKiemKho}
-              onChange={e => setNgayGioKiemKho(e.target.value)}
-              className={`mt-1 ${inputClass}`}
+              readOnly
+              className={`mt-1 ${inputClass} cursor-default bg-zinc-50 text-zinc-700`}
+              title="Tự động lấy thời gian khi lưu phiếu"
             />
           </label>
         </div>
@@ -696,10 +655,6 @@ export function KiemKhoPanel({
                 <div className="space-y-3 overflow-y-auto px-4 py-4">
                   <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-[11px] font-semibold text-zinc-600">
                     <p>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Kho </span>
-                      {tenKho.trim() || '—'}
-                    </p>
-                    <p className="mt-1">
                       <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Đợt </span>
                       {dotKiemKho.trim() || '—'}
                     </p>

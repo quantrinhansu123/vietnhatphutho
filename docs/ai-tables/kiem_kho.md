@@ -29,7 +29,7 @@
 | Path | Ghi chú |
 |------|---------|
 | `GET /api/kiem-kho` | Query: `tenKho`, `dotKiemKho`, `maSp`, `from`, `to` |
-| `POST /api/kiem-kho` | Body: `ten_kho`, `dot_kiem_kho`, `nguoi_kiem_kho`, `ngay_gio_kiem_kho`, `lines[]` |
+| `POST /api/kiem-kho` | Body: `dot_kiem_kho`, `nguoi_kiem_kho` (tự động), `ngay_gio_kiem_kho` (tự động), `lines[]`; `ten_kho` không bắt buộc |
 | `DELETE /api/kiem-kho/:id` | Xóa một dòng |
 | `POST /api/kiem-kho/dong-bo-ton-dau` | Cộng mỗi dòng chưa đồng bộ +1 vào tồn đầu sản phẩm theo `ma_nvl` |
 
@@ -37,7 +37,7 @@
 
 | File | Nội dung |
 |------|----------|
-| `src/features/kiem-kho/index.tsx` | Form thông tin phiếu (kho / đợt / người / giờ) + quét máy; `ma_nvl` auto từ tiền tố |
+| `src/features/kiem-kho/index.tsx` | Form 2 trường (đợt cố định / ngày giờ tự động) + quét máy; `ma_nvl` auto từ tiền tố |
 | `src/components/ProductQrScanner.tsx` | INPUT_CONNECTION + KEY_EVENT |
 
 ## Thêm cột trên DB đã có
