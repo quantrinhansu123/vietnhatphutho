@@ -49,7 +49,7 @@ import { VietNhatLogo } from './components/layout/Logo';
 import { BackButton, HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
 import {
   MenuCardGrid, MainMenuFlow, FourStepMenuFlow, MenuPageHeader, SubNav, MAIN_MENU_ITEMS,
-  REPORT_FORM_MENU_ITEMS, PRODUCTION_REPORT_MENU_ITEMS, FACILITY_MENU_ITEMS,
+  ADMIN_MENU_ITEMS, REPORT_FORM_MENU_ITEMS, PRODUCTION_REPORT_MENU_ITEMS, FACILITY_MENU_ITEMS,
   REPORT_LIST_MENU_ITEMS, HCNS_MENU_ITEMS, BUSINESS_MENU_ITEMS, FACTORY_MENU_ITEMS,
   FACTORY_QUAN_DOC_MENU_ITEMS, FACTORY_QC_MENU_ITEMS, FACTORY_CONG_NHAN_MENU_ITEMS, FACTORY_KHO_MENU_ITEMS,
   getActivePageMeta
@@ -739,6 +739,18 @@ export default function App() {
               >
                 <MainMenuFlow items={visibleMainMenuItems} onNavigate={navigateToTab} />
               </motion.div>
+            ) : activeTab === 'quan-tri' ? (
+              <motion.div
+                key="quan-tri-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+              >
+                <MenuPageHeader title="Quản trị" desc="Dashboard quản trị, người dùng/phân quyền, cấu hình hệ thống và danh mục dùng chung." />
+                <FourStepMenuFlow items={filterMenuItems(ADMIN_MENU_ITEMS)} onNavigate={navigateToTab} showFlow={false} />
+              </motion.div>
             ) : activeTab === 'production-reports' ? (
               <motion.div
                 key="production-reports-menu"
@@ -807,7 +819,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <div className="flex items-start gap-3">
-                  <BackButton onClick={() => navigateToTab('factory')} />
+                  <BackButton onClick={() => navigateToTab('factory-kho')} />
                   <div className="min-w-0 flex-1">
                     <MenuPageHeader title="Quản lý CSVC" desc="Cơ sở vật chất, kho hàng và thiết bị sản xuất." />
                   </div>
@@ -1330,7 +1342,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <SettingsPanel onBack={() => navigateToTab('hcns')} />
+                <SettingsPanel onBack={() => navigateToTab('quan-tri')} />
               </motion.div>
             ) : (
               <motion.div

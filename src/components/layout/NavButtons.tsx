@@ -59,7 +59,7 @@ export function HomeNavButton({
       }`}
     >
       <Home className="h-4 w-4" />
-      <span className={`font-bold uppercase leading-none ${isSidebar ? 'text-[8px] tracking-wide' : 'text-[9px] tracking-wider'}`}>
+      <span className={`whitespace-nowrap font-bold uppercase leading-tight ${isSidebar ? 'text-[7.5px] tracking-normal' : 'text-[9px] tracking-wider'}`}>
         Trang chủ
       </span>
     </a>
@@ -68,18 +68,19 @@ export function HomeNavButton({
 
 // Bảng ánh xạ tab hiện tại → tab cha (dùng cho nút Quay lại ở bottom nav)
 export const BACK_TAB_MAP: Record<string, string> = {
+  'quan-tri': 'menu',
   'acceptance-report-list': 'report-lists',
-  'report-lists': 'production-reports',
-  'report-forms': 'production-reports',
-  'production-reports': 'factory',
-  'facility-management': 'factory',
+  'report-lists': 'factory-cong-nhan',
+  'report-forms': 'factory-cong-nhan',
+  'production-reports': 'factory-quan-doc',
+  'facility-management': 'factory-kho',
   'hcns': 'menu',
   'business': 'menu',
   'factory': 'menu',
-  'factory-quan-doc': 'factory',
-  'factory-qc': 'factory',
-  'factory-cong-nhan': 'factory',
-  'factory-kho': 'factory',
+  'factory-quan-doc': 'menu',
+  'factory-qc': 'menu',
+  'factory-cong-nhan': 'menu',
+  'factory-kho': 'menu',
   'products': 'factory-kho',
   'machines': 'facility-management',
   'materials': 'factory-kho',
@@ -89,24 +90,28 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'kiem-kho': 'factory-kho',
   'hr': 'hcns',
   'vehicles': 'menu',
-  'settings': 'menu',
+  'settings': 'quan-tri',
   'orders': 'business',
   'customers': 'business',
   'shipping-orders': 'business',
-  'production-orders': 'factory',
-  'production-plan-history': 'factory',
+  'production-orders': 'factory-quan-doc',
+  'production-plan-history': 'factory-quan-doc',
+  'control-board': 'factory-quan-doc',
   'weighing-summary': 'report-forms',
-  'weighing-summary-list': 'report-lists',
-  'can-tu-dong': 'report-lists',
+  'weighing-summary-list': 'factory-qc',
+  'can-tu-dong': 'factory-qc',
   'damaged-goods-report': 'report-forms',
-  'damaged-goods-report-list': 'report-lists',
+  'damaged-goods-report-list': 'factory-qc',
+  'mixing-report': 'report-forms',
+  'mixing-report-list': 'factory-qc',
   'machine-nvl-report': 'report-forms',
-  'machine-nvl-report-list': 'report-lists',
+  'machine-nvl-report-list': 'factory-kho',
   'machine-downtime-list': 'report-lists',
   'machine-downtime-report': 'report-forms',
   'machine-run-log': 'report-forms',
   'machine-run-log-list': 'report-lists',
-  'acceptance-report': 'report-forms'
+  'acceptance-report': 'report-forms',
+  'dashboard': 'quan-tri'
 };
 
 export function MobileBackNavButton({
