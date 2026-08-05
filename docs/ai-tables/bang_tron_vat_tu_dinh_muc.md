@@ -11,7 +11,7 @@
 
 **1 form nhập = 1 dòng DB = 1 phiếu**
 
-- `ma_lenh_sx`, `ngay`, `ghi_chu`
+- `ma_lenh_sx`, `ngay`, `ca`, `ghi_chu`
 - `chi_tiet` jsonb = mảng sản phẩm:
 
 ```json

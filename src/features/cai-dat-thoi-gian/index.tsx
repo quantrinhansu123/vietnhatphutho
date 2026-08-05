@@ -114,6 +114,18 @@ export function normalizeSettings(data: unknown): SettingRow[] {
 
 export const SETTING_TYPE_OPTIONS = ['Thời gian', 'Ca máy', 'Sản xuất', 'Chung'] as const;
 
+/** Sổ xuống giờ bắt đầu / kết thúc — bước 15 phút + 23:59 */
+export const SETTING_TIME_OPTIONS: string[] = (() => {
+  const options: string[] = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    for (const minute of [0, 15, 30, 45]) {
+      options.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    }
+  }
+  if (!options.includes('23:59')) options.push('23:59');
+  return options;
+})();
+
 export type SettingFormState = {
   code: string;
   name: string;
@@ -124,19 +136,18 @@ export type SettingFormState = {
   note: string;
 };
 
-function sanitize24HourTimeInput(value: string) {
-  if (value.includes(':')) {
-    const [hours = '', minutes = ''] = value.split(':');
-    return `${hours.replace(/\D/g, '').slice(0, 2)}:${minutes.replace(/\D/g, '').slice(0, 2)}`;
-  }
-  const digits = value.replace(/\D/g, '').slice(0, 4);
-  return digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits;
-}
-
 function isValid24HourTime(value: string) {
   const match = value.match(/^(\d{2}):(\d{2})$/);
   if (!match) return false;
   return Number(match[1]) <= 23 && Number(match[2]) <= 59;
+}
+
+function timeSelectOptions(currentValue: string) {
+  const value = currentValue.trim();
+  if (value && isValid24HourTime(value) && !SETTING_TIME_OPTIONS.includes(value)) {
+    return [...SETTING_TIME_OPTIONS, value].sort();
+  }
+  return SETTING_TIME_OPTIONS;
 }
 
 const emptySettingForm = (): SettingFormState => ({
@@ -218,7 +229,17 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         throw new Error(data.error || 'Không thể tải cài đặt từ Supabase.');
       }
 
-      setSettings(normalizeSettings(data));
+      const next = normalizeSettings(data);
+      setSettings(next);
+
+      const warning = typeof data.warning === 'string' ? data.warning.trim() : '';
+      if (warning) {
+        setSettingsError(warning);
+      } else if (data.source === 'local') {
+        setSettingsError(
+          'Chưa kết nối được bảng cai_dat_thoi_gian trên Supabase. Chạy file supabase-cai-dat-thoi-gian.sql rồi tải lại trang.'
+        );
+      }
     } catch (error: any) {
       setSettings([]);
       setSettingsError(error.message || 'Không thể tải cài đặt từ Supabase.');
@@ -324,7 +345,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       }
 
       closeForm();
-      setActionMessage(isEdit ? 'Đã cập nhật cài đặt.' : 'Đã thêm cài đặt mới.');
+      setSelectedGroup('all');
+      setSearchText('');
+      setActionMessage(isEdit ? 'Đã cập nhật cài đặt (đã ghi Supabase bảng cai_dat_thoi_gian).' : 'Đã thêm cài đặt mới vào Supabase (cai_dat_thoi_gian).');
       await loadSettings();
     } catch (error: any) {
       setFormError(error.message || 'Không thể lưu cài đặt.');
@@ -634,31 +657,33 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu *</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={5}
+                <select
                   value={settingForm.startTime}
-                  onChange={e =>
-                    setSettingForm(prev => ({ ...prev, startTime: sanitize24HourTimeInput(e.target.value) }))
-                  }
+                  onChange={e => setSettingForm(prev => ({ ...prev, startTime: e.target.value }))}
                   className={orderFieldClass}
-                  placeholder="00:00"
-                />
+                >
+                  <option value="">Chọn giờ bắt đầu</option>
+                  {timeSelectOptions(settingForm.startTime).map(time => (
+                    <option key={`start-${time}`} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ kết thúc *</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={5}
+                <select
                   value={settingForm.endTime}
-                  onChange={e =>
-                    setSettingForm(prev => ({ ...prev, endTime: sanitize24HourTimeInput(e.target.value) }))
-                  }
+                  onChange={e => setSettingForm(prev => ({ ...prev, endTime: e.target.value }))}
                   className={orderFieldClass}
-                  placeholder="23:59"
-                />
+                >
+                  <option value="">Chọn giờ kết thúc</option>
+                  {timeSelectOptions(settingForm.endTime).map(time => (
+                    <option key={`end-${time}`} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhóm</span>
@@ -913,7 +938,13 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         ) : null}
 
         {settingsError && (
-          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">
+          <p
+            className={`mt-3 w-full rounded-xl border px-3 py-2 text-xs font-bold lg:basis-full ${
+              /supabase-cai-dat|chưa có|chưa kết nối|thiếu cột/i.test(settingsError)
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-rose-200 bg-rose-50 text-rose-700'
+            }`}
+          >
             {settingsError}
           </p>
         )}
@@ -1301,11 +1332,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                       >
                         <span className="text-sm font-black text-zinc-900">
                           {item.department} · {item.position}
-                        </span>
-                        <span className="text-[11px] font-semibold text-zinc-500">
-                          Xem {summarizeStaffViewPermissions(item.viewPermissions)} · Sửa{' '}
-                          {summarizeStaffViewPermissions(item.editPermissions)} · Xóa{' '}
-                          {summarizeStaffViewPermissions(item.deletePermissions)}
                         </span>
                       </button>
                     ))

@@ -11,11 +11,11 @@ import {
   Trash2
 } from 'lucide-react';
 import WeighingReportForm from './WeighingReportForm';
-import WeighingSlipSetupModal, { type SlipSetupPayload } from './WeighingSlipSetupModal';
 import WeighingImagePreviewModal, {
   WeighingImageThumbnail,
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
+import { FACTORY_PLACEHOLDER } from './layout/constants';
 import { WeighingSlipPrintBatch, type WeighingSlipPrintData } from './WeighingSlipPrintSheet';
 import { RowActionsMenu } from './shared/table';
 import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/weighingSlipConfig';
@@ -35,7 +35,6 @@ import {
   formatWeighingRowTotalWeight,
   formatWeighingNetWeight,
   formatWeighingWeightField,
-  generateWeighingDocumentNo,
   getWeighingDataRows,
   isDamagedOtherMaterial,
   normalizeWeighingRecords,
@@ -44,8 +43,6 @@ import {
   type WeighingPendingAdd,
   type WeighingRecord
 } from '../utils/weighingRecords';
-
-const FACTORY_PLACEHOLDER = 'Nhà máy Đà Nẵng';
 
 function isRealMachineName(name?: string) {
   const value = String(name ?? '').trim();
@@ -754,10 +751,6 @@ export default function WeighingShiftSummary({
   const [actionMessage, setActionMessage] = useState('');
   const [showReportForm, setShowReportForm] = useState(defaultShowForm);
   const [pendingAdd, setPendingAdd] = useState<WeighingPendingAdd | null>(null);
-  const [slipSetupOpen, setSlipSetupOpen] = useState(false);
-  const [slipSetupDefaults, setSlipSetupDefaults] = useState<{ productionDate: string; shiftName?: string }>({
-    productionDate: today
-  });
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [printSlip, setPrintSlip] = useState<WeighingSlipPrintData | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
@@ -777,42 +770,17 @@ export default function WeighingShiftSummary({
 
   const handleOpenSlipSetup = (options: { productionDate: string; shiftName?: string }) => {
     if (!canCreate) return;
-    setSlipSetupDefaults(options);
-    setSlipSetupOpen(true);
-  };
-
-  const handleCreateSlipHeader = async (payload: SlipSetupPayload) => {
-    if (!canCreate) return;
-    const documentNo = generateWeighingDocumentNo(payload.productionDate);
-    const headerRow = {
-      productionDate: payload.productionDate,
-      shiftName: payload.shiftName,
-      worker1: payload.worker1,
-      worker2: payload.worker2,
-      machineName: payload.machineName
-    };
-
-    const res = await fetch(config.apiBasePath, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        documentNo,
-        reportDate: payload.productionDate,
-        productionDate: payload.productionDate,
-        shiftName: payload.shiftName,
-        worker1: payload.worker1,
-        worker2: payload.worker2,
-        rows: [headerRow]
-      })
+    handleOpenReportForm({
+      productionDate: options.productionDate || dateTo,
+      shiftName: options.shiftName || '',
+      worker1: '',
+      worker2: '',
+      machineName: '',
+      productCode: '',
+      productName: '',
+      createNewSlip: true,
+      newWeighRound: true
     });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || 'Không thể tạo phiếu mới.');
-    }
-
-    await loadReports();
-    setActionMessage('Đã tạo phiếu mới.');
   };
 
   const handleOpenReportForm = (options: WeighingPendingAdd) => {
@@ -1168,8 +1136,7 @@ export default function WeighingShiftSummary({
 
       <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
 
-      {viewingRow && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      {viewingRow && (        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="w-full max-w-lg rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
@@ -1368,14 +1335,6 @@ export default function WeighingShiftSummary({
           </div>
         </div>
       )}
-
-      <WeighingSlipSetupModal
-        open={slipSetupOpen}
-        initialProductionDate={slipSetupDefaults.productionDate}
-        initialShiftName={slipSetupDefaults.shiftName}
-        onClose={() => setSlipSetupOpen(false)}
-        onCreate={handleCreateSlipHeader}
-      />
 
       <WeighingSlipPrintBatch
         slip={printSlip}

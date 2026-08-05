@@ -18,6 +18,7 @@ import {
   Users,
   X
 } from 'lucide-react';
+import { COMPANY_BRANCH_NAME } from './layout/constants';
 import { formatNumber, parseMoneyInput } from '../utils';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 import SearchableMultiSelect from './SearchableMultiSelect';
@@ -57,10 +58,17 @@ import {
 import {
   getProductionShiftOptions,
   normalizeShiftSettings,
+  resolveShiftName,
   type ShiftSetting
 } from '../utils/shiftSettings';
 
 const MIXING_MAX_ROUNDS = 20;
+
+function normalizeMixingCaInput(value: unknown) {
+  const ca = String(value ?? '').trim();
+  if (!ca || ca === '-' || ca === '—') return '';
+  return ca;
+}
 type RoundKey = `lan_${number}`;
 const ROUND_KEYS: readonly RoundKey[] = Array.from(
   { length: MIXING_MAX_ROUNDS },
@@ -425,7 +433,7 @@ function newReportForm(): Omit<MixingReport, 'id' | 'created_at'> {
     ca: '',
     ngay: todayIso(),
     gio: nowTimeValue(),
-    chi_nhanh: 'Đà Nẵng',
+    chi_nhanh: COMPANY_BRANCH_NAME,
     ma_may: '',
     ten_may: '',
     nhan_su: '',
@@ -1095,6 +1103,24 @@ export default function MixingReportForm({
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
+  const shiftSelectOptions = useMemo(() => {
+    const options = [...shiftOptions];
+    const current = normalizeMixingCaInput(form.ca);
+    if (current && !options.some(option => option.value === current || option.label === current)) {
+      options.unshift({ value: current, label: current });
+    }
+    return options;
+  }, [form.ca, shiftOptions]);
+
+  useEffect(() => {
+    const current = normalizeMixingCaInput(form.ca);
+    if (!current || shiftOptions.length === 0) return;
+    const resolved = resolveShiftName(current, shiftOptions);
+    if (resolved && resolved !== form.ca) {
+      setForm(prev => (prev.ca === resolved ? prev : { ...prev, ca: resolved }));
+    }
+  }, [form.ca, shiftOptions]);
+
   useEffect(() => {
     if (nhanSuManual || !form.ca.trim()) return;
     if (!form.ma_may.trim() && !form.ten_may.trim()) return;
@@ -1248,10 +1274,10 @@ export default function MixingReportForm({
     setCollapsedRounds(new Set());
     autoCollapsedRoundsRef.current = new Set();
     setForm({
-      ca: report.ca,
+      ca: resolveShiftName(normalizeMixingCaInput(report.ca), shiftOptions) || normalizeMixingCaInput(report.ca),
       ngay: report.ngay || todayIso(),
       gio: report.gio || nowTimeValue(),
-      chi_nhanh: report.chi_nhanh || 'Đà Nẵng',
+      chi_nhanh: report.chi_nhanh || COMPANY_BRANCH_NAME,
       ma_may: report.ma_may,
       ten_may: report.ten_may,
       nhan_su: report.nhan_su,
@@ -1685,8 +1711,10 @@ export default function MixingReportForm({
   };
 
   const handleSave = async () => {
-    if (!form.ca.trim()) {
-      setError(showSaveFailure('Vui lòng chọn ca.'));
+    const resolvedCa =
+      resolveShiftName(normalizeMixingCaInput(form.ca), shiftOptions) || normalizeMixingCaInput(form.ca);
+    if (!resolvedCa) {
+      setError(showSaveFailure('Vui lòng chọn ca sản xuất.'));
       return;
     }
     if (!form.ngay.trim()) {
@@ -1791,7 +1819,7 @@ export default function MixingReportForm({
       );
 
       const payload = {
-        ca: form.ca.trim(),
+        ca: resolvedCa,
         ngay: form.ngay.trim(),
         gio: form.gio.trim(),
         chi_nhanh: form.chi_nhanh.trim(),
@@ -1862,7 +1890,7 @@ export default function MixingReportForm({
         <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Ca sản xuất</span>
         <select value={form.ca} onChange={e => pickShift(e.target.value)} className={inputClass}>
           <option value="">Chọn ca sản xuất...</option>
-          {shiftOptions.map(shift => (
+          {shiftSelectOptions.map(shift => (
             <option key={shift.value} value={shift.value}>
               {shift.label}
             </option>

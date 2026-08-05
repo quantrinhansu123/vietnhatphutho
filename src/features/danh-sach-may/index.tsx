@@ -212,7 +212,7 @@ const emptyMachineForm = (): MachineFormState => ({
   code: '',
   name: '',
   type: '',
-  branch: 'Đà Nẵng',
+  branch: 'Phú Thọ',
   location: '',
   status: 'Đang dùng',
   note: '',

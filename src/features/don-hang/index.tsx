@@ -437,6 +437,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       setFormError('Vui lòng chọn ngày tạo.');
       return;
     }
+    if (!orderForm.customer.trim()) {
+      setFormError('Vui lòng chọn khách hàng từ danh mục.');
+      return;
+    }
 
     const products = orderProductLinesToPayload(orderForm.productLines, productOptions);
     if (products.length === 0) {
@@ -643,26 +647,38 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   value={orderForm.staffName}
                   onChange={staffName => setOrderForm(prev => ({ ...prev, staffName }))}
                   options={staffOptions}
-                  placeholder="Chọn nhân viên KD Đà Nẵng"
+                  placeholder="Chọn nhân viên Phòng Kinh Doanh"
                   isLoading={isLoadingLookups}
                   getValue={item => (item as StaffOption).name}
                   getLabel={item => (item as StaffOption).name}
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khách hàng</span>
-                <SimpleSelect
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khách hàng *</span>
+                <select
                   value={orderForm.customer}
-                  onChange={customer => setOrderForm(prev => ({ ...prev, customer }))}
-                  options={customerOptions}
-                  placeholder="Chọn khách hàng"
-                  isLoading={isLoadingLookups}
-                  getValue={item => (item as CustomerOption).name}
-                  getLabel={item => {
-                    const customer = item as CustomerOption;
-                    return customer.code ? `${customer.code} · ${customer.name}` : customer.name;
-                  }}
-                />
+                  onChange={event => setOrderForm(prev => ({ ...prev, customer: event.target.value }))}
+                  disabled={isLoadingLookups}
+                  className={orderFieldClass}
+                >
+                  <option value="">
+                    {isLoadingLookups ? 'Đang tải khách hàng...' : 'Chọn khách hàng'}
+                  </option>
+                  {orderForm.customer &&
+                  !customerOptions.some(customer => customer.name === orderForm.customer) ? (
+                    <option value={orderForm.customer}>{orderForm.customer}</option>
+                  ) : null}
+                  {customerOptions.map(customer => (
+                    <option key={customer.id || customer.code || customer.name} value={customer.name}>
+                      {customer.code ? `${customer.code} · ${customer.name}` : customer.name}
+                    </option>
+                  ))}
+                </select>
+                {!isLoadingLookups && customerOptions.length === 0 ? (
+                  <span className="block text-[11px] font-semibold text-amber-700">
+                    Chưa có khách hàng trong danh mục /khach-hang.
+                  </span>
+                ) : null}
               </label>
 
               <RepeatableLinesBlock

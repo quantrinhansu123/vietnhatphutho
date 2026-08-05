@@ -1286,13 +1286,8 @@ function VehicleDetailModal({
 }
 
 const DEFAULT_VEHICLE_TYPE_OPTIONS = [
-  'Xe tải 1.4T',
-  'Xe tải 2.5T',
-  'Xe tải 3.5T',
-  'Xe tải 5T',
-  'Xe van',
-  'Xe bán tải',
-  'Xe container'
+  '1,5 tấn',
+  '6 tấn'
 ];
 
 const splitAssignedDrivers = (value: string) =>
@@ -1396,7 +1391,7 @@ function VehicleModal({
   const loaiXeSuggestions = useMemo(() => {
     const seen = new Set<string>();
     const options: string[] = [];
-    for (const value of [...vehicleTypeOptions, ...DEFAULT_VEHICLE_TYPE_OPTIONS]) {
+    for (const value of [...DEFAULT_VEHICLE_TYPE_OPTIONS, ...vehicleTypeOptions, form.loai_xe]) {
       const trimmed = String(value || '').trim();
       if (!trimmed) continue;
       const key = trimmed.toLowerCase();
@@ -1404,8 +1399,8 @@ function VehicleModal({
       seen.add(key);
       options.push(trimmed);
     }
-    return options.sort((a, b) => a.localeCompare(b, 'vi'));
-  }, [vehicleTypeOptions]);
+    return options.sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));
+  }, [form.loai_xe, vehicleTypeOptions]);
 
   const updateDocuments = (documents: VehicleDocument[]) => {
     setForm(prev => ({
@@ -1495,19 +1490,18 @@ function VehicleModal({
       {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Loại xe *">
-          <input
-            list="vehicle-type-suggestions"
+          <select
             value={form.loai_xe}
             onChange={event => setForm(prev => ({ ...prev, loai_xe: event.target.value }))}
             className={inputClass}
-            placeholder="Chọn hoặc nhập loại xe"
-            autoComplete="off"
-          />
-          <datalist id="vehicle-type-suggestions">
+          >
+            <option value="">Chọn loại xe</option>
             {loaiXeSuggestions.map(type => (
-              <option key={type} value={type} />
+              <option key={type} value={type}>
+                {type}
+              </option>
             ))}
-          </datalist>
+          </select>
         </Field>
         <Field label="Biển số xe (BSX) *">
           <input value={form.bien_so_xe} onChange={event => setForm(prev => ({ ...prev, bien_so_xe: event.target.value.toUpperCase() }))} className={`${inputClass} font-mono`} placeholder="VD: 51D-251.05" />

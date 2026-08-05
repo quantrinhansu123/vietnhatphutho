@@ -15,6 +15,7 @@ import { CAMERA_IMAGE_INPUT_PROPS } from '../utils/cameraCapture';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 import { useTabAccess } from '../app/useTabAccess';
 import { RowActionsMenu } from './shared/table';
+import { FACTORY_PLACEHOLDER } from './layout/constants';
 
 interface WeighingRow {
   id: number;
@@ -48,8 +49,6 @@ interface WeighingRow {
 }
 
 const DEFAULT_ROWS: WeighingRow[] = [];
-
-const FACTORY_PLACEHOLDER = 'Nhà máy Đà Nẵng';
 
 function isRealMachineName(name?: string) {
   const value = String(name ?? '').trim();

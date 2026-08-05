@@ -8,7 +8,11 @@
 **UI:** `src/features/cai-dat-thoi-gian/index.tsx` — `SettingsPanel`  
 **Utils:** `src/utils/shiftSettings.ts`, `permissionKeys.ts`, `staffAssignments.ts`, `RolePermissionsMatrix.tsx`, `StaffRoleAssignmentPanel.tsx`, `src/features/nhan-su/menuViews.ts`
 
-Cấu hình ca, khung giờ — ảnh hưởng phiếu cân và báo cáo.
+Cấu hình ca, khung giờ — ảnh hưởng phiếu cân và báo cáo. Lưu vào bảng Supabase **`cai_dat_thoi_gian`**.
+
+Form **Thêm/Sửa** mục Thời gian: **Giờ bắt đầu / Giờ kết thúc** dùng sổ xuống `SETTING_TIME_OPTIONS` (bước 15 phút + `23:59`). Giờ lẻ cũ vẫn hiện trong list khi sửa.
+
+Nếu F5 mất dữ liệu / danh sách trống: chạy `supabase-cai-dat-thoi-gian.sql` hoặc `supabase-migrate-2026-08-05-hom-nay.sql` trên đúng project Supabase (`.env`), rồi reload. Dòng `PERM_KEY_*` không hiện ở tab hệ thống — xem tab **Phân quyền**.
 
 ## Quyền giao diện
 

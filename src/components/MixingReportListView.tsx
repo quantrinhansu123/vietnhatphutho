@@ -32,6 +32,7 @@ import { waitForPrintImagesReady } from '../utils/printReady';
 import type { MixingReport } from './MixingReportForm';
 import MixingReportForm from './MixingReportForm';
 import MixingNormMaterialsTab from './MixingNormMaterialsTab';
+import ActualMixingSheetTab from './ActualMixingSheetTab';
 import {
   getProductionShiftOptions,
   normalizeShiftSettings,
@@ -285,7 +286,7 @@ export default function MixingReportListView({
   const [reloadTick, setReloadTick] = useState(0);
   const [printReports, setPrintReports] = useState<MixingReport[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
-  const [listTab, setListTab] = useState<'reports' | 'norms'>('reports');
+  const [listTab, setListTab] = useState<'reports' | 'norms' | 'actual'>('reports');
   const [searchText, setSearchText] = useState('');
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
@@ -681,7 +682,7 @@ export default function MixingReportListView({
           </div>
         </div>
 
-        <div className="grid gap-2 border-b border-zinc-100 bg-white px-4 py-3 sm:grid-cols-2">
+        <div className="grid gap-2 border-b border-zinc-100 bg-white px-4 py-3 sm:grid-cols-3">
           <button
             type="button"
             onClick={() => setListTab('reports')}
@@ -710,6 +711,21 @@ export default function MixingReportListView({
             <span className="block text-sm font-black text-zinc-950">Phiếu trộn định mức</span>
             <span className="mt-0.5 block text-[11px] font-semibold text-zinc-500">
               Lệnh SX → Sản phẩm → NVL, lưu bảng riêng
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setListTab('actual')}
+            aria-pressed={listTab === 'actual'}
+            className={`rounded-xl border-2 px-3 py-2.5 text-left transition ${
+              listTab === 'actual'
+                ? 'border-[#ef1b2d] bg-red-50'
+                : 'border-zinc-200 bg-white hover:border-zinc-300'
+            }`}
+          >
+            <span className="block text-sm font-black text-zinc-950">Phiếu trộn thực tế</span>
+            <span className="mt-0.5 block text-[11px] font-semibold text-zinc-500">
+              Chọn ngày + ca, nhập % thực tế
             </span>
           </button>
         </div>
@@ -848,6 +864,8 @@ export default function MixingReportListView({
 
       {listTab === 'norms' ? (
         <MixingNormMaterialsTab />
+      ) : listTab === 'actual' ? (
+        <ActualMixingSheetTab />
       ) : (
         <>
       {error && (

@@ -426,7 +426,7 @@ export default function App() {
 
         if (res.ok) {
           const newRep = await res.json();
-          addNotification('Lưu báo cáo lên database Đà Nẵng thành công!', 'success');
+          addNotification('Lưu báo cáo lên database Phú Thọ thành công!', 'success');
           // Update local list
           setReports(prev => [newRep, ...prev]);
           // Reset form draft
@@ -510,7 +510,7 @@ export default function App() {
         if (res.ok) {
           const resJson = await res.json();
           setReports(resJson.data);
-          addNotification('Khôi phục database mẫu Đà Nẵng thành công!', 'success');
+          addNotification('Khôi phục database mẫu Phú Thọ thành công!', 'success');
         }
       } catch (e) {
         addNotification('Lỗi khi khôi phục database.', 'error');
@@ -877,7 +877,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <AcceptanceReportListView
-                  onBack={() => goBack('report-lists')}
+                  onBack={() => goBack('factory-qc')}
                   onCreate={prefill => {
                     setAcceptanceEditReport(null);
                     setAcceptanceCreatePrefill(prefill ?? null);
@@ -1074,7 +1074,7 @@ export default function App() {
                   <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="p-5 bg-white rounded-2xl shadow-xl flex items-center gap-3.5 text-slate-800 font-bold max-w-sm">
                       <Loader2 className="w-6 h-6 text-emerald-600 animate-spin shrink-0" />
-                      <span>Đang mã hóa & đồng bộ dữ liệu Đà Nẵng...</span>
+                      <span>Đang mã hóa & đồng bộ dữ liệu Phú Thọ...</span>
                     </div>
                   </div>
                 )}
@@ -1326,7 +1326,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachinesPanel onBack={() => goBack('facility-management')} />
+                <MachinesPanel onBack={() => goBack('menu')} />
               </motion.div>
             ) : activeTab === 'materials' ? (
               <motion.div
@@ -1405,6 +1405,7 @@ export default function App() {
               >
                 <ProductionOrdersPanel
                   onBack={() => goBack('factory')}
+                  currentUser={authUser}
                   canEdit={menuFullAccess || editableMenuTabs.has('production-orders')}
                   canDelete={menuFullAccess || deletableMenuTabs.has('production-orders')}
                 />

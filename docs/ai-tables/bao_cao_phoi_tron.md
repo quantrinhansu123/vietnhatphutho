@@ -14,4 +14,4 @@
 
 **Utils:** `lib/mixingReportModel.ts`, `utils/mixingOrderAutofill.ts`
 
-Tab **Bảng trộn vật tư định mức** lưu bảng riêng `bang_tron_vat_tu_dinh_muc` — xem [bang_tron_vat_tu_dinh_muc.md](./bang_tron_vat_tu_dinh_muc.md).
+**Update ca:** Form sửa chuẩn hóa `ca` (bỏ `-`), khớp với sổ ca / cài đặt thời gian trước khi PATCH. API từ chối lưu nếu `ca` trống hoặc chỉ là `-`.
