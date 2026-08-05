@@ -15,7 +15,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  TablePagination
+  TablePagination,
+  RowActionsMenu
 } from '../../components/shared/table';
 
 export interface StaffOption {
@@ -815,6 +816,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                   </td>
                   <td className="px-4 py-3 font-semibold text-zinc-700">{customer.managingUnit || '-'}</td>
                   <td className="px-4 py-3">
+                    <RowActionsMenu label={`Thao tác ${customer.name}`}>
                     <div className="flex items-center justify-end gap-1.5">
                       <button
                         type="button"
@@ -846,6 +848,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                         )}
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </TableRow>
               </React.Fragment>

@@ -14,7 +14,8 @@ import {
   TableHeadCell,
   TableBody,
   TableRow,
-  TableEmptyRow
+    TableEmptyRow,
+    RowActionsMenu
 } from '../../components/shared/table';
 
 type CatalogProduct = {
@@ -592,6 +593,7 @@ export function KiemKhoPanel({
                     <td className={`px-4 py-3 font-semibold text-zinc-700 ${highlightClass}`}>{line.tenSp || '—'}</td>
                     <td className={`px-4 py-3 font-semibold text-zinc-600 ${highlightClass}`}>{line.loaiSp || '—'}</td>
                     <td className={`px-4 py-3 text-center ${highlightClass}`}>
+                      <RowActionsMenu label={`Thao tác ${line.maSp}`}>
                       <button
                         type="button"
                         onClick={() => removeLine(line.key)}
@@ -600,6 +602,7 @@ export function KiemKhoPanel({
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
+                      </RowActionsMenu>
                     </td>
                   </TableRow>
                 </React.Fragment>
@@ -684,6 +687,7 @@ export function KiemKhoPanel({
                   <td className="px-4 py-3 font-semibold text-zinc-600">{row.loai_sp || '—'}</td>
                   <td className="px-4 py-3 font-semibold text-zinc-700">{row.nguoi_kiem_kho || '—'}</td>
                   <td className="px-4 py-3 text-center">
+                    <RowActionsMenu label={`Thao tác bản ghi ${row.id}`}>
                     <button
                       type="button"
                       onClick={() => void handleDeleteRecent(row.id)}
@@ -692,6 +696,7 @@ export function KiemKhoPanel({
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
+                    </RowActionsMenu>
                   </td>
                 </TableRow>
               </React.Fragment>

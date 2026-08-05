@@ -21,6 +21,7 @@ import {
 import { formatNumber, parseMoneyInput } from '../utils';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 import SearchableMultiSelect from './SearchableMultiSelect';
+import { RowActionsMenu } from './shared/table';
 import {
   normalizeMixingProductionOrders,
   type MixingProductionOrder
@@ -854,6 +855,7 @@ function MixingLineFormModal({
                               {formatOptionalNumber(item.kl_thuc_te) || '-'}
                             </td>
                             <td className="px-2 py-2 text-center">
+                              <RowActionsMenu label={`Thao tác NVL ${item.ma_nvl || rowIndex + 1}`}>
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
@@ -872,6 +874,7 @@ function MixingLineFormModal({
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
+                              </RowActionsMenu>
                             </td>
                           </tr>
                         )))}
@@ -2321,6 +2324,7 @@ export default function MixingReportForm({
                                 />
                               </td>
                               <td className="px-2 py-2 text-center">
+                                <RowActionsMenu label={`Thao tác NVL ${entry.item.ma_nvl || entry.itemIndex + 1}`}>
                                 <div className="flex items-center justify-center gap-1">
                                   <button
                                     type="button"
@@ -2354,6 +2358,7 @@ export default function MixingReportForm({
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
+                                </RowActionsMenu>
                               </td>
                             </tr>
                           ))}

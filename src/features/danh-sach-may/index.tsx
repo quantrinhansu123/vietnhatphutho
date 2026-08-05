@@ -26,6 +26,7 @@ import {
   TableRow,
   TableEmptyRow,
   StatusBadge,
+  RowActionsMenu,
   type StatusBadgeColor
 } from '../../components/shared/table';
 
@@ -1013,6 +1014,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                   </td>
                   <td className="px-4 py-3 font-semibold text-zinc-500">{machine.note || '-'}</td>
                   <td className="px-4 py-3">
+                    <RowActionsMenu label={`Thao tác ${machine.code || machine.name}`}>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
@@ -1044,6 +1046,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                         )}
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
             </TableRow>
             </React.Fragment>

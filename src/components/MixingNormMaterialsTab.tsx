@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { RowActionsMenu } from './shared/table';
 
 export type MixingNormLine = {
   ma_nvl: string;
@@ -438,6 +439,7 @@ export default function MixingNormMaterialsTab() {
                     {row.ghi_chu || '—'}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5">
+                    <RowActionsMenu label={`Thao tác định mức ${row.ngay || row.id}`}>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
@@ -461,6 +463,7 @@ export default function MixingNormMaterialsTab() {
                         Xóa
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
               ))}

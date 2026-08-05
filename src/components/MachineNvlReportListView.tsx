@@ -34,6 +34,7 @@ import {
   TableSearchInput,
   TableDateFilter,
   TablePagination,
+  RowActionsMenu,
   usePagination
 } from './shared/table';
 
@@ -426,6 +427,7 @@ function MachineNvlSection({
                               </span>
                             </td>
                             <td className="px-3 py-2.5">
+                              <RowActionsMenu label={`Thao tác báo cáo ${report.maMay || report.tenMay}`}>
                               <div className="flex flex-wrap items-center justify-center gap-1">
                                 <button
                                   type="button"
@@ -469,6 +471,7 @@ function MachineNvlSection({
                                   Xoá
                                 </button>
                               </div>
+                              </RowActionsMenu>
                             </td>
                           </tr>
                         ))}

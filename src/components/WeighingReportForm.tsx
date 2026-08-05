@@ -13,6 +13,7 @@ import WeighingImagePreviewModal, {
 } from './WeighingImagePreviewModal';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../utils/cameraCapture';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
+import { RowActionsMenu } from './shared/table';
 
 interface WeighingRow {
   id: number;
@@ -2167,6 +2168,7 @@ export default function WeighingReportForm({
                     {row.note || '—'}
                   </td>
                   <td className="px-2 py-2">
+                    <RowActionsMenu label={`Thao tác lần cân ${row.weighNo || row.id}`}>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
@@ -2198,6 +2200,7 @@ export default function WeighingReportForm({
                         )}
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
                 );
@@ -2242,6 +2245,7 @@ export default function WeighingReportForm({
                     {row.note || '—'}
                   </td>
                   <td className="px-2 py-2 text-center">
+                    <RowActionsMenu label={`Thao tác lần cân ${row.weighNo || row.id}`}>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
@@ -2273,6 +2277,7 @@ export default function WeighingReportForm({
                         )}
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
               ))}
@@ -2359,6 +2364,7 @@ export default function WeighingReportForm({
                     )}
                   </td>
                   <td className="px-2 py-2 text-center">
+                    <RowActionsMenu label={`Thao tác lần cân ${row.weighNo || row.id}`}>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
@@ -2390,6 +2396,7 @@ export default function WeighingReportForm({
                         )}
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
               ))}

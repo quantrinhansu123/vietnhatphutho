@@ -19,7 +19,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  StatusBadge
+  StatusBadge,
+  RowActionsMenu
 } from '../../components/shared/table';
 import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, QrCode, RefreshCw, X } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
@@ -2017,6 +2018,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                 <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
                 <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.minStock}</td>
                 <td className="sticky right-0 z-10 border-l border-zinc-100 bg-white px-3 py-3.5">
+                  <RowActionsMenu label={`Thao tác ${product.code || product.name}`}>
                   <div className="flex items-center justify-center gap-1">
                     <button
                       type="button"
@@ -2044,6 +2046,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                       {deletingProductId === product.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                     </button>
                   </div>
+                  </RowActionsMenu>
                 </td>
               </TableRow>
             </React.Fragment>

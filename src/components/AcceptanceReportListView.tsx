@@ -23,6 +23,7 @@ import {
   TableRow,
   TableEmptyRow,
   TablePagination,
+  RowActionsMenu,
   usePagination
 } from './shared/table';
 
@@ -686,7 +687,11 @@ export default function AcceptanceReportListView({
                             <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
                               {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
                             </td>
-                            <td className="px-3 py-2">{renderReportActions(report)}</td>
+                            <td className="px-3 py-2 text-center">
+                              <RowActionsMenu label="Thao tác báo cáo nghiệm thu">
+                                {renderReportActions(report)}
+                              </RowActionsMenu>
+                            </td>
                           </TableRow>
                         </React.Fragment>
                       ))}

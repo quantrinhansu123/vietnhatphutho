@@ -35,7 +35,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  StatusBadge
+  StatusBadge,
+  RowActionsMenu
 } from '../../components/shared/table';
 
 export interface MaterialRow {
@@ -1179,6 +1180,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                   {computeClosingStock(material.openingStock, material.inbound, material.outbound)}
                 </td>
                 <td className="px-4 py-3 text-center">
+                  <RowActionsMenu label={`Thao tác ${material.code || material.name}`}>
                   <div className="inline-flex items-center justify-center gap-1.5">
                     <button
                       type="button"
@@ -1210,6 +1212,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                       )}
                     </button>
                   </div>
+                  </RowActionsMenu>
                 </td>
               </TableRow>
             </React.Fragment>

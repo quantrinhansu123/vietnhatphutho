@@ -185,9 +185,13 @@ export default function App() {
 
     if (window.location.pathname !== path) {
       if (options?.replace) {
-        window.history.replaceState({ tab }, '', path);
+        window.history.replaceState({ tab, appNavigation: true, previousPath: null }, '', path);
       } else {
-        window.history.pushState({ tab }, '', path);
+        window.history.pushState(
+          { tab, appNavigation: true, previousPath: window.location.pathname },
+          '',
+          path
+        );
       }
     }
 
@@ -197,6 +201,15 @@ export default function App() {
     if (tab === 'dashboard') {
       fetchReports();
     }
+  };
+
+  const goBack = (fallbackTab: AppTab) => {
+    const currentState = window.history.state as { appNavigation?: boolean; previousPath?: string | null } | null;
+    if (currentState?.appNavigation && currentState.previousPath) {
+      window.history.back();
+      return;
+    }
+    navigateToTab(fallbackTab);
   };
 
   const handleNavClick = (event: React.MouseEvent<HTMLAnchorElement>, tab: AppTab) => {
@@ -512,7 +525,7 @@ export default function App() {
       <aside className="hidden shrink-0 flex-col items-center gap-1 border-r border-slate-800/60 bg-gradient-to-b from-slate-900 to-slate-950 py-3 pt-safe sm:flex sm:w-16">
         {BACK_TAB_MAP[activeTab] && (
           <MobileBackNavButton
-            onClick={() => navigateToTab(BACK_TAB_MAP[activeTab] as AppTab)}
+            onClick={() => goBack(BACK_TAB_MAP[activeTab] as AppTab)}
             variant="sidebar"
           />
         )}
@@ -795,7 +808,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <AcceptanceReportListView
-                  onBack={() => navigateToTab('report-lists')}
+                  onBack={() => goBack('report-lists')}
                   onCreate={prefill => {
                     setAcceptanceEditReport(null);
                     setAcceptanceCreatePrefill(prefill ?? null);
@@ -818,7 +831,7 @@ export default function App() {
                 className="space-y-3"
               >
                 <div className="flex items-start gap-3">
-                  <BackButton onClick={() => navigateToTab('factory-kho')} />
+                  <BackButton onClick={() => goBack('factory-kho')} />
                   <div className="min-w-0 flex-1">
                     <MenuPageHeader title="Quản lý CSVC" desc="Cơ sở vật chất, kho hàng và thiết bị sản xuất." />
                   </div>
@@ -1005,7 +1018,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <WeighingShiftSummary onBackToMenu={() => navigateToTab('report-lists')} />
+                <WeighingShiftSummary onBackToMenu={() => goBack('report-lists')} />
               </motion.div>
             ) : resolvedTab === 'can-tu-dong' ? (
               <motion.div
@@ -1015,7 +1028,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <CanTuDongPanel onBack={() => navigateToTab('report-lists')} />
+                <CanTuDongPanel onBack={() => goBack('report-lists')} />
               </motion.div>
             ) : resolvedTab === 'kiem-kho' ? (
               <motion.div
@@ -1025,7 +1038,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <KiemKhoPanel onBack={() => navigateToTab('factory-kho')} currentUser={authUser} />
+                <KiemKhoPanel onBack={() => goBack('factory-kho')} currentUser={authUser} />
               </motion.div>
             ) : resolvedTab === 'quan-ly-kho' ? (
               <motion.div
@@ -1035,7 +1048,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <QuanLyKhoPanel onBack={() => navigateToTab('factory-kho')} />
+                <QuanLyKhoPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : resolvedTab === 'weighing-summary' ? (
               <motion.div
@@ -1049,7 +1062,7 @@ export default function App() {
                   autoOpenNewSlip={!weighingPendingAdd}
                   pendingAdd={weighingPendingAdd}
                   onPendingAddHandled={() => setWeighingPendingAdd(null)}
-                  onBack={() => navigateToTab('report-forms')}
+                  onBack={() => goBack('report-forms')}
                   onOpenList={() => navigateToTab('weighing-summary-list')}
                 />
               </motion.div>
@@ -1063,7 +1076,7 @@ export default function App() {
               >
                 <WeighingShiftSummary
                   config={DAMAGED_GOODS_SLIP_CONFIG}
-                  onBackToMenu={() => navigateToTab('report-lists')}
+                  onBackToMenu={() => goBack('report-lists')}
                 />
               </motion.div>
             ) : resolvedTab === 'damaged-goods-report' ? (
@@ -1077,7 +1090,7 @@ export default function App() {
                 <WeighingReportForm
                   config={DAMAGED_GOODS_SLIP_CONFIG}
                   autoOpenNewSlip
-                  onBack={() => navigateToTab('report-forms')}
+                  onBack={() => goBack('report-forms')}
                   onOpenList={() => navigateToTab('damaged-goods-report-list')}
                 />
               </motion.div>
@@ -1090,7 +1103,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MixingReportForm
-                  onBack={() => navigateToTab('report-forms')}
+                  onBack={() => goBack('report-forms')}
                   onOpenList={() => navigateToTab('mixing-report-list')}
                   initialMachine={mixingReportMachinePrefill}
                   onInitialMachineConsumed={() => setMixingReportMachinePrefill(null)}
@@ -1105,7 +1118,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MixingReportListView
-                  onBack={() => navigateToTab('report-lists')}
+                  onBack={() => goBack('report-lists')}
                 />
               </motion.div>
             ) : activeTab === 'machine-nvl-report-list' ? (
@@ -1117,7 +1130,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MachineNvlReportListView
-                  onBack={() => navigateToTab('report-lists')}
+                  onBack={() => goBack('report-lists')}
                   onCreate={() => {
                     setMachineNvlEditReport(null);
                     navigateToTab('machine-nvl-report');
@@ -1138,7 +1151,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MachineNvlReportPanel
-                  onBack={() => navigateToTab('report-forms')}
+                  onBack={() => goBack('report-forms')}
                   onOpenList={() => navigateToTab('machine-nvl-report-list')}
                   initialMachine={machineNvlReportPrefill}
                   onInitialMachineConsumed={() => setMachineNvlReportPrefill(null)}
@@ -1155,7 +1168,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <AcceptanceReportForm
-                  onBack={() => navigateToTab('report-forms')}
+                  onBack={() => goBack('report-forms')}
                   onOpenList={() => navigateToTab('acceptance-report-list')}
                   editReport={acceptanceEditReport}
                   onEditConsumed={() => setAcceptanceEditReport(null)}
@@ -1171,7 +1184,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachineDowntimeReportPanel onBack={() => navigateToTab('report-forms')} />
+                <MachineDowntimeReportPanel onBack={() => goBack('report-forms')} />
               </motion.div>
             ) : activeTab === 'machine-downtime-list' ? (
               <motion.div
@@ -1182,7 +1195,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MachineDowntimeReportListView
-                  onBack={() => navigateToTab('report-lists')}
+                  onBack={() => goBack('report-lists')}
                   onCreate={() => navigateToTab('machine-downtime-report')}
                 />
               </motion.div>
@@ -1194,7 +1207,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachineRunLogPanel onBack={() => navigateToTab('report-forms')} />
+                <MachineRunLogPanel onBack={() => goBack('report-forms')} />
               </motion.div>
             ) : activeTab === 'machine-run-log-list' ? (
               <motion.div
@@ -1204,7 +1217,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachineRunLogPanel onBack={() => navigateToTab('report-lists')} />
+                <MachineRunLogPanel onBack={() => goBack('report-lists')} />
               </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div
@@ -1214,7 +1227,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <HumanResourcesPanel onBack={() => navigateToTab('hcns')} />
+                <HumanResourcesPanel onBack={() => goBack('hcns')} />
               </motion.div>
             ) : activeTab === 'vehicles' ? (
               <motion.div
@@ -1224,7 +1237,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <VehiclesPanel onBack={() => navigateToTab('menu')} currentUser={authUser} />
+                <VehiclesPanel onBack={() => goBack('menu')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'products' ? (
               <motion.div
@@ -1234,7 +1247,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ProductsPanel onBack={() => navigateToTab('factory-kho')} />
+                <ProductsPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'machines' ? (
               <motion.div
@@ -1244,7 +1257,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MachinesPanel onBack={() => navigateToTab('facility-management')} />
+                <MachinesPanel onBack={() => goBack('facility-management')} />
               </motion.div>
             ) : activeTab === 'materials' ? (
               <motion.div
@@ -1254,7 +1267,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MaterialsInventoryPanel onBack={() => navigateToTab('factory-kho')} />
+                <MaterialsInventoryPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'warehouse-slip' ? (
               <motion.div
@@ -1265,7 +1278,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WarehouseSlipPanel
-                  onBack={() => navigateToTab('factory-kho')}
+                  onBack={() => goBack('factory-kho')}
                   onOpenHistory={() => navigateToTab('warehouse-history')}
                 />
               </motion.div>
@@ -1278,7 +1291,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <WarehouseHistoryPanel
-                  onBack={() => navigateToTab('factory-kho')}
+                  onBack={() => goBack('factory-kho')}
                   onOpenSlip={() => navigateToTab('warehouse-slip')}
                 />
               </motion.div>
@@ -1291,7 +1304,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <OrdersPanel onBack={() => navigateToTab('menu')} />
+                <OrdersPanel onBack={() => goBack('menu')} />
               </motion.div>
             ) : activeTab === 'customers' ? (
               <motion.div
@@ -1301,7 +1314,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <CustomersPanel onBack={() => navigateToTab('business')} />
+                <CustomersPanel onBack={() => goBack('business')} />
               </motion.div>
             ) : activeTab === 'shipping-orders' ? (
               <motion.div
@@ -1311,7 +1324,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ShippingOrdersPanel onBack={() => navigateToTab('business')} currentUser={authUser} />
+                <ShippingOrdersPanel onBack={() => goBack('business')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'production-orders' ? (
               <motion.div
@@ -1322,7 +1335,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <ProductionOrdersPanel
-                  onBack={() => navigateToTab('factory')}
+                  onBack={() => goBack('factory')}
                   canEdit={menuFullAccess || editableMenuTabs.has('production-orders')}
                   canDelete={menuFullAccess || deletableMenuTabs.has('production-orders')}
                 />
@@ -1335,7 +1348,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ProductionPlanHistoryPanel onBack={() => navigateToTab('production-reports')} />
+                <ProductionPlanHistoryPanel onBack={() => goBack('production-reports')} />
               </motion.div>
             ) : activeTab === 'settings' ? (
               <motion.div
@@ -1345,7 +1358,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <SettingsPanel onBack={() => navigateToTab('quan-tri')} />
+                <SettingsPanel onBack={() => goBack('quan-tri')} />
               </motion.div>
             ) : (
               <motion.div
@@ -1431,8 +1444,8 @@ export default function App() {
         <nav className="z-40 shrink-0 px-2 pb-2 pb-safe sm:hidden">
           <div className="mx-auto flex max-w-sm items-stretch rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-xl shadow-elevated px-1.5 py-1">
             {BACK_TAB_MAP[activeTab] && (
-              <MobileBackNavButton
-                onClick={() => navigateToTab(BACK_TAB_MAP[activeTab] as AppTab)}
+          <MobileBackNavButton
+                onClick={() => goBack(BACK_TAB_MAP[activeTab] as AppTab)}
                 variant="bottom"
               />
             )}

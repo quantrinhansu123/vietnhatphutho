@@ -24,6 +24,7 @@ import {
   TableRow,
   TableEmptyRow,
   StatusBadge,
+  RowActionsMenu,
   type StatusBadgeColor
 } from '../../components/shared/table';
 
@@ -518,6 +519,7 @@ export function ShippingOrdersPanel({
                     <StatusBadge label={order.trang_thai || 'Chờ xuất'} color={statusBadgeColor(order.trang_thai)} />
                   </td>
                   <td className="px-4 py-3 text-center">
+                    <RowActionsMenu label={`Thao tác ${order.ma_lenh}`}>
                     <div className="inline-flex items-center justify-center gap-1.5">
                       <button
                         type="button"
@@ -536,6 +538,7 @@ export function ShippingOrdersPanel({
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </TableRow>
               </React.Fragment>

@@ -32,7 +32,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  StatusBadge
+  StatusBadge,
+  RowActionsMenu
 } from '../../components/shared/table';
 import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
@@ -2140,6 +2141,7 @@ export function WarehouseHistoryPanel({
                     <td className="px-4 py-3 font-semibold text-zinc-700">{header.shift || '-'}</td>
                     <td className="px-4 py-3 font-semibold text-zinc-600">{header.createdBy || '-'}</td>
                     <td className="px-4 py-3">
+                      <RowActionsMenu label={`Thao tác phiếu ${group.slipCode}`}>
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
@@ -2179,6 +2181,7 @@ export function WarehouseHistoryPanel({
                           )}
                         </button>
                       </div>
+                      </RowActionsMenu>
                     </td>
                   </TableRow>
                 </React.Fragment>

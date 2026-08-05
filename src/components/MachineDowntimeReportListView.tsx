@@ -26,6 +26,7 @@ import {
   TableRow,
   TableEmptyRow,
   TablePagination,
+  RowActionsMenu,
   usePagination
 } from './shared/table';
 
@@ -525,6 +526,7 @@ export default function MachineDowntimeReportListView({
                               {formatNumber(slip.totalRollsAffected, 0)}
                             </td>
                             <td className="px-3 py-2">
+                              <RowActionsMenu label={`Thao tác phiếu ${slip.slipCode}`}>
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
@@ -562,6 +564,7 @@ export default function MachineDowntimeReportListView({
                                   )}
                                 </button>
                               </div>
+                              </RowActionsMenu>
                             </td>
                           </TableRow>
                         </React.Fragment>

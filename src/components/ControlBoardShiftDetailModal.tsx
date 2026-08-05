@@ -12,6 +12,7 @@ import {
   type ShiftSummaryMetric
 } from '../utils/controlBoardShiftSummaryDetails';
 import { formatNumber } from '../utils';
+import { RowActionsMenu } from './shared/table';
 
 type DetailSources = {
   shiftSettings: ShiftSetting[];
@@ -413,6 +414,7 @@ export default function ControlBoardShiftDetailModal({
                           ))}
                           {showActionColumn ? (
                             <td className="px-3 py-2">
+                              <RowActionsMenu label="Thao tác dòng dữ liệu">
                               <div className="flex items-center justify-center gap-1">
                                 {showEditAction ? (
                                   <button
@@ -459,6 +461,7 @@ export default function ControlBoardShiftDetailModal({
                                   </button>
                                 ) : null}
                               </div>
+                              </RowActionsMenu>
                             </td>
                           ) : null}
                         </tr>

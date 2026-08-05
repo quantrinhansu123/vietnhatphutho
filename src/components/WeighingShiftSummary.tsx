@@ -17,6 +17,7 @@ import WeighingImagePreviewModal, {
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
 import { WeighingSlipPrintBatch, type WeighingSlipPrintData } from './WeighingSlipPrintSheet';
+import { RowActionsMenu } from './shared/table';
 import { DEFAULT_WEIGHING_SLIP_CONFIG, type WeighingSlipConfig } from '../lib/weighingSlipConfig';
 import { waitForPrintImagesReady } from '../utils/printReady';
 import {
@@ -911,6 +912,7 @@ export default function WeighingShiftSummary({
                                     </td>
                                     )}
                                     <td className="px-3 py-2">
+                                      <RowActionsMenu label="Thao tác dòng cân">
                                       <div className="flex items-center justify-center gap-1">
                                         <button
                                           type="button"
@@ -942,6 +944,7 @@ export default function WeighingShiftSummary({
                                           )}
                                         </button>
                                       </div>
+                                      </RowActionsMenu>
                                     </td>
                                   </tr>
                                 ))}

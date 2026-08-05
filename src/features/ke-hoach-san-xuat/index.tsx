@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
+import { RowActionsMenu } from '../../components/shared/table';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
@@ -2772,6 +2773,7 @@ export function ProductionPlanModal({
                           />
                         </td>
                         <td className="px-2 py-2">
+                          <RowActionsMenu label={`Thao tác dòng ${index + 1}`}>
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
@@ -2795,6 +2797,7 @@ export function ProductionPlanModal({
                               <GripVertical className="h-4 w-4" />
                             </span>
                           </div>
+                          </RowActionsMenu>
                         </td>
                       </tr>
                     ))}

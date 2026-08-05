@@ -43,7 +43,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  StatusBadge
+  StatusBadge,
+  RowActionsMenu
 } from '../../components/shared/table';
 
 export type { OrderProductLine, OrderRow };
@@ -985,6 +986,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   </td>
                   <td className="px-3 py-2.5 align-top font-semibold text-zinc-500">{order.note || '-'}</td>
                   <td className="px-3 py-2.5 align-top">
+                    <RowActionsMenu label={`Thao tác ${order.orderCode || 'đơn hàng'}`}>
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
@@ -1024,6 +1026,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         )}
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </TableRow>
               </React.Fragment>

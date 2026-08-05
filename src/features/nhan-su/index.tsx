@@ -33,7 +33,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  StatusBadge
+  StatusBadge,
+  RowActionsMenu
 } from '../../components/shared/table';
 import {
   RefreshCw,
@@ -424,6 +425,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                         />
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-center">
+                        <RowActionsMenu label={`Thao tác ${member.name}`}>
                         <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
@@ -464,6 +466,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                             Xoá
                           </button>
                         </div>
+                        </RowActionsMenu>
                       </td>
                     </TableRow>
                   </React.Fragment>

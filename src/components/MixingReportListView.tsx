@@ -49,6 +49,7 @@ import {
   TableRow,
   TableEmptyRow,
   TablePagination,
+  RowActionsMenu,
   usePagination
 } from './shared/table';
 
@@ -967,7 +968,9 @@ export default function MixingReportListView({
                             </td>
                             {round.session === rounds[0].session ? (
                               <td className="whitespace-nowrap px-3 py-2 text-center" rowSpan={rounds.length}>
-                                {renderReportActions(report)}
+                                <RowActionsMenu label="Thao tác báo cáo phối trộn">
+                                  {renderReportActions(report)}
+                                </RowActionsMenu>
                               </td>
                             ) : null}
                           </tr>

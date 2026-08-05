@@ -41,8 +41,9 @@ import {
   TableRow,
   TableSearchInput,
   TableShell,
-  TableToolbar,
-  type StatusBadgeColor
+    TableToolbar,
+    RowActionsMenu,
+    type StatusBadgeColor
 } from '../../components/shared/table';
 import {
   CustomerPaymentsView,
@@ -576,6 +577,7 @@ export function VehiclesPanel({
                         {vehicle.ghi_chu || '—'}
                       </td>
                       <td className="px-4 py-2.5">
+                        <RowActionsMenu label={`Thao tác ${vehicle.bien_so_xe}`}>
                         <div className="flex justify-center gap-1">
                           <IconButton label="Xem chi tiết" onClick={() => setViewingVehicle(vehicle)}>
                             <Eye className="h-3.5 w-3.5" />
@@ -587,6 +589,7 @@ export function VehiclesPanel({
                             <Trash2 className="h-3.5 w-3.5" />
                           </IconButton>
                         </div>
+                        </RowActionsMenu>
                       </td>
                     </TableRow>
                   </React.Fragment>
@@ -607,6 +610,7 @@ export function VehiclesPanel({
                       <p className="font-mono text-base font-black text-brand-700">{vehicle.bien_so_xe}</p>
                       <p className="mt-0.5 text-xs font-bold text-slate-700">{vehicle.loai_xe}</p>
                     </div>
+                    <RowActionsMenu label={`Thao tác ${vehicle.bien_so_xe}`}>
                     <div className="flex gap-1">
                       <IconButton label="Xem chi tiết" onClick={() => setViewingVehicle(vehicle)}>
                         <Eye className="h-3.5 w-3.5" />
@@ -618,6 +622,7 @@ export function VehiclesPanel({
                         <Trash2 className="h-3.5 w-3.5" />
                       </IconButton>
                     </div>
+                    </RowActionsMenu>
                   </div>
                   <p className="mt-2 text-xs font-semibold text-slate-600">Tài xế: {vehicle.tai_xe_phu_trach || 'Chưa phân công'}</p>
                   {vehicle.giay_to.length > 0 && (
@@ -703,6 +708,7 @@ export function VehiclesPanel({
                     <td className="px-2.5 py-2.5 text-right text-[11px] text-violet-700">{formatMoney(row.thuong_doanh_so)}</td>
                     <td className="px-2.5 py-2.5 text-right text-[11px] font-bold text-emerald-700">{formatMoney(row.doanh_so)}</td>
                     <td className="px-2.5 py-2.5">
+                      <RowActionsMenu label={`Thao tác ${row.ten_tai_xe}`}>
                       <div className="flex justify-center gap-1">
                         <IconButton label="Sửa" onClick={() => setRowModal({ mode: 'edit', row })}>
                           <Pencil className="h-3.5 w-3.5" />
@@ -711,6 +717,7 @@ export function VehiclesPanel({
                           <Trash2 className="h-3.5 w-3.5" />
                         </IconButton>
                       </div>
+                      </RowActionsMenu>
                     </td>
                   </TableRow>
                 </React.Fragment>

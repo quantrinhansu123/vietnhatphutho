@@ -11,7 +11,8 @@ import {
   TableHeadCell,
   TableBody,
   TableRow,
-  TableEmptyRow
+  TableEmptyRow,
+  RowActionsMenu
 } from '../../components/shared/table';
 
 export type QuanLyKhoRecord = {
@@ -246,6 +247,7 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-4 py-3 text-zinc-700">{row.ten_vi_tri || '—'}</td>
                   <td className="px-4 py-3 text-zinc-700">{row.nguoi_phu_trach || '—'}</td>
                   <td className="px-4 py-3 text-center">
+                    <RowActionsMenu label={`Thao tác kho ${row.ten_kho || row.id}`}>
                     <div className="inline-flex items-center justify-center gap-1.5">
                       <button
                         type="button"
@@ -264,6 +266,7 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </TableRow>
               </React.Fragment>

@@ -35,7 +35,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  StatusBadge
+  StatusBadge,
+  RowActionsMenu
 } from '../../components/shared/table';
 import { VietmapRoutePlanner } from './VietmapRoutePlanner';
 
@@ -1295,7 +1296,7 @@ export function VehicleDeliveryRequestsView({
                 <td className="px-3 py-2.5">
                   <StatusBadge label={row.trang_thai} color={deliveryRequestStatusColor(row.trang_thai)} />
                 </td>
-                <td className="px-3 py-2.5"><div className="flex justify-center gap-1"><ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton><ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton></div></td>
+                <td className="px-3 py-2.5 text-center"><RowActionsMenu label={`Thao tác ${row.so_yeu_cau}`}><div className="flex justify-center gap-1"><ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton><ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton></div></RowActionsMenu></td>
               </TableRow>
             </React.Fragment>
           ))}
@@ -1614,10 +1615,12 @@ export function VehicleExpensesView({
                     ) : '—'}
                   </td>
                   <td className="px-3 py-2.5">
+                    <RowActionsMenu label={`Thao tác chi phí ${row.id}`}>
                     <div className="flex justify-center gap-1">
                       <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
                       <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
               ))}
@@ -1632,10 +1635,12 @@ export function VehicleExpensesView({
                   <p className="font-bold text-slate-900">{row.ten_chi_phi}</p>
                   <p className="mt-1 font-mono text-xs font-black text-brand-700">{row.bien_so_xe} · {formatDateTime(row.ngay_gio)}</p>
                 </div>
+                <RowActionsMenu label={`Thao tác chi phí ${row.id}`}>
                 <div className="flex gap-1">
                   <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
                   <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
                 </div>
+                </RowActionsMenu>
               </div>
               <p className="mt-2 text-sm font-black text-rose-700">
                 {new Intl.NumberFormat('vi-VN').format(row.so_luong)} × {formatMoney(row.so_tien)}
@@ -2025,10 +2030,12 @@ export function VehicleLogsView({
                   <td className="px-3 py-2.5 text-right font-black text-emerald-700">{formatMoney(row.tong_doanh_thu)}</td>
                   <td className="px-3 py-2.5 text-right font-black text-rose-700">{formatMoney(row.tong_chi_phi)}</td>
                   <td className="px-3 py-2.5">
+                    <RowActionsMenu label={`Thao tác nhật ký ${row.id}`}>
                     <div className="flex justify-center gap-1">
                       <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
                       <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
               ))}
@@ -2547,10 +2554,12 @@ export function VehicleKmLogsView({
                   </td>
                   <td className="max-w-[220px] truncate px-3 py-2.5 text-slate-500" title={row.ghi_chu}>{row.ghi_chu || '—'}</td>
                   <td className="px-3 py-2.5">
+                    <RowActionsMenu label={`Thao tác km ${row.id}`}>
                     <div className="flex justify-center gap-1">
                       <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
                       <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
               ))}
@@ -2942,10 +2951,12 @@ export function CustomerPaymentsView({
                   </td>
                   <td className="max-w-[220px] truncate px-3 py-2.5 text-slate-500" title={row.ghi_chu}>{row.ghi_chu || '—'}</td>
                   <td className="px-3 py-2.5">
+                    <RowActionsMenu label={`Thao tác phiếu thu ${row.id}`}>
                     <div className="flex justify-center gap-1">
                       <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
                       <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
                     </div>
+                    </RowActionsMenu>
                   </td>
                 </tr>
               ))}
@@ -2969,10 +2980,12 @@ export function CustomerPaymentsView({
                   <p className="font-bold text-slate-900">{row.ten_khach_hang}</p>
                   <p className="mt-0.5 text-xs font-semibold text-slate-500">{formatDateTime(row.ngay_thu)} · {row.hinh_thuc}</p>
                 </div>
+                <RowActionsMenu label={`Thao tác phiếu thu ${row.id}`}>
                 <div className="flex gap-1">
                   <ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton>
                   <ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton>
                 </div>
+                </RowActionsMenu>
               </div>
               <p className="mt-2 text-sm font-black text-emerald-700">{formatMoney(row.so_tien)}</p>
               <p className="mt-1 text-xs text-slate-500">{row.bien_so_xe || 'Không kèm xe'} · {row.nguoi_thu || 'Chưa ghi người thu'}</p>

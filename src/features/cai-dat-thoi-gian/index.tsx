@@ -20,7 +20,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  TablePagination
+    TablePagination,
+    RowActionsMenu
 } from '../../components/shared/table';
 import {
   ChevronRight,
@@ -937,6 +938,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                 <td className="px-4 py-3 font-semibold text-zinc-700">{setting.group}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-500">{setting.note || '-'}</td>
                 <td className="px-4 py-3">
+                  <RowActionsMenu label={`Thao tác ${setting.name}`}>
                   <div className="flex items-center justify-center gap-1">
                     <button
                       type="button"
@@ -968,6 +970,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                       )}
                     </button>
                   </div>
+                  </RowActionsMenu>
                 </td>
               </TableRow>
             </React.Fragment>
@@ -1120,6 +1123,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                           {summarizeStaffViewPermissions(item.viewPermissions)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3">
+                          <RowActionsMenu label={`Thao tác ${item.permissionKey}`}>
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
@@ -1143,6 +1147,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                               )}
                             </button>
                           </div>
+                          </RowActionsMenu>
                         </td>
                       </tr>
                     </React.Fragment>
