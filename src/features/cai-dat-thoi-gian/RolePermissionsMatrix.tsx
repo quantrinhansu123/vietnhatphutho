@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { TableShell, TableHead, TableHeadCell, TableBody } from '../../components/shared/table';
 import {
   STAFF_MENU_VIEW_TREE,
   clearStaffViewPermissions,
@@ -148,19 +149,15 @@ export function RolePermissionsMatrix({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-200">
-        <div className="overflow-x-auto">
-          <table className="min-w-[720px] w-full text-left text-sm">
-            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-4 py-3 font-black">Hạng mục menu</th>
-                <th className="w-28 px-3 py-3 text-center font-black">Quyền xem</th>
-                <th className="w-28 px-3 py-3 text-center font-black">Quyền sửa</th>
-                <th className="w-28 px-3 py-3 text-center font-black">Quyền xóa</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 bg-white">
-              {STAFF_MENU_VIEW_TREE.map(group => {
+      <TableShell minWidthClassName="min-w-[720px]">
+        <TableHead>
+          <TableHeadCell>Hạng mục menu</TableHeadCell>
+          <TableHeadCell className="w-28" align="center">Quyền xem</TableHeadCell>
+          <TableHeadCell className="w-28" align="center">Quyền sửa</TableHeadCell>
+          <TableHeadCell className="w-28" align="center">Quyền xóa</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {STAFF_MENU_VIEW_TREE.map(group => {
                 const parentView = isStaffParentViewSelected(value.viewPermissions, group);
                 const parentEdit = isStaffParentViewSelected(value.editPermissions, group);
                 const parentDelete = isStaffParentViewSelected(value.deletePermissions, group);
@@ -228,10 +225,8 @@ export function RolePermissionsMatrix({
                   </React.Fragment>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        </TableBody>
+      </TableShell>
     </div>
   );
 }

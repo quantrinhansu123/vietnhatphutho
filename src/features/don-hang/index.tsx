@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eye, Loader2, Pencil, Plus, Printer, Save, Search, Trash2 } from 'lucide-react';
+import { Eye, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { BackButton } from '../../components/layout/NavButtons';
@@ -32,6 +32,19 @@ import {
 } from '../_shared/orderRecordHelpers';
 import { normalizeDaNangBusinessStaffOptions, normalizeCustomerOptions } from '../khach-hang';
 import OrderPrintSheet from '../../components/OrderPrintSheet';
+import {
+  FilterCombobox,
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  StatusBadge
+} from '../../components/shared/table';
 
 export type { OrderProductLine, OrderRow };
 
@@ -229,6 +242,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedType, setSelectedType] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [ordersError, setOrdersError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -508,11 +523,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const orderTypes = useMemo(() => {
+  const orderTypeOptions = useMemo(() => {
     const types = orders
       .map(order => order.orderType)
       .filter((type): type is string => type !== '-' && type.length > 0);
-    return ['all', ...[...new Set(types)].sort((a, b) => String(a).localeCompare(String(b), 'vi'))];
+    return [...new Set(types)].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
   }, [orders]);
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredOrders = useMemo(() => {
@@ -526,6 +541,27 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       return matchesType && matchesSearch;
     });
   }, [orders, normalizedSearch, selectedType]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredOrders.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredOrders, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch, selectedType, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const hasActiveFilters = selectedType !== 'all' || Boolean(searchText);
+
+  const resetFilters = () => {
+    setSelectedType('all');
+    setSearchText('');
+  };
 
   const customerCount = new Set(orders.map(order => order.customer).filter(customer => customer && customer !== '-')).size;
   const totalQuantity = orders.reduce((sum, order) => {
@@ -842,179 +878,164 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         ? createPortal(<OrderPrintSheet order={printOrder} />, document.body)
         : null}
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
-        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
-          {orderTypes.map(type => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => setSelectedType(type)}
-              className={`h-9 shrink-0 rounded-lg border px-3 text-xs font-black transition ${
-                selectedType === type
-                  ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
-              }`}
-            >
-              {type === 'all' ? 'Tất cả' : type}
-            </button>
-          ))}
-          {isLoadingOrders && (
-            <div className="flex h-9 shrink-0 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-500">
-              Đang tải...
-            </div>
-          )}
+      <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3 text-[11px] font-bold text-zinc-500">
+            <span>{orders.length} đơn</span>
+            <span>{customerCount} KH</span>
+            <span>SL {formatNumber(totalQuantity)}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={openAddForm}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+          >
+            <Plus className="h-4 w-4" />
+            Thêm mới
+          </button>
         </div>
 
-        <label className="flex h-9 w-full min-w-[200px] items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 sm:w-[280px] lg:w-[360px]">
-          <Search className="h-4 w-4 shrink-0 text-zinc-400" />
-          <input
+        <TableToolbar
+          isLoading={isLoadingOrders}
+          hasActiveFilters={hasActiveFilters}
+          onResetFilters={resetFilters}
+          loadError={ordersError}
+          actionMessage={actionMessage}
+        >
+          <TableSearchInput
             value={searchText}
-            onChange={event => setSearchText(event.target.value)}
+            onChange={setSearchText}
             placeholder="Tìm mã đơn, khách hàng, mã hàng..."
             disabled={isLoadingOrders}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
           />
-        </label>
 
-        <div className="hidden items-center gap-3 text-[11px] font-bold text-zinc-500 sm:flex">
-          <span>{orders.length} đơn</span>
-          <span>{customerCount} KH</span>
-          <span>SL {formatNumber(totalQuantity)}</span>
-        </div>
+          <FilterCombobox
+            label="Loại đơn"
+            options={orderTypeOptions}
+            value={selectedType}
+            onChange={setSelectedType}
+            compact
+            searchable={false}
+            dropdownWidth="w-full"
+          />
+        </TableToolbar>
 
-        <button
-          type="button"
-          onClick={openAddForm}
-          className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+        <TableShell
+          minWidthClassName="min-w-[1200px]"
+          footer={(
+            <TablePagination
+              totalRecords={filteredOrders.length}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
+          )}
         >
-          <Plus className="h-4 w-4" />
-          Thêm mới
-        </button>
-      </div>
-
-      {(ordersError || actionMessage) && (
-        <div className="space-y-1 border-b border-zinc-100 px-3 py-2">
-          {ordersError && (
-            <p className="text-xs font-bold text-rose-700">{ordersError}</p>
-          )}
-          {actionMessage && (
-            <p className="text-xs font-bold text-emerald-700">{actionMessage}</p>
-          )}
-        </div>
-      )}
-
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-zinc-950 text-xs uppercase tracking-wider text-white">
-            <tr>
-              <th className="px-3 py-2.5 font-black">Mã đơn</th>
-              <th className="whitespace-nowrap px-3 py-2.5 font-black">Ngày tạo</th>
-              <th className="w-24 min-w-24 whitespace-nowrap px-3 py-2.5 font-black">
-                Loại đơn
-              </th>
-              <th className="px-3 py-2.5 font-black">Trạng thái</th>
-              <th className="px-3 py-2.5 font-black">Nhân viên</th>
-              <th className="px-3 py-2.5 font-black">Khách hàng</th>
-              <th className="min-w-[420px] px-3 py-2.5 font-black">
-                <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
-                  <span>Mã SP</span>
-                  <span>Tên sản phẩm</span>
-                  <span className="text-right">SL</span>
-                  <span>ĐVT</span>
-                </div>
-              </th>
-              <th className="px-3 py-2.5 font-black">Ghi chú</th>
-              <th className="w-28 px-3 py-2.5 text-center font-black">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 bg-white">
-            {filteredOrders.map(order => (
-              <tr key={order.id} className="align-top transition hover:bg-red-50/30">
-                <td className="px-3 py-2.5 font-black text-zinc-950">{order.orderCode || '-'}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs font-semibold text-zinc-600">
-                  {formatOrderCreatedAt(order.createdAt)}
-                </td>
-                <td className="w-24 min-w-24 whitespace-nowrap px-3 py-2.5">
-                  <span className="inline-flex whitespace-nowrap rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2 py-0.5 text-[11px] font-black text-[#ef1b2d]">
-                    {order.orderType}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5">
-                  <span className="inline-flex whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-800">
-                    {order.status}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5 font-semibold text-zinc-700">{order.staffName}</td>
-                <td className="px-3 py-2.5 font-bold text-zinc-800">{order.customer}</td>
-                <td className="px-3 py-2.5">
-                  <div className="divide-y divide-zinc-100">
-                    {getOrderProductLines(order).map((line, index) => (
-                      <div
-                        key={`${order.id}-${line.productCode}-${line.productName}-${index}`}
-                        className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 py-1.5 text-xs font-semibold text-zinc-700 first:pt-0 last:pb-0"
+          <TableHead>
+            <TableHeadCell>Mã đơn</TableHeadCell>
+            <TableHeadCell className="whitespace-nowrap">Ngày tạo</TableHeadCell>
+            <TableHeadCell className="w-24 min-w-24 whitespace-nowrap">Loại đơn</TableHeadCell>
+            <TableHeadCell>Trạng thái</TableHeadCell>
+            <TableHeadCell>Nhân viên</TableHeadCell>
+            <TableHeadCell>Khách hàng</TableHeadCell>
+            <TableHeadCell className="min-w-[420px]">
+              <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
+                <span>Mã SP</span>
+                <span>Tên sản phẩm</span>
+                <span className="text-right">SL</span>
+                <span>ĐVT</span>
+              </div>
+            </TableHeadCell>
+            <TableHeadCell>Ghi chú</TableHeadCell>
+            <TableHeadCell className="w-28" align="center">Thao tác</TableHeadCell>
+          </TableHead>
+          <TableBody>
+            {paginatedOrders.map(order => (
+              <React.Fragment key={order.id}>
+                <TableRow>
+                  <td className="px-3 py-2.5 align-top font-black text-zinc-950">{order.orderCode || '-'}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 align-top font-mono text-xs font-semibold text-zinc-600">
+                    {formatOrderCreatedAt(order.createdAt)}
+                  </td>
+                  <td className="w-24 min-w-24 whitespace-nowrap px-3 py-2.5 align-top">
+                    <StatusBadge label={order.orderType} color="rose" />
+                  </td>
+                  <td className="px-3 py-2.5 align-top">
+                    <StatusBadge label={order.status} color="amber" />
+                  </td>
+                  <td className="px-3 py-2.5 align-top font-semibold text-zinc-700">{order.staffName}</td>
+                  <td className="px-3 py-2.5 align-top font-bold text-zinc-800">{order.customer}</td>
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="divide-y divide-zinc-100">
+                      {getOrderProductLines(order).map((line, index) => (
+                        <div
+                          key={`${order.id}-${line.productCode}-${line.productName}-${index}`}
+                          className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 py-1.5 text-xs font-semibold text-zinc-700 first:pt-0 last:pb-0"
+                        >
+                          <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
+                          <span className="text-zinc-800">{line.productName || '-'}</span>
+                          <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
+                          <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 align-top font-semibold text-zinc-500">{order.note || '-'}</td>
+                  <td className="px-3 py-2.5 align-top">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handlePrintOrder(order)}
+                        title="In phiếu"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50"
                       >
-                        <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                        <span className="text-zinc-800">{line.productName || '-'}</span>
-                        <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
-                        <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-3 py-2.5 font-semibold text-zinc-500">{order.note || '-'}</td>
-                <td className="px-3 py-2.5">
-                  <div className="flex items-center justify-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handlePrintOrder(order)}
-                      title="In phiếu"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-emerald-700 transition hover:bg-emerald-50"
-                    >
-                      <Printer className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewingOrder(order)}
-                      title="Xem"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openEditForm(order)}
-                      title="Sửa"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteOrder(order)}
-                      disabled={deletingOrderId === order.id}
-                      title="Xóa"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {deletingOrderId === order.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                </td>
-              </tr>
+                        <Printer className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewingOrder(order)}
+                        title="Xem"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditForm(order)}
+                        title="Sửa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteOrder(order)}
+                        disabled={deletingOrderId === order.id}
+                        title="Xóa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingOrderId === order.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                </TableRow>
+              </React.Fragment>
             ))}
 
             {!isLoadingOrders && filteredOrders.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-10 text-center font-bold text-zinc-500">
-                  Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
-                </td>
-              </tr>
+              <TableEmptyRow colSpan={9}>
+                Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
+              </TableEmptyRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </TableShell>
       </div>
     </div>
   );

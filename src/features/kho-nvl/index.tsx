@@ -11,7 +11,6 @@ import {
   Pencil,
   Plus,
   Save,
-  Search,
   Trash2,
   Upload
 } from 'lucide-react';
@@ -25,6 +24,19 @@ import {
 } from '../../utils/bulkMaterialTotalWeightExcel';
 import { productFieldClass } from '../san-pham/productFieldClass';
 import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
+import {
+  FilterCombobox,
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  StatusBadge
+} from '../../components/shared/table';
 
 export interface MaterialRow {
   id: string;
@@ -436,20 +448,17 @@ export function BulkMaterialTotalWeightModal({
                 )}
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-zinc-200">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
-                    <tr>
-                      <th className="px-3 py-2 font-black">Mã NVL</th>
-                      <th className="px-3 py-2 font-black">Tổng trọng lượng mới</th>
-                      <th className="px-3 py-2 font-black">Tổng kg hiện tại</th>
-                      <th className="px-3 py-2 font-black">Trạng thái</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {previewRows.map((row, index) => (
-                      <tr
-                        key={`${row.code}-${index}`}
+              <TableShell minWidthClassName="min-w-[560px]" maxHeightClassName="max-h-72">
+                <TableHead>
+                  <TableHeadCell>Mã NVL</TableHeadCell>
+                  <TableHeadCell>Tổng trọng lượng mới</TableHeadCell>
+                  <TableHeadCell>Tổng kg hiện tại</TableHeadCell>
+                  <TableHeadCell>Trạng thái</TableHeadCell>
+                </TableHead>
+                <TableBody>
+                  {previewRows.map((row, index) => (
+                    <React.Fragment key={`${row.code}-${index}`}>
+                      <TableRow
                         className={
                           row.status === 'update'
                             ? 'bg-white'
@@ -460,22 +469,22 @@ export function BulkMaterialTotalWeightModal({
                                 : 'bg-rose-50/60'
                         }
                       >
-                        <td className="px-3 py-2 font-black text-zinc-900">{row.code}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-800">{row.totalWeight}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-zinc-500">
+                        <td className="px-4 py-3 font-black text-zinc-900">{row.code}</td>
+                        <td className="px-4 py-3 font-mono font-bold text-zinc-800">{row.totalWeight}</td>
+                        <td className="px-4 py-3 font-mono font-bold text-zinc-500">
                           {row.material?.totalWeight ?? '-'}
                         </td>
-                        <td className="px-3 py-2 font-bold">
-                          {row.status === 'update' && <span className="text-emerald-700">Cập nhật</span>}
-                          {row.status === 'not_found' && <span className="text-amber-700">Không tìm thấy</span>}
-                          {row.status === 'skipped' && <span className="text-zinc-500">Bỏ qua</span>}
-                          {row.status === 'invalid' && <span className="text-rose-700">Số không hợp lệ</span>}
+                        <td className="px-4 py-3">
+                          {row.status === 'update' && <StatusBadge label="Cập nhật" color="emerald" />}
+                          {row.status === 'not_found' && <StatusBadge label="Không tìm thấy" color="amber" />}
+                          {row.status === 'skipped' && <StatusBadge label="Bỏ qua" color="zinc" />}
+                          {row.status === 'invalid' && <StatusBadge label="Số không hợp lệ" color="rose" />}
                         </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      </TableRow>
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </TableShell>
             </div>
           )}
         </div>
@@ -698,37 +707,33 @@ export function MaterialViewModal({
                         ? `Nhập kho (${inboundRows.length})`
                         : `Xuất kho (${outboundRows.length})`}
                     </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      <table className="min-w-full text-left text-xs">
-                        <thead className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
-                          <tr>
-                            <th className="px-3 py-2 font-black">Ngày</th>
-                            <th className="px-3 py-2 font-black">Phiếu</th>
-                            <th className="px-3 py-2 text-right font-black">SL</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100">
-                          {(tab === 'inbound-history' ? inboundRows : outboundRows).map(row => (
-                            <tr key={`${row.slipCode}-${row.slipDate}-${row.quantity}`}>
-                              <td className="px-3 py-2 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
-                              <td className="px-3 py-2 font-bold text-zinc-900">{row.slipCode || '-'}</td>
-                              <td className={`px-3 py-2 text-right font-mono font-bold ${
+                    <TableShell minWidthClassName="min-w-full" maxHeightClassName="max-h-64">
+                      <TableHead>
+                        <TableHeadCell>Ngày</TableHeadCell>
+                        <TableHeadCell>Phiếu</TableHeadCell>
+                        <TableHeadCell align="center">SL</TableHeadCell>
+                      </TableHead>
+                      <TableBody>
+                        {(tab === 'inbound-history' ? inboundRows : outboundRows).map(row => (
+                          <React.Fragment key={`${row.slipCode}-${row.slipDate}-${row.quantity}`}>
+                            <TableRow>
+                              <td className="px-4 py-3 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
+                              <td className="px-4 py-3 font-bold text-zinc-900">{row.slipCode || '-'}</td>
+                              <td className={`px-4 py-3 text-right font-mono font-bold ${
                                 tab === 'inbound-history' ? 'text-emerald-700' : 'text-amber-800'
                               }`}>
                                 {formatNumber(row.quantity, 2)}
                               </td>
-                            </tr>
-                          ))}
-                          {(tab === 'inbound-history' ? inboundRows : outboundRows).length === 0 && (
-                            <tr>
-                              <td colSpan={3} className="px-3 py-6 text-center font-semibold text-zinc-400">
-                                {tab === 'inbound-history' ? 'Chưa có phiếu nhập' : 'Chưa có phiếu xuất'}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                            </TableRow>
+                          </React.Fragment>
+                        ))}
+                        {(tab === 'inbound-history' ? inboundRows : outboundRows).length === 0 && (
+                          <TableEmptyRow colSpan={3}>
+                            {tab === 'inbound-history' ? 'Chưa có phiếu nhập' : 'Chưa có phiếu xuất'}
+                          </TableEmptyRow>
+                        )}
+                      </TableBody>
+                    </TableShell>
                   </div>
               )}
             </div>
@@ -779,6 +784,8 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const [actionMessage, setActionMessage] = useState('');
   const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm);
   const [showBulkTotalWeight, setShowBulkTotalWeight] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadMaterials = async () => {
     setIsLoadingMaterials(true);
@@ -813,6 +820,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     const fromMaterials = materials.map(material => material.unit).filter(unit => unit && unit !== '-');
     return [...new Set([...fromMaterials, ...readUnitSuggestions()])].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [materials]);
+  const unitFilterOptions = useMemo(() => units.filter(unit => unit !== 'all'), [units]);
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredMaterials = useMemo(() => {
     return materials.filter(material => {
@@ -823,6 +831,26 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       return matchesUnit && matchesSearch;
     });
   }, [materials, normalizedSearch, selectedUnit]);
+
+  const hasActiveFilters = selectedUnit !== 'all' || Boolean(searchText);
+  const resetFilters = () => {
+    setSelectedUnit('all');
+    setSearchText('');
+  };
+
+  const totalPages = Math.max(1, Math.ceil(filteredMaterials.length / pageSize));
+  const paginatedMaterials = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredMaterials.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredMaterials, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch, selectedUnit, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const totalWeightAllText = useMemo(() => {
     const sum = sumDecimalStrings(materials.map(material => material.totalWeight));
@@ -953,16 +981,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center">
-            <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:w-[360px]">
-              <Search className="h-4 w-4 shrink-0 text-zinc-400" />
-              <input
-                value={searchText}
-                onChange={event => setSearchText(event.target.value)}
-                placeholder="Tìm mã NVL, tên nguyên phụ liệu..."
-                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-              />
-            </label>
+          <div className="flex items-start justify-end gap-3">
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               <button
                 type="button"
@@ -1007,41 +1026,29 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-1 lg:pb-0">
-          {units.map(unit => (
-            <button
-              key={unit}
-              type="button"
-              onClick={() => setSelectedUnit(unit)}
-              className={`h-11 shrink-0 rounded-xl border px-4 text-sm font-black transition ${
-                selectedUnit === unit
-                  ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-sm'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
-              }`}
-            >
-              {unit === 'all' ? 'Tất cả' : unit}
-            </button>
-          ))}
-          {isLoadingMaterials && (
-            <div className="flex h-11 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold text-zinc-500">
-              Đang tải Supabase...
-            </div>
-          )}
-        </div>
+      <TableToolbar
+        isLoading={isLoadingMaterials}
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={resetFilters}
+        loadError={materialsError}
+        actionMessage={actionMessage}
+      >
+        <TableSearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Tìm mã NVL, tên nguyên phụ liệu..."
+          disabled={isLoadingMaterials}
+        />
 
-        {materialsError && (
-          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">
-            {materialsError}
-          </p>
-        )}
-
-        {actionMessage && (
-          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
-            {actionMessage}
-          </p>
-        )}
-      </section>
+        <FilterCombobox
+          label="Đơn vị"
+          options={unitFilterOptions}
+          value={selectedUnit}
+          onChange={setSelectedUnit}
+          searchPlaceholder="Tìm đơn vị..."
+          compact
+        />
+      </TableToolbar>
 
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -1145,82 +1152,85 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         }}
       />
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="overflow-x-auto md:overflow-visible">
-          <table className="responsive-table w-full min-w-[640px] md:min-w-0 text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-600 font-bold">
-              <tr>
-                <th className="px-2.5 py-2 font-bold">Mã NPL</th>
-                <th className="px-2.5 py-2 font-bold">Tên nguyên phụ liệu</th>
-                <th className="px-2.5 py-2 font-bold">ĐV</th>
-                <th className="px-2.5 py-2 text-right font-bold">Tổng kg</th>
-                <th className="px-2.5 py-2 font-bold">Tồn đầu</th>
-                <th className="px-2.5 py-2 font-bold">Nhập</th>
-                <th className="px-2.5 py-2 font-bold">Xuất</th>
-                <th className="px-2.5 py-2 font-bold">Tồn cuối</th>
-                <th className="px-2.5 py-2 text-center font-bold">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredMaterials.map(material => (
-                <tr key={material.id} className="transition hover:bg-brand-50/40">
-                  <td data-label="Mã NPL" className="px-1 md:px-2.5 py-2 font-black text-slate-900">{material.code || '-'}</td>
-                  <td data-label="Tên NVL" className="px-1 md:px-2.5 py-2 font-semibold text-slate-900">{material.name || '-'}</td>
-                  <td data-label="Đơn vị" className="px-1 md:px-2.5 py-2 font-semibold text-slate-700">{material.unit}</td>
-                  <td data-label="Tổng kg" className="px-1 md:px-2.5 py-2 text-right font-mono font-bold text-slate-800">{material.totalWeight}</td>
-                  <td data-label="Tồn đầu" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-700">{material.openingStock}</td>
-                  <td data-label="Nhập" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-700">{material.inbound}</td>
-                  <td data-label="Xuất" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-700">{material.outbound}</td>
-                  <td data-label="Tồn cuối" className="px-1 md:px-2.5 py-2 font-mono font-bold text-slate-900">
-                    {computeClosingStock(material.openingStock, material.inbound, material.outbound)}
-                  </td>
-                  <td data-label="Thao tác" className="px-1 md:px-2.5 py-2">
-                    <div className="flex items-center justify-end md:justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setViewingMaterial(material)}
-                        title="Xem"
-                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 active:scale-95"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openEditForm(material)}
-                        title="Sửa"
-                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 text-brand-600 transition hover:bg-brand-50 active:scale-95"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteMaterial(material)}
-                        disabled={deletingMaterialId === material.id}
-                        title="Xóa"
-                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-                      >
-                        {deletingMaterialId === material.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+      <TableShell minWidthClassName="min-w-[900px]">
+        <TableHead>
+          <TableHeadCell>Mã NPL</TableHeadCell>
+          <TableHeadCell>Tên nguyên phụ liệu</TableHeadCell>
+          <TableHeadCell>ĐV</TableHeadCell>
+          <TableHeadCell align="center">Tổng kg</TableHeadCell>
+          <TableHeadCell>Tồn đầu</TableHeadCell>
+          <TableHeadCell>Nhập</TableHeadCell>
+          <TableHeadCell>Xuất</TableHeadCell>
+          <TableHeadCell>Tồn cuối</TableHeadCell>
+          <TableHeadCell align="center">Thao tác</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {paginatedMaterials.map(material => (
+            <React.Fragment key={material.id}>
+              <TableRow>
+                <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
+                <td className="px-4 py-3 font-semibold text-zinc-900">{material.name || '-'}</td>
+                <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
+                <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
+                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.openingStock}</td>
+                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.inbound}</td>
+                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.outbound}</td>
+                <td className="px-4 py-3 font-mono font-bold text-zinc-900">
+                  {computeClosingStock(material.openingStock, material.inbound, material.outbound)}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <div className="inline-flex items-center justify-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setViewingMaterial(material)}
+                      title="Xem"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50 active:scale-95"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditForm(material)}
+                      title="Sửa"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50 active:scale-95"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMaterial(material)}
+                      disabled={deletingMaterialId === material.id}
+                      title="Xóa"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                    >
+                      {deletingMaterialId === material.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </td>
+              </TableRow>
+            </React.Fragment>
+          ))}
 
-              {!isLoadingMaterials && filteredMaterials.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center font-semibold text-slate-500">
-                    Không có nguyên phụ liệu phù hợp bộ lọc.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+          {!isLoadingMaterials && filteredMaterials.length === 0 && (
+            <TableEmptyRow colSpan={9}>
+              Không có nguyên phụ liệu phù hợp bộ lọc.
+            </TableEmptyRow>
+          )}
+        </TableBody>
+      </TableShell>
+
+      <TablePagination
+        totalRecords={filteredMaterials.length}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+      />
     </div>
   );
 }

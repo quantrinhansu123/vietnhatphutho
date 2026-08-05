@@ -28,6 +28,14 @@ import {
   type ShiftSetting
 } from '../utils/shiftSettings';
 import { formatWeighingWeightField } from '../utils/weighingRecords';
+import {
+  FilterCombobox,
+  TableToolbar,
+  TableSearchInput,
+  TableDateFilter,
+  TablePagination,
+  usePagination
+} from './shared/table';
 
 const MACHINE_NVL_SECTIONS: { id: MachineNvlReportKind; title: string; emptyLabel: string }[] = [
   { id: 'dau_ca', title: 'Báo cáo tồn đầu ca', emptyLabel: 'báo cáo tồn đầu ca' },
@@ -270,6 +278,13 @@ function MachineNvlSection({
   onClearSelection: () => void;
   bulkDeleting: boolean;
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const { paginatedItems: paginatedGroups, totalPages } = usePagination<MachineNvlReportDateGroup>(
+    groups,
+    currentPage,
+    pageSize
+  );
   const reportIds = useMemo(
     () =>
       groups.flatMap(dateGroup =>
@@ -327,7 +342,7 @@ function MachineNvlSection({
           </div>
         ) : (
           <div className="space-y-3">
-            {groups.map(dateGroup => {
+            {paginatedGroups.map(dateGroup => {
               const dateRows = dateGroup.shifts.flatMap(shiftGroup =>
                 shiftGroup.machines.flatMap(machineGroup =>
                   machineGroup.reports.map(report => ({ shiftGroup, machineGroup, report }))
@@ -352,7 +367,7 @@ function MachineNvlSection({
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[880px] border-collapse text-left text-[11px] sm:text-xs">
-                      <thead className="bg-zinc-50/95 text-[9px] uppercase tracking-wider text-zinc-500 sm:text-[10px]">
+                      <thead className="bg-zinc-950 text-[9px] uppercase tracking-wider text-white sm:text-[10px]">
                         <tr className="border-b border-zinc-200">
                           <th className="w-11 px-3 py-2.5 text-center font-black">
                             <input
@@ -466,6 +481,16 @@ function MachineNvlSection({
           </div>
         )}
       </div>
+      {!isLoading && groups.length > 0 && (
+        <TablePagination
+          totalRecords={groups.length}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
     </section>
   );
 }
@@ -483,6 +508,7 @@ export default function MachineNvlReportListView({
   const [filterToDate, setFilterToDate] = useState(todayIso());
   const [filterCa, setFilterCa] = useState('');
   const [filterMachine, setFilterMachine] = useState('');
+  const [searchText, setSearchText] = useState('');
   const [dauCaReports, setDauCaReports] = useState<MachineNvlSavedReport[]>([]);
   const [cuoiCaReports, setCuoiCaReports] = useState<MachineNvlSavedReport[]>([]);
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
@@ -515,16 +541,23 @@ export default function MachineNvlReportListView({
         const tenMay = report.tenMay.trim().toLowerCase();
         if (maMay !== key && tenMay !== key && !tenMay.includes(key) && !maMay.includes(key)) return false;
       }
+      const query = searchText.trim().toLowerCase();
+      if (query) {
+        const haystack = `${report.maMay} ${report.tenMay} ${report.ca} ${report.nhanSu} ${report.note} ${report.lines
+          .map(line => `${line.maNvl} ${line.tenNvl}`)
+          .join(' ')}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
       return true;
     });
 
   const filteredDauCaReports = useMemo(
     () => filterMachineNvlReports(dauCaReports),
-    [dauCaReports, filterCa, filterMachine]
+    [dauCaReports, filterCa, filterMachine, searchText]
   );
   const filteredCuoiCaReports = useMemo(
     () => filterMachineNvlReports(cuoiCaReports),
-    [cuoiCaReports, filterCa, filterMachine]
+    [cuoiCaReports, filterCa, filterMachine, searchText]
   );
 
   const dauCaGroups = useMemo(
@@ -736,7 +769,41 @@ export default function MachineNvlReportListView({
         </div>
 
         <div className="p-2 sm:p-4">
-          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+          <TableToolbar
+            isLoading={isLoading}
+            hasActiveFilters={Boolean(searchText || filterCa || filterMachine)}
+            onResetFilters={() => {
+              setSearchText('');
+              setFilterCa('');
+              setFilterMachine('');
+            }}
+          >
+            <TableSearchInput
+              value={searchText}
+              onChange={setSearchText}
+              placeholder="Tìm mã NVL, tên NVL, máy, nhân sự..."
+              disabled={isLoading}
+            />
+            <FilterCombobox
+              label="Ca"
+              options={shiftOptions.map(option => option.value)}
+              value={filterCa || 'all'}
+              onChange={value => setFilterCa(value === 'all' ? '' : value)}
+              formatOption={value => shiftOptions.find(option => option.value === value)?.label || value}
+              compact
+            />
+            <FilterCombobox
+              label="Máy"
+              options={machineOptions.map(([key]) => key)}
+              value={filterMachine || 'all'}
+              onChange={value => setFilterMachine(value === 'all' ? '' : value)}
+              formatOption={value => machineOptions.find(([key]) => key === value)?.[1] || value}
+              compact
+            />
+            <TableDateFilter label="Từ ngày" value={filterFromDate} onChange={setFilterFromDate} />
+            <TableDateFilter label="Đến ngày" value={filterToDate} onChange={setFilterToDate} />
+          </TableToolbar>
+          <div className="hidden grid-cols-2 gap-1.5 sm:gap-2">
             <label className="text-[9px] font-black uppercase tracking-wider text-zinc-500 sm:text-[10px]">
               Từ ngày
               <input

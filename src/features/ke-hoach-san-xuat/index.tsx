@@ -1067,7 +1067,7 @@ export function ProductionPlanMaterialAccountingModal({
                             <col className="w-[15%]" />
                             <col className="w-[15%]" />
                           </colgroup>
-                          <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-700">
+                          <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                             <tr>
                               <th className="px-2 py-1.5 font-black">STT</th>
                               <th className="px-2 py-1.5 font-black">Mã NVL</th>
@@ -1903,13 +1903,13 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
             Hôm nay
           </button>
         </div>
-
-        {loadError && (
-          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
-            {loadError}
-          </p>
-        )}
       </section>
+
+      {loadError && (
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+          {loadError}
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
         <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
@@ -5222,7 +5222,7 @@ export function ProductionOrderViewModal({
           </p>
           <div className="overflow-hidden rounded-xl border border-zinc-200">
             <table className="w-full text-left text-xs">
-              <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+              <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                 <tr>
                   <th className="px-3 py-2 font-black">Mã hàng</th>
                   <th className="px-3 py-2 font-black">Tên sản phẩm</th>

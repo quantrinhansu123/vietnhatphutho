@@ -7,7 +7,21 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { normalizeMaterialsInventory } from '../kho-nvl';
-import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, Search, QrCode, RefreshCw, X } from 'lucide-react';
+import {
+  FilterCombobox,
+  MultiSelectFilter,
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  StatusBadge
+} from '../../components/shared/table';
+import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, QrCode, RefreshCw, X } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
 import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType } from './types';
 import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber } from './types';
@@ -791,38 +805,36 @@ export function ProductViewModal({
                 Excel gồm các cột: <strong>Mã NPL</strong>, <strong>Tên NVL</strong>, <strong>Loại</strong> (Phần trăm / Số lượng), <strong>Giá trị</strong>, <strong>ĐVT</strong> (bắt buộc nếu Số lượng). Tải lên sẽ thêm mới vào danh sách hiện tại, dòng trùng Mã NPL sẽ được cập nhật.
               </p>
 
-              <div className="overflow-hidden rounded-xl border border-zinc-200">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-                    <tr>
-                      <th className="px-4 py-3 font-black">STT</th>
-                      <th className="px-4 py-3 font-black">Mã NPL</th>
-                      <th className="px-4 py-3 font-black">Tên NVL</th>
-                      <th className="px-4 py-3 font-black">Loại</th>
-                      <th className="px-4 py-3 font-black">Giá trị</th>
-                      <th className="px-4 py-3 font-black">Khối lượng (kg)</th>
-                      <th className="px-4 py-3 font-black">ĐVT</th>
-                      <th className="px-4 py-3 text-center font-black">Hành động</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {items.map((item, index) => (
-                      <tr key={`${item.code}-${index}`} className="hover:bg-red-50/40">
+              <TableShell minWidthClassName="min-w-[880px]" maxHeightClassName="">
+                <TableHead>
+                  <TableHeadCell>STT</TableHeadCell>
+                  <TableHeadCell>Mã NPL</TableHeadCell>
+                  <TableHeadCell>Tên NVL</TableHeadCell>
+                  <TableHeadCell>Loại</TableHeadCell>
+                  <TableHeadCell>Giá trị</TableHeadCell>
+                  <TableHeadCell>Khối lượng (kg)</TableHeadCell>
+                  <TableHeadCell>ĐVT</TableHeadCell>
+                  <TableHeadCell align="center">Hành động</TableHeadCell>
+                </TableHead>
+                <TableBody>
+                  {items.map((item, index) => (
+                    <React.Fragment key={`${item.code}-${index}`}>
+                      <TableRow>
                         <td className="px-4 py-3 font-bold text-zinc-600">{index + 1}</td>
                         <td className="px-4 py-3 font-black text-zinc-950">{item.code}</td>
                         <td className="px-4 py-3 font-semibold text-zinc-800">{item.name || '-'}</td>
                         <td className="px-4 py-3">
-                          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-black text-zinc-700">
-                            {productNplAmountTypeLabel(item.amountType)}
-                          </span>
+                          <StatusBadge label={productNplAmountTypeLabel(item.amountType)} color="zinc" />
                         </td>
                         <td className="px-4 py-3">
-                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
-                            {item.amountType === 'percent'
-                              ? formatPercent(item.percent ?? 0)
-                              : formatQuantityFull(item.quantity ?? 0)}
-                            {item.amountType === 'percent' ? '%' : ''}
-                          </span>
+                          <StatusBadge
+                            label={`${
+                              item.amountType === 'percent'
+                                ? formatPercent(item.percent ?? 0)
+                                : formatQuantityFull(item.quantity ?? 0)
+                            }${item.amountType === 'percent' ? '%' : ''}`}
+                            color="amber"
+                          />
                         </td>
                         <td className="px-4 py-3 font-bold text-emerald-700">
                           {formatItemWeight(item)}
@@ -859,18 +871,14 @@ export function ProductViewModal({
                             </button>
                           </div>
                         </td>
-                      </tr>
-                    ))}
-                    {items.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center font-bold text-zinc-400">
-                          Chưa khai báo thành phần NVL.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      </TableRow>
+                    </React.Fragment>
+                  ))}
+                  {items.length === 0 && (
+                    <TableEmptyRow colSpan={8}>Chưa khai báo thành phần NVL.</TableEmptyRow>
+                  )}
+                </TableBody>
+              </TableShell>
             </div>
           )}
         </div>
@@ -1185,6 +1193,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productError, setProductError] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
@@ -1586,6 +1596,28 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   );
   const allFilteredSelected = filteredProducts.length > 0 && filteredProducts.every(product => selectedProductIds.has(product.id));
 
+  const hasActiveFilters = selectedGroup !== 'all' || selectedNatures.size > 0 || Boolean(searchText);
+
+  const resetFilters = () => {
+    setSelectedGroup('all');
+    setSelectedNatures(new Set());
+    setSearchText('');
+  };
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredProducts.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredProducts, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch, selectedGroup, selectedNatures, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1633,22 +1665,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       }
       return next;
     });
-  };
-
-  const toggleNature = (nature: string) => {
-    setSelectedNatures(prev => {
-      const next = new Set(prev);
-      if (next.has(nature)) {
-        next.delete(nature);
-      } else {
-        next.add(nature);
-      }
-      return next;
-    });
-  };
-
-  const clearNatureFilters = () => {
-    setSelectedNatures(new Set());
   };
 
   const toggleFilteredProducts = () => {
@@ -1826,106 +1842,39 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         </button>
       </section>
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-1 lg:pb-0">
-          {productGroups.map(group => (
-            <button
-              key={group}
-              type="button"
-              onClick={() => setSelectedGroup(group)}
-              className={`h-11 shrink-0 rounded-xl border px-4 text-sm font-black transition ${
-                selectedGroup === group
-                  ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-sm'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
-              }`}
-            >
-              {group === 'all' ? 'Tất cả' : group}
-            </button>
-          ))}
-          {isLoadingProducts && (
-            <div className="flex h-11 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold text-zinc-500">
-              Đang tải Supabase...
-            </div>
-          )}
-        </div>
+      <TableToolbar
+        isLoading={isLoadingProducts}
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={resetFilters}
+        loadError={productError}
+        actionMessage={productActionMessage}
+      >
+        <TableSearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Tìm mã, tên, nhóm, nguồn gốc..."
+          disabled={isLoadingProducts || products.length === 0}
+        />
 
-        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[420px]">
-          <Search className="h-4 w-4 text-zinc-400" />
-          <input
-            value={searchText}
-            onChange={event => setSearchText(event.target.value)}
-            placeholder="Tìm mã, tên, nhóm, nguồn gốc..."
-            disabled={isLoadingProducts || products.length === 0}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-          />
-        </label>
+        <FilterCombobox
+          label="Nhóm"
+          options={productGroups.filter(group => group !== 'all')}
+          value={selectedGroup}
+          onChange={setSelectedGroup}
+          searchPlaceholder="Tìm nhóm..."
+          compact
+        />
 
-        {productError && (
-          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">
-            {productError}
-          </p>
-        )}
-
-        {productActionMessage && (
-          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
-            {productActionMessage}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-sm font-black text-zinc-950">Lọc theo tính chất</p>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              {selectedNatures.size === 0
-                ? 'Đang hiển thị tất cả tính chất.'
-                : `Đã chọn ${selectedNatures.size} tính chất.`}
-            </p>
-          </div>
-
-          {selectedNatures.size > 0 && (
-            <button
-              type="button"
-              onClick={clearNatureFilters}
-              className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-black text-zinc-600 transition hover:border-zinc-950"
-            >
-              Bỏ lọc tính chất
-            </button>
-          )}
-        </div>
-
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          {productNatures.map(nature => {
-            const checked = selectedNatures.has(nature);
-            return (
-              <label
-                key={nature}
-                className={`flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm font-black transition ${
-                  checked
-                    ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
-                    : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleNature(nature)}
-                  disabled={isLoadingProducts}
-                  className="h-4 w-4 accent-[#ef1b2d]"
-                />
-                <span>{nature}</span>
-              </label>
-            );
-          })}
-
-          {!isLoadingProducts && productNatures.length === 0 && (
-            <div className="flex h-10 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm font-bold text-zinc-500">
-              Chưa có dữ liệu tính chất
-            </div>
-          )}
-        </div>
-      </section>
+        <MultiSelectFilter
+          label="Tính chất"
+          allLabel="Tất cả tính chất"
+          searchPlaceholder="Tìm tính chất..."
+          emptyLabel="Không tìm thấy tính chất"
+          options={productNatures}
+          values={[...selectedNatures]}
+          onChange={values => setSelectedNatures(new Set(values))}
+        />
+      </TableToolbar>
 
       <section className="grid gap-3 rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div className="min-w-0">
@@ -1998,137 +1947,122 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1400px] table-fixed text-left text-sm">
-            <colgroup>
-              <col className="w-[56px]" />
-              <col className="w-[155px]" />
-              <col className="w-[110px]" />
-              <col className="w-[30%]" />
-              <col className="w-[155px]" />
-              <col className="w-[100px]" />
-              <col className="w-[72px]" />
-              <col className="w-[96px]" />
-              <col className="w-[76px]" />
-              <col className="w-[76px]" />
-              <col className="w-[76px]" />
-              <col className="w-[76px]" />
-              <col className="w-[118px]" />
-              <col className="w-[120px]" />
-            </colgroup>
-            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-3 py-4 text-center font-black">
+      <TableShell minWidthClassName="min-w-[1400px]">
+        <TableHead>
+          <TableHeadCell align="center" className="w-14">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onChange={toggleFilteredProducts}
+              className="h-4 w-4 accent-[#ef1b2d]"
+              aria-label="Chọn tất cả sản phẩm đang lọc"
+            />
+          </TableHeadCell>
+          <TableHeadCell>Mã SP</TableHeadCell>
+          <TableHeadCell align="center">Mã QR</TableHeadCell>
+          <TableHeadCell>Tên sản phẩm</TableHeadCell>
+          <TableHeadCell>Tính chất</TableHeadCell>
+          <TableHeadCell align="center">Nhóm</TableHeadCell>
+          <TableHeadCell align="center">Đơn vị</TableHeadCell>
+          <TableHeadCell align="center">Tổng TL (kg)</TableHeadCell>
+          <TableHeadCell align="center">Tồn đầu</TableHeadCell>
+          <TableHeadCell align="center">Nhập</TableHeadCell>
+          <TableHeadCell align="center">Xuất</TableHeadCell>
+          <TableHeadCell align="center">Tồn</TableHeadCell>
+          <TableHeadCell align="center">Tồn tối thiểu</TableHeadCell>
+          <TableHeadCell align="center" className="sticky right-0 z-10 border-l border-zinc-800 bg-zinc-950">
+            Thao tác
+          </TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {paginatedProducts.map(product => (
+            <React.Fragment key={`${product.code}-${product.name}`}>
+              <TableRow>
+                <td className="px-3 py-3.5 text-center">
                   <input
                     type="checkbox"
-                    checked={allFilteredSelected}
-                    onChange={toggleFilteredProducts}
+                    checked={selectedProductIds.has(product.id)}
+                    onChange={() => toggleProduct(product.id)}
                     className="h-4 w-4 accent-[#ef1b2d]"
-                    aria-label="Chọn tất cả sản phẩm đang lọc"
+                    aria-label={`Chọn in QR ${product.code}`}
                   />
-                </th>
-                <th className="px-4 py-4 font-black">Mã SP</th>
-                <th className="px-3 py-4 text-center font-black">Mã QR</th>
-                <th className="px-4 py-4 font-black">Tên sản phẩm</th>
-                <th className="px-4 py-4 font-black">Tính chất</th>
-                <th className="px-4 py-4 text-center font-black">Nhóm</th>
-                <th className="px-4 py-4 text-center font-black">Đơn vị</th>
-                <th className="px-3 py-4 text-center font-black">Tổng TL (kg)</th>
-                <th className="px-3 py-4 text-center font-black">Tồn đầu</th>
-                <th className="px-3 py-4 text-center font-black">Nhập</th>
-                <th className="px-3 py-4 text-center font-black">Xuất</th>
-                <th className="px-3 py-4 text-center font-black">Tồn</th>
-                <th className="px-3 py-4 text-center font-black">Tồn tối thiểu</th>
-                <th className="sticky right-0 z-10 border-l border-zinc-800 bg-zinc-950 px-3 py-4 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredProducts.map(product => (
-                <tr key={`${product.code}-${product.name}`} className="group align-middle transition hover:bg-red-50/40">
-                  <td className="px-3 py-3.5 text-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedProductIds.has(product.id)}
-                      onChange={() => toggleProduct(product.id)}
-                      className="h-4 w-4 accent-[#ef1b2d]"
-                      aria-label={`Chọn in QR ${product.code}`}
-                    />
-                  </td>
-                  <td className="px-4 py-3.5 font-black text-zinc-950">{product.code || '-'}</td>
-                  <td className="px-3 py-3.5">
-                    {qrImages[product.id] ? (
-                      <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
-                        <img src={qrImages[product.id]} alt={`QR ${product.code}`} className="h-full w-full" />
-                      </div>
-                    ) : (
-                      <span className="text-xs font-semibold text-zinc-300">Đang tạo</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <div className="font-black text-zinc-950">{product.name || '-'}</div>
-                    {product.description && (
-                      <div className="mt-0.5 max-w-sm truncate text-xs font-semibold text-zinc-400">{product.description}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <span className="inline-flex max-w-full items-center rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2.5 py-1 text-xs font-black leading-tight text-[#ef1b2d]">
-                      {product.nature}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.group}</td>
-                  <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.unit}</td>
-                  <td className="px-3 py-3.5 text-center font-mono font-bold text-emerald-800">
-                    {formatProductSpecDisplay(product.totalWeight)}
-                  </td>
-                  <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.openingStock}</td>
-                  <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.inbound}</td>
-                  <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.outbound}</td>
-                  <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
-                  <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.minStock}</td>
-                  <td className="sticky right-0 z-10 border-l border-zinc-100 bg-white px-3 py-3.5 group-hover:bg-red-50/40">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => openProductView(product)}
-                        title="Xem"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openProductEdit(product)}
-                        title="Sửa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteProduct(product)}
-                        disabled={deletingProductId === product.id}
-                        title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {deletingProductId === product.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      </button>
+                </td>
+                <td className="px-4 py-3.5 font-black text-zinc-950">{product.code || '-'}</td>
+                <td className="px-3 py-3.5">
+                  {qrImages[product.id] ? (
+                    <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
+                      <img src={qrImages[product.id]} alt={`QR ${product.code}`} className="h-full w-full" />
                     </div>
-                  </td>
-                </tr>
-              ))}
+                  ) : (
+                    <span className="text-xs font-semibold text-zinc-300">Đang tạo</span>
+                  )}
+                </td>
+                <td className="px-4 py-3.5">
+                  <div className="font-black text-zinc-950">{product.name || '-'}</div>
+                  {product.description && (
+                    <div className="mt-0.5 max-w-sm truncate text-xs font-semibold text-zinc-400">{product.description}</div>
+                  )}
+                </td>
+                <td className="px-4 py-3.5">
+                  <StatusBadge label={product.nature} color="rose" />
+                </td>
+                <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.group}</td>
+                <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.unit}</td>
+                <td className="px-3 py-3.5 text-center font-mono font-bold text-emerald-800">
+                  {formatProductSpecDisplay(product.totalWeight)}
+                </td>
+                <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.openingStock}</td>
+                <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.inbound}</td>
+                <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.outbound}</td>
+                <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
+                <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.minStock}</td>
+                <td className="sticky right-0 z-10 border-l border-zinc-100 bg-white px-3 py-3.5">
+                  <div className="flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openProductView(product)}
+                      title="Xem"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openProductEdit(product)}
+                      title="Sửa"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProduct(product)}
+                      disabled={deletingProductId === product.id}
+                      title="Xóa"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingProductId === product.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </td>
+              </TableRow>
+            </React.Fragment>
+          ))}
 
-              {!isLoadingProducts && filteredProducts.length === 0 && (
-                <tr>
-                  <td colSpan={14} className="px-4 py-8 text-center font-bold text-zinc-500">
-                    Không có sản phẩm phù hợp bộ lọc.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+          {!isLoadingProducts && filteredProducts.length === 0 && (
+            <TableEmptyRow colSpan={14}>Không có sản phẩm phù hợp bộ lọc.</TableEmptyRow>
+          )}
+        </TableBody>
+      </TableShell>
+
+      <TablePagination
+        totalRecords={filteredProducts.length}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+      />
 
       {productFormMode && (
         <ProductEditModal
@@ -2206,19 +2140,17 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                     </button>
                   </div>
 
-                  <div className="overflow-hidden rounded-xl border border-zinc-200">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
-                        <tr>
-                          <th className="px-3 py-2.5 font-black">Mã SP</th>
-                          <th className="w-28 px-3 py-2.5 text-center font-black">Số bản</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {selectedProducts
-                          .filter(product => String(product.code || '').trim())
-                          .map(product => (
-                            <tr key={product.id}>
+                  <TableShell minWidthClassName="min-w-full" maxHeightClassName="max-h-72">
+                    <TableHead>
+                      <TableHeadCell>Mã SP</TableHeadCell>
+                      <TableHeadCell align="center" className="w-28">Số bản</TableHeadCell>
+                    </TableHead>
+                    <TableBody>
+                      {selectedProducts
+                        .filter(product => String(product.code || '').trim())
+                        .map(product => (
+                          <React.Fragment key={product.id}>
+                            <TableRow>
                               <td className="px-3 py-2.5">
                                 <p className="font-black text-zinc-900">{product.code}</p>
                                 <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-zinc-500">
@@ -2240,11 +2172,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                                   className="mx-auto h-10 w-20 rounded-lg border border-zinc-200 bg-white px-2 text-center text-sm font-black text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
                                 />
                               </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </TableRow>
+                          </React.Fragment>
+                        ))}
+                    </TableBody>
+                  </TableShell>
 
                   {printQtyError ? (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">

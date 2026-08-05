@@ -23,6 +23,19 @@ import {
   type StaffViewPermissions
 } from './menuViews';
 import {
+  FilterCombobox,
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  StatusBadge
+} from '../../components/shared/table';
+import {
   RefreshCw,
   Eye,
   ExternalLink,
@@ -31,7 +44,6 @@ import {
   Pencil,
   Plus,
   Save,
-  Search,
   Trash2
 } from 'lucide-react';
 
@@ -55,6 +67,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     branchId: '',
     department: ''
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadStaffGroups = async () => {
     setIsLoadingStaff(true);
@@ -204,6 +218,26 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [branches]);
 
+  const hasActiveFilters = Boolean(searchText) || Boolean(departmentFilter);
+  const resetFilters = () => {
+    setSearchText('');
+    setDepartmentFilter('');
+  };
+
+  const totalPages = Math.max(1, Math.ceil(tableRows.length / pageSize));
+  const paginatedRows = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return tableRows.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, tableRows, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch, departmentFilter, selectedBranchId, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
   return (
     <div className="mx-auto w-full min-w-0 max-w-[1680px] space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
@@ -269,8 +303,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-1 lg:pb-0">
+      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap gap-2">
           {branches.map(branch => (
             <button
               key={branch.id}
@@ -291,41 +325,30 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
             </div>
           )}
         </div>
-
-        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[220px]">
-          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider text-zinc-400">Phòng ban</span>
-          <select
-            value={departmentFilter}
-            onChange={event => setDepartmentFilter(event.target.value)}
-            disabled={isLoadingStaff || branches.length === 0}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 focus:outline-none"
-          >
-            <option value="">Tất cả</option>
-            {branchDepartmentOptions.map(department => (
-              <option key={department} value={department}>
-                {department}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[360px]">
-          <Search className="h-4 w-4 text-zinc-400" />
-          <input
-            value={searchText}
-            onChange={event => setSearchText(event.target.value)}
-            placeholder="Tìm tên, chức vụ, ca làm..."
-            disabled={isLoadingStaff || branches.length === 0}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-          />
-        </label>
-
-        {staffError && (
-          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
-            {staffError}
-          </p>
-        )}
       </section>
+
+      <TableToolbar
+        isLoading={isLoadingStaff}
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={resetFilters}
+        loadError={staffError}
+      >
+        <TableSearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Tìm tên, chức vụ, ca làm..."
+          disabled={isLoadingStaff || branches.length === 0}
+        />
+
+        <FilterCombobox
+          label="Phòng ban"
+          options={branchDepartmentOptions}
+          value={departmentFilter || 'all'}
+          onChange={value => setDepartmentFilter(value === 'all' ? '' : value)}
+          searchPlaceholder="Tìm phòng ban..."
+          compact
+        />
+      </TableToolbar>
 
       <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
         {!isLoadingStaff && !staffError && branches.length === 0 && (
@@ -335,131 +358,131 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         )}
 
         {filteredDepartments.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="min-w-[1280px] w-full text-left text-xs">
-              <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2.5 font-black">Họ tên</th>
-                  <th className="px-3 py-2.5 font-black">Mã NV</th>
-                  <th className="px-3 py-2.5 font-black">Phòng ban</th>
-                  <th className="px-3 py-2.5 font-black">Chức vụ</th>
-                  <th className="px-3 py-2.5 font-black">Vị trí</th>
-                  <th className="px-3 py-2.5 font-black">Ca</th>
-                  <th className="px-3 py-2.5 font-black">Tên đăng nhập</th>
-                  <th className="px-3 py-2.5 font-black">Mật khẩu</th>
-                  <th className="px-3 py-2.5 font-black">Chữ ký</th>
-                  <th className="min-w-[220px] px-3 py-2.5 font-black">Quyền xem (JSON)</th>
-                  <th className="px-3 py-2.5 font-black">Trạng thái</th>
-                  <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {tableRows.map(({ key, departmentName, member }) => (
-                  <tr key={key} className="hover:bg-red-50/40">
-                    <td className="whitespace-nowrap px-3 py-2.5 font-black text-zinc-950">{member.name}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-mono font-semibold text-zinc-700">
-                      {member.code || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-700">{departmentName}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.role || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.position || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-zinc-700">{member.shift || '—'}</td>
-                    <td className="max-w-[200px] truncate px-3 py-2.5 font-mono text-zinc-700" title={member.username}>
-                      {member.username || '—'}
-                    </td>
-                    <td className="max-w-[140px] truncate px-3 py-2.5 font-mono text-zinc-700" title={member.password}>
-                      {member.password || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">
-                      {member.signatureUrl ? (
-                        <a
-                          href={member.signatureUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:underline"
-                        >
-                          <ImageUp className="h-3.5 w-3.5" />
-                          Xem chữ ký
-                        </a>
-                      ) : (
-                        <span className="text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => setViewPermissionsMember(member)}
-                        className="max-w-[280px] truncate text-left text-[11px] font-semibold text-[#ef1b2d] underline decoration-dotted underline-offset-2 hover:text-[#b30d1c]"
-                        title={formatStaffViewPermissionsJson(member.viewPermissions)}
-                      >
-                        {summarizeStaffViewPermissions(member.viewPermissions)}
-                      </button>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${
-                          member.status === 'Đang làm'
-                            ? 'border-[#ef1b2d]/20 bg-red-50 text-[#ef1b2d]'
-                            : 'border-zinc-200 bg-zinc-50 text-zinc-600'
-                        }`}
-                      >
-                        {member.status}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-center">
-                      <div className="flex items-center justify-center gap-1">
+          <>
+            <TableShell minWidthClassName="min-w-[1280px]">
+              <TableHead>
+                <TableHeadCell>Họ tên</TableHeadCell>
+                <TableHeadCell>Mã NV</TableHeadCell>
+                <TableHeadCell>Phòng ban</TableHeadCell>
+                <TableHeadCell>Chức vụ</TableHeadCell>
+                <TableHeadCell>Vị trí</TableHeadCell>
+                <TableHeadCell>Ca</TableHeadCell>
+                <TableHeadCell>Tên đăng nhập</TableHeadCell>
+                <TableHeadCell>Mật khẩu</TableHeadCell>
+                <TableHeadCell>Chữ ký</TableHeadCell>
+                <TableHeadCell className="min-w-[220px]">Quyền xem (JSON)</TableHeadCell>
+                <TableHeadCell>Trạng thái</TableHeadCell>
+                <TableHeadCell align="center">Thao tác</TableHeadCell>
+              </TableHead>
+              <TableBody>
+                {paginatedRows.map(({ key, departmentName, member }) => (
+                  <React.Fragment key={key}>
+                    <TableRow>
+                      <td className="whitespace-nowrap px-4 py-3 font-black text-zinc-950">{member.name}</td>
+                      <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold text-zinc-700">
+                        {member.code || '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">{departmentName}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.role || '—'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.position || '—'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.shift || '—'}</td>
+                      <td className="max-w-[200px] truncate px-4 py-3 font-mono text-zinc-700" title={member.username}>
+                        {member.username || '—'}
+                      </td>
+                      <td className="max-w-[140px] truncate px-4 py-3 font-mono text-zinc-700" title={member.password}>
+                        {member.password || '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        {member.signatureUrl ? (
+                          <a
+                            href={member.signatureUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:underline"
+                          >
+                            <ImageUp className="h-3.5 w-3.5" />
+                            Xem chữ ký
+                          </a>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
                         <button
                           type="button"
-                          onClick={() => setViewMember({ member, departmentName })}
-                          aria-label={`Xem ${member.name}`}
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[11px] font-bold text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                          onClick={() => setViewPermissionsMember(member)}
+                          className="max-w-[280px] truncate text-left text-[11px] font-semibold text-[#ef1b2d] underline decoration-dotted underline-offset-2 hover:text-[#b30d1c]"
+                          title={formatStaffViewPermissionsJson(member.viewPermissions)}
                         >
-                          <Eye className="h-3.5 w-3.5" />
-                          Xem
+                          {summarizeStaffViewPermissions(member.viewPermissions)}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setEditTarget({
-                              member,
-                              departmentName,
-                              branchName: selectedBranch?.name || ''
-                            })
-                          }
-                          aria-label={`Sửa ${member.name}`}
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Sửa
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteMember(member)}
-                          disabled={deletingCode === member.code}
-                          aria-label={`Xóa ${member.name}`}
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {deletingCode === member.code ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                          Xoá
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <StatusBadge
+                          label={member.status}
+                          color={member.status === 'Đang làm' ? 'rose' : 'zinc'}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewMember({ member, departmentName })}
+                            aria-label={`Xem ${member.name}`}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[11px] font-bold text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Xem
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditTarget({
+                                member,
+                                departmentName,
+                                branchName: selectedBranch?.name || ''
+                              })
+                            }
+                            aria-label={`Sửa ${member.name}`}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteMember(member)}
+                            disabled={deletingCode === member.code}
+                            aria-label={`Xóa ${member.name}`}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {deletingCode === member.code ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            Xoá
+                          </button>
+                        </div>
+                      </td>
+                    </TableRow>
+                  </React.Fragment>
                 ))}
                 {tableRows.length === 0 && !isLoadingStaff && (
-                  <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center font-bold text-zinc-400">
-                      Không có nhân sự phù hợp bộ lọc.
-                    </td>
-                  </tr>
+                  <TableEmptyRow colSpan={12}>Không có nhân sự phù hợp bộ lọc.</TableEmptyRow>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </TableShell>
+
+            <TablePagination
+              totalRecords={tableRows.length}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+            />
+          </>
         )}
 
         {isLoadingStaff && (

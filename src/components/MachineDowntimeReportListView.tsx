@@ -14,9 +14,20 @@ import {
   normalizeMachineDowntimeSlips,
   type MachineDowntimeSlip
 } from './MachineDowntimeReportPanel';
-
-const inputClass =
-  'h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+import {
+  FilterCombobox,
+  TableToolbar,
+  TableSearchInput,
+  TableDateFilter,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  TablePagination,
+  usePagination
+} from './shared/table';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -124,49 +135,42 @@ function MachineDowntimeDetailModal({
             </div>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-xs">
-                <thead className="bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
-                  <tr>
-                    <th className="px-3 py-2 font-black">STT</th>
-                    <th className="px-3 py-2 font-black">Bắt đầu</th>
-                    <th className="px-3 py-2 font-black">Chạy lại</th>
-                    <th className="px-3 py-2 text-right font-black">Phút</th>
-                    <th className="px-3 py-2 font-black">Lý do</th>
-                    <th className="px-3 py-2 text-right font-black">Cuộn</th>
-                    <th className="px-3 py-2 font-black">Xác nhận</th>
-                    <th className="px-3 py-2 font-black">Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {slip.lines.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-3 py-6 text-center font-semibold text-zinc-400">
-                        Không có dòng chi tiết.
+          <div className="mt-4">
+            <TableShell minWidthClassName="min-w-full" maxHeightClassName="max-h-[360px]">
+              <TableHead>
+                <TableHeadCell>STT</TableHeadCell>
+                <TableHeadCell>Bắt đầu</TableHeadCell>
+                <TableHeadCell>Chạy lại</TableHeadCell>
+                <TableHeadCell align="center">Phút</TableHeadCell>
+                <TableHeadCell>Lý do</TableHeadCell>
+                <TableHeadCell align="center">Cuộn</TableHeadCell>
+                <TableHeadCell>Xác nhận</TableHeadCell>
+                <TableHeadCell>Ghi chú</TableHeadCell>
+              </TableHead>
+              <TableBody>
+                {slip.lines.map(line => (
+                  <React.Fragment key={`${slip.id}-${line.stt}`}>
+                    <TableRow>
+                      <td className="px-3 py-2 font-bold text-[#ef1b2d]">{line.stt}</td>
+                      <td className="px-3 py-2 font-mono text-zinc-700">{line.startTime || '—'}</td>
+                      <td className="px-3 py-2 font-mono text-zinc-700">{line.restartTime || '—'}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">
+                        {formatNumber(line.downtimeMinutes, 0)}
                       </td>
-                    </tr>
-                  ) : (
-                    slip.lines.map(line => (
-                      <tr key={`${slip.id}-${line.stt}`} className="hover:bg-amber-50/40">
-                        <td className="px-3 py-2 font-bold text-[#ef1b2d]">{line.stt}</td>
-                        <td className="px-3 py-2 font-mono text-zinc-700">{line.startTime || '—'}</td>
-                        <td className="px-3 py-2 font-mono text-zinc-700">{line.restartTime || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-800">
-                          {formatNumber(line.downtimeMinutes, 0)}
-                        </td>
-                        <td className="px-3 py-2 text-zinc-800">{line.reason || '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono text-zinc-700">
-                          {formatNumber(line.rollsAffected, 0)}
-                        </td>
-                        <td className="px-3 py-2 text-zinc-700">{line.confirmedBy || '—'}</td>
-                        <td className="px-3 py-2 text-zinc-600">{line.note || '—'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                      <td className="px-3 py-2 text-zinc-800">{line.reason || '—'}</td>
+                      <td className="px-3 py-2 text-right font-mono text-zinc-700">
+                        {formatNumber(line.rollsAffected, 0)}
+                      </td>
+                      <td className="px-3 py-2 text-zinc-700">{line.confirmedBy || '—'}</td>
+                      <td className="px-3 py-2 text-zinc-600">{line.note || '—'}</td>
+                    </TableRow>
+                  </React.Fragment>
+                ))}
+                {slip.lines.length === 0 && (
+                  <TableEmptyRow colSpan={8}>Không có dòng chi tiết.</TableEmptyRow>
+                )}
+              </TableBody>
+            </TableShell>
           </div>
 
           {slip.note ? (
@@ -213,20 +217,45 @@ export default function MachineDowntimeReportListView({
   const [message, setMessage] = useState('');
   const [filterFromDate, setFilterFromDate] = useState(defaultFromDate);
   const [filterToDate, setFilterToDate] = useState(todayIso);
+  const [searchText, setSearchText] = useState('');
+  const [filterShift, setFilterShift] = useState('');
   const [deletingId, setDeletingId] = useState('');
   const [viewingSlip, setViewingSlip] = useState<MachineDowntimeSlip | null>(null);
   const [printSlips, setPrintSlips] = useState<MachineDowntimePrintSlip[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
+  const shiftOptions = useMemo<string[]>(() => {
+    const shifts = slips.reduce<string[]>((result, slip) => {
+      const shift = (slip.shift || '').trim();
+      if (shift) result.push(shift);
+      return result;
+    }, []);
+    return Array.from(new Set<string>(shifts)).sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));
+  }, [slips]);
+
+  const normalizedSearch = searchText.trim().toLowerCase();
   const filteredSlips = useMemo(() => {
     return slips.filter(slip => {
       const date = slip.date || '';
       if (filterFromDate && date && date < filterFromDate) return false;
       if (filterToDate && date && date > filterToDate) return false;
+      if (filterShift && slip.shift?.trim() !== filterShift) return false;
+      if (normalizedSearch) {
+        const haystack = `${slip.slipCode} ${slip.shift} ${machineLabel(slip)} ${slip.preparedBy} ${slip.productionOrder}`.toLowerCase();
+        if (!haystack.includes(normalizedSearch)) return false;
+      }
       return true;
     });
-  }, [slips, filterFromDate, filterToDate]);
+  }, [slips, filterFromDate, filterToDate, filterShift, normalizedSearch]);
+
+  const hasActiveFilters = Boolean(filterShift) || Boolean(searchText);
+  const resetFilters = () => {
+    setFilterShift('');
+    setSearchText('');
+  };
 
   const dateGroups = useMemo((): DateGroup[] => {
     const map = new Map<string, MachineDowntimeSlip[]>();
@@ -240,6 +269,11 @@ export default function MachineDowntimeReportListView({
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([ngay, groupSlips]) => ({ ngay, slips: groupSlips }));
   }, [filteredSlips]);
+  const { paginatedItems: paginatedDateGroups, totalPages } = usePagination<DateGroup>(
+    dateGroups,
+    currentPage,
+    pageSize
+  );
 
   const totalMinutes = useMemo(
     () => filteredSlips.reduce((sum, slip) => sum + (slip.totalDowntimeMinutes || 0), 0),
@@ -401,27 +435,28 @@ export default function MachineDowntimeReportListView({
               <Printer className="h-4 w-4" />
               In danh sách
             </button>
-            <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-              Từ ngày
-              <input
-                type="date"
-                value={filterFromDate}
-                max={filterToDate || undefined}
-                onChange={e => setFilterFromDate(e.target.value)}
-                className={inputClass}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-              Đến ngày
-              <input
-                type="date"
-                value={filterToDate}
-                min={filterFromDate || undefined}
-                onChange={e => setFilterToDate(e.target.value)}
-                className={inputClass}
-              />
-            </label>
           </div>
+        </div>
+
+        <div className="border-b border-zinc-100 bg-white px-4 py-3">
+          <TableToolbar isLoading={isLoading} hasActiveFilters={hasActiveFilters} onResetFilters={resetFilters}>
+            <TableSearchInput
+              value={searchText}
+              onChange={setSearchText}
+              placeholder="Tìm số phiếu, máy, người lập, lệnh SX..."
+              disabled={isLoading}
+            />
+            <FilterCombobox
+              label="Ca"
+              options={shiftOptions}
+              value={filterShift || 'all'}
+              onChange={value => setFilterShift(value === 'all' ? '' : value)}
+              searchPlaceholder="Tìm ca..."
+              compact
+            />
+            <TableDateFilter label="Từ ngày" value={filterFromDate} onChange={setFilterFromDate} />
+            <TableDateFilter label="Đến ngày" value={filterToDate} onChange={setFilterToDate} />
+          </TableToolbar>
         </div>
 
         {error ? (
@@ -446,7 +481,7 @@ export default function MachineDowntimeReportListView({
           </div>
         ) : (
           <div className="space-y-3 p-3 sm:p-4">
-            {dateGroups.map(group => {
+            {paginatedDateGroups.map(group => {
               const groupMinutes = group.slips.reduce((sum, slip) => sum + (slip.totalDowntimeMinutes || 0), 0);
               return (
                 <div key={group.ngay} className="overflow-hidden rounded-xl border border-zinc-200">
@@ -459,24 +494,22 @@ export default function MachineDowntimeReportListView({
                       {group.slips.length} phiếu · {formatNumber(groupMinutes, 0)} phút
                     </span>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-left text-xs">
-                      <thead className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
-                        <tr>
-                          <th className="px-3 py-2 font-black">Số phiếu</th>
-                          <th className="px-3 py-2 font-black">Ca</th>
-                          <th className="px-3 py-2 font-black">Máy</th>
-                          <th className="px-3 py-2 font-black">Người lập</th>
-                          <th className="px-3 py-2 font-black">Lệnh SX</th>
-                          <th className="px-3 py-2 text-right font-black">Tổng phút</th>
-                          <th className="px-3 py-2 text-right font-black">Lần dừng</th>
-                          <th className="px-3 py-2 text-right font-black">Cuộn</th>
-                          <th className="px-3 py-2 text-center font-black">Thao tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {group.slips.map(slip => (
-                          <tr key={slip.id} className="hover:bg-amber-50/40">
+                  <TableShell minWidthClassName="min-w-full" maxHeightClassName="max-h-[520px]">
+                    <TableHead>
+                      <TableHeadCell>Số phiếu</TableHeadCell>
+                      <TableHeadCell>Ca</TableHeadCell>
+                      <TableHeadCell>Máy</TableHeadCell>
+                      <TableHeadCell>Người lập</TableHeadCell>
+                      <TableHeadCell>Lệnh SX</TableHeadCell>
+                      <TableHeadCell align="center">Tổng phút</TableHeadCell>
+                      <TableHeadCell align="center">Lần dừng</TableHeadCell>
+                      <TableHeadCell align="center">Cuộn</TableHeadCell>
+                      <TableHeadCell align="center">Thao tác</TableHeadCell>
+                    </TableHead>
+                    <TableBody>
+                      {group.slips.map(slip => (
+                        <React.Fragment key={slip.id}>
+                          <TableRow>
                             <td className="px-3 py-2 font-black text-zinc-900">{slip.slipCode || '—'}</td>
                             <td className="px-3 py-2 font-semibold text-zinc-800">{slip.shift || '—'}</td>
                             <td className="px-3 py-2 text-zinc-700">{machineLabel(slip)}</td>
@@ -530,15 +563,28 @@ export default function MachineDowntimeReportListView({
                                 </button>
                               </div>
                             </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                          </TableRow>
+                        </React.Fragment>
+                      ))}
+                      {group.slips.length === 0 && (
+                        <TableEmptyRow colSpan={9}>Chưa có dữ liệu.</TableEmptyRow>
+                      )}
+                    </TableBody>
+                  </TableShell>
                 </div>
               );
             })}
           </div>
+        )}
+        {!isLoading && dateGroups.length > 0 && (
+          <TablePagination
+            totalRecords={dateGroups.length}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
         )}
       </section>
     </div>

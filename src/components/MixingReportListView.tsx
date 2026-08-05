@@ -37,6 +37,20 @@ import {
   shiftNamesMatch,
   type ShiftSetting
 } from '../utils/shiftSettings';
+import {
+  FilterCombobox,
+  TableToolbar,
+  TableSearchInput,
+  TableDateFilter,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  TablePagination,
+  usePagination
+} from './shared/table';
 
 const inputClass =
   'h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
@@ -271,12 +285,26 @@ export default function MixingReportListView({
   const [printReports, setPrintReports] = useState<MixingReport[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [listTab, setListTab] = useState<'reports' | 'norms'>('reports');
+  const [searchText, setSearchText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
-  const shiftGroups = useMemo(() => buildShiftGroups(reports, shiftOptions), [reports, shiftOptions]);
+  const visibleReports = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    if (!query) return reports;
+    return reports.filter(report =>
+      `${report.ca} ${report.gio} ${report.ma_may} ${report.ten_may} ${report.nhan_su} ${report.chi_tiet
+        .map(line => `${line.ma_nvl} ${line.ten_vat_tu}`)
+        .join(' ')}`
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [reports, searchText]);
+  const shiftGroups = useMemo(() => buildShiftGroups(visibleReports, shiftOptions), [visibleReports, shiftOptions]);
   const sortedReports = useMemo(
-    () => [...reports].sort((left, right) => compareMixingReportsForList(left, right, shiftOptions)),
-    [reports, shiftOptions]
+    () => [...visibleReports].sort((left, right) => compareMixingReportsForList(left, right, shiftOptions)),
+    [visibleReports, shiftOptions]
   );
   const dateGroups = useMemo(() => {
     const map = new Map<string, MixingReport[]>();
@@ -290,6 +318,10 @@ export default function MixingReportListView({
       .sort((left, right) => right[0].localeCompare(left[0]))
       .map(([ngay, groupReports]) => ({ ngay, reports: groupReports }));
   }, [sortedReports]);
+  const { paginatedItems: paginatedDateGroups, totalPages } = usePagination<{
+    ngay: string;
+    reports: MixingReport[];
+  }>(dateGroups, currentPage, pageSize);
 
   const loadReferenceData = async () => {
     const [machineRes, settingRes] = await Promise.all([
@@ -693,6 +725,56 @@ export default function MixingReportListView({
               Đang lọc: {formatFilterSummary(filters, machines)}
             </p>
           </div>
+          <div className="hidden">
+          <TableToolbar
+            isLoading={isLoading}
+            hasActiveFilters={Boolean(searchText || filters.ca || filters.machineId || filters.tuNgay || filters.denNgay)}
+            onResetFilters={() => {
+              setSearchText('');
+              setFilters(emptyFilters());
+              setCurrentPage(1);
+            }}
+          >
+            <TableSearchInput
+              value={searchText}
+              onChange={value => {
+                setSearchText(value);
+                setCurrentPage(1);
+              }}
+              placeholder="Tìm máy, nhân sự, mã hoặc tên vật tư..."
+              disabled={isLoading}
+            />
+            <FilterCombobox
+              label="Ca"
+              options={shiftOptions.map(shift => shift.value)}
+              value={filters.ca || 'all'}
+              onChange={value => setFilters(prev => ({ ...prev, ca: value === 'all' ? '' : value }))}
+              formatOption={value => shiftOptions.find(shift => shift.value === value)?.label || value}
+              compact
+            />
+            <FilterCombobox
+              label="Máy"
+              options={machines.map(machine => machine.id)}
+              value={filters.machineId || 'all'}
+              onChange={value => setFilters(prev => ({ ...prev, machineId: value === 'all' ? '' : value }))}
+              formatOption={value => {
+                const machine = machines.find(item => item.id === value);
+                return machine ? `${machine.code} · ${machine.name}` : value;
+              }}
+              compact
+            />
+            <TableDateFilter
+              label="Từ ngày"
+              value={filters.tuNgay}
+              onChange={value => setFilters(prev => ({ ...prev, tuNgay: value }))}
+            />
+            <TableDateFilter
+              label="Đến ngày"
+              value={filters.denNgay}
+              onChange={value => setFilters(prev => ({ ...prev, denNgay: value }))}
+            />
+          </TableToolbar>
+          </div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
             <label className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
@@ -826,7 +908,7 @@ export default function MixingReportListView({
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-left text-xs">
-                    <thead className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
+                    <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                       <tr>
                         <th className="w-10 px-3 py-2 text-center font-black">
                           <input

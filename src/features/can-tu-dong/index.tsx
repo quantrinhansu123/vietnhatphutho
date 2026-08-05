@@ -7,6 +7,17 @@ import WeighingImagePreviewModal, {
 } from '../../components/WeighingImagePreviewModal';
 import { formatNumber } from '../../utils';
 import { readApiErrorMessage, showAppToast } from '../../lib/appToast';
+import {
+  TableToolbar,
+  TableSearchInput,
+  FilterCombobox,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow
+} from '../../components/shared/table';
 
 export type CanTuDongRecord = {
   id: number | string;
@@ -85,6 +96,8 @@ export function CanTuDongPanel({ onBack }: { onBack: () => void }) {
   const [deviceFilter, setDeviceFilter] = useState('');
   const [qrFilter, setQrFilter] = useState('');
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('all');
 
   const loadRecords = async () => {
     setLoading(true);
@@ -127,8 +140,37 @@ export function CanTuDongPanel({ onBack }: { onBack: () => void }) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'));
   }, [records]);
 
+  const statusOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of records) {
+      const status = String(row.status ?? '').trim();
+      if (status) set.add(status);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [records]);
+
+  const hasActiveFilters = Boolean(searchText.trim()) || selectedStatus !== 'all';
+
+  const resetFilters = () => {
+    setSearchText('');
+    setSelectedStatus('all');
+  };
+
+  const normalizedSearch = searchText.trim().toLowerCase();
+  const filteredRecords = useMemo(() => {
+    return records.filter(row => {
+      const matchesStatus = selectedStatus === 'all' || String(row.status ?? '').trim() === selectedStatus;
+      const matchesSearch =
+        !normalizedSearch ||
+        `${row.qr_code ?? ''} ${row.event_id ?? ''} ${row.device_id ?? ''} ${row.weight_source ?? ''} ${row.qr_source ?? ''}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+      return matchesStatus && matchesSearch;
+    });
+  }, [records, normalizedSearch, selectedStatus]);
+
   return (
-    <div className="mx-auto max-w-7xl space-y-4 px-3 py-4 sm:px-4">
+    <div className="w-full max-w-none space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <BackButton onClick={onBack} />
@@ -216,99 +258,101 @@ export function CanTuDongPanel({ onBack }: { onBack: () => void }) {
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-left text-xs">
-            <thead className="bg-zinc-50 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="whitespace-nowrap px-3 py-2.5">Ảnh</th>
-                <th className="whitespace-nowrap px-3 py-2.5">Thời điểm</th>
-                <th className="whitespace-nowrap px-3 py-2.5">QR</th>
-                <th className="whitespace-nowrap px-3 py-2.5">Net</th>
-                <th className="whitespace-nowrap px-3 py-2.5">Gross</th>
-                <th className="whitespace-nowrap px-3 py-2.5">Tare</th>
-                <th className="whitespace-nowrap px-3 py-2.5">Thiết bị</th>
-                <th className="whitespace-nowrap px-3 py-2.5">Trạng thái</th>
-                <th className="whitespace-nowrap px-3 py-2.5">Nguồn</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={9} className="px-3 py-10 text-center text-sm font-semibold text-zinc-500">
-                    <span className="inline-flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Đang tải cân tự động…
-                    </span>
-                  </td>
-                </tr>
-              ) : records.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-3 py-10 text-center text-sm font-semibold text-zinc-500">
-                    Không có bản ghi trong khoảng lọc.
-                  </td>
-                </tr>
-              ) : (
-                records.map(row => {
-                  const previewUrl = resolvePreviewUrl(row);
-                  const title = `Ảnh cân · ${row.qr_code || row.event_id || row.id}`;
-                  return (
-                    <tr key={String(row.id)} className="border-t border-zinc-100 hover:bg-zinc-50/70">
-                      <td className="px-3 py-2 align-middle">
-                        {previewUrl ? (
-                          <WeighingImageThumbnail
-                            url={previewUrl}
-                            alt={title}
-                            title="Xem ảnh cân"
-                            onView={() => setViewingImage({ url: previewUrl, title })}
-                          />
-                        ) : (
-                          <span className="inline-flex h-12 w-16 items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50 text-[10px] font-bold text-zinc-400">
-                            Không ảnh
-                          </span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-700">
-                        {formatDateTime(row.captured_at || row.created_at)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 font-mono font-bold text-zinc-900">
-                        {row.qr_code || '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-900">
-                        {formatWeight(row.net_weight, row.unit)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-700">
-                        {formatWeight(row.weight, row.unit)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-600">
-                        {formatWeight(row.tare_weight, row.unit)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-700">
-                        {row.device_id || '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <span
-                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${statusClass(row.status)}`}
-                        >
-                          {row.status || '—'}
+      <TableToolbar isLoading={loading} hasActiveFilters={hasActiveFilters} onResetFilters={resetFilters}>
+        <TableSearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Tìm QR, thiết bị, nguồn..."
+          disabled={loading}
+        />
+        <FilterCombobox
+          label="Trạng thái"
+          options={statusOptions}
+          value={selectedStatus}
+          onChange={setSelectedStatus}
+          searchPlaceholder="Tìm trạng thái..."
+          compact
+        />
+      </TableToolbar>
+
+      <TableShell minWidthClassName="min-w-[1000px]">
+        <TableHead>
+          <TableHeadCell>Ảnh</TableHeadCell>
+          <TableHeadCell className="whitespace-nowrap">Thời điểm</TableHeadCell>
+          <TableHeadCell>QR</TableHeadCell>
+          <TableHeadCell>Net</TableHeadCell>
+          <TableHeadCell>Gross</TableHeadCell>
+          <TableHeadCell>Tare</TableHeadCell>
+          <TableHeadCell>Thiết bị</TableHeadCell>
+          <TableHeadCell>Trạng thái</TableHeadCell>
+          <TableHeadCell>Nguồn</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {loading ? (
+            <TableEmptyRow colSpan={9}>
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Đang tải cân tự động…
+              </span>
+            </TableEmptyRow>
+          ) : filteredRecords.length === 0 ? (
+            <TableEmptyRow colSpan={9}>Không có bản ghi trong khoảng lọc.</TableEmptyRow>
+          ) : (
+            filteredRecords.map(row => {
+              const previewUrl = resolvePreviewUrl(row);
+              const title = `Ảnh cân · ${row.qr_code || row.event_id || row.id}`;
+              return (
+                <React.Fragment key={String(row.id)}>
+                  <TableRow>
+                    <td className="px-4 py-3 align-middle">
+                      {previewUrl ? (
+                        <WeighingImageThumbnail
+                          url={previewUrl}
+                          alt={title}
+                          title="Xem ảnh cân"
+                          onView={() => setViewingImage({ url: previewUrl, title })}
+                        />
+                      ) : (
+                        <span className="inline-flex h-12 w-16 items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50 text-[10px] font-bold text-zinc-400">
+                          Không ảnh
                         </span>
-                      </td>
-                      <td className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-500" title={String(row.weight_source || '')}>
-                        {row.weight_source || '—'}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        {!loading && records.length > 0 ? (
-          <div className="border-t border-zinc-100 px-3 py-2 text-[11px] font-semibold text-zinc-500">
-            {records.length} bản ghi
-          </div>
-        ) : null}
-      </div>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">
+                      {formatDateTime(row.captured_at || row.created_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-mono font-bold text-zinc-900">
+                      {row.qr_code || '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-bold text-zinc-900">
+                      {formatWeight(row.net_weight, row.unit)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">
+                      {formatWeight(row.weight, row.unit)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-600">
+                      {formatWeight(row.tare_weight, row.unit)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">
+                      {row.device_id || '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${statusClass(row.status)}`}
+                      >
+                        {row.status || '—'}
+                      </span>
+                    </td>
+                    <td className="max-w-[140px] truncate px-4 py-3 font-semibold text-zinc-500" title={String(row.weight_source || '')}>
+                      {row.weight_source || '—'}
+                    </td>
+                  </TableRow>
+                </React.Fragment>
+              );
+            })
+          )}
+        </TableBody>
+      </TableShell>
 
       <WeighingImagePreviewModal image={viewingImage} onClose={() => setViewingImage(null)} />
     </div>

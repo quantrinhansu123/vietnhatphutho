@@ -14,6 +14,20 @@ import {
 import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { sanitizeDecimalTyping } from '../../lib/mixingReportModel';
+import {
+  FilterCombobox,
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  StatusBadge,
+  type StatusBadgeColor
+} from '../../components/shared/table';
 
 export interface MachineRow {
   id: string;
@@ -226,10 +240,19 @@ export function machineToForm(machine: MachineRow): MachineFormState {
 const machineFieldClass =
   'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
+export function machineStatusColor(status: string): StatusBadgeColor {
+  if (/đang|hoạt|active|dung|dùng/i.test(status)) return 'emerald';
+  if (/bảo trì|maintenance|sửa/i.test(status)) return 'amber';
+  if (/ngừng|hỏng|dừng|stop/i.test(status)) return 'rose';
+  return 'zinc';
+}
+
 export function MachinesPanel({ onBack }: { onBack: () => void }) {
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedType, setSelectedType] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isLoadingMachines, setIsLoadingMachines] = useState(true);
   const [machineError, setMachineError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -504,7 +527,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
   };
 
   const machineTypes = useMemo(
-    () => ['all', ...Array.from(new Set(machines.map(machine => machine.type))).sort((a, b) => String(a).localeCompare(String(b), 'vi'))],
+    () => Array.from(new Set(machines.map(machine => machine.type))).sort((a, b) => String(a).localeCompare(String(b), 'vi')),
     [machines]
   );
   const normalizedSearch = searchText.trim().toLowerCase();
@@ -519,6 +542,26 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
       return matchesType && matchesSearch;
     });
   }, [machines, normalizedSearch, selectedType]);
+
+  const hasActiveFilters = selectedType !== 'all' || Boolean(searchText);
+  const resetMachineFilters = () => {
+    setSelectedType('all');
+    setSearchText('');
+  };
+
+  const totalMachinePages = Math.max(1, Math.ceil(filteredMachines.length / pageSize));
+  const paginatedMachines = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredMachines.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredMachines, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch, selectedType, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalMachinePages) setCurrentPage(totalMachinePages);
+  }, [currentPage, totalMachinePages]);
 
   const branchCount = new Set(machines.map(machine => machine.branch).filter(branch => branch && branch !== '-')).size;
   const activeCount = machines.filter(machine => /đang|hoạt|active|dung|dùng/i.test(machine.status)).length;
@@ -843,74 +886,48 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-1 lg:pb-0">
-          {machineTypes.map(type => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => setSelectedType(type)}
-              className={`h-11 shrink-0 rounded-xl border px-4 text-sm font-black transition ${
-                selectedType === type
-                  ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-sm'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-950'
-              }`}
-            >
-              {type === 'all' ? 'Tất cả' : type}
-            </button>
-          ))}
-          {isLoadingMachines && (
-            <div className="flex h-11 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold text-zinc-500">
-              Đang tải Supabase...
-            </div>
-          )}
-        </div>
+      <TableToolbar
+        isLoading={isLoadingMachines}
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={resetMachineFilters}
+        loadError={machineError}
+        actionMessage={actionMessage}
+      >
+        <TableSearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Tìm mã máy, tên máy, vị trí..."
+          disabled={isLoadingMachines}
+        />
 
-        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[420px]">
-          <Search className="h-4 w-4 text-zinc-400" />
-          <input
-            value={searchText}
-            onChange={event => setSearchText(event.target.value)}
-            placeholder="Tìm mã máy, tên máy, vị trí..."
-            disabled={isLoadingMachines}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-          />
-        </label>
+        <FilterCombobox
+          label="Loại/Nhóm"
+          options={machineTypes}
+          value={selectedType}
+          onChange={setSelectedType}
+          searchPlaceholder="Tìm loại/nhóm..."
+          compact
+        />
+      </TableToolbar>
 
-        {machineError && (
-          <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">
-            {machineError}
-          </p>
-        )}
-
-        {actionMessage && (
-          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 lg:mt-0">
-            {actionMessage}
-          </p>
-        )}
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[1320px] w-full text-left text-sm">
-            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-4 py-3 font-black">Mã máy</th>
-                <th className="px-4 py-3 font-black">Tên máy</th>
-                <th className="px-4 py-3 font-black">Hình ảnh</th>
-                <th className="px-4 py-3 font-black">Loại/Nhóm</th>
-                <th className="px-4 py-3 text-right font-black">Định lượng</th>
-                <th className="px-4 py-3 font-black">Tỷ lệ trộn</th>
-                <th className="px-4 py-3 font-black">Chi nhánh</th>
-                <th className="px-4 py-3 font-black">Vị trí</th>
-                <th className="px-4 py-3 font-black">Trạng thái</th>
-                <th className="px-4 py-3 font-black">Ghi chú</th>
-                <th className="px-4 py-3 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredMachines.map(machine => (
-                <tr key={machine.id} className="transition hover:bg-red-50/40">
+      <TableShell minWidthClassName="min-w-[1320px]">
+        <TableHead>
+          <TableHeadCell>Mã máy</TableHeadCell>
+          <TableHeadCell>Tên máy</TableHeadCell>
+          <TableHeadCell>Hình ảnh</TableHeadCell>
+          <TableHeadCell>Loại/Nhóm</TableHeadCell>
+          <TableHeadCell className="text-right">Định lượng</TableHeadCell>
+          <TableHeadCell>Tỷ lệ trộn</TableHeadCell>
+          <TableHeadCell>Chi nhánh</TableHeadCell>
+          <TableHeadCell>Vị trí</TableHeadCell>
+          <TableHeadCell>Trạng thái</TableHeadCell>
+          <TableHeadCell>Ghi chú</TableHeadCell>
+          <TableHeadCell align="center">Thao tác</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {paginatedMachines.map(machine => (
+            <React.Fragment key={machine.id}>
+            <TableRow>
                   <td className="px-4 py-3 font-black text-zinc-950">{machine.code || '-'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 font-black text-zinc-950">
@@ -992,9 +1009,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-4 py-3 font-semibold text-zinc-600">{machine.branch}</td>
                   <td className="px-4 py-3 font-semibold text-zinc-600">{machine.location}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2.5 py-1 text-xs font-black text-[#ef1b2d]">
-                      {machine.status}
-                    </span>
+                    <StatusBadge label={machine.status} color={machineStatusColor(machine.status)} />
                   </td>
                   <td className="px-4 py-3 font-semibold text-zinc-500">{machine.note || '-'}</td>
                   <td className="px-4 py-3">
@@ -1030,20 +1045,26 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                       </button>
                     </div>
                   </td>
-                </tr>
-              ))}
+            </TableRow>
+            </React.Fragment>
+          ))}
 
-              {!isLoadingMachines && filteredMachines.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center font-bold text-zinc-500">
-                    Bảng danh_sach_may chưa có dữ liệu hoặc không có máy phù hợp bộ lọc.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+          {!isLoadingMachines && filteredMachines.length === 0 && (
+            <TableEmptyRow colSpan={11}>
+              Bảng danh_sach_may chưa có dữ liệu hoặc không có máy phù hợp bộ lọc.
+            </TableEmptyRow>
+          )}
+        </TableBody>
+      </TableShell>
+
+      <TablePagination
+        totalRecords={filteredMachines.length}
+        currentPage={currentPage}
+        totalPages={totalMachinePages}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+      />
 
       {viewingMachine ? (
         <div
@@ -1088,19 +1109,17 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                   Máy này chưa thiết lập định mức tỉ lệ trộn.
                 </p>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-zinc-200">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-                      <tr>
-                        <th className="px-3 py-2.5 font-black">STT</th>
-                        <th className="px-3 py-2.5 font-black">Mã NVL</th>
-                        <th className="px-3 py-2.5 font-black">Tên NVL</th>
-                        <th className="px-3 py-2.5 text-right font-black">Tỉ lệ (%)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {viewingMachine.mixingRatios.map((item, index) => (
-                        <tr key={`${item.materialCode}-${index}`} className="bg-white hover:bg-amber-50/50">
+                <TableShell minWidthClassName="min-w-full" maxHeightClassName="max-h-[50vh]">
+                  <TableHead>
+                    <TableHeadCell>STT</TableHeadCell>
+                    <TableHeadCell>Mã NVL</TableHeadCell>
+                    <TableHeadCell>Tên NVL</TableHeadCell>
+                    <TableHeadCell className="text-right">Tỉ lệ (%)</TableHeadCell>
+                  </TableHead>
+                  <TableBody>
+                    {viewingMachine.mixingRatios.map((item, index) => (
+                      <React.Fragment key={`${item.materialCode}-${index}`}>
+                      <TableRow>
                           <td className="px-3 py-2.5 font-mono font-bold text-zinc-500">{index + 1}</td>
                           <td className="px-3 py-2.5 font-mono font-black text-zinc-900">
                             {item.materialCode || '—'}
@@ -1111,10 +1130,11 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                           <td className="px-3 py-2.5 text-right font-mono font-black text-amber-800">
                             {formatMachineDinhLuong(item.percent)}%
                           </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="border-t-2 border-zinc-200 bg-amber-50 text-sm font-black">
+                      </TableRow>
+                      </React.Fragment>
+                    ))}
+                  </TableBody>
+                  <tfoot className="border-t-2 border-zinc-200 bg-amber-50 text-sm font-black">
                       <tr>
                         <td colSpan={3} className="px-3 py-3 text-right uppercase tracking-wider text-zinc-600">
                           Tổng tỉ lệ
@@ -1129,9 +1149,8 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
                           {formatNumber(viewingMixingTotal, 2)}%
                         </td>
                       </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                  </tfoot>
+                </TableShell>
               )}
             </div>
 

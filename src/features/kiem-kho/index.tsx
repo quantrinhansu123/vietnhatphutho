@@ -4,6 +4,18 @@ import { ClipboardList, Loader2, Plus, Save, ScanBarcode, Trash2, X } from 'luci
 import { BackButton } from '../../components/layout/NavButtons';
 import ProductQrScanner from '../../components/ProductQrScanner';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../../lib/appToast';
+import {
+  MultiSelectFilter,
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow
+} from '../../components/shared/table';
 
 type CatalogProduct = {
   code: string;
@@ -160,6 +172,12 @@ export function KiemKhoPanel({
   const [showManualModal, setShowManualModal] = useState(false);
   const manualInputRef = useRef<HTMLInputElement>(null);
   const manualAutoAddTimerRef = useRef<number | null>(null);
+
+  // Bảng "Danh sách mã SP" (đang nhập trong phiên hiện tại)
+  const [lineSearchText, setLineSearchText] = useState('');
+  const [lineTypeFilter, setLineTypeFilter] = useState<string[]>([]);
+  const [linePage, setLinePage] = useState(1);
+  const [linePageSize, setLinePageSize] = useState(10);
 
   const linesRef = useRef(lines);
   useEffect(() => {
@@ -387,8 +405,44 @@ export function KiemKhoPanel({
 
   const lineCountLabel = useMemo(() => `${lines.length} mã SP`, [lines.length]);
 
+  const lineTypeOptions = useMemo(() => {
+    const values = lines.map(line => line.loaiSp).filter((value): value is string => Boolean(value));
+    return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
+  }, [lines]);
+
+  const normalizedLineSearch = normalizeKey(lineSearchText);
+  const filteredLines = useMemo(() => {
+    return lines.filter(line => {
+      const matchesType = lineTypeFilter.length === 0 || lineTypeFilter.includes(line.loaiSp);
+      const matchesSearch =
+        !normalizedLineSearch ||
+        normalizeKey(`${line.maNvl} ${line.maSp} ${line.tenSp} ${line.loaiSp}`).includes(normalizedLineSearch);
+      return matchesType && matchesSearch;
+    });
+  }, [lines, lineTypeFilter, normalizedLineSearch]);
+
+  const lineTotalPages = Math.max(1, Math.ceil(filteredLines.length / linePageSize));
+  const paginatedLines = useMemo(() => {
+    const startIndex = (linePage - 1) * linePageSize;
+    return filteredLines.slice(startIndex, startIndex + linePageSize);
+  }, [filteredLines, linePage, linePageSize]);
+
+  useEffect(() => {
+    setLinePage(1);
+  }, [normalizedLineSearch, lineTypeFilter, linePageSize]);
+
+  useEffect(() => {
+    if (linePage > lineTotalPages) setLinePage(lineTotalPages);
+  }, [linePage, lineTotalPages]);
+
+  const hasActiveLineFilters = Boolean(lineSearchText) || lineTypeFilter.length > 0;
+  const resetLineFilters = () => {
+    setLineSearchText('');
+    setLineTypeFilter([]);
+  };
+
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-3 py-4 sm:px-4">
+    <div className="mx-auto w-full max-w-none space-y-4 px-3 py-4 sm:px-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <BackButton onClick={onBack} />
@@ -489,40 +543,55 @@ export function KiemKhoPanel({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-left text-xs">
-            <thead className="bg-zinc-50 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2.5">STT</th>
-                <th className="px-3 py-2.5">Mã NVL</th>
-                <th className="px-3 py-2.5">Mã quét</th>
-                <th className="px-3 py-2.5">Tên SP</th>
-                <th className="px-3 py-2.5">Loại SP</th>
-                <th className="px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {lines.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-sm font-semibold text-zinc-500">
-                    Chưa có mã. Bấm <span className="text-[#ef1b2d]">Thêm</span> để nhập, hoặc{' '}
-                    <span className="text-[#ef1b2d]">Quét máy</span>.
-                  </td>
-                </tr>
-              ) : (
-                lines.map((line, index) => (
-                  <tr
-                    key={line.key}
-                    className={`border-t border-zinc-100 ${
-                      line.key === highlightKey ? 'bg-emerald-50/70' : 'hover:bg-zinc-50/70'
-                    }`}
-                  >
-                    <td className="px-3 py-2 font-bold text-zinc-500">{index + 1}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-zinc-800">{line.maNvl || '—'}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-zinc-900">{line.maSp}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{line.tenSp || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-600">{line.loaiSp || '—'}</td>
-                    <td className="px-3 py-2 text-right">
+        {lines.length > 0 ? (
+          <div className="border-b border-zinc-100 px-3 py-2.5 sm:px-4">
+            <TableToolbar
+              hasActiveFilters={hasActiveLineFilters}
+              onResetFilters={resetLineFilters}
+            >
+              <TableSearchInput
+                value={lineSearchText}
+                onChange={setLineSearchText}
+                placeholder="Tìm mã NVL, mã quét, tên SP..."
+              />
+              {lineTypeOptions.length > 0 && (
+                <MultiSelectFilter
+                  label="Loại SP"
+                  allLabel="Tất cả loại SP"
+                  searchPlaceholder="Tìm loại SP..."
+                  emptyLabel="Không tìm thấy loại SP"
+                  options={lineTypeOptions}
+                  values={lineTypeFilter}
+                  onChange={setLineTypeFilter}
+                />
+              )}
+            </TableToolbar>
+          </div>
+        ) : null}
+
+        <TableShell minWidthClassName="min-w-[720px]" maxHeightClassName="max-h-[420px]">
+          <TableHead>
+            <TableHeadCell>STT</TableHeadCell>
+            <TableHeadCell>Mã NVL</TableHeadCell>
+            <TableHeadCell>Mã quét</TableHeadCell>
+            <TableHeadCell>Tên SP</TableHeadCell>
+            <TableHeadCell>Loại SP</TableHeadCell>
+            <TableHeadCell align="center">Thao tác</TableHeadCell>
+          </TableHead>
+          <TableBody>
+            {paginatedLines.map((line, index) => {
+              const highlightClass = line.key === highlightKey ? 'bg-emerald-50/70' : '';
+              return (
+                <React.Fragment key={line.key}>
+                  <TableRow>
+                    <td className={`px-4 py-3 font-bold text-zinc-500 ${highlightClass}`}>
+                      {(linePage - 1) * linePageSize + index + 1}
+                    </td>
+                    <td className={`px-4 py-3 font-mono font-bold text-zinc-800 ${highlightClass}`}>{line.maNvl || '—'}</td>
+                    <td className={`px-4 py-3 font-mono font-bold text-zinc-900 ${highlightClass}`}>{line.maSp}</td>
+                    <td className={`px-4 py-3 font-semibold text-zinc-700 ${highlightClass}`}>{line.tenSp || '—'}</td>
+                    <td className={`px-4 py-3 font-semibold text-zinc-600 ${highlightClass}`}>{line.loaiSp || '—'}</td>
+                    <td className={`px-4 py-3 text-center ${highlightClass}`}>
                       <button
                         type="button"
                         onClick={() => removeLine(line.key)}
@@ -532,12 +601,36 @@ export function KiemKhoPanel({
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                  </TableRow>
+                </React.Fragment>
+              );
+            })}
+
+            {filteredLines.length === 0 && (
+              <TableEmptyRow colSpan={6}>
+                {lines.length === 0 ? (
+                  <>
+                    Chưa có mã. Bấm <span className="text-[#ef1b2d]">Thêm</span> để nhập, hoặc{' '}
+                    <span className="text-[#ef1b2d]">Quét máy</span>.
+                  </>
+                ) : (
+                  'Không có mã nào phù hợp bộ lọc.'
+                )}
+              </TableEmptyRow>
+            )}
+          </TableBody>
+        </TableShell>
+
+        {filteredLines.length > 0 ? (
+          <TablePagination
+            totalRecords={filteredLines.length}
+            currentPage={linePage}
+            totalPages={lineTotalPages}
+            pageSize={linePageSize}
+            onPageChange={setLinePage}
+            onPageSizeChange={setLinePageSize}
+          />
+        ) : null}
       </section>
 
       {error ? (
@@ -563,57 +656,54 @@ export function KiemKhoPanel({
             {loadingRecent ? 'Đang tải…' : 'Tải lại'}
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-left text-xs">
-            <thead className="bg-zinc-50 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2.5">Thời điểm</th>
-                <th className="px-3 py-2.5">Kho</th>
-                <th className="px-3 py-2.5">Đợt</th>
-                <th className="px-3 py-2.5">Mã NVL</th>
-                <th className="px-3 py-2.5">Mã quét</th>
-                <th className="px-3 py-2.5">Tên SP</th>
-                <th className="px-3 py-2.5">Loại</th>
-                <th className="px-3 py-2.5">Người kiểm</th>
-                <th className="px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {recent.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-sm font-semibold text-zinc-500">
-                    Chưa có dữ liệu kiểm kho.
+
+        <TableShell minWidthClassName="min-w-[1080px]" maxHeightClassName="max-h-[480px]">
+          <TableHead>
+            <TableHeadCell>Thời điểm</TableHeadCell>
+            <TableHeadCell>Kho</TableHeadCell>
+            <TableHeadCell>Đợt</TableHeadCell>
+            <TableHeadCell>Mã NVL</TableHeadCell>
+            <TableHeadCell>Mã quét</TableHeadCell>
+            <TableHeadCell>Tên SP</TableHeadCell>
+            <TableHeadCell>Loại</TableHeadCell>
+            <TableHeadCell>Người kiểm</TableHeadCell>
+            <TableHeadCell align="center">Thao tác</TableHeadCell>
+          </TableHead>
+          <TableBody>
+            {recent.map(row => (
+              <React.Fragment key={String(row.id)}>
+                <TableRow>
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">
+                    {formatDateTime(row.ngay_gio_kiem_kho || row.created_at)}
                   </td>
-                </tr>
-              ) : (
-                recent.map(row => (
-                  <tr key={String(row.id)} className="border-t border-zinc-100 hover:bg-zinc-50/70">
-                    <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-700">
-                      {formatDateTime(row.ngay_gio_kiem_kho || row.created_at)}
-                    </td>
-                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.ten_kho || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-800">{row.dot_kiem_kho || '—'}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-zinc-800">{row.ma_nvl || '—'}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-zinc-900">{row.ma_sp || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{row.ten_sp || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-600">{row.loai_sp || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{row.nguoi_kiem_kho || '—'}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteRecent(row.id)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                        title="Xóa"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                  <td className="px-4 py-3 font-semibold text-zinc-800">{row.ten_kho || '—'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-800">{row.dot_kiem_kho || '—'}</td>
+                  <td className="px-4 py-3 font-mono font-bold text-zinc-800">{row.ma_nvl || '—'}</td>
+                  <td className="px-4 py-3 font-mono font-bold text-zinc-900">{row.ma_sp || '—'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">{row.ten_sp || '—'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-600">{row.loai_sp || '—'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">{row.nguoi_kiem_kho || '—'}</td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteRecent(row.id)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      title="Xóa"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
+                </TableRow>
+              </React.Fragment>
+            ))}
+
+            {recent.length === 0 && (
+              <TableEmptyRow colSpan={9}>
+                {loadingRecent ? 'Đang tải dữ liệu kiểm kho...' : 'Chưa có dữ liệu kiểm kho.'}
+              </TableEmptyRow>
+            )}
+          </TableBody>
+        </TableShell>
       </section>
 
       <ProductQrScanner

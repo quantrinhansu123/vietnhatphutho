@@ -32,6 +32,19 @@ import {
   uploadImage
 } from '../_shared/recordHelpers';
 import {
+  FilterCombobox,
+  StatusBadge,
+  TableBody,
+  TableEmptyRow,
+  TableHead,
+  TableHeadCell,
+  TableRow,
+  TableSearchInput,
+  TableShell,
+  TableToolbar,
+  type StatusBadgeColor
+} from '../../components/shared/table';
+import {
   CustomerPaymentsView,
   VehicleDeliveryRequestsView,
   VehicleDeliveryRouteView,
@@ -237,6 +250,15 @@ function normalizeReconciliationRows(data: unknown): DriverReconciliation[] {
     }));
 }
 
+const VEHICLE_STATUS_OPTIONS = ['Đang sử dụng', 'Bảo dưỡng', 'Tạm ngưng', 'Thanh lý'];
+
+function vehicleStatusColor(status: string): StatusBadgeColor {
+  if (status === 'Đang sử dụng') return 'emerald';
+  if (status === 'Bảo dưỡng') return 'amber';
+  if (status === 'Thanh lý') return 'rose';
+  return 'zinc';
+}
+
 function formatNumber(value: number, maximumFractionDigits = 2) {
   return new Intl.NumberFormat('vi-VN', { maximumFractionDigits }).format(value || 0);
 }
@@ -266,6 +288,8 @@ export function VehiclesPanel({
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [staff, setStaff] = useState<DriverOption[]>([]);
   const [search, setSearch] = useState('');
+  const [vehicleStatusFilter, setVehicleStatusFilter] = useState('all');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('all');
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
   const [isLoadingVehicles, setIsLoadingVehicles] = useState(true);
@@ -344,15 +368,33 @@ export function VehiclesPanel({
     void loadRows();
   }, [loadRows]);
 
+  const vehicleTypeFilterOptions = useMemo(() => {
+    const types = new Set<string>();
+    vehicles.forEach(vehicle => {
+      if (vehicle.loai_xe.trim()) types.add(vehicle.loai_xe.trim());
+    });
+    return [...types].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [vehicles]);
+
   const filteredVehicles = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return vehicles;
-    return vehicles.filter(vehicle =>
-      `${vehicle.id} ${vehicle.loai_xe} ${vehicle.bien_so_xe} ${vehicle.tai_xe_phu_trach} ${vehicle.trang_thai} ${vehicle.giay_to.map(document => document.ten_giay_to).join(' ')}`
+    return vehicles.filter(vehicle => {
+      if (vehicleStatusFilter !== 'all' && vehicle.trang_thai !== vehicleStatusFilter) return false;
+      if (vehicleTypeFilter !== 'all' && vehicle.loai_xe !== vehicleTypeFilter) return false;
+      if (!query) return true;
+      return `${vehicle.id} ${vehicle.loai_xe} ${vehicle.bien_so_xe} ${vehicle.tai_xe_phu_trach} ${vehicle.trang_thai} ${vehicle.giay_to.map(document => document.ten_giay_to).join(' ')}`
         .toLowerCase()
-        .includes(query)
-    );
-  }, [search, vehicles]);
+        .includes(query);
+    });
+  }, [search, vehicles, vehicleStatusFilter, vehicleTypeFilter]);
+
+  const hasActiveVehicleFilters = Boolean(search.trim()) || vehicleStatusFilter !== 'all' || vehicleTypeFilter !== 'all';
+
+  const resetVehicleFilters = () => {
+    setSearch('');
+    setVehicleStatusFilter('all');
+    setVehicleTypeFilter('all');
+  };
 
   const totals = useMemo(
     () =>
@@ -465,45 +507,56 @@ export function VehiclesPanel({
 
       {activeView && (activeView === 'vehicles' ? (
         <>
-          <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
-            <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 sm:max-w-md">
-              <Search className="h-4 w-4 text-slate-400" />
-              <input
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-                placeholder="Tìm biển số, loại xe, tài xế..."
-                className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
-              />
-            </label>
-            <span className="text-xs font-bold text-slate-500">{filteredVehicles.length} xe</span>
-          </section>
+          <TableToolbar
+            hasActiveFilters={hasActiveVehicleFilters}
+            onResetFilters={resetVehicleFilters}
+            isLoading={isLoadingVehicles}
+          >
+            <TableSearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Tìm biển số, loại xe, tài xế..."
+            />
+            <FilterCombobox
+              label="Trạng thái"
+              options={VEHICLE_STATUS_OPTIONS}
+              value={vehicleStatusFilter}
+              onChange={setVehicleStatusFilter}
+              compact
+            />
+            <FilterCombobox
+              label="Loại xe"
+              options={vehicleTypeFilterOptions}
+              value={vehicleTypeFilter}
+              onChange={setVehicleTypeFilter}
+              compact
+            />
+          </TableToolbar>
 
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1080px] text-left text-xs">
-                <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2.5 font-black">ID</th>
-                    <th className="px-3 py-2.5 font-black">Loại xe</th>
-                    <th className="px-3 py-2.5 font-black">BSX</th>
-                    <th className="px-3 py-2.5 font-black">Tài xế phụ trách</th>
-                    <th className="px-3 py-2.5 font-black">Giấy tờ</th>
-                    <th className="px-3 py-2.5 font-black">Trạng thái</th>
-                    <th className="px-3 py-2.5 font-black">Ghi chú</th>
-                    <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredVehicles.map(vehicle => (
-                    <tr key={vehicle.id} className="hover:bg-slate-50">
-                      <td className="px-3 py-2.5 font-mono text-slate-500">{vehicle.id}</td>
-                      <td className="px-3 py-2.5 font-bold text-slate-800">{vehicle.loai_xe || '—'}</td>
-                      <td className="px-3 py-2.5 font-mono text-sm font-black text-brand-700">{vehicle.bien_so_xe}</td>
-                      <td className="px-3 py-2.5 font-semibold text-slate-700">
+          <div className="hidden md:block">
+            <TableShell minWidthClassName="min-w-[1080px]">
+              <TableHead>
+                <TableHeadCell>ID</TableHeadCell>
+                <TableHeadCell>Loại xe</TableHeadCell>
+                <TableHeadCell>BSX</TableHeadCell>
+                <TableHeadCell>Tài xế phụ trách</TableHeadCell>
+                <TableHeadCell>Giấy tờ</TableHeadCell>
+                <TableHeadCell>Trạng thái</TableHeadCell>
+                <TableHeadCell>Ghi chú</TableHeadCell>
+                <TableHeadCell align="center">Thao tác</TableHeadCell>
+              </TableHead>
+              <TableBody>
+                {filteredVehicles.map(vehicle => (
+                  <React.Fragment key={vehicle.id}>
+                    <TableRow>
+                      <td className="px-4 py-2.5 font-mono text-xs text-zinc-500">{vehicle.id}</td>
+                      <td className="px-4 py-2.5 font-bold text-zinc-800">{vehicle.loai_xe || '—'}</td>
+                      <td className="px-4 py-2.5 font-mono text-sm font-black text-brand-700">{vehicle.bien_so_xe}</td>
+                      <td className="px-4 py-2.5 font-semibold text-zinc-700">
                         {vehicle.tai_xe_phu_trach || 'Chưa phân công'}
-                        {vehicle.ma_tai_xe && <span className="ml-1 text-[10px] text-slate-400">({vehicle.ma_tai_xe})</span>}
+                        {vehicle.ma_tai_xe && <span className="ml-1 text-[10px] text-zinc-400">({vehicle.ma_tai_xe})</span>}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-4 py-2.5">
                         {vehicle.giay_to.length > 0 ? (
                           <div className="flex max-w-[240px] flex-wrap gap-1">
                             {vehicle.giay_to.map(document => (
@@ -513,22 +566,16 @@ export function VehiclesPanel({
                             ))}
                           </div>
                         ) : (
-                          <span className="text-slate-400">—</span>
+                          <span className="text-zinc-400">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <span className={`rounded-full px-2 py-1 text-[10px] font-black ${
-                          vehicle.trang_thai === 'Đang sử dụng'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {vehicle.trang_thai}
-                        </span>
+                      <td className="px-4 py-2.5">
+                        <StatusBadge label={vehicle.trang_thai} color={vehicleStatusColor(vehicle.trang_thai)} />
                       </td>
-                      <td className="max-w-[260px] truncate px-3 py-2.5 text-slate-500" title={vehicle.ghi_chu}>
+                      <td className="max-w-[260px] truncate px-4 py-2.5 text-zinc-500" title={vehicle.ghi_chu}>
                         {vehicle.ghi_chu || '—'}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-4 py-2.5">
                         <div className="flex justify-center gap-1">
                           <IconButton label="Xem chi tiết" onClick={() => setViewingVehicle(vehicle)}>
                             <Eye className="h-3.5 w-3.5" />
@@ -541,12 +588,18 @@ export function VehiclesPanel({
                           </IconButton>
                         </div>
                       </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="divide-y divide-slate-100 md:hidden">
+                    </TableRow>
+                  </React.Fragment>
+                ))}
+                {!isLoadingVehicles && filteredVehicles.length === 0 && (
+                  <TableEmptyRow colSpan={8}>Chưa có xe phù hợp bộ lọc.</TableEmptyRow>
+                )}
+              </TableBody>
+            </TableShell>
+          </div>
+
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:hidden">
+            <div className="divide-y divide-slate-100">
               {filteredVehicles.map(vehicle => (
                 <article key={vehicle.id} className="p-3">
                   <div className="flex items-start justify-between gap-2">
@@ -609,81 +662,80 @@ export function VehiclesPanel({
             <span className="ml-auto text-xs font-bold text-slate-500">{rows.length} dòng đối chiếu</span>
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <p className="border-b border-slate-100 bg-sky-50 px-3 py-2 text-[10px] font-bold text-sky-700 md:hidden">
-              Vuốt ngang bảng để xem đầy đủ các chỉ tiêu.
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1540px] text-left text-[11px]">
-                <thead className="bg-slate-100 text-[9px] uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-2.5 py-2.5 font-black">Năm</th>
-                    <th className="px-2.5 py-2.5 font-black">Tháng</th>
-                    <th className="px-2.5 py-2.5 font-black">Tên NV</th>
-                    <th className="px-2.5 py-2.5 font-black">Loại xe đi</th>
-                    <th className="px-2.5 py-2.5 text-right font-black">Công quy đổi</th>
-                    <th className="px-2.5 py-2.5 text-right font-black">Số chuyến</th>
-                    <th className="px-2.5 py-2.5 text-right font-black">KM thực tế</th>
-                    <th className="px-2.5 py-2.5 text-right font-black">Thưởng luật</th>
-                    <th className="px-2.5 py-2.5 text-right font-black">Thưởng chuyến</th>
-                    <th className="px-2.5 py-2.5 text-right font-black">Thưởng doanh số</th>
-                    <th className="px-2.5 py-2.5 text-right font-black">Doanh số</th>
-                    <th className="px-2.5 py-2.5 text-center font-black">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {rows.map(row => (
-                    <tr key={row.id} className="hover:bg-slate-50">
-                      <td className="px-2.5 py-2.5">{row.nam}</td>
-                      <td className="px-2.5 py-2.5">Tháng {row.thang}</td>
-                      <td className="px-2.5 py-2.5 font-bold text-slate-800">
-                        {row.ten_tai_xe}
-                        {row.ma_nhan_su && <span className="ml-1 text-[9px] text-slate-400">({row.ma_nhan_su})</span>}
-                      </td>
-                      <td className="px-2.5 py-2.5 font-semibold">
-                        {row.loai_xe_di || '—'}
-                        {row.bien_so_xe && <span className="ml-1 font-mono text-brand-700">· {row.bien_so_xe}</span>}
-                      </td>
-                      <td className="px-2.5 py-2.5 text-right">{formatNumber(row.tong_cong_quy_doi)}</td>
-                      <td className="px-2.5 py-2.5 text-right">{formatNumber(row.so_chuyen_di)}</td>
-                      <td className="px-2.5 py-2.5 text-right">{formatNumber(row.tong_km_thuc_te)}</td>
-                      <td className="px-2.5 py-2.5 text-right text-violet-700">{formatMoney(row.tien_thuong_luat)}</td>
-                      <td className="px-2.5 py-2.5 text-right text-violet-700">{formatMoney(row.tien_thuong_chuyen)}</td>
-                      <td className="px-2.5 py-2.5 text-right text-violet-700">{formatMoney(row.thuong_doanh_so)}</td>
-                      <td className="px-2.5 py-2.5 text-right font-bold text-emerald-700">{formatMoney(row.doanh_so)}</td>
-                      <td className="px-2.5 py-2.5">
-                        <div className="flex justify-center gap-1">
-                          <IconButton label="Sửa" onClick={() => setRowModal({ mode: 'edit', row })}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </IconButton>
-                          <IconButton label="Xóa" danger onClick={() => void deleteRow(row)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </IconButton>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {rows.length > 0 && (
-                  <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-black text-slate-800">
-                    <tr>
-                      <td colSpan={4} className="px-2.5 py-3 text-right uppercase">Tổng</td>
-                      <td className="px-2.5 py-3 text-right">{formatNumber(totals.tong_cong_quy_doi)}</td>
-                      <td className="px-2.5 py-3 text-right">{formatNumber(totals.so_chuyen_di)}</td>
-                      <td className="px-2.5 py-3 text-right">{formatNumber(totals.tong_km_thuc_te)}</td>
-                      <td className="px-2.5 py-3 text-right">{formatMoney(totals.tien_thuong_luat)}</td>
-                      <td className="px-2.5 py-3 text-right">{formatMoney(totals.tien_thuong_chuyen)}</td>
-                      <td className="px-2.5 py-3 text-right">{formatMoney(totals.thuong_doanh_so)}</td>
-                      <td className="px-2.5 py-3 text-right text-emerald-700">{formatMoney(totals.doanh_so)}</td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-            {!isLoadingRows && rows.length === 0 && <EmptyState text={`Chưa có dữ liệu đối chiếu tháng ${month}/${year}.`} />}
-            {isLoadingRows && <LoadingState text="Đang tải bảng đối chiếu..." />}
-          </section>
+          <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-[10px] font-bold text-sky-700 md:hidden">
+            Vuốt ngang bảng để xem đầy đủ các chỉ tiêu.
+          </p>
+
+          <TableShell minWidthClassName="min-w-[1540px]">
+            <TableHead>
+              <TableHeadCell>Năm</TableHeadCell>
+              <TableHeadCell>Tháng</TableHeadCell>
+              <TableHeadCell>Tên NV</TableHeadCell>
+              <TableHeadCell>Loại xe đi</TableHeadCell>
+              <TableHeadCell align="center">Công quy đổi</TableHeadCell>
+              <TableHeadCell align="center">Số chuyến</TableHeadCell>
+              <TableHeadCell align="center">KM thực tế</TableHeadCell>
+              <TableHeadCell align="center">Thưởng luật</TableHeadCell>
+              <TableHeadCell align="center">Thưởng chuyến</TableHeadCell>
+              <TableHeadCell align="center">Thưởng doanh số</TableHeadCell>
+              <TableHeadCell align="center">Doanh số</TableHeadCell>
+              <TableHeadCell align="center">Thao tác</TableHeadCell>
+            </TableHead>
+            <TableBody>
+              {rows.map(row => (
+                <React.Fragment key={row.id}>
+                  <TableRow>
+                    <td className="px-2.5 py-2.5 text-[11px]">{row.nam}</td>
+                    <td className="px-2.5 py-2.5 text-[11px]">Tháng {row.thang}</td>
+                    <td className="px-2.5 py-2.5 text-[11px] font-bold text-zinc-800">
+                      {row.ten_tai_xe}
+                      {row.ma_nhan_su && <span className="ml-1 text-[9px] text-zinc-400">({row.ma_nhan_su})</span>}
+                    </td>
+                    <td className="px-2.5 py-2.5 text-[11px] font-semibold">
+                      {row.loai_xe_di || '—'}
+                      {row.bien_so_xe && <span className="ml-1 font-mono text-brand-700">· {row.bien_so_xe}</span>}
+                    </td>
+                    <td className="px-2.5 py-2.5 text-right text-[11px]">{formatNumber(row.tong_cong_quy_doi)}</td>
+                    <td className="px-2.5 py-2.5 text-right text-[11px]">{formatNumber(row.so_chuyen_di)}</td>
+                    <td className="px-2.5 py-2.5 text-right text-[11px]">{formatNumber(row.tong_km_thuc_te)}</td>
+                    <td className="px-2.5 py-2.5 text-right text-[11px] text-violet-700">{formatMoney(row.tien_thuong_luat)}</td>
+                    <td className="px-2.5 py-2.5 text-right text-[11px] text-violet-700">{formatMoney(row.tien_thuong_chuyen)}</td>
+                    <td className="px-2.5 py-2.5 text-right text-[11px] text-violet-700">{formatMoney(row.thuong_doanh_so)}</td>
+                    <td className="px-2.5 py-2.5 text-right text-[11px] font-bold text-emerald-700">{formatMoney(row.doanh_so)}</td>
+                    <td className="px-2.5 py-2.5">
+                      <div className="flex justify-center gap-1">
+                        <IconButton label="Sửa" onClick={() => setRowModal({ mode: 'edit', row })}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </IconButton>
+                        <IconButton label="Xóa" danger onClick={() => void deleteRow(row)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </IconButton>
+                      </div>
+                    </td>
+                  </TableRow>
+                </React.Fragment>
+              ))}
+              {!isLoadingRows && rows.length === 0 && (
+                <TableEmptyRow colSpan={12}>{`Chưa có dữ liệu đối chiếu tháng ${month}/${year}.`}</TableEmptyRow>
+              )}
+            </TableBody>
+            {rows.length > 0 && (
+              <tfoot className="border-t-2 border-zinc-200 bg-zinc-50 text-[11px] font-black text-zinc-800">
+                <tr>
+                  <td colSpan={4} className="px-2.5 py-3 text-right uppercase">Tổng</td>
+                  <td className="px-2.5 py-3 text-right">{formatNumber(totals.tong_cong_quy_doi)}</td>
+                  <td className="px-2.5 py-3 text-right">{formatNumber(totals.so_chuyen_di)}</td>
+                  <td className="px-2.5 py-3 text-right">{formatNumber(totals.tong_km_thuc_te)}</td>
+                  <td className="px-2.5 py-3 text-right">{formatMoney(totals.tien_thuong_luat)}</td>
+                  <td className="px-2.5 py-3 text-right">{formatMoney(totals.tien_thuong_chuyen)}</td>
+                  <td className="px-2.5 py-3 text-right">{formatMoney(totals.thuong_doanh_so)}</td>
+                  <td className="px-2.5 py-3 text-right text-emerald-700">{formatMoney(totals.doanh_so)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </TableShell>
+          {isLoadingRows && <LoadingState text="Đang tải bảng đối chiếu..." />}
         </>
       ) : activeView === 'delivery' ? (
         <VehicleDeliveryRequestsView vehicles={vehicles} staff={staff} />

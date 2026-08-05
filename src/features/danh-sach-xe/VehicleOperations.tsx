@@ -23,6 +23,20 @@ import {
 } from '../_shared/recordHelpers';
 import { vietNhatLogoUrl } from '../../components/layout/constants';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import {
+  FilterCombobox,
+  MultiSelectFilter,
+  TableToolbar,
+  TableSearchInput,
+  TableDateFilter,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  StatusBadge
+} from '../../components/shared/table';
 import { VietmapRoutePlanner } from './VietmapRoutePlanner';
 
 export type VehicleOption = {
@@ -1105,6 +1119,16 @@ function ProductNameCombobox({
   );
 }
 
+const DELIVERY_REQUEST_STATUS_OPTIONS = ['Chờ xuất hàng', 'Đang giao', 'Hoàn thành', 'Đã hủy'];
+
+function deliveryRequestStatusColor(status: string): 'amber' | 'sky' | 'emerald' | 'rose' | 'zinc' {
+  if (status === 'Hoàn thành') return 'emerald';
+  if (status === 'Đang giao') return 'sky';
+  if (status === 'Đã hủy') return 'rose';
+  if (status === 'Chờ xuất hàng') return 'amber';
+  return 'zinc';
+}
+
 export function VehicleDeliveryRequestsView({
   vehicles,
   staff
@@ -1118,6 +1142,8 @@ export function VehicleDeliveryRequestsView({
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<VehicleDeliveryRequest | null | undefined>(undefined);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [vehicleFilter, setVehicleFilter] = useState<string[]>([]);
 
   const loadRows = useCallback(async () => {
     setIsLoading(true);
@@ -1178,14 +1204,30 @@ export function VehicleDeliveryRequestsView({
 
   useEffect(() => { void loadRows(); }, [loadRows]);
 
+  const vehicleFilterOptions = useMemo(() => {
+    const plates = rows.map(row => row.bien_so_xe).filter((plate): plate is string => Boolean(plate));
+    return [...new Set<string>(plates)].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [rows]);
+
+  const normalizedSearch = search.trim().toLocaleLowerCase('vi');
   const filteredRows = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('vi');
-    if (!query) return rows;
-    return rows.filter(row =>
-      `${row.so_yeu_cau} ${row.dia_diem_giao} ${row.hang_hoa} ${row.bien_so_xe} ${row.ten_tai_xe} ${row.trang_thai}`
-        .toLocaleLowerCase('vi').includes(query)
-    );
-  }, [rows, search]);
+    return rows.filter(row => {
+      const matchesStatus = statusFilter === 'all' || row.trang_thai === statusFilter;
+      const matchesVehicle = vehicleFilter.length === 0 || vehicleFilter.includes(row.bien_so_xe);
+      const matchesSearch =
+        !normalizedSearch ||
+        `${row.so_yeu_cau} ${row.dia_diem_giao} ${row.hang_hoa} ${row.bien_so_xe} ${row.ten_tai_xe} ${row.trang_thai}`
+          .toLocaleLowerCase('vi').includes(normalizedSearch);
+      return matchesStatus && matchesVehicle && matchesSearch;
+    });
+  }, [rows, normalizedSearch, statusFilter, vehicleFilter]);
+
+  const hasActiveFilters = statusFilter !== 'all' || vehicleFilter.length > 0 || Boolean(search);
+  const resetFilters = () => {
+    setStatusFilter('all');
+    setVehicleFilter([]);
+    setSearch('');
+  };
 
   const deleteRow = async (row: VehicleDeliveryRequest) => {
     if (!window.confirm(`Xóa yêu cầu "${row.so_yeu_cau}"?`)) return;
@@ -1201,37 +1243,68 @@ export function VehicleDeliveryRequestsView({
     <>
       <ViewHeader title="Yêu cầu xuất hàng" subtitle="Điều phối giao hàng theo xe và lái xe" count={filteredRows.length} buttonLabel="Thêm yêu cầu" onAdd={() => setEditing(null)} />
       {error && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>}
-      <label className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:max-w-lg">
-        <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm số yêu cầu, nơi giao, hàng hóa, BSX..." className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" />
-      </label>
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] text-left text-xs">
-            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
-              <tr><th className="px-3 py-2.5">STT</th><th className="px-3 py-2.5">Số yêu cầu</th><th className="px-3 py-2.5">Ngày</th><th className="px-3 py-2.5">Khách hàng</th><th className="px-3 py-2.5">Địa điểm giao</th><th className="px-3 py-2.5">Hàng hóa</th><th className="px-3 py-2.5 text-right">Số lượng</th><th className="px-3 py-2.5">BSX</th><th className="px-3 py-2.5">Lái xe</th><th className="px-3 py-2.5">Trạng thái</th><th className="px-3 py-2.5 text-center">Thao tác</th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredRows.map(row => (
-                <tr key={row.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-2.5 font-black text-slate-500">{row.thu_tu_giao > 0 ? row.thu_tu_giao : '—'}</td>
-                  <td className="px-3 py-2.5 font-black text-brand-700">{row.so_yeu_cau}</td>
-                  <td className="px-3 py-2.5">{row.ngay_yeu_cau}</td>
-                  <td className="px-3 py-2.5 font-semibold">{row.ten_khach_hang || '—'}</td>
-                  <td className="px-3 py-2.5 font-semibold">{row.dia_diem_giao}</td>
-                  <td className="px-3 py-2.5">{row.hang_hoa}</td>
-                  <td className="px-3 py-2.5 text-right font-black">{row.so_luong} {row.don_vi}</td>
-                  <td className="px-3 py-2.5 font-mono font-black">{row.bien_so_xe || '—'}</td>
-                  <td className="px-3 py-2.5">{row.ten_tai_xe || '—'}</td>
-                  <td className="px-3 py-2.5">{row.trang_thai}</td>
-                  <td className="px-3 py-2.5"><div className="flex justify-center gap-1"><ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton><ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton></div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải yêu cầu xuất hàng...</p>}
-        {!isLoading && filteredRows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Chưa có yêu cầu xuất hàng.</p>}
-      </section>
+
+      <TableToolbar isLoading={isLoading} hasActiveFilters={hasActiveFilters} onResetFilters={resetFilters}>
+        <TableSearchInput value={search} onChange={setSearch} placeholder="Tìm số yêu cầu, nơi giao, hàng hóa, BSX..." disabled={isLoading} />
+        <FilterCombobox
+          label="Trạng thái"
+          options={DELIVERY_REQUEST_STATUS_OPTIONS}
+          value={statusFilter}
+          onChange={setStatusFilter}
+          searchPlaceholder="Tìm trạng thái..."
+          compact
+        />
+        <MultiSelectFilter
+          label="BSX"
+          allLabel="Tất cả xe"
+          searchPlaceholder="Tìm biển số xe..."
+          emptyLabel="Không tìm thấy xe"
+          options={vehicleFilterOptions}
+          values={vehicleFilter}
+          onChange={setVehicleFilter}
+        />
+      </TableToolbar>
+
+      <TableShell minWidthClassName="min-w-[1120px]">
+        <TableHead>
+          <TableHeadCell>STT</TableHeadCell>
+          <TableHeadCell>Số yêu cầu</TableHeadCell>
+          <TableHeadCell>Ngày</TableHeadCell>
+          <TableHeadCell>Khách hàng</TableHeadCell>
+          <TableHeadCell>Địa điểm giao</TableHeadCell>
+          <TableHeadCell>Hàng hóa</TableHeadCell>
+          <TableHeadCell align="center">Số lượng</TableHeadCell>
+          <TableHeadCell>BSX</TableHeadCell>
+          <TableHeadCell>Lái xe</TableHeadCell>
+          <TableHeadCell>Trạng thái</TableHeadCell>
+          <TableHeadCell align="center">Thao tác</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {filteredRows.map(row => (
+            <React.Fragment key={row.id}>
+              <TableRow>
+                <td className="px-3 py-2.5 font-black text-slate-500">{row.thu_tu_giao > 0 ? row.thu_tu_giao : '—'}</td>
+                <td className="px-3 py-2.5 font-black text-brand-700">{row.so_yeu_cau}</td>
+                <td className="px-3 py-2.5">{row.ngay_yeu_cau}</td>
+                <td className="px-3 py-2.5 font-semibold">{row.ten_khach_hang || '—'}</td>
+                <td className="px-3 py-2.5 font-semibold">{row.dia_diem_giao}</td>
+                <td className="px-3 py-2.5">{row.hang_hoa}</td>
+                <td className="px-3 py-2.5 text-right font-black">{row.so_luong} {row.don_vi}</td>
+                <td className="px-3 py-2.5 font-mono font-black">{row.bien_so_xe || '—'}</td>
+                <td className="px-3 py-2.5">{row.ten_tai_xe || '—'}</td>
+                <td className="px-3 py-2.5">
+                  <StatusBadge label={row.trang_thai} color={deliveryRequestStatusColor(row.trang_thai)} />
+                </td>
+                <td className="px-3 py-2.5"><div className="flex justify-center gap-1"><ActionButton label="Sửa" onClick={() => setEditing(row)}><Pencil className="h-3.5 w-3.5" /></ActionButton><ActionButton label="Xóa" danger onClick={() => void deleteRow(row)}><Trash2 className="h-3.5 w-3.5" /></ActionButton></div></td>
+              </TableRow>
+            </React.Fragment>
+          ))}
+          {!isLoading && filteredRows.length === 0 && (
+            <TableEmptyRow colSpan={11}>Chưa có yêu cầu xuất hàng.</TableEmptyRow>
+          )}
+        </TableBody>
+      </TableShell>
+
       {editing !== undefined && (
         <DeliveryRequestModal
           initial={editing || undefined}
@@ -1506,7 +1579,7 @@ export function VehicleExpensesView({
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1120px] text-left text-xs">
-            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
               <tr>
                 <th className="px-3 py-2.5 font-black">ID</th>
                 <th className="px-3 py-2.5 font-black">Ngày giờ</th>
@@ -1867,6 +1940,7 @@ export function VehicleLogsView({
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [editing, setEditing] = useState<VehicleLog | null | undefined>(undefined);
+  const [searchText, setSearchText] = useState('');
 
   const loadRows = useCallback(async () => {
     setIsLoading(true);
@@ -1887,8 +1961,17 @@ export function VehicleLogsView({
     void loadRows();
   }, [loadRows]);
 
+  const filteredRows = useMemo(() => {
+    const query = searchText.trim().toLocaleLowerCase('vi');
+    if (!query) return rows;
+    return rows.filter(row =>
+      `${row.id} ${row.ngay_gio} ${row.ca} ${row.bien_so_xe} ${row.nhan_vien_phu_trach}`
+        .toLocaleLowerCase('vi')
+        .includes(query)
+    );
+  }, [rows, searchText]);
   const totals = useMemo(
-    () => rows.reduce(
+    () => filteredRows.reduce(
       (sum, row) => ({
         items: sum.items + row.tong_mat_hang,
         revenue: sum.revenue + row.tong_doanh_thu,
@@ -1896,7 +1979,7 @@ export function VehicleLogsView({
       }),
       { items: 0, revenue: 0, expense: 0 }
     ),
-    [rows]
+    [filteredRows]
   );
 
   const deleteRow = async (row: VehicleLog) => {
@@ -1917,7 +2000,7 @@ export function VehicleLogsView({
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-left text-xs">
-            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
               <tr>
                 <th className="px-3 py-2.5 font-black">ID</th>
                 <th className="px-3 py-2.5 font-black">Ngày giờ</th>
@@ -1931,7 +2014,7 @@ export function VehicleLogsView({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map(row => (
+              {filteredRows.map(row => (
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-3 py-2.5 font-mono text-slate-500">{row.id}</td>
                   <td className="px-3 py-2.5 font-semibold">{formatDateTime(row.ngay_gio)}</td>
@@ -1950,7 +2033,7 @@ export function VehicleLogsView({
                 </tr>
               ))}
             </tbody>
-            {rows.length > 0 && (
+            {filteredRows.length > 0 && (
               <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-black">
                 <tr>
                   <td colSpan={5} className="px-3 py-3 text-right uppercase">Tổng</td>
@@ -1966,6 +2049,9 @@ export function VehicleLogsView({
         {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải nhật ký xe...</p>}
         {!isLoading && rows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Chưa có nhật ký xe.</p>}
       </section>
+      <TableToolbar hasActiveFilters={Boolean(searchText)} onResetFilters={() => setSearchText('')} isLoading={isLoading}>
+        <TableSearchInput value={searchText} onChange={setSearchText} placeholder="Tìm ID, ngày, ca, biển số, nhân viên..." />
+      </TableToolbar>
       {editing !== undefined && (
         <LogModal
           initial={editing || undefined}
@@ -2322,6 +2408,7 @@ export function VehicleKmLogsView({
   const [toDate, setToDate] = useState('');
   const [vehicleFilter, setVehicleFilter] = useState('');
   const [driverFilter, setDriverFilter] = useState('');
+  const [searchText, setSearchText] = useState('');
 
   const loadRows = useCallback(async () => {
     setIsLoading(true);
@@ -2349,9 +2436,13 @@ export function VehicleKmLogsView({
       if (toDate && date > toDate) return false;
       if (vehicleFilter && row.bien_so_xe !== vehicleFilter) return false;
       if (driverFilter && row.ten_lai_xe !== driverFilter) return false;
+      if (searchText.trim()) {
+        const query = searchText.trim().toLocaleLowerCase('vi');
+        if (!`${row.ten_lai_xe} ${row.bien_so_xe} ${row.loai_km} ${row.ghi_chu}`.toLocaleLowerCase('vi').includes(query)) return false;
+      }
       return true;
     });
-  }, [driverFilter, fromDate, rows, toDate, vehicleFilter]);
+  }, [driverFilter, fromDate, rows, searchText, toDate, vehicleFilter]);
 
   const totalKm = useMemo(() => filteredRows.reduce((sum, row) => sum + row.tong_km, 0), [filteredRows]);
 
@@ -2419,7 +2510,7 @@ export function VehicleKmLogsView({
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-left text-xs">
-            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
               <tr>
                 <th className="px-3 py-2.5 font-black">Lái xe</th>
                 <th className="px-3 py-2.5 font-black">BSX</th>
@@ -2478,6 +2569,9 @@ export function VehicleKmLogsView({
         {isLoading && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Đang tải nhật ký KM xe...</p>}
         {!isLoading && filteredRows.length === 0 && <p className="px-4 py-10 text-center text-sm font-bold text-slate-400">Không có nhật ký KM phù hợp bộ lọc.</p>}
       </section>
+      <TableToolbar hasActiveFilters={Boolean(searchText)} onResetFilters={() => setSearchText('')} isLoading={isLoading}>
+        <TableSearchInput value={searchText} onChange={setSearchText} placeholder="Tìm lái xe, biển số, loại KM, ghi chú..." />
+      </TableToolbar>
       {editing !== undefined && (
         <KmLogModal
           initial={editing || undefined}
@@ -2812,7 +2906,7 @@ export function CustomerPaymentsView({
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1100px] text-left text-xs">
-            <thead className="bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
               <tr>
                 <th className="px-3 py-2.5 font-black">Ngày thu</th>
                 <th className="px-3 py-2.5 font-black">Khách hàng</th>

@@ -13,6 +13,16 @@ import { summarizeStaffViewPermissions } from '../nhan-su/menuViews';
 import { buildPermissionKey, parsePermissionSettings } from './permissionKeys';
 import { RolePermissionsMatrix } from './RolePermissionsMatrix';
 import {
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  TablePagination
+} from '../../components/shared/table';
+import {
   ChevronRight,
   Clock3,
   Eye,
@@ -20,7 +30,6 @@ import {
   Pencil,
   Plus,
   Save,
-  Search,
   ShieldCheck,
   Trash2,
   UsersRound
@@ -153,6 +162,10 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [permissionCurrentPage, setPermissionCurrentPage] = useState(1);
+  const [permissionPageSize, setPermissionPageSize] = useState(10);
   const [activeSection, setActiveSection] = useState<'settings' | 'permissions' | 'role-permissions'>('settings');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [settingsError, setSettingsError] = useState('');
@@ -365,6 +378,20 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     });
   }, [normalizedSearch, selectedGroup, settings]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredSettings.length / pageSize));
+  const paginatedSettings = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredSettings.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredSettings, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch, selectedGroup, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
   const permissionSettings = useMemo(
     () =>
       parsePermissionSettings(
@@ -379,6 +406,20 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       ),
     [settings]
   );
+
+  const permissionTotalPages = Math.max(1, Math.ceil(permissionSettings.length / permissionPageSize));
+  const paginatedPermissionSettings = useMemo(() => {
+    const startIndex = (permissionCurrentPage - 1) * permissionPageSize;
+    return permissionSettings.slice(startIndex, startIndex + permissionPageSize);
+  }, [permissionCurrentPage, permissionSettings, permissionPageSize]);
+
+  useEffect(() => {
+    setPermissionCurrentPage(1);
+  }, [permissionPageSize, permissionSettings.length]);
+
+  useEffect(() => {
+    if (permissionCurrentPage > permissionTotalPages) setPermissionCurrentPage(permissionTotalPages);
+  }, [permissionCurrentPage, permissionTotalPages]);
 
   // Phòng ban = distinct phong_ban từ bảng nhan_su
   const departmentOptions = useMemo(() => {
@@ -830,16 +871,14 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           )}
         </div>
 
-        <label className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10 lg:mt-0 lg:w-[420px]">
-          <Search className="h-4 w-4 text-zinc-400" />
-          <input
+        <div className="mt-3 lg:mt-0 lg:w-[420px]">
+          <TableSearchInput
             value={searchText}
-            onChange={event => setSearchText(event.target.value)}
+            onChange={setSearchText}
             placeholder="Tìm mã, tên, giá trị cài đặt..."
             disabled={isLoadingSettings}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
           />
-        </label>
+        </div>
 
         <button
           type="button"
@@ -863,90 +902,93 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         )}
       </section>
 
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[1080px] w-full text-left text-sm">
-            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-4 py-3 font-black">Mã</th>
-                <th className="px-4 py-3 font-black">Tên cài đặt</th>
-                <th className="px-4 py-3 font-black">Loại</th>
-                <th className="px-4 py-3 font-black">Giờ bắt đầu</th>
-                <th className="px-4 py-3 font-black">Giờ kết thúc</th>
-                <th className="px-4 py-3 font-black">Nhóm</th>
-                <th className="px-4 py-3 font-black">Ghi chú</th>
-                <th className="px-4 py-3 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filteredSettings.map(setting => (
-                <tr key={setting.id} className="transition hover:bg-red-50/40">
-                  <td className="px-4 py-3 font-black text-zinc-950">{setting.code || '-'}</td>
-                  <td className="px-4 py-3 font-black text-zinc-950">{setting.name || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 text-xs font-black text-zinc-800">
-                      {setting.loaiCaiDat}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2.5 py-1 text-xs font-black text-[#ef1b2d]">
-                      {setting.startTime}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 text-xs font-black text-zinc-800">
-                      {setting.endTime}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-zinc-700">{setting.group}</td>
-                  <td className="px-4 py-3 font-semibold text-zinc-500">{setting.note || '-'}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setViewingSetting(setting)}
-                        title="Xem"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openEditForm(setting)}
-                        title="Sửa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteSetting(setting)}
-                        disabled={deletingSettingId === setting.id}
-                        title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {deletingSettingId === setting.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+      <TableShell minWidthClassName="min-w-[1080px]">
+        <TableHead>
+          <TableHeadCell>Mã</TableHeadCell>
+          <TableHeadCell>Tên cài đặt</TableHeadCell>
+          <TableHeadCell>Loại</TableHeadCell>
+          <TableHeadCell>Giờ bắt đầu</TableHeadCell>
+          <TableHeadCell>Giờ kết thúc</TableHeadCell>
+          <TableHeadCell>Nhóm</TableHeadCell>
+          <TableHeadCell>Ghi chú</TableHeadCell>
+          <TableHeadCell align="center">Thao tác</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {paginatedSettings.map(setting => (
+            <React.Fragment key={setting.id}>
+              <TableRow>
+                <td className="px-4 py-3 font-black text-zinc-950">{setting.code || '-'}</td>
+                <td className="px-4 py-3 font-black text-zinc-950">{setting.name || '-'}</td>
+                <td className="px-4 py-3">
+                  <span className="rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 text-xs font-black text-zinc-800">
+                    {setting.loaiCaiDat}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2.5 py-1 text-xs font-black text-[#ef1b2d]">
+                    {setting.startTime}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 text-xs font-black text-zinc-800">
+                    {setting.endTime}
+                  </span>
+                </td>
+                <td className="px-4 py-3 font-semibold text-zinc-700">{setting.group}</td>
+                <td className="px-4 py-3 font-semibold text-zinc-500">{setting.note || '-'}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setViewingSetting(setting)}
+                      title="Xem"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditForm(setting)}
+                      title="Sửa"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSetting(setting)}
+                      disabled={deletingSettingId === setting.id}
+                      title="Xóa"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingSettingId === setting.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </td>
+              </TableRow>
+            </React.Fragment>
+          ))}
 
-              {!isLoadingSettings && filteredSettings.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center font-bold text-zinc-500">
-                    Bảng cai_dat_thoi_gian chưa có dữ liệu hoặc không có mục phù hợp bộ lọc.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+          {!isLoadingSettings && filteredSettings.length === 0 && (
+            <TableEmptyRow colSpan={8}>
+              Bảng cai_dat_thoi_gian chưa có dữ liệu hoặc không có mục phù hợp bộ lọc.
+            </TableEmptyRow>
+          )}
+        </TableBody>
+      </TableShell>
+
+      <TablePagination
+        totalRecords={filteredSettings.length}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+      />
         </>
       ) : activeSection === 'permissions' ? (
         <>
@@ -1056,71 +1098,69 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="space-y-4">
-              <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="min-w-max w-full text-left text-sm">
-                    <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-                      <tr>
-                        <th className="whitespace-nowrap px-4 py-3 font-black">Phòng ban</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-black">Vị trí</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-black">Key</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-black">Menu đã cấp</th>
-                        <th className="whitespace-nowrap px-4 py-3 text-center font-black">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {permissionSettings.map(item => (
-                        <tr
-                          key={item.id}
-                          className={`transition ${permissionForm.id === item.id ? 'bg-red-50/70' : 'hover:bg-red-50/40'}`}
+              <TableShell minWidthClassName="min-w-max">
+                <TableHead>
+                  <TableHeadCell className="whitespace-nowrap">Phòng ban</TableHeadCell>
+                  <TableHeadCell className="whitespace-nowrap">Vị trí</TableHeadCell>
+                  <TableHeadCell className="whitespace-nowrap">Key</TableHeadCell>
+                  <TableHeadCell className="whitespace-nowrap">Menu đã cấp</TableHeadCell>
+                  <TableHeadCell className="whitespace-nowrap" align="center">Thao tác</TableHeadCell>
+                </TableHead>
+                <TableBody>
+                  {paginatedPermissionSettings.map(item => (
+                    <React.Fragment key={item.id}>
+                      <tr className={`transition ${permissionForm.id === item.id ? 'bg-red-50/70' : 'hover:bg-red-50/40'}`}>
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-900">{item.department}</td>
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">{item.position}</td>
+                        <td className="whitespace-nowrap px-4 py-3 font-black text-[#ef1b2d]">{item.permissionKey}</td>
+                        <td
+                          className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-zinc-600"
+                          title={summarizeStaffViewPermissions(item.viewPermissions)}
                         >
-                          <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-900">{item.department}</td>
-                          <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">{item.position}</td>
-                          <td className="whitespace-nowrap px-4 py-3 font-black text-[#ef1b2d]">{item.permissionKey}</td>
-                          <td
-                            className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-zinc-600"
-                            title={summarizeStaffViewPermissions(item.viewPermissions)}
-                          >
-                            {summarizeStaffViewPermissions(item.viewPermissions)}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleSelectPermission(item.id)}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-                                title="Chọn"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeletePermission(item.id)}
-                                disabled={deletingPermissionId === item.id}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-                                title="Xóa"
-                              >
-                                {deletingPermissionId === item.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
-                                )}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {!isLoadingSettings && permissionSettings.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="px-4 py-8 text-center font-bold text-zinc-500">
-                            Chưa có key phân quyền nào.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                          {summarizeStaffViewPermissions(item.viewPermissions)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectPermission(item.id)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                              title="Chọn"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePermission(item.id)}
+                              disabled={deletingPermissionId === item.id}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                              title="Xóa"
+                            >
+                              {deletingPermissionId === item.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  ))}
+                  {!isLoadingSettings && permissionSettings.length === 0 && (
+                    <TableEmptyRow colSpan={5}>Chưa có key phân quyền nào.</TableEmptyRow>
+                  )}
+                </TableBody>
+              </TableShell>
+
+              <TablePagination
+                totalRecords={permissionSettings.length}
+                currentPage={permissionCurrentPage}
+                totalPages={permissionTotalPages}
+                pageSize={permissionPageSize}
+                onPageChange={setPermissionCurrentPage}
+                onPageSizeChange={setPermissionPageSize}
+              />
             </div>
           </section>
         </>

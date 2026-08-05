@@ -11,9 +11,20 @@ import WeighingImagePreviewModal, {
   WeighingImageThumbnail,
   type WeighingPreviewImage
 } from './WeighingImagePreviewModal';
-
-const inputClass =
-  'h-9 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+import {
+  FilterCombobox,
+  TableToolbar,
+  TableSearchInput,
+  TableDateFilter,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  TablePagination,
+  usePagination
+} from './shared/table';
 
 type AcceptanceDateGroup = {
   ngay: string;
@@ -242,6 +253,7 @@ export default function AcceptanceReportListView({
   const [filterFromDate, setFilterFromDate] = useState(todayIso());
   const [filterToDate, setFilterToDate] = useState(todayIso());
   const [filterShift, setFilterShift] = useState('');
+  const [searchText, setSearchText] = useState('');
   const [reports, setReports] = useState<AcceptanceReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -254,6 +266,8 @@ export default function AcceptanceReportListView({
   const [productNameByCode, setProductNameByCode] = useState<Map<string, string>>(() => new Map());
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const [viewingReport, setViewingReport] = useState<AcceptanceReport | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const shiftOptions = useMemo<string[]>(() => {
     const shifts = reports.reduce<string[]>((result, report) => {
@@ -265,11 +279,29 @@ export default function AcceptanceReportListView({
       a.localeCompare(b, 'vi', { numeric: true })
     );
   }, [reports]);
-  const filteredReports = useMemo(
-    () => (filterShift ? reports.filter(report => report.ca?.trim() === filterShift) : reports),
-    [filterShift, reports]
-  );
+  const normalizedSearch = searchText.trim().toLowerCase();
+  const filteredReports = useMemo(() => {
+    return reports.filter(report => {
+      const matchesShift = !filterShift || report.ca?.trim() === filterShift;
+      const matchesSearch =
+        !normalizedSearch ||
+        `${report.mat_hang} ${report.ten_may} ${report.ma_may} ${report.ca} ${report.don_vi}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+      return matchesShift && matchesSearch;
+    });
+  }, [filterShift, normalizedSearch, reports]);
+  const hasActiveFilters = Boolean(filterShift) || Boolean(searchText);
+  const resetFilters = () => {
+    setFilterShift('');
+    setSearchText('');
+  };
   const dateGroups = useMemo(() => buildDateGroups(filteredReports), [filteredReports]);
+  const { paginatedItems: paginatedDateGroups, totalPages } = usePagination<AcceptanceDateGroup>(
+    dateGroups,
+    currentPage,
+    pageSize
+  );
   const allReportIds = useMemo(() => filteredReports.map(report => report.id).filter(Boolean), [filteredReports]);
   const selectedCount = selectedIds.size;
   const allSelected = allReportIds.length > 0 && selectedIds.size === allReportIds.length;
@@ -513,26 +545,24 @@ export default function AcceptanceReportListView({
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                disabled={selectedCount === 0 || bulkDeleting || isLoading}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Xóa các dòng đã chọn"
-              >
-                {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Xoá đã chọn ({selectedCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedIds(new Set())}
-                disabled={selectedCount === 0 || bulkDeleting || isLoading}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Bỏ chọn
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={selectedCount === 0 || bulkDeleting || isLoading}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Xóa các dòng đã chọn"
+            >
+              {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Xoá đã chọn ({selectedCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              disabled={selectedCount === 0 || bulkDeleting || isLoading}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Bỏ chọn
+            </button>
             <button
               type="button"
               onClick={handlePrint}
@@ -542,38 +572,28 @@ export default function AcceptanceReportListView({
               <Printer className="h-4 w-4" />
               In phiếu
             </button>
-            <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-              Ca
-              <select value={filterShift} onChange={e => setFilterShift(e.target.value)} className={inputClass}>
-                <option value="">Tất cả ca</option>
-                {shiftOptions.map(shift => (
-                  <option key={shift} value={shift}>
-                    {shift}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-              Từ ngày
-              <input
-                type="date"
-                value={filterFromDate}
-                max={filterToDate || undefined}
-                onChange={e => setFilterFromDate(e.target.value)}
-                className={inputClass}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-xs font-bold text-zinc-600">
-              Đến ngày
-              <input
-                type="date"
-                value={filterToDate}
-                min={filterFromDate || undefined}
-                onChange={e => setFilterToDate(e.target.value)}
-                className={inputClass}
-              />
-            </label>
           </div>
+        </div>
+
+        <div className="border-b border-zinc-100 bg-white px-4 py-3">
+          <TableToolbar isLoading={isLoading} hasActiveFilters={hasActiveFilters} onResetFilters={resetFilters}>
+            <TableSearchInput
+              value={searchText}
+              onChange={setSearchText}
+              placeholder="Tìm mặt hàng, tổ/máy, ca..."
+              disabled={isLoading}
+            />
+            <FilterCombobox
+              label="Ca"
+              options={shiftOptions}
+              value={filterShift || 'all'}
+              onChange={value => setFilterShift(value === 'all' ? '' : value)}
+              searchPlaceholder="Tìm ca..."
+              compact
+            />
+            <TableDateFilter label="Từ ngày" value={filterFromDate} onChange={setFilterFromDate} />
+            <TableDateFilter label="Đến ngày" value={filterToDate} onChange={setFilterToDate} />
+          </TableToolbar>
         </div>
 
         {isLoading ? (
@@ -587,7 +607,7 @@ export default function AcceptanceReportListView({
           </div>
         ) : (
           <div className="space-y-3 p-3 sm:p-4">
-            {dateGroups.map(group => {
+            {paginatedDateGroups.map(group => {
               const totalsByUnit = sumByUnit(
                 group.reports.map(report => ({
                   mat_hang: report.mat_hang,
@@ -604,34 +624,32 @@ export default function AcceptanceReportListView({
                     </div>
                     <span className="text-[11px] font-black text-emerald-800">{group.reports.length} dòng</span>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-left text-xs">
-                      <thead className="bg-zinc-50 text-[10px] uppercase tracking-wider text-zinc-500">
-                        <tr>
-                          <th className="w-10 px-3 py-2 text-center font-black">
-                            <input
-                              type="checkbox"
-                              checked={allSelected}
-                              onChange={toggleSelectAll}
-                              aria-label="Chọn tất cả"
-                              className="h-4 w-4 accent-[#ef1b2d]"
-                            />
-                          </th>
-                          <th className="w-12 px-3 py-2 text-center font-black">STT</th>
-                          <th className="px-3 py-2 font-black">Ảnh</th>
-                          <th className="px-3 py-2 font-black">Ca</th>
-                          <th className="px-3 py-2 font-black">Tổ</th>
-                          <th className="px-3 py-2 font-black">Lần</th>
-                          <th className="px-3 py-2 font-black">Giờ</th>
-                          <th className="px-3 py-2 font-black">Mặt hàng</th>
-                          <th className="px-3 py-2 font-black">ĐVT</th>
-                          <th className="px-3 py-2 text-right font-black">SL</th>
-                          <th className="px-3 py-2 text-center font-black">Thao tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {group.reports.map((report, reportIndex) => (
-                          <tr key={report.id} className="hover:bg-emerald-50/40">
+                  <TableShell minWidthClassName="min-w-full" maxHeightClassName="max-h-[520px]">
+                    <TableHead>
+                      <TableHeadCell align="center" className="w-10">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleSelectAll}
+                          aria-label="Chọn tất cả"
+                          className="h-4 w-4 accent-[#ef1b2d]"
+                        />
+                      </TableHeadCell>
+                      <TableHeadCell align="center" className="w-12">STT</TableHeadCell>
+                      <TableHeadCell>Ảnh</TableHeadCell>
+                      <TableHeadCell>Ca</TableHeadCell>
+                      <TableHeadCell>Tổ</TableHeadCell>
+                      <TableHeadCell>Lần</TableHeadCell>
+                      <TableHeadCell>Giờ</TableHeadCell>
+                      <TableHeadCell>Mặt hàng</TableHeadCell>
+                      <TableHeadCell>ĐVT</TableHeadCell>
+                      <TableHeadCell align="center">SL</TableHeadCell>
+                      <TableHeadCell align="center">Thao tác</TableHeadCell>
+                    </TableHead>
+                    <TableBody>
+                      {group.reports.map((report, reportIndex) => (
+                        <React.Fragment key={report.id}>
+                          <TableRow>
                             <td className="px-3 py-2 text-center">
                               <input
                                 type="checkbox"
@@ -669,10 +687,12 @@ export default function AcceptanceReportListView({
                               {report.so_luong === null ? '-' : formatNumber(report.so_luong, 2)}
                             </td>
                             <td className="px-3 py-2">{renderReportActions(report)}</td>
-                          </tr>
-                        ))}
-                        {totalsByUnit.map(([unit, total]) => (
-                          <tr key={unit} className="bg-zinc-50">
+                          </TableRow>
+                        </React.Fragment>
+                      ))}
+                      {totalsByUnit.map(([unit, total]) => (
+                        <React.Fragment key={unit}>
+                          <TableRow className="bg-zinc-50">
                             <td className="px-3 py-2" />
                             <td className="px-3 py-2" />
                             <td colSpan={7} className="px-3 py-2 text-right font-black text-zinc-800">
@@ -682,15 +702,28 @@ export default function AcceptanceReportListView({
                               {formatNumber(total, 2)}
                             </td>
                             <td />
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                          </TableRow>
+                        </React.Fragment>
+                      ))}
+                      {group.reports.length === 0 && (
+                        <TableEmptyRow colSpan={11}>Chưa có dữ liệu.</TableEmptyRow>
+                      )}
+                    </TableBody>
+                  </TableShell>
                 </div>
               );
             })}
           </div>
+        )}
+        {!isLoading && dateGroups.length > 0 && (
+          <TablePagination
+            totalRecords={dateGroups.length}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
         )}
       </section>
 

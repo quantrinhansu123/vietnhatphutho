@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Pencil, Plus, Save, Search, Trash2, Truck } from 'lucide-react';
+import { Loader2, Pencil, Plus, Save, Trash2, Truck } from 'lucide-react';
 import { formatNumber } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
@@ -12,6 +12,20 @@ import {
   type OrderProductOption
 } from '../_shared/orderHelpers';
 import { showAppToast, showSaveFailure, readApiErrorMessage } from '../../lib/appToast';
+import {
+  FilterCombobox,
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  StatusBadge,
+  type StatusBadgeColor
+} from '../../components/shared/table';
 
 export type ShippingOrderLine = {
   id: string;
@@ -177,11 +191,11 @@ function emptyForm(code = '', staffName = ''): Omit<ShippingOrder, 'id'> {
   };
 }
 
-function statusClass(status: string) {
-  if (status === 'Đã giao') return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
-  if (status === 'Đang giao') return 'bg-sky-50 text-sky-700 ring-sky-200';
-  if (status === 'Hủy') return 'bg-rose-50 text-rose-700 ring-rose-200';
-  return 'bg-amber-50 text-amber-800 ring-amber-200';
+function statusBadgeColor(status: string): StatusBadgeColor {
+  if (status === 'Đã giao') return 'emerald';
+  if (status === 'Đang giao') return 'sky';
+  if (status === 'Hủy') return 'rose';
+  return 'amber';
 }
 
 export function ShippingOrdersPanel({
@@ -195,6 +209,9 @@ export function ShippingOrdersPanel({
   const [customers, setCustomers] = useState<CustomerDetail[]>([]);
   const [products, setProducts] = useState<OrderProductOption[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -231,15 +248,39 @@ export function ShippingOrdersPanel({
     void loadAll();
   }, []);
 
+  const hasActiveFilters = selectedStatus !== 'all' || Boolean(searchText);
+
+  const resetFilters = () => {
+    setSelectedStatus('all');
+    setSearchText('');
+  };
+
   const filteredOrders = useMemo(() => {
     const q = searchText.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter(order =>
-      `${order.ma_lenh} ${order.ten_khach_hang} ${order.ma_khach_hang} ${order.dia_chi_giao} ${order.trang_thai}`
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [orders, searchText]);
+    return orders.filter(order => {
+      const matchesStatus = selectedStatus === 'all' || order.trang_thai === selectedStatus;
+      const matchesSearch =
+        !q ||
+        `${order.ma_lenh} ${order.ten_khach_hang} ${order.ma_khach_hang} ${order.dia_chi_giao} ${order.trang_thai}`
+          .toLowerCase()
+          .includes(q);
+      return matchesStatus && matchesSearch;
+    });
+  }, [orders, searchText, selectedStatus]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredOrders.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredOrders, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText, selectedStatus, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -407,104 +448,105 @@ export function ShippingOrdersPanel({
         </button>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <label className="relative block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            value={searchText}
-            onChange={event => setSearchText(event.target.value)}
-            className={`${orderFieldClass} pl-9`}
-            placeholder="Tìm mã lệnh, khách hàng, địa chỉ..."
+      <TableToolbar
+        isLoading={isLoading}
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={resetFilters}
+        loadError={error}
+      >
+        <TableSearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Tìm mã lệnh, khách hàng, địa chỉ..."
+          disabled={isLoading}
+        />
+
+        <FilterCombobox
+          label="Trạng thái"
+          options={[...STATUS_OPTIONS]}
+          value={selectedStatus}
+          onChange={setSelectedStatus}
+          compact
+          searchable={false}
+          dropdownWidth="w-full"
+        />
+      </TableToolbar>
+
+      <TableShell
+        minWidthClassName="min-w-[920px]"
+        footer={(
+          <TablePagination
+            totalRecords={filteredOrders.length}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
           />
-        </label>
-      </section>
-
-      {error ? (
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
-          {error}
-        </p>
-      ) : null}
-
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[920px] w-full text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-3 py-2.5 font-black">Mã lệnh</th>
-                <th className="px-3 py-2.5 font-black">Ngày xuất</th>
-                <th className="px-3 py-2.5 font-black">Khách hàng</th>
-                <th className="px-3 py-2.5 font-black">Địa chỉ giao</th>
-                <th className="px-3 py-2.5 text-right font-black">SL SP</th>
-                <th className="px-3 py-2.5 font-black">Trạng thái</th>
-                <th className="px-3 py-2.5 text-center font-black">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-slate-400">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải lệnh xuất hàng...
+        )}
+      >
+        <TableHead>
+          <TableHeadCell>Mã lệnh</TableHeadCell>
+          <TableHeadCell>Ngày xuất</TableHeadCell>
+          <TableHeadCell>Khách hàng</TableHeadCell>
+          <TableHeadCell>Địa chỉ giao</TableHeadCell>
+          <TableHeadCell align="center">SL SP</TableHeadCell>
+          <TableHeadCell>Trạng thái</TableHeadCell>
+          <TableHeadCell align="center">Thao tác</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {paginatedOrders.map(order => {
+            const qty = order.chi_tiet.reduce((sum, line) => sum + (line.so_luong || 0), 0);
+            return (
+              <React.Fragment key={order.id || order.ma_lenh}>
+                <TableRow>
+                  <td className="px-4 py-3 font-mono font-black text-sky-800">{order.ma_lenh || '—'}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">
+                    {formatDateVi(order.ngay_xuat)}
                   </td>
-                </tr>
-              ) : filteredOrders.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center font-bold text-slate-400">
-                    Chưa có lệnh xuất hàng.
+                  <td className="px-4 py-3">
+                    <div className="font-bold text-zinc-900">{order.ten_khach_hang || '—'}</div>
+                    {order.ma_khach_hang ? (
+                      <div className="text-[11px] font-semibold text-zinc-500">{order.ma_khach_hang}</div>
+                    ) : null}
                   </td>
-                </tr>
-              ) : (
-                filteredOrders.map(order => {
-                  const qty = order.chi_tiet.reduce((sum, line) => sum + (line.so_luong || 0), 0);
-                  return (
-                    <tr key={order.id || order.ma_lenh} className="hover:bg-slate-50/80">
-                      <td className="px-3 py-2.5 font-mono font-black text-sky-800">{order.ma_lenh || '—'}</td>
-                      <td className="px-3 py-2.5 font-semibold text-slate-700">{formatDateVi(order.ngay_xuat)}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="font-bold text-slate-900">{order.ten_khach_hang || '—'}</div>
-                        {order.ma_khach_hang ? (
-                          <div className="text-[11px] font-semibold text-slate-500">{order.ma_khach_hang}</div>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2.5 text-slate-700">{order.dia_chi_giao || '—'}</td>
-                      <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-800">
-                        {formatNumber(qty, 2)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-extrabold ring-1 ${statusClass(order.trang_thai)}`}
-                        >
-                          {order.trang_thai || 'Chờ xuất'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openEdit(order)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-                            title="Sửa"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(order)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                            title="Xóa"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                  <td className="px-4 py-3 text-zinc-700">{order.dia_chi_giao || '—'}</td>
+                  <td className="px-4 py-3 text-center font-mono font-bold text-zinc-800">
+                    {formatNumber(qty, 2)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge label={order.trang_thai || 'Chờ xuất'} color={statusBadgeColor(order.trang_thai)} />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <div className="inline-flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(order)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                        title="Sửa"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(order)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                        title="Xóa"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </TableRow>
+              </React.Fragment>
+            );
+          })}
+
+          {!isLoading && filteredOrders.length === 0 && (
+            <TableEmptyRow colSpan={7}>Chưa có lệnh xuất hàng.</TableEmptyRow>
+          )}
+        </TableBody>
+      </TableShell>
 
       {formOpen ? (
         <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-4">

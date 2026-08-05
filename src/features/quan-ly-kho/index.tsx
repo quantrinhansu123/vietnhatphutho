@@ -3,6 +3,17 @@ import { createPortal } from 'react-dom';
 import { Loader2, Pencil, Plus, Save, Trash2, Warehouse, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../../lib/appToast';
+import {
+  TablePagination,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow
+} from '../../components/shared/table';
 
 export type QuanLyKhoRecord = {
   id: number | string;
@@ -48,6 +59,8 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
   const [editingId, setEditingId] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -95,6 +108,20 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
         .some(v => v.includes(q))
     );
   }, [records, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filtered.slice(startIndex, startIndex + pageSize);
+  }, [filtered, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const openCreateForm = () => {
     setForm(emptyForm());
@@ -183,89 +210,92 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2.5 sm:px-4">
-          <h2 className="text-sm font-black text-zinc-900">Danh sách kho</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Tìm tên kho / vị trí / phụ trách"
-              className="h-9 w-full max-w-xs rounded-lg border border-zinc-200 px-3 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] sm:w-64"
-            />
-            <button
-              type="button"
-              onClick={openCreateForm}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Thêm
-            </button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-left text-xs">
-            <thead className="bg-zinc-50 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2.5">ID</th>
-                <th className="px-3 py-2.5">Tên kho</th>
-                <th className="px-3 py-2.5">Vị trí</th>
-                <th className="px-3 py-2.5">Tên vị trí</th>
-                <th className="px-3 py-2.5">Người phụ trách</th>
-                <th className="px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-sm font-semibold text-zinc-500">
-                    <span className="inline-flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Đang tải…
-                    </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-black text-zinc-900">Danh sách kho</h2>
+        <button
+          type="button"
+          onClick={openCreateForm}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Thêm
+        </button>
+      </div>
+
+      <TableToolbar isLoading={loading} loadError={error && !showForm ? error : undefined}>
+        <TableSearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Tìm tên kho / vị trí / phụ trách"
+          disabled={loading}
+        />
+      </TableToolbar>
+
+      <TableShell minWidthClassName="min-w-[720px]">
+        <TableHead>
+          <TableHeadCell>ID</TableHeadCell>
+          <TableHeadCell>Tên kho</TableHeadCell>
+          <TableHeadCell>Vị trí</TableHeadCell>
+          <TableHeadCell>Tên vị trí</TableHeadCell>
+          <TableHeadCell>Người phụ trách</TableHeadCell>
+          <TableHeadCell align="center">Thao tác</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {loading ? (
+            <TableEmptyRow colSpan={6}>
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Đang tải…
+              </span>
+            </TableEmptyRow>
+          ) : paginated.length === 0 ? (
+            <TableEmptyRow colSpan={6}>
+              Chưa có kho nào. Bấm <span className="text-[#ef1b2d]">Thêm</span> để tạo.
+            </TableEmptyRow>
+          ) : (
+            paginated.map(row => (
+              <React.Fragment key={String(row.id)}>
+                <TableRow>
+                  <td className="px-4 py-3 font-mono font-semibold text-zinc-500">{row.id}</td>
+                  <td className="px-4 py-3 font-bold text-zinc-900">{row.ten_kho || '—'}</td>
+                  <td className="px-4 py-3 text-zinc-700">{row.vi_tri || '—'}</td>
+                  <td className="px-4 py-3 text-zinc-700">{row.ten_vi_tri || '—'}</td>
+                  <td className="px-4 py-3 text-zinc-700">{row.nguoi_phu_trach || '—'}</td>
+                  <td className="px-4 py-3 text-center">
+                    <div className="inline-flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(row)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-[#ef1b2d]/40 hover:bg-red-50 hover:text-[#ef1b2d]"
+                        title="Sửa"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(row.id)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                        title="Xóa"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
-                </tr>
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-sm font-semibold text-zinc-500">
-                    Chưa có kho nào. Bấm <span className="text-[#ef1b2d]">Thêm</span> để tạo.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map(row => (
-                  <tr key={String(row.id)} className="border-t border-zinc-100 hover:bg-zinc-50/70">
-                    <td className="px-3 py-2 font-mono font-semibold text-zinc-500">{row.id}</td>
-                    <td className="px-3 py-2 font-bold text-zinc-900">{row.ten_kho || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{row.vi_tri || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{row.ten_vi_tri || '—'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{row.nguoi_phu_trach || '—'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(row)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-[#ef1b2d]/40 hover:bg-red-50 hover:text-[#ef1b2d]"
-                          title="Sửa"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDelete(row.id)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                          title="Xóa"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                </TableRow>
+              </React.Fragment>
+            ))
+          )}
+        </TableBody>
+      </TableShell>
+
+      <TablePagination
+        totalRecords={filtered.length}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+      />
 
       {showForm
         ? createPortal(

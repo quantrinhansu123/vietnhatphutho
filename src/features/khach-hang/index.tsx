@@ -1,10 +1,22 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Download, Eye, FileUp, Loader2, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { Download, Eye, FileUp, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { pickText } from '../_shared/recordHelpers';
 import { normalizeHrBranches } from '../_shared/hr';
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { showAppToast, showSaveFailure, readApiErrorMessage } from '../../lib/appToast';
 import { downloadCustomerExcel, parseCustomerExcel } from '../../utils/customerExcel';
+import {
+  FilterCombobox,
+  TableToolbar,
+  TableSearchInput,
+  TableShell,
+  TableHead,
+  TableHeadCell,
+  TableBody,
+  TableRow,
+  TableEmptyRow,
+  TablePagination
+} from '../../components/shared/table';
 
 export interface StaffOption {
   name: string;
@@ -189,6 +201,10 @@ function emptyForm(code = ''): CustomerForm {
 export function CustomersPanel({ onBack }: { onBack: () => void }) {
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [selectedCustomerType, setSelectedCustomerType] = useState('all');
+  const [selectedManagingUnit, setSelectedManagingUnit] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -366,14 +382,55 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
     };
   }, [form.dia_chi, form.dia_chi_moi, formOpen]);
 
-  const normalizedSearch = searchText.trim().toLowerCase();
-  const filteredCustomers = useMemo(
+  const managingUnitFilters = useMemo(
     () =>
-      customers.filter(customer =>
-        !normalizedSearch || `${customer.code} ${customer.name}`.toLowerCase().includes(normalizedSearch)
-      ),
-    [customers, normalizedSearch]
+      [...new Set<string>(customers.map(customer => customer.managingUnit.trim()).filter(Boolean))]
+        .sort((left, right) => left.localeCompare(right, 'vi')),
+    [customers]
   );
+
+  const hasActiveFilters =
+    Boolean(searchText) ||
+    selectedCustomerType !== 'all' ||
+    selectedManagingUnit !== 'all';
+
+  const resetFilters = () => {
+    setSearchText('');
+    setSelectedCustomerType('all');
+    setSelectedManagingUnit('all');
+  };
+
+  const normalizedSearch = searchText.trim().toLowerCase();
+  const filteredCustomers = useMemo(() => {
+    return customers
+      .filter(customer => {
+        const matchesSearch =
+          !normalizedSearch ||
+          `${customer.code} ${customer.name} ${customer.address} ${customer.newAddress} ${customer.taxCode} ${customer.phone} ${customer.mobilePhoneNlh} ${customer.managingUnit}`
+            .toLowerCase()
+            .includes(normalizedSearch);
+        const matchesCustomerType =
+          selectedCustomerType === 'all' ||
+          (selectedCustomerType === 'internal' ? customer.isInternal : !customer.isInternal);
+        const matchesManagingUnit =
+          selectedManagingUnit === 'all' || customer.managingUnit === selectedManagingUnit;
+        return matchesSearch && matchesCustomerType && matchesManagingUnit;
+      });
+  }, [customers, normalizedSearch, selectedCustomerType, selectedManagingUnit]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / pageSize));
+  const paginatedCustomers = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredCustomers.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredCustomers, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch, selectedCustomerType, selectedManagingUnit, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -601,19 +658,9 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-4">
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:gap-3">
-        <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
-          <Search className="h-4 w-4 text-zinc-400" />
-          <input
-            value={searchText}
-            onChange={event => setSearchText(event.target.value)}
-            placeholder="Tìm mã hoặc tên khách hàng..."
-            disabled={isLoading}
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
-          />
-        </label>
-        <div className="mt-3 flex flex-wrap gap-2 lg:mt-0">
+    <div className="mx-auto w-full max-w-none space-y-4">
+      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm lg:flex lg:items-center lg:justify-end lg:gap-3">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => downloadCustomerExcel(customers)}
@@ -664,108 +711,148 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
         </section>
       )}
 
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
-              <tr>
-                <th className="px-4 py-3 font-black">STT</th>
-                <th className="px-4 py-3 font-black">Mã khách hàng</th>
-                <th className="px-4 py-3 font-black">Tên khách hàng</th>
-                <th className="px-4 py-3 font-black">Địa chỉ cũ</th>
-                <th className="px-4 py-3 font-black">Địa chỉ mới</th>
-                <th className="px-4 py-3 font-black">Công nợ</th>
-                <th className="px-4 py-3 font-black">Mã số thuế/CCCD chủ hộ</th>
-                <th className="px-4 py-3 font-black">Điện thoại</th>
-                <th className="px-4 py-3 font-black">ĐT di động NLH</th>
-                <th className="px-4 py-3 font-black">Là Đối tượng nội bộ</th>
-                <th className="px-4 py-3 font-black">Đơn vị Quản lý</th>
-                <th className="px-4 py-3 font-black text-left">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={12} className="px-4 py-10 text-center font-bold text-zinc-400">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Đang tải khách hàng...
+      <TableToolbar
+        isLoading={isLoading}
+        hasActiveFilters={hasActiveFilters}
+        onResetFilters={resetFilters}
+      >
+        <TableSearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Tìm mã, tên, địa chỉ, MST, điện thoại..."
+          disabled={isLoading}
+        />
+
+        <FilterCombobox
+          label="Đối tượng"
+          options={['internal', 'external']}
+          value={selectedCustomerType}
+          onChange={setSelectedCustomerType}
+          searchPlaceholder="Tìm loại đối tượng..."
+          compact
+          searchable={false}
+          formatOption={value => (value === 'internal' ? 'Nội bộ' : 'Khách hàng')}
+        />
+
+        <FilterCombobox
+          label="Đơn vị quản lý"
+          options={managingUnitFilters}
+          value={selectedManagingUnit}
+          onChange={setSelectedManagingUnit}
+          searchPlaceholder="Tìm đơn vị quản lý..."
+          compact
+        />
+
+      </TableToolbar>
+
+      <TableShell
+        minWidthClassName="min-w-[1320px]"
+        footer={(
+          <TablePagination
+            totalRecords={filteredCustomers.length}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
+      >
+        <TableHead>
+          <TableHeadCell>STT</TableHeadCell>
+          <TableHeadCell>Mã khách hàng</TableHeadCell>
+          <TableHeadCell>Tên khách hàng</TableHeadCell>
+          <TableHeadCell>Địa chỉ cũ</TableHeadCell>
+          <TableHeadCell>Địa chỉ mới</TableHeadCell>
+          <TableHeadCell>Công nợ</TableHeadCell>
+          <TableHeadCell>Mã số thuế/CCCD chủ hộ</TableHeadCell>
+          <TableHeadCell>Điện thoại</TableHeadCell>
+          <TableHeadCell>ĐT di động NLH</TableHeadCell>
+          <TableHeadCell>Là Đối tượng nội bộ</TableHeadCell>
+          <TableHeadCell>Đơn vị Quản lý</TableHeadCell>
+          <TableHeadCell align="center">Thao tác</TableHeadCell>
+        </TableHead>
+        <TableBody>
+          {isLoading ? (
+            <tr>
+              <td colSpan={12} className="px-4 py-10 text-center font-bold text-zinc-400">
+                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                Đang tải khách hàng...
+              </td>
+            </tr>
+          ) : paginatedCustomers.length === 0 ? (
+            <TableEmptyRow colSpan={12}>Chưa có khách hàng phù hợp.</TableEmptyRow>
+          ) : (
+            paginatedCustomers.map((customer, index) => (
+              <React.Fragment key={customer.id}>
+                <TableRow>
+                  <td className="px-4 py-3 font-black text-[#ef1b2d]">
+                    {(currentPage - 1) * pageSize + index + 1}
                   </td>
-                </tr>
-              ) : filteredCustomers.length === 0 ? (
-                <tr>
-                  <td colSpan={12} className="px-4 py-10 text-center font-bold text-zinc-500">
-                    Chưa có khách hàng phù hợp.
+                  <td className="px-4 py-3 font-mono font-bold text-zinc-900">{customer.code || '-'}</td>
+                  <td className="px-4 py-3 font-normal text-zinc-950">{customer.name}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">{customer.address || '-'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">
+                    {customer.newAddress ? (
+                      customer.newAddress
+                    ) : backfillingAddressIds.has(customer.dbId || customer.code) ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-sky-600">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Đang chuyển...
+                      </span>
+                    ) : (
+                      '-'
+                    )}
                   </td>
-                </tr>
-              ) : (
-                filteredCustomers.map((customer, index) => (
-                  <tr key={customer.id} className="transition hover:bg-red-50/40">
-                    <td className="px-4 py-3 font-black text-[#ef1b2d]">{index + 1}</td>
-                    <td className="px-4 py-3 font-mono font-bold text-zinc-900">{customer.code || '-'}</td>
-                    <td className="px-4 py-3 font-black text-zinc-950">{customer.name}</td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">{customer.address || '-'}</td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">
-                      {customer.newAddress ? (
-                        customer.newAddress
-                      ) : backfillingAddressIds.has(customer.dbId || customer.code) ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-sky-600">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Đang chuyển...
-                        </span>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">
-                      {customer.debt ? customer.debt.toLocaleString('vi-VN') : '-'}
-                    </td>
-                    <td className="px-4 py-3 font-mono font-semibold text-zinc-700">{customer.taxCode || '-'}</td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">{customer.phone || '-'}</td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">{customer.mobilePhoneNlh || '-'}</td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">
-                      {customer.isInternal ? 'Có' : 'Không'}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">{customer.managingUnit || '-'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setViewingCustomer(customer)}
-                          title="Xem"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-100"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEdit(customer)}
-                          title="Sửa"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDelete(customer)}
-                          disabled={deletingId === (customer.dbId || customer.id)}
-                          title="Xóa"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
-                        >
-                          {deletingId === (customer.dbId || customer.id) ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">
+                    {customer.debt ? customer.debt.toLocaleString('vi-VN') : '-'}
+                  </td>
+                  <td className="px-4 py-3 font-mono font-semibold text-zinc-700">{customer.taxCode || '-'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">{customer.phone || '-'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">{customer.mobilePhoneNlh || '-'}</td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">
+                    {customer.isInternal ? 'Có' : 'Không'}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-zinc-700">{customer.managingUnit || '-'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingCustomer(customer)}
+                        title="Xem"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-100"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(customer)}
+                        title="Sửa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(customer)}
+                        disabled={deletingId === (customer.dbId || customer.id)}
+                        title="Xóa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+                      >
+                        {deletingId === (customer.dbId || customer.id) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                </TableRow>
+              </React.Fragment>
+            ))
+          )}
+        </TableBody>
+      </TableShell>
 
       {formOpen ? (
         <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-4">

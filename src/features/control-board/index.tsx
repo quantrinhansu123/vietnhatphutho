@@ -963,7 +963,7 @@ export function ControlBoardPanel({
           </div>
           <div className="min-w-0 overflow-x-auto">
           <table className="control-board-report-table w-full min-w-[880px] text-left text-[11px]">
-            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500">
+            <thead className="sticky top-0 bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
               <tr>
                 <th className="px-2 py-1.5 text-center font-black">
                   <input
