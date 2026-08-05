@@ -164,6 +164,42 @@ export function buildAllowedTabSet(permissions: StaffViewPermissions): Set<strin
   return tabs;
 }
 
+/** Gộp nhiều bộ quyền (nhiều vị trí gán) — union theo menu + tab con. */
+export function mergeStaffViewPermissions(
+  ...lists: StaffViewPermissions[]
+): StaffViewPermissions {
+  const byMenu = new Map<string, StaffViewGroup>();
+
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const group of list) {
+      if (!group?.menu) continue;
+      const menu = String(group.menu);
+      let existing = byMenu.get(menu);
+      if (!existing) {
+        existing = {
+          menu,
+          label: String(group.label || menu),
+          children: []
+        };
+        byMenu.set(menu, existing);
+      }
+      const seen = new Set(existing.children.map(child => child.tab));
+      for (const child of group.children || []) {
+        const tab = String(child?.tab || '').trim();
+        if (!tab || seen.has(tab)) continue;
+        existing.children.push({
+          tab,
+          label: String(child.label || tab)
+        });
+        seen.add(tab);
+      }
+    }
+  }
+
+  return [...byMenu.values()];
+}
+
 function normalizeAccessIdentity(value: string | null | undefined): string {
   return (value ?? '')
     .normalize('NFD')

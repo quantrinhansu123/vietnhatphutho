@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Download, Eye, FileUp, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { useTabAccess } from '../../app/useTabAccess';
 import { pickText } from '../_shared/recordHelpers';
 import { normalizeHrBranches } from '../_shared/hr';
 import { orderFieldClass } from '../_shared/orderHelpers';
@@ -199,6 +200,7 @@ function emptyForm(code = ''): CustomerForm {
 }
 
 export function CustomersPanel({ onBack }: { onBack: () => void }) {
+  const { canCreate, canEdit, canDelete } = useTabAccess('customers');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedCustomerType, setSelectedCustomerType] = useState('all');
@@ -417,6 +419,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   }, [customers, normalizedSearch, selectedCustomerType, selectedManagingUnit]);
 
   const openCreate = () => {
+    if (!canCreate) return;
     setEditingId(null);
     setForm(emptyForm(generateNextCustomerCode(customers.map(item => item.code))));
     setAddressLookupMessage('');
@@ -425,6 +428,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   };
 
   const openEdit = (customer: CustomerOption) => {
+    if (!canEdit) return;
     setEditingId(customer.dbId || customer.id);
     setForm({
       ma_khach_hang: customer.code,
@@ -512,7 +516,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   };
 
   const handleExcelImport = async (file?: File | null) => {
-    if (!file) return;
+    if (!canCreate || !file) return;
 
     setIsImporting(true);
     setError('');
@@ -654,15 +658,17 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
             <Download className="h-4 w-4" />
             Tải mẫu Excel
           </button>
-          <button
-            type="button"
-            onClick={() => excelInputRef.current?.click()}
-            disabled={isImporting || isLoading}
-            className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
-          >
-            {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-            {isImporting ? 'Đang nhập...' : 'Tải Excel lên'}
-          </button>
+          {canCreate ? (
+            <button
+              type="button"
+              onClick={() => excelInputRef.current?.click()}
+              disabled={isImporting || isLoading}
+              className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+            >
+              {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
+              {isImporting ? 'Đang nhập...' : 'Tải Excel lên'}
+            </button>
+          ) : null}
           <input
             ref={excelInputRef}
             type="file"
@@ -678,14 +684,16 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
           >
             {isLoading ? 'Đang tải...' : 'Tải lại'}
           </button>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c]"
-          >
-            <Plus className="h-4 w-4" />
-            Thêm khách hàng
-          </button>
+          {canCreate ? (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c]"
+            >
+              <Plus className="h-4 w-4" />
+              Thêm khách hàng
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -799,27 +807,31 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                       >
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(customer)}
-                        title="Sửa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(customer)}
-                        disabled={deletingId === (customer.dbId || customer.id)}
-                        title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
-                      >
-                        {deletingId === (customer.dbId || customer.id) ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </button>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(customer)}
+                          title="Sửa"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(customer)}
+                          disabled={deletingId === (customer.dbId || customer.id)}
+                          title="Xóa"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          {deletingId === (customer.dbId || customer.id) ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
                     </div>
                     </RowActionsMenu>
                   </td>
@@ -1061,18 +1073,20 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => {
-                  const customer = viewingCustomer;
-                  setViewingCustomer(null);
-                  if (customer) openEdit(customer);
-                }}
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-sm font-extrabold text-white"
-              >
-                <Pencil className="h-4 w-4" />
-                Sửa
-              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const customer = viewingCustomer;
+                    setViewingCustomer(null);
+                    if (customer) openEdit(customer);
+                  }}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-sm font-extrabold text-white"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Sửa
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

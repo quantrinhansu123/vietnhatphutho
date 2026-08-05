@@ -1,7 +1,9 @@
 import {
+  mergeStaffViewPermissions,
   normalizeStaffViewPermissions,
   type StaffViewPermissions
 } from '../nhan-su/menuViews';
+import type { StaffAssignablePosition } from './staffAssignments';
 
 export type PermissionSettingLike = {
   id: string;
@@ -83,4 +85,66 @@ export function parsePermissionSettings(settings: PermissionSettingLike[]): Perm
       };
     })
     .filter((item): item is PermissionKeySetting => Boolean(item));
+}
+
+function findPermissionSettingByKey(
+  settings: PermissionKeySetting[],
+  permissionKey: string
+): PermissionKeySetting | undefined {
+  const key = permissionKey.trim().toUpperCase();
+  if (!key) return undefined;
+  return settings.find(item => item.permissionKey.trim().toUpperCase() === key);
+}
+
+/**
+ * Quyền hiệu lực khi đăng nhập:
+ * 1) Ưu tiên các vị trí trong `nhan_su.vi_tri_gan`
+ * 2) Không có → phòng ban + chức vụ HR
+ * 3) Không khớp ma trận Phân quyền → `quyen_xem` trên hồ sơ (chỉ cột Xem)
+ */
+export function resolveLoginPermissions(input: {
+  permissionSettings: PermissionKeySetting[];
+  assignedPositions?: StaffAssignablePosition[];
+  departmentName: string;
+  hrRoleOrPosition: string;
+  memberViewPermissions?: StaffViewPermissions;
+}): {
+  viewPermissions: StaffViewPermissions;
+  editPermissions: StaffViewPermissions;
+  deletePermissions: StaffViewPermissions;
+} {
+  const {
+    permissionSettings,
+    assignedPositions = [],
+    departmentName,
+    hrRoleOrPosition,
+    memberViewPermissions = []
+  } = input;
+
+  const keys: string[] = [];
+  for (const position of assignedPositions) {
+    const key = String(position.permissionKey || '').trim();
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+  if (keys.length === 0) {
+    keys.push(buildPermissionKey(departmentName, hrRoleOrPosition));
+  }
+
+  const matched = keys
+    .map(key => findPermissionSettingByKey(permissionSettings, key))
+    .filter((item): item is PermissionKeySetting => Boolean(item));
+
+  if (matched.length === 0) {
+    return {
+      viewPermissions: memberViewPermissions,
+      editPermissions: [],
+      deletePermissions: []
+    };
+  }
+
+  return {
+    viewPermissions: mergeStaffViewPermissions(...matched.map(item => item.viewPermissions)),
+    editPermissions: mergeStaffViewPermissions(...matched.map(item => item.editPermissions)),
+    deletePermissions: mergeStaffViewPermissions(...matched.map(item => item.deletePermissions))
+  };
 }

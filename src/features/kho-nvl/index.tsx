@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
+import { useTabAccess } from '../../app/useTabAccess';
 import {
   Download,
   Eye,
@@ -559,8 +560,8 @@ export function MaterialViewModal({
 }: {
   material: MaterialRow;
   onClose: () => void;
-  onEdit: (material: MaterialRow) => void;
-  onDelete: (material: MaterialRow) => void;
+  onEdit?: (material: MaterialRow) => void;
+  onDelete?: (material: MaterialRow) => void;
   isDeleting: boolean;
 }) {
   const [tab, setTab] = useState<MaterialViewTab>('detail');
@@ -750,19 +751,23 @@ export function MaterialViewModal({
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
-          <button type="button" onClick={() => onEdit(material)} className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
-            <Pencil className="h-4 w-4" />
-            Sửa
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(material)}
-            disabled={isDeleting}
-            className="flex h-10 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            Xóa
-          </button>
+          {onEdit ? (
+            <button type="button" onClick={() => onEdit(material)} className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
+              <Pencil className="h-4 w-4" />
+              Sửa
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button
+              type="button"
+              onClick={() => onDelete(material)}
+              disabled={isDeleting}
+              className="flex h-10 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Xóa
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -770,6 +775,7 @@ export function MaterialViewModal({
 }
 
 export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
+  const { canCreate, canEdit, canDelete } = useTabAccess('materials');
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('all');
@@ -851,6 +857,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   };
 
   const openAddForm = () => {
+    if (!canCreate) return;
     setFormError('');
     setActionMessage('');
     setEditingId(null);
@@ -859,6 +866,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   };
 
   const openEditForm = (material: MaterialRow) => {
+    if (!canEdit) return;
     setFormError('');
     setActionMessage('');
     setViewingMaterial(null);
@@ -975,22 +983,26 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 <Download className="h-4 w-4" />
                 Tải mẫu Excel
               </button>
-              <button
-                type="button"
-                onClick={() => setShowBulkTotalWeight(true)}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200"
-              >
-                <Upload className="h-4 w-4" />
-                Tải Excel lên
-              </button>
-              <button
-                type="button"
-                onClick={openAddForm}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm mới
-              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkTotalWeight(true)}
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200"
+                >
+                  <Upload className="h-4 w-4" />
+                  Tải Excel lên
+                </button>
+              ) : null}
+              {canCreate ? (
+                <button
+                  type="button"
+                  onClick={openAddForm}
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm mới
+                </button>
+              ) : null}
 
             </div>
           </div>
@@ -1120,8 +1132,8 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
             setViewingMaterial(null);
             loadMaterials();
           }}
-          onEdit={openEditForm}
-          onDelete={handleDeleteMaterial}
+          onEdit={canEdit ? openEditForm : undefined}
+          onDelete={canDelete ? handleDeleteMaterial : undefined}
           isDeleting={deletingMaterialId === viewingMaterial.id}
         />
       )}
@@ -1173,27 +1185,31 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => openEditForm(material)}
-                      title="Sửa"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50 active:scale-95"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteMaterial(material)}
-                      disabled={deletingMaterialId === material.id}
-                      title="Xóa"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-                    >
-                      {deletingMaterialId === material.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        onClick={() => openEditForm(material)}
+                        title="Sửa"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50 active:scale-95"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMaterial(material)}
+                        disabled={deletingMaterialId === material.id}
+                        title="Xóa"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                      >
+                        {deletingMaterialId === material.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    ) : null}
                   </div>
                   </RowActionsMenu>
                 </td>

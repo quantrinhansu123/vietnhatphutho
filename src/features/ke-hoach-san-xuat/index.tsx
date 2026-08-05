@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { useTabAccess } from '../../app/useTabAccess';
 import { BackButton } from '../../components/layout/NavButtons';
 import { RowActionsMenu } from '../../components/shared/table';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
@@ -2055,6 +2056,7 @@ export function ProductionPlanModal({
   productionOrders: ProductionOrderRow[];
   machines: MachineRow[];
 }) {
+  const { canCreate } = useTabAccess('production-plan-history');
   const [planLines, setPlanLines] = useState<ProductionPlanLine[]>([]);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -2874,15 +2876,17 @@ export function ProductionPlanModal({
               {isLoadingRelatedPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               In tất cả phiếu liên quan
             </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || displayLines.length === 0}
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Lưu kế hoạch SX
-            </button>
+            {canCreate ? (
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving || displayLines.length === 0}
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Lưu kế hoạch SX
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
+import { useTabAccess } from '../app/useTabAccess';
 import { RowActionsMenu } from './shared/table';
 import { SearchableSelect } from './shared/SearchableSelect';
 import {
@@ -386,6 +387,7 @@ function summarizeProductsNvl(products: MixingNormProduct[]) {
 }
 
 export default function MixingNormMaterialsTab() {
+  const { canCreate, canEdit, canDelete } = useTabAccess('mixing-report-list');
   const [rows, setRows] = useState<MixingNormRow[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
@@ -534,6 +536,7 @@ export default function MixingNormMaterialsTab() {
   }, [query, rows]);
 
   const openCreate = () => {
+    if (!canCreate) return;
     setEditingId('');
     setForm(emptyForm());
     setShowForm(true);
@@ -542,6 +545,7 @@ export default function MixingNormMaterialsTab() {
   };
 
   const openEdit = (row: MixingNormRow) => {
+    if (!canEdit) return;
     setEditingId(row.id);
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
@@ -815,14 +819,16 @@ export default function MixingNormMaterialsTab() {
           <Printer className="h-4 w-4" />
           In danh sách
         </button>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="mt-3 flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] lg:mt-0"
-        >
-          <Plus className="h-4 w-4" />
-          Thêm phiếu định mức
-        </button>
+        {canCreate ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="mt-3 flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] lg:mt-0"
+          >
+            <Plus className="h-4 w-4" />
+            Thêm phiếu định mức
+          </button>
+        ) : null}
       </section>
 
       {error && (
@@ -932,27 +938,31 @@ export default function MixingNormMaterialsTab() {
                         <Printer className="h-3.5 w-3.5" />
                         In
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(row)}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 hover:bg-amber-100"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Sửa
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(row.id)}
-                        disabled={deletingId === row.id}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                      >
-                        {deletingId === row.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
-                        Xóa
-                      </button>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(row)}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 hover:bg-amber-100"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Sửa
+                        </button>
+                      ) : null}
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(row.id)}
+                          disabled={deletingId === row.id}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                        >
+                          {deletingId === row.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          Xóa
+                        </button>
+                      ) : null}
                     </div>
                     </RowActionsMenu>
                   </td>
@@ -980,7 +990,7 @@ export default function MixingNormMaterialsTab() {
         </div>
       </section>
 
-      {showForm && (
+      {showForm && (canCreate || (canEdit && editingId)) ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -1297,7 +1307,7 @@ export default function MixingNormMaterialsTab() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {printDocs.length > 0 ? <MixingNormRatioPrintBatch docs={printDocs} /> : null}
     </div>

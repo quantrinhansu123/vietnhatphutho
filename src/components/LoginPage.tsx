@@ -8,7 +8,7 @@ import {
   PRIMARY_ADMIN_USERNAME,
   type StaffViewPermissions
 } from '../features/nhan-su/menuViews';
-import { buildPermissionKey, parsePermissionSettings } from '../features/cai-dat-thoi-gian/permissionKeys';
+import { parsePermissionSettings, resolveLoginPermissions } from '../features/cai-dat-thoi-gian/permissionKeys';
 
 export type AuthUser = {
   id: string;
@@ -122,20 +122,22 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
         return;
       }
 
-      const rolePermissions = permissionSettings.find(
-        item =>
-          item.permissionKey ===
-          buildPermissionKey(matched.departmentName, matched.member.role || matched.member.position || '')
-      );
+      const resolved = resolveLoginPermissions({
+        permissionSettings,
+        assignedPositions: matched.member.assignedPositions,
+        departmentName: matched.departmentName,
+        hrRoleOrPosition: matched.member.role || matched.member.position || '',
+        memberViewPermissions: matched.member.viewPermissions || []
+      });
 
       onLogin(grantResolvedAccess({
         id: matched.member.id,
         name: matched.member.name,
         username: matched.member.username || user,
         role: matched.member.role || 'Nhân sự',
-        viewPermissions: rolePermissions?.viewPermissions || matched.member.viewPermissions || [],
-        editPermissions: rolePermissions?.editPermissions || [],
-        deletePermissions: rolePermissions?.deletePermissions || []
+        viewPermissions: resolved.viewPermissions,
+        editPermissions: resolved.editPermissions,
+        deletePermissions: resolved.deletePermissions
       }));
     } catch (err: any) {
       setError(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.');

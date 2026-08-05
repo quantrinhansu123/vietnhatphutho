@@ -1023,7 +1023,7 @@ export function SubNav({
   allowedTabs?: Set<string>;
   fullAccess?: boolean;
 }) {
-  const canSee = (tab: AppTab) => tab === 'settings' || fullAccess || (allowedTabs?.has(tab) ?? false);
+  const canSee = (tab: AppTab) => fullAccess || (allowedTabs?.has(tab) ?? false);
   const visibleGroups = PRIMARY_NAV_GROUPS
     .map(group => ({
       ...group,

@@ -39,7 +39,7 @@ import { normalizeProducts } from '../san-pham';
 import type { ProductRow } from '../san-pham/types';
 import { normalizeMachines, type MachineRow } from '../danh-sach-may';
 import type { OrderRow } from '../_shared/orderRecordHelpers';
-import { useAccessControl } from '../../app/accessControl';
+import { useTabAccess } from '../../app/useTabAccess';
 import {
   Eye,
   Loader2,
@@ -52,16 +52,19 @@ import {
 
 export function ProductionOrdersPanel({
   onBack,
+  canCreate: canCreateOverride,
   canEdit: canEditOverride,
   canDelete: canDeleteOverride
 }: {
   onBack: () => void;
+  canCreate?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
 }) {
-  const access = useAccessControl();
-  const canEdit = canEditOverride ?? access.canEdit('production-orders');
-  const canDelete = canDeleteOverride ?? access.canDelete('production-orders');
+  const tabAccess = useTabAccess('production-orders');
+  const canCreate = canCreateOverride ?? tabAccess.canCreate;
+  const canEdit = canEditOverride ?? tabAccess.canEdit;
+  const canDelete = canDeleteOverride ?? tabAccess.canDelete;
   const [rows, setRows] = useState<ProductionOrderRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
@@ -113,6 +116,7 @@ export function ProductionOrdersPanel({
   }, []);
 
   const openEditModal = async (row: ProductionOrderRow) => {
+    if (!canEdit) return;
     setIsLoadingEdit(true);
     setActionMessage('');
     try {
@@ -256,14 +260,16 @@ export function ProductionOrdersPanel({
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => setShowAddForm(true)}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm mới
-              </button>
+              {canCreate ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(true)}
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm mới
+                </button>
+              ) : null}
 
             </div>
           </div>

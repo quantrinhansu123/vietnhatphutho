@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { useTabAccess } from '../../app/useTabAccess';
 import { BackButton } from '../../components/layout/NavButtons';
 import {
   cloudinaryPreviewUrl,
@@ -48,6 +49,7 @@ import {
 } from 'lucide-react';
 
 export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
+  const { canCreate, canEdit, canDelete } = useTabAccess('hr');
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [searchText, setSearchText] = useState('');
@@ -248,14 +250,16 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 )}
                 {isSyncingViTri ? 'Đang cập nhật...' : 'Cập nhật vị trí'}
               </button>
-              <button
-                type="button"
-                onClick={() => openAddStaffForm()}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-              >
-                <Plus className="h-4 w-4" />
-                Thêm mới
-              </button>
+              {canCreate ? (
+                <button
+                  type="button"
+                  onClick={() => openAddStaffForm()}
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm mới
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -418,35 +422,39 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                             <Eye className="h-3.5 w-3.5" />
                             Xem
                           </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditTarget({
-                                member,
-                                departmentName,
-                                branchName: selectedBranch?.name || ''
-                              })
-                            }
-                            aria-label={`Sửa ${member.name}`}
-                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Sửa
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteMember(member)}
-                            disabled={deletingCode === member.code}
-                            aria-label={`Xóa ${member.name}`}
-                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {deletingCode === member.code ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
-                            Xoá
-                          </button>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditTarget({
+                                  member,
+                                  departmentName,
+                                  branchName: selectedBranch?.name || ''
+                                })
+                              }
+                              aria-label={`Sửa ${member.name}`}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Sửa
+                            </button>
+                          ) : null}
+                          {canDelete ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteMember(member)}
+                              disabled={deletingCode === member.code}
+                              aria-label={`Xóa ${member.name}`}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {deletingCode === member.code ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                              Xoá
+                            </button>
+                          ) : null}
                         </div>
                         </RowActionsMenu>
                       </td>
@@ -489,6 +497,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
           departmentName={viewMember.departmentName}
           branchName={selectedBranch?.name || ''}
           onClose={() => setViewMember(null)}
+          canEdit={canEdit}
           onEdit={() => {
             setEditTarget({
               member: viewMember.member,
@@ -515,13 +524,15 @@ function StaffDetailModal({
   departmentName,
   branchName,
   onClose,
-  onEdit
+  onEdit,
+  canEdit = false
 }: {
   member: HrMember;
   departmentName: string;
   branchName: string;
   onClose: () => void;
   onEdit: () => void;
+  canEdit?: boolean;
 }) {
   const rows: [string, string][] = [
     ['Họ tên', member.name],
@@ -603,14 +614,16 @@ function StaffDetailModal({
           >
             Đóng
           </button>
-          <button
-            type="button"
-            onClick={onEdit}
-            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c]"
-          >
-            <Pencil className="h-4 w-4" />
-            Sửa
-          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c]"
+            >
+              <Pencil className="h-4 w-4" />
+              Sửa
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

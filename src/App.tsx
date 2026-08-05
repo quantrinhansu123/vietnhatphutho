@@ -181,24 +181,43 @@ export default function App() {
   const [machineNvlEditReport, setMachineNvlEditReport] = useState<MachineNvlSavedReport | null>(null);
   const [weighingPendingAdd, setWeighingPendingAdd] = useState<WeighingPendingAdd | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
-    const path = pathFromTab(tab);
+    let nextTab = tab;
+    let nextOptions = options;
+    if (authUser) {
+      const fullAccess =
+        Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
+      if (!fullAccess && nextTab !== 'menu') {
+        const allowed = buildAllowedTabSet(authUser.viewPermissions ?? []);
+        const known = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
+        if (known.has(nextTab) && !allowed.has(nextTab)) {
+          nextTab = 'menu';
+          nextOptions = { ...options, replace: true };
+        }
+      }
+    }
+
+    const path = pathFromTab(nextTab);
 
     if (window.location.pathname !== path) {
-      if (options?.replace) {
-        window.history.replaceState({ tab, appNavigation: true, previousPath: null }, '', path);
+      if (nextOptions?.replace) {
+        window.history.replaceState(
+          { tab: nextTab, appNavigation: true, previousPath: null },
+          '',
+          path
+        );
       } else {
         window.history.pushState(
-          { tab, appNavigation: true, previousPath: window.location.pathname },
+          { tab: nextTab, appNavigation: true, previousPath: window.location.pathname },
           '',
           path
         );
       }
     }
 
-    setActiveTab(tab);
+    setActiveTab(nextTab);
     setLocationPath(path);
 
-    if (tab === 'dashboard') {
+    if (nextTab === 'dashboard') {
       fetchReports();
     }
   };
@@ -211,6 +230,19 @@ export default function App() {
     }
     navigateToTab(fallbackTab);
   };
+
+  // URL / tab đang mở phải nằm trong quyền xem (trừ admin).
+  useEffect(() => {
+    if (!authUser) return;
+    const fullAccess =
+      Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
+    if (fullAccess || activeTab === 'menu') return;
+    const allowed = buildAllowedTabSet(authUser.viewPermissions ?? []);
+    const known = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
+    if (known.has(activeTab) && !allowed.has(activeTab)) {
+      navigateToTab('menu', { replace: true });
+    }
+  }, [authUser, activeTab]);
 
   const handleNavClick = (event: React.MouseEvent<HTMLAnchorElement>, tab: AppTab) => {
     event.preventDefault();
@@ -481,16 +513,16 @@ export default function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  // Chỉ quản trị mới xem toàn bộ; còn lại đúng theo "Quyền xem menu"
+  // Chỉ quản trị mới xem toàn bộ; còn lại đúng theo ma trận Phân quyền (và vị trí gán).
   // Kiểm tra cả vai trò và tài khoản để phiên admin cũ/khác cách ghi vai trò vẫn luôn có toàn quyền.
   const menuFullAccess = Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
   const allowedMenuTabs = buildAllowedTabSet(authUser.viewPermissions ?? []);
   const editableMenuTabs = buildAllowedTabSet(authUser.editPermissions ?? []);
   const deletableMenuTabs = buildAllowedTabSet(authUser.deletePermissions ?? []);
   const knownPermissionTabs = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
-  // Tab không thuộc cây phân quyền => không bị kiểm soát, luôn hiển thị
+  // Tab trong cây phân quyền: chỉ hiện khi được cấp. Tab ngoài cây: không bị khóa bởi ma trận.
   const canSeeTab = (tab: AppTab) =>
-    tab === 'settings' || menuFullAccess || !knownPermissionTabs.has(tab) || allowedMenuTabs.has(tab);
+    menuFullAccess || !knownPermissionTabs.has(tab) || allowedMenuTabs.has(tab);
   const canSeeMainMenuTab = (tab: AppTab) => {
     if (canSeeTab(tab)) return true;
     if (tab === 'business') {

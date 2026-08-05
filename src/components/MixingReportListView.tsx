@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTabAccess } from '../app/useTabAccess';
 import { ChevronLeft, ClipboardList, Eye, Loader2, Pencil, Plus, Printer, Search, Trash2, X } from 'lucide-react';
 import { vietNhatLogoUrl } from './layout/constants';
 import { MixingReportPrintBatch } from './MixingReportPrintSheet';
@@ -265,6 +266,7 @@ export default function MixingReportListView({
 }: {
   onBack: () => void;
 }) {
+  const { canCreate, canEdit, canDelete } = useTabAccess('mixing-report-list');
   const [filters, setFilters] = useState<MixingReportFilters>(emptyFilters);
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
@@ -581,6 +583,7 @@ export default function MixingReportListView({
   };
 
   const openEditReport = (report: MixingReport) => {
+    if (!canEdit) return;
     setFormModalMode('edit');
     setPendingEditReport(report);
     setCreateModalOpen(true);
@@ -597,29 +600,33 @@ export default function MixingReportListView({
         <Eye className="h-3.5 w-3.5" />
         Xem
       </button>
-      <button
-        type="button"
-        onClick={() => openEditReport(report)}
-        className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
-        title="Sửa báo cáo"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-        Sửa
-      </button>
-      <button
-        type="button"
-        onClick={() => void handleDelete(report.id)}
-        disabled={deletingId === report.id}
-        className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-        title="Xóa báo cáo"
-      >
-        {deletingId === report.id ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Trash2 className="h-3.5 w-3.5" />
-        )}
-        Xoá
-      </button>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => openEditReport(report)}
+          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100"
+          title="Sửa báo cáo"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Sửa
+        </button>
+      ) : null}
+      {canDelete ? (
+        <button
+          type="button"
+          onClick={() => void handleDelete(report.id)}
+          disabled={deletingId === report.id}
+          className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+          title="Xóa báo cáo"
+        >
+          {deletingId === report.id ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+          Xoá
+        </button>
+      ) : null}
     </div>
   );
 
@@ -646,18 +653,20 @@ export default function MixingReportListView({
                     <Printer className="h-4 w-4" />
                     In danh sách
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormModalMode('create');
-                      setPendingEditReport(null);
-                      setCreateModalOpen(true);
-                    }}
-                    className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Thêm mới
-                  </button>
+                  {canCreate ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormModalMode('create');
+                        setPendingEditReport(null);
+                        setCreateModalOpen(true);
+                      }}
+                      className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Thêm mới
+                    </button>
+                  ) : null}
                 </>
               )}
               <button
@@ -857,15 +866,17 @@ export default function MixingReportListView({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-black text-zinc-950">Danh sách phiếu phối trộn</p>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                disabled={selectedCount === 0 || bulkDeleting || isLoading}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Xoá đã chọn ({selectedCount})
-              </button>
+              {canDelete ? (
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={selectedCount === 0 || bulkDeleting || isLoading}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Xoá đã chọn ({selectedCount})
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setSelectedIds(new Set())}
@@ -1238,7 +1249,7 @@ export default function MixingReportListView({
           </div>
         </div>
       )}
-      {createModalOpen && (
+      {createModalOpen && (canCreate || (canEdit && pendingEditReport)) ? (
         <MixingReportForm
           modalMode
           open
@@ -1256,7 +1267,7 @@ export default function MixingReportListView({
             await loadReports(filters, machines);
           }}
         />
-      )}
+      ) : null}
 
       {printReports.length > 0 ? <MixingReportPrintBatch reports={printReports} /> : null}
         </>

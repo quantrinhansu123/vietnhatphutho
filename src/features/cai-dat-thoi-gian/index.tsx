@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { useTabAccess } from '../../app/useTabAccess';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pickText, fileToDataUrl, uploadImage, formatCell, formatTimeCell } from '../_shared/recordHelpers';
 import { orderFieldClass } from '../_shared/orderHelpers';
@@ -165,6 +166,7 @@ export function settingToForm(setting: SettingRow): SettingFormState {
 }
 
 export function SettingsPanel({ onBack }: { onBack: () => void }) {
+  const { canCreate, canEdit, canDelete } = useTabAccess('settings');
   const [settings, setSettings] = useState<SettingRow[]>([]);
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -732,27 +734,31 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
               ))}
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => openEditForm(viewingSetting)}
-                className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
-              >
-                <Pencil className="h-4 w-4" />
-                Sửa
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeleteSetting(viewingSetting)}
-                disabled={deletingSettingId === viewingSetting.id}
-                className="flex h-10 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {deletingSettingId === viewingSetting.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-                Xóa
-              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => openEditForm(viewingSetting)}
+                  className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Sửa
+                </button>
+              ) : null}
+              {canDelete ? (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSetting(viewingSetting)}
+                  disabled={deletingSettingId === viewingSetting.id}
+                  className="flex h-10 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deletingSettingId === viewingSetting.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Xóa
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -895,14 +901,16 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           />
         </div>
 
-        <button
-          type="button"
-          onClick={openAddForm}
-          className="mt-3 flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] lg:mt-0"
-        >
-          <Plus className="h-4 w-4" />
-          Thêm mới
-        </button>
+        {canCreate ? (
+          <button
+            type="button"
+            onClick={openAddForm}
+            className="mt-3 flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] lg:mt-0"
+          >
+            <Plus className="h-4 w-4" />
+            Thêm mới
+          </button>
+        ) : null}
 
         {settingsError && (
           <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 lg:mt-0">
@@ -962,27 +970,31 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => openEditForm(setting)}
-                      title="Sửa"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteSetting(setting)}
-                      disabled={deletingSettingId === setting.id}
-                      title="Xóa"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {deletingSettingId === setting.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        onClick={() => openEditForm(setting)}
+                        title="Sửa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSetting(setting)}
+                        disabled={deletingSettingId === setting.id}
+                        title="Xóa"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingSettingId === setting.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    ) : null}
                   </div>
                   </RowActionsMenu>
                 </td>
@@ -1007,13 +1019,15 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Key phân quyền</h3>
                   <p className="mt-1 text-xs font-semibold text-zinc-500">Ghép `Phòng ban + Vị trí` thành 1 key.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={resetPermissionForm}
-                  className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
-                >
-                  Tạo mới
-                </button>
+                {canCreate ? (
+                  <button
+                    type="button"
+                    onClick={resetPermissionForm}
+                    className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                  >
+                    Tạo mới
+                  </button>
+                ) : null}
               </div>
 
               <div className="mt-4 space-y-3">
@@ -1093,15 +1107,17 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                     {permissionMessage}
                   </p>
                 )}
-                <button
-                  type="button"
-                  onClick={handleSavePermission}
-                  disabled={isSavingPermission}
-                  className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
-                >
-                  {isSavingPermission ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {isSavingPermission ? 'Đang lưu...' : permissionForm.id ? 'Cập nhật key' : 'Lưu key'}
-                </button>
+                {(permissionForm.id ? canEdit : canCreate) ? (
+                  <button
+                    type="button"
+                    onClick={handleSavePermission}
+                    disabled={isSavingPermission}
+                    className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+                  >
+                    {isSavingPermission ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {isSavingPermission ? 'Đang lưu...' : permissionForm.id ? 'Cập nhật key' : 'Lưu key'}
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -1138,19 +1154,21 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                             >
                               <Eye className="h-4 w-4" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePermission(item.id)}
-                              disabled={deletingPermissionId === item.id}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-                              title="Xóa"
-                            >
-                              {deletingPermissionId === item.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </button>
+                            {canDelete ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePermission(item.id)}
+                                disabled={deletingPermissionId === item.id}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                                title="Xóa"
+                              >
+                                {deletingPermissionId === item.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            ) : null}
                           </div>
                           </RowActionsMenu>
                         </td>
@@ -1176,13 +1194,15 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                     Mỗi vai trò = Phòng ban + Vị trí (cùng key phân quyền).
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={resetPermissionForm}
-                  className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
-                >
-                  Tạo mới
-                </button>
+                {canCreate ? (
+                  <button
+                    type="button"
+                    onClick={resetPermissionForm}
+                    className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                  >
+                    Tạo mới
+                  </button>
+                ) : null}
               </div>
 
               <div className="mt-4 space-y-3">
@@ -1303,15 +1323,17 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   </p>
                 )}
 
-                <button
-                  type="button"
-                  onClick={handleSavePermission}
-                  disabled={isSavingPermission}
-                  className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
-                >
-                  {isSavingPermission ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {isSavingPermission ? 'Đang lưu...' : permissionForm.id ? 'Cập nhật quyền vai trò' : 'Lưu quyền vai trò'}
-                </button>
+                {(permissionForm.id ? canEdit : canCreate) ? (
+                  <button
+                    type="button"
+                    onClick={handleSavePermission}
+                    disabled={isSavingPermission}
+                    className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+                  >
+                    {isSavingPermission ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {isSavingPermission ? 'Đang lưu...' : permissionForm.id ? 'Cập nhật quyền vai trò' : 'Lưu quyền vai trò'}
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -1343,6 +1365,8 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           isLoadingStaff={isLoadingStaffOptions}
           staffError={staffOptionsError}
           onReloadStaff={loadStaffGroups}
+          canEdit={canEdit}
+          canDelete={canDelete}
         />
       )}
     </div>
