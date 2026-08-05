@@ -225,6 +225,24 @@ export function ProductionOrdersPanel({
     return Number.isFinite(value) ? sum + value : sum;
   }, 0);
 
+  const dateGroups = useMemo(() => {
+    const map = new Map<string, ProductionOrderRow[]>();
+    filteredRows.forEach(row => {
+      const date = formatProductionOrderDate(row.createdAt) || 'Chưa có ngày';
+      const list = map.get(date) ?? [];
+      list.push(row);
+      map.set(date, list);
+    });
+    return [...map.entries()].map(([date, groupRows]) => ({
+      date,
+      rows: groupRows,
+      totalQuantity: groupRows.reduce((sum, row) => {
+        const value = Number(row.quantity);
+        return Number.isFinite(value) ? sum + value : sum;
+      }, 0)
+    }));
+  }, [filteredRows]);
+
   return (
     <div className="mx-auto w-full max-w-none space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
@@ -335,84 +353,103 @@ export function ProductionOrdersPanel({
         onSaved={loadProductionOrders}
       />
 
-      <TableShell
-        minWidthClassName="min-w-0 table-fixed"
-      >
-        <colgroup>
-          <col className="w-[6%]" /><col className="w-[9%]" /><col className="w-[5%]" />
-          <col className="w-[9%]" /><col className="w-[23%]" /><col className="w-[9%]" />
-          <col className="w-[6%]" /><col className="w-[7%]" /><col className="w-[9%]" />
-          <col className="w-[5%]" /><col className="w-[7%]" /><col className="w-[5%]" />
-        </colgroup>
-        <TableHead>
-          <TableHeadCell>Mã lệnh</TableHeadCell>
-          <TableHeadCell>Ngày tạo lệnh</TableHeadCell>
-          <TableHeadCell>Ca</TableHeadCell>
-          <TableHeadCell>Mã hàng</TableHeadCell>
-          <TableHeadCell>Tên hàng</TableHeadCell>
-          <TableHeadCell className="w-32 min-w-32 whitespace-nowrap">Trạng thái</TableHeadCell>
-          <TableHeadCell>Khách hàng</TableHeadCell>
-          <TableHeadCell>Đơn hàng</TableHeadCell>
-          <TableHeadCell>Bắt đầu</TableHeadCell>
-          <TableHeadCell>Kết thúc</TableHeadCell>
-          <TableHeadCell>Máy</TableHeadCell>
-          <TableHeadCell align="center">Thao tác</TableHeadCell>
-        </TableHead>
-        <TableBody>
-          {filteredRows.map(row => (
-            <React.Fragment key={row.id}>
-            <TableRow>
-              <td className="px-4 py-3 font-black text-zinc-950">{row.code || '-'}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-zinc-700">
-                {formatProductionOrderDate(row.createdAt)}
-              </td>
-              <td className="px-4 py-3 text-zinc-700">{row.shift || '-'}</td>
-              <td className="px-4 py-3 text-zinc-700">
-                {getProductionOrderProductLines(row)
-                  .map(product => product.productCode || '-')
-                  .join(' | ') || '-'}
-              </td>
-              <td className="px-4 py-3 text-zinc-800">
-                {getProductionOrderProductLines(row)
-                  .map(product => product.productName || '-')
-                  .join(' | ') || '-'}
-              </td>
-              <td className="w-32 min-w-32 whitespace-nowrap px-4 py-3">
-                <StatusBadge label={row.status} color="amber" />
-              </td>
-              <td className="px-4 py-3 text-zinc-700">{row.customer}</td>
-              <td className="px-4 py-3 text-zinc-600">{row.orderRef}</td>
-              <td className="px-4 py-3 text-zinc-600">{row.startDate}</td>
-              <td className="px-4 py-3 text-zinc-600">{row.endDate}</td>
-              <td className="px-4 py-3 text-zinc-600">{row.machine}</td>
-              <td className="px-4 py-3 text-center">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setActionMenu(current => current?.row.id === row.id
-                      ? null
-                      : { row, x: rect.right, y: rect.bottom });
-                  }}
-                  title="Thao tác"
-                  aria-label={`Thao tác cho ${row.code || 'lệnh sản xuất'}`}
-                  aria-expanded={actionMenu?.row.id === row.id}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-              </td>
-            </TableRow>
-            </React.Fragment>
-          ))}
-
-          {!isLoading && filteredRows.length === 0 && (
-            <TableEmptyRow colSpan={12}>
+      {!isLoading && dateGroups.length === 0 ? (
+        <TableShell minWidthClassName="min-w-0">
+          <TableBody>
+            <TableEmptyRow colSpan={11}>
               Bảng lenh_sx chưa có dữ liệu hoặc không có lệnh phù hợp bộ lọc.
             </TableEmptyRow>
-          )}
-        </TableBody>
-      </TableShell>
+          </TableBody>
+        </TableShell>
+      ) : (
+        <div className="space-y-3">
+          {dateGroups.map(group => (
+            <div key={group.date} className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+              <div className="flex items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-100/90 px-3 py-2 sm:px-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ngày</span>
+                  <span className="font-mono text-sm font-black text-zinc-900">{group.date}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-zinc-500 ring-1 ring-zinc-200">
+                    {group.rows.length} lệnh
+                  </span>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Tổng SL ngày</p>
+                  <p className="font-mono text-sm font-black text-emerald-800">{formatNumber(group.totalQuantity)}</p>
+                </div>
+              </div>
+              <div className="hover-scrollbar max-h-[70vh] overflow-auto">
+                <table className="w-full min-w-[900px] table-fixed border-collapse text-left text-sm">
+                  <colgroup>
+                    <col className="w-[6%]" /><col className="w-[5%]" /><col className="w-[9%]" />
+                    <col className="w-[32%]" /><col className="w-[9%]" /><col className="w-[6%]" />
+                    <col className="w-[7%]" /><col className="w-[9%]" /><col className="w-[5%]" />
+                    <col className="w-[7%]" /><col className="w-[5%]" />
+                  </colgroup>
+                  <TableHead>
+                    <TableHeadCell>Mã lệnh</TableHeadCell>
+                    <TableHeadCell>Ca</TableHeadCell>
+                    <TableHeadCell>Mã hàng</TableHeadCell>
+                    <TableHeadCell>Tên hàng</TableHeadCell>
+                    <TableHeadCell className="w-32 min-w-32 whitespace-nowrap">Trạng thái</TableHeadCell>
+                    <TableHeadCell>Khách hàng</TableHeadCell>
+                    <TableHeadCell>Đơn hàng</TableHeadCell>
+                    <TableHeadCell>Bắt đầu</TableHeadCell>
+                    <TableHeadCell>Kết thúc</TableHeadCell>
+                    <TableHeadCell>Máy</TableHeadCell>
+                    <TableHeadCell align="center">Thao tác</TableHeadCell>
+                  </TableHead>
+                  <TableBody>
+                    {group.rows.map(row => (
+                      <React.Fragment key={row.id}>
+                      <TableRow>
+                        <td className="px-4 py-3 font-black text-zinc-950">{row.code || '-'}</td>
+                        <td className="px-4 py-3 text-zinc-700">{row.shift || '-'}</td>
+                        <td className="px-4 py-3 text-zinc-700">
+                          {getProductionOrderProductLines(row)
+                            .map(product => product.productCode || '-')
+                            .join(' | ') || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-zinc-800">
+                          {getProductionOrderProductLines(row)
+                            .map(product => product.productName || '-')
+                            .join(' | ') || '-'}
+                        </td>
+                        <td className="w-32 min-w-32 whitespace-nowrap px-4 py-3">
+                          <StatusBadge label={row.status} color="amber" />
+                        </td>
+                        <td className="px-4 py-3 text-zinc-700">{row.customer}</td>
+                        <td className="px-4 py-3 text-zinc-600">{row.orderRef}</td>
+                        <td className="px-4 py-3 text-zinc-600">{row.startDate}</td>
+                        <td className="px-4 py-3 text-zinc-600">{row.endDate}</td>
+                        <td className="px-4 py-3 text-zinc-600">{row.machine}</td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              setActionMenu(current => current?.row.id === row.id
+                                ? null
+                                : { row, x: rect.right, y: rect.bottom });
+                            }}
+                            title="Thao tác"
+                            aria-label={`Thao tác cho ${row.code || 'lệnh sản xuất'}`}
+                            aria-expanded={actionMenu?.row.id === row.id}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </TableRow>
+                      </React.Fragment>
+                    ))}
+                  </TableBody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {actionMenu && createPortal(
         <div
