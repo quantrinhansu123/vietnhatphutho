@@ -4,7 +4,6 @@ import { Loader2, Pencil, Plus, Save, Trash2, Warehouse, X } from 'lucide-react'
 import { BackButton } from '../../components/layout/NavButtons';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../../lib/appToast';
 import {
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -59,8 +58,6 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
   const [editingId, setEditingId] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -108,20 +105,6 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
         .some(v => v.includes(q))
     );
   }, [records, query]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filtered.slice(startIndex, startIndex + pageSize);
-  }, [filtered, currentPage, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [query, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
 
   const openCreateForm = () => {
     setForm(emptyForm());
@@ -192,35 +175,36 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-3 py-4 sm:px-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <BackButton onClick={onBack} />
-          <div className="mt-3 flex items-center gap-2">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#ef1b2d]/10 text-[#ef1b2d]">
-              <Warehouse className="h-5 w-5" />
-            </span>
-            <div>
-              <h1 className="text-lg font-black text-zinc-900 sm:text-xl">Quản lý kho</h1>
-              <p className="text-xs font-semibold text-zinc-500">
-                Bảng <span className="font-mono">quan_ly_kho</span> · tên kho, vị trí, người phụ trách
-              </p>
+    <div className="mx-auto w-full max-w-none space-y-4">
+      <BackButton onClick={onBack} />
+
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#ef1b2d]/10 text-[#ef1b2d]">
+                <Warehouse className="h-5 w-5" />
+              </span>
+              <div>
+                <h1 className="text-lg font-black text-zinc-900 sm:text-xl">Quản lý kho</h1>
+                <p className="text-xs font-semibold text-zinc-500">
+                  Bảng <span className="font-mono">quan_ly_kho</span> · tên kho, vị trí, người phụ trách
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={openCreateForm}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm mới
+              </button>
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-black text-zinc-900">Danh sách kho</h2>
-        <button
-          type="button"
-          onClick={openCreateForm}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Thêm
-        </button>
-      </div>
+      </section>
 
       <TableToolbar isLoading={loading} loadError={error && !showForm ? error : undefined}>
         <TableSearchInput
@@ -248,12 +232,12 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
                 Đang tải…
               </span>
             </TableEmptyRow>
-          ) : paginated.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <TableEmptyRow colSpan={6}>
               Chưa có kho nào. Bấm <span className="text-[#ef1b2d]">Thêm</span> để tạo.
             </TableEmptyRow>
           ) : (
-            paginated.map(row => (
+            filtered.map(row => (
               <React.Fragment key={String(row.id)}>
                 <TableRow>
                   <td className="px-4 py-3 font-mono font-semibold text-zinc-500">{row.id}</td>
@@ -287,15 +271,6 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
           )}
         </TableBody>
       </TableShell>
-
-      <TablePagination
-        totalRecords={filtered.length}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        pageSize={pageSize}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={setPageSize}
-      />
 
       {showForm
         ? createPortal(

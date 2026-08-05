@@ -567,7 +567,7 @@ export default function App() {
           <span className="hidden md:inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white text-[11px] font-bold shadow-sm">
             VN
           </span>
-          <VietNhatLogo className="h-9 md:h-10 w-auto max-h-full object-contain shrink-0 ml-0.5" />
+          <VietNhatLogo className="h-9 md:h-10 max-h-full shrink-0 ml-0.5" />
           <div className="ml-1 flex items-center gap-1.5 pl-1.5 md:border-l md:border-slate-200 md:pl-2.5">
             <span className="hidden max-w-[140px] flex-col leading-tight md:flex">
               <span className="truncate text-[12px] font-bold text-slate-900">{authUser.name}</span>

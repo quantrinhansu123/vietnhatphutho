@@ -127,12 +127,45 @@ function resolveMachineNvlLineCountQty(
   return resolveMachineNvlLineActualQty(line);
 }
 
-/** Tổng khối lượng (kg/ĐVT) từ bảng kho NVL theo mã. */
-function resolveNvlTotalWeightByCode(materials: MaterialRow[], code: string) {
-  const material = findMaterialByCode(materials, code);
-  if (!material) return 0;
-  const totalWeight = parseMachineNvlNumber(material.totalWeight);
-  return totalWeight > 0 ? totalWeight : 0;
+function inferExplicitKgWeight(...values: string[]) {
+  for (const value of values) {
+    const matches = [...String(value ?? '').matchAll(/(\d+(?:[.,]\d+)?)\s*kg\b/gi)];
+    for (let index = matches.length - 1; index >= 0; index -= 1) {
+      const parsed = parseMachineNvlNumber(matches[index][1]);
+      if (parsed > 0) return parsed;
+    }
+  }
+  return 0;
+}
+
+/** Hệ số kg/ĐVT: kho NVL → hệ số đã lưu → trường theo loại → trọng lượng ghi trong mã/tên → quy tắc lõi. */
+function resolveMachineNvlLineUnitWeightKg(
+  line: Pick<MachineNvlReportLine, 'code' | 'name' | 'unit' | 'unitWeightKg' | 'materialType'>,
+  materials: MaterialRow[]
+) {
+  if (isKgUnitValue(line.unit)) return 1;
+
+  const material = findMaterialByCode(materials, line.code);
+  const totalWeight = material ? parseMachineNvlNumber(material.totalWeight) : 0;
+  if (totalWeight > 0) return totalWeight;
+
+  const savedWeight = parseMachineNvlNumber(line.unitWeightKg);
+  if (savedWeight > 0) return savedWeight;
+
+  const materialType =
+    line.materialType || guessMachineNvlMaterialType(line.code, line.name || material?.name || '', line.unit);
+  const typeWeight = materialType === 'loi'
+    ? parseMachineNvlNumber(material?.coreWeight || '')
+    : materialType === 'bao_bi'
+      ? parseMachineNvlNumber(material?.bagWeight || '')
+      : 0;
+  if (typeWeight > 0) return typeWeight;
+
+  const explicitWeight = inferExplicitKgWeight(line.code, line.name, material?.code || '', material?.name || '');
+  if (explicitWeight > 0) return explicitWeight;
+
+  // Đồng bộ quy tắc nghiệp vụ đang dùng ở danh sách/in phiếu: lõi thiếu hệ số = 1 kg/cái.
+  return materialType === 'loi' ? 1 : 0;
 }
 
 function resolveMachineNvlLineKg(
@@ -156,8 +189,10 @@ function resolveMachineNvlLineActualKg(
   line: Pick<
     MachineNvlReportLine,
     | 'code'
+    | 'name'
     | 'unit'
     | 'unitWeightKg'
+    | 'materialType'
     | 'quantity'
     | 'inMachineQuantity'
     | 'inMixerQuantity'
@@ -169,9 +204,7 @@ function resolveMachineNvlLineActualKg(
   const qty = resolveMachineNvlLineCountQty(line);
   if (qty <= 0) return 0;
   if (isKgUnitValue(line.unit)) return qty;
-  const nvlFactor = resolveNvlTotalWeightByCode(materials, line.code);
-  if (nvlFactor > 0) return qty * nvlFactor;
-  const factor = parseMachineNvlNumber(line.unitWeightKg);
+  const factor = resolveMachineNvlLineUnitWeightKg(line, materials);
   return factor > 0 ? qty * factor : 0;
 }
 
@@ -603,7 +636,7 @@ export function MachineNvlReportPanel({
           next.quantity = totalQty > 0 ? formatMachineNvlQuantityValue(totalQty) : '';
           // Đồng bộ hệ số kg từ kho NVL theo mã
           if (next.code.trim()) {
-            const fromNvl = resolveNvlTotalWeightByCode(materials, next.code);
+            const fromNvl = resolveMachineNvlLineUnitWeightKg(next, materials);
             if (fromNvl > 0) {
               next.unitWeightKg = formatMachineNvlQuantityValue(fromNvl);
             }
@@ -644,7 +677,7 @@ export function MachineNvlReportPanel({
           ten_nvl: line.name.trim(),
           don_vi: line.unit.trim() || 'kg',
           trong_luong_quy_doi_kg: (() => {
-            const fromNvl = resolveNvlTotalWeightByCode(materials, line.code);
+            const fromNvl = resolveMachineNvlLineUnitWeightKg(line, materials);
             if (fromNvl > 0) return fromNvl;
             const raw = Number(String(line.unitWeightKg || '').replace(',', '.'));
             return Number.isFinite(raw) && raw > 0 ? raw : null;
@@ -1075,8 +1108,8 @@ export function MachineNvlReportPanel({
                         <span className="machine-nvl-line-mobile-label">KL định mức</span>
                         <input
                           value={
-                            resolveNvlTotalWeightByCode(materials, line.code) > 0
-                              ? formatMachineNvlQuantityValue(resolveNvlTotalWeightByCode(materials, line.code))
+                            resolveMachineNvlLineUnitWeightKg(line, materials) > 0
+                              ? formatMachineNvlQuantityValue(resolveMachineNvlLineUnitWeightKg(line, materials))
                               : line.unitWeightKg || '—'
                           }
                           readOnly
@@ -1190,8 +1223,8 @@ export function MachineNvlReportPanel({
                     />
                     <input
                       value={
-                        resolveNvlTotalWeightByCode(materials, line.code) > 0
-                          ? formatMachineNvlQuantityValue(resolveNvlTotalWeightByCode(materials, line.code))
+                        resolveMachineNvlLineUnitWeightKg(line, materials) > 0
+                          ? formatMachineNvlQuantityValue(resolveMachineNvlLineUnitWeightKg(line, materials))
                           : line.unitWeightKg || '—'
                       }
                       readOnly
