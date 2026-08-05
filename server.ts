@@ -82,6 +82,8 @@ const SUPABASE_PRODUCTION_PLAN_LINES_TABLE =
   process.env.SUPABASE_PRODUCTION_PLAN_LINES_TABLE || 'ke_hoach_san_xuat_dong';
 const SUPABASE_WAREHOUSE_MOVEMENTS_TABLE = process.env.SUPABASE_WAREHOUSE_MOVEMENTS_TABLE || 'phieu_xuat_nhap_kho';
 const SUPABASE_MIXING_REPORTS_TABLE = process.env.SUPABASE_MIXING_REPORTS_TABLE || 'bao_cao_phoi_tron';
+const SUPABASE_MIXING_NORM_TABLE =
+  process.env.SUPABASE_MIXING_NORM_TABLE || 'bang_tron_vat_tu_dinh_muc';
 const SUPABASE_ACCEPTANCE_REPORTS_TABLE = process.env.SUPABASE_ACCEPTANCE_REPORTS_TABLE || 'bao_cao_nghiem_thu';
 const SUPABASE_MACHINE_NVL_REPORTS_TABLE =
   process.env.SUPABASE_MACHINE_NVL_REPORTS_TABLE || 'bao_cao_may_nvl_ton';
@@ -170,6 +172,7 @@ if (useSupabase) {
     productionPlanLines: SUPABASE_PRODUCTION_PLAN_LINES_TABLE,
     warehouseMovements: SUPABASE_WAREHOUSE_MOVEMENTS_TABLE,
     mixingReports: SUPABASE_MIXING_REPORTS_TABLE,
+    mixingNormMaterials: SUPABASE_MIXING_NORM_TABLE,
     acceptanceReports: SUPABASE_ACCEPTANCE_REPORTS_TABLE,
     machineNvlReports: SUPABASE_MACHINE_NVL_REPORTS_TABLE,
     machineDowntime: SUPABASE_MACHINE_DOWNTIME_TABLE,
@@ -2742,6 +2745,87 @@ function mixingReportWriteError(error: { code?: string; message?: string }) {
     return `Bảng ${SUPABASE_MIXING_REPORTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bao-cao-phoi-tron.sql.`;
   }
   return `Không thể lưu báo cáo phối trộn. ${error.message || ''}`.trim();
+}
+
+function mixingNormWriteError(error: { code?: string; message?: string }) {
+  if (isMissingTableError(error)) {
+    return `Bảng ${SUPABASE_MIXING_NORM_TABLE} chưa tồn tại. Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql.`;
+  }
+  if (isMissingColumnError(error)) {
+    return `Bảng ${SUPABASE_MIXING_NORM_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql.`;
+  }
+  return `Không thể lưu bảng trộn vật tư định mức. ${error.message || ''}`.trim();
+}
+
+function parseMixingNormBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+  if (!body || typeof body !== 'object') return { error: 'Dữ liệu không hợp lệ.' };
+  const source = body as Record<string, unknown>;
+
+  const ngayRaw = String(source.ngay ?? '').trim();
+  const ngay = ngayRaw ? parseWarehouseSlipDate(ngayRaw) || ngayRaw : null;
+
+  const tongRaw = source.tong_trong_luong ?? source.tongTrongLuong;
+  let tong_trong_luong: number | null = null;
+  if (tongRaw !== null && tongRaw !== undefined && String(tongRaw).trim() !== '') {
+    const n = Number(String(tongRaw).replace(',', '.'));
+    if (!Number.isFinite(n)) return { error: 'Tổng trọng lượng phải là số.' };
+    tong_trong_luong = n;
+  }
+
+  const linesRaw = Array.isArray(source.chi_tiet)
+    ? source.chi_tiet
+    : Array.isArray(source.lines)
+      ? source.lines
+      : [];
+
+  const chi_tiet = linesRaw
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null;
+      const line = item as Record<string, unknown>;
+      const ma_nvl = String(line.ma_nvl ?? line.maNvl ?? '').trim();
+      const ten_nvl = String(line.ten_nvl ?? line.tenNvl ?? '').trim();
+      if (!ma_nvl && !ten_nvl) return null;
+      const giaTriRaw = line.gia_tri ?? line.giaTri ?? line.dinh_muc ?? line.value;
+      let gia_tri: number | null = null;
+      if (giaTriRaw !== null && giaTriRaw !== undefined && String(giaTriRaw).trim() !== '') {
+        const n = Number(String(giaTriRaw).replace(',', '.'));
+        if (!Number.isFinite(n)) {
+          return { error: `Giá trị dòng NVL #${index + 1} không hợp lệ.` };
+        }
+        gia_tri = n;
+      }
+      const donVi = String(line.don_vi ?? line.donVi ?? 'kg').trim().toLowerCase();
+      return {
+        ma_nvl: ma_nvl || null,
+        ten_nvl: ten_nvl || null,
+        gia_tri,
+        don_vi: donVi === '%' ? '%' : 'kg'
+      };
+    })
+    .filter(Boolean);
+
+  const lineError = chi_tiet.find(
+    item => item && typeof item === 'object' && 'error' in (item as object)
+  ) as { error: string } | undefined;
+  if (lineError?.error) return { error: lineError.error };
+
+  const lines = chi_tiet.filter(
+    (item): item is { ma_nvl: string | null; ten_nvl: string | null; gia_tri: number | null; don_vi: string } =>
+      Boolean(item && typeof item === 'object' && !('error' in (item as object)))
+  );
+
+  if (lines.length === 0) {
+    return { error: 'Vui lòng thêm ít nhất 1 dòng NVL.' };
+  }
+
+  return {
+    record: {
+      ngay,
+      tong_trong_luong,
+      ghi_chu: String(source.ghi_chu ?? source.ghiChu ?? '').trim() || null,
+      chi_tiet: lines
+    }
+  };
 }
 
 function parseMachineNvlReportKind(value: unknown): 'dau_ca' | 'cuoi_ca' {
@@ -9003,6 +9087,118 @@ export function createApp() {
       return res.json({ success: true, deleted });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhiều báo cáo phối trộn.' });
+    }
+  });
+
+  app.get('/api/bang-tron-vat-tu-dinh-muc', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      let query = supabase
+        .from(SUPABASE_MIXING_NORM_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      const { data, error } = await query.limit(2000);
+      if (error) {
+        console.error('Supabase mixing norm query error:', error);
+        return res.status(500).json({ error: mixingNormWriteError(error) });
+      }
+
+      let records = Array.isArray(data) ? data : [];
+      if (q) {
+        const needle = q.toLowerCase();
+        records = records.filter(row => {
+          const r = row as Record<string, unknown>;
+          return `${r.ngay ?? ''} ${r.ma_sp ?? ''} ${r.ten_sp ?? ''} ${r.ma_nvl ?? ''} ${r.ten_nvl ?? ''} ${r.ghi_chu ?? ''}`
+            .toLowerCase()
+            .includes(needle);
+        });
+      }
+
+      return res.json({ records, total: records.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải bảng định mức.' });
+    }
+  });
+
+  app.post('/api/bang-tron-vat-tu-dinh-muc', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseMixingNormBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MIXING_NORM_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase mixing norm insert error:', error);
+        return res.status(500).json({ error: mixingNormWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thêm dòng định mức.' });
+    }
+  });
+
+  app.patch('/api/bang-tron-vat-tu-dinh-muc/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu id.' });
+
+    try {
+      const parsed = parseMixingNormBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_MIXING_NORM_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase mixing norm update error:', error);
+        return res.status(500).json({ error: mixingNormWriteError(error) });
+      }
+
+      return res.json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật dòng định mức.' });
+    }
+  });
+
+  app.delete('/api/bang-tron-vat-tu-dinh-muc/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu id.' });
+
+    try {
+      const { error } = await supabase.from(SUPABASE_MIXING_NORM_TABLE).delete().eq('id', id);
+      if (error) {
+        console.error('Supabase mixing norm delete error:', error);
+        return res.status(500).json({ error: mixingNormWriteError(error) });
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa dòng định mức.' });
     }
   });
 

@@ -295,8 +295,25 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '5284–5476',
     appTab: 'mixing-report | mixing-report-list',
     appLines: 'src/components/MixingReportForm.tsx, src/components/MixingReportListView.tsx',
-    components: ['src/components/MixingReportForm.tsx', 'src/components/MixingReportListView.tsx', 'src/components/MixingReportPrintSheet.tsx', 'src/components/MixingOrderAutofillModal.tsx'],
+    components: [
+      'src/components/MixingReportForm.tsx',
+      'src/components/MixingReportListView.tsx',
+      'src/components/MixingNormMaterialsTab.tsx',
+      'src/components/MixingReportPrintSheet.tsx',
+      'src/components/MixingOrderAutofillModal.tsx'
+    ],
     utils: ['src/lib/mixingReportModel.ts', 'src/utils/mixingOrderAutofill.ts']
+  },
+  bang_tron_vat_tu_dinh_muc: {
+    table: 'bang_tron_vat_tu_dinh_muc',
+    label: 'Bảng trộn vật tư định mức',
+    sql: ['supabase-bang-tron-vat-tu-dinh-muc.sql'],
+    apiPrefix: '/api/bang-tron-vat-tu-dinh-muc',
+    serverLines: 'bang_tron_vat_tu_dinh_muc routes',
+    appTab: 'mixing-report-list',
+    appLines: 'src/components/MixingNormMaterialsTab.tsx',
+    components: ['src/components/MixingNormMaterialsTab.tsx'],
+    utils: []
   },
   bao_cao_nghiem_thu: {
     table: 'bao_cao_nghiem_thu',
