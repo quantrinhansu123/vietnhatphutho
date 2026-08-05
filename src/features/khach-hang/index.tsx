@@ -15,7 +15,6 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  TablePagination,
   RowActionsMenu
 } from '../../components/shared/table';
 
@@ -204,8 +203,6 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   const [searchText, setSearchText] = useState('');
   const [selectedCustomerType, setSelectedCustomerType] = useState('all');
   const [selectedManagingUnit, setSelectedManagingUnit] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -418,20 +415,6 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
         return matchesSearch && matchesCustomerType && matchesManagingUnit;
       });
   }, [customers, normalizedSearch, selectedCustomerType, selectedManagingUnit]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / pageSize));
-  const paginatedCustomers = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredCustomers.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredCustomers, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, selectedCustomerType, selectedManagingUnit, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -748,16 +731,6 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
 
       <TableShell
         minWidthClassName="min-w-[1320px]"
-        footer={(
-          <TablePagination
-            totalRecords={filteredCustomers.length}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={setPageSize}
-          />
-        )}
       >
         <TableHead>
           <TableHeadCell>STT</TableHeadCell>
@@ -781,14 +754,14 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
                 Đang tải khách hàng...
               </td>
             </tr>
-          ) : paginatedCustomers.length === 0 ? (
+          ) : filteredCustomers.length === 0 ? (
             <TableEmptyRow colSpan={12}>Chưa có khách hàng phù hợp.</TableEmptyRow>
           ) : (
-            paginatedCustomers.map((customer, index) => (
+            filteredCustomers.map((customer, index) => (
               <React.Fragment key={customer.id}>
                 <TableRow>
                   <td className="px-4 py-3 font-black text-[#ef1b2d]">
-                    {(currentPage - 1) * pageSize + index + 1}
+                    {index + 1}
                   </td>
                   <td className="px-4 py-3 font-mono font-bold text-zinc-900">{customer.code || '-'}</td>
                   <td className="px-4 py-3 font-normal text-zinc-950">{customer.name}</td>

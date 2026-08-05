@@ -20,7 +20,6 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-    TablePagination,
     RowActionsMenu
 } from '../../components/shared/table';
 import {
@@ -163,10 +162,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [permissionCurrentPage, setPermissionCurrentPage] = useState(1);
-  const [permissionPageSize, setPermissionPageSize] = useState(10);
   const [activeSection, setActiveSection] = useState<'settings' | 'permissions' | 'role-permissions'>('settings');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [settingsError, setSettingsError] = useState('');
@@ -379,20 +374,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     });
   }, [normalizedSearch, selectedGroup, settings]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredSettings.length / pageSize));
-  const paginatedSettings = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredSettings.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredSettings, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, selectedGroup, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
-
   const permissionSettings = useMemo(
     () =>
       parsePermissionSettings(
@@ -407,20 +388,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       ),
     [settings]
   );
-
-  const permissionTotalPages = Math.max(1, Math.ceil(permissionSettings.length / permissionPageSize));
-  const paginatedPermissionSettings = useMemo(() => {
-    const startIndex = (permissionCurrentPage - 1) * permissionPageSize;
-    return permissionSettings.slice(startIndex, startIndex + permissionPageSize);
-  }, [permissionCurrentPage, permissionSettings, permissionPageSize]);
-
-  useEffect(() => {
-    setPermissionCurrentPage(1);
-  }, [permissionPageSize, permissionSettings.length]);
-
-  useEffect(() => {
-    if (permissionCurrentPage > permissionTotalPages) setPermissionCurrentPage(permissionTotalPages);
-  }, [permissionCurrentPage, permissionTotalPages]);
 
   // Phòng ban = distinct phong_ban từ bảng nhan_su
   const departmentOptions = useMemo(() => {
@@ -915,7 +882,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {paginatedSettings.map(setting => (
+          {filteredSettings.map(setting => (
             <React.Fragment key={setting.id}>
               <TableRow>
                 <td className="px-4 py-3 font-black text-zinc-950">{setting.code || '-'}</td>
@@ -983,15 +950,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           )}
         </TableBody>
       </TableShell>
-
-      <TablePagination
-        totalRecords={filteredSettings.length}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        pageSize={pageSize}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={setPageSize}
-      />
         </>
       ) : activeSection === 'permissions' ? (
         <>
@@ -1110,7 +1068,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   <TableHeadCell className="whitespace-nowrap" align="center">Thao tác</TableHeadCell>
                 </TableHead>
                 <TableBody>
-                  {paginatedPermissionSettings.map(item => (
+                  {permissionSettings.map(item => (
                     <React.Fragment key={item.id}>
                       <tr className={`transition ${permissionForm.id === item.id ? 'bg-red-50/70' : 'hover:bg-red-50/40'}`}>
                         <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-900">{item.department}</td>
@@ -1157,15 +1115,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   )}
                 </TableBody>
               </TableShell>
-
-              <TablePagination
-                totalRecords={permissionSettings.length}
-                currentPage={permissionCurrentPage}
-                totalPages={permissionTotalPages}
-                pageSize={permissionPageSize}
-                onPageChange={setPermissionCurrentPage}
-                onPageSizeChange={setPermissionPageSize}
-              />
             </div>
           </section>
         </>

@@ -16,7 +16,6 @@ import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { sanitizeDecimalTyping } from '../../lib/mixingReportModel';
 import {
   FilterCombobox,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -252,8 +251,6 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedType, setSelectedType] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [isLoadingMachines, setIsLoadingMachines] = useState(true);
   const [machineError, setMachineError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -549,20 +546,6 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
     setSelectedType('all');
     setSearchText('');
   };
-
-  const totalMachinePages = Math.max(1, Math.ceil(filteredMachines.length / pageSize));
-  const paginatedMachines = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredMachines.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredMachines, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, selectedType, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalMachinePages) setCurrentPage(totalMachinePages);
-  }, [currentPage, totalMachinePages]);
 
   const branchCount = new Set(machines.map(machine => machine.branch).filter(branch => branch && branch !== '-')).size;
   const activeCount = machines.filter(machine => /đang|hoạt|active|dung|dùng/i.test(machine.status)).length;
@@ -926,7 +909,7 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {paginatedMachines.map(machine => (
+          {filteredMachines.map(machine => (
             <React.Fragment key={machine.id}>
             <TableRow>
                   <td className="px-4 py-3 font-black text-zinc-950">{machine.code || '-'}</td>
@@ -1059,15 +1042,6 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
           )}
         </TableBody>
       </TableShell>
-
-      <TablePagination
-        totalRecords={filteredMachines.length}
-        currentPage={currentPage}
-        totalPages={totalMachinePages}
-        pageSize={pageSize}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={setPageSize}
-      />
 
       {viewingMachine ? (
         <div

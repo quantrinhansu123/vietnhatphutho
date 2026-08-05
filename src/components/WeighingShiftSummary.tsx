@@ -79,40 +79,19 @@ function formatDateVi(value: string) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
-interface DateSlipGroup {
-  date: string;
-  slips: WeighingSlip[];
-  slipCount: number;
-  totalWeighRounds: number;
-}
-
-interface ShiftSummary {
+interface ShiftDateGroup {
   shiftKey: string;
   shiftLabel: string;
   slips: WeighingSlip[];
-  dateGroups: DateSlipGroup[];
   slipCount: number;
   totalWeighRounds: number;
 }
 
-function groupSlipsByDate(slips: WeighingSlip[]): DateSlipGroup[] {
-  const map = new Map<string, WeighingSlip[]>();
-
-  slips.forEach(slip => {
-    const date = slip.productionDate || slip.reportDate || '';
-    const bucket = map.get(date) ?? [];
-    bucket.push(slip);
-    map.set(date, bucket);
-  });
-
-  return [...map.entries()]
-    .map(([date, dateSlips]) => ({
-      date,
-      slips: [...dateSlips].sort((a, b) => b.reportDate.localeCompare(a.reportDate)),
-      slipCount: dateSlips.length,
-      totalWeighRounds: dateSlips.reduce((sum, slip) => sum + countWeighingRounds(slip.rows), 0)
-    }))
-    .sort((a, b) => b.date.localeCompare(a.date));
+interface DateGroup {
+  date: string;
+  shiftGroups: ShiftDateGroup[];
+  slipCount: number;
+  totalWeighRounds: number;
 }
 
 interface WeighingRoundEntry {
@@ -169,7 +148,7 @@ function formatWeighingProductLabel(row: WeighingRecord, slip?: WeighingSlip) {
   return '—';
 }
 
-function groupByShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): ShiftSummary[] {
+function groupSlipsByDateAndShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): DateGroup[] {
   const slipMap = new Map<string, WeighingSlip>();
 
   records.forEach(record => {
@@ -202,32 +181,521 @@ function groupByShift(records: WeighingRecord[], shiftOptions: ShiftOption[]): S
     rows: [...slip.rows].sort((a, b) => Number(a.weighNo) - Number(b.weighNo))
   }));
 
-  return shiftOptions.map(option => {
-    const shiftSlips = slips
-      .filter(slip => resolveShiftName(slip.shiftName, shiftOptions) === option.value)
-      .sort((a, b) => b.reportDate.localeCompare(a.reportDate));
-
-    return {
-      shiftKey: option.value,
-      shiftLabel: option.label,
-      slips: shiftSlips,
-      dateGroups: groupSlipsByDate(shiftSlips),
-      slipCount: shiftSlips.length,
-      totalWeighRounds: shiftSlips.reduce((sum, slip) => sum + countWeighingRounds(slip.rows), 0)
-    };
+  const dateMap = new Map<string, WeighingSlip[]>();
+  slips.forEach(slip => {
+    const date = slip.productionDate || slip.reportDate || '';
+    const bucket = dateMap.get(date) ?? [];
+    bucket.push(slip);
+    dateMap.set(date, bucket);
   });
+
+  return [...dateMap.entries()]
+    .map(([date, dateSlips]) => {
+      const shiftGroups: ShiftDateGroup[] = shiftOptions
+        .map(option => {
+          const shiftSlips = dateSlips
+            .filter(slip => resolveShiftName(slip.shiftName, shiftOptions) === option.value)
+            .sort((a, b) => b.reportDate.localeCompare(a.reportDate));
+
+          return {
+            shiftKey: option.value,
+            shiftLabel: option.label,
+            slips: shiftSlips,
+            slipCount: shiftSlips.length,
+            totalWeighRounds: shiftSlips.reduce((sum, slip) => sum + countWeighingRounds(slip.rows), 0)
+          };
+        })
+        .filter(group => group.slipCount > 0);
+
+      return {
+        date,
+        shiftGroups,
+        slipCount: dateSlips.length,
+        totalWeighRounds: dateSlips.reduce((sum, slip) => sum + countWeighingRounds(slip.rows), 0)
+      };
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-function findWeighingSlipInSummaries(
-  summaries: ShiftSummary[],
-  record: WeighingRecord
-): WeighingSlip | null {
+function findWeighingSlipInGroups(groups: DateGroup[], record: WeighingRecord): WeighingSlip | null {
   const key = slipKey(record);
-  for (const shift of summaries) {
-    const slip = shift.slips.find(item => item.key === key);
-    if (slip) return slip;
+  for (const dateGroup of groups) {
+    for (const shift of dateGroup.shiftGroups) {
+      const slip = shift.slips.find(item => item.key === key);
+      if (slip) return slip;
+    }
   }
   return null;
+}
+
+function ShiftSlipCard({
+  shift,
+  productionDate,
+  config,
+  splitDamagedPlasticDefectWeights,
+  splitPlasticFilmWeights,
+  hideProductFields,
+  onOpenSlipSetup,
+  onPrintSlip,
+  onEditSlip,
+  onDeleteSlip,
+  deletingSlipKey,
+  onEditRow,
+  onDeleteRow,
+  deletingRowId,
+  onViewRow,
+  onViewImage
+}: {
+  key?: string;
+  shift: ShiftDateGroup;
+  productionDate: string;
+  config: WeighingSlipConfig;
+  splitDamagedPlasticDefectWeights: boolean;
+  splitPlasticFilmWeights: boolean;
+  hideProductFields: boolean;
+  onOpenSlipSetup: (options: { productionDate: string; shiftName?: string }) => void;
+  onPrintSlip: (slip: WeighingSlip) => void;
+  onEditSlip: (slip: WeighingSlip) => void;
+  onDeleteSlip: (slip: WeighingSlip) => void;
+  deletingSlipKey: string | null;
+  onEditRow: (slip: WeighingSlip, row: WeighingRecord) => void;
+  onDeleteRow: (row: WeighingRecord) => void;
+  deletingRowId: string | number | null;
+  onViewRow: (row: WeighingRecord) => void;
+  onViewImage: (image: WeighingPreviewImage) => void;
+}) {
+  const roundGroups = groupShiftRowsByRound(shift.slips);
+  const primarySlip = shift.slips.length === 1 ? shift.slips[0] : null;
+  const primaryMachine = primarySlip
+    ? resolveMachineName(primarySlip.machineName, ...primarySlip.rows.map(row => row.machineName))
+    : '—';
+  const tableColSpan = splitDamagedPlasticDefectWeights
+    ? 13 - (hideProductFields ? 1 : 0) - (config.hideAcceptanceStatus ? 1 : 0)
+    : splitPlasticFilmWeights
+      ? 7
+      : 12;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+        <div className="min-w-0">
+          <h3 className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{shift.shiftLabel}</h3>
+          <p className="text-[10px] font-semibold text-zinc-400">
+            {primarySlip ? (
+              <>
+                {primarySlip.worker1 || '—'}
+                {primarySlip.worker2 ? ` · ${primarySlip.worker2}` : ''}
+                {primaryMachine !== '—' ? ` · ${primaryMachine}` : ''}
+              </>
+            ) : (
+              <>
+                {shift.slipCount} phiếu · {shift.totalWeighRounds} lần cân
+              </>
+            )}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {primarySlip && (
+            <>
+              <button
+                type="button"
+                onClick={() => onPrintSlip(primarySlip)}
+                title="In phiếu cân ca"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+              >
+                <Printer className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onEditSlip(primarySlip)}
+                title="Sửa phiếu"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onDeleteSlip(primarySlip)}
+                disabled={deletingSlipKey === primarySlip.key}
+                title="Xóa phiếu"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingSlipKey === primarySlip.key ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              onOpenSlipSetup({
+                productionDate,
+                shiftName: shift.shiftKey
+              })
+            }
+            className="flex h-7 items-center gap-1 rounded-lg bg-red-50 px-2 text-[10px] font-bold text-[#ef1b2d] transition hover:bg-red-100"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Thêm
+          </button>
+        </div>
+      </div>
+
+      {shift.slips.length === 0 ? (
+        <p className="px-3 py-6 text-center text-xs font-semibold text-zinc-400">Chưa có phiếu cho ca này.</p>
+      ) : (
+        <div className="p-3">
+          <div className="overflow-x-auto rounded-xl border border-zinc-200">
+            <table className="w-full min-w-[1280px] border-collapse text-left text-xs">
+              <thead>
+                <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
+                  {!hideProductFields && <th className="px-3 py-2">Sản phẩm</th>}
+                  <th className="px-3 py-2">Người cân</th>
+                  {splitDamagedPlasticDefectWeights ? (
+                    <>
+                      <th className="px-3 py-2">Loại</th>
+                      <th className="px-3 py-2">Mã VT</th>
+                      <th className="px-3 py-2">SL</th>
+                      <th className="px-3 py-2">NVL khác</th>
+                      <th className="px-3 py-2">Nhựa KM</th>
+                      <th className="px-3 py-2">Nhựa ĐN</th>
+                      <th className="px-3 py-2">Nhựa DM</th>
+                      <th className="px-3 py-2">Màng</th>
+                      <th className="px-3 py-2">Lõi</th>
+                      <th className="px-3 py-2">Tổng</th>
+                    </>
+                  ) : splitPlasticFilmWeights ? (
+                    <>
+                      <th className="px-3 py-2">KL nhựa</th>
+                      <th className="px-3 py-2">KL màng</th>
+                      <th className="px-3 py-2">Tổng</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-3 py-2">TL lõi</th>
+                      <th className="px-3 py-2">TL bì</th>
+                      <th className="px-3 py-2">TL nhựa</th>
+                      <th className="px-3 py-2">Tổng trọng lượng</th>
+                    </>
+                  )}
+                  <th className="px-3 py-2">Giờ</th>
+                  {!config.hideAcceptanceStatus && <th className="px-3 py-2">Nghiệm thu</th>}
+                  <th className="px-3 py-2">Ghi chú</th>
+                  {!config.hideCoreWeightImage && <th className="px-3 py-2">Ảnh TL lõi</th>}
+                  {!config.hideWeightImage && <th className="px-3 py-2">Ảnh</th>}
+                  <th className="px-3 py-2 text-center">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {roundGroups.length === 0 ? (
+                  <tr>
+                    <td colSpan={tableColSpan} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
+                      Chưa có lần cân.
+                    </td>
+                  </tr>
+                ) : (
+                  roundGroups.map(group => {
+                    const metaWeigher = group.entries.find(entry => entry.row.weigherName?.trim())?.row.weigherName;
+                    const metaTime = group.entries.find(entry => entry.row.weighTime?.trim())?.row.weighTime;
+
+                    return (
+                      <React.Fragment key={group.roundKey}>
+                        <tr className="bg-red-50/60">
+                          <td colSpan={tableColSpan} className="px-3 py-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">
+                              Lần {group.weighNo}
+                              {metaWeigher ? ` · ${metaWeigher}` : ''}
+                              {metaTime ? ` · ${metaTime}` : ''}
+                            </span>
+                          </td>
+                        </tr>
+                        {group.entries.map((entry, index) => (
+                          <tr key={entry.row.id ?? `${group.roundKey}-${entry.slip.key}-${index}`}>
+                            {!hideProductFields && (
+                            <td className="px-3 py-2 font-semibold text-zinc-800">
+                              <p>{formatWeighingProductLabel(entry.row, entry.slip)}</p>
+                              {shift.slips.length > 1 ? (
+                                <p className="mt-0.5 text-[10px] font-semibold text-zinc-400">
+                                  Phiếu {entry.slip.documentNo || '—'}
+                                </p>
+                              ) : null}
+                            </td>
+                            )}
+                            <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weigherName || '—'}</td>
+                            {splitDamagedPlasticDefectWeights ? (
+                              (() => {
+                                const isOther = isDamagedOtherMaterial(entry.row);
+                                return (
+                                  <>
+                                    <td className="px-3 py-2 font-semibold text-zinc-800">
+                                      {damagedGoodsMaterialTypeLabel(entry.row.materialType)}
+                                    </td>
+                                    <td className="px-3 py-2 font-mono font-bold text-zinc-900">
+                                      {isOther ? entry.row.materialCode || '—' : '—'}
+                                    </td>
+                                    <td className="px-3 py-2 font-bold text-zinc-900">
+                                      {isOther ? entry.row.materialQuantity || '—' : '—'}
+                                    </td>
+                                    <td className="px-3 py-2 font-bold text-zinc-900">
+                                      {isOther ? formatWeighingWeightField(entry.row.weight) : '—'}
+                                    </td>
+                                    <td className="px-3 py-2 font-bold text-zinc-900">
+                                      {isOther ? '—' : formatWeighingWeightField(entry.row.plasticNoFilmWeight)}
+                                    </td>
+                                    <td className="px-3 py-2 font-bold text-zinc-900">
+                                      {isOther ? '—' : formatWeighingWeightField(entry.row.plasticNozzleWeight)}
+                                    </td>
+                                    <td className="px-3 py-2 font-bold text-zinc-900">
+                                      {isOther
+                                        ? '—'
+                                        : formatWeighingWeightField(entry.row.plasticFilmAdhesionWeight)}
+                                    </td>
+                                    <td className="px-3 py-2 font-semibold text-zinc-700">
+                                      {isOther ? '—' : formatWeighingWeightField(entry.row.shellWeight)}
+                                    </td>
+                                    <td className="px-3 py-2 font-semibold text-zinc-700">
+                                      {isOther
+                                        ? formatWeighingWeightField(entry.row.weight)
+                                        : formatWeighingWeightField(entry.row.coreWeight)}
+                                    </td>
+                                    <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                                      {formatDamagedGoodsRowTotalWeight(entry.row)}
+                                    </td>
+                                  </>
+                                );
+                              })()
+                            ) : splitPlasticFilmWeights ? (
+                              <>
+                                <td className="px-3 py-2 font-bold text-zinc-900">
+                                  {formatWeighingWeightField(entry.row.weight)}
+                                </td>
+                                <td className="px-3 py-2 font-semibold text-zinc-700">
+                                  {formatWeighingWeightField(entry.row.shellWeight)}
+                                </td>
+                                <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                                  {formatDamagedGoodsRowTotalWeight(entry.row)}
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.coreWeight || '—'}</td>
+                                <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.shellWeight || '—'}</td>
+                                <td className="px-3 py-2 font-bold text-zinc-900">{formatWeighingNetWeight(entry.row)}</td>
+                                <td className="px-3 py-2 font-black text-[#ef1b2d]">
+                                  {formatWeighingRowTotalWeight(entry.row)}
+                                </td>
+                              </>
+                            )}
+                            <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weighTime || '—'}</td>
+                            {!config.hideAcceptanceStatus && (
+                            <td className="px-3 py-2">
+                              {entry.row.acceptanceStatus ? (
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                                    entry.row.acceptanceStatus === 'Đạt'
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : 'bg-rose-50 text-rose-700'
+                                  }`}
+                                >
+                                  {entry.row.acceptanceStatus}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-300">—</span>
+                              )}
+                            </td>
+                            )}
+                            <td
+                              className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600"
+                              title={entry.row.note || undefined}
+                            >
+                              {entry.row.note || '—'}
+                            </td>
+                            {!config.hideCoreWeightImage && (
+                            <td className="px-3 py-2">
+                              {entry.row.coreWeightImageUrl ? (
+                                <WeighingImageThumbnail
+                                  url={entry.row.coreWeightImageUrl}
+                                  alt="Ảnh trọng lượng lõi"
+                                  title="Ảnh trọng lượng lõi"
+                                  onView={() =>
+                                    onViewImage({ url: entry.row.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })
+                                  }
+                                />
+                              ) : (
+                                <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
+                              )}
+                            </td>
+                            )}
+                            {!config.hideWeightImage && (
+                            <td className="px-3 py-2">
+                              {entry.row.imageUrl ? (
+                                <WeighingImageThumbnail
+                                  url={entry.row.imageUrl}
+                                  alt="Ảnh cân"
+                                  title="Ảnh cân"
+                                  onView={() => onViewImage({ url: entry.row.imageUrl!, title: 'Ảnh cân' })}
+                                />
+                              ) : (
+                                <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
+                              )}
+                            </td>
+                            )}
+                            <td className="px-3 py-2">
+                              <RowActionsMenu label="Thao tác dòng cân">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => onViewRow(entry.row)}
+                                  title="Xem"
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onEditRow(entry.slip, entry.row)}
+                                  title="Sửa"
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteRow(entry.row)}
+                                  disabled={deletingRowId === entry.row.id}
+                                  title="Xóa"
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {deletingRowId === entry.row.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                              </RowActionsMenu>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DateGroupSection({
+  group,
+  shiftOptions,
+  config,
+  splitDamagedPlasticDefectWeights,
+  splitPlasticFilmWeights,
+  hideProductFields,
+  onOpenSlipSetup,
+  onPrintSlip,
+  onEditSlip,
+  onDeleteSlip,
+  deletingSlipKey,
+  onEditRow,
+  onDeleteRow,
+  deletingRowId,
+  onViewRow,
+  onViewImage
+}: {
+  key?: string;
+  group: DateGroup;
+  shiftOptions: ShiftOption[];
+  config: WeighingSlipConfig;
+  splitDamagedPlasticDefectWeights: boolean;
+  splitPlasticFilmWeights: boolean;
+  hideProductFields: boolean;
+  onOpenSlipSetup: (options: { productionDate: string; shiftName?: string }) => void;
+  onPrintSlip: (slip: WeighingSlip) => void;
+  onEditSlip: (slip: WeighingSlip) => void;
+  onDeleteSlip: (slip: WeighingSlip) => void;
+  deletingSlipKey: string | null;
+  onEditRow: (slip: WeighingSlip, row: WeighingRecord) => void;
+  onDeleteRow: (row: WeighingRecord) => void;
+  deletingRowId: string | number | null;
+  onViewRow: (row: WeighingRecord) => void;
+  onViewImage: (image: WeighingPreviewImage) => void;
+}) {
+  const [addShiftKey, setAddShiftKey] = useState(shiftOptions[0]?.value ?? '');
+
+  useEffect(() => {
+    if (!shiftOptions.some(option => option.value === addShiftKey)) {
+      setAddShiftKey(shiftOptions[0]?.value ?? '');
+    }
+  }, [shiftOptions, addShiftKey]);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-zinc-200 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-100/90 px-3 py-2 sm:px-4">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ngày</span>
+          <span className="font-mono text-sm font-black text-zinc-900">{formatDateVi(group.date)}</span>
+          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-zinc-500 ring-1 ring-zinc-200">
+            {group.slipCount} phiếu · {group.totalWeighRounds} lần cân
+          </span>
+        </div>
+        {shiftOptions.length > 0 && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <select
+              value={addShiftKey}
+              onChange={e => setAddShiftKey(e.target.value)}
+              className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold text-zinc-700 outline-none focus:border-[#ef1b2d]"
+            >
+              {shiftOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => onOpenSlipSetup({ productionDate: group.date, shiftName: addShiftKey })}
+              className="flex h-8 items-center gap-1 rounded-lg bg-red-50 px-2 text-[10px] font-bold text-[#ef1b2d] transition hover:bg-red-100"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm theo ca
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="space-y-3 p-3">
+        {group.shiftGroups.map(shift => (
+          <ShiftSlipCard
+            key={shift.shiftKey}
+            shift={shift}
+            productionDate={group.date}
+            config={config}
+            splitDamagedPlasticDefectWeights={splitDamagedPlasticDefectWeights}
+            splitPlasticFilmWeights={splitPlasticFilmWeights}
+            hideProductFields={hideProductFields}
+            onOpenSlipSetup={onOpenSlipSetup}
+            onPrintSlip={onPrintSlip}
+            onEditSlip={onEditSlip}
+            onDeleteSlip={onDeleteSlip}
+            deletingSlipKey={deletingSlipKey}
+            onEditRow={onEditRow}
+            onDeleteRow={onDeleteRow}
+            deletingRowId={deletingRowId}
+            onViewRow={onViewRow}
+            onViewImage={onViewImage}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function WeighingShiftSummary({
@@ -329,10 +797,10 @@ export default function WeighingShiftSummary({
     await loadReports();
   };
 
-  const shiftSummaries = useMemo(() => groupByShift(records, shiftOptions), [records, shiftOptions]);
+  const dateGroups = useMemo(() => groupSlipsByDateAndShift(records, shiftOptions), [records, shiftOptions]);
   const viewingRowSlip = useMemo(
-    () => (viewingRow ? findWeighingSlipInSummaries(shiftSummaries, viewingRow) : null),
-    [viewingRow, shiftSummaries]
+    () => (viewingRow ? findWeighingSlipInGroups(dateGroups, viewingRow) : null),
+    [viewingRow, dateGroups]
   );
   const loadReports = async () => {
     setIsLoading(true);
@@ -619,347 +1087,33 @@ export default function WeighingShiftSummary({
             </div>
           )}
 
-          {shiftSummaries.map(shift => {
-            const roundGroups = groupShiftRowsByRound(shift.slips);
-            const primarySlip = shift.slips.length === 1 ? shift.slips[0] : null;
-            const primaryMachine = primarySlip
-              ? resolveMachineName(primarySlip.machineName, ...primarySlip.rows.map(row => row.machineName))
-              : '—';
-            const isMultiDayRange = dateFrom !== dateTo;
-            const tableColSpan = splitDamagedPlasticDefectWeights
-              ? (isMultiDayRange ? 14 : 13) - (hideProductFields ? 1 : 0) - (config.hideAcceptanceStatus ? 1 : 0)
-              : splitPlasticFilmWeights
-                ? isMultiDayRange
-                  ? 8
-                  : 7
-                : isMultiDayRange
-                  ? 13
-                  : 12;
-
-            return (
-            <section key={shift.shiftKey} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
-                <div className="min-w-0">
-                  <h3 className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{shift.shiftLabel}</h3>
-                  <p className="text-[10px] font-semibold text-zinc-400">
-                    {primarySlip ? (
-                      <>
-                        {primarySlip.worker1 || '—'}
-                        {primarySlip.worker2 ? ` · ${primarySlip.worker2}` : ''}
-                        {primaryMachine !== '—' ? ` · ${primaryMachine}` : ''}
-                      </>
-                    ) : (
-                      <>
-                        {shift.slipCount} phiếu · {shift.totalWeighRounds} lần cân
-                      </>
-                    )}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {primarySlip && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handlePrintSlip(primarySlip)}
-                        title="In phiếu cân ca"
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                      >
-                        <Printer className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleEditSlip(primarySlip)}
-                        title="Sửa phiếu"
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteSlip(primarySlip)}
-                        disabled={deletingSlipKey === primarySlip.key}
-                        title="Xóa phiếu"
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {deletingSlipKey === primarySlip.key ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleOpenSlipSetup({
-                        productionDate: dateTo,
-                        shiftName: shift.shiftKey
-                      })
-                    }
-                    className="flex h-7 items-center gap-1 rounded-lg bg-red-50 px-2 text-[10px] font-bold text-[#ef1b2d] transition hover:bg-red-100"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Thêm
-                  </button>
-                </div>
-              </div>
-
-              {shift.slips.length === 0 ? (
-                <p className="px-3 py-6 text-center text-xs font-semibold text-zinc-400">Chưa có phiếu cho ca này.</p>
-              ) : (
-                <div className="p-3">
-                  <div className="overflow-x-auto rounded-xl border border-zinc-200">
-                    <table className="w-full min-w-[1280px] border-collapse text-left text-xs">
-                      <thead>
-                        <tr className="bg-zinc-950 text-[10px] font-black uppercase tracking-wider text-white">
-                          {isMultiDayRange && <th className="px-3 py-2">Ngày</th>}
-                          {!hideProductFields && <th className="px-3 py-2">Sản phẩm</th>}
-                          <th className="px-3 py-2">Người cân</th>
-                          {splitDamagedPlasticDefectWeights ? (
-                            <>
-                              <th className="px-3 py-2">Loại</th>
-                              <th className="px-3 py-2">Mã VT</th>
-                              <th className="px-3 py-2">SL</th>
-                              <th className="px-3 py-2">NVL khác</th>
-                              <th className="px-3 py-2">Nhựa KM</th>
-                              <th className="px-3 py-2">Nhựa ĐN</th>
-                              <th className="px-3 py-2">Nhựa DM</th>
-                              <th className="px-3 py-2">Màng</th>
-                              <th className="px-3 py-2">Lõi</th>
-                              <th className="px-3 py-2">Tổng</th>
-                            </>
-                          ) : splitPlasticFilmWeights ? (
-                            <>
-                              <th className="px-3 py-2">KL nhựa</th>
-                              <th className="px-3 py-2">KL màng</th>
-                              <th className="px-3 py-2">Tổng</th>
-                            </>
-                          ) : (
-                            <>
-                              <th className="px-3 py-2">TL lõi</th>
-                              <th className="px-3 py-2">TL bì</th>
-                              <th className="px-3 py-2">TL nhựa</th>
-                              <th className="px-3 py-2">Tổng trọng lượng</th>
-                            </>
-                          )}
-                          <th className="px-3 py-2">Giờ</th>
-                          {!config.hideAcceptanceStatus && <th className="px-3 py-2">Nghiệm thu</th>}
-                          <th className="px-3 py-2">Ghi chú</th>
-                          {!config.hideCoreWeightImage && <th className="px-3 py-2">Ảnh TL lõi</th>}
-                          {!config.hideWeightImage && <th className="px-3 py-2">Ảnh</th>}
-                          <th className="px-3 py-2 text-center">Thao tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {roundGroups.length === 0 ? (
-                          <tr>
-                            <td colSpan={tableColSpan} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
-                              Chưa có lần cân.
-                            </td>
-                          </tr>
-                        ) : (
-                          roundGroups.map(group => {
-                            const metaWeigher = group.entries.find(entry => entry.row.weigherName?.trim())?.row.weigherName;
-                            const metaTime = group.entries.find(entry => entry.row.weighTime?.trim())?.row.weighTime;
-
-                            return (
-                              <React.Fragment key={group.roundKey}>
-                                <tr className="bg-red-50/60">
-                                  <td colSpan={tableColSpan} className="px-3 py-1.5">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-[#ef1b2d]">
-                                      {isMultiDayRange ? `${formatDateVi(group.date)} · ` : ''}
-                                      Lần {group.weighNo}
-                                      {metaWeigher ? ` · ${metaWeigher}` : ''}
-                                      {metaTime ? ` · ${metaTime}` : ''}
-                                    </span>
-                                  </td>
-                                </tr>
-                                {group.entries.map((entry, index) => (
-                                  <tr key={entry.row.id ?? `${group.roundKey}-${entry.slip.key}-${index}`}>
-                                    {isMultiDayRange && (
-                                      <td className="px-3 py-2 font-mono text-[11px] font-bold text-zinc-700">
-                                        {formatDateVi(entry.slip.productionDate || entry.slip.reportDate)}
-                                      </td>
-                                    )}
-                                    {!hideProductFields && (
-                                    <td className="px-3 py-2 font-semibold text-zinc-800">
-                                      <p>{formatWeighingProductLabel(entry.row, entry.slip)}</p>
-                                      {shift.slips.length > 1 ? (
-                                        <p className="mt-0.5 text-[10px] font-semibold text-zinc-400">
-                                          Phiếu {entry.slip.documentNo || '—'}
-                                        </p>
-                                      ) : null}
-                                    </td>
-                                    )}
-                                    <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weigherName || '—'}</td>
-                                    {splitDamagedPlasticDefectWeights ? (
-                                      (() => {
-                                        const isOther = isDamagedOtherMaterial(entry.row);
-                                        return (
-                                          <>
-                                            <td className="px-3 py-2 font-semibold text-zinc-800">
-                                              {damagedGoodsMaterialTypeLabel(entry.row.materialType)}
-                                            </td>
-                                            <td className="px-3 py-2 font-mono font-bold text-zinc-900">
-                                              {isOther ? entry.row.materialCode || '—' : '—'}
-                                            </td>
-                                            <td className="px-3 py-2 font-bold text-zinc-900">
-                                              {isOther ? entry.row.materialQuantity || '—' : '—'}
-                                            </td>
-                                            <td className="px-3 py-2 font-bold text-zinc-900">
-                                              {isOther ? formatWeighingWeightField(entry.row.weight) : '—'}
-                                            </td>
-                                            <td className="px-3 py-2 font-bold text-zinc-900">
-                                              {isOther ? '—' : formatWeighingWeightField(entry.row.plasticNoFilmWeight)}
-                                            </td>
-                                            <td className="px-3 py-2 font-bold text-zinc-900">
-                                              {isOther ? '—' : formatWeighingWeightField(entry.row.plasticNozzleWeight)}
-                                            </td>
-                                            <td className="px-3 py-2 font-bold text-zinc-900">
-                                              {isOther
-                                                ? '—'
-                                                : formatWeighingWeightField(entry.row.plasticFilmAdhesionWeight)}
-                                            </td>
-                                            <td className="px-3 py-2 font-semibold text-zinc-700">
-                                              {isOther ? '—' : formatWeighingWeightField(entry.row.shellWeight)}
-                                            </td>
-                                            <td className="px-3 py-2 font-semibold text-zinc-700">
-                                              {isOther
-                                                ? formatWeighingWeightField(entry.row.weight)
-                                                : formatWeighingWeightField(entry.row.coreWeight)}
-                                            </td>
-                                            <td className="px-3 py-2 font-black text-[#ef1b2d]">
-                                              {formatDamagedGoodsRowTotalWeight(entry.row)}
-                                            </td>
-                                          </>
-                                        );
-                                      })()
-                                    ) : splitPlasticFilmWeights ? (
-                                      <>
-                                        <td className="px-3 py-2 font-bold text-zinc-900">
-                                          {formatWeighingWeightField(entry.row.weight)}
-                                        </td>
-                                        <td className="px-3 py-2 font-semibold text-zinc-700">
-                                          {formatWeighingWeightField(entry.row.shellWeight)}
-                                        </td>
-                                        <td className="px-3 py-2 font-black text-[#ef1b2d]">
-                                          {formatDamagedGoodsRowTotalWeight(entry.row)}
-                                        </td>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.coreWeight || '—'}</td>
-                                        <td className="px-3 py-2 font-semibold text-zinc-700">{entry.row.shellWeight || '—'}</td>
-                                        <td className="px-3 py-2 font-bold text-zinc-900">{formatWeighingNetWeight(entry.row)}</td>
-                                        <td className="px-3 py-2 font-black text-[#ef1b2d]">
-                                          {formatWeighingRowTotalWeight(entry.row)}
-                                        </td>
-                                      </>
-                                    )}
-                                    <td className="px-3 py-2 font-semibold text-zinc-600">{entry.row.weighTime || '—'}</td>
-                                    {!config.hideAcceptanceStatus && (
-                                    <td className="px-3 py-2">
-                                      {entry.row.acceptanceStatus ? (
-                                        <span
-                                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                                            entry.row.acceptanceStatus === 'Đạt'
-                                              ? 'bg-emerald-50 text-emerald-700'
-                                              : 'bg-rose-50 text-rose-700'
-                                          }`}
-                                        >
-                                          {entry.row.acceptanceStatus}
-                                        </span>
-                                      ) : (
-                                        <span className="text-zinc-300">—</span>
-                                      )}
-                                    </td>
-                                    )}
-                                    <td
-                                      className="max-w-[140px] truncate px-3 py-2 font-semibold text-zinc-600"
-                                      title={entry.row.note || undefined}
-                                    >
-                                      {entry.row.note || '—'}
-                                    </td>
-                                    {!config.hideCoreWeightImage && (
-                                    <td className="px-3 py-2">
-                                      {entry.row.coreWeightImageUrl ? (
-                                        <WeighingImageThumbnail
-                                          url={entry.row.coreWeightImageUrl}
-                                          alt="Ảnh trọng lượng lõi"
-                                          title="Ảnh trọng lượng lõi"
-                                          onView={() =>
-                                            setViewingImage({ url: entry.row.coreWeightImageUrl!, title: 'Ảnh trọng lượng lõi' })
-                                          }
-                                        />
-                                      ) : (
-                                        <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
-                                      )}
-                                    </td>
-                                    )}
-                                    {!config.hideWeightImage && (
-                                    <td className="px-3 py-2">
-                                      {entry.row.imageUrl ? (
-                                        <WeighingImageThumbnail
-                                          url={entry.row.imageUrl}
-                                          alt="Ảnh cân"
-                                          title="Ảnh cân"
-                                          onView={() => setViewingImage({ url: entry.row.imageUrl!, title: 'Ảnh cân' })}
-                                        />
-                                      ) : (
-                                        <span className="text-xs font-semibold text-zinc-300">Chưa có</span>
-                                      )}
-                                    </td>
-                                    )}
-                                    <td className="px-3 py-2">
-                                      <RowActionsMenu label="Thao tác dòng cân">
-                                      <div className="flex items-center justify-center gap-1">
-                                        <button
-                                          type="button"
-                                          onClick={() => setViewingRow(entry.row)}
-                                          title="Xem"
-                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                                        >
-                                          <Eye className="h-3.5 w-3.5" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleEditRow(entry.slip, entry.row)}
-                                          title="Sửa"
-                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                                        >
-                                          <Pencil className="h-3.5 w-3.5" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteRow(entry.row)}
-                                          disabled={deletingRowId === entry.row.id}
-                                          title="Xóa"
-                                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                          {deletingRowId === entry.row.id ? (
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                          ) : (
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          )}
-                                        </button>
-                                      </div>
-                                      </RowActionsMenu>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </React.Fragment>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </section>
-            );
-          })}
+          {dateGroups.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-xs font-semibold text-zinc-400">
+              Chưa có phiếu cân nào trong khoảng ngày đã chọn.
+            </div>
+          ) : (
+            dateGroups.map(dateGroup => (
+              <DateGroupSection
+                key={dateGroup.date}
+                group={dateGroup}
+                shiftOptions={shiftOptions}
+                config={config}
+                splitDamagedPlasticDefectWeights={splitDamagedPlasticDefectWeights}
+                splitPlasticFilmWeights={splitPlasticFilmWeights}
+                hideProductFields={hideProductFields}
+                onOpenSlipSetup={handleOpenSlipSetup}
+                onPrintSlip={handlePrintSlip}
+                onEditSlip={handleEditSlip}
+                onDeleteSlip={handleDeleteSlip}
+                deletingSlipKey={deletingSlipKey}
+                onEditRow={handleEditRow}
+                onDeleteRow={handleDeleteRow}
+                deletingRowId={deletingRowId}
+                onViewRow={setViewingRow}
+                onViewImage={setViewingImage}
+              />
+            ))
+          )}
         </div>
       )}
 

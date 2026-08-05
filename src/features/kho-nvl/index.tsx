@@ -26,7 +26,6 @@ import { productFieldClass } from '../san-pham/productFieldClass';
 import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
 import {
   FilterCombobox,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -785,8 +784,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const [actionMessage, setActionMessage] = useState('');
   const [materialForm, setMaterialForm] = useState<MaterialFormState>(emptyMaterialForm);
   const [showBulkTotalWeight, setShowBulkTotalWeight] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const loadMaterials = async () => {
     setIsLoadingMaterials(true);
@@ -838,20 +835,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     setSelectedUnit('all');
     setSearchText('');
   };
-
-  const totalPages = Math.max(1, Math.ceil(filteredMaterials.length / pageSize));
-  const paginatedMaterials = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredMaterials.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredMaterials, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, selectedUnit, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
 
   const totalWeightAllText = useMemo(() => {
     const sum = sumDecimalStrings(materials.map(material => material.totalWeight));
@@ -1166,7 +1149,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {paginatedMaterials.map(material => (
+          {filteredMaterials.map(material => (
             <React.Fragment key={material.id}>
               <TableRow>
                 <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
@@ -1225,15 +1208,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           )}
         </TableBody>
       </TableShell>
-
-      <TablePagination
-        totalRecords={filteredMaterials.length}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        pageSize={pageSize}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={setPageSize}
-      />
     </div>
   );
 }

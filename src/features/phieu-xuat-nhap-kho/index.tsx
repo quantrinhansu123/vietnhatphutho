@@ -1838,6 +1838,21 @@ export function WarehouseHistoryPanel({
       });
   }, [filteredMovements]);
 
+  const slipDateGroups = useMemo(() => {
+    const map = new Map<string, typeof slipGroups>();
+    slipGroups.forEach(group => {
+      const key = group.header.slipDate || '—';
+      const current = map.get(key) || [];
+      current.push(group);
+      map.set(key, current);
+    });
+    return [...map.entries()].map(([slipDate, groups]) => ({
+      slipDate,
+      groups,
+      totalAmount: groups.reduce((sum, group) => sum + group.totalAmount, 0)
+    }));
+  }, [slipGroups]);
+
   const sortedMovementLines = useMemo(
     () =>
       [...filteredMovements].sort((a, b) => {
@@ -2079,117 +2094,164 @@ export function WarehouseHistoryPanel({
         </section>
       )}
 
-      <TableShell minWidthClassName="min-w-[900px]">
-        <TableHead>
-          <TableHeadCell className="w-10" align="center">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleSelectAll}
-              disabled={selectableSlips.length === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
-              className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-              title="Chọn tất cả"
-            />
-          </TableHeadCell>
-          <TableHeadCell>Mã phiếu</TableHeadCell>
-          <TableHeadCell>Loại</TableHeadCell>
-          <TableHeadCell>Ngày</TableHeadCell>
-          <TableHeadCell>Ca</TableHeadCell>
-          <TableHeadCell>Người lập</TableHeadCell>
-          <TableHeadCell align="center">Thao tác</TableHeadCell>
-        </TableHead>
-        <TableBody>
-          {isLoading ? (
-            <TableEmptyRow colSpan={7}>Đang tải Supabase...</TableEmptyRow>
-          ) : slipGroups.length === 0 ? (
-            <TableEmptyRow colSpan={7}>
+      {isLoading ? (
+        <TableShell minWidthClassName="min-w-[900px]">
+          <TableHead>
+            <TableHeadCell className="w-10" align="center">
+              {' '}
+            </TableHeadCell>
+            <TableHeadCell>Mã phiếu</TableHeadCell>
+            <TableHeadCell>Loại</TableHeadCell>
+            <TableHeadCell>Ca</TableHeadCell>
+            <TableHeadCell>Người lập</TableHeadCell>
+            <TableHeadCell align="center">Thao tác</TableHeadCell>
+          </TableHead>
+          <TableBody>
+            <TableEmptyRow colSpan={6}>Đang tải Supabase...</TableEmptyRow>
+          </TableBody>
+        </TableShell>
+      ) : slipDateGroups.length === 0 ? (
+        <TableShell minWidthClassName="min-w-[900px]">
+          <TableHead>
+            <TableHeadCell className="w-10" align="center">
+              {' '}
+            </TableHeadCell>
+            <TableHeadCell>Mã phiếu</TableHeadCell>
+            <TableHeadCell>Loại</TableHeadCell>
+            <TableHeadCell>Ca</TableHeadCell>
+            <TableHeadCell>Người lập</TableHeadCell>
+            <TableHeadCell align="center">Thao tác</TableHeadCell>
+          </TableHead>
+          <TableBody>
+            <TableEmptyRow colSpan={6}>
               Chưa có lịch sử {warehouseKindLabel(warehouseTab).toLowerCase()}.
             </TableEmptyRow>
-          ) : (
-            slipGroups.map(group => {
-              const header = group.header;
-              const lineCount = group.rows.length;
-              const isSelected = selectedSlipCodes.has(group.slipCode);
-              const isDeleting = deletingSlipCode === group.slipCode;
+          </TableBody>
+        </TableShell>
+      ) : (
+        <div className="space-y-3">
+          {slipDateGroups.map(dateGroup => (
+            <div key={dateGroup.slipDate} className="overflow-hidden rounded-xl border border-zinc-200 shadow-sm">
+              <div className="flex items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-100/90 px-3 py-2 sm:px-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ngày</span>
+                  <span className="font-mono text-sm font-black text-zinc-900">{dateGroup.slipDate}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-zinc-500 ring-1 ring-zinc-200">
+                    {dateGroup.groups.length} phiếu
+                  </span>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Tổng ngày</p>
+                  <p className="font-mono text-sm font-black text-emerald-800">
+                    {formatWarehouseMoney(dateGroup.totalAmount)} đ
+                  </p>
+                </div>
+              </div>
+              <TableShell minWidthClassName="min-w-[820px]">
+                <TableHead>
+                  <TableHeadCell className="w-10" align="center">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      disabled={selectableSlips.length === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                      title="Chọn tất cả"
+                    />
+                  </TableHeadCell>
+                  <TableHeadCell>Mã phiếu</TableHeadCell>
+                  <TableHeadCell>Loại</TableHeadCell>
+                  <TableHeadCell>Ca</TableHeadCell>
+                  <TableHeadCell>Người lập</TableHeadCell>
+                  <TableHeadCell align="center">Thao tác</TableHeadCell>
+                </TableHead>
+                <TableBody>
+                  {dateGroup.groups.map(group => {
+                    const header = group.header;
+                    const lineCount = group.rows.length;
+                    const isSelected = selectedSlipCodes.has(group.slipCode);
+                    const isDeleting = deletingSlipCode === group.slipCode;
 
-              return (
-                <React.Fragment key={group.slipCode}>
-                  <TableRow className={isSelected ? 'bg-red-50/30' : ''}>
-                    <td className="px-3 py-3 text-center">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={!group.slipCode || isBulkDeleting || isDeleting}
-                        onChange={() => toggleSlipSelection(group.slipCode)}
-                        className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
-                        title="Chọn phiếu"
-                      />
-                    </td>
-                    <td className="px-4 py-3 font-black text-zinc-950">
-                      <div>{group.slipCode || '-'}</div>
-                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-                        {lineCount} dòng · {formatWarehouseMoney(group.totalAmount)} đ
-                      </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge
-                        label={warehouseSlipTypeLabel(header.slipType)}
-                        color={header.slipType === 'nhap' ? 'emerald' : 'amber'}
-                      />
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">{header.slipDate || '-'}</td>
-                    <td className="px-4 py-3 font-semibold text-zinc-700">{header.shift || '-'}</td>
-                    <td className="px-4 py-3 font-semibold text-zinc-600">{header.createdBy || '-'}</td>
-                    <td className="px-4 py-3">
-                      <RowActionsMenu label={`Thao tác phiếu ${group.slipCode}`}>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setViewingSlipCode(group.slipCode)}
-                          title="Xem chi tiết NVL"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleEditSlip(group.slipCode)}
-                          title="Sửa phiếu"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-amber-700 transition hover:bg-amber-50"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handlePrintSlipByCode(group.slipCode, true)}
-                          title="In phiếu"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                        >
-                          <Printer className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteSlip(group.slipCode, lineCount)}
-                          disabled={isDeleting || isBulkDeleting}
-                          title="Xóa phiếu"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isDeleting ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                      </RowActionsMenu>
-                    </td>
-                  </TableRow>
-                </React.Fragment>
-              );
-            })
-          )}
-        </TableBody>
-      </TableShell>
+                    return (
+                      <React.Fragment key={group.slipCode}>
+                        <TableRow className={isSelected ? 'bg-red-50/30' : ''}>
+                          <td className="px-3 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={!group.slipCode || isBulkDeleting || isDeleting}
+                              onChange={() => toggleSlipSelection(group.slipCode)}
+                              className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                              title="Chọn phiếu"
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-black text-zinc-950">
+                            <div>{group.slipCode || '-'}</div>
+                            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                              {lineCount} dòng · {formatWarehouseMoney(group.totalAmount)} đ
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge
+                              label={warehouseSlipTypeLabel(header.slipType)}
+                              color={header.slipType === 'nhap' ? 'emerald' : 'amber'}
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-zinc-700">{header.shift || '-'}</td>
+                          <td className="px-4 py-3 font-semibold text-zinc-600">{header.createdBy || '-'}</td>
+                          <td className="px-4 py-3">
+                            <RowActionsMenu label={`Thao tác phiếu ${group.slipCode}`}>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setViewingSlipCode(group.slipCode)}
+                                title="Xem chi tiết NVL"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditSlip(group.slipCode)}
+                                title="Sửa phiếu"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-amber-700 transition hover:bg-amber-50"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePrintSlipByCode(group.slipCode, true)}
+                                title="In phiếu"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                              >
+                                <Printer className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteSlip(group.slipCode, lineCount)}
+                                disabled={isDeleting || isBulkDeleting}
+                                title="Xóa phiếu"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {isDeleting ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                            </RowActionsMenu>
+                          </td>
+                        </TableRow>
+                      </React.Fragment>
+                    );
+                  })}
+                </TableBody>
+              </TableShell>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">

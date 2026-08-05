@@ -6,7 +6,6 @@ import ProductQrScanner from '../../components/ProductQrScanner';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../../lib/appToast';
 import {
   MultiSelectFilter,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -177,8 +176,6 @@ export function KiemKhoPanel({
   // Bảng "Danh sách mã SP" (đang nhập trong phiên hiện tại)
   const [lineSearchText, setLineSearchText] = useState('');
   const [lineTypeFilter, setLineTypeFilter] = useState<string[]>([]);
-  const [linePage, setLinePage] = useState(1);
-  const [linePageSize, setLinePageSize] = useState(10);
 
   const linesRef = useRef(lines);
   useEffect(() => {
@@ -422,20 +419,6 @@ export function KiemKhoPanel({
     });
   }, [lines, lineTypeFilter, normalizedLineSearch]);
 
-  const lineTotalPages = Math.max(1, Math.ceil(filteredLines.length / linePageSize));
-  const paginatedLines = useMemo(() => {
-    const startIndex = (linePage - 1) * linePageSize;
-    return filteredLines.slice(startIndex, startIndex + linePageSize);
-  }, [filteredLines, linePage, linePageSize]);
-
-  useEffect(() => {
-    setLinePage(1);
-  }, [normalizedLineSearch, lineTypeFilter, linePageSize]);
-
-  useEffect(() => {
-    if (linePage > lineTotalPages) setLinePage(lineTotalPages);
-  }, [linePage, lineTotalPages]);
-
   const hasActiveLineFilters = Boolean(lineSearchText) || lineTypeFilter.length > 0;
   const resetLineFilters = () => {
     setLineSearchText('');
@@ -580,13 +563,13 @@ export function KiemKhoPanel({
             <TableHeadCell align="center">Thao tác</TableHeadCell>
           </TableHead>
           <TableBody>
-            {paginatedLines.map((line, index) => {
+            {filteredLines.map((line, index) => {
               const highlightClass = line.key === highlightKey ? 'bg-emerald-50/70' : '';
               return (
                 <React.Fragment key={line.key}>
                   <TableRow>
                     <td className={`px-4 py-3 font-bold text-zinc-500 ${highlightClass}`}>
-                      {(linePage - 1) * linePageSize + index + 1}
+                      {index + 1}
                     </td>
                     <td className={`px-4 py-3 font-mono font-bold text-zinc-800 ${highlightClass}`}>{line.maNvl || '—'}</td>
                     <td className={`px-4 py-3 font-mono font-bold text-zinc-900 ${highlightClass}`}>{line.maSp}</td>
@@ -623,17 +606,6 @@ export function KiemKhoPanel({
             )}
           </TableBody>
         </TableShell>
-
-        {filteredLines.length > 0 ? (
-          <TablePagination
-            totalRecords={filteredLines.length}
-            currentPage={linePage}
-            totalPages={lineTotalPages}
-            pageSize={linePageSize}
-            onPageChange={setLinePage}
-            onPageSizeChange={setLinePageSize}
-          />
-        ) : null}
       </section>
 
       {error ? (

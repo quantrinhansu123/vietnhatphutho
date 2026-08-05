@@ -297,6 +297,38 @@ export function normalizeMachineRunLogs(data: unknown): MachineRunLog[] {
     .filter((log): log is MachineRunLog => Boolean(log));
 }
 
+type MachineRunLogShiftGroup = {
+  shift: string;
+  logs: MachineRunLog[];
+};
+
+type MachineRunLogDateGroup = {
+  date: string;
+  logs: MachineRunLog[];
+  shifts: MachineRunLogShiftGroup[];
+};
+
+function groupRunLogsByDateAndShift(logs: MachineRunLog[]): MachineRunLogDateGroup[] {
+  const dateMap = new Map<string, Map<string, MachineRunLog[]>>();
+
+  logs.forEach(log => {
+    const dateKey = log.date || '—';
+    if (!dateMap.has(dateKey)) dateMap.set(dateKey, new Map());
+    const shiftMap = dateMap.get(dateKey)!;
+    const shiftKey = log.shift || '—';
+    if (!shiftMap.has(shiftKey)) shiftMap.set(shiftKey, []);
+    shiftMap.get(shiftKey)!.push(log);
+  });
+
+  return [...dateMap.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0))
+    .map(([date, shiftMap]) => {
+      const shifts = [...shiftMap.entries()].map(([shift, shiftLogs]) => ({ shift, logs: shiftLogs }));
+      const dateLogs = shifts.flatMap(group => group.logs);
+      return { date, logs: dateLogs, shifts };
+    });
+}
+
 function logToPrintSlip(log: MachineRunLog): MachineRunLogPrintSlip {
   return buildMachineRunLogPrintSlip({
     slipCode: log.slipCode,
@@ -410,6 +442,8 @@ export default function MachineRunLogPanel({ onBack }: { onBack: () => void }) {
 
     return { totalRolls, totalDowntime, actualRunMinutes, timeEfficiencyPct, speedAttainmentPct, productivityRollsPerHour };
   }, [lines, plannedRunHours]);
+
+  const runLogGroups = useMemo(() => groupRunLogsByDateAndShift(logs), [logs]);
 
   const loadLogs = async () => {
     const res = await fetch('/api/nhat-ky-chay-may?limit=50');
@@ -869,52 +903,92 @@ export default function MachineRunLogPanel({ onBack }: { onBack: () => void }) {
               </div>
               <Activity className="h-5 w-5 text-[#ef1b2d]" />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {isLoading && (
                 <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-500">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Đang tải...
                 </div>
               )}
-              {!isLoading && logs.length === 0 && (
+              {!isLoading && runLogGroups.length === 0 && (
                 <p className="rounded-xl border border-dashed border-zinc-200 px-3 py-6 text-center text-xs font-semibold text-zinc-400">
                   Chưa có nhật ký nào.
                 </p>
               )}
-              {logs.map(log => (
-                <div key={log.id} className="rounded-xl border border-zinc-200 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-black text-zinc-900">{log.slipCode || log.machineName || log.machineCode}</p>
-                      <p className="text-xs font-semibold text-zinc-500">
-                        {log.date} · {log.shift} · {log.machineName || log.machineCode || '-'}
-                      </p>
-                      <p className="mt-1 text-xs font-bold text-emerald-800">
-                        {formatNumber(log.totalRollsProduced, 0)} cuộn · dừng {formatNumber(log.totalDowntimeMinutes, 0)} phút
-                        {log.timeEfficiencyPct !== null ? ` · HS ${formatNumber(log.timeEfficiencyPct, 1)}%` : ''}
-                      </p>
+              {!isLoading &&
+                runLogGroups.map(dateGroup => {
+                  const dateTotalRolls = dateGroup.logs.reduce((sum, log) => sum + log.totalRollsProduced, 0);
+                  const dateTotalDowntime = dateGroup.logs.reduce((sum, log) => sum + log.totalDowntimeMinutes, 0);
+
+                  return (
+                    <div key={dateGroup.date} className="overflow-hidden rounded-xl border border-zinc-200 shadow-sm">
+                      <div className="flex items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-100/90 px-3 py-2">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ngày</span>
+                          <span className="font-mono text-sm font-black text-zinc-900">{dateGroup.date}</span>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-zinc-500 ring-1 ring-zinc-200">
+                            {dateGroup.logs.length} nhật ký
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Tổng ngày</p>
+                          <p className="font-mono text-xs font-black text-emerald-800">
+                            {formatNumber(dateTotalRolls, 0)} cuộn · dừng {formatNumber(dateTotalDowntime, 0)} phút
+                          </p>
+                        </div>
+                      </div>
+                      <div className="divide-y divide-zinc-100 bg-white">
+                        {dateGroup.shifts.map(shiftGroup => (
+                          <div key={shiftGroup.shift} className="p-2">
+                            <div className="mb-1.5 flex items-center gap-2 px-1">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ca</span>
+                              <span className="inline-flex rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-black text-zinc-800">
+                                {shiftGroup.shift}
+                              </span>
+                              <span className="text-[10px] font-bold text-zinc-400">{shiftGroup.logs.length} nhật ký</span>
+                            </div>
+                            <div className="space-y-2">
+                              {shiftGroup.logs.map(log => (
+                                <div key={log.id} className="rounded-xl border border-zinc-200 p-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <p className="font-black text-zinc-900">{log.slipCode || log.machineName || log.machineCode}</p>
+                                      <p className="text-xs font-semibold text-zinc-500">
+                                        {log.machineName || log.machineCode || '-'}
+                                      </p>
+                                      <p className="mt-1 text-xs font-bold text-emerald-800">
+                                        {formatNumber(log.totalRollsProduced, 0)} cuộn · dừng {formatNumber(log.totalDowntimeMinutes, 0)} phút
+                                        {log.timeEfficiencyPct !== null ? ` · HS ${formatNumber(log.timeEfficiencyPct, 1)}%` : ''}
+                                      </p>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrint(logToPrintSlip(log))}
+                                        className="rounded-lg border border-zinc-200 p-2 text-zinc-600 hover:bg-zinc-50"
+                                        title="In nhật ký"
+                                      >
+                                        <Printer className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => deleteLog(log.id)}
+                                        className="rounded-lg border border-zinc-200 p-2 text-[#ef1b2d]"
+                                        title="Xóa nhật ký"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handlePrint(logToPrintSlip(log))}
-                        className="rounded-lg border border-zinc-200 p-2 text-zinc-600 hover:bg-zinc-50"
-                        title="In nhật ký"
-                      >
-                        <Printer className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteLog(log.id)}
-                        className="rounded-lg border border-zinc-200 p-2 text-[#ef1b2d]"
-                        title="Xóa nhật ký"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
             </div>
           </section>
         </div>

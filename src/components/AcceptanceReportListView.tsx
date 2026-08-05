@@ -22,9 +22,7 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  TablePagination,
-  RowActionsMenu,
-  usePagination
+  RowActionsMenu
 } from './shared/table';
 
 type AcceptanceDateGroup = {
@@ -267,8 +265,6 @@ export default function AcceptanceReportListView({
   const [productNameByCode, setProductNameByCode] = useState<Map<string, string>>(() => new Map());
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
   const [viewingReport, setViewingReport] = useState<AcceptanceReport | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const shiftOptions = useMemo<string[]>(() => {
     const shifts = reports.reduce<string[]>((result, report) => {
@@ -298,11 +294,6 @@ export default function AcceptanceReportListView({
     setSearchText('');
   };
   const dateGroups = useMemo(() => buildDateGroups(filteredReports), [filteredReports]);
-  const { paginatedItems: paginatedDateGroups, totalPages } = usePagination<AcceptanceDateGroup>(
-    dateGroups,
-    currentPage,
-    pageSize
-  );
   const allReportIds = useMemo(() => filteredReports.map(report => report.id).filter(Boolean), [filteredReports]);
   const selectedCount = selectedIds.size;
   const allSelected = allReportIds.length > 0 && selectedIds.size === allReportIds.length;
@@ -608,7 +599,7 @@ export default function AcceptanceReportListView({
           </div>
         ) : (
           <div className="space-y-3 p-3 sm:p-4">
-            {paginatedDateGroups.map(group => {
+            {dateGroups.map(group => {
               const totalsByUnit = sumByUnit(
                 group.reports.map(report => ({
                   mat_hang: report.mat_hang,
@@ -719,16 +710,6 @@ export default function AcceptanceReportListView({
               );
             })}
           </div>
-        )}
-        {!isLoading && dateGroups.length > 0 && (
-          <TablePagination
-            totalRecords={dateGroups.length}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={setPageSize}
-          />
         )}
       </section>
 

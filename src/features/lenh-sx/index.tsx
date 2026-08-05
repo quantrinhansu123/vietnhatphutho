@@ -10,7 +10,6 @@ import { getProductionShiftOptions } from '../../utils/shiftSettings';
 import {
   FilterCombobox,
   MultiSelectFilter,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableDateFilter,
@@ -70,8 +69,6 @@ export function ProductionOrdersPanel({
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [viewingRow, setViewingRow] = useState<ProductionOrderRow | null>(null);
@@ -222,20 +219,6 @@ export function ProductionOrdersPanel({
       });
   }, [normalizedSearch, rows, selectedStatus, selectedMachines, dateFrom, dateTo, sortOrder]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const paginatedRows = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredRows.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredRows, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, selectedStatus, selectedMachines, dateFrom, dateTo, sortOrder, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
-
   const activeCount = rows.filter(row => /đang|cho|chờ|active|sx/i.test(row.status)).length;
   const totalQuantity = rows.reduce((sum, row) => {
     const value = Number(row.quantity);
@@ -354,16 +337,6 @@ export function ProductionOrdersPanel({
 
       <TableShell
         minWidthClassName="min-w-0 table-fixed"
-        footer={(
-          <TablePagination
-            totalRecords={filteredRows.length}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={setPageSize}
-          />
-        )}
       >
         <colgroup>
           <col className="w-[6%]" /><col className="w-[9%]" /><col className="w-[5%]" />
@@ -386,7 +359,7 @@ export function ProductionOrdersPanel({
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {paginatedRows.map(row => (
+          {filteredRows.map(row => (
             <React.Fragment key={row.id}>
             <TableRow>
               <td className="px-4 py-3 font-black text-zinc-950">{row.code || '-'}</td>

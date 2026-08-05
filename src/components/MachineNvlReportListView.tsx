@@ -33,9 +33,7 @@ import {
   TableToolbar,
   TableSearchInput,
   TableDateFilter,
-  TablePagination,
-  RowActionsMenu,
-  usePagination
+  RowActionsMenu
 } from './shared/table';
 
 const MACHINE_NVL_SECTIONS: { id: MachineNvlReportKind; title: string; emptyLabel: string }[] = [
@@ -279,13 +277,6 @@ function MachineNvlSection({
   onClearSelection: () => void;
   bulkDeleting: boolean;
 }) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const { paginatedItems: paginatedGroups, totalPages } = usePagination<MachineNvlReportDateGroup>(
-    groups,
-    currentPage,
-    pageSize
-  );
   const reportIds = useMemo(
     () =>
       groups.flatMap(dateGroup =>
@@ -343,7 +334,7 @@ function MachineNvlSection({
           </div>
         ) : (
           <div className="space-y-3">
-            {paginatedGroups.map(dateGroup => {
+            {groups.map(dateGroup => {
               const dateRows = dateGroup.shifts.flatMap(shiftGroup =>
                 shiftGroup.machines.flatMap(machineGroup =>
                   machineGroup.reports.map(report => ({ shiftGroup, machineGroup, report }))
@@ -484,16 +475,6 @@ function MachineNvlSection({
           </div>
         )}
       </div>
-      {!isLoading && groups.length > 0 && (
-        <TablePagination
-          totalRecords={groups.length}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          pageSize={pageSize}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={setPageSize}
-        />
-      )}
     </section>
   );
 }

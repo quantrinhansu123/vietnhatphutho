@@ -24,7 +24,6 @@ import {
 } from './menuViews';
 import {
   FilterCombobox,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -68,9 +67,6 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     branchId: '',
     department: ''
   });
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
   const loadStaffGroups = async () => {
     setIsLoadingStaff(true);
     setStaffError('');
@@ -225,20 +221,6 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     setDepartmentFilter('');
   };
 
-  const totalPages = Math.max(1, Math.ceil(tableRows.length / pageSize));
-  const paginatedRows = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return tableRows.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, tableRows, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, departmentFilter, selectedBranchId, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
-
   return (
     <div className="mx-auto w-full min-w-0 max-w-[1680px] space-y-4">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
@@ -376,7 +358,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 <TableHeadCell align="center">Thao tác</TableHeadCell>
               </TableHead>
               <TableBody>
-                {paginatedRows.map(({ key, departmentName, member }) => (
+                {tableRows.map(({ key, departmentName, member }) => (
                   <React.Fragment key={key}>
                     <TableRow>
                       <td className="whitespace-nowrap px-4 py-3 font-black text-zinc-950">{member.name}</td>
@@ -476,15 +458,6 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 )}
               </TableBody>
             </TableShell>
-
-            <TablePagination
-              totalRecords={tableRows.length}
-              currentPage={currentPage}
-              totalPages={totalPages}
-              pageSize={pageSize}
-              onPageChange={setCurrentPage}
-              onPageSizeChange={setPageSize}
-            />
           </>
         )}
 

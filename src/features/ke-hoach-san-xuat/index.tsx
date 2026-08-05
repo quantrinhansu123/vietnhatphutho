@@ -1929,10 +1929,20 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
               </p>
             ) : (
               <div className="divide-y divide-zinc-100">
-                {plansByDate.map(([date, datePlans]) => (
+                {plansByDate.map(([date, datePlans]) => {
+                  const dateOrderTotal = datePlans.reduce((sum, plan) => sum + (plan.orderCount || 0), 0);
+                  return (
                   <div key={date}>
-                    <div className="sticky top-0 bg-zinc-950 px-4 py-2 text-xs font-black uppercase tracking-wider text-red-300">
-                      {date}
+                    <div className="sticky top-0 flex items-center justify-between gap-2 bg-zinc-950 px-4 py-2">
+                      <span className="text-xs font-black uppercase tracking-wider text-red-300">{date}</span>
+                      <span className="text-right">
+                        <span className="mr-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-300">
+                          Tổng ngày
+                        </span>
+                        <span className="font-mono text-xs font-black text-emerald-200">
+                          {dateOrderTotal} lệnh SX
+                        </span>
+                      </span>
                     </div>
                     {datePlans.map(plan => (
                       <button
@@ -1956,7 +1966,8 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                       </button>
                     ))}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

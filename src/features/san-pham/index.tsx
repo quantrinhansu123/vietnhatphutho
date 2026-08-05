@@ -10,7 +10,6 @@ import { normalizeMaterialsInventory } from '../kho-nvl';
 import {
   FilterCombobox,
   MultiSelectFilter,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -1194,8 +1193,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productError, setProductError] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
@@ -1605,20 +1602,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     setSearchText('');
   };
 
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
-  const paginatedProducts = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredProducts.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredProducts, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, selectedGroup, selectedNatures, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
-
   useEffect(() => {
     let cancelled = false;
 
@@ -1976,7 +1959,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           </TableHeadCell>
         </TableHead>
         <TableBody>
-          {paginatedProducts.map(product => (
+          {filteredProducts.map(product => (
             <React.Fragment key={`${product.code}-${product.name}`}>
               <TableRow>
                 <td className="px-3 py-3.5 text-center">
@@ -2058,14 +2041,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         </TableBody>
       </TableShell>
 
-      <TablePagination
-        totalRecords={filteredProducts.length}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        pageSize={pageSize}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={setPageSize}
-      />
 
       {productFormMode && (
         <ProductEditModal

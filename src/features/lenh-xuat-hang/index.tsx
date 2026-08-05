@@ -14,7 +14,6 @@ import {
 import { showAppToast, showSaveFailure, readApiErrorMessage } from '../../lib/appToast';
 import {
   FilterCombobox,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -211,8 +210,6 @@ export function ShippingOrdersPanel({
   const [products, setProducts] = useState<OrderProductOption[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -268,20 +265,6 @@ export function ShippingOrdersPanel({
       return matchesStatus && matchesSearch;
     });
   }, [orders, searchText, selectedStatus]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
-  const paginatedOrders = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredOrders.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredOrders, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchText, selectedStatus, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -475,16 +458,6 @@ export function ShippingOrdersPanel({
 
       <TableShell
         minWidthClassName="min-w-[920px]"
-        footer={(
-          <TablePagination
-            totalRecords={filteredOrders.length}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={setPageSize}
-          />
-        )}
       >
         <TableHead>
           <TableHeadCell>Mã lệnh</TableHeadCell>
@@ -496,7 +469,7 @@ export function ShippingOrdersPanel({
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {paginatedOrders.map(order => {
+          {filteredOrders.map(order => {
             const qty = order.chi_tiet.reduce((sum, line) => sum + (line.so_luong || 0), 0);
             return (
               <React.Fragment key={order.id || order.ma_lenh}>

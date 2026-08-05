@@ -48,9 +48,7 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  TablePagination,
-  RowActionsMenu,
-  usePagination
+  RowActionsMenu
 } from './shared/table';
 
 const inputClass =
@@ -287,8 +285,6 @@ export default function MixingReportListView({
   const [pendingPrint, setPendingPrint] = useState(false);
   const [listTab, setListTab] = useState<'reports' | 'norms'>('reports');
   const [searchText, setSearchText] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
   const visibleReports = useMemo(() => {
@@ -319,10 +315,6 @@ export default function MixingReportListView({
       .sort((left, right) => right[0].localeCompare(left[0]))
       .map(([ngay, groupReports]) => ({ ngay, reports: groupReports }));
   }, [sortedReports]);
-  const { paginatedItems: paginatedDateGroups, totalPages } = usePagination<{
-    ngay: string;
-    reports: MixingReport[];
-  }>(dateGroups, currentPage, pageSize);
 
   const loadReferenceData = async () => {
     const [machineRes, settingRes] = await Promise.all([
@@ -733,14 +725,12 @@ export default function MixingReportListView({
             onResetFilters={() => {
               setSearchText('');
               setFilters(emptyFilters());
-              setCurrentPage(1);
             }}
           >
             <TableSearchInput
               value={searchText}
               onChange={value => {
                 setSearchText(value);
-                setCurrentPage(1);
               }}
               placeholder="Tìm máy, nhân sự, mã hoặc tên vật tư..."
               disabled={isLoading}

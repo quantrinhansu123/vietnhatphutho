@@ -34,7 +34,6 @@ import { normalizeDaNangBusinessStaffOptions, normalizeCustomerOptions } from '.
 import OrderPrintSheet from '../../components/OrderPrintSheet';
 import {
   FilterCombobox,
-  TablePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -243,8 +242,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedType, setSelectedType] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [ordersError, setOrdersError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -542,20 +539,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       return matchesType && matchesSearch;
     });
   }, [orders, normalizedSearch, selectedType]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
-  const paginatedOrders = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return filteredOrders.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, filteredOrders, pageSize]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [normalizedSearch, selectedType, pageSize]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
 
   const hasActiveFilters = selectedType !== 'all' || Boolean(searchText);
 
@@ -924,16 +907,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
         <TableShell
           minWidthClassName="min-w-[1200px]"
-          footer={(
-            <TablePagination
-              totalRecords={filteredOrders.length}
-              currentPage={currentPage}
-              totalPages={totalPages}
-              pageSize={pageSize}
-              onPageChange={setCurrentPage}
-              onPageSizeChange={setPageSize}
-            />
-          )}
         >
           <TableHead>
             <TableHeadCell>Mã đơn</TableHeadCell>
@@ -954,7 +927,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <TableHeadCell className="w-28" align="center">Thao tác</TableHeadCell>
           </TableHead>
           <TableBody>
-            {paginatedOrders.map(order => (
+            {filteredOrders.map(order => (
               <React.Fragment key={order.id}>
                 <TableRow>
                   <td className="px-3 py-2.5 align-top font-black text-zinc-950">{order.orderCode || '-'}</td>

@@ -25,9 +25,7 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  TablePagination,
-  RowActionsMenu,
-  usePagination
+  RowActionsMenu
 } from './shared/table';
 
 function todayIso() {
@@ -225,8 +223,6 @@ export default function MachineDowntimeReportListView({
   const [printSlips, setPrintSlips] = useState<MachineDowntimePrintSlip[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const shiftOptions = useMemo<string[]>(() => {
     const shifts = slips.reduce<string[]>((result, slip) => {
@@ -270,11 +266,6 @@ export default function MachineDowntimeReportListView({
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([ngay, groupSlips]) => ({ ngay, slips: groupSlips }));
   }, [filteredSlips]);
-  const { paginatedItems: paginatedDateGroups, totalPages } = usePagination<DateGroup>(
-    dateGroups,
-    currentPage,
-    pageSize
-  );
 
   const totalMinutes = useMemo(
     () => filteredSlips.reduce((sum, slip) => sum + (slip.totalDowntimeMinutes || 0), 0),
@@ -482,7 +473,7 @@ export default function MachineDowntimeReportListView({
           </div>
         ) : (
           <div className="space-y-3 p-3 sm:p-4">
-            {paginatedDateGroups.map(group => {
+            {dateGroups.map(group => {
               const groupMinutes = group.slips.reduce((sum, slip) => sum + (slip.totalDowntimeMinutes || 0), 0);
               return (
                 <div key={group.ngay} className="overflow-hidden rounded-xl border border-zinc-200">
@@ -578,16 +569,6 @@ export default function MachineDowntimeReportListView({
               );
             })}
           </div>
-        )}
-        {!isLoading && dateGroups.length > 0 && (
-          <TablePagination
-            totalRecords={dateGroups.length}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={setPageSize}
-          />
         )}
       </section>
     </div>
