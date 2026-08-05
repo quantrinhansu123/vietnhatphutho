@@ -18,7 +18,9 @@ alter table public.nhan_su
   add column if not exists trang_thai text default 'Đang làm',
   add column if not exists ten_dang_nhap text,
   add column if not exists mat_khau text,
-  add column if not exists link_chu_ky text;
+  add column if not exists link_chu_ky text,
+  add column if not exists quyen_xem jsonb not null default '[]'::jsonb,
+  add column if not exists vi_tri_gan jsonb not null default '[]'::jsonb;
 
 create index if not exists nhan_su_phong_ban_idx on public.nhan_su (phong_ban);
 create index if not exists nhan_su_chi_nhanh_idx on public.nhan_su (chi_nhanh);
@@ -48,4 +50,6 @@ comment on column public.nhan_su.ten_dang_nhap is 'Ten dang nhap he thong.';
 comment on column public.nhan_su.mat_khau is 'Mat khau dang nhap.';
 comment on column public.nhan_su.cong_viec is 'Chuc vu / cong viec — dung lam Vị trí khi tạo key phân quyền.';
 comment on column public.nhan_su.vi_tri is 'Vi tri: dong bo tu cong_viec de khớp phân quyền (phong_ban + vi_tri).';
+comment on column public.nhan_su.vi_tri_gan is
+  'Danh sach vi tri duoc gan (nhieu): [{ department, position, permissionKey }].';
 comment on column public.nhan_su.link_chu_ky is 'URL anh chu ky nhan su tren Cloudinary.';

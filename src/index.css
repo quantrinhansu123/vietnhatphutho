@@ -3885,3 +3885,212 @@ input[type="number"] {
     /* iOS Safari: video trong modal cần playsinline */
   }
 }
+
+/* ===== Phiếu in tỷ lệ trộn định mức (theo lệnh SX) ===== */
+.mixing-norm-ratio-print-batch {
+  display: none;
+}
+
+.mixing-norm-ratio-print-sheet {
+  color: #111;
+  background: #fff;
+}
+
+.mixing-norm-ratio-print-doc {
+  width: 190mm;
+  margin: 0 auto;
+  padding: 8mm 6mm;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+}
+
+.mixing-norm-ratio-print-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.mixing-norm-ratio-print-logo {
+  width: 120px;
+  max-height: 56px;
+  object-fit: contain;
+}
+
+.mixing-norm-ratio-print-company-name {
+  margin: 0;
+  font-size: 11pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.mixing-norm-ratio-print-company-sub {
+  margin: 2px 0 0;
+  font-size: 9pt;
+  color: #333;
+}
+
+.mixing-norm-ratio-print-title {
+  margin: 6px 0 4px;
+  text-align: center;
+  font-size: 16pt;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mixing-norm-ratio-print-intro {
+  margin: 0 0 4px;
+  text-align: center;
+  font-style: italic;
+  font-size: 11pt;
+}
+
+.mixing-norm-ratio-print-meta {
+  margin: 0 0 10px;
+  text-align: center;
+  font-size: 10.5pt;
+}
+
+.mixing-norm-ratio-print-meta-sep {
+  margin: 0 8px;
+  color: #666;
+}
+
+.mixing-norm-ratio-print-block {
+  margin: 0 0 12px;
+  page-break-inside: avoid;
+}
+
+.mixing-norm-ratio-print-product {
+  margin: 0 0 4px;
+  font-size: 12pt;
+  font-weight: 800;
+  text-transform: uppercase;
+  border-bottom: 1.5px solid #111;
+  padding-bottom: 2px;
+}
+
+.mixing-norm-ratio-print-tonnage {
+  margin: 0 0 4px;
+  font-size: 10pt;
+}
+
+.mixing-norm-ratio-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 4px;
+}
+
+.mixing-norm-ratio-print-table th,
+.mixing-norm-ratio-print-table td {
+  border: 1px solid #222;
+  padding: 3px 5px;
+  font-size: 10pt;
+  vertical-align: middle;
+}
+
+.mixing-norm-ratio-print-table th {
+  background: #f3f3f3;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mixing-norm-ratio-print-table .col-stt {
+  width: 28px;
+  text-align: center;
+}
+
+.mixing-norm-ratio-print-table .col-code {
+  width: 18%;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.mixing-norm-ratio-print-table .col-pct,
+.mixing-norm-ratio-print-table .col-kg {
+  width: 14%;
+  text-align: right;
+  font-weight: 700;
+}
+
+.mixing-norm-ratio-print-note {
+  margin: 4px 0 0;
+  font-size: 10pt;
+  text-transform: uppercase;
+}
+
+.mixing-norm-ratio-print-place {
+  margin-top: 14px;
+  text-align: right;
+  font-style: italic;
+  font-size: 10.5pt;
+}
+
+.mixing-norm-ratio-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+  text-align: center;
+}
+
+.mixing-norm-ratio-print-signatures .role {
+  margin: 0 0 28mm;
+  font-weight: 700;
+  font-size: 11pt;
+}
+
+.mixing-norm-ratio-print-signatures span {
+  font-size: 9pt;
+  font-style: italic;
+}
+
+.mixing-norm-ratio-print-empty,
+.mixing-norm-ratio-print-empty-cell {
+  text-align: center;
+  font-style: italic;
+  color: #555;
+}
+
+.mixing-norm-ratio-print-page + .mixing-norm-ratio-print-page {
+  page-break-before: always;
+}
+
+@media print {
+  .mixing-norm-ratio-print-batch,
+  .mixing-norm-ratio-print-batch * {
+    visibility: visible !important;
+  }
+
+  .mixing-norm-ratio-print-batch {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 99999;
+    background: #fff;
+    color: #111;
+  }
+
+  body.mixing-norm-ratio-print-active #root {
+    display: none !important;
+  }
+
+  body.mixing-norm-ratio-print-active .mixing-norm-ratio-print-batch {
+    display: block !important;
+  }
+
+  .mixing-norm-ratio-print-sheet {
+    display: block !important;
+    background: #fff;
+  }
+
+  .mixing-norm-ratio-print-doc {
+    width: 190mm;
+    margin: 0;
+    padding: 0;
+  }
+}

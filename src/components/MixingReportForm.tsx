@@ -1271,10 +1271,10 @@ export default function MixingReportForm({
   };
 
   useEffect(() => {
-    if (!editReport || machines.length === 0) return;
+    if (!editReport) return;
     startEdit(editReport);
     onEditConsumed?.();
-  }, [editReport, machines, onEditConsumed]);
+  }, [editReport, onEditConsumed]);
 
   const sessionRoundEnd = sessionRoundStart + Math.max(activeRoundCount, 1) - 1;
   const canAddSessionRound = sessionRoundEnd < MAX_MIXING_SESSIONS_PER_SHIFT;

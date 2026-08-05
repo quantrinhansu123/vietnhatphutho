@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -20,8 +20,14 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-    RowActionsMenu
+  RowActionsMenu
 } from '../../components/shared/table';
+import {
+  StaffRoleAssignmentPanel,
+  collectPositionsFromHrTree,
+  collectPositionsFromPermissionRoles
+} from './StaffRoleAssignmentPanel';
+import { isSpecialSettingsRow } from './staffAssignments';
 import {
   ChevronRight,
   Clock3,
@@ -32,6 +38,7 @@ import {
   Save,
   ShieldCheck,
   Trash2,
+  UserCog,
   UsersRound
 } from 'lucide-react';
 
@@ -162,7 +169,9 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [branches, setBranches] = useState<HrBranch[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
-  const [activeSection, setActiveSection] = useState<'settings' | 'permissions' | 'role-permissions'>('settings');
+  const [activeSection, setActiveSection] = useState<
+    'settings' | 'permissions' | 'role-permissions' | 'staff-assignments'
+  >('settings');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [settingsError, setSettingsError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -220,27 +229,27 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     loadSettings();
   }, []);
 
-  useEffect(() => {
-    const loadStaffGroups = async () => {
-      setIsLoadingStaffOptions(true);
-      setStaffOptionsError('');
-      try {
-        const res = await fetch('/api/nhan-su?format=groups&scope=all');
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data.error || 'Không thể tải phòng ban / vị trí từ nhan_su.');
-        }
-        setBranches(normalizeHrBranches(data));
-      } catch (error: any) {
-        setBranches([]);
-        setStaffOptionsError(error.message || 'Không thể tải phòng ban / vị trí từ nhan_su.');
-      } finally {
-        setIsLoadingStaffOptions(false);
+  const loadStaffGroups = useCallback(async () => {
+    setIsLoadingStaffOptions(true);
+    setStaffOptionsError('');
+    try {
+      const res = await fetch('/api/nhan-su?format=groups&scope=all');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể tải phòng ban / vị trí từ nhan_su.');
       }
-    };
-
-    void loadStaffGroups();
+      setBranches(normalizeHrBranches(data));
+    } catch (error: any) {
+      setBranches([]);
+      setStaffOptionsError(error.message || 'Không thể tải phòng ban / vị trí từ nhan_su.');
+    } finally {
+      setIsLoadingStaffOptions(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadStaffGroups();
+  }, [loadStaffGroups]);
 
   const openAddForm = () => {
     setFormError('');
@@ -353,6 +362,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
 
   const settingGroups = useMemo(() => {
     const groups = settings
+      .filter(setting => !isSpecialSettingsRow(setting))
       .map(setting => setting.group)
       .filter((group): group is string => group !== '-' && group.length > 0);
     return ['all', ...[...new Set(groups)].sort((a, b) => String(a).localeCompare(String(b), 'vi'))];
@@ -361,9 +371,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredSettings = useMemo(() => {
     return settings.filter(setting => {
-      const permissionText = `${setting.group} ${setting.loaiCaiDat}`.toLowerCase();
-      const isPermissionSetting = permissionText.includes('phân quyền') || permissionText.includes('phan quyen');
-      if (isPermissionSetting) return false;
+      if (isSpecialSettingsRow(setting)) return false;
       const matchesGroup = selectedGroup === 'all' || setting.group === selectedGroup;
       const matchesSearch =
         !normalizedSearch ||
@@ -388,6 +396,20 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       ),
     [settings]
   );
+
+  const availableAssignablePositions = useMemo(() => {
+    const fromRoles = collectPositionsFromPermissionRoles(permissionSettings);
+    if (fromRoles.length > 0) return fromRoles;
+    return collectPositionsFromHrTree(
+      branches.flatMap(branch =>
+        branch.departments.map(department => ({
+          department: department.name,
+          members: department.members
+        }))
+      )
+    );
+  }, [branches, permissionSettings]);
+
 
   // Phòng ban = distinct phong_ban từ bảng nhan_su
   const departmentOptions = useMemo(() => {
@@ -736,7 +758,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      <section className="grid gap-3 md:grid-cols-3">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <button
           type="button"
           onClick={() => setActiveSection('settings')}
@@ -810,6 +832,31 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           </span>
           <ChevronRight className={`h-5 w-5 shrink-0 transition ${
             activeSection === 'role-permissions' ? 'text-[#ef1b2d]' : 'text-zinc-300 group-hover:text-zinc-600'
+          }`} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection('staff-assignments')}
+          aria-pressed={activeSection === 'staff-assignments'}
+          className={`group flex min-h-28 items-center gap-4 rounded-2xl border-2 p-4 text-left shadow-sm transition ${
+            activeSection === 'staff-assignments'
+              ? 'border-[#ef1b2d] bg-red-50 shadow-red-100'
+              : 'border-zinc-900/10 bg-white hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md'
+          }`}
+        >
+          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+            activeSection === 'staff-assignments' ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-700'
+          }`}>
+            <UserCog className="h-6 w-6" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-black text-zinc-950">Gán quyền nhân sự</span>
+            <span className="mt-1 block text-xs font-semibold leading-5 text-zinc-500">
+              Gán nhiều vị trí theo mã NV (tên chỉ hiển thị).
+            </span>
+          </span>
+          <ChevronRight className={`h-5 w-5 shrink-0 transition ${
+            activeSection === 'staff-assignments' ? 'text-[#ef1b2d]' : 'text-zinc-300 group-hover:text-zinc-600'
           }`} />
         </button>
       </section>
@@ -1118,7 +1165,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             </div>
           </section>
         </>
-      ) : (
+      ) : activeSection === 'role-permissions' ? (
         <>
           <section className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
             <div className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
@@ -1287,6 +1334,16 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             </section>
           </section>
         </>
+      ) : null}
+
+      {activeSection === 'staff-assignments' && (
+        <StaffRoleAssignmentPanel
+          availablePositions={availableAssignablePositions}
+          staffMembers={flattenHrMembers(branches)}
+          isLoadingStaff={isLoadingStaffOptions}
+          staffError={staffOptionsError}
+          onReloadStaff={loadStaffGroups}
+        />
       )}
     </div>
   );
