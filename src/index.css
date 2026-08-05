@@ -459,6 +459,32 @@ input[type="number"] {
   display: none;
 }
 
+/* Scrollbar ẩn mặc định, chỉ hiện khi hover vào vùng cuộn */
+.hover-scrollbar {
+  scrollbar-width: none;
+}
+.hover-scrollbar:hover {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+.hover-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.hover-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hover-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+.hover-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.45);
+}
+.hover-scrollbar:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.65);
+}
+
 /* ===== Báo cáo máy BB — thanh tab cuộn ngang & bảng thân thiện điện thoại ===== */
 /* Dải tab kéo ngang: giữ 1 hàng, cuộn mượt, có thanh kéo mảnh để kéo sang */
 .bb-tab-scroller {

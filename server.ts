@@ -4873,6 +4873,27 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+
+    // Vite bỏ qua spa-fallback khi middlewareMode bật, nên các route client-side
+    // (ví dụ /lenh-san-xuat) trả "Cannot GET" khi vào thẳng URL hoặc F5. Tự phục vụ
+    // index.html (qua transformIndexHtml) cho mọi GET không phải API/asset để router phía client xử lý.
+    app.get('*', async (req, res, next) => {
+      const urlPath = (req.url || '/').split('?')[0] || '/';
+      if (urlPath.startsWith('/api/') || isBundledAssetPath(urlPath)) {
+        next();
+        return;
+      }
+
+      try {
+        const indexPath = path.join(process.cwd(), 'index.html');
+        const rawHtml = await fs.promises.readFile(indexPath, 'utf-8');
+        const html = await vite.transformIndexHtml(req.originalUrl, rawHtml);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch (error) {
+        vite.ssrFixStacktrace(error as Error);
+        next(error);
+      }
+    });
   } else {
     app.use(express.static(distPath));
     app.get('*', (req, res) => {

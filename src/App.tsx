@@ -690,15 +690,7 @@ export default function App() {
             className={
               activeTab === 'machine-nvl-report' || activeTab === 'orders'
                 ? 'w-full'
-                : activeTab === 'control-board' ||
-                    activeTab === 'warehouse-slip' ||
-                    activeTab === 'warehouse-history' ||
-                    activeTab === 'products' ||
-                    activeTab === 'machines' ||
-                    activeTab === 'acceptance-report-list' ||
-                    activeTab === 'settings'
-                  ? 'mx-auto w-full min-w-0 max-w-none'
-                  : 'mx-auto w-full min-w-0 max-w-[1280px]'
+                : 'mx-auto w-full min-w-0 max-w-none'
             }
           >
             <div className="min-w-0">
