@@ -706,9 +706,9 @@ export default function MixingReportListView({
                 : 'border-zinc-200 bg-white hover:border-zinc-300'
             }`}
           >
-            <span className="block text-sm font-black text-zinc-950">Bảng trộn vật tư định mức</span>
+            <span className="block text-sm font-black text-zinc-950">Phiếu trộn định mức</span>
             <span className="mt-0.5 block text-[11px] font-semibold text-zinc-500">
-              Nhập tay định mức SP / NVL, lưu bảng riêng
+              Lệnh SX → Sản phẩm → NVL, lưu bảng riêng
             </span>
           </button>
         </div>

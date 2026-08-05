@@ -10,10 +10,11 @@ create table if not exists public.bang_tron_vat_tu_dinh_muc (
 alter table public.bang_tron_vat_tu_dinh_muc
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists ngay date,
+  add column if not exists ma_lenh_sx text,
   add column if not exists tong_trong_luong numeric,
   add column if not exists ghi_chu text,
   add column if not exists chi_tiet jsonb not null default '[]'::jsonb,
-  -- cột cũ (có thể còn sẵn; UI mới không bắt buộc)
+  -- SP + NVL
   add column if not exists ma_sp text,
   add column if not exists ten_sp text,
   add column if not exists ma_nvl text,
@@ -23,6 +24,9 @@ alter table public.bang_tron_vat_tu_dinh_muc
 
 create index if not exists bang_tron_vat_tu_dinh_muc_ngay_idx
   on public.bang_tron_vat_tu_dinh_muc (ngay desc);
+
+create index if not exists bang_tron_vat_tu_dinh_muc_ma_lenh_sx_idx
+  on public.bang_tron_vat_tu_dinh_muc (ma_lenh_sx);
 
 alter table public.bang_tron_vat_tu_dinh_muc enable row level security;
 
@@ -43,7 +47,8 @@ create policy "bang_tron_vat_tu_dinh_muc_delete_all"
   on public.bang_tron_vat_tu_dinh_muc for delete using (true);
 
 comment on table public.bang_tron_vat_tu_dinh_muc is
-  'Bang tron vat tu dinh muc — nhap tay: tong trong luong + dong NVL.';
+  'Phieu tron dinh muc: lenh SX + san pham + dong NVL.';
+comment on column public.bang_tron_vat_tu_dinh_muc.ma_lenh_sx is 'Ma lenh san xuat.';
 comment on column public.bang_tron_vat_tu_dinh_muc.tong_trong_luong is 'Tong trong luong (kg) cua phieu dinh muc.';
 comment on column public.bang_tron_vat_tu_dinh_muc.chi_tiet is
-  'Mang dong NVL: [{ma_nvl, ten_nvl, gia_tri, don_vi}].';
+  'Mang SP: [{ma_sp, ten_sp, tong_trong_luong, ghi_chu, nvl:[{ma_nvl, ten_nvl, gia_tri, don_vi, khoi_luong}]}]. khoi_luong = tong_tl * % / 100 (hoac = gia_tri neu don_vi kg). 1 dong = 1 phieu.';

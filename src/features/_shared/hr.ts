@@ -1,5 +1,9 @@
 import type { StaffViewPermissions } from '../nhan-su/menuViews';
 import { normalizeStaffViewPermissions } from '../nhan-su/menuViews';
+import {
+  normalizeAssignablePositions,
+  type StaffAssignablePosition
+} from '../cai-dat-thoi-gian/staffAssignments';
 
 export interface HrMember {
   id: string;
@@ -13,6 +17,7 @@ export interface HrMember {
   password?: string;
   signatureUrl?: string;
   viewPermissions: StaffViewPermissions;
+  assignedPositions?: StaffAssignablePosition[];
 }
 
 export interface HrDepartment {
@@ -74,6 +79,9 @@ export function normalizeHrBranches(data: unknown): HrBranch[] {
                   ).trim() || undefined,
                   viewPermissions: normalizeStaffViewPermissions(
                     memberRecord.viewPermissions ?? memberRecord.quyen_xem
+                  ),
+                  assignedPositions: normalizeAssignablePositions(
+                    memberRecord.assignedPositions ?? memberRecord.vi_tri_gan
                   )
                 };
               })

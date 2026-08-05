@@ -1,10 +1,29 @@
 # bang_tron_vat_tu_dinh_muc
 
 | **Bảng** | `bang_tron_vat_tu_dinh_muc` |
-| **Tab** | trong `/danh-sach-bao-cao-phoi-tron` → tab **Bảng trộn vật tư định mức** |
+| **Tab** | `/danh-sach-bao-cao-phoi-tron` → **Phiếu trộn định mức** |
 | **SQL** | `supabase-bang-tron-vat-tu-dinh-muc.sql` |
 
-**API:** `server.ts` — `/api/bang-tron-vat-tu-dinh-muc` (GET/POST/PATCH/DELETE)  
-**UI:** `src/components/MixingNormMaterialsTab.tsx` (nhúng trong `MixingReportListView.tsx`)
+**API:** `/api/bang-tron-vat-tu-dinh-muc`  
+**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx`
 
-Nhập tay theo **phiếu**: Ngày, Tổng trọng lượng (kg), Ghi chú + nhiều dòng NVL (`ma_nvl`, `ten_nvl`, `gia_tri`, `don_vi`) lưu `chi_tiet` jsonb. Không còn bắt buộc Mã/Tên SP.
+## Mô hình
+
+**1 form nhập = 1 dòng DB = 1 phiếu**
+
+- `ma_lenh_sx`, `ngay`, `ghi_chu`
+- `chi_tiet` jsonb = mảng sản phẩm:
+
+```json
+[{
+  "ma_sp": "...",
+  "ten_sp": "...",
+  "tong_trong_luong": 1000,
+  "ghi_chu": "...",
+  "nvl": [{ "ma_nvl", "ten_nvl", "gia_tri", "don_vi", "khoi_luong" }]
+}]
+```
+
+`khoi_luong` (kg): nếu `don_vi = %` → `tong_trong_luong × gia_tri / 100`; nếu `kg` → bằng `gia_tri`.
+
+Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). In theo lệnh/phiếu xếp chồng từng khối SP + Logo.

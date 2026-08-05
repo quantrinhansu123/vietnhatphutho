@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
 import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
+import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 
 dotenv.config();
 
@@ -1163,7 +1164,9 @@ function mapStaffRecord(row: Record<string, unknown>) {
     signatureUrl,
     link_chu_ky: signatureUrl,
     viewPermissions: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
-    quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions)
+    quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
+    assignedPositions: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions),
+    vi_tri_gan: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions)
   };
 }
 
@@ -1280,22 +1283,30 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
   const explicitViTri = pickRowField(source, ['vi_tri', 'position', 'ma_vi_tri'], '');
   const viTri = explicitViTri || buildStaffViTriLabel(department, congViec);
 
-  return {
-    record: {
-      nhan_su: name,
-      phong_ban: department,
-      chi_nhanh: branch,
-      cong_viec: congViec,
-      vi_tri: viTri,
-      ca_lam: pickRowField(source, ['ca_lam', 'ca', 'shift'], 'Theo phân công'),
-      trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang làm'),
-      ma_nhan_su: code || null,
-      ten_dang_nhap: pickRowField(source, ['ten_dang_nhap', 'username', 'login'], '') || null,
-      mat_khau: pickRowField(source, ['mat_khau', 'password'], '') || null,
-      link_chu_ky: pickRowField(source, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '') || null,
-      quyen_xem: parseStaffQuyenXem(source)
-    }
+  const record: Record<string, unknown> = {
+    nhan_su: name,
+    phong_ban: department,
+    chi_nhanh: branch,
+    cong_viec: congViec,
+    vi_tri: viTri,
+    ca_lam: pickRowField(source, ['ca_lam', 'ca', 'shift'], 'Theo phân công'),
+    trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang làm'),
+    ma_nhan_su: code || null,
+    ten_dang_nhap: pickRowField(source, ['ten_dang_nhap', 'username', 'login'], '') || null,
+    mat_khau: pickRowField(source, ['mat_khau', 'password'], '') || null,
+    link_chu_ky: pickRowField(source, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '') || null,
+    quyen_xem: parseStaffQuyenXem(source)
   };
+
+  // Chỉ ghi vi_tri_gan khi client gửi rõ — tránh form nhân sự ghi đè [] mất dữ liệu gán quyền
+  if (
+    Object.prototype.hasOwnProperty.call(source, 'vi_tri_gan') ||
+    Object.prototype.hasOwnProperty.call(source, 'assignedPositions')
+  ) {
+    record.vi_tri_gan = normalizeAssignablePositions(source.vi_tri_gan ?? source.assignedPositions);
+  }
+
+  return { record };
 }
 
 function vehicleWriteError(error: { code?: string; message?: string }, table: string) {
@@ -2763,7 +2774,125 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
   const ngayRaw = String(source.ngay ?? '').trim();
   const ngay = ngayRaw ? parseWarehouseSlipDate(ngayRaw) || ngayRaw : null;
+  const ma_lenh_sx = String(source.ma_lenh_sx ?? source.maLenhSx ?? '').trim() || null;
 
+  const parseNvlLines = (raw: unknown, label: string) => {
+    const linesRaw = Array.isArray(raw) ? raw : [];
+    const mapped = linesRaw
+      .map((item, index) => {
+        if (!item || typeof item !== 'object') return null;
+        const line = item as Record<string, unknown>;
+        const ma_nvl = String(line.ma_nvl ?? line.maNvl ?? '').trim();
+        const ten_nvl = String(line.ten_nvl ?? line.tenNvl ?? '').trim();
+        if (!ma_nvl && !ten_nvl) return null;
+        const giaTriRaw = line.gia_tri ?? line.giaTri ?? line.dinh_muc ?? line.value;
+        let gia_tri: number | null = null;
+        if (giaTriRaw !== null && giaTriRaw !== undefined && String(giaTriRaw).trim() !== '') {
+          const n = Number(String(giaTriRaw).replace(',', '.'));
+          if (!Number.isFinite(n)) {
+            return { error: `Giá trị NVL #${index + 1} (${label}) không hợp lệ.` };
+          }
+          gia_tri = n;
+        }
+        const donVi = String(line.don_vi ?? line.donVi ?? 'kg').trim().toLowerCase();
+        const don_vi = donVi === '%' ? '%' : 'kg';
+        let khoi_luong: number | null = null;
+        const khoiRaw = line.khoi_luong ?? line.khoiLuong;
+        if (khoiRaw !== null && khoiRaw !== undefined && String(khoiRaw).trim() !== '') {
+          const n = Number(String(khoiRaw).replace(',', '.'));
+          if (!Number.isFinite(n)) {
+            return { error: `Khối lượng NVL #${index + 1} (${label}) không hợp lệ.` };
+          }
+          khoi_luong = n;
+        }
+        return {
+          ma_nvl: ma_nvl || null,
+          ten_nvl: ten_nvl || null,
+          gia_tri,
+          don_vi,
+          khoi_luong
+        };
+      })
+      .filter(Boolean);
+
+    const lineError = mapped.find(
+      item => item && typeof item === 'object' && 'error' in (item as object)
+    ) as { error: string } | undefined;
+    if (lineError?.error) return { error: lineError.error as string };
+
+    const lines = mapped.filter(
+      (
+        item
+      ): item is {
+        ma_nvl: string | null;
+        ten_nvl: string | null;
+        gia_tri: number | null;
+        don_vi: string;
+        khoi_luong: number | null;
+      } => Boolean(item && typeof item === 'object' && !('error' in (item as object)))
+    );
+    if (lines.length === 0) return { error: `${label}: cần ít nhất 1 dòng NVL.` };
+    return { lines };
+  };
+
+  // Phiếu mới: nhiều SP trong chi_tiet
+  const productsRaw = Array.isArray(source.products)
+    ? source.products
+    : Array.isArray(source.san_pham)
+      ? source.san_pham
+      : null;
+
+  if (productsRaw) {
+    const products: Array<Record<string, unknown>> = [];
+    for (const [index, item] of productsRaw.entries()) {
+      if (!item || typeof item !== 'object') continue;
+      const product = item as Record<string, unknown>;
+      const ma_sp = String(product.ma_sp ?? product.maSp ?? '').trim();
+      const ten_sp = String(product.ten_sp ?? product.tenSp ?? '').trim();
+      if (!ma_sp) return { error: `Sản phẩm #${index + 1} thiếu mã SP.` };
+
+      const tongRaw = product.tong_trong_luong ?? product.tongTrongLuong;
+      let tong_trong_luong: number | null = null;
+      if (tongRaw !== null && tongRaw !== undefined && String(tongRaw).trim() !== '') {
+        const n = Number(String(tongRaw).replace(',', '.'));
+        if (!Number.isFinite(n)) {
+          return { error: `Tổng trọng lượng SP ${ma_sp} phải là số.` };
+        }
+        tong_trong_luong = n;
+      }
+
+      const nvlParsed = parseNvlLines(
+        product.nvl ?? product.lines ?? product.chi_tiet,
+        `SP ${ma_sp}`
+      );
+      if ('error' in nvlParsed) return { error: nvlParsed.error };
+
+      products.push({
+        ma_sp,
+        ten_sp: ten_sp || null,
+        tong_trong_luong,
+        ghi_chu: String(product.ghi_chu ?? product.ghiChu ?? '').trim() || null,
+        nvl: nvlParsed.lines
+      });
+    }
+
+    if (products.length === 0) return { error: 'Vui lòng thêm ít nhất 1 sản phẩm.' };
+
+    const first = products[0];
+    return {
+      record: {
+        ngay,
+        ma_lenh_sx,
+        ma_sp: first.ma_sp,
+        ten_sp: first.ten_sp,
+        tong_trong_luong: first.tong_trong_luong,
+        ghi_chu: String(source.ghi_chu ?? source.ghiChu ?? '').trim() || null,
+        chi_tiet: products
+      }
+    };
+  }
+
+  // Legacy: 1 SP + chi_tiet = mảng NVL phẳng
   const tongRaw = source.tong_trong_luong ?? source.tongTrongLuong;
   let tong_trong_luong: number | null = null;
   if (tongRaw !== null && tongRaw !== undefined && String(tongRaw).trim() !== '') {
@@ -2772,58 +2901,28 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
     tong_trong_luong = n;
   }
 
-  const linesRaw = Array.isArray(source.chi_tiet)
-    ? source.chi_tiet
-    : Array.isArray(source.lines)
-      ? source.lines
-      : [];
-
-  const chi_tiet = linesRaw
-    .map((item, index) => {
-      if (!item || typeof item !== 'object') return null;
-      const line = item as Record<string, unknown>;
-      const ma_nvl = String(line.ma_nvl ?? line.maNvl ?? '').trim();
-      const ten_nvl = String(line.ten_nvl ?? line.tenNvl ?? '').trim();
-      if (!ma_nvl && !ten_nvl) return null;
-      const giaTriRaw = line.gia_tri ?? line.giaTri ?? line.dinh_muc ?? line.value;
-      let gia_tri: number | null = null;
-      if (giaTriRaw !== null && giaTriRaw !== undefined && String(giaTriRaw).trim() !== '') {
-        const n = Number(String(giaTriRaw).replace(',', '.'));
-        if (!Number.isFinite(n)) {
-          return { error: `Giá trị dòng NVL #${index + 1} không hợp lệ.` };
-        }
-        gia_tri = n;
-      }
-      const donVi = String(line.don_vi ?? line.donVi ?? 'kg').trim().toLowerCase();
-      return {
-        ma_nvl: ma_nvl || null,
-        ten_nvl: ten_nvl || null,
-        gia_tri,
-        don_vi: donVi === '%' ? '%' : 'kg'
-      };
-    })
-    .filter(Boolean);
-
-  const lineError = chi_tiet.find(
-    item => item && typeof item === 'object' && 'error' in (item as object)
-  ) as { error: string } | undefined;
-  if (lineError?.error) return { error: lineError.error };
-
-  const lines = chi_tiet.filter(
-    (item): item is { ma_nvl: string | null; ten_nvl: string | null; gia_tri: number | null; don_vi: string } =>
-      Boolean(item && typeof item === 'object' && !('error' in (item as object)))
-  );
-
-  if (lines.length === 0) {
-    return { error: 'Vui lòng thêm ít nhất 1 dòng NVL.' };
-  }
+  const ma_sp = String(source.ma_sp ?? source.maSp ?? '').trim() || null;
+  const ten_sp = String(source.ten_sp ?? source.tenSp ?? '').trim() || null;
+  const nvlParsed = parseNvlLines(source.chi_tiet ?? source.lines, 'Sản phẩm');
+  if ('error' in nvlParsed) return { error: nvlParsed.error };
 
   return {
     record: {
       ngay,
+      ma_lenh_sx,
+      ma_sp,
+      ten_sp,
       tong_trong_luong,
       ghi_chu: String(source.ghi_chu ?? source.ghiChu ?? '').trim() || null,
-      chi_tiet: lines
+      chi_tiet: [
+        {
+          ma_sp,
+          ten_sp,
+          tong_trong_luong,
+          ghi_chu: String(source.ghi_chu ?? source.ghiChu ?? '').trim() || null,
+          nvl: nvlParsed.lines
+        }
+      ]
     }
   };
 }
@@ -7694,6 +7793,51 @@ export function createApp() {
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật nhân sự.' });
+    }
+  });
+
+  /** Gán / xóa danh sách vị trí quyền theo mã NV — chỉ cập nhật cột vi_tri_gan. */
+  app.patch('/api/nhan-su/:code/vi-tri-gan', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    const code = String(req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Thiếu mã nhân sự.' });
+    }
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const vi_tri_gan = normalizeAssignablePositions(source.vi_tri_gan ?? source.assignedPositions ?? source.positions);
+
+      const { data: updated, error: updateError } = await supabase
+        .from(SUPABASE_STAFF_TABLE)
+        .update({ vi_tri_gan })
+        .eq('ma_nhan_su', code)
+        .select('*')
+        .maybeSingle();
+
+      if (updateError) {
+        console.error('Supabase nhan_su vi_tri_gan update error:', updateError);
+        return res.status(500).json({
+          error: isMissingColumnError(updateError)
+            ? 'Bảng nhan_su thiếu cột vi_tri_gan. Hãy chạy supabase-nhan-su-vi-tri-gan.sql.'
+            : staffWriteErrorMessage(updateError)
+        });
+      }
+
+      if (!updated) {
+        return res.status(404).json({ error: `Không tìm thấy nhân sự mã ${code}.` });
+      }
+
+      return res.json({
+        success: true,
+        staff: updated,
+        person: mapStaffRecord(updated as Record<string, unknown>)
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi gán vị trí nhân sự.' });
     }
   });
 

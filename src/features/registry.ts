@@ -213,12 +213,21 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   nhan_su: {
     table: 'nhan_su',
     label: 'Nhân sự',
-    sql: ['supabase-nhan-su.sql', 'supabase-nhan-su-dang-nhap.sql', 'supabase-nhan-su-vi-tri.sql'],
+    sql: [
+      'supabase-nhan-su.sql',
+      'supabase-nhan-su-dang-nhap.sql',
+      'supabase-nhan-su-vi-tri.sql',
+      'supabase-nhan-su-vi-tri-gan.sql',
+      'supabase-nhan-su-quyen-xem.sql'
+    ],
     apiPrefix: '/api/nhan-su',
     serverLines: '7252–7590',
     appTab: 'hr',
     appLines: 'src/features/nhan-su/index.tsx',
-    components: ['src/components/ShiftInfoForm.tsx'],
+    components: [
+      'src/components/ShiftInfoForm.tsx',
+      'src/features/cai-dat-thoi-gian/StaffRoleAssignmentPanel.tsx'
+    ],
     utils: ['src/utils/shiftSettings.ts', 'src/features/nhan-su/menuViews.ts']
   },
   danh_sach_xe: {
@@ -284,8 +293,16 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '4481–4603',
     appTab: 'settings',
     appLines: 'src/features/cai-dat-thoi-gian/index.tsx',
-    components: ['src/features/cai-dat-thoi-gian/RolePermissionsMatrix.tsx'],
-    utils: ['src/utils/shiftSettings.ts', 'src/features/cai-dat-thoi-gian/permissionKeys.ts', 'src/features/nhan-su/menuViews.ts']
+    components: [
+      'src/features/cai-dat-thoi-gian/RolePermissionsMatrix.tsx',
+      'src/features/cai-dat-thoi-gian/StaffRoleAssignmentPanel.tsx'
+    ],
+    utils: [
+      'src/utils/shiftSettings.ts',
+      'src/features/cai-dat-thoi-gian/permissionKeys.ts',
+      'src/features/cai-dat-thoi-gian/staffAssignments.ts',
+      'src/features/nhan-su/menuViews.ts'
+    ]
   },
   bao_cao_phoi_tron: {
     table: 'bao_cao_phoi_tron',
