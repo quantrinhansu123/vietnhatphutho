@@ -5674,9 +5674,9 @@ export function createApp() {
       let { data, error } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
         .select('*')
-        // Bản ghi tạo sớm hơn được đưa lên đầu danh sách lệnh sản xuất.
-        .order('created_at', { ascending: true, nullsFirst: false })
-        .order('id', { ascending: true });
+        // Bản ghi tạo mới nhất được đưa lên đầu danh sách lệnh sản xuất.
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false });
 
       if (error && isMissingColumnError(error)) {
         ({ data, error } = await supabase

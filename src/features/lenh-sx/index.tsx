@@ -145,13 +145,13 @@ export function ProductionOrdersPanel({
             .includes(normalizedSearch);
         return matchesStatus && matchesSearch;
       })
-      // Bản ghi tạo sớm hơn đứng trước; dữ liệu không có created_at được đặt sau cùng.
+      // Bản ghi tạo mới nhất đứng trước; dữ liệu không có created_at được đặt sau cùng.
       .sort((left, right) => {
         const leftTime = Date.parse(left.createdAt);
         const rightTime = Date.parse(right.createdAt);
         const leftValid = Number.isFinite(leftTime);
         const rightValid = Number.isFinite(rightTime);
-        if (leftValid && rightValid) return leftTime - rightTime;
+        if (leftValid && rightValid) return rightTime - leftTime;
         if (leftValid) return -1;
         if (rightValid) return 1;
         return left.id.localeCompare(right.id, 'vi');
