@@ -103,6 +103,7 @@ export interface ProductionOrderRow {
   orderRef: string;
   startDate: string;
   endDate: string;
+  createdAt: string;
   machine: string;
   shift: string;
   staff: string;
@@ -2994,10 +2995,11 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         status: pickText(record, ['trang_thai', 'status', 'tinh_trang'], '-'),
         customer: pickText(record, ['khach_hang', 'customer', 'ten_khach_hang'], '-'),
         orderRef: pickText(record, ['ma_don_hang', 'don_hang', 'order_code'], '-'),
-        startDate: formatCell(
+        startDate: formatProductionOrderDate(
           record.ngay_gio_bat_dau ?? record.ngay_bat_dau ?? record.ngay_san_xuat ?? record.ngay_sx ?? record.start_date
         ),
-        endDate: formatCell(record.ngay_gio_ket_thuc ?? record.ngay_ket_thuc ?? record.end_date),
+        endDate: formatProductionOrderDate(record.ngay_gio_ket_thuc ?? record.ngay_ket_thuc ?? record.end_date),
+        createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
         machine: pickText(record, ['may', 'ten_may', 'ma_may', 'machine'], '-'),
         shift: pickText(record, ['ca', 'shift'], '-'),
         staff: pickText(record, ['nhan_su', 'staff', 'nhan_vien'], '-'),
@@ -3011,6 +3013,25 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
       };
     })
     .filter((row): row is ProductionOrderRow => Boolean(row));
+}
+
+/** Hiển thị ngày của lệnh SX theo định dạng Việt Nam, không kèm giờ. */
+export function formatProductionOrderDate(value: unknown): string {
+  const text = formatCell(value);
+  if (text === '-') return text;
+
+  // Dữ liệu PostgreSQL ISO bắt đầu bằng YYYY-MM-DD; lấy trực tiếp phần ngày để không bị lệch múi giờ.
+  const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'Asia/Ho_Chi_Minh'
+  }).format(parsed);
 }
 
 export interface ProductionOrderMaterialLine {

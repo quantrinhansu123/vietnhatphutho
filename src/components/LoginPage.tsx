@@ -2,7 +2,12 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, Lock, User2, ShieldCheck } from 'lucide-react';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { normalizeHrBranches } from '../features/_shared/hr';
-import type { StaffViewPermissions } from '../features/nhan-su/menuViews';
+import {
+  defaultStaffViewPermissions,
+  hasFullMenuAccess,
+  PRIMARY_ADMIN_USERNAME,
+  type StaffViewPermissions
+} from '../features/nhan-su/menuViews';
 import { buildPermissionKey, parsePermissionSettings } from '../features/cai-dat-thoi-gian/permissionKeys';
 
 export type AuthUser = {
@@ -11,10 +16,25 @@ export type AuthUser = {
   username: string;
   role: string;
   viewPermissions?: StaffViewPermissions;
+  editPermissions?: StaffViewPermissions;
+  deletePermissions?: StaffViewPermissions;
+  fullAccess?: boolean;
 };
 
+export function grantResolvedAccess(user: AuthUser): AuthUser {
+  if (!hasFullMenuAccess(user.role, user.username)) return user;
+  const allPermissions = defaultStaffViewPermissions();
+  return {
+    ...user,
+    fullAccess: true,
+    viewPermissions: allPermissions,
+    editPermissions: allPermissions,
+    deletePermissions: allPermissions
+  };
+}
+
 const FALLBACK_ADMIN = {
-  username: 'itvietnhat2026@gmail.com',
+  username: PRIMARY_ADMIN_USERNAME,
   password: '123456',
   name: 'Quản trị viên',
   role: 'Quản trị'
@@ -46,13 +66,15 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
 
     try {
       if (user === FALLBACK_ADMIN.username && pass === FALLBACK_ADMIN.password) {
-        onLogin({
+        onLogin(grantResolvedAccess({
           id: 'admin',
           name: FALLBACK_ADMIN.name,
           username: FALLBACK_ADMIN.username,
           role: FALLBACK_ADMIN.role,
-          viewPermissions: []
-        });
+          viewPermissions: [],
+          editPermissions: [],
+          deletePermissions: []
+        }));
         return;
       }
 
@@ -100,20 +122,21 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
         return;
       }
 
-      onLogin({
+      const rolePermissions = permissionSettings.find(
+        item =>
+          item.permissionKey ===
+          buildPermissionKey(matched.departmentName, matched.member.role || matched.member.position || '')
+      );
+
+      onLogin(grantResolvedAccess({
         id: matched.member.id,
         name: matched.member.name,
         username: matched.member.username || user,
         role: matched.member.role || 'Nhân sự',
-        viewPermissions:
-          permissionSettings.find(
-            item =>
-              item.permissionKey ===
-              buildPermissionKey(matched.departmentName, matched.member.role || matched.member.position || '')
-          )?.viewPermissions ||
-          matched.member.viewPermissions ||
-          []
-      });
+        viewPermissions: rolePermissions?.viewPermissions || matched.member.viewPermissions || [],
+        editPermissions: rolePermissions?.editPermissions || [],
+        deletePermissions: rolePermissions?.deletePermissions || []
+      }));
     } catch (err: any) {
       setError(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.');
     } finally {

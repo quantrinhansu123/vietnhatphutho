@@ -43,7 +43,8 @@ import {
 } from 'lucide-react';
 
 import { readCachedReports, STORAGE_DRAFT_KEY, STORAGE_OFFLINE_KEY, STORAGE_REPORTS_CACHE_KEY, STORAGE_AUTH_KEY } from './features/_shared/storage';
-import LoginPage, { type AuthUser } from './components/LoginPage';
+import LoginPage, { grantResolvedAccess, type AuthUser } from './components/LoginPage';
+import { AccessControlProvider } from './app/accessControl';
 import { buildAllowedTabSet, hasFullMenuAccess, STAFF_MENU_VIEW_TREE } from './features/nhan-su/menuViews';
 import { VietNhatLogo } from './components/layout/Logo';
 import { BackButton, HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
@@ -100,7 +101,7 @@ const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
 function readStoredAuthUser(): AuthUser | null {
   try {
     const raw = localStorage.getItem(STORAGE_AUTH_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+    return raw ? grantResolvedAccess(JSON.parse(raw) as AuthUser) : null;
   } catch {
     return null;
   }
@@ -109,12 +110,13 @@ function readStoredAuthUser(): AuthUser | null {
 export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => readStoredAuthUser());
   const handleLogin = (user: AuthUser) => {
+    const resolvedUser = grantResolvedAccess(user);
     try {
-      localStorage.setItem(STORAGE_AUTH_KEY, JSON.stringify(user));
+      localStorage.setItem(STORAGE_AUTH_KEY, JSON.stringify(resolvedUser));
     } catch {
       /* ignore storage errors */
     }
-    setAuthUser(user);
+    setAuthUser(resolvedUser);
   };
   const handleLogout = () => {
     try {
@@ -467,8 +469,11 @@ export default function App() {
   }
 
   // Chỉ quản trị mới xem toàn bộ; còn lại đúng theo "Quyền xem menu"
-  const menuFullAccess = hasFullMenuAccess(authUser.role);
+  // Kiểm tra cả vai trò và tài khoản để phiên admin cũ/khác cách ghi vai trò vẫn luôn có toàn quyền.
+  const menuFullAccess = Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
   const allowedMenuTabs = buildAllowedTabSet(authUser.viewPermissions ?? []);
+  const editableMenuTabs = buildAllowedTabSet(authUser.editPermissions ?? []);
+  const deletableMenuTabs = buildAllowedTabSet(authUser.deletePermissions ?? []);
   const knownPermissionTabs = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
   // Tab không thuộc cây phân quyền => không bị kiểm soát, luôn hiển thị
   const canSeeTab = (tab: AppTab) =>
@@ -499,6 +504,7 @@ export default function App() {
     menuFullAccess ? items : items.filter(item => canSeeTab(item.tab));
 
   return (
+    <AccessControlProvider user={authUser}>
     <div
       className="flex h-[100dvh] overflow-hidden bg-slate-50 font-sans text-slate-800 selection:bg-brand-500 selection:text-white"
       id="main-root-container"
@@ -1323,7 +1329,11 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ProductionOrdersPanel onBack={() => navigateToTab('factory')} />
+                <ProductionOrdersPanel
+                  onBack={() => navigateToTab('factory')}
+                  canEdit={menuFullAccess || editableMenuTabs.has('production-orders')}
+                  canDelete={menuFullAccess || deletableMenuTabs.has('production-orders')}
+                />
               </motion.div>
             ) : activeTab === 'production-plan-history' ? (
               <motion.div
@@ -1569,6 +1579,7 @@ export default function App() {
       </div>
       </div>
     </div>
+    </AccessControlProvider>
   );
 }
 

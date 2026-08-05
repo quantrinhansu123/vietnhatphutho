@@ -13,6 +13,9 @@ export type StaffViewGroup = {
 
 export type StaffViewPermissions = StaffViewGroup[];
 
+/** Tài khoản quản trị hệ thống luôn có toàn quyền, không phụ thuộc cấu hình menu theo nhân sự. */
+export const PRIMARY_ADMIN_USERNAME = 'itvietnhat2026@gmail.com';
+
 /** Cây menu cha / con dùng cấp quyền (đồng bộ cấu trúc menu app) */
 export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
   {
@@ -161,13 +164,32 @@ export function buildAllowedTabSet(permissions: StaffViewPermissions): Set<strin
   return tabs;
 }
 
-/** Chỉ tài khoản quản trị mới được xem toàn bộ menu */
-export function hasFullMenuAccess(role: string | null | undefined): boolean {
-  const normalized = (role ?? '')
-    .normalize('NFC')
+function normalizeAccessIdentity(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
     .trim()
     .toLowerCase();
-  return normalized === 'quản trị' || normalized === 'admin' || normalized === 'quản trị viên';
+}
+
+/** Tài khoản quản trị hoặc vai trò quản trị được xem toàn bộ menu. */
+export function hasFullMenuAccess(
+  role: string | null | undefined,
+  username?: string | null
+): boolean {
+  if (normalizeAccessIdentity(username) === PRIMARY_ADMIN_USERNAME) return true;
+
+  const normalizedRole = normalizeAccessIdentity(role);
+  return [
+    'admin',
+    'administrator',
+    'super admin',
+    'superadmin',
+    'quan tri',
+    'quan tri vien',
+    'quan tri he thong'
+  ].includes(normalizedRole);
 }
 
 export function summarizeStaffViewPermissions(permissions: StaffViewPermissions): string {

@@ -5674,7 +5674,8 @@ export function createApp() {
       let { data, error } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
         .select('*')
-        .order('thu_tu_uu_tien', { ascending: true, nullsFirst: false })
+        // Bản ghi tạo sớm hơn được đưa lên đầu danh sách lệnh sản xuất.
+        .order('created_at', { ascending: true, nullsFirst: false })
         .order('id', { ascending: true });
 
       if (error && isMissingColumnError(error)) {
@@ -6138,12 +6139,12 @@ export function createApp() {
 
         const { data: linkedOrders, error: ordersError } = await supabase
           .from(SUPABASE_ORDERS_TABLE)
-          .delete()
+          .update({ lenh_sx: null })
           .eq('lenh_sx', code)
           .select('id');
         if (ordersError && !isMissingTableError(ordersError) && !isMissingColumnError(ordersError)) {
           console.error('Supabase don_hang delete error:', ordersError);
-          warnings.push(`Chưa xóa được đơn hàng liên quan: ${ordersError.message}`);
+          warnings.push(`Chưa gỡ được liên kết lệnh SX khỏi đơn hàng: ${ordersError.message}`);
         }
         cascade.orders += linkedOrders?.length || 0;
       }
