@@ -59,6 +59,7 @@ import {
   ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban
 } from 'lucide-react';
 import type { AppTab } from '../routes';
+import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
 import { pathFromTab } from '../routes';
 import MachineDowntimeIcon from '../components/icons/MachineDowntimeIcon';
 
@@ -1023,7 +1024,17 @@ export function SubNav({
   allowedTabs?: Set<string>;
   fullAccess?: boolean;
 }) {
-  const canSee = (tab: AppTab) => fullAccess || (allowedTabs?.has(tab) ?? false);
+  const canSee = (tab: AppTab) => {
+    if (fullAccess) return true;
+    if (!allowedTabs) return false;
+    const accessTab = resolveAccessTab(tab);
+    return (
+      allowedTabs.has(tab) ||
+      allowedTabs.has(accessTab) ||
+      hubHasAllowedChild(tab, allowedTabs) ||
+      hubHasAllowedChild(accessTab, allowedTabs)
+    );
+  };
   const visibleGroups = PRIMARY_NAV_GROUPS
     .map(group => ({
       ...group,

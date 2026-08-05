@@ -1,0 +1,93 @@
+-- =============================================================================
+-- Tổng hợp SQL thay đổi hôm nay (2026-08-05) — chạy trên DB mới gzxdlqz...
+-- Paste vào Supabase SQL Editor → Run (an toàn khi chạy lại)
+-- =============================================================================
+-- Gồm:
+--   1) bang_tron_vat_tu_dinh_muc  — phiếu trộn định mức (nhiều SP + NVL trong chi_tiet)
+--   2) nhan_su.vi_tri_gan         — gán nhiều vị trí quyền theo mã NV
+-- -----------------------------------------------------------------------------
+-- Lưu ý:
+--   - khoi_luong NVL nằm trong chi_tiet jsonb (không cần cột riêng)
+--   - Ma trận Phân quyền (PERM_KEY_…) là DỮ LIỆU trong cai_dat_thoi_gian,
+--     không phải schema — phải tạo lại trên UI hoặc import từ DB cũ
+--   - Nếu bảng nhan_su chưa có trên DB mới: chạy thêm supabase-nhan-su.sql trước
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- 1) Bảng phiếu trộn vật tư định mức
+-- -----------------------------------------------------------------------------
+create table if not exists public.bang_tron_vat_tu_dinh_muc (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now()
+);
+
+alter table public.bang_tron_vat_tu_dinh_muc
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists ngay date,
+  add column if not exists ma_lenh_sx text,
+  add column if not exists tong_trong_luong numeric,
+  add column if not exists ghi_chu text,
+  add column if not exists chi_tiet jsonb not null default '[]'::jsonb,
+  add column if not exists ma_sp text,
+  add column if not exists ten_sp text,
+  add column if not exists ma_nvl text,
+  add column if not exists ten_nvl text,
+  add column if not exists dinh_muc numeric,
+  add column if not exists don_vi_dinh_muc text default '%';
+
+create index if not exists bang_tron_vat_tu_dinh_muc_ngay_idx
+  on public.bang_tron_vat_tu_dinh_muc (ngay desc);
+
+create index if not exists bang_tron_vat_tu_dinh_muc_ma_lenh_sx_idx
+  on public.bang_tron_vat_tu_dinh_muc (ma_lenh_sx);
+
+alter table public.bang_tron_vat_tu_dinh_muc enable row level security;
+
+drop policy if exists "bang_tron_vat_tu_dinh_muc_select_all" on public.bang_tron_vat_tu_dinh_muc;
+create policy "bang_tron_vat_tu_dinh_muc_select_all"
+  on public.bang_tron_vat_tu_dinh_muc for select using (true);
+
+drop policy if exists "bang_tron_vat_tu_dinh_muc_insert_all" on public.bang_tron_vat_tu_dinh_muc;
+create policy "bang_tron_vat_tu_dinh_muc_insert_all"
+  on public.bang_tron_vat_tu_dinh_muc for insert with check (true);
+
+drop policy if exists "bang_tron_vat_tu_dinh_muc_update_all" on public.bang_tron_vat_tu_dinh_muc;
+create policy "bang_tron_vat_tu_dinh_muc_update_all"
+  on public.bang_tron_vat_tu_dinh_muc for update using (true) with check (true);
+
+drop policy if exists "bang_tron_vat_tu_dinh_muc_delete_all" on public.bang_tron_vat_tu_dinh_muc;
+create policy "bang_tron_vat_tu_dinh_muc_delete_all"
+  on public.bang_tron_vat_tu_dinh_muc for delete using (true);
+
+comment on table public.bang_tron_vat_tu_dinh_muc is
+  'Phieu tron dinh muc: lenh SX + san pham + dong NVL.';
+comment on column public.bang_tron_vat_tu_dinh_muc.ma_lenh_sx is 'Ma lenh san xuat.';
+comment on column public.bang_tron_vat_tu_dinh_muc.tong_trong_luong is
+  'Tong trong luong (kg) denormalize tu SP dau (tuong thich cu).';
+comment on column public.bang_tron_vat_tu_dinh_muc.chi_tiet is
+  'Mang SP: [{ma_sp, ten_sp, tong_trong_luong, ghi_chu, nvl:[{ma_nvl, ten_nvl, gia_tri, don_vi, khoi_luong}]}]. 1 dong DB = 1 phieu.';
+
+
+-- -----------------------------------------------------------------------------
+-- 2) Cột gán nhiều vị trí quyền trên nhân sự
+-- -----------------------------------------------------------------------------
+-- Yêu cầu: bảng public.nhan_su đã tồn tại.
+alter table public.nhan_su
+  add column if not exists vi_tri_gan jsonb not null default '[]'::jsonb;
+
+comment on column public.nhan_su.vi_tri_gan is
+  'Danh sach vi tri duoc gan: [{ department, position, permissionKey }]. Khoa theo ma_nhan_su.';
+
+
+-- -----------------------------------------------------------------------------
+-- Kiểm tra nhanh sau khi chạy
+-- -----------------------------------------------------------------------------
+-- select column_name, data_type
+-- from information_schema.columns
+-- where table_schema = 'public'
+--   and table_name in ('bang_tron_vat_tu_dinh_muc', 'nhan_su')
+--   and column_name in (
+--     'ma_lenh_sx', 'chi_tiet', 'tong_trong_luong', 'vi_tri_gan'
+--   )
+-- order by table_name, column_name;

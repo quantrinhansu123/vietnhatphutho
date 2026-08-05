@@ -15,18 +15,17 @@ Cấu hình ca, khung giờ — ảnh hưởng phiếu cân và báo cáo.
 Đăng nhập lấy quyền menu từ ma trận **Phân quyền**:
 
 1. Ưu tiên các vị trí trong `nhan_su.vi_tri_gan` (tab Gán quyền nhân sự) → gộp (union) Xem/Sửa/Xóa
-2. Không có gán → theo phòng ban + chức vụ HR
-3. Không khớp PERM_KEY → chỉ dùng `quyen_xem` hồ sơ (nếu có)
-
-Admin / tài khoản quản trị vẫn full menu.
+2. Không có gán → theo phòng ban + chức vụ HR (KEY như `SAN_XUAT__QUAN_DOC`)
+3. Có PERM trên hệ thống mà KEY không khớp → **không** dùng `quyen_xem` cũ (tránh full menu sai bảng)
+4. Mỗi lần mở app: `refreshAuthUserPermissions` nạp lại ma trận (không kẹt localStorage)
 
 | Cột ma trận | Hiệu lực UI |
 |-------------|-------------|
-| **Xem** | Hiện mục menu / vào tab (`App.tsx`, drawer) |
+| **Xem** | Hiện mục menu / vào tab (`App.tsx`, drawer, alias form→list) |
 | **Sửa** | Hiện nút Thêm + Sửa (`useTabAccess` → `canCreate`/`canEdit`) |
 | **Xóa** | Hiện nút Xóa (`canDelete`) |
 
-Helper: `src/app/useTabAccess.ts` · context: `src/app/accessControl.tsx`.
+Helper: `src/app/useTabAccess.ts`, `src/app/tabAccess.ts`, `src/app/refreshAuthPermissions.ts`, `src/app/accessControl.tsx`.
 
 ## Các tab
 

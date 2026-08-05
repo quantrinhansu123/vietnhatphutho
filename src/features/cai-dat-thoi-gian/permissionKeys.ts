@@ -100,7 +100,9 @@ function findPermissionSettingByKey(
  * Quyền hiệu lực khi đăng nhập:
  * 1) Ưu tiên các vị trí trong `nhan_su.vi_tri_gan`
  * 2) Không có → phòng ban + chức vụ HR
- * 3) Không khớp ma trận Phân quyền → `quyen_xem` trên hồ sơ (chỉ cột Xem)
+ * 3) Khớp thêm theo department/position (slug) nếu KEY lệch chữ hoa
+ * 4) Có intent vai trò + đã có PERM trên hệ thống mà không khớp → rỗng (không dùng quyen_xem cũ)
+ * 5) Không có PERM nào trên hệ thống → fallback `quyen_xem` hồ sơ (chỉ Xem)
  */
 export function resolveLoginPermissions(input: {
   permissionSettings: PermissionKeySetting[];
@@ -122,29 +124,58 @@ export function resolveLoginPermissions(input: {
   } = input;
 
   const keys: string[] = [];
+  const pushKey = (key: string) => {
+    const normalized = key.trim().toUpperCase();
+    if (normalized && !keys.includes(normalized)) keys.push(normalized);
+  };
+
   for (const position of assignedPositions) {
-    const key = String(position.permissionKey || '').trim();
-    if (key && !keys.includes(key)) keys.push(key);
+    pushKey(String(position.permissionKey || ''));
+    pushKey(buildPermissionKey(position.department, position.position));
   }
   if (keys.length === 0) {
-    keys.push(buildPermissionKey(departmentName, hrRoleOrPosition));
+    pushKey(buildPermissionKey(departmentName, hrRoleOrPosition));
   }
 
-  const matched = keys
-    .map(key => findPermissionSettingByKey(permissionSettings, key))
-    .filter((item): item is PermissionKeySetting => Boolean(item));
+  const matched = new Map<string, PermissionKeySetting>();
+  for (const key of keys) {
+    const byKey = findPermissionSettingByKey(permissionSettings, key);
+    if (byKey) matched.set(byKey.permissionKey.toUpperCase(), byKey);
+  }
 
-  if (matched.length === 0) {
+  // Khớp phụ: slug phòng+vị trí trong ma trận == key đã thử
+  for (const setting of permissionSettings) {
+    const settingKey = buildPermissionKey(setting.department, setting.position).toUpperCase();
+    if (keys.includes(settingKey) || keys.includes(setting.permissionKey.trim().toUpperCase())) {
+      matched.set(setting.permissionKey.toUpperCase(), setting);
+    }
+  }
+
+  const matchedList = [...matched.values()];
+  if (matchedList.length > 0) {
     return {
-      viewPermissions: memberViewPermissions,
+      viewPermissions: mergeStaffViewPermissions(...matchedList.map(item => item.viewPermissions)),
+      editPermissions: mergeStaffViewPermissions(...matchedList.map(item => item.editPermissions)),
+      deletePermissions: mergeStaffViewPermissions(...matchedList.map(item => item.deletePermissions))
+    };
+  }
+
+  const hasRoleIntent =
+    assignedPositions.length > 0 ||
+    Boolean(String(departmentName || '').trim() && String(hrRoleOrPosition || '').trim());
+
+  // Đã cấu hình Phân quyền mà không khớp vai trò → không lấy quyen_xem legacy (dễ full menu sai bảng).
+  if (hasRoleIntent && permissionSettings.length > 0) {
+    return {
+      viewPermissions: [],
       editPermissions: [],
       deletePermissions: []
     };
   }
 
   return {
-    viewPermissions: mergeStaffViewPermissions(...matched.map(item => item.viewPermissions)),
-    editPermissions: mergeStaffViewPermissions(...matched.map(item => item.editPermissions)),
-    deletePermissions: mergeStaffViewPermissions(...matched.map(item => item.deletePermissions))
+    viewPermissions: memberViewPermissions,
+    editPermissions: [],
+    deletePermissions: []
   };
 }

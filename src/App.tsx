@@ -45,7 +45,13 @@ import {
 import { readCachedReports, STORAGE_DRAFT_KEY, STORAGE_OFFLINE_KEY, STORAGE_REPORTS_CACHE_KEY, STORAGE_AUTH_KEY } from './features/_shared/storage';
 import LoginPage, { grantResolvedAccess, type AuthUser } from './components/LoginPage';
 import { AccessControlProvider } from './app/accessControl';
-import { buildAllowedTabSet, hasFullMenuAccess, STAFF_MENU_VIEW_TREE } from './features/nhan-su/menuViews';
+import { buildAllowedTabSet, hasFullMenuAccess } from './features/nhan-su/menuViews';
+import { refreshAuthUserPermissions } from './app/refreshAuthPermissions';
+import {
+  buildKnownPermissionTabSet,
+  hubHasAllowedChild,
+  resolveAccessTab
+} from './app/tabAccess';
 import { VietNhatLogo } from './components/layout/Logo';
 import { BackButton, HomeNavButton, MobileBackNavButton, BACK_TAB_MAP } from './components/layout/NavButtons';
 import {
@@ -127,6 +133,27 @@ export default function App() {
     setAuthUser(null);
   };
 
+  // Mỗi lần mở app: nạp lại quyền từ ma trận Phân quyền (tránh localStorage quyền cũ).
+  useEffect(() => {
+    const username = authUser?.username;
+    if (!username || authUser?.fullAccess) return;
+    let cancelled = false;
+    void refreshAuthUserPermissions(username).then(next => {
+      if (cancelled || !next) return;
+      try {
+        localStorage.setItem(STORAGE_AUTH_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      setAuthUser(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Chỉ chạy khi đổi user đăng nhập
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.username, authUser?.fullAccess]);
+
   const [activeTab, setActiveTab] = useState<AppTab>(() => tabFromPath(window.location.pathname));
   const [locationPath, setLocationPath] = useState(() => window.location.pathname);
   const resolvedTab = useMemo(() => tabFromPath(locationPath), [locationPath]);
@@ -188,8 +215,15 @@ export default function App() {
         Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
       if (!fullAccess && nextTab !== 'menu') {
         const allowed = buildAllowedTabSet(authUser.viewPermissions ?? []);
-        const known = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
-        if (known.has(nextTab) && !allowed.has(nextTab)) {
+        const known = buildKnownPermissionTabSet();
+        const accessTab = resolveAccessTab(nextTab);
+        const allowedHere =
+          allowed.has(accessTab) ||
+          allowed.has(nextTab) ||
+          hubHasAllowedChild(accessTab, allowed) ||
+          hubHasAllowedChild(nextTab, allowed);
+        const controlled = known.has(nextTab) || known.has(accessTab);
+        if (controlled && !allowedHere) {
           nextTab = 'menu';
           nextOptions = { ...options, replace: true };
         }
@@ -238,8 +272,15 @@ export default function App() {
       Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
     if (fullAccess || activeTab === 'menu') return;
     const allowed = buildAllowedTabSet(authUser.viewPermissions ?? []);
-    const known = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
-    if (known.has(activeTab) && !allowed.has(activeTab)) {
+    const known = buildKnownPermissionTabSet();
+    const accessTab = resolveAccessTab(activeTab);
+    const allowedHere =
+      allowed.has(accessTab) ||
+      allowed.has(activeTab) ||
+      hubHasAllowedChild(accessTab, allowed) ||
+      hubHasAllowedChild(activeTab, allowed);
+    const controlled = known.has(activeTab) || known.has(accessTab);
+    if (controlled && !allowedHere) {
       navigateToTab('menu', { replace: true });
     }
   }, [authUser, activeTab]);
@@ -519,29 +560,25 @@ export default function App() {
   const allowedMenuTabs = buildAllowedTabSet(authUser.viewPermissions ?? []);
   const editableMenuTabs = buildAllowedTabSet(authUser.editPermissions ?? []);
   const deletableMenuTabs = buildAllowedTabSet(authUser.deletePermissions ?? []);
-  const knownPermissionTabs = buildAllowedTabSet(STAFF_MENU_VIEW_TREE);
-  // Tab trong cây phân quyền: chỉ hiện khi được cấp. Tab ngoài cây: không bị khóa bởi ma trận.
-  const canSeeTab = (tab: AppTab) =>
-    menuFullAccess || !knownPermissionTabs.has(tab) || allowedMenuTabs.has(tab);
-  const canSeeMainMenuTab = (tab: AppTab) => {
-    if (canSeeTab(tab)) return true;
-    if (tab === 'business') {
-      return ['orders', 'customers', 'shipping-orders'].some(child => allowedMenuTabs.has(child));
+  const knownPermissionTabs = buildKnownPermissionTabSet();
+  const canSeeTab = (tab: AppTab) => {
+    if (menuFullAccess || tab === 'menu') return true;
+    const accessTab = resolveAccessTab(tab);
+    if (
+      allowedMenuTabs.has(accessTab) ||
+      allowedMenuTabs.has(tab) ||
+      hubHasAllowedChild(accessTab, allowedMenuTabs) ||
+      hubHasAllowedChild(tab, allowedMenuTabs)
+    ) {
+      return true;
     }
-    if (tab === 'factory') {
-      return [
-        'factory-quan-doc',
-        'factory-qc',
-        'factory-cong-nhan',
-        'factory-kho',
-        'production-reports',
-        'facility-management',
-        'production-orders',
-        'production-plan-history'
-      ].some(child => allowedMenuTabs.has(child));
-    }
-    return false;
+    const controlled = knownPermissionTabs.has(tab) || knownPermissionTabs.has(accessTab);
+    // Tab thuộc cây / alias phân quyền mà không được cấp → ẩn
+    if (controlled) return false;
+    // Tab ngoài ma trận: giữ hành vi cũ (không khóa)
+    return true;
   };
+  const canSeeMainMenuTab = (tab: AppTab) => canSeeTab(tab);
   const visibleMainMenuItems = menuFullAccess
     ? MAIN_MENU_ITEMS
     : MAIN_MENU_ITEMS.filter(item => canSeeMainMenuTab(item.tab));

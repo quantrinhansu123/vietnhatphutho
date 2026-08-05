@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useMemo } from 'react';
-import type { AppTab } from '../routes';
-import type { AuthUser } from '../components/LoginPage';
+import type { AuthUser } from './authUser';
 import { buildAllowedTabSet, hasFullMenuAccess } from '../features/nhan-su/menuViews';
+import { resolveAccessTab } from './tabAccess';
+import type { AppTab } from '../routes';
+import React, { createContext, useContext, useMemo } from 'react';
 
 export type AppAccessControl = {
   isAdmin: boolean;
@@ -32,9 +33,9 @@ export function AccessControlProvider({
     const viewTabs = buildAllowedTabSet(user.viewPermissions ?? []);
     const editTabs = buildAllowedTabSet(user.editPermissions ?? []);
     const deleteTabs = buildAllowedTabSet(user.deletePermissions ?? []);
-    const canView = (tab: AppTab | string) => isAdmin || viewTabs.has(tab);
-    const canEdit = (tab: AppTab | string) => isAdmin || editTabs.has(tab);
-    const canDelete = (tab: AppTab | string) => isAdmin || deleteTabs.has(tab);
+    const canView = (tab: AppTab | string) => isAdmin || viewTabs.has(resolveAccessTab(tab));
+    const canEdit = (tab: AppTab | string) => isAdmin || editTabs.has(resolveAccessTab(tab));
+    const canDelete = (tab: AppTab | string) => isAdmin || deleteTabs.has(resolveAccessTab(tab));
 
     return {
       isAdmin,

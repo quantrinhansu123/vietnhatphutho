@@ -3,35 +3,13 @@ import { Eye, EyeOff, Loader2, Lock, User2, ShieldCheck } from 'lucide-react';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { normalizeHrBranches } from '../features/_shared/hr';
 import {
-  defaultStaffViewPermissions,
-  hasFullMenuAccess,
-  PRIMARY_ADMIN_USERNAME,
-  type StaffViewPermissions
+  PRIMARY_ADMIN_USERNAME
 } from '../features/nhan-su/menuViews';
 import { parsePermissionSettings, resolveLoginPermissions } from '../features/cai-dat-thoi-gian/permissionKeys';
+import { grantResolvedAccess, type AuthUser } from '../app/authUser';
 
-export type AuthUser = {
-  id: string;
-  name: string;
-  username: string;
-  role: string;
-  viewPermissions?: StaffViewPermissions;
-  editPermissions?: StaffViewPermissions;
-  deletePermissions?: StaffViewPermissions;
-  fullAccess?: boolean;
-};
-
-export function grantResolvedAccess(user: AuthUser): AuthUser {
-  if (!hasFullMenuAccess(user.role, user.username)) return user;
-  const allPermissions = defaultStaffViewPermissions();
-  return {
-    ...user,
-    fullAccess: true,
-    viewPermissions: allPermissions,
-    editPermissions: allPermissions,
-    deletePermissions: allPermissions
-  };
-}
+export type { AuthUser } from '../app/authUser';
+export { grantResolvedAccess } from '../app/authUser';
 
 const FALLBACK_ADMIN = {
   username: PRIMARY_ADMIN_USERNAME,
