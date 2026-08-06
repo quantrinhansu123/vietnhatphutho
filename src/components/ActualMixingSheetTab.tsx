@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Printer, Save } from 'lucide-react';
+import { CheckCircle2, Loader2, Printer, Save, XCircle } from 'lucide-react';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../utils/shiftSettings';
 import { MixingNormRatioPrintBatch, type MixingNormRatioPrintDoc } from './MixingNormRatioPrintSheet';
 import { waitForPrintImagesReady } from '../utils/printReady';
@@ -89,6 +89,8 @@ export default function ActualMixingSheetTab() {
   const matchingNorms = useMemo(() => norms.filter(row => row.ngay === date && row.ca === shift), [norms, date, shift]);
   useEffect(() => {
     setSelectedNormId(matchingNorms.length === 1 ? matchingNorms[0].id : '');
+    setError('');
+    setMessage('');
     if (matchingNorms.length === 1) return;
     setProducts([]);
     setNote('');
@@ -100,8 +102,6 @@ export default function ActualMixingSheetTab() {
     const saved = actuals.find(row => row.dinh_muc_id === selectedNormId);
     setProducts(normalizeProducts(saved?.chi_tiet ?? norm.chi_tiet));
     setNote(saved?.ghi_chu ?? '');
-    setError('');
-    setMessage('');
   }, [selectedNormId, norms, actuals]);
 
   const changePercent = (productIndex: number, lineIndex: number, text: string) => {
@@ -129,8 +129,9 @@ export default function ActualMixingSheetTab() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Không thể lưu phiếu.');
+      if (!data.record?.id) throw new Error('Máy chủ không trả về phiếu vừa lưu. Vui lòng thử lại.');
       setActuals(current => [...current.filter(row => row.dinh_muc_id !== norm.id), data.record]);
-      setMessage('Đã lưu phiếu trộn thực tế.');
+      setMessage(existing ? 'Đã cập nhật phiếu trộn thực tế thành công.' : 'Đã lưu phiếu trộn thực tế thành công.');
     } catch (err: any) { setError(err.message || 'Không thể lưu phiếu.'); }
     finally { setSaving(false); }
   };
@@ -192,16 +193,16 @@ export default function ActualMixingSheetTab() {
     <div className="grid gap-3 sm:grid-cols-3">
       <label className="grid gap-1 text-xs font-black text-zinc-600">Ngày<input type="date" value={date} onChange={e => setDate(e.target.value)} className={fieldClass} /></label>
       <label className="grid gap-1 text-xs font-black text-zinc-600">Ca<select value={shift} onChange={e => setShift(e.target.value)} className={fieldClass}><option value="">Chọn ca</option>{shiftOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-      <label className="grid gap-1 text-xs font-black text-zinc-600">Phiếu định mức<select value={selectedNormId} onChange={e => setSelectedNormId(e.target.value)} disabled={!shift || matchingNorms.length === 0} className={fieldClass}><option value="">{matchingNorms.length ? 'Chọn phiếu' : 'Không có phiếu phù hợp'}</option>{matchingNorms.map(row => <option key={row.id} value={row.id}>{row.ma_lenh_sx || 'Không có mã lệnh'}</option>)}</select></label>
+      <label className="grid gap-1 text-xs font-black text-zinc-600">Phiếu định mức<select value={selectedNormId} onChange={e => { setSelectedNormId(e.target.value); setError(''); setMessage(''); }} disabled={!shift || matchingNorms.length === 0} className={fieldClass}><option value="">{matchingNorms.length ? 'Chọn phiếu' : 'Không có phiếu phù hợp'}</option>{matchingNorms.map(row => <option key={row.id} value={row.id}>{row.ma_lenh_sx || 'Không có mã lệnh'}</option>)}</select></label>
     </div>
-    {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">{error}</p>}
-    {message && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">{message}</p>}
+    {error && <p role="alert" className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700"><XCircle className="h-5 w-5 shrink-0" />{error}</p>}
+    {message && <p role="status" aria-live="polite" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700"><CheckCircle2 className="h-5 w-5 shrink-0" />{message}</p>}
     {selectedNormId && products.map((product, pi) => <div key={`${product.ma_sp}-${pi}`} className="overflow-hidden rounded-xl border border-zinc-200">
       <div className="bg-zinc-100 px-3 py-2 text-sm font-black">{product.ma_sp} · {product.ten_sp} <span className="ml-2 text-zinc-500">Tổng TL: {formatNumber(product.tong_trong_luong)} kg</span></div>
       <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-zinc-950 text-white"><tr><th className="px-3 py-2">Mã NVL</th><th className="px-3 py-2">Tên NVL</th><th className="px-3 py-2 text-right">% định mức</th><th className="px-3 py-2 text-right">Trọng lượng định mức</th><th className="px-3 py-2 text-right">% thực tế</th><th className="px-3 py-2 text-right">Trọng lượng thực tế</th></tr></thead>
       <tbody className="divide-y divide-zinc-100">{product.nvl.map((line, li) => <tr key={`${line.ma_nvl}-${li}`}><td className="px-3 py-2 font-mono font-bold">{line.ma_nvl}</td><td className="px-3 py-2">{line.ten_nvl}</td><td className="px-3 py-2 text-right font-mono">{formatNumber(line.gia_tri)}%</td><td className="px-3 py-2 text-right font-mono">{formatNumber(line.khoi_luong)} kg</td><td className="px-3 py-2"><input type="number" min="0" step="0.001" value={line.phan_tram_thuc_te ?? ''} onChange={e => changePercent(pi, li, e.target.value)} className={`${fieldClass} ml-auto block w-28 text-right`} /></td><td className="px-3 py-2 text-right font-mono font-black text-[#ef1b2d]">{formatNumber(line.trong_luong_thuc_te)} kg</td></tr>)}</tbody></table></div>
     </div>)}
-    {selectedNormId && <div className="flex flex-wrap items-end justify-between gap-3"><label className="grid flex-1 gap-1 text-xs font-black text-zinc-600">Ghi chú<input value={note} onChange={e => setNote(e.target.value)} className={fieldClass} /></label><button type="button" onClick={print} className="inline-flex h-10 items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 text-sm font-black text-zinc-800"><Printer className="h-4 w-4" />In phiếu</button><button type="button" onClick={save} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-sm font-black text-white disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Lưu phiếu thực tế</button></div>}
+    {selectedNormId && <div className="flex flex-wrap items-end justify-between gap-3"><label className="grid flex-1 gap-1 text-xs font-black text-zinc-600">Ghi chú<input value={note} onChange={e => setNote(e.target.value)} className={fieldClass} /></label><button type="button" onClick={print} className="inline-flex h-10 items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 text-sm font-black text-zinc-800"><Printer className="h-4 w-4" />In phiếu</button><button type="button" onClick={save} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-sm font-black text-white disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? 'Đang lưu...' : 'Lưu phiếu thực tế'}</button></div>}
     {printDoc ? <MixingNormRatioPrintBatch docs={[printDoc]} /> : null}
   </section>;
 }
