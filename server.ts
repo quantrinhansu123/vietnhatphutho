@@ -9476,14 +9476,60 @@ export function createApp() {
   app.post('/api/phieu-tron-thuc-te', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     try {
-      const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
       const ngay = String(body.ngay ?? '').trim();
       const ca = String(body.ca ?? '').trim();
       const normId = String(body.dinh_muc_id ?? '').trim();
-      const chiTiet = Array.isArray(body.chi_tiet) ? body.chi_tiet : [];
+      const rawChiTiet = Array.isArray(body.chi_tiet) ? body.chi_tiet : [];
+      const chiTiet = rawChiTiet
+        .map(item => {
+          if (!item || typeof item !== 'object') return null;
+          const product = item as Record<string, unknown>;
+          const nvlRaw = Array.isArray(product.nvl)
+            ? product.nvl
+            : Array.isArray(product.chi_tiet)
+              ? product.chi_tiet
+              : [];
+          const nvl = nvlRaw
+            .map(line => {
+              if (!line || typeof line !== 'object') return null;
+              const row = line as Record<string, unknown>;
+              const ma_nvl = String(row.ma_nvl ?? '').trim();
+              const ten_nvl = String(row.ten_nvl ?? '').trim();
+              if (!ma_nvl && !ten_nvl) return null;
+              const toNum = (value: unknown) => {
+                if (value === null || value === undefined || String(value).trim() === '') return null;
+                const parsed = Number(String(value).replace(',', '.'));
+                return Number.isFinite(parsed) ? parsed : null;
+              };
+              return {
+                ma_nvl,
+                ten_nvl,
+                gia_tri: toNum(row.gia_tri ?? row.dinh_muc),
+                khoi_luong: toNum(row.khoi_luong),
+                phan_tram_thuc_te: toNum(row.phan_tram_thuc_te),
+                trong_luong_thuc_te: toNum(row.trong_luong_thuc_te)
+              };
+            })
+            .filter(Boolean);
+          return {
+            ma_sp: String(product.ma_sp ?? '').trim(),
+            ten_sp: String(product.ten_sp ?? '').trim(),
+            tong_trong_luong: (() => {
+              const value = product.tong_trong_luong;
+              if (value === null || value === undefined || String(value).trim() === '') return null;
+              const parsed = Number(String(value).replace(',', '.'));
+              return Number.isFinite(parsed) ? parsed : null;
+            })(),
+            nvl
+          };
+        })
+        .filter(Boolean);
+
       if (!ngay || !ca) return res.status(400).json({ error: 'Vui lòng chọn ngày và ca.' });
       if (!normId) return res.status(400).json({ error: 'Thiếu phiếu trộn định mức.' });
       if (chiTiet.length === 0) return res.status(400).json({ error: 'Phiếu không có chi tiết NVL.' });
+
       const record = {
         ngay,
         ca,
