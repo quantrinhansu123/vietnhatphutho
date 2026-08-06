@@ -25,11 +25,11 @@ Nếu F5 mất dữ liệu / danh sách trống: chạy `supabase-cai-dat-thoi-g
 
 | Cột ma trận | Hiệu lực UI |
 |-------------|-------------|
-| **Xem** | Hiện mục menu / vào tab (`App.tsx`, drawer, alias form→list) |
+| **Xem** | Hiện mục menu / vào tab (`App.tsx`, drawer, alias form→list). Hub `report-forms` / `report-lists` / `production-reports` tự mở các card con bên trong. |
 | **Sửa** | Hiện nút Thêm + Sửa (`useTabAccess` → `canCreate`/`canEdit`) |
 | **Xóa** | Hiện nút Xóa (`canDelete`) |
 
-Helper: `src/app/useTabAccess.ts`, `src/app/tabAccess.ts`, `src/app/refreshAuthPermissions.ts`, `src/app/accessControl.tsx`.
+Helper: `src/app/useTabAccess.ts`, `src/app/tabAccess.ts` (`HUB_IMPLIED_TABS`, `expandImpliedHubTabs`), `src/app/refreshAuthPermissions.ts`, `src/app/accessControl.tsx`.
 
 ## Các tab
 

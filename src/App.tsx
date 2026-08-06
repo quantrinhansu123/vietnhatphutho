@@ -49,6 +49,7 @@ import { buildAllowedTabSet, hasFullMenuAccess } from './features/nhan-su/menuVi
 import { refreshAuthUserPermissions } from './app/refreshAuthPermissions';
 import {
   buildKnownPermissionTabSet,
+  expandImpliedHubTabs,
   hubHasAllowedChild,
   resolveAccessTab
 } from './app/tabAccess';
@@ -557,9 +558,9 @@ export default function App() {
   // Chỉ quản trị mới xem toàn bộ; còn lại đúng theo ma trận Phân quyền (và vị trí gán).
   // Kiểm tra cả vai trò và tài khoản để phiên admin cũ/khác cách ghi vai trò vẫn luôn có toàn quyền.
   const menuFullAccess = Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
-  const allowedMenuTabs = buildAllowedTabSet(authUser.viewPermissions ?? []);
-  const editableMenuTabs = buildAllowedTabSet(authUser.editPermissions ?? []);
-  const deletableMenuTabs = buildAllowedTabSet(authUser.deletePermissions ?? []);
+  const allowedMenuTabs = expandImpliedHubTabs(buildAllowedTabSet(authUser.viewPermissions ?? []));
+  const editableMenuTabs = expandImpliedHubTabs(buildAllowedTabSet(authUser.editPermissions ?? []));
+  const deletableMenuTabs = expandImpliedHubTabs(buildAllowedTabSet(authUser.deletePermissions ?? []));
   const knownPermissionTabs = buildKnownPermissionTabSet();
   const canSeeTab = (tab: AppTab) => {
     if (menuFullAccess || tab === 'menu') return true;

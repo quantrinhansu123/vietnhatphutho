@@ -5,7 +5,9 @@
 | **SQL** | `supabase-bang-tron-vat-tu-dinh-muc.sql` |
 
 **API:** `/api/bang-tron-vat-tu-dinh-muc`  
-**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx`
+Query: `ngay`, `ca`, `q`  
+**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx`  
+Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts`
 
 ## Mô hình
 

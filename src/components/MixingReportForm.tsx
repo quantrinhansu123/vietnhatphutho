@@ -10,6 +10,7 @@ import {
   Clock3,
   Cpu,
   ImagePlus,
+  Lightbulb,
   Loader2,
   Pencil,
   Plus,
@@ -61,6 +62,12 @@ import {
   resolveShiftName,
   type ShiftSetting
 } from '../utils/shiftSettings';
+import {
+  filterMixingNormSuggestionsByDateShift,
+  mixingNormToRoundItems,
+  normalizeMixingNormSuggestions,
+  type MixingNormSuggestion
+} from '../utils/mixingNormSuggestion';
 
 const MIXING_MAX_ROUNDS = 20;
 
@@ -1017,6 +1024,9 @@ export default function MixingReportForm({
   const [actualWeightDrafts, setActualWeightDrafts] = useState<Record<string, string>>({});
   const [reasonOptions, setReasonOptions] = useState<string[]>([]);
   const [collapsedRounds, setCollapsedRounds] = useState<Set<RoundKey>>(() => new Set());
+  const [normSuggestions, setNormSuggestions] = useState<MixingNormSuggestion[]>([]);
+  const [normSuggestionsLoading, setNormSuggestionsLoading] = useState(false);
+  const [applyingNormId, setApplyingNormId] = useState<string | null>(null);
   const autoCollapsedRoundsRef = useRef<Set<RoundKey>>(new Set());
 
   const allReasonOptions = useMemo(() => {
@@ -1210,6 +1220,75 @@ export default function MixingReportForm({
       ngay,
       nhan_su: ''
     }));
+  };
+
+  useEffect(() => {
+    const ngay = form.ngay.trim();
+    const ca = normalizeMixingCaInput(form.ca);
+    if (!ngay || !ca) {
+      setNormSuggestions([]);
+      setNormSuggestionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setNormSuggestionsLoading(true);
+    (async () => {
+      try {
+        const params = new URLSearchParams({ ngay, ca });
+        const res = await fetch(`/api/bang-tron-vat-tu-dinh-muc?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setNormSuggestions([]);
+          return;
+        }
+        const all = normalizeMixingNormSuggestions(data);
+        setNormSuggestions(filterMixingNormSuggestionsByDateShift(all, ngay, ca));
+      } catch {
+        if (!cancelled) setNormSuggestions([]);
+      } finally {
+        if (!cancelled) setNormSuggestionsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.ngay, form.ca]);
+
+  const applyNormSuggestion = (norm: MixingNormSuggestion) => {
+    const items = mixingNormToRoundItems(norm);
+    if (items.length === 0) {
+      setError('Phiếu định mức này chưa có NVL để áp dụng.');
+      return;
+    }
+
+    const hasExisting = form.chi_tiet.length > 0;
+    if (hasExisting) {
+      const ok = window.confirm(
+        'Form đã có NVL. Áp dụng phiếu định mức sẽ thay danh sách NVL hiện tại bằng định mức QC. Tiếp tục?'
+      );
+      if (!ok) return;
+    }
+
+    setApplyingNormId(norm.id);
+    const roundKey = ROUND_KEYS[0];
+    let nextLines: MixingReportLine[] = [];
+    for (const item of items) {
+      nextLines = upsertMaterialInRound(nextLines, roundKey, item);
+    }
+
+    setForm(prev => ({
+      ...prev,
+      chi_tiet: normalizeChiTietLines(nextLines)
+    }));
+    setActiveRoundCount(prev => Math.max(prev, 1));
+    setMessage(
+      `Đã áp dụng ${items.length} NVL từ định mức QC${norm.ma_lenh_sx ? ` (${norm.ma_lenh_sx})` : ''}.`
+    );
+    setError('');
+    setApplyingNormId(null);
   };
 
   useEffect(() => {
@@ -1977,6 +2056,70 @@ export default function MixingReportForm({
           {headerFields}
         </div>
       )}
+
+      {form.ngay.trim() && normalizeMixingCaInput(form.ca) ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/70 px-3 py-3 shadow-sm sm:px-4">
+          <div className="mb-2 flex items-start gap-2">
+            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="min-w-0">
+              <p className="text-sm font-black text-zinc-900">Gợi ý từ phiếu trộn định mức QC</p>
+              <p className="text-[11px] font-medium text-zinc-600">
+                Theo ngày {form.ngay} · ca {form.ca}. Bấm Áp dụng để đổ NVL vào bảng trộn.
+              </p>
+            </div>
+          </div>
+          {normSuggestionsLoading ? (
+            <p className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-600">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Đang tìm phiếu định mức...
+            </p>
+          ) : normSuggestions.length === 0 ? (
+            <p className="text-xs font-semibold text-zinc-500">
+              Không có phiếu định mức QC khớp ngày/ca này.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {normSuggestions.map(norm => {
+                const productLabels = norm.products
+                  .map(product => product.ma_sp || product.ten_sp)
+                  .filter(Boolean)
+                  .slice(0, 3)
+                  .join(', ');
+                return (
+                  <li
+                    key={norm.id}
+                    className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-zinc-900">
+                        {norm.ma_lenh_sx || 'Không có mã lệnh'} · {norm.nvlCount} NVL
+                        {norm.products.length > 1 ? ` · ${norm.products.length} SP` : ''}
+                      </p>
+                      <p className="truncate text-[11px] font-medium text-zinc-500">
+                        {productLabels || '—'}
+                        {norm.ghi_chu ? ` · ${norm.ghi_chu}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => applyNormSuggestion(norm)}
+                      disabled={applyingNormId === norm.id}
+                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+                    >
+                      {applyingNormId === norm.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      )}
+                      Áp dụng
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">

@@ -15,9 +15,67 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
   'machine-run-log': 'machine-run-log-list'
 };
 
+/**
+ * Hub trong cây Phân quyền (Công nhân / Quản Đốc) ≠ từng card bên trong.
+ * Có quyền hub → được xem các tab card thuộc hub đó.
+ */
+export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
+  'report-forms': [
+    'machine-nvl-report',
+    'mixing-report',
+    'weighing-summary',
+    'machine-downtime-report',
+    'machine-run-log',
+    'damaged-goods-report',
+    'acceptance-report',
+    'kiem-kho',
+    // form ↔ list (nút Danh sách / Sửa)
+    'machine-nvl-report-list',
+    'mixing-report-list',
+    'weighing-summary-list',
+    'machine-downtime-list',
+    'machine-run-log-list',
+    'damaged-goods-report-list',
+    'acceptance-report-list'
+  ],
+  'report-lists': [
+    'machine-nvl-report-list',
+    'mixing-report-list',
+    'weighing-summary-list',
+    'can-tu-dong',
+    'kiem-kho',
+    'damaged-goods-report-list',
+    'acceptance-report-list',
+    'warehouse-history',
+    'machine-downtime-list',
+    'machine-run-log-list'
+  ],
+  'production-reports': ['report-forms', 'report-lists']
+};
+
 export function resolveAccessTab(tab: AppTab | string): string {
   const raw = String(tab || '').trim();
   return TAB_ACCESS_ALIASES[raw] || raw;
+}
+
+/** Bổ sung tab card ẩn sau hub (report-forms / report-lists / …). */
+export function expandImpliedHubTabs(tabs: Set<string>): Set<string> {
+  const out = new Set(tabs);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const tab of [...out]) {
+      const implied = HUB_IMPLIED_TABS[tab];
+      if (!implied) continue;
+      for (const next of implied) {
+        if (!out.has(next)) {
+          out.add(next);
+          changed = true;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** Tập tab cha + con trong cây phân quyền + alias form. */
@@ -32,6 +90,10 @@ export function buildKnownPermissionTabSet(): Set<string> {
   for (const [from, to] of Object.entries(TAB_ACCESS_ALIASES)) {
     tabs.add(from);
     tabs.add(to);
+  }
+  for (const [hub, implied] of Object.entries(HUB_IMPLIED_TABS)) {
+    tabs.add(hub);
+    for (const tab of implied) tabs.add(tab);
   }
   // Hub phụ dùng trong App nhưng không nằm trong matrix
   tabs.add('factory');
@@ -59,6 +121,9 @@ export function hubHasAllowedChild(hubTab: string, allowed: Set<string>): boolea
       'production-plan-history',
       'control-board'
     ].some(tab => allowed.has(tab) || hubHasAllowedChild(tab, allowed));
+  }
+  if (HUB_IMPLIED_TABS[hubTab]) {
+    return HUB_IMPLIED_TABS[hubTab].some(tab => allowed.has(tab));
   }
   return false;
 }

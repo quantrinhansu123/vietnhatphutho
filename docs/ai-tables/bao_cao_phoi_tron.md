@@ -12,6 +12,8 @@
 - `MixingReportPrintSheet.tsx` — in
 - `MixingOrderAutofillModal.tsx` — autofill
 
-**Utils:** `lib/mixingReportModel.ts`, `utils/mixingOrderAutofill.ts`
+**Utils:** `lib/mixingReportModel.ts`, `utils/mixingOrderAutofill.ts`, `utils/mixingNormSuggestion.ts`
+
+**Gợi ý định mức QC:** Form `/bao-cao-phoi-tron` khi chọn Ngày + Ca sẽ tải `/api/bang-tron-vat-tu-dinh-muc?ngay&ca` và hiện phiếu định mức QC để **Áp dụng** (đổ NVL gộp theo mã vào lần 1).
 
 **Update ca:** Form sửa chuẩn hóa `ca` (bỏ `-`), khớp với sổ ca / cài đặt thời gian trước khi PATCH. API từ chối lưu nếu `ca` trống hoặc chỉ là `-`.

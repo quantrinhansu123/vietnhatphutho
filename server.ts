@@ -9324,11 +9324,21 @@ export function createApp() {
 
     try {
       const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      const ngay =
+        typeof req.query.ngay === 'string'
+          ? req.query.ngay.trim().slice(0, 10)
+          : typeof req.query.tu_ngay === 'string'
+            ? req.query.tu_ngay.trim().slice(0, 10)
+            : '';
+      const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+
       let query = supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
         .select('*')
         .order('ngay', { ascending: false })
         .order('created_at', { ascending: false });
+
+      if (ngay) query = query.eq('ngay', ngay);
 
       const { data, error } = await query.limit(2000);
       if (error) {
@@ -9337,11 +9347,20 @@ export function createApp() {
       }
 
       let records = Array.isArray(data) ? data : [];
+      if (ca) {
+        const needle = ca.toLowerCase();
+        records = records.filter(row => {
+          const value = String((row as Record<string, unknown>).ca ?? '')
+            .trim()
+            .toLowerCase();
+          return value === needle || value.includes(needle) || needle.includes(value);
+        });
+      }
       if (q) {
         const needle = q.toLowerCase();
         records = records.filter(row => {
           const r = row as Record<string, unknown>;
-          return `${r.ngay ?? ''} ${r.ma_sp ?? ''} ${r.ten_sp ?? ''} ${r.ma_nvl ?? ''} ${r.ten_nvl ?? ''} ${r.ghi_chu ?? ''}`
+          return `${r.ngay ?? ''} ${r.ca ?? ''} ${r.ma_lenh_sx ?? ''} ${r.ma_sp ?? ''} ${r.ten_sp ?? ''} ${r.ma_nvl ?? ''} ${r.ten_nvl ?? ''} ${r.ghi_chu ?? ''}`
             .toLowerCase()
             .includes(needle);
         });
@@ -9430,7 +9449,7 @@ export function createApp() {
   });
 
   app.get('/api/phieu-tron-thuc-te', async (req, res) => {
-    if (!supabase) return res.status(503).json({ error: 'Supabase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.' });
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
@@ -9442,24 +9461,29 @@ export function createApp() {
       if (ngay) query = query.eq('ngay', ngay);
       if (ca) query = query.eq('ca', ca);
       const { data, error } = await query.limit(2000);
-      if (error) return res.status(500).json({ error: `KhÃ´ng thá»ƒ táº£i phiáº¿u trá»™n thá»±c táº¿. ${error.message}` });
+      if (error) {
+        const message = isMissingTableError(error)
+          ? `Bảng ${SUPABASE_ACTUAL_MIXING_SHEET_TABLE} chưa tồn tại trên Supabase. Hãy chạy file supabase-phieu-tron-thuc-te.sql trong Supabase SQL Editor.`
+          : `Không thể tải phiếu trộn thực tế. ${error.message}`;
+        return res.status(500).json({ error: message });
+      }
       return res.json({ records: data || [], total: data?.length || 0 });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lá»—i khi táº£i phiáº¿u trá»™n thá»±c táº¿.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải phiếu trộn thực tế.' });
     }
   });
 
   app.post('/api/phieu-tron-thuc-te', async (req, res) => {
-    if (!supabase) return res.status(503).json({ error: 'Supabase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.' });
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     try {
       const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
       const ngay = String(body.ngay ?? '').trim();
       const ca = String(body.ca ?? '').trim();
       const normId = String(body.dinh_muc_id ?? '').trim();
       const chiTiet = Array.isArray(body.chi_tiet) ? body.chi_tiet : [];
-      if (!ngay || !ca) return res.status(400).json({ error: 'Vui lÃ²ng chá»n ngÃ y vÃ  ca.' });
-      if (!normId) return res.status(400).json({ error: 'Thiáº¿u phiáº¿u trá»™n Ä‘á»‹nh má»©c.' });
-      if (chiTiet.length === 0) return res.status(400).json({ error: 'Phiáº¿u khÃ´ng cÃ³ chi tiáº¿t NVL.' });
+      if (!ngay || !ca) return res.status(400).json({ error: 'Vui lòng chọn ngày và ca.' });
+      if (!normId) return res.status(400).json({ error: 'Thiếu phiếu trộn định mức.' });
+      if (chiTiet.length === 0) return res.status(400).json({ error: 'Phiếu không có chi tiết NVL.' });
       const record = {
         ngay,
         ca,
@@ -9474,10 +9498,15 @@ export function createApp() {
         ? supabase.from(SUPABASE_ACTUAL_MIXING_SHEET_TABLE).update(record).eq('id', id)
         : supabase.from(SUPABASE_ACTUAL_MIXING_SHEET_TABLE).upsert(record, { onConflict: 'dinh_muc_id' });
       const { data, error } = await request.select('*').single();
-      if (error) return res.status(500).json({ error: `KhÃ´ng thá»ƒ lÆ°u phiáº¿u trá»™n thá»±c táº¿. ${error.message}` });
+      if (error) {
+        const message = isMissingTableError(error)
+          ? `Bảng ${SUPABASE_ACTUAL_MIXING_SHEET_TABLE} chưa tồn tại trên Supabase. Hãy chạy file supabase-phieu-tron-thuc-te.sql trong Supabase SQL Editor.`
+          : `Không thể lưu phiếu trộn thực tế. ${error.message}`;
+        return res.status(500).json({ error: message });
+      }
       return res.status(id ? 200 : 201).json({ success: true, record: data });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lá»—i khi lÆ°u phiáº¿u trá»™n thá»±c táº¿.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu phiếu trộn thực tế.' });
     }
   });
 

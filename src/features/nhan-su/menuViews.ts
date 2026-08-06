@@ -154,15 +154,36 @@ export function normalizeStaffViewPermissions(raw: unknown): StaffViewPermission
 
       return { menu, label: label || menu, children };
     })
-    .filter((group): group is StaffViewGroup => Boolean(group));
+    .filter((group): group is StaffViewGroup => Boolean(group))
+    .map(group => {
+      // Sửa quyền chỉ có menu cha / children rỗng → gắn đủ menu con theo cây hiện tại.
+      if (group.children.length > 0) return group;
+      const tree = STAFF_MENU_VIEW_TREE.find(item => item.menu === group.menu);
+      if (!tree || tree.children.length === 0) return group;
+      return {
+        ...group,
+        label: group.label || tree.label,
+        children: tree.children.map(child => ({ ...child }))
+      };
+    });
 }
 
 /** Tập hợp tab (menu cha + con) mà nhân sự được xem */
 export function buildAllowedTabSet(permissions: StaffViewPermissions): Set<string> {
   const tabs = new Set<string>();
   permissions.forEach(group => {
-    if (group.menu) tabs.add(String(group.menu));
-    group.children.forEach(child => {
+    if (!group?.menu) return;
+    const menu = String(group.menu);
+    tabs.add(menu);
+
+    const savedChildren = Array.isArray(group.children) ? group.children : [];
+    // Menu cha được lưu nhưng children rỗng (dữ liệu cũ / normalize lỗi) → mở hết menu con trong cây.
+    const children =
+      savedChildren.length > 0
+        ? savedChildren
+        : STAFF_MENU_VIEW_TREE.find(item => item.menu === menu)?.children ?? [];
+
+    children.forEach(child => {
       if (child.tab) tabs.add(String(child.tab));
     });
   });
