@@ -32,6 +32,14 @@ function formatNumberVi(value: number | null | undefined) {
   return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(value);
 }
 
+function formatActualPercentVi(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '';
+  return new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
 function resolveLinePercentAndKg(
   line: MixingNormLine,
   tongTrongLuong: number | null
@@ -149,7 +157,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                             <td className="col-kg">{kg ? `${kg} kg` : ''}</td>
                             {doc.isActual ? (
                               <td className="col-kg">
-                                {formatNumberVi(doc.actualValues?.[index]?.[lineIndex]?.percent)}%
+                                {formatActualPercentVi(doc.actualValues?.[index]?.[lineIndex]?.percent)}%
                                 {' · '}
                                 {formatNumberVi(doc.actualValues?.[index]?.[lineIndex]?.weight)} kg
                               </td>

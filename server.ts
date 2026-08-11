@@ -87,6 +87,19 @@ const SUPABASE_MIXING_NORM_TABLE =
   process.env.SUPABASE_MIXING_NORM_TABLE || 'bang_tron_vat_tu_dinh_muc';
 const SUPABASE_ACTUAL_MIXING_SHEET_TABLE =
   process.env.SUPABASE_ACTUAL_MIXING_SHEET_TABLE || 'phieu_tron_thuc_te';
+const ACTUAL_MIXING_WEIGHT_FORMAT_ERROR = 'Trọng lượng thực tế không đúng định dạng. Ví dụ: 123.56';
+const ACTUAL_MIXING_WEIGHT_PATTERN = /^\d+(?:\.\d{1,2})?$/;
+
+function parseActualMixingNumber(value: unknown): number | null {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const parsed = Number(String(value).replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isValidActualMixingWeight(value: unknown): boolean {
+  if (value === null || value === undefined || String(value).trim() === '') return true;
+  return ACTUAL_MIXING_WEIGHT_PATTERN.test(String(value).trim());
+}
 const SUPABASE_ACCEPTANCE_REPORTS_TABLE = process.env.SUPABASE_ACCEPTANCE_REPORTS_TABLE || 'bao_cao_nghiem_thu';
 const SUPABASE_MACHINE_NVL_REPORTS_TABLE =
   process.env.SUPABASE_MACHINE_NVL_REPORTS_TABLE || 'bao_cao_may_nvl_ton';
@@ -9481,10 +9494,12 @@ export function createApp() {
       const ca = String(body.ca ?? '').trim();
       const normId = String(body.dinh_muc_id ?? '').trim();
       const rawChiTiet = Array.isArray(body.chi_tiet) ? body.chi_tiet : [];
+      let hasInvalidActualWeight = false;
       const chiTiet = rawChiTiet
         .map(item => {
           if (!item || typeof item !== 'object') return null;
           const product = item as Record<string, unknown>;
+          const totalWeight = parseActualMixingNumber(product.tong_trong_luong);
           const nvlRaw = Array.isArray(product.nvl)
             ? product.nvl
             : Array.isArray(product.chi_tiet)
@@ -9497,30 +9512,31 @@ export function createApp() {
               const ma_nvl = String(row.ma_nvl ?? '').trim();
               const ten_nvl = String(row.ten_nvl ?? '').trim();
               if (!ma_nvl && !ten_nvl) return null;
-              const toNum = (value: unknown) => {
-                if (value === null || value === undefined || String(value).trim() === '') return null;
-                const parsed = Number(String(value).replace(',', '.'));
-                return Number.isFinite(parsed) ? parsed : null;
-              };
+              const parsedActualWeight = parseActualMixingNumber(row.trong_luong_thuc_te);
+              if (
+                !isValidActualMixingWeight(row.trong_luong_thuc_te) ||
+                (row.trong_luong_thuc_te !== null &&
+                  row.trong_luong_thuc_te !== undefined &&
+                  String(row.trong_luong_thuc_te).trim() !== '' &&
+                  parsedActualWeight === null)
+              ) {
+                hasInvalidActualWeight = true;
+              }
+              const actualWeight = parsedActualWeight ?? 0;
               return {
                 ma_nvl,
                 ten_nvl,
-                gia_tri: toNum(row.gia_tri ?? row.dinh_muc),
-                khoi_luong: toNum(row.khoi_luong),
-                phan_tram_thuc_te: toNum(row.phan_tram_thuc_te),
-                trong_luong_thuc_te: toNum(row.trong_luong_thuc_te)
+                gia_tri: parseActualMixingNumber(row.gia_tri ?? row.dinh_muc),
+                khoi_luong: parseActualMixingNumber(row.khoi_luong),
+                phan_tram_thuc_te: parseActualMixingNumber(row.phan_tram_thuc_te),
+                trong_luong_thuc_te: actualWeight
               };
             })
             .filter(Boolean);
           return {
             ma_sp: String(product.ma_sp ?? '').trim(),
             ten_sp: String(product.ten_sp ?? '').trim(),
-            tong_trong_luong: (() => {
-              const value = product.tong_trong_luong;
-              if (value === null || value === undefined || String(value).trim() === '') return null;
-              const parsed = Number(String(value).replace(',', '.'));
-              return Number.isFinite(parsed) ? parsed : null;
-            })(),
+            tong_trong_luong: totalWeight,
             nvl
           };
         })
@@ -9529,6 +9545,7 @@ export function createApp() {
       if (!ngay || !ca) return res.status(400).json({ error: 'Vui lòng chọn ngày và ca.' });
       if (!normId) return res.status(400).json({ error: 'Thiếu phiếu trộn định mức.' });
       if (chiTiet.length === 0) return res.status(400).json({ error: 'Phiếu không có chi tiết NVL.' });
+      if (hasInvalidActualWeight) return res.status(400).json({ error: ACTUAL_MIXING_WEIGHT_FORMAT_ERROR });
 
       const record = {
         ngay,

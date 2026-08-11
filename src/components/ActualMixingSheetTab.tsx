@@ -10,6 +10,7 @@ type ActualLine = {
   khoi_luong: number | null;
   phan_tram_thuc_te: number | null;
   trong_luong_thuc_te: number | null;
+  trong_luong_thuc_te_input: string;
 };
 type ActualProduct = {
   ma_sp: string;
@@ -28,6 +29,8 @@ type ActualRecord = {
 };
 
 const STORAGE_KEY = 'actual-mixing-sheet-v1';
+const ACTUAL_WEIGHT_FORMAT_ERROR = 'Trọng lượng thực tế không đúng định dạng. Ví dụ: 123.56';
+const ACTUAL_WEIGHT_INPUT_PATTERN = /^\d*(?:\.\d{0,2})?$/;
 
 const fieldClass =
   'h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
@@ -40,6 +43,27 @@ const numberValue = (value: unknown) => {
 
 const formatNumber = (value: number | null) =>
   value === null ? '—' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(value);
+
+const formatActualPercent = (value: number | null) =>
+  value === null
+    ? '—'
+    : new Intl.NumberFormat('vi-VN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(value);
+
+const recalculateActualPercents = (lines: ActualLine[]): ActualLine[] => {
+  const totalActualWeight = lines.reduce((sum, line) => sum + (line.trong_luong_thuc_te ?? 0), 0);
+  return lines.map(line => ({
+    ...line,
+    phan_tram_thuc_te:
+      line.trong_luong_thuc_te === null
+        ? null
+        : totalActualWeight > 0
+          ? (line.trong_luong_thuc_te * 100) / totalActualWeight
+          : 0
+  }));
+};
 
 function lineKey(maNvl: string, tenNvl: string) {
   return `${maNvl.trim().toLowerCase()}|${tenNvl.trim().toLowerCase()}`;
@@ -57,7 +81,7 @@ function normalizeProducts(raw: unknown): ActualProduct[] {
         : Array.isArray(product.chi_tiet)
           ? product.chi_tiet
           : [];
-      const nvl = rawLines
+      const nvl = recalculateActualPercents(rawLines
         .map((entry): ActualLine | null => {
           if (!entry || typeof entry !== 'object') return null;
           const line = entry as Record<string, unknown>;
@@ -66,18 +90,20 @@ function normalizeProducts(raw: unknown): ActualProduct[] {
           if (!ma_nvl && !ten_nvl) return null;
           const actualPercent = numberValue(line.phan_tram_thuc_te);
           const actualWeight = numberValue(line.trong_luong_thuc_te);
+          const resolvedWeight =
+            actualWeight ??
+            (total !== null && actualPercent !== null ? (total * actualPercent) / 100 : 0);
           return {
             ma_nvl,
             ten_nvl,
             gia_tri: numberValue(line.gia_tri ?? line.dinh_muc),
             khoi_luong: numberValue(line.khoi_luong),
-            phan_tram_thuc_te: actualPercent,
-            trong_luong_thuc_te:
-              actualWeight ??
-              (total !== null && actualPercent !== null ? (total * actualPercent) / 100 : null)
+            phan_tram_thuc_te: null,
+            trong_luong_thuc_te: resolvedWeight,
+            trong_luong_thuc_te_input: String(resolvedWeight)
           };
         })
-        .filter((line): line is ActualLine => Boolean(line));
+        .filter((line): line is ActualLine => Boolean(line)));
 
       const ma_sp = String(product.ma_sp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? '').trim();
@@ -110,25 +136,24 @@ function mergeActualOntoNorm(normChiTiet: unknown, savedChiTiet: unknown): Actua
       matched.nvl.map(line => [lineKey(line.ma_nvl, line.ten_nvl), line] as const)
     );
 
+    const mergedLines = product.nvl.map(line => {
+      const savedLine =
+        savedLines.get(lineKey(line.ma_nvl, line.ten_nvl)) ||
+        matched.nvl.find(item => item.ma_nvl && item.ma_nvl === line.ma_nvl) ||
+        null;
+      if (!savedLine) return line;
+      const actualWeight = savedLine.trong_luong_thuc_te ?? 0;
+      return {
+        ...line,
+        phan_tram_thuc_te: null,
+        trong_luong_thuc_te: actualWeight,
+        trong_luong_thuc_te_input: String(actualWeight)
+      };
+    });
+
     return {
       ...product,
-      nvl: product.nvl.map(line => {
-        const savedLine =
-          savedLines.get(lineKey(line.ma_nvl, line.ten_nvl)) ||
-          matched.nvl.find(item => item.ma_nvl && item.ma_nvl === line.ma_nvl) ||
-          null;
-        if (!savedLine) return line;
-        const percent = savedLine.phan_tram_thuc_te;
-        return {
-          ...line,
-          phan_tram_thuc_te: percent,
-          trong_luong_thuc_te:
-            savedLine.trong_luong_thuc_te ??
-            (product.tong_trong_luong !== null && percent !== null
-              ? (product.tong_trong_luong * percent) / 100
-              : null)
-        };
-      })
+      nvl: recalculateActualPercents(mergedLines)
     };
   });
 }
@@ -265,26 +290,27 @@ export default function ActualMixingSheetTab() {
     writeStoredSelection(date, selectedNorm?.ca || '', selectedNormId);
   }, [date, selectedNorm?.ca, selectedNormId]);
 
-  const changePercent = (productIndex: number, lineIndex: number, text: string) => {
-    const percent = numberValue(text);
+  const changeActualWeight = (productIndex: number, lineIndex: number, text: string) => {
+    if (!ACTUAL_WEIGHT_INPUT_PATTERN.test(text)) return;
+    if (text !== '' && !Number.isFinite(Number(text))) return;
+    setError(current => current === ACTUAL_WEIGHT_FORMAT_ERROR ? '' : current);
+    const normalizedText = text === '' ? '0' : text;
+    const actualWeight = Number(normalizedText);
     setProducts(current =>
       current.map((product, pi) =>
         pi !== productIndex
           ? product
           : {
               ...product,
-              nvl: product.nvl.map((line, li) =>
+              nvl: recalculateActualPercents(product.nvl.map((line, li) =>
                 li !== lineIndex
                   ? line
                   : {
                       ...line,
-                      phan_tram_thuc_te: percent,
-                      trong_luong_thuc_te:
-                        product.tong_trong_luong !== null && percent !== null
-                          ? (product.tong_trong_luong * percent) / 100
-                          : null
+                      trong_luong_thuc_te: actualWeight,
+                      trong_luong_thuc_te_input: normalizedText
                     }
-              )
+              ))
             }
       )
     );
@@ -298,7 +324,6 @@ export default function ActualMixingSheetTab() {
     if (products.length === 0 || products.every(product => product.nvl.length === 0)) {
       return setError('Phiếu không có dòng NVL để lưu.');
     }
-
     setSaving(true);
     setError('');
     setMessage('');
@@ -314,7 +339,7 @@ export default function ActualMixingSheetTab() {
           gia_tri: line.gia_tri,
           khoi_luong: line.khoi_luong,
           phan_tram_thuc_te: line.phan_tram_thuc_te,
-          trong_luong_thuc_te: line.trong_luong_thuc_te
+          trong_luong_thuc_te: line.trong_luong_thuc_te_input || null
         }))
       }));
 
@@ -526,18 +551,20 @@ export default function ActualMixingSheetTab() {
                         <td className="px-3 py-2">{line.ten_nvl}</td>
                         <td className="px-3 py-2 text-right font-mono">{formatNumber(line.gia_tri)}%</td>
                         <td className="px-3 py-2 text-right font-mono">{formatNumber(line.khoi_luong)} kg</td>
+                        <td className="px-3 py-2 text-right font-mono font-black text-[#ef1b2d]">
+                          {formatActualPercent(line.phan_tram_thuc_te)}%
+                        </td>
                         <td className="px-3 py-2">
                           <input
-                            type="number"
-                            min="0"
-                            step="0.001"
-                            value={line.phan_tram_thuc_te ?? ''}
-                            onChange={e => changePercent(pi, li, e.target.value)}
+                            type="text"
+                            inputMode="decimal"
+                            value={line.trong_luong_thuc_te_input}
+                            onChange={e => changeActualWeight(pi, li, e.target.value)}
+                            onFocus={e => e.currentTarget.select()}
                             className={`${fieldClass} ml-auto block w-28 text-right`}
+                            placeholder="123.56"
+                            aria-label={`Trọng lượng thực tế ${line.ma_nvl || line.ten_nvl}`}
                           />
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono font-black text-[#ef1b2d]">
-                          {formatNumber(line.trong_luong_thuc_te)} kg
                         </td>
                       </tr>
                     ))
