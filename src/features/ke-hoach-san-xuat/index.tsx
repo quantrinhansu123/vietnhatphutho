@@ -266,6 +266,21 @@ export function buildInitialProductionPlanLines(
     .map((row, index) => productionOrderToPlanLine(row, row.priority > 0 ? row.priority : index + 1, machines));
 }
 
+export function buildUpdateProductionPlanLines(
+  savedLines: ProductionPlanLine[],
+  productionOrders: ProductionOrderRow[],
+  machines: MachineRow[] = []
+): ProductionPlanLine[] {
+  const savedIds = new Set(savedLines.map(line => line.id));
+  const remainingLines = [...productionOrders]
+    .sort(compareProductionOrderPriority)
+    .filter(row => !savedIds.has(row.id))
+    .map((row, index) => productionOrderToPlanLine(row, savedLines.length + index + 1, machines));
+
+  return [...cloneProductionPlanLines(savedLines), ...remainingLines]
+    .map((line, index) => ({ ...line, priority: index + 1 }));
+}
+
 export function enrichProductionPlanLines(
   planLines: ProductionPlanLine[],
   productionOrders: ProductionOrderRow[],
@@ -481,6 +496,29 @@ type StaffAssignmentRow = {
   machine: string;
   order: string;
 };
+
+type ProductionPlanFormSnapshot = {
+  planLines: ProductionPlanLine[];
+  selectedLineIds: string[];
+  planDate: string;
+  planHeaderNote: string;
+  selectedRelatedShifts: string[];
+};
+
+function cloneProductionPlanLines(lines: ProductionPlanLine[]): ProductionPlanLine[] {
+  return lines.map(line => ({
+    ...line,
+    products: line.products.map(product => ({ ...product }))
+  }));
+}
+
+function productionPlanSnapshotSignature(snapshot: ProductionPlanFormSnapshot): string {
+  return JSON.stringify({
+    ...snapshot,
+    selectedLineIds: [...snapshot.selectedLineIds].sort(),
+    selectedRelatedShifts: [...snapshot.selectedRelatedShifts].sort()
+  });
+}
 
 export function StaffAssignmentPrintSheet({
   rows,
@@ -1744,6 +1782,10 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
   const [editingPlan, setEditingPlan] = useState<ProductionPlanHistorySummary | null>(null);
   const [editLines, setEditLines] = useState<ProductionPlanLine[]>([]);
   const [deletingPlanId, setDeletingPlanId] = useState('');
+  const [printingPlan, setPrintingPlan] = useState<ProductionPlanHistorySummary | null>(null);
+  const [printLines, setPrintLines] = useState<ProductionPlanLine[]>([]);
+  const [loadingPrintPlanId, setLoadingPrintPlanId] = useState('');
+  const [printAnchorElement, setPrintAnchorElement] = useState<HTMLElement | null>(null);
 
   const loadPlans = async (options?: { ngay?: string; tuNgay?: string; denNgay?: string }) => {
     setIsLoading(true);
@@ -1893,6 +1935,53 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
     } finally { setIsLoadingCreate(false); }
   };
 
+  const openPrintPlan = async (plan: ProductionPlanHistorySummary, anchorElement: HTMLElement) => {
+    setLoadingPrintPlanId(plan.id);
+    setPrintAnchorElement(anchorElement);
+    setLoadError('');
+    try {
+      const [detailRes, orderRes, machineRes] = await Promise.all([
+        fetch(`/api/ke-hoach-sx?id=${encodeURIComponent(plan.id)}`),
+        fetch('/api/lenh-sx'),
+        fetch('/api/danh-sach-may')
+      ]);
+      const [detailData, orderData, machineData] = await Promise.all([
+        detailRes.json().catch(() => ({})),
+        orderRes.json().catch(() => ({})),
+        machineRes.json().catch(() => ({}))
+      ]);
+      if (!detailRes.ok || !orderRes.ok || !machineRes.ok) {
+        throw new Error('Không thể tải dữ liệu in kế hoạch.');
+      }
+      const historyLines = normalizeProductionPlanHistoryLines(detailData);
+      setCreateOrders(normalizeProductionOrders(orderData));
+      setCreateMachines(normalizeMachines(machineData));
+      setPrintLines(historyLines.map(line => ({
+        id: line.productionOrderId,
+        code: line.orderCode,
+        name: line.orderCode,
+        productCode: line.products[0]?.productCode || '',
+        productName: line.products[0]?.productName || '',
+        quantity: line.products[0]?.quantity || '',
+        unit: line.products[0]?.unit || '',
+        products: line.products,
+        status: '',
+        orderRef: line.orderRef,
+        position: line.machine !== '-' ? line.machine : line.position,
+        staff: line.staff,
+        shift: line.shift,
+        priority: line.priority,
+        note: line.note
+      })));
+      setPrintingPlan(plan);
+    } catch (error: any) {
+      setPrintAnchorElement(null);
+      setLoadError(error.message || 'Không thể mở chức năng in kế hoạch.');
+    } finally {
+      setLoadingPrintPlanId('');
+    }
+  };
+
   const deletePlan = async (plan: ProductionPlanHistorySummary) => {
     if (!window.confirm(`Xóa kế hoạch ${plan.code}?`)) return;
     setDeletingPlanId(plan.id); setLoadError('');
@@ -1907,7 +1996,8 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1680px] space-y-4">
+    <div className="mx-auto w-full max-w-[1680px]">
+      <div className="space-y-4" inert={printingPlan ? true : undefined}>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
           <div className="flex items-start justify-end gap-3">
@@ -2065,6 +2155,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-zinc-200/70 pt-2">
                           <button type="button" onClick={() => void loadPlanDetail(plan.id)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700"><Eye className="h-3.5 w-3.5" />Xem</button>
                           {canEdit ? <button type="button" onClick={() => void openEditPlan(plan)} disabled={isLoadingCreate} className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Sửa</button> : null}
+                          <button type="button" onClick={event => void openPrintPlan(plan, event.currentTarget)} disabled={Boolean(loadingPrintPlanId)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[11px] font-bold text-emerald-700 disabled:opacity-50">{loadingPrintPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}In</button>
                           {canDelete ? <button type="button" onClick={() => void deletePlan(plan)} disabled={deletingPlanId === plan.id} className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 disabled:opacity-50">{deletingPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Xóa</button> : null}
                         </div>
                       </div>
@@ -2140,6 +2231,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
           )}
         </section>
       </div>
+      </div>
       <ProductionPlanModal
         open={showCreateModal}
         onClose={() => { setShowCreateModal(false); setEditingPlan(null); setEditLines([]); }}
@@ -2155,6 +2247,21 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         initialPlanDate={editingPlan?.planDate}
         initialNote={editingPlan?.note}
       />
+      <ProductionPlanModal
+        open={Boolean(printingPlan)}
+        onClose={() => { setPrintingPlan(null); setPrintLines([]); setPrintAnchorElement(null); }}
+        onSaved={() => undefined}
+        onOpenWarehouseSlip={() => undefined}
+        productionOrders={createOrders}
+        machines={createMachines}
+        editPlanId={printingPlan?.id}
+        initialLines={printLines}
+        initialPlanDate={printingPlan?.planDate}
+        initialNote={printingPlan?.note}
+        printOnly
+        planCode={printingPlan?.code}
+        anchorElement={printAnchorElement}
+      />
     </div>
   );
 }
@@ -2169,7 +2276,10 @@ export function ProductionPlanModal({
   editPlanId,
   initialLines,
   initialPlanDate,
-  initialNote
+  initialNote,
+  printOnly = false,
+  planCode,
+  anchorElement
 }: {
   open: boolean;
   onClose: () => void;
@@ -2181,9 +2291,17 @@ export function ProductionPlanModal({
   initialLines?: ProductionPlanLine[];
   initialPlanDate?: string;
   initialNote?: string;
+  printOnly?: boolean;
+  planCode?: string;
+  anchorElement?: HTMLElement | null;
 }) {
   const { canCreate } = useTabAccess('production-plan-history');
   const [planLines, setPlanLines] = useState<ProductionPlanLine[]>([]);
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
+  const [initialFormSnapshot, setInitialFormSnapshot] = useState<ProductionPlanFormSnapshot | null>(null);
+  const checkAllRef = useRef<HTMLInputElement>(null);
+  const printPopupRef = useRef<HTMLDivElement>(null);
+  const [printPopupPosition, setPrintPopupPosition] = useState({ left: -9999, top: -9999 });
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -2223,13 +2341,50 @@ export function ProductionPlanModal({
   } | null>(null);
 
   const displayLines = useMemo(
-    () => enrichProductionPlanLines(planLines, productionOrders, machines),
-    [planLines, productionOrders, machines]
+    () => printOnly ? planLines : enrichProductionPlanLines(planLines, productionOrders, machines),
+    [planLines, productionOrders, machines, printOnly]
+  );
+  const selectedLines = useMemo(
+    () => displayLines
+      .filter(line => selectedLineIds.has(line.id))
+      .map((line, index) => ({ ...line, priority: index + 1 })),
+    [displayLines, selectedLineIds]
+  );
+  const allLinesSelected = displayLines.length > 0 && selectedLineIds.size === displayLines.length;
+  const someLinesSelected = selectedLineIds.size > 0 && !allLinesSelected;
+  const currentFormSnapshot = useMemo<ProductionPlanFormSnapshot>(() => ({
+    planLines,
+    selectedLineIds: [...selectedLineIds],
+    planDate,
+    planHeaderNote,
+    selectedRelatedShifts
+  }), [planLines, selectedLineIds, planDate, planHeaderNote, selectedRelatedShifts]);
+  const isFormDirty = useMemo(
+    () => Boolean(initialFormSnapshot) &&
+      productionPlanSnapshotSignature(currentFormSnapshot) !== productionPlanSnapshotSignature(initialFormSnapshot!),
+    [currentFormSnapshot, initialFormSnapshot]
   );
 
   useEffect(() => {
     if (!open) return;
-    setPlanLines(initialLines?.length ? initialLines : buildInitialProductionPlanLines(productionOrders, machines));
+    const isUpdateFlow = Boolean(editPlanId) && !printOnly;
+    const savedLines = initialLines ?? [];
+    const nextLines = isUpdateFlow
+      ? buildUpdateProductionPlanLines(savedLines, productionOrders, machines)
+      : initialLines?.length
+        ? initialLines
+        : buildInitialProductionPlanLines(productionOrders, machines);
+    const initialLinesSnapshot = cloneProductionPlanLines(nextLines);
+    const initialIds = (isUpdateFlow ? savedLines : nextLines).map(line => line.id);
+    const initialDate = initialPlanDate || todayDateInputValue();
+    const initialHeaderNote = initialNote || '';
+    const initialShifts = Array.from(new Set(
+      (isUpdateFlow ? savedLines : nextLines)
+        .map(line => (line.shift || '').trim())
+        .filter(shift => shift && shift !== '-')
+    ));
+    setPlanLines(initialLinesSnapshot);
+    setSelectedLineIds(new Set(initialIds));
     setFormError('');
     setDragIndex(null);
     setPendingPrint(false);
@@ -2245,8 +2400,8 @@ export function ProductionPlanModal({
     setAccountingMaterialsByLine({});
     setAccountingInventoryMaterials([]);
     setShowQrPrintModal(false);
-    setPlanDate(initialPlanDate || todayDateInputValue());
-    setPlanHeaderNote(initialNote || '');
+    setPlanDate(initialDate);
+    setPlanHeaderNote(initialHeaderNote);
     setPendingStaffAssignmentPrint(false);
     setIsLoadingRelatedPrint(false);
     setRelatedPrintData(null);
@@ -2254,7 +2409,14 @@ export function ProductionPlanModal({
     setRelatedPrintCustomerOrders([]);
     setRelatedPrintCatalog([]);
     setPendingRelatedPrint(false);
-    setSelectedRelatedShifts([]);
+    setSelectedRelatedShifts(initialShifts);
+    setInitialFormSnapshot({
+      planLines: cloneProductionPlanLines(initialLinesSnapshot),
+      selectedLineIds: [...initialIds],
+      planDate: initialDate,
+      planHeaderNote: initialHeaderNote,
+      selectedRelatedShifts: [...initialShifts]
+    });
     setRelatedShiftSummaryRows([]);
     setRelatedShiftSummaryFilters(null);
 
@@ -2262,7 +2424,45 @@ export function ProductionPlanModal({
       .then(res => (res.ok ? res.json() : null))
       .then(data => setRelatedShiftOptions(data ? getProductionShiftOptions(normalizeShiftSettings(data)) : []))
       .catch(() => setRelatedShiftOptions([]));
-  }, [open, productionOrders, machines, initialLines, initialPlanDate, initialNote]);
+  }, [open, productionOrders, machines, editPlanId, initialLines, initialPlanDate, initialNote, printOnly]);
+
+  useEffect(() => {
+    if (checkAllRef.current) checkAllRef.current.indeterminate = someLinesSelected;
+  }, [someLinesSelected]);
+
+  useEffect(() => {
+    if (!open || !printOnly || !anchorElement) return;
+
+    const updatePosition = () => {
+      if (!anchorElement.isConnected) return;
+      const anchorRect = anchorElement.getBoundingClientRect();
+      const popupWidth = printPopupRef.current?.offsetWidth || 360;
+      const popupHeight = printPopupRef.current?.offsetHeight || 320;
+      const gap = 8;
+      const viewportMargin = 8;
+      const rightPosition = anchorRect.right + gap;
+      const left = rightPosition + popupWidth <= window.innerWidth - viewportMargin
+        ? rightPosition
+        : Math.max(viewportMargin, anchorRect.left - gap - popupWidth);
+      const top = Math.min(
+        Math.max(viewportMargin, anchorRect.top),
+        Math.max(viewportMargin, window.innerHeight - popupHeight - viewportMargin)
+      );
+      setPrintPopupPosition({ left, top });
+    };
+
+    const frame = window.requestAnimationFrame(updatePosition);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
+    if (printPopupRef.current) resizeObserver?.observe(printPopupRef.current);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, printOnly, anchorElement]);
 
   useEffect(() => {
     if (!open) return;
@@ -2430,8 +2630,8 @@ export function ProductionPlanModal({
   };
 
   const handleSave = async () => {
-    if (displayLines.length === 0) {
-      setFormError('Không có lệnh SX đang chờ/đang sản xuất để lập kế hoạch.');
+    if (selectedLines.length === 0) {
+      setFormError('Vui lòng chọn ít nhất một lệnh sản xuất.');
       return;
     }
 
@@ -2446,7 +2646,7 @@ export function ProductionPlanModal({
           id: editPlanId,
           ngay_ke_hoach: planDate,
           ghi_chu: planHeaderNote.trim(),
-          items: buildProductionPlanSaveItems(displayLines)
+          items: buildProductionPlanSaveItems(selectedLines)
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -2764,17 +2964,42 @@ export function ProductionPlanModal({
     setPlanLines(prev => prev.map(line => (line.id === lineId ? { ...line, note } : line)));
   };
 
+  const handleReset = () => {
+    if (!initialFormSnapshot || !isFormDirty) return;
+    setPlanLines(cloneProductionPlanLines(initialFormSnapshot.planLines));
+    setSelectedLineIds(new Set(initialFormSnapshot.selectedLineIds));
+    setPlanDate(initialFormSnapshot.planDate);
+    setPlanHeaderNote(initialFormSnapshot.planHeaderNote);
+    setSelectedRelatedShifts([...initialFormSnapshot.selectedRelatedShifts]);
+    setDragIndex(null);
+    setFormError('');
+  };
+
   if (!open) return null;
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-        <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div
+        ref={printOnly ? printPopupRef : undefined}
+        style={printOnly ? { left: printPopupPosition.left, top: printPopupPosition.top } : undefined}
+        role={printOnly ? 'dialog' : undefined}
+        aria-modal={printOnly ? false : undefined}
+        aria-label={printOnly ? `Chức năng in ${planCode || 'kế hoạch sản xuất'}` : undefined}
+        className={printOnly
+          ? `fixed z-[80] w-[min(360px,calc(100vw-16px))] ${showMaterialAccountingModal || showQrPrintModal ? 'invisible' : ''}`
+          : 'fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4'}
+      >
+        <div className={printOnly
+          ? 'flex max-h-[calc(100vh-16px)] w-full flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl'
+          : 'flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl'}
+        >
           <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
             <div>
-              <h3 className="text-lg font-black text-zinc-950">Kế hoạch sản xuất</h3>
+              <h3 className="text-lg font-black text-zinc-950">{printOnly ? 'In kế hoạch sản xuất' : 'Kế hoạch sản xuất'}</h3>
               <p className="mt-1 text-sm font-medium text-zinc-500">
-                Máy, ca, nhân sự và sản phẩm lấy từ lệnh SX. Kéo thả hoặc dùng mũi tên để sắp xếp ưu tiên.
+                {printOnly
+                  ? `${planCode || 'Kế hoạch'} · ${planDate} · ${displayLines.length} lệnh SX`
+                  : 'Máy, ca, nhân sự và sản phẩm lấy từ lệnh SX. Kéo thả hoặc dùng mũi tên để sắp xếp ưu tiên.'}
               </p>
             </div>
             <button
@@ -2793,7 +3018,7 @@ export function ProductionPlanModal({
               </p>
             )}
 
-            <div className="mb-4 grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
+            {!printOnly && <div className="mb-4 grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày kế hoạch</span>
                 <input
@@ -2813,9 +3038,9 @@ export function ProductionPlanModal({
                   className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
-            </div>
+            </div>}
 
-            <section className="mb-4 rounded-xl border border-zinc-200 bg-white p-3">
+            {!printOnly && <section className="mb-4 rounded-xl border border-zinc-200 bg-white p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Lọc phiếu theo ca (khi in phiếu liên quan)</p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2862,9 +3087,9 @@ export function ProductionPlanModal({
                   );
                 })}
               </div>
-            </section>
+            </section>}
 
-            {displayLines.length === 0 ? (
+            {!printOnly && (displayLines.length === 0 ? (
               <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm font-semibold text-zinc-500">
                 Không có lệnh SX đang chờ hoặc đang sản xuất.
               </p>
@@ -2873,6 +3098,18 @@ export function ProductionPlanModal({
                 <table className="min-w-[980px] w-full text-left text-sm">
                   <thead className="bg-zinc-950 text-[11px] uppercase tracking-wider text-white">
                     <tr>
+                      <th className="w-10 px-2 py-2 text-center font-black">
+                        <input
+                          ref={checkAllRef}
+                          type="checkbox"
+                          checked={allLinesSelected}
+                          onChange={event => setSelectedLineIds(
+                            event.target.checked ? new Set(displayLines.map(line => line.id)) : new Set()
+                          )}
+                          className="h-4 w-4 cursor-pointer rounded border-zinc-400 accent-emerald-500 focus:ring-2 focus:ring-emerald-300"
+                          aria-label="Chọn tất cả lệnh sản xuất"
+                        />
+                      </th>
                       <th className="px-2 py-2 font-black">STT</th>
                       <th className="px-2 py-2 font-black">Tên máy</th>
                       <th className="px-2 py-2 font-black">Ca làm việc</th>
@@ -2894,8 +3131,26 @@ export function ProductionPlanModal({
                           reorderLine(dragIndex, index);
                           setDragIndex(null);
                         }}
-                        className={dragIndex === index ? 'bg-emerald-50' : 'hover:bg-zinc-50'}
+                        className={dragIndex === index || selectedLineIds.has(line.id) ? 'bg-emerald-50' : 'hover:bg-zinc-50'}
                       >
+                        <td className="w-10 px-2 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedLineIds.has(line.id)}
+                            onPointerDown={event => event.stopPropagation()}
+                            onChange={event => {
+                              const checked = event.target.checked;
+                              setSelectedLineIds(current => {
+                                const next = new Set(current);
+                                if (checked) next.add(line.id);
+                                else next.delete(line.id);
+                                return next;
+                              });
+                            }}
+                            className="h-4 w-4 cursor-pointer rounded border-zinc-300 accent-emerald-600 focus:ring-2 focus:ring-emerald-200"
+                            aria-label={`Chọn lệnh sản xuất dòng ${index + 1}`}
+                          />
+                        </td>
                         <td className="px-2 py-2 font-black text-emerald-700">{index + 1}</td>
                         <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
@@ -2944,10 +3199,14 @@ export function ProductionPlanModal({
                   </tbody>
                 </table>
               </div>
-            )}
+            ))}
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-4 sm:px-5">
+          <div className={printOnly
+            ? 'grid grid-cols-1 gap-2 border-t border-zinc-200 p-3'
+            : 'flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-4 sm:px-5'}
+          >
+            {printOnly ? <>
             <button
               type="button"
               onClick={() => setPendingStaffAssignmentPrint(true)}
@@ -3003,17 +3262,33 @@ export function ProductionPlanModal({
               {isLoadingRelatedPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               In tất cả phiếu liên quan
             </button>
+            </> : <>
+            {editPlanId ? (
+              <button
+                id="btn-reset"
+                type="button"
+                onClick={handleReset}
+                disabled={!isFormDirty || isSaving}
+                className="inline-flex h-10 items-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-extrabold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Khôi phục
+              </button>
+            ) : null}
+            <span className="mr-auto text-xs font-bold text-zinc-500">
+              Đã chọn <span className="text-emerald-700">{selectedLines.length}</span>/{displayLines.length} lệnh SX
+            </span>
             {canCreate ? (
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={isSaving || displayLines.length === 0}
+                disabled={isSaving || selectedLines.length === 0}
                 className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Lưu kế hoạch SX
               </button>
             ) : null}
+            </>}
           </div>
         </div>
       </div>
