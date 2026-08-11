@@ -262,8 +262,7 @@ export function buildInitialProductionPlanLines(
 ): ProductionPlanLine[] {
   return productionOrders
     .filter(isActiveProductionPlanOrder)
-    .sort(compareProductionOrderPriority)
-    .map((row, index) => productionOrderToPlanLine(row, row.priority > 0 ? row.priority : index + 1, machines));
+    .map((row, index) => productionOrderToPlanLine(row, index + 1, machines));
 }
 
 export function buildUpdateProductionPlanLines(
@@ -271,13 +270,18 @@ export function buildUpdateProductionPlanLines(
   productionOrders: ProductionOrderRow[],
   machines: MachineRow[] = []
 ): ProductionPlanLine[] {
-  const savedIds = new Set(savedLines.map(line => line.id));
-  const remainingLines = [...productionOrders]
-    .sort(compareProductionOrderPriority)
-    .filter(row => !savedIds.has(row.id))
-    .map((row, index) => productionOrderToPlanLine(row, savedLines.length + index + 1, machines));
+  const savedById = new Map(savedLines.map(line => [line.id, line]));
+  const sourceIds = new Set(productionOrders.map(row => row.id));
+  const sourceLines = productionOrders.map((row, index) => {
+    const line = productionOrderToPlanLine(row, index + 1, machines);
+    const savedLine = savedById.get(row.id);
+    return savedLine ? { ...line, note: savedLine.note } : line;
+  });
+  const missingSavedLines = savedLines
+    .filter(line => !sourceIds.has(line.id))
+    .map(line => ({ ...line, priority: sourceLines.length + 1 }));
 
-  return [...cloneProductionPlanLines(savedLines), ...remainingLines]
+  return [...sourceLines, ...missingSavedLines]
     .map((line, index) => ({ ...line, priority: index + 1 }));
 }
 
