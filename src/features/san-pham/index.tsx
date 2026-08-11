@@ -978,6 +978,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
+        warehouse: String(record.ten_kho ?? '').trim(),
         totalWeight: formatCell(record.tong_trong_luong),
         rollWidth: formatCell(record.kho_cuon),
         rollLength: formatCell(record.chieu_dai_cuon),
@@ -1015,6 +1016,7 @@ export type ProductFormState = {
   nature: string;
   group: string;
   unit: string;
+  warehouse: string;
   totalWeight: string;
   rollWidth: string;
   rollLength: string;
@@ -1043,6 +1045,7 @@ export function productToForm(product: ProductRow): ProductFormState {
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
     unit: productCellToInput(product.unit),
+    warehouse: product.warehouse,
     totalWeight: productCellToInput(product.totalWeight),
     rollWidth: productCellToInput(product.rollWidth),
     rollLength: productCellToInput(product.rollLength),
@@ -1068,6 +1071,7 @@ export function emptyProductForm(): ProductFormState {
     nature: '',
     group: '',
     unit: '',
+    warehouse: '',
     totalWeight: '',
     rollWidth: '',
     rollLength: '',
@@ -1093,6 +1097,7 @@ export function productFormToPayload(form: ProductFormState) {
     nature: form.nature.trim(),
     group: form.group.trim(),
     unit: form.unit.trim(),
+    warehouse: form.warehouse.trim(),
     totalWeight: form.totalWeight.trim(),
     rollWidth: form.rollWidth.trim(),
     rollLength: form.rollLength.trim(),
@@ -1114,6 +1119,8 @@ export function ProductEditModal({
   product,
   isSaving,
   formError,
+  warehouseOptions,
+  isLoadingWarehouses,
   onClose,
   onSave
 }: {
@@ -1121,6 +1128,8 @@ export function ProductEditModal({
   product: ProductRow | null;
   isSaving: boolean;
   formError: string;
+  warehouseOptions: string[];
+  isLoadingWarehouses: boolean;
   onClose: () => void;
   onSave: (form: ProductFormState) => Promise<void>;
 }) {
@@ -1179,6 +1188,18 @@ export function ProductEditModal({
           </div>
         )}
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+          <label className="block space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Kho</span>
+            <select
+              value={form.warehouse}
+              onChange={event => setForm(prev => ({ ...prev, warehouse: event.target.value }))}
+              disabled={isLoadingWarehouses}
+              className={productFieldClass}
+            >
+              <option value="">{isLoadingWarehouses ? 'Đang tải danh mục kho...' : 'Chưa chọn kho'}</option>
+              {warehouseOptions.map(warehouse => <option key={warehouse} value={warehouse}>{warehouse}</option>)}
+            </select>
+          </label>
           {fields.map(field => (
             <label key={field.key} className={`block space-y-1.5 ${field.span ? 'sm:col-span-2' : ''}`}>
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
@@ -1243,6 +1264,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const catalogFileInputRef = useRef<HTMLInputElement>(null);
   const [isImportingBulkProductComponents, setIsImportingBulkProductComponents] = useState(false);
   const [isImportingProductCatalog, setIsImportingProductCatalog] = useState(false);
+  const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
 
   const loadProducts = async () => {
     setIsLoadingProducts(true);
@@ -1267,6 +1290,28 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     loadProducts();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setIsLoadingWarehouses(true);
+    void fetch('/api/quan-ly-kho')
+      .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Không tải được danh mục kho.');
+        const records = Array.isArray(data.records) ? data.records : [];
+        const names = records
+          .map((record: any) => String(record?.ten_kho ?? '').trim())
+          .filter(Boolean);
+        if (active) setWarehouseOptions(Array.from(new Set<string>(names)));
+      })
+      .catch((error: any) => {
+        if (!active) return;
+        setWarehouseOptions([]);
+        showAppToast(error?.message || 'Không tải được danh mục kho.', 'error');
+      })
+      .finally(() => { if (active) setIsLoadingWarehouses(false); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -2220,6 +2265,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           product={editingProduct}
           isSaving={isSavingProduct}
           formError={productFormError}
+          warehouseOptions={warehouseOptions}
+          isLoadingWarehouses={isLoadingWarehouses}
           onClose={closeProductForm}
           onSave={productFormMode === 'add' ? handleCreateProduct : handleSaveProduct}
         />

@@ -609,6 +609,13 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'products'
   },
   {
+    title: 'Tồn kho',
+    desc: 'Xem tồn NVL và thành phẩm theo kho, khoảng ngày và mã hàng.',
+    icon: Boxes,
+    icon3d: inventory3d,
+    tab: 'ton-kho'
+  },
+  {
     title: 'Phiếu xuất nhập kho',
     desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
     icon: ArrowDownToLine,
@@ -901,6 +908,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Danh mục kho', tab: 'quan-ly-kho' },
       { label: 'Kho nguyên vật liệu', tab: 'materials' },
       { label: 'Kho thành phẩm', tab: 'products' },
+      { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Phiếu xuất nhập kho', tab: 'warehouse-slip' },
       { label: 'Kiểm kho', tab: 'kiem-kho' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
@@ -936,6 +944,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'can-tu-dong': { group: 'QC', sub: 'Dữ liệu cân tự động' },
   'kiem-kho': { group: 'Kho', sub: 'Kiểm kho' },
   'quan-ly-kho': { group: 'Kho', sub: 'Danh mục kho' },
+  'ton-kho': { group: 'Kho', sub: 'Tồn kho' },
   'damaged-goods-report': { group: 'Công nhân', sub: 'Báo cáo hàng hư' },
   'damaged-goods-report-list': { group: 'QC', sub: 'Kiểm soát hàng hỏng' },
   'mixing-report': { group: 'Công nhân', sub: 'Báo cáo trộn' },

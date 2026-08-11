@@ -2035,7 +2035,7 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
   const name = parseMaterialText(source.name ?? source.ten_sp);
   const hasProductField = [
     'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
-    'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
+    'unit', 'don_vi', 'warehouse', 'ten_kho', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
     'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
     'origin', 'nguon_goc', 'description', 'mo_ta',
     'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
@@ -2064,6 +2064,9 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
   }
   if (Object.prototype.hasOwnProperty.call(source, 'unit') || Object.prototype.hasOwnProperty.call(source, 'don_vi')) {
     record.don_vi = parseMaterialText(source.unit ?? source.don_vi) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'warehouse') || Object.prototype.hasOwnProperty.call(source, 'ten_kho')) {
+    record.ten_kho = parseMaterialText(source.warehouse ?? source.ten_kho) || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'openingStock') || Object.prototype.hasOwnProperty.call(source, 'ton_dau_ky')) {
     record.ton_dau_ky = parseOptionalMaterialNumber(source.openingStock ?? source.ton_dau_ky);
@@ -4043,6 +4046,143 @@ function parseWarehouseSlipDate(value: unknown): string | null {
   return parsed.toISOString().slice(0, 10);
 }
 
+type TonKhoStorageType = 'nvl' | 'san_pham';
+
+type TonKhoRow = {
+  ma: string;
+  ten: string;
+  don_vi: string | null;
+  ten_kho: string | null;
+  ton_dau_ky: number;
+  nhap_trong_ky: number;
+  xuat_trong_ky: number;
+  ton_cuoi_ky: number;
+};
+
+let hasWarnedMissingTonKhoRpc = false;
+
+async function readAllTonKhoPages(buildQuery: () => any): Promise<Record<string, unknown>[]> {
+  const pageSize = 1000;
+  const rows: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message || 'Không thể đọc dữ liệu tồn kho từ Supabase.');
+    const page = Array.isArray(data) ? data : [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+async function loadTonKhoFallback(
+  loaiKho: TonKhoStorageType,
+  tenKho: string | null,
+  tuNgay: string | null,
+  denNgay: string | null
+): Promise<TonKhoRow[]> {
+  if (!supabase) return [];
+  const isProduct = loaiKho === 'san_pham';
+  const catalogTable = isProduct ? SUPABASE_PRODUCTS_TABLE : SUPABASE_MATERIALS_TABLE;
+  const codeField = isProduct ? 'ma_sp' : 'ma_npl';
+  const nameField = isProduct ? 'ten_sp' : 'ten_npl';
+
+  const [catalog, movements] = await Promise.all([
+    readAllTonKhoPages(() => {
+      let query = supabase
+        .from(catalogTable)
+        .select(`${codeField},${nameField},don_vi,ten_kho,ton_dau_ky`);
+      if (tenKho) query = query.eq('ten_kho', tenKho);
+      return query;
+    }),
+    readAllTonKhoPages(() => {
+      let query = supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .select(`${codeField},so_luong,ngay_phieu,loai_phieu,ten_kho,loai_kho`);
+      query = isProduct
+        ? query.eq('loai_kho', 'san_pham')
+        : query.or('loai_kho.eq.nvl,loai_kho.is.null');
+      if (tenKho) query = query.eq('ten_kho', tenKho);
+      if (denNgay) query = query.lte('ngay_phieu', denNgay);
+      return query;
+    })
+  ]);
+
+  const byCode = new Map<string, TonKhoRow>();
+  for (const row of catalog) {
+    const ma = String(row[codeField] ?? '').trim();
+    if (!ma) continue;
+    const baseline = Number(row.ton_dau_ky);
+    byCode.set(ma, {
+      ma,
+      ten: String(row[nameField] ?? '').trim(),
+      don_vi: row.don_vi == null ? null : String(row.don_vi),
+      ten_kho: row.ten_kho == null ? null : String(row.ten_kho),
+      ton_dau_ky: Number.isFinite(baseline) ? baseline : 0,
+      nhap_trong_ky: 0,
+      xuat_trong_ky: 0,
+      ton_cuoi_ky: 0
+    });
+  }
+
+  for (const movement of movements) {
+    const ma = String(movement[codeField] ?? '').trim();
+    if (!ma) continue;
+    let row = byCode.get(ma);
+    if (!row) {
+      row = {
+        ma,
+        ten: ma,
+        don_vi: null,
+        ten_kho: tenKho,
+        ton_dau_ky: 0,
+        nhap_trong_ky: 0,
+        xuat_trong_ky: 0,
+        ton_cuoi_ky: 0
+      };
+      byCode.set(ma, row);
+    }
+    const parsedQty = Number(movement.so_luong);
+    const qty = Number.isFinite(parsedQty) ? parsedQty : 0;
+    const slipDate = String(movement.ngay_phieu ?? '').slice(0, 10);
+    const slipType = String(movement.loai_phieu ?? '');
+    if (tuNgay && slipDate && slipDate < tuNgay) {
+      if (slipType === 'nhap') row.ton_dau_ky += qty;
+      if (slipType === 'xuat') row.ton_dau_ky -= qty;
+      continue;
+    }
+    const inPeriod = (!tuNgay || (slipDate && slipDate >= tuNgay)) && (!denNgay || (slipDate && slipDate <= denNgay));
+    if (!inPeriod) continue;
+    if (slipType === 'nhap') row.nhap_trong_ky += qty;
+    if (slipType === 'xuat') row.xuat_trong_ky += qty;
+  }
+
+  return [...byCode.values()]
+    .map(row => ({ ...row, ton_cuoi_ky: row.ton_dau_ky + row.nhap_trong_ky - row.xuat_trong_ky }))
+    .sort((a, b) => a.ma.localeCompare(b.ma, 'vi'));
+}
+
+async function loadTonKhoGop(
+  loaiKho: TonKhoStorageType,
+  tenKho: string | null,
+  tuNgay: string | null,
+  denNgay: string | null
+): Promise<{ data: unknown; error: any }> {
+  if (!supabase) return { data: [], error: null };
+  const rpcName = loaiKho === 'san_pham' ? 'ton_kho_san_pham_gop' : 'ton_kho_nvl_gop';
+  const result = await supabase.rpc(rpcName, {
+    p_ten_kho: tenKho,
+    p_tu_ngay: tuNgay,
+    p_den_ngay: denNgay
+  });
+  if (!result.error) return result;
+  if (result.error.code !== 'PGRST202') return result;
+  if (!hasWarnedMissingTonKhoRpc) {
+    console.warn('RPC tồn kho chưa có trong schema cache; dùng phép tính dự phòng từ bảng dữ liệu.');
+    hasWarnedMissingTonKhoRpc = true;
+  }
+  return { data: await loadTonKhoFallback(loaiKho, tenKho, tuNgay, denNgay), error: null };
+}
+
 function parseWarehouseSlipLines(
   raw: unknown,
   loaiKho: 'nvl' | 'san_pham'
@@ -5540,7 +5680,7 @@ export function createApp() {
 
       const productFieldKeys = [
         'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
-        'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
+        'unit', 'don_vi', 'warehouse', 'ten_kho', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
         'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
         'origin', 'nguon_goc', 'description', 'mo_ta',
         'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
@@ -8955,6 +9095,29 @@ export function createApp() {
       });
     }
   });
+
+  const handleTonKho = (fallbackMessage: string) => async (req: express.Request, res: express.Response) => {
+    if (!supabase) return res.json({ records: [], total: 0, source: 'local' });
+    try {
+      const loaiKho = parseWarehouseStorageType(req.query.loai_kho ?? req.query.loaiKho) ?? 'nvl';
+      const rawTenKho = req.query.ten_kho ?? req.query.tenKho;
+      const tenKho = String(rawTenKho ?? '').trim() || null;
+      const tuNgay = parseWarehouseSlipDate(req.query.from ?? req.query.tu_ngay);
+      const denNgay = parseWarehouseSlipDate(req.query.to ?? req.query.den_ngay);
+      const { data, error } = await loadTonKhoGop(loaiKho, tenKho, tuNgay, denNgay);
+      if (error) {
+        console.error(`Supabase ${req.path} error:`, error);
+        return res.status(500).json({ error: error.message || fallbackMessage });
+      }
+      const records = Array.isArray(data) ? data : [];
+      return res.json({ records, total: records.length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || fallbackMessage });
+    }
+  };
+
+  app.get('/api/ton-kho/chi-tiet', handleTonKho('Lỗi khi tải danh sách chi tiết tồn kho.'));
+  app.get('/api/ton-kho/tong-hop', handleTonKho('Lỗi khi tải bảng tổng hợp tồn kho.'));
 
   app.post('/api/quan-ly-kho', async (req, res) => {
     if (!supabase) {

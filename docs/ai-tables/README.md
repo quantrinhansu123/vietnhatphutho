@@ -25,6 +25,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `can_tu_dong` | `/can-tu-dong` | [can_tu_dong.md](./can_tu_dong.md) |
 | `kiem_kho` | `/kiem-kho` | [kiem_kho.md](./kiem_kho.md) |
 | `quan_ly_kho` | `/quan-ly-kho` | [quan_ly_kho.md](./quan_ly_kho.md) |
+| *(tổng hợp)* | `/ton-kho` | [ton_kho.md](./ton_kho.md) |
 | `bao_cao_hang_hong` | `/bao-cao-hang-hong` | [bao_cao_hang_hong.md](./bao_cao_hang_hong.md) |
 | `san_pham` | `/san-pham` | [san_pham.md](./san_pham.md) |
 | `danh_sach_may` | `/danh-sach-may` | [danh_sach_may.md](./danh_sach_may.md) |

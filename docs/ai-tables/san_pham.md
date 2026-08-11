@@ -29,7 +29,9 @@
 
 ## Cột quan trọng
 
-`ma_sp`, `ten_sp`, `nhom_vthh`, `ton_dau_ky`, `dinh_muc_npl` (JSON NPL).
+`ma_sp`, `ten_sp`, `nhom_vthh`, `ten_kho`, `ton_dau_ky`, `dinh_muc_npl` (JSON NPL).
+
+Form thêm/sửa chọn `ten_kho` từ `GET /api/quan-ly-kho`; để trống lưu `null`.
 
 Đồng bộ kiểm kho dùng `supabase-san-pham-kiem-kho-dong-bo.sql` trên DB chính để bảo đảm mỗi `kiem_kho.id` chỉ cộng một lần.
 

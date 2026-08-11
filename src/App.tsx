@@ -79,6 +79,7 @@ import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
 import { KiemKhoPanel } from './features/kiem-kho';
 import { QuanLyKhoPanel } from './features/quan-ly-kho';
+import { TonKhoPanel } from './features/ton-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -1338,6 +1339,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MaterialsInventoryPanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : activeTab === 'ton-kho' ? (
+              <motion.div
+                key="ton-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <TonKhoPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'warehouse-slip' ? (
               <motion.div

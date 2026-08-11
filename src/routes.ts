@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'ton-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'settings' | 'dashboard';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -21,6 +21,7 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'can-tu-dong': '/can-tu-dong',
   'kiem-kho': '/kiem-kho',
   'quan-ly-kho': '/quan-ly-kho',
+  'ton-kho': '/ton-kho',
   'damaged-goods-report': '/bao-cao-hang-hong',
   'damaged-goods-report-list': '/danh-sach-bao-cao-hang-hong',
   'mixing-report': '/bao-cao-phoi-tron',

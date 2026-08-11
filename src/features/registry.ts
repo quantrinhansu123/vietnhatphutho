@@ -8,6 +8,7 @@ export type TableId =
   | 'can_tu_dong'
   | 'kiem_kho'
   | 'quan_ly_kho'
+  | 'ton_kho'
   | 'bao_cao_hang_hong'
   | 'san_pham'
   | 'danh_sach_may'
@@ -100,6 +101,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appTab: 'quan-ly-kho',
     appLines: 'src/features/quan-ly-kho/index.tsx',
     components: [],
+    utils: []
+  },
+  ton_kho: {
+    table: 'ton_kho',
+    label: 'Tồn kho NVL và thành phẩm',
+    sql: ['supabase-ton-kho.sql'],
+    apiPrefix: '/api/ton-kho',
+    serverLines: 'loadTonKhoGop + GET /api/ton-kho/chi-tiet, /api/ton-kho/tong-hop',
+    appTab: 'ton-kho',
+    appLines: 'src/features/ton-kho/index.tsx',
+    components: ['src/components/shared/table/FilterCombobox.tsx'],
     utils: []
   },
   bao_cao_hang_hong: {

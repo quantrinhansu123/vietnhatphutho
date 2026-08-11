@@ -46,6 +46,7 @@ alter table public.san_pham
   add column if not exists tinh_chat text,
   add column if not exists nhom_vthh text,
   add column if not exists don_vi text,
+  add column if not exists ten_kho text,
   add column if not exists sl_ton numeric,
   add column if not exists ton_dau_ky numeric,
   add column if not exists nhap_trong_ky numeric,
@@ -64,6 +65,7 @@ alter table public.san_pham
   add column if not exists trong_luong_nhua numeric;
 
 create unique index if not exists san_pham_ma_sp_key on public.san_pham (ma_sp);
+create index if not exists san_pham_ten_kho_idx on public.san_pham (ten_kho);
 
 alter table public.san_pham enable row level security;
 
