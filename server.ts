@@ -4433,6 +4433,12 @@ type OrderProductRecord = {
   ten_sp: string;
   don_vi: string;
   so_luong: number | null;
+  kq_quy_doi?: {
+    don_vi_nguon: string;
+    so_luong_nguon: number;
+    don_vi_dich: 'kg';
+    trong_luong_kg: number;
+  };
 };
 
 function parseOrderProductsInput(
@@ -4458,6 +4464,7 @@ function parseOrderProductsInput(
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
+    const rawConversion = row.kq_quy_doi ?? row.conversionResult;
 
     if (!ma_sp && !ten_sp) {
       return { error: 'Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.' };
@@ -4465,8 +4472,26 @@ function parseOrderProductsInput(
     if (so_luong === null || so_luong <= 0) {
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
+    if (!rawConversion || typeof rawConversion !== 'object') {
+      return { error: `Sản phẩm ${ma_sp || ten_sp} chưa có kết quả quy đổi bắt buộc.` };
+    }
+    const conversion = rawConversion as Record<string, unknown>;
+    const convertedWeight = parseOrderQuantity(conversion.trong_luong_kg ?? conversion.value);
+    if (convertedWeight === null || convertedWeight <= 0) {
+      return { error: `Kết quả quy đổi kg của sản phẩm ${ma_sp || ten_sp} không hợp lệ.` };
+    }
+    const sourceQuantity = parseOrderQuantity(conversion.so_luong_nguon) ?? so_luong;
+    const sourceUnit = pickRowField(conversion, ['don_vi_nguon']) || don_vi;
+    if (Math.abs(sourceQuantity - so_luong) > 0.000001 || sourceUnit.trim().toLocaleLowerCase('vi') !== don_vi.trim().toLocaleLowerCase('vi')) {
+      return { error: `Kết quả quy đổi của sản phẩm ${ma_sp || ten_sp} không khớp ĐVT và số lượng.` };
+    }
 
-    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong, kq_quy_doi: {
+      don_vi_nguon: sourceUnit,
+      so_luong_nguon: sourceQuantity,
+      don_vi_dich: 'kg',
+      trong_luong_kg: convertedWeight
+    } });
   }
 
   if (products.length === 0) {

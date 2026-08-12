@@ -544,12 +544,36 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }
     }
 
+    const productsWithConversion: Array<(typeof products)[number] & { kq_quy_doi: { don_vi_nguon: string; so_luong_nguon: number; don_vi_dich: 'kg'; trong_luong_kg: number } }> = [];
+    for (const product of products) {
+      const conversionOptions = productConversions.filter(item => {
+        const code = product.ma_sp.trim().toLocaleLowerCase('vi');
+        return item.maSp.trim().toLocaleLowerCase('vi') === code || item.maAmis.trim().toLocaleLowerCase('vi') === code;
+      });
+      const conversion = conversionOptions.find(item => conversionSupportsUnit(item, product.don_vi));
+      const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion) : [];
+      const kgResult = result.find(([, , unit]) => unit === 'kg');
+      if (!kgResult) {
+        setFormError(`Không thể tính kết quả quy đổi sang kg cho sản phẩm ${product.ma_sp || product.ten_sp}. Vui lòng kiểm tra bảng quy đổi.`);
+        return;
+      }
+      productsWithConversion.push({
+        ...product,
+        kq_quy_doi: {
+          don_vi_nguon: product.don_vi,
+          so_luong_nguon: product.so_luong as number,
+          don_vi_dich: 'kg',
+          trong_luong_kg: Math.round(kgResult[1] * 1_000_000) / 1_000_000
+        }
+      });
+    }
+
     const payload = {
       orderCode: orderForm.orderCode.trim(),
       orderType: orderForm.orderType,
       staffName: orderForm.staffName,
       customer: orderForm.customer,
-      products,
+      products: productsWithConversion,
       note: orderForm.note,
       status: orderForm.status,
       createdAt: orderForm.createdAt
@@ -867,7 +891,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
                         </button>
                       ) : null}
-                      {formMode === 'add' && line.productCode.trim() && line.unit.trim() ? (
+                      {formMode && line.productCode.trim() && line.unit.trim() ? (
                         <div className={`col-span-2 rounded-lg border px-3 py-2 md:col-span-5 ${matchedConversion ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
                           {matchedConversion ? (
                             calculatedConversion.length > 0 ? (
