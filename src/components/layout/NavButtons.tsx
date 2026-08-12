@@ -82,6 +82,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'factory-cong-nhan': 'menu',
   'factory-kho': 'menu',
   'products': 'factory-kho',
+  'product-conversions': 'factory-qc',
   'machines': 'menu',
   'materials': 'factory-kho',
   'warehouse-slip': 'factory-kho',
