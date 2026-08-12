@@ -2130,6 +2130,8 @@ const PRODUCT_CONVERSION_SELECT = `
 function parsePositiveConversionNumber(value: unknown): number | null | 'invalid' {
   if (value === null || value === undefined || String(value).trim() === '') return null;
   const text = String(value).trim().replace(/\s/g, '');
+  const emptyText = text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  if (emptyText === 'khonggiatri' || emptyText === 'null' || emptyText === '-') return null;
   const normalized = text.includes(',') && text.includes('.')
     ? text.lastIndexOf(',') > text.lastIndexOf('.')
       ? text.replace(/\./g, '').replace(',', '.')

@@ -13988,7 +13988,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
               {!isLoadingOrders && filteredOrders.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center font-bold text-zinc-500">
-                    Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
+                    Không có đơn phù hợp bộ lọc.
                   </td>
                 </tr>
               )}
