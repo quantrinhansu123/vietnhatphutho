@@ -598,6 +598,7 @@ export function ProductViewModal({
     product.description && product.description !== '-' ? product.description.trim() : '';
 
   const normSpecCells = [
+    { label: 'Tên sản xuất', value: product.productionName || '-' },
     { label: 'Đơn vị tính', value: product.unit && product.unit !== '-' ? product.unit : '-' },
     { label: 'Tổng trọng lượng TP (kg)', value: formatProductSpecDisplay(product.totalWeight), highlight: true },
     { label: 'Khổ cuộn (m)', value: formatProductSpecDisplay(product.rollWidth) },
@@ -975,6 +976,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         newCode: String(record.ma_sp_moi ?? '').trim(),
         amisCode: String(record.ma_amis ?? '').trim(),
         name,
+        productionName: String(record.ten_san_xuat ?? '').trim(),
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
@@ -1012,6 +1014,7 @@ export type ProductFormState = {
   newCode: string;
   amisCode: string;
   name: string;
+  productionName: string;
   nature: string;
   group: string;
   unit: string;
@@ -1040,6 +1043,7 @@ export function productToForm(product: ProductRow): ProductFormState {
     newCode: productCellToInput(product.newCode),
     amisCode: productCellToInput(product.amisCode),
     name: productCellToInput(product.name),
+    productionName: productCellToInput(product.productionName),
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
     unit: productCellToInput(product.unit),
@@ -1065,6 +1069,7 @@ export function emptyProductForm(): ProductFormState {
     newCode: '',
     amisCode: '',
     name: '',
+    productionName: '',
     nature: '',
     group: '',
     unit: '',
@@ -1090,6 +1095,7 @@ export function productFormToPayload(form: ProductFormState) {
     newCode: form.newCode.trim(),
     amisCode: form.amisCode.trim(),
     name: form.name.trim(),
+    productionName: form.productionName.trim(),
     nature: form.nature.trim(),
     group: form.group.trim(),
     unit: form.unit.trim(),
@@ -1137,6 +1143,7 @@ export function ProductEditModal({
     { key: 'amisCode', label: 'Mã AMIS' },
     { key: 'newCode', label: 'Mã mới' },
     { key: 'name', label: 'Tên sản phẩm', required: true },
+    { key: 'productionName', label: 'Tên sản xuất' },
     { key: 'nature', label: 'Tính chất' },
     { key: 'group', label: 'Nhóm VTHH' },
     { key: 'unit', label: 'Đơn vị tính' },
@@ -1184,11 +1191,16 @@ export function ProductEditModal({
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 {field.label}{field.required ? ' *' : ''}
               </span>
-              <input
-                value={form[field.key]}
-                onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))}
-                className={productFieldClass}
-              />
+              {field.key === 'unit' ? (
+                <select value={form.unit} onChange={event => setForm(prev => ({ ...prev, unit: event.target.value }))} className={productFieldClass}>
+                  <option value="">Chọn đơn vị tính</option>
+                  <option value="m">m</option>
+                  <option value="m2">m2</option>
+                  <option value="Tấm">Tấm</option>
+                </select>
+              ) : (
+                <input value={form[field.key]} onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))} className={productFieldClass} />
+              )}
             </label>
           ))}
         </div>
@@ -1691,7 +1703,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       const matchesNature = selectedNatures.size === 0 || selectedNatures.has(product.nature);
       const matchesSearch =
         !normalizedSearch ||
-        `${product.code} ${product.newCode} ${product.name} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`
+        `${product.code} ${product.newCode} ${product.name} ${product.productionName} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesGroup && matchesNature && matchesSearch;
@@ -2113,6 +2125,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell>Mã SP</TableHeadCell>
           <TableHeadCell align="center">Mã QR</TableHeadCell>
           <TableHeadCell>Tên sản phẩm</TableHeadCell>
+          <TableHeadCell>Tên sản xuất</TableHeadCell>
           <TableHeadCell>Tính chất</TableHeadCell>
           <TableHeadCell align="center">Nhóm</TableHeadCell>
           <TableHeadCell align="center">Đơn vị</TableHeadCell>
@@ -2155,6 +2168,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                     <div className="mt-0.5 max-w-sm truncate text-xs font-semibold text-zinc-400">{product.description}</div>
                   )}
                 </td>
+                <td className="px-4 py-3.5 font-bold text-zinc-700">{product.productionName || '-'}</td>
                 <td className="px-4 py-3.5">
                   <StatusBadge label={product.nature} color="rose" />
                 </td>
@@ -2208,7 +2222,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           ))}
 
           {!isLoadingProducts && filteredProducts.length === 0 && (
-            <TableEmptyRow colSpan={14}>Không có sản phẩm phù hợp bộ lọc.</TableEmptyRow>
+            <TableEmptyRow colSpan={15}>Không có sản phẩm phù hợp bộ lọc.</TableEmptyRow>
           )}
         </TableBody>
       </TableShell>

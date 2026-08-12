@@ -11,6 +11,7 @@ export interface ProductRow {
   newCode: string;
   amisCode: string;
   name: string;
+  productionName: string;
   nature: string;
   group: string;
   unit: string;

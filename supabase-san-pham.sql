@@ -95,3 +95,31 @@ comment on column public.san_pham.ten_sp is 'Ten san pham.';
 comment on column public.san_pham.ten_may_san_xuat is 'Ten may san xuat tuong ung voi ma_sp.';
 comment on column public.san_pham.npl_phan_tram is
   'Danh sach NPL can thiet va ty le phan tram. VD: [{"ma_npl":"NPL-001","ten_npl":"Mang PE","phan_tram":40}]';
+
+-- ============================================================================
+-- SQL CHẠY RIÊNG: thêm Tên sản xuất và giới hạn ĐVT = m, m2, Tấm
+-- Copy nguyên khối bên dưới để chạy riêng trong Supabase SQL Editor.
+-- ============================================================================
+
+alter table public.san_pham
+  add column if not exists ten_san_xuat text;
+
+comment on column public.san_pham.ten_san_xuat is
+  'Tên sản phẩm sử dụng trong sản xuất.';
+
+-- Chuẩn hóa cách viết phổ biến; ĐVT cũ ngoài danh sách được chuyển thành NULL.
+update public.san_pham
+set don_vi = case
+  when lower(btrim(coalesce(don_vi, ''))) in ('m', 'm dài', 'm dai', 'mét', 'met') then 'm'
+  when lower(btrim(coalesce(don_vi, ''))) in ('m2', 'm²', 'mét vuông', 'met vuong') then 'm2'
+  when lower(btrim(coalesce(don_vi, ''))) in ('tấm', 'tam') then 'Tấm'
+  else null
+end
+where don_vi is not null;
+
+alter table public.san_pham
+  drop constraint if exists san_pham_don_vi_hop_le;
+
+alter table public.san_pham
+  add constraint san_pham_don_vi_hop_le
+  check (don_vi is null or don_vi in ('m', 'm2', 'Tấm'));

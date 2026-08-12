@@ -2034,8 +2034,9 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const code = parseMaterialText(source.code ?? source.ma_sp);
   const name = parseMaterialText(source.name ?? source.ten_sp);
+  const productionName = parseMaterialText(source.productionName ?? source.tenSanXuat ?? source.ten_san_xuat);
   const hasProductField = [
-    'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
+    'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'productionName', 'tenSanXuat', 'ten_san_xuat', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
     'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
     'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
     'origin', 'nguon_goc', 'description', 'mo_ta',
@@ -2054,6 +2055,9 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
   const record: Record<string, string | number | null> = {};
   if (code) record.ma_sp = code;
   if (name) record.ten_sp = name;
+  if (Object.prototype.hasOwnProperty.call(source, 'productionName') || Object.prototype.hasOwnProperty.call(source, 'tenSanXuat') || Object.prototype.hasOwnProperty.call(source, 'ten_san_xuat')) {
+    record.ten_san_xuat = productionName || null;
+  }
   if (Object.prototype.hasOwnProperty.call(source, 'newCode') || Object.prototype.hasOwnProperty.call(source, 'ma_sp_moi')) {
     record.ma_sp_moi = parseMaterialText(source.newCode ?? source.ma_sp_moi) || null;
   }
@@ -2064,7 +2068,11 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
     record.nhom_vthh = parseMaterialText(source.group ?? source.nhom_vthh) || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'unit') || Object.prototype.hasOwnProperty.call(source, 'don_vi')) {
-    record.don_vi = parseMaterialText(source.unit ?? source.don_vi) || null;
+    const unit = parseMaterialText(source.unit ?? source.don_vi);
+    const normalizedUnit = unit.toLocaleLowerCase('vi').replace('m²', 'm2');
+    const allowedUnit = normalizedUnit === 'm' ? 'm' : normalizedUnit === 'm2' ? 'm2' : normalizedUnit === 'tấm' || normalizedUnit === 'tam' ? 'Tấm' : '';
+    if (unit && !allowedUnit) return { error: 'Đơn vị tính chỉ được phép là m, m2 hoặc Tấm.' };
+    record.don_vi = allowedUnit || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'openingStock') || Object.prototype.hasOwnProperty.call(source, 'ton_dau_ky')) {
     record.ton_dau_ky = parseOptionalMaterialNumber(source.openingStock ?? source.ton_dau_ky);
@@ -5605,7 +5613,7 @@ export function createApp() {
       }
 
       const productFieldKeys = [
-        'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
+        'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'productionName', 'tenSanXuat', 'ten_san_xuat', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
         'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
         'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
         'origin', 'nguon_goc', 'description', 'mo_ta',
