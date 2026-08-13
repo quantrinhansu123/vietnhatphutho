@@ -45,6 +45,7 @@ const SUPABASE_KIEM_KHO_TABLE = process.env.SUPABASE_KIEM_KHO_TABLE || 'kiem_kho
 const SUPABASE_QUAN_LY_KHO_TABLE = process.env.SUPABASE_QUAN_LY_KHO_TABLE || 'quan_ly_kho';
 const SUPABASE_DAMAGED_GOODS_TABLE = process.env.SUPABASE_DAMAGED_GOODS_TABLE || 'bao_cao_hang_hong';
 const SUPABASE_PRODUCTS_TABLE = process.env.SUPABASE_PRODUCTS_TABLE || 'san_pham';
+const SUPABASE_PRODUCT_CONVERSIONS_TABLE = process.env.SUPABASE_PRODUCT_CONVERSIONS_TABLE || 'san_pham_quy_doi';
 /** Sửa typo env phổ biến: anh_sach_may → danh_sach_may */
 const SUPABASE_MACHINES_TABLE = (() => {
   const raw = String(process.env.SUPABASE_MACHINES_TABLE || '')
@@ -1928,7 +1929,7 @@ function respondSupabaseReadError(
     });
   }
   console.error(`Supabase ${table} error:`, error);
-  return res.status(500).json({ error: `Không thể tải từ ${table}. ${error.message}` });
+  return res.status(500).json({ error: `Không thể tải dữ liệu ${table}. Vui lòng thử lại sau.` });
 }
 
 type ProductNplPhanTramItem = {
@@ -2046,8 +2047,9 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const code = parseMaterialText(source.code ?? source.ma_sp);
   const name = parseMaterialText(source.name ?? source.ten_sp);
+  const productionName = parseMaterialText(source.productionName ?? source.tenSanXuat ?? source.ten_san_xuat);
   const hasProductField = [
-    'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
+    'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'productionName', 'tenSanXuat', 'ten_san_xuat', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
     'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
     'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
     'origin', 'nguon_goc', 'description', 'mo_ta',
@@ -2066,6 +2068,9 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
   const record: Record<string, string | number | null> = {};
   if (code) record.ma_sp = code;
   if (name) record.ten_sp = name;
+  if (Object.prototype.hasOwnProperty.call(source, 'productionName') || Object.prototype.hasOwnProperty.call(source, 'tenSanXuat') || Object.prototype.hasOwnProperty.call(source, 'ten_san_xuat')) {
+    record.ten_san_xuat = productionName || null;
+  }
   if (Object.prototype.hasOwnProperty.call(source, 'newCode') || Object.prototype.hasOwnProperty.call(source, 'ma_sp_moi')) {
     record.ma_sp_moi = parseMaterialText(source.newCode ?? source.ma_sp_moi) || null;
   }
@@ -2076,7 +2081,11 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
     record.nhom_vthh = parseMaterialText(source.group ?? source.nhom_vthh) || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'unit') || Object.prototype.hasOwnProperty.call(source, 'don_vi')) {
-    record.don_vi = parseMaterialText(source.unit ?? source.don_vi) || null;
+    const unit = parseMaterialText(source.unit ?? source.don_vi);
+    const normalizedUnit = unit.toLocaleLowerCase('vi').replace('m²', 'm2');
+    const allowedUnit = normalizedUnit === 'm' ? 'm' : normalizedUnit === 'm2' ? 'm2' : normalizedUnit === 'tấm' || normalizedUnit === 'tam' ? 'Tấm' : '';
+    if (unit && !allowedUnit) return { error: 'Đơn vị tính chỉ được phép là m, m2 hoặc Tấm.' };
+    record.don_vi = allowedUnit || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'openingStock') || Object.prototype.hasOwnProperty.call(source, 'ton_dau_ky')) {
     record.ton_dau_ky = parseOptionalMaterialNumber(source.openingStock ?? source.ton_dau_ky);
@@ -2132,6 +2141,71 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-san-pham-dinh-muc.sql.`;
   }
   return `Không thể lưu sản phẩm vào ${SUPABASE_PRODUCTS_TABLE}. ${error.message}${error.details ? ` (${error.details})` : ''}`;
+}
+
+const PRODUCT_CONVERSION_SELECT = `
+  *,
+  san_pham:san_pham_id (id, ma_sp, ma_amis, ten_sp, don_vi)
+`;
+
+function parsePositiveConversionNumber(value: unknown): number | null | 'invalid' {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const text = String(value).trim().replace(/\s/g, '');
+  const emptyText = text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  if (emptyText === 'khonggiatri' || emptyText === 'null' || emptyText === '-') return null;
+  const normalized = text.includes(',') && text.includes('.')
+    ? text.lastIndexOf(',') > text.lastIndexOf('.')
+      ? text.replace(/\./g, '').replace(',', '.')
+      : text.replace(/,/g, '')
+    : text.replace(',', '.');
+  const num = Number(normalized);
+  return Number.isFinite(num) && num > 0 ? num : 'invalid';
+}
+
+function parseProductConversionBody(body: unknown) {
+  const source = body && typeof body === 'object' ? body as Record<string, unknown> : {};
+  const forbiddenProductNameKeys = ['name', 'productName', 'product_name', 'tenSp', 'ten_sp', 'tenSanPham', 'ten_san_pham'];
+  if (forbiddenProductNameKeys.some(key => Object.prototype.hasOwnProperty.call(source, key))) {
+    return { error: 'Không được phép sửa tên sản phẩm trong bảng quy đổi.' } as const;
+  }
+  const sanPhamId = String(source.productId ?? source.sanPhamId ?? source.san_pham_id ?? '').trim();
+  const donViTinh = String(source.unit ?? source.donViTinh ?? source.don_vi_tinh ?? '').trim();
+  if (!sanPhamId) return { error: 'Vui lòng chọn sản phẩm.' } as const;
+  if (!donViTinh) return { error: 'Vui lòng nhập đơn vị tính.' } as const;
+  const fields: Array<[string, unknown]> = [
+    ['kho_tam_rong_m', source.sheetWidthM ?? source.khoTamRongM ?? source.kho_tam_rong_m],
+    ['kho_tam_dai_m', source.sheetLengthM ?? source.khoTamDaiM ?? source.kho_tam_dai_m],
+    ['kho_cuon_rong_m', source.rollWidthM ?? source.khoCuonRongM ?? source.kho_cuon_rong_m],
+    ['kho_cuon_dai_m', source.rollLengthM ?? source.khoCuonDaiM ?? source.kho_cuon_dai_m],
+    ['dien_tich_m2', source.areaM2 ?? source.dienTichM2 ?? source.dien_tich_m2],
+    ['trong_luong_kg_m_dai', source.kgPerLinearM ?? source.trongLuongKgMDai ?? source.trong_luong_kg_m_dai],
+    ['trong_luong_kg_m2', source.kgPerM2 ?? source.trongLuongKgM2 ?? source.trong_luong_kg_m2],
+    ['trong_luong_kg_tam', source.kgPerSheet ?? source.trongLuongKgTam ?? source.trong_luong_kg_tam]
+  ];
+  const record: Record<string, string | number | null> = { san_pham_id: sanPhamId, don_vi_tinh: donViTinh };
+  for (const [field, raw] of fields) {
+    const value = parsePositiveConversionNumber(raw);
+    if (value === 'invalid') return { error: `${field} phải là số lớn hơn 0 hoặc để trống.` } as const;
+    record[field] = value;
+  }
+  return { record } as const;
+}
+
+function normalizeProductConversionRow(raw: Record<string, unknown>) {
+  const joinedRaw = raw.san_pham;
+  const product = (Array.isArray(joinedRaw) ? joinedRaw[0] : joinedRaw) as Record<string, unknown> | null;
+  return {
+    id: Number(raw.id),
+    sanPhamId: String(raw.san_pham_id ?? ''),
+    maSp: String(product?.ma_sp ?? ''), maAmis: String(product?.ma_amis ?? ''),
+    tenSp: String(product?.ten_sp ?? ''), donViSanPham: String(product?.don_vi ?? ''),
+    donViTinh: String(raw.don_vi_tinh ?? ''),
+    khoTamRongM: raw.kho_tam_rong_m, khoTamDaiM: raw.kho_tam_dai_m,
+    khoCuonRongM: raw.kho_cuon_rong_m, khoCuonDaiM: raw.kho_cuon_dai_m,
+    dienTichM2: raw.dien_tich_m2, trongLuongKgMDai: raw.trong_luong_kg_m_dai,
+    trongLuongKgM2: raw.trong_luong_kg_m2, trongLuongKgTam: raw.trong_luong_kg_tam,
+    createdAt: String(raw.created_at ?? ''), updatedAt: String(raw.updated_at ?? '')
+  };
 }
 
 function parseMixingNumber(value: unknown): number | null {
@@ -4372,6 +4446,13 @@ type OrderProductRecord = {
   ten_sp: string;
   don_vi: string;
   so_luong: number | null;
+  kq_quy_doi?: {
+    don_vi_nguon: string;
+    so_luong_nguon: number;
+    don_vi_dich: 'kg';
+    trong_luong_kg: number;
+    chieu_dai_m: number;
+  };
 };
 
 function parseOrderProductsInput(
@@ -4397,6 +4478,7 @@ function parseOrderProductsInput(
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
+    const rawConversion = row.kq_quy_doi ?? row.conversionResult;
 
     if (!ma_sp && !ten_sp) {
       return { error: 'Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.' };
@@ -4404,8 +4486,26 @@ function parseOrderProductsInput(
     if (so_luong === null || so_luong <= 0) {
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
-
-    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+    if (!rawConversion || typeof rawConversion !== 'object') {
+      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      continue;
+    }
+    const conversion = rawConversion as Record<string, unknown>;
+    const convertedWeight = parseOrderQuantity(conversion.trong_luong_kg ?? conversion.value);
+    const convertedLength = parseOrderQuantity(conversion.chieu_dai_m ?? conversion.met_dai);
+    const sourceQuantity = parseOrderQuantity(conversion.so_luong_nguon) ?? so_luong;
+    const sourceUnit = pickRowField(conversion, ['don_vi_nguon']) || don_vi;
+    const conversionIsValid = convertedWeight !== null && convertedWeight > 0 && convertedLength !== null && convertedLength > 0
+      && Math.abs(sourceQuantity - so_luong) <= 0.000001
+      && sourceUnit.trim().toLocaleLowerCase('vi') === don_vi.trim().toLocaleLowerCase('vi');
+    if (!conversionIsValid) {
+      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      continue;
+    }
+    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong, kq_quy_doi: {
+      don_vi_nguon: sourceUnit, so_luong_nguon: sourceQuantity, don_vi_dich: 'kg',
+      trong_luong_kg: convertedWeight, chieu_dai_m: convertedLength
+    } });
   }
 
   if (products.length === 0) {
@@ -5552,7 +5652,7 @@ export function createApp() {
       }
 
       const productFieldKeys = [
-        'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
+        'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'productionName', 'tenSanXuat', 'ten_san_xuat', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
         'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
         'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
         'origin', 'nguon_goc', 'description', 'mo_ta',
@@ -5593,6 +5693,181 @@ export function createApp() {
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật sản phẩm.' });
     }
+  });
+
+  app.get('/api/bang-quy-doi-san-pham', async (req, res) => {
+    if (!supabase) return res.json({ items: [], page: 1, pageSize: 50, total: 0 });
+    try {
+      const key = String(req.query.key ?? '').trim();
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+      let productIds: string[] = [];
+      if (key) {
+        const escaped = key.replace(/[,%()]/g, '');
+        const productResult = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id')
+          .or(`ma_sp.ilike.%${escaped}%,ma_amis.ilike.%${escaped}%,ten_sp.ilike.%${escaped}%`)
+          .limit(500);
+        if (productResult.error) return res.status(500).json({ error: productWriteErrorMessage(productResult.error) });
+        productIds = (productResult.data || []).map(row => String(row.id));
+      }
+      let query = supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE)
+        .select(PRODUCT_CONVERSION_SELECT, { count: 'exact' });
+      if (key) {
+        const escaped = key.replace(/[,%()]/g, '');
+        query = productIds.length > 0
+          ? query.or(`don_vi_tinh.ilike.%${escaped}%,san_pham_id.in.(${productIds.join(',')})`)
+          : query.ilike('don_vi_tinh', `%${escaped}%`);
+      }
+      const from = (page - 1) * pageSize;
+      const { data, error, count } = await query.order('id', { ascending: false }).range(from, from + pageSize - 1);
+      if (error) return respondSupabaseReadError(res, error, SUPABASE_PRODUCT_CONVERSIONS_TABLE, { items: [], page, pageSize, total: 0 });
+      return res.json({ items: (data || []).map(row => normalizeProductConversionRow(row as Record<string, unknown>)), page, pageSize, total: count || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải bảng quy đổi sản phẩm.' });
+    }
+  });
+
+  app.get('/api/export-bang-quy-doi-san-pham', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const key = String(req.query.key ?? '').trim();
+      let productIds: string[] = [];
+      if (key) {
+        const escaped = key.replace(/[,%()]/g, '');
+        const productResult = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id')
+          .or(`ma_sp.ilike.%${escaped}%,ma_amis.ilike.%${escaped}%,ten_sp.ilike.%${escaped}%`).limit(5000);
+        if (productResult.error) return res.status(500).json({ error: productWriteErrorMessage(productResult.error) });
+        productIds = (productResult.data || []).map(row => String(row.id));
+      }
+      const rows: Record<string, unknown>[] = [];
+      for (let from = 0; ; from += 1000) {
+        let query = supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select(PRODUCT_CONVERSION_SELECT);
+        if (key) {
+          const escaped = key.replace(/[,%()]/g, '');
+          query = productIds.length > 0
+            ? query.or(`don_vi_tinh.ilike.%${escaped}%,san_pham_id.in.(${productIds.join(',')})`)
+            : query.ilike('don_vi_tinh', `%${escaped}%`);
+        }
+        const result = await query.order('id', { ascending: false }).range(from, from + 999);
+        if (result.error) return res.status(500).json({ error: result.error.message });
+        rows.push(...((result.data || []) as Record<string, unknown>[]));
+        if ((result.data || []).length < 1000) break;
+      }
+      const headers = ['Stt','Mã amis','Tên sản phẩm','Đơn vị tính','Khổ tấm rộng (m rộng)','Khổ tấm dài (m dài / tấm)','Khổ cuộn rộng (m rộng)','Khổ cuộn dài (m dài)','Khổ diện tính mét vuông (m2)','Trọng lượng (kg/1 m dài )','Trọng lượng (kg/m2 )','Trọng lượng (kg/Tấm )'];
+      const csvCell = (value: unknown) => {
+        const text = value === null || value === undefined ? '' : String(value);
+        return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      };
+      const lines = [headers, ...rows.map((raw, index) => {
+        const row = normalizeProductConversionRow(raw);
+        return [index + 1,row.maAmis,row.tenSp,row.donViTinh,row.khoTamRongM,row.khoTamDaiM,row.khoCuonRongM,row.khoCuonDaiM,row.dienTichM2,row.trongLuongKgMDai,row.trongLuongKgM2,row.trongLuongKgTam];
+      })].map(columns => columns.map(csvCell).join(';'));
+      const filename = `bang-quy-doi-san-pham-${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(`\uFEFF${lines.join('\r\n')}`);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Không xuất được CSV.' });
+    }
+  });
+
+  app.post('/api/bang-quy-doi-san-pham/import', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 200) : [];
+    if (items.length === 0) return res.status(400).json({ error: 'Không có dữ liệu import.' });
+    const valid: Array<{ rowNumber: number; record: Record<string, unknown> }> = [];
+    const errors: Array<{ rowNumber: number; error: string }> = [];
+    items.forEach((item: unknown, index: number) => {
+      const body = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+      const parsed = parseProductConversionBody(body);
+      const rowNumber = Number(body.rowNumber) || index + 1;
+      if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
+      else valid.push({ rowNumber, record: parsed.record });
+    });
+    const productIds = [...new Set(valid.map(item => String(item.record.san_pham_id)))];
+    const existingResult = productIds.length
+      ? await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('id,san_pham_id,don_vi_tinh').in('san_pham_id', productIds)
+      : { data: [], error: null };
+    if (existingResult.error) return res.status(500).json({ error: existingResult.error.message });
+    const existing = new Map((existingResult.data || []).map(row => [`${row.san_pham_id}::${String(row.don_vi_tinh).trim().toLowerCase()}`, Number(row.id)]));
+    let created = 0, updated = 0;
+    const processItem = async (item: { rowNumber: number; record: Record<string, unknown> }) => {
+      const mapKey = `${item.record.san_pham_id}::${String(item.record.don_vi_tinh).trim().toLowerCase()}`;
+      const id = existing.get(mapKey);
+      if (id) {
+        const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).update({ ...item.record, updated_at: new Date().toISOString() }).eq('id', id);
+        if (result.error) errors.push({ rowNumber: item.rowNumber, error: result.error.message });
+        else updated += 1;
+        return;
+      }
+      const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).insert(item.record).select('id').single();
+      if (result.error) errors.push({ rowNumber: item.rowNumber, error: result.error.message });
+      else { created += 1; existing.set(mapKey, Number(result.data.id)); }
+    };
+    for (let index = 0; index < valid.length; index += 10) await Promise.all(valid.slice(index, index + 10).map(processItem));
+    return res.json({ success: true, processed: items.length, created, updated, failed: errors.length, errors });
+  });
+
+  app.get('/api/bang-quy-doi-san-pham/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ID quy đổi không hợp lệ.' });
+    const { data, error } = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE)
+      .select(PRODUCT_CONVERSION_SELECT).eq('id', id).maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'Không tìm thấy dòng quy đổi.' });
+    return res.json({ item: normalizeProductConversionRow(data as Record<string, unknown>) });
+  });
+
+  app.post('/api/bang-quy-doi-san-pham', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseProductConversionBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const product = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id,don_vi').eq('id', parsed.record.san_pham_id).maybeSingle();
+    if (product.error) return res.status(500).json({ error: product.error.message });
+    if (!product.data) return res.status(400).json({ error: 'Sản phẩm không tồn tại.' });
+    if (String(product.data.don_vi ?? '').trim().toLocaleLowerCase('vi') !== String(parsed.record.don_vi_tinh).trim().toLocaleLowerCase('vi')) {
+      return res.status(400).json({ error: 'Đơn vị tính phải lấy theo danh mục sản phẩm.' });
+    }
+    const { data, error } = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE)
+      .insert(parsed.record).select(PRODUCT_CONVERSION_SELECT).single();
+    if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'Sản phẩm đã có quy đổi cho đơn vị này.' : error.message });
+    return res.status(201).json({ success: true, item: normalizeProductConversionRow(data as Record<string, unknown>) });
+  });
+
+  app.patch('/api/bang-quy-doi-san-pham/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ID quy đổi không hợp lệ.' });
+    const parsed = parseProductConversionBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const current = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('san_pham_id,don_vi_tinh').eq('id', id).maybeSingle();
+    if (current.error) return res.status(500).json({ error: current.error.message });
+    if (!current.data) return res.status(404).json({ error: 'Không tìm thấy dòng quy đổi.' });
+    if (String(current.data.san_pham_id) !== String(parsed.record.san_pham_id)) {
+      return res.status(400).json({ error: 'Không được phép thay đổi sản phẩm của dòng quy đổi.' });
+    }
+    if (String(current.data.don_vi_tinh).trim().toLocaleLowerCase('vi') !== String(parsed.record.don_vi_tinh).trim().toLocaleLowerCase('vi')) {
+      return res.status(400).json({ error: 'Không được phép thay đổi đơn vị tính của dòng quy đổi.' });
+    }
+    const product = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id').eq('id', parsed.record.san_pham_id).maybeSingle();
+    if (!product.data) return res.status(400).json({ error: 'Sản phẩm không tồn tại.' });
+    const { data, error } = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE)
+      .update({ ...parsed.record, updated_at: new Date().toISOString() }).eq('id', id)
+      .select(PRODUCT_CONVERSION_SELECT).maybeSingle();
+    if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'Sản phẩm đã có quy đổi cho đơn vị này.' : error.message });
+    if (!data) return res.status(404).json({ error: 'Không tìm thấy dòng quy đổi.' });
+    return res.json({ success: true, item: normalizeProductConversionRow(data as Record<string, unknown>) });
+  });
+
+  app.delete('/api/bang-quy-doi-san-pham/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ID quy đổi không hợp lệ.' });
+    const { data, error } = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).delete().eq('id', id).select('id').maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: 'Không tìm thấy dòng quy đổi.' });
+    return res.json({ success: true, id });
   });
 
   app.get('/api/danh-sach-may', async (_req, res) => {

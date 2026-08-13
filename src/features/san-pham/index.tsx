@@ -34,6 +34,7 @@ import {
 } from '../../utils/productCatalogExcel';
 import { showAppToast } from '../../lib/appToast';
 import { waitForPrintImagesReady } from '../../utils/printReady';
+import { availableConvertedUnits, convertProductQuantity, type ProductConversionFactors, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 
 const PRODUCT_QR_LABEL_FOOTER_ROWS = ['Cơ sở sản xuất', 'Công nhân sx', 'Ngày sản xuất'] as const;
 
@@ -598,6 +599,7 @@ export function ProductViewModal({
     product.description && product.description !== '-' ? product.description.trim() : '';
 
   const normSpecCells = [
+    { label: 'Tên sản xuất', value: product.productionName || '-' },
     { label: 'Đơn vị tính', value: product.unit && product.unit !== '-' ? product.unit : '-' },
     { label: 'Tổng trọng lượng TP (kg)', value: formatProductSpecDisplay(product.totalWeight), highlight: true },
     { label: 'Khổ cuộn (m)', value: formatProductSpecDisplay(product.rollWidth) },
@@ -975,6 +977,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         newCode: String(record.ma_sp_moi ?? '').trim(),
         amisCode: String(record.ma_amis ?? '').trim(),
         name,
+        productionName: String(record.ten_san_xuat ?? '').trim(),
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
@@ -1012,6 +1015,7 @@ export type ProductFormState = {
   newCode: string;
   amisCode: string;
   name: string;
+  productionName: string;
   nature: string;
   group: string;
   unit: string;
@@ -1040,6 +1044,7 @@ export function productToForm(product: ProductRow): ProductFormState {
     newCode: productCellToInput(product.newCode),
     amisCode: productCellToInput(product.amisCode),
     name: productCellToInput(product.name),
+    productionName: productCellToInput(product.productionName),
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
     unit: productCellToInput(product.unit),
@@ -1065,6 +1070,7 @@ export function emptyProductForm(): ProductFormState {
     newCode: '',
     amisCode: '',
     name: '',
+    productionName: '',
     nature: '',
     group: '',
     unit: '',
@@ -1090,6 +1096,7 @@ export function productFormToPayload(form: ProductFormState) {
     newCode: form.newCode.trim(),
     amisCode: form.amisCode.trim(),
     name: form.name.trim(),
+    productionName: form.productionName.trim(),
     nature: form.nature.trim(),
     group: form.group.trim(),
     unit: form.unit.trim(),
@@ -1137,6 +1144,7 @@ export function ProductEditModal({
     { key: 'amisCode', label: 'Mã AMIS' },
     { key: 'newCode', label: 'Mã mới' },
     { key: 'name', label: 'Tên sản phẩm', required: true },
+    { key: 'productionName', label: 'Tên sản xuất' },
     { key: 'nature', label: 'Tính chất' },
     { key: 'group', label: 'Nhóm VTHH' },
     { key: 'unit', label: 'Đơn vị tính' },
@@ -1184,11 +1192,16 @@ export function ProductEditModal({
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 {field.label}{field.required ? ' *' : ''}
               </span>
-              <input
-                value={form[field.key]}
-                onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))}
-                className={productFieldClass}
-              />
+              {field.key === 'unit' ? (
+                <select value={form.unit} onChange={event => setForm(prev => ({ ...prev, unit: event.target.value }))} className={productFieldClass}>
+                  <option value="">Chọn đơn vị tính</option>
+                  <option value="m">m</option>
+                  <option value="m2">m2</option>
+                  <option value="Tấm">Tấm</option>
+                </select>
+              ) : (
+                <input value={form[field.key]} onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))} className={productFieldClass} />
+              )}
             </label>
           ))}
         </div>
@@ -1212,6 +1225,7 @@ export function ProductEditModal({
 export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('products');
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [productConversions, setProductConversions] = useState<ProductConversionFactors[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
@@ -1267,6 +1281,31 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     loadProducts();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadConversions = async () => {
+      try {
+        const all: ProductConversionFactors[] = [];
+        for (let page = 1; ; page += 1) {
+          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error('Không thể tải bảng quy đổi.');
+          const items = Array.isArray(data.items) ? data.items as ProductConversionFactors[] : [];
+          all.push(...items);
+          if (all.length >= Number(data.total || 0)) break;
+        }
+        if (!cancelled) setProductConversions(all);
+      } catch {
+        if (!cancelled) {
+          setProductConversions([]);
+          showAppToast('Không thể tải bảng quy đổi. Dữ liệu sản phẩm gốc vẫn được hiển thị.', 'error');
+        }
+      }
+    };
+    void loadConversions();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -1687,16 +1726,23 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
+      const isFinishedProduct = product.nature.trim().toLocaleLowerCase('vi') === 'thành phẩm';
       const matchesGroup = selectedGroup === 'all' || product.group === selectedGroup;
       const matchesNature = selectedNatures.size === 0 || selectedNatures.has(product.nature);
       const matchesSearch =
         !normalizedSearch ||
-        `${product.code} ${product.newCode} ${product.name} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`
+        `${product.code} ${product.newCode} ${product.name} ${product.productionName} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`
           .toLowerCase()
           .includes(normalizedSearch);
-      return matchesGroup && matchesNature && matchesSearch;
+      return isFinishedProduct && matchesGroup && matchesNature && matchesSearch;
     });
   }, [normalizedSearch, products, selectedGroup, selectedNatures]);
+
+  const conversionByProductId = useMemo(() => {
+    const map = new Map<string, ProductConversionFactors>();
+    productConversions.forEach(item => { if (item.sanPhamId && !map.has(item.sanPhamId)) map.set(item.sanPhamId, item); });
+    return map;
+  }, [productConversions]);
 
   const selectedProducts = useMemo(
     () => products.filter(product => selectedProductIds.has(product.id)),
@@ -2113,6 +2159,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell>Mã SP</TableHeadCell>
           <TableHeadCell align="center">Mã QR</TableHeadCell>
           <TableHeadCell>Tên sản phẩm</TableHeadCell>
+          <TableHeadCell>Tên sản xuất</TableHeadCell>
           <TableHeadCell>Tính chất</TableHeadCell>
           <TableHeadCell align="center">Nhóm</TableHeadCell>
           <TableHeadCell align="center">Đơn vị</TableHeadCell>
@@ -2127,10 +2174,21 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           </TableHeadCell>
         </TableHead>
         <TableBody>
-          {filteredProducts.map(product => (
-            <React.Fragment key={`${product.code}-${product.name}`}>
-              <TableRow>
-                <td className="px-3 py-3.5 text-center">
+          {filteredProducts.map(product => {
+            const conversion = conversionByProductId.get(product.id);
+            const convertedUnits = conversion ? availableConvertedUnits(product.unit, conversion) : [];
+            const rowSpan = 1 + convertedUnits.length;
+            const quantityFields = [product.openingStock, product.inbound, product.outbound, product.stock, product.minStock];
+            const renderConvertedValue = (raw: string, unit: ProductConvertedUnit) => {
+              if (!conversion || raw === '-' || raw.trim() === '') return '—';
+              const quantity = Number(raw.replace(',', '.'));
+              if (!Number.isFinite(quantity)) return '—';
+              const value = convertProductQuantity(quantity, product.unit, unit, conversion);
+              return value === null ? '—' : formatNumber(value, 3);
+            };
+            return <React.Fragment key={`${product.code}-${product.name}`}>
+              <tr className="border-t-2 border-zinc-300 bg-white transition-colors hover:bg-emerald-50/40">
+                <td rowSpan={rowSpan} className="px-3 py-3.5 text-center align-middle">
                   <input
                     type="checkbox"
                     checked={selectedProductIds.has(product.id)}
@@ -2139,8 +2197,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                     aria-label={`Chọn in QR ${product.code}`}
                   />
                 </td>
-                <td className="px-4 py-3.5 font-black text-zinc-950">{product.code || '-'}</td>
-                <td className="px-3 py-3.5">
+                <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-black text-zinc-950">{product.code || '-'}</td>
+                <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle">
                   {qrImages[product.id] ? (
                     <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
                       <img src={qrImages[product.id]} alt={`QR ${product.code}`} className="h-full w-full" />
@@ -2149,16 +2207,17 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                     <span className="text-xs font-semibold text-zinc-300">Đang tạo</span>
                   )}
                 </td>
-                <td className="px-4 py-3.5">
+                <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
                   <div className="font-black text-zinc-950">{product.name || '-'}</div>
                   {product.description && (
                     <div className="mt-0.5 max-w-sm truncate text-xs font-semibold text-zinc-400">{product.description}</div>
                   )}
                 </td>
-                <td className="px-4 py-3.5">
+                <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-bold text-zinc-700">{product.productionName || '-'}</td>
+                <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
                   <StatusBadge label={product.nature} color="rose" />
                 </td>
-                <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.group}</td>
+                <td rowSpan={rowSpan} className="px-4 py-3.5 text-center align-middle font-bold text-zinc-700">{product.group}</td>
                 <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.unit}</td>
                 <td className="px-3 py-3.5 text-center font-mono font-bold text-emerald-800">
                   {formatProductSpecDisplay(product.totalWeight)}
@@ -2168,7 +2227,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                 <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.outbound}</td>
                 <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
                 <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.minStock}</td>
-                <td className="sticky right-0 z-10 border-l border-zinc-100 bg-white px-3 py-3.5">
+                <td rowSpan={rowSpan} className="sticky right-0 z-10 border-l border-zinc-100 bg-white px-3 py-3.5 align-middle">
                   <RowActionsMenu label={`Thao tác ${product.code || product.name}`}>
                   <div className="flex items-center justify-center gap-1">
                     <button
@@ -2203,12 +2262,19 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                   </div>
                   </RowActionsMenu>
                 </td>
-              </TableRow>
-            </React.Fragment>
-          ))}
+              </tr>
+              {convertedUnits.map(unit => (
+                <tr key={`${product.id}-${unit}`} className="border-t border-zinc-100 bg-zinc-50/70 text-zinc-700">
+                  <td className="px-4 py-2.5 text-center font-bold text-zinc-700">{unit}</td>
+                  <td className="px-3 py-2.5 text-center font-mono font-bold text-zinc-400">—</td>
+                  {quantityFields.map((raw, index) => <td key={index} title={renderConvertedValue(raw, unit) === '—' ? 'Chưa đủ hệ số quy đổi' : undefined} className="px-3 py-2.5 text-center font-mono font-bold">{renderConvertedValue(raw, unit)}</td>)}
+                </tr>
+              ))}
+            </React.Fragment>;
+          })}
 
           {!isLoadingProducts && filteredProducts.length === 0 && (
-            <TableEmptyRow colSpan={14}>Không có sản phẩm phù hợp bộ lọc.</TableEmptyRow>
+            <TableEmptyRow colSpan={15}>Không có sản phẩm phù hợp bộ lọc.</TableEmptyRow>
           )}
         </TableBody>
       </TableShell>

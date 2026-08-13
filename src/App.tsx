@@ -63,6 +63,7 @@ import {
   getActivePageMeta
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
+import { ProductConversionsPanel } from './features/bang-quy-doi-san-pham';
 import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsInventoryPanel } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
@@ -1318,6 +1319,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <ProductsPanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : activeTab === 'product-conversions' ? (
+              <motion.div
+                key="product-conversions"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ProductConversionsPanel onBack={() => goBack('factory-qc')} />
               </motion.div>
             ) : activeTab === 'machines' ? (
               <motion.div

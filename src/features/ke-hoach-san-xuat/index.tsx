@@ -5117,7 +5117,7 @@ export function AddProductionOrderModal({
                           product.remainingQty <= 0 && product.orderQty > 0
                             ? ' · hết'
                             : product.orderQty > 0
-                              ? ` · còn ${formatNumber(product.remainingQty, 0)}`
+                              ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0`
                               : '';
                         return product.code ? `${product.code} · ${product.name}${remaining}` : product.name;
                       }}
@@ -5153,7 +5153,7 @@ export function AddProductionOrderModal({
                   </div>
                   {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
                     <span className="col-span-2 mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
-                      Còn {formatNumber(selectedProduct.remainingQty, 0)}
+                      Còn {formatNumber(selectedProduct.remainingQty, 0)} · SL Tồn 0
                     </span>
                   )}
                   {form.entryLines.length > 1 && (
@@ -5501,7 +5501,7 @@ export function AddProductionOrderModal({
                                     {product.orderRef}
                                   </span>
                                   <span className="text-[11px] font-bold text-emerald-700">
-                                    Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''}
+                                    Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''} · SL Tồn 0
                                   </span>
                                 </div>
                                 <p className="mt-0.5 text-xs font-semibold text-zinc-600">{product.productName || '-'}</p>
@@ -5603,7 +5603,7 @@ export function AddProductionOrderModal({
                   getLabel={item => {
                     const product = item as { code: string; name: string; orderQty: number; remainingQty: number };
                     return product.code
-                      ? `${product.code} · ${product.name}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)}` : ''}`
+                      ? `${product.code} · ${product.name}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0` : ''}`
                       : product.name;
                   }}
                   getValue={item => (item as { code: string }).code}

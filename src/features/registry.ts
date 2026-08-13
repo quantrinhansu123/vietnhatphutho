@@ -10,6 +10,7 @@ export type TableId =
   | 'quan_ly_kho'
   | 'bao_cao_hang_hong'
   | 'san_pham'
+  | 'san_pham_quy_doi'
   | 'danh_sach_may'
   | 'kho_nvl'
   | 'phieu_xuat_nhap_kho'
@@ -123,6 +124,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/san-pham/index.tsx, src/features/san-pham/types.ts, src/features/san-pham/productFieldClass.ts',
     components: ['src/components/ProductQrScanner.tsx', 'src/components/LineEditorSheet.tsx'],
     utils: ['src/utils/productNplComponentsExcel.ts', 'src/utils/productCatalogExcel.ts']
+  },
+  san_pham_quy_doi: {
+    table: 'san_pham_quy_doi',
+    label: 'Bảng quy đổi sản phẩm',
+    sql: ['supabase-san-pham-quy-doi.sql'],
+    apiPrefix: '/api/bang-quy-doi-san-pham',
+    serverLines: 'tìm theo api/bang-quy-doi-san-pham',
+    appTab: 'product-conversions',
+    appLines: 'src/features/bang-quy-doi-san-pham/index.tsx',
+    components: [],
+    utils: ['src/utils/productConversionCsv.ts']
   },
   danh_sach_may: {
     table: 'danh_sach_may',

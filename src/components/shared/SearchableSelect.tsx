@@ -227,7 +227,7 @@ export function SearchableSelect({
   }, [open, query, filteredOptions.length, desktopAutoFlip]);
 
   const dropdownPanelClass =
-    'fixed z-[200] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
+    'fixed z-[300] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
 
   const keepFocusForSelection = () => {
     suppressBlurRef.current = true;
@@ -244,7 +244,7 @@ export function SearchableSelect({
               type="button"
               onMouseDown={event => event.preventDefault()}
               onClick={() => commitValue('', null)}
-              className="block w-full px-3 py-2 text-left text-xs font-semibold text-zinc-500 transition hover:bg-zinc-50"
+              className="block w-full cursor-pointer px-3 py-2 text-left text-xs font-semibold text-zinc-500 transition hover:bg-zinc-50"
             >
               {placeholder}
             </button>
@@ -258,7 +258,7 @@ export function SearchableSelect({
                 type="button"
                 onMouseDown={event => event.preventDefault()}
                 onClick={() => commitValue(optionValue, item)}
-                className={`block w-full px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
+                className={`block w-full cursor-pointer px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
                   optionValue === value ? 'bg-red-50 font-black text-[#ef1b2d]' : 'font-semibold text-zinc-800'
                 }`}
               >

@@ -137,6 +137,88 @@ export type OrderProductFormLine = {
   quantity: string;
 };
 
+type OrderProductConversion = {
+  id: number; maSp: string; maAmis: string; donViTinh: string;
+  khoTamRongM: number | null; khoTamDaiM: number | null;
+  khoCuonRongM: number | null; khoCuonDaiM: number | null;
+  dienTichM2: number | null; trongLuongKgMDai: number | null;
+  trongLuongKgM2: number | null; trongLuongKgTam: number | null;
+};
+
+function normalizeConversionUnit(value: string) {
+  return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ').replace('m²', 'm2');
+}
+
+type ConversionUnit = 'sheet' | 'roll' | 'meter' | 'squareMeter' | 'kg' | 'unsupported';
+
+function resolveConversionUnit(value: string): ConversionUnit {
+  const unit = normalizeConversionUnit(value);
+  if (unit === 'tấm' || unit === 'tam') return 'sheet';
+  if (unit === 'cuộn' || unit === 'cuon') return 'roll';
+  if (unit === 'm' || unit === 'm dài' || unit === 'mét' || unit === 'met') return 'meter';
+  if (unit === 'm2' || unit === 'm 2' || unit === 'mét vuông' || unit === 'met vuong') return 'squareMeter';
+  if (unit === 'kg' || unit === 'kilogram') return 'kg';
+  return 'unsupported';
+}
+
+function calculateOrderConversion(quantityText: string, inputUnitText: string, conversion: OrderProductConversion) {
+  const quantity = parsePercentInput(quantityText);
+  if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
+  const inputUnit = resolveConversionUnit(inputUnitText);
+  const sheetLength = conversion.khoTamDaiM;
+  const rollLength = conversion.khoCuonDaiM;
+  const rollWidth = conversion.khoCuonRongM;
+  const kgPerMeter = conversion.trongLuongKgMDai;
+  const kgPerSheet = conversion.trongLuongKgTam;
+  const kgPerM2 = conversion.trongLuongKgM2;
+  const areaPerRoll = conversion.dienTichM2 || (rollWidth && rollLength ? rollWidth * rollLength : null);
+  let weight: number | null = null;
+  let linearLength: number | null = null;
+
+  // ĐVT nguồn lấy từ san_pham; đầu ra chuẩn hóa duy nhất là kg.
+  if (inputUnit === 'sheet') {
+    if (sheetLength) linearLength = quantity * sheetLength;
+    if (kgPerSheet) weight = quantity * kgPerSheet;
+    else if (sheetLength && kgPerMeter) weight = quantity * sheetLength * kgPerMeter;
+  } else if (inputUnit === 'roll') {
+    if (rollLength) linearLength = quantity * rollLength;
+    if (areaPerRoll && kgPerM2) weight = quantity * areaPerRoll * kgPerM2;
+    else if (rollLength && kgPerMeter) weight = quantity * rollLength * kgPerMeter;
+  } else if (inputUnit === 'meter') {
+    linearLength = quantity;
+    if (kgPerMeter) weight = quantity * kgPerMeter;
+    else if (rollWidth && kgPerM2) weight = quantity * rollWidth * kgPerM2;
+    else if (conversion.khoTamRongM && kgPerM2) weight = quantity * conversion.khoTamRongM * kgPerM2;
+  } else if (inputUnit === 'squareMeter' && kgPerM2) {
+    const width = conversion.khoTamRongM || rollWidth;
+    if (width) linearLength = quantity / width;
+    weight = quantity * kgPerM2;
+  } else if (inputUnit === 'kg') {
+    weight = quantity;
+    if (kgPerMeter) linearLength = quantity / kgPerMeter;
+    else if (kgPerM2) {
+      const width = conversion.khoTamRongM || rollWidth;
+      if (width) linearLength = quantity / kgPerM2 / width;
+    }
+  }
+  const results: Array<[string, number, string]> = [];
+  if (weight !== null) results.push(['Trọng lượng quy đổi', weight, 'kg']);
+  if (linearLength !== null) results.push(['Chiều dài quy đổi', linearLength, 'm dài']);
+  return results;
+}
+
+function conversionSupportsUnit(conversion: OrderProductConversion, unitText: string) {
+  const unit = resolveConversionUnit(unitText);
+  if (unit === 'sheet') return Boolean(conversion.trongLuongKgTam || (conversion.khoTamDaiM && conversion.trongLuongKgMDai));
+  const areaPerRoll = conversion.dienTichM2 || (conversion.khoCuonRongM && conversion.khoCuonDaiM ? conversion.khoCuonRongM * conversion.khoCuonDaiM : null);
+  const hasRollAreaCase = Boolean(conversion.khoCuonDaiM && areaPerRoll && conversion.trongLuongKgM2);
+  if (unit === 'roll') return Boolean((conversion.khoCuonDaiM && conversion.trongLuongKgMDai) || hasRollAreaCase);
+  if (unit === 'squareMeter') return Boolean(conversion.trongLuongKgM2);
+  if (unit === 'meter') return Boolean(conversion.trongLuongKgMDai || ((conversion.khoTamRongM || conversion.khoCuonRongM) && conversion.trongLuongKgM2));
+  if (unit === 'kg') return true;
+  return false;
+}
+
 export function newOrderProductFormLine(): OrderProductFormLine {
   return {
     key: `order-product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -258,6 +340,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [productOptions, setProductOptions] = useState<OrderProductOption[]>([]);
+  const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [orderForm, setOrderForm] = useState<OrderFormState>(emptyOrderForm);
@@ -297,15 +380,17 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       setLookupError('');
 
       try {
-        const [staffRes, customerRes, productRes] = await Promise.all([
+        const [staffRes, customerRes, productRes, conversionRes] = await Promise.all([
           fetch('/api/nhan-su?format=groups&scope=all'),
           fetch('/api/khach-hang'),
-          fetch('/api/san-pham?format=table')
+          fetch('/api/san-pham?format=table'),
+          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
         ]);
 
         const staffData = await staffRes.json().catch(() => ({}));
         const customerData = await customerRes.json().catch(() => ({}));
         const productData = await productRes.json().catch(() => ({}));
+        const conversionData = await conversionRes.json().catch(() => ({}));
 
         if (!staffRes.ok) {
           throw new Error(staffData.error || 'Không thể tải nhân sự.');
@@ -316,17 +401,31 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         if (!productRes.ok) {
           throw new Error(productData.error || 'Không thể tải hàng hóa.');
         }
+        if (!conversionRes.ok) {
+          throw new Error(conversionData.error || 'Không thể tải bảng quy đổi sản phẩm.');
+        }
+
+        const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
+        const conversionTotal = Number(conversionData.total) || conversions.length;
+        for (let page = 2; conversions.length < conversionTotal; page += 1) {
+          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
+          conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
+        }
 
         if (!cancelled) {
           setStaffOptions(normalizeDaNangBusinessStaffOptions(staffData));
           setCustomerOptions(normalizeCustomerOptions(customerData));
           setProductOptions(normalizeOrderProducts(productData));
+          setProductConversions(conversions);
         }
       } catch (error: any) {
         if (!cancelled) {
           setStaffOptions([]);
           setCustomerOptions([]);
           setProductOptions([]);
+          setProductConversions([]);
           setLookupError(error.message || 'Không thể tải dữ liệu tham chiếu.');
         }
       } finally {
@@ -459,12 +558,38 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }
     }
 
+    const productsWithConversion: Array<(typeof products)[number] & { kq_quy_doi?: { don_vi_nguon: string; so_luong_nguon: number; don_vi_dich: 'kg'; trong_luong_kg: number; chieu_dai_m: number } }> = [];
+    for (const product of products) {
+      const conversionOptions = productConversions.filter(item => {
+        const code = product.ma_sp.trim().toLocaleLowerCase('vi');
+        return item.maSp.trim().toLocaleLowerCase('vi') === code || item.maAmis.trim().toLocaleLowerCase('vi') === code;
+      });
+      const conversion = conversionOptions.find(item => conversionSupportsUnit(item, product.don_vi));
+      const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion) : [];
+      const kgResult = result.find(([, , unit]) => unit === 'kg');
+      const meterResult = result.find(([, , unit]) => unit === 'm dài');
+      if (!kgResult || !meterResult) {
+        productsWithConversion.push(product);
+        continue;
+      }
+      productsWithConversion.push({
+        ...product,
+        kq_quy_doi: {
+          don_vi_nguon: product.don_vi,
+          so_luong_nguon: product.so_luong as number,
+          don_vi_dich: 'kg',
+          trong_luong_kg: Math.round(kgResult[1] * 1_000_000) / 1_000_000,
+          chieu_dai_m: Math.round(meterResult[1] * 1_000_000) / 1_000_000
+        }
+      });
+    }
+
     const payload = {
       orderCode: orderForm.orderCode.trim(),
       orderType: orderForm.orderType,
       staffName: orderForm.staffName,
       customer: orderForm.customer,
-      products,
+      products: productsWithConversion,
       note: orderForm.note,
       status: orderForm.status,
       createdAt: orderForm.createdAt
@@ -704,6 +829,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               >
                 {orderForm.productLines.map(line => {
                   const matchedLineProduct = findOrderProductByCode(productOptions, line.productCode);
+                  const normalizedCode = line.productCode.trim().toLocaleLowerCase('vi');
+                  const productConversionOptions = productConversions.filter(item =>
+                    item.maSp.trim().toLocaleLowerCase('vi') === normalizedCode ||
+                    item.maAmis.trim().toLocaleLowerCase('vi') === normalizedCode
+                  );
+                  const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit));
+                  const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, line.unit, matchedConversion) : [];
                   return (
                     <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
                       <div className="col-span-2 min-w-0 md:col-span-1">
@@ -739,15 +871,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       </div>
                       <div className="col-span-1 min-w-0">
                         <input
-                          list="order-unit-suggestions"
                           value={line.unit}
+                          readOnly={Boolean(matchedLineProduct)}
                           onChange={e => updateProductLine(line.key, { unit: e.target.value })}
                           onBlur={e => {
                             const trimmed = e.target.value.trim();
                             if (trimmed) saveUnitSuggestion(trimmed);
                           }}
-                          className={`${orderFieldClass} bg-white`}
-                          placeholder="ĐVT"
+                          className={`${orderFieldClass} ${matchedLineProduct ? 'cursor-not-allowed bg-zinc-100 text-zinc-600' : 'bg-white'}`}
+                          placeholder={matchedLineProduct ? 'Theo danh mục sản phẩm' : 'ĐVT'}
                         />
                       </div>
                       <div className="col-span-1 min-w-0">
@@ -774,6 +906,24 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <Trash2 className="h-4 w-4" />
                           <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
                         </button>
+                      ) : null}
+                      {formMode && line.productCode.trim() && line.unit.trim() ? (
+                        <div className={`col-span-2 rounded-lg border px-3 py-2 md:col-span-5 ${matchedConversion ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                          {matchedConversion ? (
+                            calculatedConversion.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-semibold text-emerald-900">
+                                <span className="font-black">Kết quả quy đổi:</span>
+                                {calculatedConversion.map(([label, value, unit]) => (
+                                  <span key={label}>{label}: <strong>{formatNumber(value, 3)} {unit}</strong></span>
+                                ))}
+                              </div>
+                            ) : <p className="text-xs font-semibold text-emerald-800">Nhập số lượng lớn hơn 0 để xem kết quả quy đổi.</p>
+                          ) : productConversionOptions.length > 0 ? (
+                            <p className="text-xs font-bold text-amber-800">Không đủ hệ số để quy đổi từ đơn vị “{line.unit}”. Vui lòng kiểm tra chiều dài tấm và hệ số trọng lượng trong bảng quy đổi.</p>
+                          ) : (
+                            <p className="text-xs font-bold text-amber-800">Sản phẩm này chưa có dữ liệu trong bảng quy đổi.</p>
+                          )}
+                        </div>
                       ) : null}
                     </RepeatableLineRow>
                   );

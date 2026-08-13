@@ -6,6 +6,7 @@ export type ProductCatalogExcelRow = {
   amisCode: string;
   newCode: string;
   name: string;
+  productionName: string;
   nature: string;
   group: string;
   unit: string;
@@ -30,6 +31,7 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
   amisCode: ['ma amis', 'ma_amis', 'amis'],
   newCode: ['ma moi', 'ma_sp_moi', 'ma sp moi'],
   name: ['ten san pham', 'ten_sp', 'ten sp', 'name'],
+  productionName: ['ten san xuat', 'ten_san_xuat', 'production name'],
   nature: ['tinh chat', 'tinh_chat', 'nature'],
   group: ['nhom vthh', 'nhom_vthh', 'nhom', 'group'],
   unit: ['don vi tinh', 'don_vi', 'don vi', 'unit'],
@@ -61,6 +63,7 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
 export const PRODUCT_CATALOG_EXCEL_HEADERS = [
   'Mã SP',
   'Tên sản phẩm',
+  'Tên sản xuất',
   'Tính chất',
   'Nhóm',
   'Đơn vị',
@@ -146,6 +149,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
     amisCode: findColumn(headers, HEADER_ALIASES.amisCode),
     newCode: findColumn(headers, HEADER_ALIASES.newCode),
     name: nameIndex,
+    productionName: findColumn(headers, HEADER_ALIASES.productionName),
     nature: findColumn(headers, HEADER_ALIASES.nature),
     group: findColumn(headers, HEADER_ALIASES.group),
     unit: findColumn(headers, HEADER_ALIASES.unit),
@@ -188,6 +192,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
         amisCode: get('amisCode'),
         newCode: get('newCode'),
         name: get('name'),
+        productionName: get('productionName'),
         nature: get('nature'),
         group: get('group'),
         unit: get('unit'),
@@ -217,6 +222,7 @@ export function downloadProductCatalogExcelTemplate() {
     [
       'SP-001',
       'Tấm nhựa sóng mẫu',
+      'Tấm nhựa sóng dùng sản xuất',
       'Thành phẩm',
       'Nhựa',
       'tấm',
@@ -237,7 +243,7 @@ export function downloadProductCatalogExcelTemplate() {
       ''
     ],
     // 1 dòng gần như trống — vẫn hợp lệ khi tải lên (chỉ cần Mã SP hoặc Tên)
-    ['SP-002', 'Sản phẩm để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    ['SP-002', 'Sản phẩm để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
   ]);
   worksheet['!cols'] = PRODUCT_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(34, Math.max(12, header.length + 2))
@@ -255,6 +261,7 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     newCode: row.newCode.trim(),
     amisCode: row.amisCode.trim(),
     name: row.name.trim(),
+    productionName: row.productionName.trim(),
     nature: row.nature.trim(),
     group: row.group.trim(),
     unit: row.unit.trim(),
