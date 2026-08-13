@@ -33,6 +33,8 @@
 
 Đồng bộ kiểm kho dùng `supabase-san-pham-kiem-kho-dong-bo.sql` trên DB chính để bảo đảm mỗi `kiem_kho.id` chỉ cộng một lần.
 
+Danh sách chỉ hiển thị `Thành phẩm`; mỗi sản phẩm là nhóm dòng, các đơn vị quy đổi hợp lệ (`m`, `m2`, `Tấm`, `kg`) nằm ở dòng con. Plan/mockup: `plan_danh_sach_san_pham.md`.
+
 ### Excel danh mục SP
 
 - Nút **Tải mẫu Excel** / **Tải Excel lên** (và **Tải mẫu Excel SP**) — `src/utils/productCatalogExcel.ts`

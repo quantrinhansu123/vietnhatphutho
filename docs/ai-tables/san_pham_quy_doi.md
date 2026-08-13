@@ -12,3 +12,4 @@
 **Menu:** Nhà máy → QC (`factory-qc`)
 
 Danh sách join `san_pham`; bảng quy đổi chỉ lưu `san_pham_id`, đơn vị và thông số.
+ĐVT tạo mới tự lấy từ `san_pham.don_vi`; khi cập nhật chỉ hiển thị và không được thay đổi.

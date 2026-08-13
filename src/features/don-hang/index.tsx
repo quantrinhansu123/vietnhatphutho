@@ -173,24 +173,38 @@ function calculateOrderConversion(quantityText: string, inputUnitText: string, c
   const kgPerM2 = conversion.trongLuongKgM2;
   const areaPerRoll = conversion.dienTichM2 || (rollWidth && rollLength ? rollWidth * rollLength : null);
   let weight: number | null = null;
+  let linearLength: number | null = null;
 
   // ĐVT nguồn lấy từ san_pham; đầu ra chuẩn hóa duy nhất là kg.
   if (inputUnit === 'sheet') {
+    if (sheetLength) linearLength = quantity * sheetLength;
     if (kgPerSheet) weight = quantity * kgPerSheet;
     else if (sheetLength && kgPerMeter) weight = quantity * sheetLength * kgPerMeter;
   } else if (inputUnit === 'roll') {
+    if (rollLength) linearLength = quantity * rollLength;
     if (areaPerRoll && kgPerM2) weight = quantity * areaPerRoll * kgPerM2;
     else if (rollLength && kgPerMeter) weight = quantity * rollLength * kgPerMeter;
   } else if (inputUnit === 'meter') {
+    linearLength = quantity;
     if (kgPerMeter) weight = quantity * kgPerMeter;
     else if (rollWidth && kgPerM2) weight = quantity * rollWidth * kgPerM2;
     else if (conversion.khoTamRongM && kgPerM2) weight = quantity * conversion.khoTamRongM * kgPerM2;
   } else if (inputUnit === 'squareMeter' && kgPerM2) {
+    const width = conversion.khoTamRongM || rollWidth;
+    if (width) linearLength = quantity / width;
     weight = quantity * kgPerM2;
   } else if (inputUnit === 'kg') {
     weight = quantity;
+    if (kgPerMeter) linearLength = quantity / kgPerMeter;
+    else if (kgPerM2) {
+      const width = conversion.khoTamRongM || rollWidth;
+      if (width) linearLength = quantity / kgPerM2 / width;
+    }
   }
-  return weight === null ? [] : [['Trọng lượng quy đổi', weight, 'kg']];
+  const results: Array<[string, number, string]> = [];
+  if (weight !== null) results.push(['Trọng lượng quy đổi', weight, 'kg']);
+  if (linearLength !== null) results.push(['Chiều dài quy đổi', linearLength, 'm dài']);
+  return results;
 }
 
 function conversionSupportsUnit(conversion: OrderProductConversion, unitText: string) {
@@ -544,7 +558,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }
     }
 
-    const productsWithConversion: Array<(typeof products)[number] & { kq_quy_doi: { don_vi_nguon: string; so_luong_nguon: number; don_vi_dich: 'kg'; trong_luong_kg: number } }> = [];
+    const productsWithConversion: Array<(typeof products)[number] & { kq_quy_doi?: { don_vi_nguon: string; so_luong_nguon: number; don_vi_dich: 'kg'; trong_luong_kg: number; chieu_dai_m: number } }> = [];
     for (const product of products) {
       const conversionOptions = productConversions.filter(item => {
         const code = product.ma_sp.trim().toLocaleLowerCase('vi');
@@ -553,9 +567,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       const conversion = conversionOptions.find(item => conversionSupportsUnit(item, product.don_vi));
       const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion) : [];
       const kgResult = result.find(([, , unit]) => unit === 'kg');
-      if (!kgResult) {
-        setFormError(`Không thể tính kết quả quy đổi sang kg cho sản phẩm ${product.ma_sp || product.ten_sp}. Vui lòng kiểm tra bảng quy đổi.`);
-        return;
+      const meterResult = result.find(([, , unit]) => unit === 'm dài');
+      if (!kgResult || !meterResult) {
+        productsWithConversion.push(product);
+        continue;
       }
       productsWithConversion.push({
         ...product,
@@ -563,7 +578,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           don_vi_nguon: product.don_vi,
           so_luong_nguon: product.so_luong as number,
           don_vi_dich: 'kg',
-          trong_luong_kg: Math.round(kgResult[1] * 1_000_000) / 1_000_000
+          trong_luong_kg: Math.round(kgResult[1] * 1_000_000) / 1_000_000,
+          chieu_dai_m: Math.round(meterResult[1] * 1_000_000) / 1_000_000
         }
       });
     }

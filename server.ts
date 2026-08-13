@@ -4438,6 +4438,7 @@ type OrderProductRecord = {
     so_luong_nguon: number;
     don_vi_dich: 'kg';
     trong_luong_kg: number;
+    chieu_dai_m: number;
   };
 };
 
@@ -4473,24 +4474,24 @@ function parseOrderProductsInput(
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
     if (!rawConversion || typeof rawConversion !== 'object') {
-      return { error: `Sản phẩm ${ma_sp || ten_sp} chưa có kết quả quy đổi bắt buộc.` };
+      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      continue;
     }
     const conversion = rawConversion as Record<string, unknown>;
     const convertedWeight = parseOrderQuantity(conversion.trong_luong_kg ?? conversion.value);
-    if (convertedWeight === null || convertedWeight <= 0) {
-      return { error: `Kết quả quy đổi kg của sản phẩm ${ma_sp || ten_sp} không hợp lệ.` };
-    }
+    const convertedLength = parseOrderQuantity(conversion.chieu_dai_m ?? conversion.met_dai);
     const sourceQuantity = parseOrderQuantity(conversion.so_luong_nguon) ?? so_luong;
     const sourceUnit = pickRowField(conversion, ['don_vi_nguon']) || don_vi;
-    if (Math.abs(sourceQuantity - so_luong) > 0.000001 || sourceUnit.trim().toLocaleLowerCase('vi') !== don_vi.trim().toLocaleLowerCase('vi')) {
-      return { error: `Kết quả quy đổi của sản phẩm ${ma_sp || ten_sp} không khớp ĐVT và số lượng.` };
+    const conversionIsValid = convertedWeight !== null && convertedWeight > 0 && convertedLength !== null && convertedLength > 0
+      && Math.abs(sourceQuantity - so_luong) <= 0.000001
+      && sourceUnit.trim().toLocaleLowerCase('vi') === don_vi.trim().toLocaleLowerCase('vi');
+    if (!conversionIsValid) {
+      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      continue;
     }
-
     products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong, kq_quy_doi: {
-      don_vi_nguon: sourceUnit,
-      so_luong_nguon: sourceQuantity,
-      don_vi_dich: 'kg',
-      trong_luong_kg: convertedWeight
+      don_vi_nguon: sourceUnit, so_luong_nguon: sourceQuantity, don_vi_dich: 'kg',
+      trong_luong_kg: convertedWeight, chieu_dai_m: convertedLength
     } });
   }
 
@@ -5809,9 +5810,12 @@ export function createApp() {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     const parsed = parseProductConversionBody(req.body);
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
-    const product = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id').eq('id', parsed.record.san_pham_id).maybeSingle();
+    const product = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id,don_vi').eq('id', parsed.record.san_pham_id).maybeSingle();
     if (product.error) return res.status(500).json({ error: product.error.message });
     if (!product.data) return res.status(400).json({ error: 'Sản phẩm không tồn tại.' });
+    if (String(product.data.don_vi ?? '').trim().toLocaleLowerCase('vi') !== String(parsed.record.don_vi_tinh).trim().toLocaleLowerCase('vi')) {
+      return res.status(400).json({ error: 'Đơn vị tính phải lấy theo danh mục sản phẩm.' });
+    }
     const { data, error } = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE)
       .insert(parsed.record).select(PRODUCT_CONVERSION_SELECT).single();
     if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'Sản phẩm đã có quy đổi cho đơn vị này.' : error.message });
@@ -5824,11 +5828,14 @@ export function createApp() {
     if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ID quy đổi không hợp lệ.' });
     const parsed = parseProductConversionBody(req.body);
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
-    const current = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('san_pham_id').eq('id', id).maybeSingle();
+    const current = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('san_pham_id,don_vi_tinh').eq('id', id).maybeSingle();
     if (current.error) return res.status(500).json({ error: current.error.message });
     if (!current.data) return res.status(404).json({ error: 'Không tìm thấy dòng quy đổi.' });
     if (String(current.data.san_pham_id) !== String(parsed.record.san_pham_id)) {
       return res.status(400).json({ error: 'Không được phép thay đổi sản phẩm của dòng quy đổi.' });
+    }
+    if (String(current.data.don_vi_tinh).trim().toLocaleLowerCase('vi') !== String(parsed.record.don_vi_tinh).trim().toLocaleLowerCase('vi')) {
+      return res.status(400).json({ error: 'Không được phép thay đổi đơn vị tính của dòng quy đổi.' });
     }
     const product = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id').eq('id', parsed.record.san_pham_id).maybeSingle();
     if (!product.data) return res.status(400).json({ error: 'Sản phẩm không tồn tại.' });

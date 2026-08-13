@@ -32,4 +32,4 @@ Tạo lệnh SX: `POST /api/lenh-sx/from-don-hang/:id`
 
 - **Khách hàng**: sổ xuống (`<select>`) lấy từ `/api/khach-hang` (bảng danh mục Khách hàng), bắt buộc chọn.
 - **Quy đổi khi thêm mới**: tải `san_pham_quy_doi`, khớp mã SP + đơn vị và hiển thị mét dài, m², kg có thể tính. Kế hoạch/công thức: `tinh_toan_quy_doi.md`.
-- Mỗi dòng JSON `san_pham` bắt buộc có `kq_quy_doi` khi thêm/cập nhật; kết quả chuẩn hóa sang kg.
+- Dòng JSON `san_pham` có `kq_quy_doi` khi tính được; thiếu cấu hình quy đổi vẫn cho phép thêm/cập nhật đơn hàng.
