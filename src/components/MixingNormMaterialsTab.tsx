@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
+import { Copy, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../app/useTabAccess';
 import { RowActionsMenu } from './shared/table';
 import { SearchableSelect } from './shared/SearchableSelect';
@@ -510,6 +510,7 @@ export default function MixingNormMaterialsTab() {
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState('');
+  const [copySourceTitle, setCopySourceTitle] = useState('');
   const [form, setForm] = useState<NormForm>(emptyForm);
   const [printDocs, setPrintDocs] = useState<MixingNormRatioPrintDoc[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
@@ -669,6 +670,7 @@ export default function MixingNormMaterialsTab() {
   const openCreate = () => {
     if (!canCreate) return;
     setEditingId('');
+    setCopySourceTitle('');
     setForm(emptyForm());
     setShowForm(true);
     setError('');
@@ -679,6 +681,7 @@ export default function MixingNormMaterialsTab() {
   const openEdit = (row: MixingNormRow) => {
     if (!canEdit) return;
     setEditingId(row.id);
+    setCopySourceTitle('');
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
       ca: row.ca,
@@ -695,9 +698,31 @@ export default function MixingNormMaterialsTab() {
     setMessage('');
   };
 
+  const openCopy = (row: MixingNormRow) => {
+    if (!canCreate) return;
+    setEditingId('');
+    setCopySourceTitle(
+      `Copy phiếu trộn định mức · ${row.ngay || 'Chưa có ngày'} · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
+    );
+    setForm({
+      ngay: row.ngay || new Date().toISOString().slice(0, 10),
+      ca: row.ca,
+      maLenhSx: row.ma_lenh_sx,
+      ghiChu: row.ghi_chu,
+      products: row.products.length > 0
+        ? row.products.map(product => productToForm(product, `${row.id}-copy`))
+        : [emptyProduct()]
+    });
+    setShowForm(true);
+    setError('');
+    setErrorProductKey('');
+    setMessage('');
+  };
+
   const closeForm = () => {
     setShowForm(false);
     setEditingId('');
+    setCopySourceTitle('');
     setForm(emptyForm());
   };
 
@@ -1213,6 +1238,17 @@ export default function MixingNormMaterialsTab() {
                         <Printer className="h-3.5 w-3.5" />
                         In
                       </button>
+                      {canCreate ? (
+                        <button
+                          type="button"
+                          onClick={() => openCopy(row)}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700 hover:bg-sky-100"
+                          title="Sao chép thành phiếu định mức mới"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Sao chép
+                        </button>
+                      ) : null}
                       {canEdit ? (
                         <button
                           type="button"
@@ -1270,7 +1306,7 @@ export default function MixingNormMaterialsTab() {
           <div className="max-h-[94vh] w-full max-w-7xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
-                {editingId ? 'Sửa phiếu trộn định mức' : 'Thêm phiếu trộn định mức'}
+                {copySourceTitle || (editingId ? 'Sửa phiếu trộn định mức' : 'Thêm phiếu trộn định mức')}
               </h3>
               <button
                 type="button"
