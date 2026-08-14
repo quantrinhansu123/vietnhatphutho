@@ -4019,9 +4019,28 @@ input[type="number"] {
 .mixing-norm-ratio-round-table .col-code { width: 15%; }
 .mixing-norm-ratio-round-table .col-name { width: 20%; }
 .mixing-norm-ratio-round-table .col-round {
-  width: 10%;
+  width: 12%;
   text-align: center;
   font-weight: 700;
+}
+
+.mixing-norm-ratio-round-table.is-actual .col-stt { width: 4%; }
+.mixing-norm-ratio-round-table.is-actual .col-code { width: 12%; }
+.mixing-norm-ratio-round-table.is-actual .col-name { width: 20%; }
+.mixing-norm-ratio-round-table.is-actual .col-round { width: 6.4%; }
+.mixing-norm-ratio-round-table.is-actual th,
+.mixing-norm-ratio-round-table.is-actual td {
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 8.5pt;
+}
+.mixing-norm-ratio-round-table .col-round-actual {
+  background: #fff4f4;
+}
+
+.mixing-norm-ratio-print-legend {
+  margin: 4px 0 0;
+  font-size: 9.5pt;
 }
 
 .mixing-norm-ratio-print-table .col-pct,

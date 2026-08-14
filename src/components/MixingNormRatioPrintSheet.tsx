@@ -9,6 +9,7 @@ export type MixingNormRatioPrintDoc = {
   ca?: string;
   isActual?: boolean;
   actualValues?: Array<Array<{ percent: number | null; weight: number | null }>>;
+  actualRounds?: Array<Array<Array<{ percent: number | null; weight: number | null }>>>;
   intro?: string;
   products: MixingNormProduct[];
 };
@@ -72,9 +73,12 @@ function productTitle(product: MixingNormProduct) {
   return name.toUpperCase();
 }
 
-const MIXING_ROUNDS_PER_TABLE = 6;
+const MIXING_ROUNDS_PER_TABLE = 5;
 
 function buildMixingRoundWeights(product: MixingNormProduct) {
+  if (product.lan_tron?.length) {
+    return product.lan_tron.map(round => round.tong_trong_luong ?? 0);
+  }
   const total = product.tong_trong_luong ?? 0;
   const batch = product.dinh_luong_coi ?? 0;
   if (total <= 0 || batch <= 0) return [];
@@ -144,36 +148,55 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   </p>
                 ) : null}
 
-                {!doc.isActual && buildMixingRoundWeights(product).length > 0 ? (
+                {buildMixingRoundWeights(product).length > 0 ? (
                   chunks(buildMixingRoundWeights(product), MIXING_ROUNDS_PER_TABLE).map((rounds, tableIndex) => (
-                    <table key={tableIndex} className="mixing-norm-ratio-print-table mixing-norm-ratio-round-table">
+                    <table key={tableIndex} className={`mixing-norm-ratio-print-table mixing-norm-ratio-round-table ${doc.isActual ? 'is-actual' : ''}`}>
                       <colgroup>
                         <col className="col-stt" />
                         <col className="col-code" />
                         <col className="col-name" />
-                        {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => <col key={index} className="col-round" />)}
+                        {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, roundIndex) => (
+                          <React.Fragment key={roundIndex}>
+                            <col className="col-round" />
+                            {doc.isActual ? <col className="col-round col-round-actual" /> : null}
+                          </React.Fragment>
+                        ))}
                       </colgroup>
                       <thead><tr>
                         <th className="col-stt">STT</th><th className="col-code">Mã NVL</th><th className="col-name">Tên NVL</th>
                         {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => (
-                          <th key={index} className="col-round">
-                            {index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1}` : ''}
-                          </th>
+                          <React.Fragment key={index}>
+                            <th className="col-round">{index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1}` : ''}</th>
+                            {doc.isActual ? <th className="col-round col-round-actual">{index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1} TT` : ''}</th> : null}
+                          </React.Fragment>
                         ))}
                       </tr></thead>
-                      <tbody>{product.chi_tiet.map((line, lineIndex) => (
-                        <tr key={`${line.ma_nvl}-${lineIndex}`}>
-                          <td className="col-stt">{lineIndex + 1}</td><td className="col-code">{line.ma_nvl}</td><td className="col-name">{line.ten_nvl}</td>
-                          {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => {
-                            const roundWeight = rounds[index];
-                            if (roundWeight === undefined) return <td key={index} className="col-round" />;
-                            const kg = line.don_vi === '%' && line.gia_tri != null
-                              ? roundWeight * line.gia_tri / 100
-                              : line.gia_tri;
-                            return <td key={index} className="col-round">{formatNumberVi(kg)}</td>;
-                          })}
-                        </tr>
-                      ))}</tbody>
+                      <tbody>{(() => {
+                        const roundOffset = tableIndex * MIXING_ROUNDS_PER_TABLE;
+                        const normRounds = Array.from({ length: rounds.length }, (_, index) =>
+                          product.lan_tron?.[roundOffset + index]?.nvl ?? product.chi_tiet
+                        );
+                        const uniqueLines = new Map<string, MixingNormLine>();
+                        normRounds.flat().forEach(line => uniqueLines.set(`${line.ma_nvl}|${line.ten_nvl}`.toLowerCase(), line));
+                        return [...uniqueLines.values()].map((displayLine, lineIndex) => (
+                          <tr key={`${displayLine.ma_nvl}-${displayLine.ten_nvl}-${lineIndex}`}>
+                            <td className="col-stt">{lineIndex + 1}</td><td className="col-code">{displayLine.ma_nvl}</td><td className="col-name">{displayLine.ten_nvl}</td>
+                            {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, slotIndex) => {
+                              const roundWeight = rounds[slotIndex];
+                              if (roundWeight === undefined) return <React.Fragment key={slotIndex}><td className="col-round" />{doc.isActual ? <td className="col-round col-round-actual" /> : null}</React.Fragment>;
+                              const globalRoundIndex = roundOffset + slotIndex;
+                              const normLines = normRounds[slotIndex] ?? [];
+                              const normLineIndex = normLines.findIndex(line => `${line.ma_nvl}|${line.ten_nvl}`.toLowerCase() === `${displayLine.ma_nvl}|${displayLine.ten_nvl}`.toLowerCase());
+                              const normLine = normLines[normLineIndex];
+                              const kg = normLine
+                                ? normLine.khoi_luong ?? (normLine.don_vi === '%' && normLine.gia_tri != null ? roundWeight * normLine.gia_tri / 100 : normLine.gia_tri)
+                                : null;
+                              const actualWeight = normLineIndex >= 0 ? doc.actualRounds?.[index]?.[globalRoundIndex]?.[normLineIndex]?.weight : null;
+                              return <React.Fragment key={slotIndex}><td className="col-round">{formatNumberVi(kg)}</td>{doc.isActual ? <td className="col-round col-round-actual">{formatNumberVi(actualWeight)}</td> : null}</React.Fragment>;
+                            })}
+                          </tr>
+                        ));
+                      })()}</tbody>
                     </table>
                   ))
                 ) : (
@@ -229,6 +252,8 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
             );
           })
         )}
+
+        {doc.isActual ? <p className="mixing-norm-ratio-print-legend"><strong>Ghi chú:</strong> TT là Thực tế.</p> : null}
 
         <div className="mixing-norm-ratio-print-footer">
           <div className="mixing-norm-ratio-print-place">

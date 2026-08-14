@@ -432,12 +432,23 @@ export default function ActualMixingSheetTab() {
         ten_sp: product.ten_sp,
         tong_trong_luong: product.tong_trong_luong,
         ghi_chu: '',
-        chi_tiet: product.rounds.flatMap(round => round.nvl).map(line => ({
+        chi_tiet: (product.rounds[0]?.nvl ?? []).map(line => ({
           ma_nvl: line.ma_nvl,
           ten_nvl: line.ten_nvl,
           gia_tri: line.gia_tri,
           don_vi: '%',
           khoi_luong: line.khoi_luong
+        })),
+        lan_tron: product.rounds.map(round => ({
+          lan: round.lan,
+          tong_trong_luong: round.tong_trong_luong,
+          nvl: round.nvl.map(line => ({
+            ma_nvl: line.ma_nvl,
+            ten_nvl: line.ten_nvl,
+            gia_tri: line.gia_tri,
+            don_vi: 'kg',
+            khoi_luong: line.khoi_luong
+          }))
         }))
       })),
       actualValues: products.map(product =>
@@ -445,6 +456,12 @@ export default function ActualMixingSheetTab() {
           percent: line.phan_tram_thuc_te,
           weight: line.trong_luong_thuc_te
         }))
+      ),
+      actualRounds: products.map(product =>
+        product.rounds.map(round => round.nvl.map(line => ({
+          percent: line.phan_tram_thuc_te,
+          weight: line.trong_luong_thuc_te
+        })))
       )
     });
   };
@@ -552,7 +569,7 @@ export default function ActualMixingSheetTab() {
                 {product.rounds.map((round, ri) => (
                   <div key={`${product.ma_sp}-round-${round.lan}-${ri}`} className="w-[620px] shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
                     <div className="bg-red-50 px-2 py-1.5 text-[11px] font-black uppercase text-[#ef1b2d]">
-                      Cối {round.lan} · {formatNumber(round.tong_trong_luong)} kg
+                      Lần trộn thứ {round.lan} · {formatNumber(round.tong_trong_luong)} kg
                     </div>
                     <table className="w-full table-fixed text-left text-[10px]">
                       <colgroup>
@@ -563,13 +580,15 @@ export default function ActualMixingSheetTab() {
                       <thead className="bg-zinc-950 text-white">
                         <tr>
                           <th className="px-2 py-1.5">Mã NVL</th><th className="px-2 py-1.5">Tên NVL</th>
-                          <th className="px-1 py-1.5 text-center">% ĐM</th><th className="px-1 py-1.5 text-center">TL ĐM</th>
-                          <th className="px-1 py-1.5 text-center">% TT</th><th className="px-1 py-1.5 text-center">TL TT</th>
+                          <th className="px-1 py-1.5 text-center" title="Phần trăm định mức">% ĐM</th>
+                          <th className="px-1 py-1.5 text-center" title="Trọng lượng định mức">TL ĐM</th>
+                          <th className="px-1 py-1.5 text-center" title="Phần trăm thực tế">% TT</th>
+                          <th className="px-1 py-1.5 text-center" title="Trọng lượng thực tế">TL TT</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
                         {round.nvl.length === 0 ? (
-                          <tr><td colSpan={6} className="px-2 py-3 text-center font-semibold text-zinc-400">Cối chưa có NVL.</td></tr>
+                          <tr><td colSpan={6} className="px-2 py-3 text-center font-semibold text-zinc-400">Lần trộn này chưa có NVL.</td></tr>
                         ) : round.nvl.map((line, li) => (
                           <tr key={`${line.ma_nvl}-${li}`}>
                             <td className="px-2 py-1.5 font-mono font-bold">{line.ma_nvl}</td>
@@ -586,7 +605,7 @@ export default function ActualMixingSheetTab() {
                                 onFocus={e => e.currentTarget.select()}
                                 className={`${fieldClass} h-8 w-full px-1 text-center text-[10px]`}
                                 placeholder="0.00"
-                                aria-label={`Trọng lượng thực tế cối ${round.lan} ${line.ma_nvl || line.ten_nvl}`}
+                                aria-label={`Trọng lượng thực tế lần trộn thứ ${round.lan} ${line.ma_nvl || line.ten_nvl}`}
                               />
                             </td>
                           </tr>
