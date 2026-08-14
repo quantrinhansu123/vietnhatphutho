@@ -4044,6 +4044,11 @@ input[type="number"] {
   font-size: 10.5pt;
 }
 
+.mixing-norm-ratio-print-footer {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
 .mixing-norm-ratio-print-signatures {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

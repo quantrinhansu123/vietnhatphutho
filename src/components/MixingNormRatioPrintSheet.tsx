@@ -230,22 +230,24 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
           })
         )}
 
-        <div className="mixing-norm-ratio-print-place">
-          Việt Trì, ngày {dateParts.day} tháng {dateParts.month} năm {dateParts.year}
-        </div>
+        <div className="mixing-norm-ratio-print-footer">
+          <div className="mixing-norm-ratio-print-place">
+            Việt Trì, ngày {dateParts.day} tháng {dateParts.month} năm {dateParts.year}
+          </div>
 
-        <div className="mixing-norm-ratio-print-signatures">
-          <div>
-            <p className="role">Người lập</p>
-            <span>(Ký, ghi rõ họ tên)</span>
-          </div>
-          <div>
-            <p className="role">Người kiểm tra</p>
-            <span>(Ký, ghi rõ họ tên)</span>
-          </div>
-          <div>
-            <p className="role">Duyệt</p>
-            <span>(Ký, ghi rõ họ tên)</span>
+          <div className="mixing-norm-ratio-print-signatures">
+            <div>
+              <p className="role">Người lập</p>
+              <span>(Ký, ghi rõ họ tên)</span>
+            </div>
+            <div>
+              <p className="role">Người kiểm tra</p>
+              <span>(Ký, ghi rõ họ tên)</span>
+            </div>
+            <div>
+              <p className="role">Duyệt</p>
+              <span>(Ký, ghi rõ họ tên)</span>
+            </div>
           </div>
         </div>
       </div>
