@@ -9868,12 +9868,7 @@ export function createApp() {
           if (!item || typeof item !== 'object') return null;
           const product = item as Record<string, unknown>;
           const totalWeight = parseActualMixingNumber(product.tong_trong_luong);
-          const nvlRaw = Array.isArray(product.nvl)
-            ? product.nvl
-            : Array.isArray(product.chi_tiet)
-              ? product.chi_tiet
-              : [];
-          const nvl = nvlRaw
+          const parseActualLines = (raw: unknown) => (Array.isArray(raw) ? raw : [])
             .map(line => {
               if (!line || typeof line !== 'object') return null;
               const row = line as Record<string, unknown>;
@@ -9901,11 +9896,24 @@ export function createApp() {
               };
             })
             .filter(Boolean);
+          const nvl = parseActualLines(
+            Array.isArray(product.nvl) ? product.nvl : product.chi_tiet
+          );
+          const roundsRaw = Array.isArray(product.lan_tron) ? product.lan_tron : [];
+          const lan_tron = roundsRaw.map((entry, index) => {
+            const round = entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
+            return {
+              lan: Math.max(1, Math.trunc(parseActualMixingNumber(round.lan) ?? index + 1)),
+              tong_trong_luong: parseActualMixingNumber(round.tong_trong_luong),
+              nvl: parseActualLines(round.nvl)
+            };
+          });
           return {
             ma_sp: String(product.ma_sp ?? '').trim(),
             ten_sp: String(product.ten_sp ?? '').trim(),
             tong_trong_luong: totalWeight,
-            nvl
+            nvl: lan_tron[0]?.nvl ?? nvl,
+            lan_tron
           };
         })
         .filter(Boolean);
