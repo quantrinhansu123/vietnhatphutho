@@ -2043,7 +2043,19 @@ function parseProductNplPhanTramInput(raw: unknown): { error: string } | { items
   return { items };
 }
 
-function parseProductPatchBody(body: unknown): { error: string } | { record: Record<string, string | number | null> } {
+function parseProductWastePercent(value: unknown): { error: string } | { value: number | null } {
+  const raw = String(value ?? '').trim();
+  if (!raw) return { value: null };
+  if (!/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(raw)) {
+    return { error: '% tỷ lệ hao hụt phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.' };
+  }
+  return { value: Number(raw.replace(',', '.')) };
+}
+
+function parseProductPatchBody(
+  body: unknown,
+  options: { requireIdentity?: boolean } = {}
+): { error: string } | { record: Record<string, string | number | null> } {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const code = parseMaterialText(source.code ?? source.ma_sp);
   const name = parseMaterialText(source.name ?? source.ten_sp);
@@ -2054,14 +2066,15 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
     'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
     'origin', 'nguon_goc', 'description', 'mo_ta',
     'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
-    'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua'
+    'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua',
+    'wastePercent', 'ty_le_hao_hut'
   ].some(key => Object.prototype.hasOwnProperty.call(source, key));
 
   if (!hasProductField) {
     return { error: 'Không có dữ liệu sản phẩm để cập nhật.' };
   }
 
-  if (!code && !name) {
+  if (options.requireIdentity !== false && !code && !name) {
     return { error: 'Vui lòng nhập mã SP hoặc tên sản phẩm.' };
   }
 
@@ -2114,6 +2127,11 @@ function parseProductPatchBody(body: unknown): { error: string } | { record: Rec
   if (Object.prototype.hasOwnProperty.call(source, 'totalWeight') || Object.prototype.hasOwnProperty.call(source, 'tong_trong_luong')) {
     record.tong_trong_luong = parseOptionalMaterialDecimalText(source.totalWeight ?? source.tong_trong_luong);
   }
+  if (Object.prototype.hasOwnProperty.call(source, 'wastePercent') || Object.prototype.hasOwnProperty.call(source, 'ty_le_hao_hut')) {
+    const parsedWastePercent = parseProductWastePercent(source.ty_le_hao_hut ?? source.wastePercent);
+    if ('error' in parsedWastePercent) return parsedWastePercent;
+    record.ty_le_hao_hut = parsedWastePercent.value;
+  }
   if (Object.prototype.hasOwnProperty.call(source, 'rollWidth') || Object.prototype.hasOwnProperty.call(source, 'kho_cuon')) {
     record.kho_cuon = parseOptionalMaterialDecimalText(source.rollWidth ?? source.kho_cuon);
   }
@@ -2138,7 +2156,7 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} chưa tồn tại trên Supabase.`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-san-pham-dinh-muc.sql.`;
+    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy các migration san_pham liên quan, gồm supabase-san-pham-ty-le-hao-hut.sql.`;
   }
   return `Không thể lưu sản phẩm vào ${SUPABASE_PRODUCTS_TABLE}. ${error.message}${error.details ? ` (${error.details})` : ''}`;
 }
@@ -2949,12 +2967,16 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
   if (productsRaw) {
     const products: Array<Record<string, unknown>> = [];
+    const seenProductCodes = new Set<string>();
     for (const [index, item] of productsRaw.entries()) {
       if (!item || typeof item !== 'object') continue;
       const product = item as Record<string, unknown>;
       const ma_sp = String(product.ma_sp ?? product.maSp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? product.tenSp ?? '').trim();
       if (!ma_sp) return { error: `Sản phẩm #${index + 1} thiếu mã SP.` };
+      const productKey = ma_sp.toLocaleLowerCase('vi');
+      if (seenProductCodes.has(productKey)) return { error: `Sản phẩm ${ma_sp} bị trùng trong cùng phiếu.` };
+      seenProductCodes.add(productKey);
 
       const tongRaw = product.tong_trong_luong ?? product.tongTrongLuong;
       let tong_trong_luong: number | null = null;
@@ -2965,17 +2987,60 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         }
         tong_trong_luong = n;
       }
+      const parseOptionalNormNumber = (value: unknown) => {
+        if (value === null || value === undefined || String(value).trim() === '') return null;
+        const parsed = Number(String(value).replace(',', '.'));
+        return Number.isFinite(parsed) ? parsed : Number.NaN;
+      };
+      const so_luong_goc = parseOptionalNormNumber(product.so_luong_goc ?? product.soLuongGoc);
+      const ty_le_hao_hut = parseOptionalNormNumber(product.ty_le_hao_hut ?? product.haoHut) ?? 0;
+      const dinh_luong_coi = parseOptionalNormNumber(product.dinh_luong_coi ?? product.dinhLuongCoi);
+      if (Number.isNaN(so_luong_goc) || so_luong_goc !== null && so_luong_goc < 0) {
+        return { error: `SL quy đổi của SP ${ma_sp} không hợp lệ.` };
+      }
+      if (!Number.isFinite(ty_le_hao_hut) || ty_le_hao_hut < 0 || ty_le_hao_hut > 100) {
+        return { error: `% tỷ lệ hao hụt của SP ${ma_sp} phải từ 0 đến 100.` };
+      }
+      if (Number.isNaN(dinh_luong_coi) || dinh_luong_coi !== null && dinh_luong_coi <= 0) {
+        return { error: `Định lượng 1 cối của SP ${ma_sp} phải lớn hơn 0.` };
+      }
+      if (so_luong_goc !== null) {
+        tong_trong_luong = Math.round(so_luong_goc * (1 - ty_le_hao_hut / 100) * 1000) / 1000;
+      }
+      const so_lan_tron = tong_trong_luong && dinh_luong_coi
+        ? Math.ceil(tong_trong_luong / dinh_luong_coi)
+        : 0;
 
       const nvlParsed = parseNvlLines(
         product.nvl ?? product.lines ?? product.chi_tiet,
         `SP ${ma_sp}`
       );
       if ('error' in nvlParsed) return { error: nvlParsed.error };
+      const roundsRaw = Array.isArray(product.lan_tron) ? product.lan_tron : [];
+      const lan_tron: Array<Record<string, unknown>> = [];
+      for (const [roundIndex, roundItem] of roundsRaw.entries()) {
+        if (!roundItem || typeof roundItem !== 'object') continue;
+        const round = roundItem as Record<string, unknown>;
+        const roundNvl = parseNvlLines(round.nvl, `SP ${ma_sp}, lần trộn ${roundIndex + 1}`);
+        if ('error' in roundNvl) return { error: roundNvl.error };
+        const expectedWeight = tong_trong_luong && dinh_luong_coi
+          ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
+          : tong_trong_luong;
+        lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: roundNvl.lines });
+      }
+      if (so_lan_tron > 0 && lan_tron.length !== so_lan_tron) {
+        return { error: `SP ${ma_sp} phải có đúng ${so_lan_tron} danh sách lần trộn.` };
+      }
 
       products.push({
         ma_sp,
         ten_sp: ten_sp || null,
         tong_trong_luong,
+        ty_le_hao_hut,
+        so_luong_goc,
+        dinh_luong_coi,
+        so_lan_tron,
+        lan_tron,
         ghi_chu: String(product.ghi_chu ?? product.ghiChu ?? '').trim() || null,
         nvl: nvlParsed.lines
       });
@@ -5643,6 +5708,17 @@ export function createApp() {
       const hasNplInput = nplInput !== undefined && nplInput !== null;
       const updateRecord: Record<string, unknown> = {};
 
+      const hasWastePercentInput =
+        Object.prototype.hasOwnProperty.call(body, 'ty_le_hao_hut') ||
+        Object.prototype.hasOwnProperty.call(body, 'wastePercent');
+      if (hasWastePercentInput) {
+        const parsedWastePercent = parseProductWastePercent(body.ty_le_hao_hut ?? body.wastePercent);
+        if ('error' in parsedWastePercent) {
+          return res.status(400).json({ error: parsedWastePercent.error });
+        }
+        updateRecord.ty_le_hao_hut = parsedWastePercent.value;
+      }
+
       if (hasNplInput) {
         const parsedNpl = parseProductNplPhanTramInput(nplInput);
         if ('error' in parsedNpl) {
@@ -5662,7 +5738,7 @@ export function createApp() {
       const hasProductFields = productFieldKeys.some(key => Object.prototype.hasOwnProperty.call(body, key));
 
       if (hasProductFields) {
-        const parsedProduct = parseProductPatchBody(body);
+        const parsedProduct = parseProductPatchBody(body, { requireIdentity: false });
         if ('error' in parsedProduct) {
           return res.status(400).json({ error: parsedProduct.error });
         }
@@ -5672,7 +5748,6 @@ export function createApp() {
       if (Object.keys(updateRecord).length === 0) {
         return res.status(400).json({ error: 'Không có dữ liệu để cập nhật.' });
       }
-
       const { data, error } = await supabase
         .from(SUPABASE_PRODUCTS_TABLE)
         .update(updateRecord)

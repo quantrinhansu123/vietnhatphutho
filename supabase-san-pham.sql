@@ -93,8 +93,6 @@ comment on column public.san_pham.ma_sp is 'Ma san pham.';
 comment on column public.san_pham.ma_sp_moi is 'Ma san pham moi.';
 comment on column public.san_pham.ten_sp is 'Ten san pham.';
 comment on column public.san_pham.ten_may_san_xuat is 'Ten may san xuat tuong ung voi ma_sp.';
-comment on column public.san_pham.npl_phan_tram is
-  'Danh sach NPL can thiet va ty le phan tram. VD: [{"ma_npl":"NPL-001","ten_npl":"Mang PE","phan_tram":40}]';
 
 -- ============================================================================
 -- SQL CHẠY RIÊNG: thêm Tên sản xuất và giới hạn ĐVT = m, m2, Tấm
@@ -123,3 +121,25 @@ alter table public.san_pham
 alter table public.san_pham
   add constraint san_pham_don_vi_hop_le
   check (don_vi is null or don_vi in ('m', 'm2', 'Tấm'));
+
+ALTER TABLE public.san_pham
+ADD COLUMN IF NOT EXISTS ty_le_hao_hut NUMERIC(5,2);
+
+COMMENT ON COLUMN public.san_pham.ty_le_hao_hut IS
+'Tỷ lệ hao hụt của sản phẩm, giá trị từ 0 đến 100, tối đa 2 chữ số thập phân.';
+
+COMMENT ON COLUMN public.san_pham.npl_phan_tram IS
+'Danh sách NPL cần thiết và tỷ lệ phần trăm. VD: [{"ma_npl":"NPL-001","ten_npl":"Màng PE","phan_tram":40}]';
+
+ALTER TABLE public.san_pham
+DROP CONSTRAINT IF EXISTS san_pham_ty_le_hao_hut_check;
+
+ALTER TABLE public.san_pham
+ADD CONSTRAINT san_pham_ty_le_hao_hut_check
+CHECK (
+    ty_le_hao_hut IS NULL
+    OR (
+        ty_le_hao_hut >= 0
+        AND ty_le_hao_hut <= 100
+    )
+);

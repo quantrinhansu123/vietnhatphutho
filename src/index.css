@@ -3897,7 +3897,7 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-doc {
-  width: 190mm;
+  width: 277mm;
   margin: 0 auto;
   padding: 8mm 6mm;
   font-family: "Times New Roman", Times, serif;
@@ -3980,6 +3980,7 @@ input[type="number"] {
 .mixing-norm-ratio-print-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
   margin-bottom: 4px;
 }
 
@@ -4005,6 +4006,22 @@ input[type="number"] {
 .mixing-norm-ratio-print-table .col-code {
   width: 18%;
   font-family: Consolas, "Courier New", monospace;
+}
+
+.mixing-norm-ratio-print-table .col-name {
+  width: 20%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mixing-norm-ratio-round-table .col-stt { width: 5%; }
+.mixing-norm-ratio-round-table .col-code { width: 15%; }
+.mixing-norm-ratio-round-table .col-name { width: 20%; }
+.mixing-norm-ratio-round-table .col-round {
+  width: 10%;
+  text-align: center;
+  font-weight: 700;
 }
 
 .mixing-norm-ratio-print-table .col-pct,
@@ -4058,6 +4075,10 @@ input[type="number"] {
 }
 
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
   .mixing-norm-ratio-print-batch,
   .mixing-norm-ratio-print-batch * {
     visibility: visible !important;
@@ -4089,8 +4110,12 @@ input[type="number"] {
   }
 
   .mixing-norm-ratio-print-doc {
-    width: 190mm;
+    width: 277mm;
     margin: 0;
     padding: 0;
+  }
+
+  .mixing-norm-ratio-round-table {
+    page-break-inside: avoid;
   }
 }

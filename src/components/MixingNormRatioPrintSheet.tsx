@@ -72,6 +72,23 @@ function productTitle(product: MixingNormProduct) {
   return name.toUpperCase();
 }
 
+const MIXING_ROUNDS_PER_TABLE = 6;
+
+function buildMixingRoundWeights(product: MixingNormProduct) {
+  const total = product.tong_trong_luong ?? 0;
+  const batch = product.dinh_luong_coi ?? 0;
+  if (total <= 0 || batch <= 0) return [];
+  return Array.from({ length: Math.ceil(total / batch) }, (_, index) =>
+    Math.min(batch, Math.max(0, total - batch * index))
+  );
+}
+
+function chunks<T>(items: T[], size: number) {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) =>
+    items.slice(index * size, index * size + size)
+  );
+}
+
 /** Một phiếu DB → một tờ in (nhiều khối SP). */
 export function toPrintDoc(row: MixingNormRow): MixingNormRatioPrintDoc {
   return {
@@ -127,6 +144,39 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   </p>
                 ) : null}
 
+                {!doc.isActual && buildMixingRoundWeights(product).length > 0 ? (
+                  chunks(buildMixingRoundWeights(product), MIXING_ROUNDS_PER_TABLE).map((rounds, tableIndex) => (
+                    <table key={tableIndex} className="mixing-norm-ratio-print-table mixing-norm-ratio-round-table">
+                      <colgroup>
+                        <col className="col-stt" />
+                        <col className="col-code" />
+                        <col className="col-name" />
+                        {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => <col key={index} className="col-round" />)}
+                      </colgroup>
+                      <thead><tr>
+                        <th className="col-stt">STT</th><th className="col-code">Mã NVL</th><th className="col-name">Tên NVL</th>
+                        {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => (
+                          <th key={index} className="col-round">
+                            {index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1}` : ''}
+                          </th>
+                        ))}
+                      </tr></thead>
+                      <tbody>{product.chi_tiet.map((line, lineIndex) => (
+                        <tr key={`${line.ma_nvl}-${lineIndex}`}>
+                          <td className="col-stt">{lineIndex + 1}</td><td className="col-code">{line.ma_nvl}</td><td className="col-name">{line.ten_nvl}</td>
+                          {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => {
+                            const roundWeight = rounds[index];
+                            if (roundWeight === undefined) return <td key={index} className="col-round" />;
+                            const kg = line.don_vi === '%' && line.gia_tri != null
+                              ? roundWeight * line.gia_tri / 100
+                              : line.gia_tri;
+                            return <td key={index} className="col-round">{formatNumberVi(kg)}</td>;
+                          })}
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  ))
+                ) : (
                 <table className="mixing-norm-ratio-print-table">
                   <thead>
                     <tr>
@@ -168,6 +218,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                     )}
                   </tbody>
                 </table>
+                )}
 
                 {product.ghi_chu ? (
                   <p className="mixing-norm-ratio-print-note">

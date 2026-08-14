@@ -982,6 +982,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
         totalWeight: formatCell(record.tong_trong_luong),
+        wastePercent: formatCell(record.ty_le_hao_hut),
         rollWidth: formatCell(record.kho_cuon),
         rollLength: formatCell(record.chieu_dai_cuon),
         coreWeight: formatCell(record.trong_luong_loi),
@@ -1020,6 +1021,7 @@ export type ProductFormState = {
   group: string;
   unit: string;
   totalWeight: string;
+  wastePercent: string;
   rollWidth: string;
   rollLength: string;
   coreWeight: string;
@@ -1049,6 +1051,7 @@ export function productToForm(product: ProductRow): ProductFormState {
     group: productCellToInput(product.group),
     unit: productCellToInput(product.unit),
     totalWeight: productCellToInput(product.totalWeight),
+    wastePercent: productCellToInput(product.wastePercent),
     rollWidth: productCellToInput(product.rollWidth),
     rollLength: productCellToInput(product.rollLength),
     coreWeight: productCellToInput(product.coreWeight),
@@ -1075,6 +1078,7 @@ export function emptyProductForm(): ProductFormState {
     group: '',
     unit: '',
     totalWeight: '',
+    wastePercent: '',
     rollWidth: '',
     rollLength: '',
     coreWeight: '',
@@ -1101,6 +1105,7 @@ export function productFormToPayload(form: ProductFormState) {
     group: form.group.trim(),
     unit: form.unit.trim(),
     totalWeight: form.totalWeight.trim(),
+    wastePercent: form.wastePercent.trim().replace(',', '.'),
     rollWidth: form.rollWidth.trim(),
     rollLength: form.rollLength.trim(),
     coreWeight: form.coreWeight.trim(),
@@ -1149,6 +1154,7 @@ export function ProductEditModal({
     { key: 'group', label: 'Nhóm VTHH' },
     { key: 'unit', label: 'Đơn vị tính' },
     { key: 'totalWeight', label: 'Tổng trọng lượng TP (kg)' },
+    { key: 'wastePercent', label: '% tỷ lệ hao hụt' },
     { key: 'rollWidth', label: 'Khổ cuộn (m)' },
     { key: 'rollLength', label: 'Chiều dài mét/cuộn (m)' },
     { key: 'coreWeight', label: 'Trọng lượng lõi (kg)' },
@@ -1383,6 +1389,10 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       setProductFormError('Vui lòng nhập mã SP hoặc tên sản phẩm.');
       return;
     }
+    if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
+      setProductFormError('% tỷ lệ hao hụt phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+      return;
+    }
 
     setIsSavingProduct(true);
     setProductFormError('');
@@ -1413,6 +1423,10 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     if (!editingProduct) return;
     if (!form.code.trim() && !form.name.trim()) {
       setProductFormError('Vui lòng nhập mã SP hoặc tên sản phẩm.');
+      return;
+    }
+    if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
+      setProductFormError('% tỷ lệ hao hụt phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
       return;
     }
 
@@ -1538,6 +1552,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         const name = row.name.trim();
         if (!code && !name) {
           failures.push(`dòng ${row.rowNumber}: thiếu mã SP và tên`);
+          continue;
+        }
+        const rawWaste = row.wastePercent.trim();
+        if (rawWaste && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(rawWaste)) {
+          failures.push(`dòng ${row.rowNumber}: giá trị hao hụt "${rawWaste}" không hợp lệ (phải từ 0 đến 100, tối đa 2 chữ số thập phân)`);
           continue;
         }
 
