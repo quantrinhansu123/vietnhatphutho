@@ -505,6 +505,7 @@ export default function MixingNormMaterialsTab() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState('');
   const [error, setError] = useState('');
+  const [errorProductKey, setErrorProductKey] = useState('');
   const [message, setMessage] = useState('');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -671,6 +672,7 @@ export default function MixingNormMaterialsTab() {
     setForm(emptyForm());
     setShowForm(true);
     setError('');
+    setErrorProductKey('');
     setMessage('');
   };
 
@@ -689,6 +691,7 @@ export default function MixingNormMaterialsTab() {
     });
     setShowForm(true);
     setError('');
+    setErrorProductKey('');
     setMessage('');
   };
 
@@ -876,6 +879,7 @@ export default function MixingNormMaterialsTab() {
   };
 
   const handleSave = async () => {
+    setErrorProductKey('');
     const resolvedCa = resolveShiftName(form.ca.trim(), shiftOptions) || form.ca.trim();
     if (!resolvedCa || resolvedCa === '-' || resolvedCa === '—') {
       setError('Vui lòng chọn ca.');
@@ -888,12 +892,15 @@ export default function MixingNormMaterialsTab() {
 
     const products = form.products.filter(product => product.maSp.trim());
     if (products.length === 0) {
+      setErrorProductKey(form.products[0]?.key || '');
       setError('Vui lòng thêm ít nhất 1 sản phẩm.');
       return;
     }
 
     const codes = products.map(p => p.maSp.trim());
     if (new Set(codes).size !== codes.length) {
+      const duplicate = products.find((product, index) => codes.indexOf(product.maSp.trim()) !== index);
+      setErrorProductKey(duplicate?.key || products[0].key);
       setError('Các sản phẩm trong cùng phiếu không được trùng mã SP.');
       return;
     }
@@ -902,15 +909,18 @@ export default function MixingNormMaterialsTab() {
       const rounds = resizeProductRounds(product);
       const emptyRound = rounds.findIndex(lines => !lines.some(line => line.maNvl.trim() || line.tenNvl.trim()));
       if (emptyRound >= 0) {
+        setErrorProductKey(product.key);
         setError(`Sản phẩm #${pIndex + 1} (${product.maSp}), lần trộn ${emptyRound + 1} cần ít nhất 1 dòng NVL.`);
         return;
       }
       if (parseNumberOrNull(product.soLuongGoc) === null) {
+        setErrorProductKey(product.key);
         setError(`Không tính được Tổng TL của SP ${product.maSp}. Kiểm tra kết quả quy đổi trong Lệnh SX hoặc Tổng trọng lượng trong danh mục SP.`);
         return;
       }
       const batch = parseNumberOrNull(product.dinhLuongCoi);
       if (batch === null || batch <= 0) {
+        setErrorProductKey(product.key);
         setError(`Định lượng 1 cối của SP ${product.maSp} phải lớn hơn 0.`);
         return;
       }
@@ -922,6 +932,7 @@ export default function MixingNormMaterialsTab() {
           return sum + (calcNvlKhoiLuong(roundLimit, value, line.donVi) ?? 0);
         }, 0);
         if (materialTotal > roundLimit + 0.0005) {
+          setErrorProductKey(product.key);
           setError(
             `SP ${product.maSp}, lần trộn ${roundIndex + 1}: tổng khối lượng NVL ` +
             `${formatKhoiLuongDisplay(materialTotal)} vượt khối lượng cối ${formatKhoiLuongDisplay(roundLimit)}.`
@@ -1013,7 +1024,10 @@ export default function MixingNormMaterialsTab() {
       closeForm();
       await loadRows();
     } catch (err: any) {
-      setError(err?.message || 'Không lưu được phiếu trộn định mức.');
+      const errorMessage = err?.message || 'Không lưu được phiếu trộn định mức.';
+      const errorProduct = products.find(product => errorMessage.includes(product.maSp.trim()));
+      setErrorProductKey(errorProduct?.key || products[0]?.key || '');
+      setError(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -1090,7 +1104,7 @@ export default function MixingNormMaterialsTab() {
         ) : null}
       </section>
 
-      {error && (
+      {error && !showForm && (
         <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>
       )}
       {message && (
@@ -1268,6 +1282,11 @@ export default function MixingNormMaterialsTab() {
             </div>
 
             <div className="space-y-4 p-4">
+              {error && !errorProductKey ? (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                  {error}
+                </p>
+              ) : null}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <label className="space-y-1.5">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày</span>
@@ -1376,6 +1395,11 @@ export default function MixingNormMaterialsTab() {
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <label className="space-y-1 sm:col-span-2">
+                          {error && errorProductKey === product.key ? (
+                            <span className="block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold normal-case tracking-normal text-rose-700">
+                              {error}
+                            </span>
+                          ) : null}
                           <span className="text-[11px] font-bold text-zinc-500">Mã sản phẩm</span>
                           <SearchableSelect
                             value={product.maSp}
