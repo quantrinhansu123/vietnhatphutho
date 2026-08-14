@@ -103,7 +103,7 @@ type NormForm = {
 };
 
 const inputClass =
-  'h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 const emptyLine = (): LineForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -914,6 +914,21 @@ export default function MixingNormMaterialsTab() {
         setError(`Định lượng 1 cối của SP ${product.maSp} phải lớn hơn 0.`);
         return;
       }
+      const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
+      for (const [roundIndex, lines] of rounds.entries()) {
+        const roundLimit = Math.min(batch, Math.max(0, productTotal - batch * roundIndex));
+        const materialTotal = lines.reduce((sum, line) => {
+          const value = parseNumberOrNull(line.giaTri);
+          return sum + (calcNvlKhoiLuong(roundLimit, value, line.donVi) ?? 0);
+        }, 0);
+        if (materialTotal > roundLimit + 0.0005) {
+          setError(
+            `SP ${product.maSp}, lần trộn ${roundIndex + 1}: tổng khối lượng NVL ` +
+            `${formatKhoiLuongDisplay(materialTotal)} vượt khối lượng cối ${formatKhoiLuongDisplay(roundLimit)}.`
+          );
+          return;
+        }
+      }
     }
 
     setSaving(true);
@@ -1422,7 +1437,7 @@ export default function MixingNormMaterialsTab() {
                               ? Math.min(standardBatch, Math.max(0, productTotal - standardBatch * roundIndex))
                               : productTotal;
                             return (
-                        <div key={`${product.key}-round-${roundIndex}`} className="w-[920px] shrink-0 rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2.5">
+                        <div key={`${product.key}-round-${roundIndex}`} className="w-[600px] shrink-0 rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2">
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
                               Lần trộn thứ {roundIndex + 1} · {formatKhoiLuongDisplay(roundTotal)}
@@ -1436,7 +1451,7 @@ export default function MixingNormMaterialsTab() {
                               Thêm NVL
                             </button>
                           </div>
-                          <p className="mb-1.5 hidden text-[10px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_0.7fr_0.5fr_0.75fr_auto] sm:gap-2 sm:px-2">
+                          <p className="mb-1.5 hidden text-[9px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_48px_40px_60px_30px] sm:gap-1 sm:px-1">
                             <span>Mã NVL</span>
                             <span>Tên NVL</span>
                             <span>Giá trị</span>
@@ -1452,7 +1467,7 @@ export default function MixingNormMaterialsTab() {
                               return (
                                 <div
                                   key={`${line.key}-round-${roundIndex}`}
-                                  className="grid grid-cols-1 gap-2 rounded-lg border border-zinc-200 bg-white p-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_0.7fr_0.5fr_0.75fr_auto]"
+                                  className="grid grid-cols-1 gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_48px_40px_60px_30px]"
                                 >
                                   <SearchableSelect
                                     value={line.maNvl}
@@ -1478,7 +1493,7 @@ export default function MixingNormMaterialsTab() {
                                         giaTri: event.target.value
                                       })
                                     }
-                                    className={inputClass}
+                                    className={`${inputClass} h-8 px-1 text-[10px]`}
                                     placeholder={line.donVi === '%' ? '%' : 'kg'}
                                     inputMode="decimal"
                                     title="Giá trị định mức"
@@ -1490,7 +1505,7 @@ export default function MixingNormMaterialsTab() {
                                         donVi: event.target.value === '%' ? '%' : 'kg'
                                       })
                                     }
-                                    className={inputClass}
+                                    className={`${inputClass} h-8 px-0.5 text-[10px]`}
                                   >
                                     <option value="kg">kg</option>
                                     <option value="%">%</option>
@@ -1502,7 +1517,7 @@ export default function MixingNormMaterialsTab() {
                                         : formatKhoiLuongDisplay(khoiLuong)
                                     }
                                     readOnly
-                                    className={`${inputClass} bg-zinc-50 font-black text-[#ef1b2d]`}
+                                    className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-[#ef1b2d]`}
                                     placeholder={
                                       line.donVi === '%' && tong === null
                                         ? 'Nhập Tổng TL'
@@ -1518,7 +1533,7 @@ export default function MixingNormMaterialsTab() {
                                     type="button"
                                     onClick={() => removeLine(product.key, roundIndex, line.key)}
                                     disabled={(product.roundLines[roundIndex] ?? product.lines).length <= 1}
-                                    className="inline-flex h-10 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                    className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
                                     title="Xóa dòng NVL"
                                   >
                                     <Trash2 className="h-4 w-4" />

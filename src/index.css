@@ -4082,7 +4082,7 @@ input[type="number"] {
 @media print {
   @page {
     size: A4 landscape;
-    margin: 8mm;
+    margin: 0;
   }
   .mixing-norm-ratio-print-batch,
   .mixing-norm-ratio-print-batch * {
@@ -4115,9 +4115,10 @@ input[type="number"] {
   }
 
   .mixing-norm-ratio-print-doc {
-    width: 277mm;
+    width: 297mm;
     margin: 0;
-    padding: 0;
+    padding: 8mm;
+    box-sizing: border-box;
   }
 
   .mixing-norm-ratio-round-table {
