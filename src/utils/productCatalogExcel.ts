@@ -11,6 +11,7 @@ export type ProductCatalogExcelRow = {
   group: string;
   unit: string;
   totalWeight: string;
+  wastePercent: string;
   rollWidth: string;
   rollLength: string;
   coreWeight: string;
@@ -36,6 +37,7 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
   group: ['nhom vthh', 'nhom_vthh', 'nhom', 'group'],
   unit: ['don vi tinh', 'don_vi', 'don vi', 'unit'],
   totalWeight: ['tong tl kg', 'tong tl', 'tong trong luong', 'tong_trong_luong', 'total weight'],
+  wastePercent: ['% ty le hao hut', 'ty le hao hut', 'ty_le_hao_hut', 'hao hut', 'waste percent'],
   rollWidth: ['kho cuon m', 'kho cuon', 'kho_cuon', 'roll width'],
   rollLength: ['chieu dai met cuon m', 'chieu dai met cuon', 'chieu_dai_cuon', 'roll length'],
   coreWeight: ['trong luong loi kg', 'trong luong loi', 'trong_luong_loi', 'core weight'],
@@ -68,6 +70,7 @@ export const PRODUCT_CATALOG_EXCEL_HEADERS = [
   'Nhóm',
   'Đơn vị',
   'Tổng TL (kg)',
+  '% tỷ lệ hao hụt',
   'Tồn đầu',
   'Nhập',
   'Xuất',
@@ -154,6 +157,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
     group: findColumn(headers, HEADER_ALIASES.group),
     unit: findColumn(headers, HEADER_ALIASES.unit),
     totalWeight: findColumn(headers, HEADER_ALIASES.totalWeight),
+    wastePercent: findColumn(headers, HEADER_ALIASES.wastePercent),
     rollWidth: findColumn(headers, HEADER_ALIASES.rollWidth),
     rollLength: findColumn(headers, HEADER_ALIASES.rollLength),
     coreWeight: findColumn(headers, HEADER_ALIASES.coreWeight),
@@ -197,6 +201,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
         group: get('group'),
         unit: get('unit'),
         totalWeight: get('totalWeight'),
+        wastePercent: get('wastePercent'),
         rollWidth: get('rollWidth'),
         rollLength: get('rollLength'),
         coreWeight: get('coreWeight'),
@@ -227,6 +232,7 @@ export function downloadProductCatalogExcelTemplate() {
       'Nhựa',
       'tấm',
       '12.5',
+      '2.5',
       '0',
       '0',
       '0',
@@ -243,7 +249,7 @@ export function downloadProductCatalogExcelTemplate() {
       ''
     ],
     // 1 dòng gần như trống — vẫn hợp lệ khi tải lên (chỉ cần Mã SP hoặc Tên)
-    ['SP-002', 'Sản phẩm để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    ['SP-002', 'Sản phẩm để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
   ]);
   worksheet['!cols'] = PRODUCT_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(34, Math.max(12, header.length + 2))
@@ -266,6 +272,7 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     group: row.group.trim(),
     unit: row.unit.trim(),
     totalWeight: row.totalWeight.trim(),
+    wastePercent: row.wastePercent.trim().replace(',', '.'),
     rollWidth: row.rollWidth.trim(),
     rollLength: row.rollLength.trim(),
     coreWeight: row.coreWeight.trim(),

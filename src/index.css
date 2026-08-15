@@ -3897,7 +3897,7 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-doc {
-  width: 190mm;
+  width: 277mm;
   margin: 0 auto;
   padding: 8mm 6mm;
   font-family: "Times New Roman", Times, serif;
@@ -3980,6 +3980,7 @@ input[type="number"] {
 .mixing-norm-ratio-print-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
   margin-bottom: 4px;
 }
 
@@ -4007,6 +4008,41 @@ input[type="number"] {
   font-family: Consolas, "Courier New", monospace;
 }
 
+.mixing-norm-ratio-print-table .col-name {
+  width: 20%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mixing-norm-ratio-round-table .col-stt { width: 5%; }
+.mixing-norm-ratio-round-table .col-code { width: 15%; }
+.mixing-norm-ratio-round-table .col-name { width: 20%; }
+.mixing-norm-ratio-round-table .col-round {
+  width: 12%;
+  text-align: center;
+  font-weight: 700;
+}
+
+.mixing-norm-ratio-round-table.is-actual .col-stt { width: 4%; }
+.mixing-norm-ratio-round-table.is-actual .col-code { width: 12%; }
+.mixing-norm-ratio-round-table.is-actual .col-name { width: 20%; }
+.mixing-norm-ratio-round-table.is-actual .col-round { width: 6.4%; }
+.mixing-norm-ratio-round-table.is-actual th,
+.mixing-norm-ratio-round-table.is-actual td {
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 8.5pt;
+}
+.mixing-norm-ratio-round-table .col-round-actual {
+  background: #fff4f4;
+}
+
+.mixing-norm-ratio-print-legend {
+  margin: 4px 0 0;
+  font-size: 9.5pt;
+}
+
 .mixing-norm-ratio-print-table .col-pct,
 .mixing-norm-ratio-print-table .col-kg {
   width: 14%;
@@ -4025,6 +4061,11 @@ input[type="number"] {
   text-align: right;
   font-style: italic;
   font-size: 10.5pt;
+}
+
+.mixing-norm-ratio-print-footer {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .mixing-norm-ratio-print-signatures {
@@ -4058,6 +4099,10 @@ input[type="number"] {
 }
 
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
   .mixing-norm-ratio-print-batch,
   .mixing-norm-ratio-print-batch * {
     visibility: visible !important;
@@ -4089,8 +4134,13 @@ input[type="number"] {
   }
 
   .mixing-norm-ratio-print-doc {
-    width: 190mm;
+    width: 297mm;
     margin: 0;
-    padding: 0;
+    padding: 8mm;
+    box-sizing: border-box;
+  }
+
+  .mixing-norm-ratio-round-table {
+    page-break-inside: avoid;
   }
 }

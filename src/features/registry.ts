@@ -117,7 +117,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   san_pham: {
     table: 'san_pham',
     label: 'Danh mục sản phẩm',
-    sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-ton-dau-ky.sql', 'supabase-san-pham-kiem-kho-dong-bo.sql'],
+    sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-ty-le-hao-hut.sql', 'supabase-san-pham-ton-dau-ky.sql', 'supabase-san-pham-kiem-kho-dong-bo.sql'],
     apiPrefix: '/api/san-pham',
     serverLines: '3507–3695',
     appTab: 'products',

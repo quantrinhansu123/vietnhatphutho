@@ -16,7 +16,7 @@ type ActualProduct = {
   ma_sp: string;
   ten_sp: string;
   tong_trong_luong: number | null;
-  nvl: ActualLine[];
+  rounds: Array<{ lan: number; tong_trong_luong: number | null; nvl: ActualLine[] }>;
 };
 type NormRecord = { id: string; ngay: string; ca: string; ma_lenh_sx: string; chi_tiet: unknown };
 type ActualRecord = {
@@ -65,6 +65,15 @@ const recalculateActualPercents = (lines: ActualLine[]): ActualLine[] => {
   }));
 };
 
+const calculateNormPercent = (line: ActualLine, lines: ActualLine[]) => {
+  const totalNormWeight = lines.reduce((sum, item) => sum + (item.khoi_luong ?? 0), 0);
+  return line.khoi_luong === null
+    ? null
+    : totalNormWeight > 0
+      ? (line.khoi_luong * 100) / totalNormWeight
+      : 0;
+};
+
 function lineKey(maNvl: string, tenNvl: string) {
   return `${maNvl.trim().toLowerCase()}|${tenNvl.trim().toLowerCase()}`;
 }
@@ -76,12 +85,7 @@ function normalizeProducts(raw: unknown): ActualProduct[] {
       if (!item || typeof item !== 'object') return null;
       const product = item as Record<string, unknown>;
       const total = numberValue(product.tong_trong_luong);
-      const rawLines = Array.isArray(product.nvl)
-        ? product.nvl
-        : Array.isArray(product.chi_tiet)
-          ? product.chi_tiet
-          : [];
-      const nvl = recalculateActualPercents(rawLines
+      const normalizeLines = (rawLines: unknown): ActualLine[] => recalculateActualPercents((Array.isArray(rawLines) ? rawLines : [])
         .map((entry): ActualLine | null => {
           if (!entry || typeof entry !== 'object') return null;
           const line = entry as Record<string, unknown>;
@@ -105,10 +109,26 @@ function normalizeProducts(raw: unknown): ActualProduct[] {
         })
         .filter((line): line is ActualLine => Boolean(line)));
 
+      const rawRounds = Array.isArray(product.lan_tron) ? product.lan_tron : [];
+      const rounds = rawRounds.length > 0
+        ? rawRounds.map((entry, index) => {
+            const round = entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
+            return {
+              lan: Math.max(1, Math.trunc(numberValue(round.lan) ?? index + 1)),
+              tong_trong_luong: numberValue(round.tong_trong_luong),
+              nvl: normalizeLines(round.nvl)
+            };
+          })
+        : [{
+            lan: 1,
+            tong_trong_luong: total,
+            nvl: normalizeLines(Array.isArray(product.nvl) ? product.nvl : product.chi_tiet)
+          }];
+
       const ma_sp = String(product.ma_sp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? '').trim();
-      if (!ma_sp && !ten_sp && nvl.length === 0) return null;
-      return { ma_sp, ten_sp, tong_trong_luong: total, nvl };
+      if (!ma_sp && !ten_sp && rounds.every(round => round.nvl.length === 0)) return null;
+      return { ma_sp, ten_sp, tong_trong_luong: total, rounds };
     })
     .filter((product): product is ActualProduct => Boolean(product));
 }
@@ -132,28 +152,23 @@ function mergeActualOntoNorm(normChiTiet: unknown, savedChiTiet: unknown): Actua
       null;
     if (!matched) return product;
 
-    const savedLines = new Map(
-      matched.nvl.map(line => [lineKey(line.ma_nvl, line.ten_nvl), line] as const)
-    );
-
-    const mergedLines = product.nvl.map(line => {
-      const savedLine =
-        savedLines.get(lineKey(line.ma_nvl, line.ten_nvl)) ||
-        matched.nvl.find(item => item.ma_nvl && item.ma_nvl === line.ma_nvl) ||
-        null;
-      if (!savedLine) return line;
-      const actualWeight = savedLine.trong_luong_thuc_te ?? 0;
-      return {
-        ...line,
-        phan_tram_thuc_te: null,
-        trong_luong_thuc_te: actualWeight,
-        trong_luong_thuc_te_input: String(actualWeight)
-      };
-    });
-
     return {
       ...product,
-      nvl: recalculateActualPercents(mergedLines)
+      rounds: product.rounds.map((round, roundIndex) => {
+        const matchedRound = matched.rounds.find(item => item.lan === round.lan) || matched.rounds[roundIndex];
+        if (!matchedRound) return round;
+        const savedLines = new Map(
+          matchedRound.nvl.map(line => [lineKey(line.ma_nvl, line.ten_nvl), line] as const)
+        );
+        const mergedLines = round.nvl.map(line => {
+          const savedLine = savedLines.get(lineKey(line.ma_nvl, line.ten_nvl)) ||
+            matchedRound.nvl.find(item => item.ma_nvl && item.ma_nvl === line.ma_nvl) || null;
+          if (!savedLine) return line;
+          const actualWeight = savedLine.trong_luong_thuc_te ?? 0;
+          return { ...line, phan_tram_thuc_te: null, trong_luong_thuc_te: actualWeight, trong_luong_thuc_te_input: String(actualWeight) };
+        });
+        return { ...round, nvl: recalculateActualPercents(mergedLines) };
+      })
     };
   });
 }
@@ -290,7 +305,7 @@ export default function ActualMixingSheetTab() {
     writeStoredSelection(date, selectedNorm?.ca || '', selectedNormId);
   }, [date, selectedNorm?.ca, selectedNormId]);
 
-  const changeActualWeight = (productIndex: number, lineIndex: number, text: string) => {
+  const changeActualWeight = (productIndex: number, roundIndex: number, lineIndex: number, text: string) => {
     if (!ACTUAL_WEIGHT_INPUT_PATTERN.test(text)) return;
     if (text !== '' && !Number.isFinite(Number(text))) return;
     setError(current => current === ACTUAL_WEIGHT_FORMAT_ERROR ? '' : current);
@@ -302,15 +317,16 @@ export default function ActualMixingSheetTab() {
           ? product
           : {
               ...product,
-              nvl: recalculateActualPercents(product.nvl.map((line, li) =>
-                li !== lineIndex
-                  ? line
-                  : {
-                      ...line,
-                      trong_luong_thuc_te: actualWeight,
-                      trong_luong_thuc_te_input: normalizedText
-                    }
-              ))
+              rounds: product.rounds.map((round, ri) => ri !== roundIndex ? round : ({
+                ...round,
+                nvl: recalculateActualPercents(round.nvl.map((line, li) =>
+                  li !== lineIndex ? line : {
+                    ...line,
+                    trong_luong_thuc_te: actualWeight,
+                    trong_luong_thuc_te_input: normalizedText
+                  }
+                ))
+              }))
             }
       )
     );
@@ -321,7 +337,7 @@ export default function ActualMixingSheetTab() {
     if (!norm) return setError('Vui lòng chọn đúng dòng phiếu định mức.');
     if (!norm.ngay) return setError('Phiếu định mức thiếu ngày.');
     if (!norm.ca) return setError('Phiếu định mức thiếu ca — sửa phiếu định mức rồi lưu lại.');
-    if (products.length === 0 || products.every(product => product.nvl.length === 0)) {
+    if (products.length === 0 || products.every(product => product.rounds.every(round => round.nvl.length === 0))) {
       return setError('Phiếu không có dòng NVL để lưu.');
     }
     setSaving(true);
@@ -329,17 +345,23 @@ export default function ActualMixingSheetTab() {
     setMessage('');
     try {
       const existing = actuals.find(row => String(row.dinh_muc_id) === String(norm.id));
-      const payloadChiTiet = products.map(product => ({
-        ma_sp: product.ma_sp,
-        ten_sp: product.ten_sp,
-        tong_trong_luong: product.tong_trong_luong,
-        nvl: product.nvl.map(line => ({
+      const serializeLines = (lines: ActualLine[]) => lines.map(line => ({
           ma_nvl: line.ma_nvl,
           ten_nvl: line.ten_nvl,
           gia_tri: line.gia_tri,
           khoi_luong: line.khoi_luong,
           phan_tram_thuc_te: line.phan_tram_thuc_te,
           trong_luong_thuc_te: line.trong_luong_thuc_te_input || null
+        }));
+      const payloadChiTiet = products.map(product => ({
+        ma_sp: product.ma_sp,
+        ten_sp: product.ten_sp,
+        tong_trong_luong: product.tong_trong_luong,
+        nvl: serializeLines(product.rounds[0]?.nvl ?? []),
+        lan_tron: product.rounds.map(round => ({
+          lan: round.lan,
+          tong_trong_luong: round.tong_trong_luong,
+          nvl: serializeLines(round.nvl)
         }))
       }));
 
@@ -410,19 +432,36 @@ export default function ActualMixingSheetTab() {
         ten_sp: product.ten_sp,
         tong_trong_luong: product.tong_trong_luong,
         ghi_chu: '',
-        chi_tiet: product.nvl.map(line => ({
+        chi_tiet: (product.rounds[0]?.nvl ?? []).map(line => ({
           ma_nvl: line.ma_nvl,
           ten_nvl: line.ten_nvl,
           gia_tri: line.gia_tri,
           don_vi: '%',
           khoi_luong: line.khoi_luong
+        })),
+        lan_tron: product.rounds.map(round => ({
+          lan: round.lan,
+          tong_trong_luong: round.tong_trong_luong,
+          nvl: round.nvl.map(line => ({
+            ma_nvl: line.ma_nvl,
+            ten_nvl: line.ten_nvl,
+            gia_tri: line.gia_tri,
+            don_vi: 'kg',
+            khoi_luong: line.khoi_luong
+          }))
         }))
       })),
       actualValues: products.map(product =>
-        product.nvl.map(line => ({
+        product.rounds.flatMap(round => round.nvl).map(line => ({
           percent: line.phan_tram_thuc_te,
           weight: line.trong_luong_thuc_te
         }))
+      ),
+      actualRounds: products.map(product =>
+        product.rounds.map(round => round.nvl.map(line => ({
+          percent: line.phan_tram_thuc_te,
+          weight: line.trong_luong_thuc_te
+        })))
       )
     });
   };
@@ -525,52 +564,57 @@ export default function ActualMixingSheetTab() {
               {product.ma_sp} · {product.ten_sp}{' '}
               <span className="ml-2 text-zinc-500">Tổng TL: {formatNumber(product.tong_trong_luong)} kg</span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-xs">
-                <thead className="bg-zinc-950 text-white">
-                  <tr>
-                    <th className="px-3 py-2">Mã NVL</th>
-                    <th className="px-3 py-2">Tên NVL</th>
-                    <th className="px-3 py-2 text-right">% định mức</th>
-                    <th className="px-3 py-2 text-right">Trọng lượng định mức</th>
-                    <th className="px-3 py-2 text-right">% thực tế</th>
-                    <th className="px-3 py-2 text-right">Trọng lượng thực tế</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {product.nvl.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-3 text-center font-semibold text-zinc-400">
-                        Phiếu định mức chưa có dòng NVL.
-                      </td>
-                    </tr>
-                  ) : (
-                    product.nvl.map((line, li) => (
-                      <tr key={`${line.ma_nvl}-${li}`}>
-                        <td className="px-3 py-2 font-mono font-bold">{line.ma_nvl}</td>
-                        <td className="px-3 py-2">{line.ten_nvl}</td>
-                        <td className="px-3 py-2 text-right font-mono">{formatNumber(line.gia_tri)}%</td>
-                        <td className="px-3 py-2 text-right font-mono">{formatNumber(line.khoi_luong)} kg</td>
-                        <td className="px-3 py-2 text-right font-mono font-black text-[#ef1b2d]">
-                          {formatActualPercent(line.phan_tram_thuc_te)}%
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={line.trong_luong_thuc_te_input}
-                            onChange={e => changeActualWeight(pi, li, e.target.value)}
-                            onFocus={e => e.currentTarget.select()}
-                            className={`${fieldClass} ml-auto block w-28 text-right`}
-                            placeholder="123.56"
-                            aria-label={`Trọng lượng thực tế ${line.ma_nvl || line.ten_nvl}`}
-                          />
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="overflow-x-auto p-2">
+              <div className="flex min-w-max items-start gap-2">
+                {product.rounds.map((round, ri) => (
+                  <div key={`${product.ma_sp}-round-${round.lan}-${ri}`} className="w-[620px] shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+                    <div className="bg-red-50 px-2 py-1.5 text-[11px] font-black uppercase text-[#ef1b2d]">
+                      Lần trộn thứ {round.lan} · {formatNumber(round.tong_trong_luong)} kg
+                    </div>
+                    <table className="w-full table-fixed text-left text-[10px]">
+                      <colgroup>
+                        <col className="w-[105px]" /><col />
+                        <col className="w-[62px]" /><col className="w-[82px]" />
+                        <col className="w-[62px]" /><col className="w-[88px]" />
+                      </colgroup>
+                      <thead className="bg-zinc-950 text-white">
+                        <tr>
+                          <th className="px-2 py-1.5">Mã NVL</th><th className="px-2 py-1.5">Tên NVL</th>
+                          <th className="px-1 py-1.5 text-center" title="Phần trăm định mức">% ĐM</th>
+                          <th className="px-1 py-1.5 text-center" title="Trọng lượng định mức">TL ĐM</th>
+                          <th className="px-1 py-1.5 text-center" title="Phần trăm thực tế">% TT</th>
+                          <th className="px-1 py-1.5 text-center" title="Trọng lượng thực tế">TL TT</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {round.nvl.length === 0 ? (
+                          <tr><td colSpan={6} className="px-2 py-3 text-center font-semibold text-zinc-400">Lần trộn này chưa có NVL.</td></tr>
+                        ) : round.nvl.map((line, li) => (
+                          <tr key={`${line.ma_nvl}-${li}`}>
+                            <td className="px-2 py-1.5 font-mono font-bold">{line.ma_nvl}</td>
+                            <td className="break-words px-2 py-1.5">{line.ten_nvl}</td>
+                            <td className="px-1 py-1.5 text-center font-mono">{formatActualPercent(calculateNormPercent(line, round.nvl))}%</td>
+                            <td className="px-1 py-1.5 text-center font-mono">{formatNumber(line.khoi_luong)}</td>
+                            <td className="px-1 py-1.5 text-center font-mono font-black text-[#ef1b2d]">{formatActualPercent(line.phan_tram_thuc_te)}%</td>
+                            <td className="px-1 py-1">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={line.trong_luong_thuc_te_input}
+                                onChange={e => changeActualWeight(pi, ri, li, e.target.value)}
+                                onFocus={e => e.currentTarget.select()}
+                                className={`${fieldClass} h-8 w-full px-1 text-center text-[10px]`}
+                                placeholder="0.00"
+                                aria-label={`Trọng lượng thực tế lần trộn thứ ${round.lan} ${line.ma_nvl || line.ten_nvl}`}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ))}

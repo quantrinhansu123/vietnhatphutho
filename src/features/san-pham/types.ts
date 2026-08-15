@@ -16,6 +16,7 @@ export interface ProductRow {
   group: string;
   unit: string;
   totalWeight: string;
+  wastePercent: string;
   rollWidth: string;
   rollLength: string;
   coreWeight: string;

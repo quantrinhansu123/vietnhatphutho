@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
+import { Copy, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../app/useTabAccess';
 import { RowActionsMenu } from './shared/table';
 import { SearchableSelect } from './shared/SearchableSelect';
 import {
   normalizeMixingProductionOrders,
+  parseMixingProductBom,
+  type MixingBomItem,
   type MixingProductionOrder
 } from '../utils/mixingOrderAutofill';
 import { waitForPrintImagesReady } from '../utils/printReady';
@@ -14,6 +16,7 @@ import {
   type MixingNormRatioPrintDoc
 } from './MixingNormRatioPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, resolveShiftName } from '../utils/shiftSettings';
+import { convertProductQuantity, type ProductConversionFactors } from '../utils/productUnitConversion';
 
 export type MixingNormLine = {
   ma_nvl: string;
@@ -29,6 +32,11 @@ export type MixingNormProduct = {
   ten_sp: string;
   tong_trong_luong: number | null;
   ghi_chu: string;
+  ty_le_hao_hut?: number | null;
+  so_luong_goc?: number | null;
+  dinh_luong_coi?: number | null;
+  so_lan_tron?: number;
+  lan_tron?: Array<{ lan: number; tong_trong_luong: number | null; nvl: MixingNormLine[] }>;
   chi_tiet: MixingNormLine[];
 };
 
@@ -49,8 +57,20 @@ type MaterialOption = {
 };
 
 type ProductOption = {
+  id?: string;
   code: string;
+  amisCode?: string;
+  newCode?: string;
   name: string;
+  totalWeight?: number | null;
+  wastePercent?: number;
+  nplItems?: MixingBomItem[];
+};
+
+type MixingProductConversion = ProductConversionFactors & {
+  maSp: string;
+  maAmis: string;
+  donViTinh: string;
 };
 
 type LineForm = {
@@ -66,8 +86,12 @@ type ProductForm = {
   maSp: string;
   tenSp: string;
   tongTrongLuong: string;
-  ghiChu: string;
+  haoHut: string;
+  soLuongGoc: string;
+  soLuongTuDong: boolean;
+  dinhLuongCoi: string;
   lines: LineForm[];
+  roundLines: LineForm[][];
 };
 
 type NormForm = {
@@ -79,7 +103,7 @@ type NormForm = {
 };
 
 const inputClass =
-  'h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 const emptyLine = (): LineForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -94,9 +118,17 @@ const emptyProduct = (): ProductForm => ({
   maSp: '',
   tenSp: '',
   tongTrongLuong: '',
-  ghiChu: '',
+  haoHut: '0',
+  soLuongGoc: '',
+  soLuongTuDong: false,
+  dinhLuongCoi: '',
   lines: [emptyLine()]
+  ,roundLines: []
 });
+
+function cloneLineForms(lines: LineForm[]): LineForm[] {
+  return lines.map(line => ({ ...line, key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
+}
 
 const emptyForm = (): NormForm => ({
   ngay: new Date().toISOString().slice(0, 10),
@@ -107,6 +139,15 @@ const emptyForm = (): NormForm => ({
 });
 
 function productToForm(product: MixingNormProduct, idHint = ''): ProductForm {
+  const baseLines = product.chi_tiet.length > 0
+    ? product.chi_tiet.map(line => ({
+        key: `${idHint}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
+        maNvl: line.ma_nvl,
+        tenNvl: line.ten_nvl,
+        giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
+        donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
+      }))
+    : [emptyLine()];
   return {
     key: `${idHint}-${product.ma_sp}-${Math.random().toString(36).slice(2, 6)}`,
     maSp: product.ma_sp,
@@ -115,17 +156,18 @@ function productToForm(product: MixingNormProduct, idHint = ''): ProductForm {
       product.tong_trong_luong === null || product.tong_trong_luong === undefined
         ? ''
         : String(product.tong_trong_luong),
-    ghiChu: product.ghi_chu,
-    lines:
-      product.chi_tiet.length > 0
-        ? product.chi_tiet.map(line => ({
-            key: `${idHint}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-            maNvl: line.ma_nvl,
-            tenNvl: line.ten_nvl,
-            giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
-            donVi: line.don_vi === '%' ? '%' : 'kg'
-          }))
-        : [emptyLine()]
+    haoHut: product.ty_le_hao_hut == null ? '0' : String(product.ty_le_hao_hut),
+    soLuongGoc: product.so_luong_goc == null ? '' : String(product.so_luong_goc),
+    soLuongTuDong: product.so_luong_goc != null,
+    dinhLuongCoi: product.dinh_luong_coi == null ? '' : String(product.dinh_luong_coi),
+    lines: baseLines,
+    roundLines: product.lan_tron?.map(round => round.nvl.map(line => ({
+      key: `${idHint}-round-${round.lan}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
+      maNvl: line.ma_nvl,
+      tenNvl: line.ten_nvl,
+      giaTri: line.gia_tri == null ? '' : String(line.gia_tri),
+      donVi: line.don_vi === '%' ? '%' : 'kg'
+    }))) ?? []
   };
 }
 
@@ -179,7 +221,16 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
     ).trim();
     if (!code && !name) continue;
     const key = code || name;
-    if (!byCode.has(key)) byCode.set(key, { code: code || name, name: name || code });
+    if (!byCode.has(key)) byCode.set(key, {
+      id: String(row.id ?? '').trim(),
+      code: code || name,
+      amisCode: String(row.ma_amis ?? row.amisCode ?? '').trim(),
+      newCode: String(row.ma_sp_moi ?? row.newCode ?? '').trim(),
+      name: name || code,
+      totalWeight: parseNumberOrNull(row.tong_trong_luong ?? row.totalWeight),
+      wastePercent: parseNumberOrNull(row.ty_le_hao_hut ?? row.wastePercent) ?? 0,
+      nplItems: parseMixingProductBom(row.npl_phan_tram ?? row.nplPhanTram)
+    });
   }
   return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
 }
@@ -207,6 +258,34 @@ export function calcNvlKhoiLuong(
 function formatKhoiLuongDisplay(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
   return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(value)} kg`;
+}
+
+function normalizeProductLookupKey(value: string) {
+  return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
+}
+
+function findCatalogProductByAnyCode(products: ProductOption[], value: string) {
+  const key = normalizeProductLookupKey(value);
+  if (!key) return undefined;
+  return products.find(product =>
+    [product.code, product.amisCode ?? '', product.newCode ?? '']
+      .some(code => normalizeProductLookupKey(code) === key)
+  );
+}
+
+function roundMixing(value: number) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function bomToLineForms(items: MixingBomItem[]): LineForm[] {
+  const lines = items.map(item => ({
+    key: `${Date.now()}-${item.code}-${Math.random().toString(36).slice(2, 6)}`,
+    maNvl: item.code,
+    tenNvl: item.name,
+    giaTri: String(item.amountType === 'percent' ? item.percent ?? '' : item.quantity ?? ''),
+    donVi: item.amountType === 'percent' ? '%' as const : 'kg' as const
+  }));
+  return lines.length ? lines : [emptyLine()];
 }
 
 function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): MixingNormLine[] {
@@ -247,12 +326,27 @@ function normalizeProductBlock(item: Record<string, unknown>): MixingNormProduct
   const tong_trong_luong = parseNumberOrNull(item.tong_trong_luong);
   const nvlRaw = item.nvl ?? item.chi_tiet;
   const chi_tiet = normalizeLines(nvlRaw, tong_trong_luong);
+  const lan_tron = Array.isArray(item.lan_tron)
+    ? item.lan_tron.map((round, index) => {
+        const source = round && typeof round === 'object' ? round as Record<string, unknown> : {};
+        return {
+          lan: Math.max(1, Math.trunc(parseNumberOrNull(source.lan) ?? index + 1)),
+          tong_trong_luong: parseNumberOrNull(source.tong_trong_luong),
+          nvl: normalizeLines(source.nvl, parseNumberOrNull(source.tong_trong_luong))
+        };
+      })
+    : [];
   if (!ma_sp && !ten_sp && chi_tiet.length === 0) return null;
   return {
     ma_sp,
     ten_sp,
     tong_trong_luong,
     ghi_chu: String(item.ghi_chu ?? '').trim(),
+    ty_le_hao_hut: parseNumberOrNull(item.ty_le_hao_hut),
+    so_luong_goc: parseNumberOrNull(item.so_luong_goc),
+    dinh_luong_coi: parseNumberOrNull(item.dinh_luong_coi),
+    so_lan_tron: Math.max(0, Math.trunc(parseNumberOrNull(item.so_lan_tron) ?? 0)),
+    lan_tron,
     chi_tiet
   };
 }
@@ -315,6 +409,10 @@ function normalizeRows(data: unknown): MixingNormRow[] {
               ten_sp: String(row.ten_sp ?? '').trim(),
               tong_trong_luong,
               ghi_chu: String(row.ghi_chu ?? '').trim(),
+              ty_le_hao_hut: null,
+              so_luong_goc: tong_trong_luong,
+              dinh_luong_coi: null,
+              so_lan_tron: 0,
               chi_tiet
             }
           ];
@@ -350,6 +448,10 @@ function normalizeRows(data: unknown): MixingNormRow[] {
               ten_sp,
               tong_trong_luong,
               ghi_chu: String(row.ghi_chu ?? '').trim(),
+              ty_le_hao_hut: null,
+              so_luong_goc: tong_trong_luong,
+              dinh_luong_coi: null,
+              so_lan_tron: 0,
               chi_tiet
             }
           ];
@@ -381,12 +483,62 @@ function summarizeLines(lines: MixingNormLine[]) {
     .join(' · ');
 }
 
+type SummarizedMaterial = {
+  ma_nvl: string;
+  ten_nvl: string;
+  khoi_luong: number | null;
+  gia_tri: number | null;
+  don_vi: string;
+};
+
+/** Cộng khối lượng cùng NVL qua toàn bộ cối trộn; phiếu cũ dùng chi_tiet. */
+function summarizeProductMaterials(product: MixingNormProduct): SummarizedMaterial[] {
+  const hasMixingRounds = Boolean(product.lan_tron?.length);
+  const sourceLines = hasMixingRounds
+    ? product.lan_tron!.flatMap(round => round.nvl)
+    : product.chi_tiet;
+  const byMaterial = new Map<string, SummarizedMaterial>();
+
+  sourceLines.forEach((line, index) => {
+    const key = `${line.ma_nvl.trim().toLocaleLowerCase('vi')}|${line.ten_nvl.trim().toLocaleLowerCase('vi')}`
+      || `line-${index}`;
+    const current = byMaterial.get(key);
+    const weight = line.khoi_luong;
+    if (!current) {
+      byMaterial.set(key, {
+        ma_nvl: line.ma_nvl,
+        ten_nvl: line.ten_nvl,
+        khoi_luong: weight,
+        gia_tri: line.gia_tri,
+        don_vi: line.don_vi
+      });
+      return;
+    }
+    current.khoi_luong = current.khoi_luong === null || current.khoi_luong === undefined
+      ? weight
+      : weight === null || weight === undefined
+        ? current.khoi_luong
+        : current.khoi_luong + weight;
+  });
+
+  return [...byMaterial.values()];
+}
+
 function summarizeProductsNvl(products: MixingNormProduct[]) {
   if (products.length === 0) return '—';
   return products
     .map(product => {
       const label = product.ma_sp || product.ten_sp || 'SP';
-      return `${label}: ${summarizeLines(product.chi_tiet)}`;
+      const materials = summarizeProductMaterials(product);
+      const details = materials.length === 0
+        ? 'Chưa có NVL'
+        : materials.map(line => {
+            const name = line.ten_nvl || line.ma_nvl || 'NVL';
+            return `${name}: ${line.khoi_luong == null
+              ? `${line.gia_tri ?? '—'} ${line.don_vi || 'kg'}`
+              : formatKhoiLuongDisplay(line.khoi_luong)}`;
+          }).join(' · ');
+      return `${label}: ${details}`;
     })
     .join(' | ');
 }
@@ -397,15 +549,18 @@ export default function MixingNormMaterialsTab() {
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductOption[]>([]);
+  const [productConversions, setProductConversions] = useState<MixingProductConversion[]>([]);
   const [shiftOptions, setShiftOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState('');
   const [error, setError] = useState('');
+  const [errorProductKey, setErrorProductKey] = useState('');
   const [message, setMessage] = useState('');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState('');
+  const [copySourceTitle, setCopySourceTitle] = useState('');
   const [form, setForm] = useState<NormForm>(emptyForm);
   const [printDocs, setPrintDocs] = useState<MixingNormRatioPrintDoc[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
@@ -432,7 +587,10 @@ export default function MixingNormMaterialsTab() {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
       if (!byCode.has(trimmedCode)) {
-        byCode.set(trimmedCode, { code: trimmedCode, name: name.trim() });
+        const catalog = findCatalogProductByAnyCode(catalogProducts, trimmedCode);
+        byCode.set(trimmedCode, catalog
+          ? { ...catalog, code: trimmedCode, name: name.trim() || catalog.name }
+          : { code: trimmedCode, name: name.trim() });
       }
     };
 
@@ -476,20 +634,35 @@ export default function MixingNormMaterialsTab() {
 
   const loadReferenceData = useCallback(async () => {
     try {
-      const [materialRes, orderRes, productRes, settingRes] = await Promise.all([
+      const [materialRes, orderRes, productRes, settingRes, conversionRes] = await Promise.all([
         fetch('/api/kho-nvl'),
         fetch('/api/lenh-sx'),
         fetch('/api/san-pham?format=table'),
-        fetch('/api/cai-dat')
+        fetch('/api/cai-dat'),
+        fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
       ]);
       const materialData = await materialRes.json().catch(() => ({}));
       const orderData = await orderRes.json().catch(() => ({}));
       const productData = await productRes.json().catch(() => ({}));
       const settingData = await settingRes.json().catch(() => ({}));
+      const conversionData = await conversionRes.json().catch(() => ({}));
       if (materialRes.ok) setMaterials(normalizeMaterials(materialData));
       if (orderRes.ok) setProductionOrders(normalizeMixingProductionOrders(orderData));
       if (productRes.ok) setCatalogProducts(normalizeCatalogProducts(productData));
       if (settingRes.ok) setShiftOptions(getProductionShiftOptions(normalizeShiftSettings(settingData)));
+      if (conversionRes.ok) {
+        const conversions = Array.isArray(conversionData.items) ? conversionData.items as MixingProductConversion[] : [];
+        const total = Number(conversionData.total) || conversions.length;
+        for (let page = 2; conversions.length < total; page += 1) {
+          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) break;
+          const items = Array.isArray(data.items) ? data.items as MixingProductConversion[] : [];
+          if (!items.length) break;
+          conversions.push(...items);
+        }
+        setProductConversions(conversions);
+      }
     } catch {
       // giữ partial data nếu một nguồn lỗi
     }
@@ -547,15 +720,18 @@ export default function MixingNormMaterialsTab() {
   const openCreate = () => {
     if (!canCreate) return;
     setEditingId('');
+    setCopySourceTitle('');
     setForm(emptyForm());
     setShowForm(true);
     setError('');
+    setErrorProductKey('');
     setMessage('');
   };
 
   const openEdit = (row: MixingNormRow) => {
     if (!canEdit) return;
     setEditingId(row.id);
+    setCopySourceTitle('');
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
       ca: row.ca,
@@ -568,27 +744,86 @@ export default function MixingNormMaterialsTab() {
     });
     setShowForm(true);
     setError('');
+    setErrorProductKey('');
+    setMessage('');
+  };
+
+  const openCopy = (row: MixingNormRow) => {
+    if (!canCreate) return;
+    setEditingId('');
+    setCopySourceTitle(
+      `Sao chép phiếu trộn định mức · ${row.ngay || 'Chưa có ngày'} · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
+    );
+    setForm({
+      ngay: row.ngay || new Date().toISOString().slice(0, 10),
+      ca: row.ca,
+      maLenhSx: row.ma_lenh_sx,
+      ghiChu: row.ghi_chu,
+      products: row.products.length > 0
+        ? row.products.map(product => productToForm(product, `${row.id}-copy`))
+        : [emptyProduct()]
+    });
+    setShowForm(true);
+    setError('');
+    setErrorProductKey('');
     setMessage('');
   };
 
   const closeForm = () => {
     setShowForm(false);
     setEditingId('');
+    setCopySourceTitle('');
     setForm(emptyForm());
   };
 
+  const resolveOrderLineKg = (
+    line: MixingProductionOrder['productLines'][number],
+    catalog?: ProductOption
+  ): number | null => {
+    const quantity = line.quantity;
+    if (quantity === null || !Number.isFinite(quantity) || quantity < 0) return null;
+    if (/^kg$/i.test(line.unit.trim())) return quantity;
+    const codeKey = normalizeProductLookupKey(line.productCode);
+    const sameProduct = (item: MixingProductConversion) =>
+      Boolean(catalog?.id && item.sanPhamId === catalog.id) ||
+      normalizeProductLookupKey(item.maSp) === codeKey ||
+      normalizeProductLookupKey(item.maAmis) === codeKey;
+    const unitKey = line.unit.trim().toLocaleLowerCase('vi').replace('m²', 'm2');
+    const conversion = productConversions.find(item =>
+      sameProduct(item) && item.donViTinh.trim().toLocaleLowerCase('vi').replace('m²', 'm2') === unitKey
+    ) ?? productConversions.find(sameProduct);
+    if (conversion) {
+      const converted = convertProductQuantity(quantity, line.unit, 'kg', conversion);
+      if (converted !== null && Number.isFinite(converted)) return roundMixing(converted);
+    }
+    if (line.convertedWeightKg !== null && line.convertedWeightKg > 0) return line.convertedWeightKg;
+    return catalog?.totalWeight ? roundMixing(quantity * catalog.totalWeight) : null;
+  };
+
   const selectOrder = (orderCode: string) => {
+    const order = productionOrders.find(item => item.orderCode === orderCode);
     setForm(prev => ({
       ...prev,
       maLenhSx: orderCode,
-      // Tạo mới: đổi lệnh → reset SP. Đang sửa: giữ SP đã có.
-      products: editingId
+      products: editingId || !order
         ? prev.products
-        : prev.products.map(product =>
-            product.maSp.trim()
-              ? product
-              : { ...emptyProduct(), key: product.key }
-          )
+        : order.productLines.map(line => {
+            const catalog = findCatalogProductByAnyCode(catalogProducts, line.productCode);
+            const sourceKg = resolveOrderLineKg(line, catalog);
+            const waste = catalog?.wastePercent ?? 0;
+            const total = sourceKg === null ? null : roundMixing(sourceKg * (1 - waste / 100));
+            return {
+              ...emptyProduct(),
+              maSp: line.productCode,
+              tenSp: line.productName || catalog?.name || '',
+              soLuongGoc: sourceKg === null ? '' : String(roundMixing(sourceKg)),
+              soLuongTuDong: sourceKg !== null,
+              haoHut: String(waste),
+              tongTrongLuong: total === null ? '' : String(total),
+              lines: bomToLineForms(catalog?.nplItems ?? []),
+              roundLines: []
+            };
+          })
     }));
   };
 
@@ -601,8 +836,45 @@ export default function MixingNormMaterialsTab() {
     }));
   };
 
+  const updateManualSourceQuantity = (productKey: string, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      products: prev.products.map(product => {
+        if (product.key !== productKey) return product;
+        const source = parseNumberOrNull(value);
+        const waste = parseNumberOrNull(product.haoHut) ?? 0;
+        const next = {
+          ...product,
+          soLuongGoc: value,
+          tongTrongLuong: source === null ? '' : String(roundMixing(source * (1 - waste / 100)))
+        };
+        return { ...next, roundLines: resizeProductRounds(next) };
+      })
+    }));
+  };
+
+  const resizeProductRounds = (product: ProductForm, batchValue = product.dinhLuongCoi) => {
+    const total = parseNumberOrNull(product.tongTrongLuong) ?? 0;
+    const batch = parseNumberOrNull(batchValue) ?? 0;
+    const count = total > 0 && batch > 0 ? Math.ceil(total / batch) : 1;
+    const current = product.roundLines.length ? product.roundLines : [cloneLineForms(product.lines)];
+    return Array.from({ length: count }, (_, index) => current[index] ?? cloneLineForms(current[0] ?? product.lines));
+  };
+
+  const updateMixingBatch = (productKey: string, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      products: prev.products.map(product => product.key === productKey
+        ? { ...product, dinhLuongCoi: value, roundLines: resizeProductRounds(product, value) }
+        : product)
+    }));
+  };
+
   const selectProductCode = (productKey: string, code: string) => {
-    const catalog = productOptions.find(item => item.code === code);
+    const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+    const orderLine = selectedOrder?.productLines.find(item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code));
+    const sourceKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
+    const waste = catalog?.wastePercent ?? 0;
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product => {
@@ -612,7 +884,12 @@ export default function MixingNormMaterialsTab() {
           ...product,
           maSp: code,
           tenSp: catalog?.name ?? '',
-          lines: keepLines ? product.lines : [emptyLine()]
+          soLuongGoc: sourceKg === null ? '' : String(roundMixing(sourceKg)),
+          soLuongTuDong: sourceKg !== null,
+          haoHut: String(waste),
+          tongTrongLuong: sourceKg === null ? '' : String(roundMixing(sourceKg * (1 - waste / 100))),
+          lines: keepLines ? product.lines : bomToLineForms(catalog?.nplItems ?? []),
+          roundLines: keepLines ? product.roundLines : []
         };
       })
     }));
@@ -629,52 +906,55 @@ export default function MixingNormMaterialsTab() {
     });
   };
 
-  const updateLine = (productKey: string, lineKey: string, patch: Partial<LineForm>) => {
+  const updateLine = (productKey: string, roundIndex: number, lineKey: string, patch: Partial<LineForm>) => {
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product =>
-        product.key !== productKey
-          ? product
-          : {
-              ...product,
-              lines: product.lines.map(line => (line.key === lineKey ? { ...line, ...patch } : line))
-            }
+        product.key !== productKey ? product : (() => {
+          const rounds = resizeProductRounds(product);
+          rounds[roundIndex] = rounds[roundIndex].map(line => line.key === lineKey ? { ...line, ...patch } : line);
+          return { ...product, lines: roundIndex === 0 ? rounds[0] : product.lines, roundLines: rounds };
+        })()
       )
     }));
   };
 
-  const selectMaterialCode = (productKey: string, lineKey: string, code: string) => {
+  const selectMaterialCode = (productKey: string, roundIndex: number, lineKey: string, code: string) => {
     const material = materialsByCode.get(code);
-    updateLine(productKey, lineKey, {
+    updateLine(productKey, roundIndex, lineKey, {
       maNvl: code,
       tenNvl: material?.name ?? ''
     });
   };
 
-  const addLine = (productKey: string) => {
+  const addLine = (productKey: string, roundIndex: number) => {
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product =>
-        product.key === productKey
-          ? { ...product, lines: [...product.lines, emptyLine()] }
-          : product
+        product.key !== productKey ? product : (() => {
+          const rounds = resizeProductRounds(product);
+          rounds[roundIndex] = [...rounds[roundIndex], emptyLine()];
+          return { ...product, lines: roundIndex === 0 ? rounds[0] : product.lines, roundLines: rounds };
+        })()
       )
     }));
   };
 
-  const removeLine = (productKey: string, lineKey: string) => {
+  const removeLine = (productKey: string, roundIndex: number, lineKey: string) => {
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product => {
         if (product.key !== productKey) return product;
-        const lines =
-          product.lines.length <= 1 ? product.lines : product.lines.filter(line => line.key !== lineKey);
-        return { ...product, lines };
+        const rounds = resizeProductRounds(product);
+        const current = rounds[roundIndex];
+        rounds[roundIndex] = current.length <= 1 ? current : current.filter(line => line.key !== lineKey);
+        return { ...product, lines: roundIndex === 0 ? rounds[0] : product.lines, roundLines: rounds };
       })
     }));
   };
 
   const handleSave = async () => {
+    setErrorProductKey('');
     const resolvedCa = resolveShiftName(form.ca.trim(), shiftOptions) || form.ca.trim();
     if (!resolvedCa || resolvedCa === '-' || resolvedCa === '—') {
       setError('Vui lòng chọn ca.');
@@ -687,21 +967,53 @@ export default function MixingNormMaterialsTab() {
 
     const products = form.products.filter(product => product.maSp.trim());
     if (products.length === 0) {
+      setErrorProductKey(form.products[0]?.key || '');
       setError('Vui lòng thêm ít nhất 1 sản phẩm.');
       return;
     }
 
     const codes = products.map(p => p.maSp.trim());
     if (new Set(codes).size !== codes.length) {
+      const duplicate = products.find((product, index) => codes.indexOf(product.maSp.trim()) !== index);
+      setErrorProductKey(duplicate?.key || products[0].key);
       setError('Các sản phẩm trong cùng phiếu không được trùng mã SP.');
       return;
     }
 
     for (const [pIndex, product] of products.entries()) {
-      const validLines = product.lines.filter(line => line.maNvl.trim() || line.tenNvl.trim());
-      if (validLines.length === 0) {
-        setError(`Sản phẩm #${pIndex + 1} (${product.maSp}) cần ít nhất 1 dòng NVL.`);
+      const rounds = resizeProductRounds(product);
+      const emptyRound = rounds.findIndex(lines => !lines.some(line => line.maNvl.trim() || line.tenNvl.trim()));
+      if (emptyRound >= 0) {
+        setErrorProductKey(product.key);
+        setError(`Sản phẩm #${pIndex + 1} (${product.maSp}), lần trộn ${emptyRound + 1} cần ít nhất 1 dòng NVL.`);
         return;
+      }
+      if (parseNumberOrNull(product.soLuongGoc) === null) {
+        setErrorProductKey(product.key);
+        setError(`Không tính được Tổng TL của SP ${product.maSp}. Kiểm tra kết quả quy đổi trong Lệnh SX hoặc Tổng trọng lượng trong danh mục SP.`);
+        return;
+      }
+      const batch = parseNumberOrNull(product.dinhLuongCoi);
+      if (batch === null || batch <= 0) {
+        setErrorProductKey(product.key);
+        setError(`Định lượng 1 cối của SP ${product.maSp} phải lớn hơn 0.`);
+        return;
+      }
+      const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
+      for (const [roundIndex, lines] of rounds.entries()) {
+        const roundLimit = Math.min(batch, Math.max(0, productTotal - batch * roundIndex));
+        const materialTotal = lines.reduce((sum, line) => {
+          const value = parseNumberOrNull(line.giaTri);
+          return sum + (calcNvlKhoiLuong(roundLimit, value, line.donVi) ?? 0);
+        }, 0);
+        if (materialTotal > roundLimit + 0.0005) {
+          setErrorProductKey(product.key);
+          setError(
+            `SP ${product.maSp}, lần trộn ${roundIndex + 1}: tổng khối lượng NVL ` +
+            `${formatKhoiLuongDisplay(materialTotal)} vượt khối lượng cối ${formatKhoiLuongDisplay(roundLimit)}.`
+          );
+          return;
+        }
       }
     }
 
@@ -710,7 +1022,7 @@ export default function MixingNormMaterialsTab() {
     setMessage('');
     try {
       const payloadProducts = products.map((product, pIndex) => {
-        const validLines = product.lines.filter(line => line.maNvl.trim() || line.tenNvl.trim());
+        const rounds = resizeProductRounds(product);
         const tong =
           product.tongTrongLuong.trim() === ''
             ? null
@@ -718,7 +1030,9 @@ export default function MixingNormMaterialsTab() {
         if (tong !== null && !Number.isFinite(tong)) {
           throw new Error(`Tổng trọng lượng SP #${pIndex + 1} phải là số.`);
         }
-        const nvl = validLines.map((line, index) => {
+        const serializeLines = (lines: LineForm[], roundWeight: number) => lines
+          .filter(line => line.maNvl.trim() || line.tenNvl.trim())
+          .map((line, index) => {
           const gia_tri =
             line.giaTri.trim() === '' ? null : Number(line.giaTri.replace(',', '.'));
           if (gia_tri !== null && !Number.isFinite(gia_tri)) {
@@ -729,14 +1043,29 @@ export default function MixingNormMaterialsTab() {
             ten_nvl: line.tenNvl.trim(),
             gia_tri,
             don_vi: line.donVi,
-            khoi_luong: calcNvlKhoiLuong(tong, gia_tri, line.donVi)
+            khoi_luong: calcNvlKhoiLuong(roundWeight, gia_tri, line.donVi)
           };
         });
+        const batch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
+        const lan_tron = rounds.map((lines, roundIndex) => {
+          const roundWeight = tong === null || batch <= 0
+            ? tong ?? 0
+            : Math.min(batch, Math.max(0, tong - batch * roundIndex));
+          return { lan: roundIndex + 1, tong_trong_luong: roundWeight, nvl: serializeLines(lines, roundWeight) };
+        });
+        const nvl = lan_tron[0]?.nvl ?? [];
         return {
           ma_sp: product.maSp.trim(),
           ten_sp: product.tenSp.trim(),
           tong_trong_luong: tong,
-          ghi_chu: product.ghiChu.trim(),
+          ty_le_hao_hut: parseNumberOrNull(product.haoHut),
+          so_luong_goc: parseNumberOrNull(product.soLuongGoc),
+          dinh_luong_coi: parseNumberOrNull(product.dinhLuongCoi),
+          so_lan_tron: tong && parseNumberOrNull(product.dinhLuongCoi)
+            ? Math.ceil(tong / (parseNumberOrNull(product.dinhLuongCoi) as number))
+            : 0,
+          ghi_chu: product.dinhLuongCoi.trim(),
+          lan_tron,
           nvl
         };
       });
@@ -770,7 +1099,10 @@ export default function MixingNormMaterialsTab() {
       closeForm();
       await loadRows();
     } catch (err: any) {
-      setError(err?.message || 'Không lưu được phiếu trộn định mức.');
+      const errorMessage = err?.message || 'Không lưu được phiếu trộn định mức.';
+      const errorProduct = products.find(product => errorMessage.includes(product.maSp.trim()));
+      setErrorProductKey(errorProduct?.key || products[0]?.key || '');
+      setError(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -847,7 +1179,7 @@ export default function MixingNormMaterialsTab() {
         ) : null}
       </section>
 
-      {error && (
+      {error && !showForm && (
         <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>
       )}
       {message && (
@@ -907,16 +1239,18 @@ export default function MixingNormMaterialsTab() {
                       <span className="text-zinc-400">—</span>
                     ) : (
                       <div className="space-y-2">
-                        {row.products.map((product, pIndex) => (
+                        {row.products.map((product, pIndex) => {
+                          const materials = summarizeProductMaterials(product);
+                          return (
                           <div key={`${row.id}-nvl-${pIndex}`}>
                             <p className="mb-0.5 font-black text-zinc-800">
                               {product.ma_sp || product.ten_sp || `SP #${pIndex + 1}`}
                             </p>
-                            {product.chi_tiet.length === 0 ? (
+                            {materials.length === 0 ? (
                               <span className="text-zinc-400">Chưa có NVL</span>
                             ) : (
                               <div className="space-y-0.5">
-                                {product.chi_tiet.map((line, index) => (
+                                {materials.map((line, index) => (
                                   <div
                                     key={`${row.id}-${pIndex}-${index}`}
                                     className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
@@ -926,21 +1260,19 @@ export default function MixingNormMaterialsTab() {
                                     </span>
                                     <span>{line.ten_nvl || '—'}</span>
                                     <span className="font-black text-[#ef1b2d]">
-                                      {line.gia_tri === null || line.gia_tri === undefined
-                                        ? '—'
-                                        : `${line.gia_tri} ${line.don_vi || 'kg'}`}
+                                      {line.khoi_luong !== null && line.khoi_luong !== undefined
+                                        ? formatKhoiLuongDisplay(line.khoi_luong)
+                                        : line.gia_tri === null || line.gia_tri === undefined
+                                          ? '—'
+                                          : `${line.gia_tri} ${line.don_vi || 'kg'}`}
                                     </span>
-                                    {line.khoi_luong !== null && line.khoi_luong !== undefined ? (
-                                      <span className="text-zinc-500">
-                                        → {formatKhoiLuongDisplay(line.khoi_luong)}
-                                      </span>
-                                    ) : null}
                                   </div>
                                 ))}
                               </div>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </td>
@@ -956,6 +1288,17 @@ export default function MixingNormMaterialsTab() {
                         <Printer className="h-3.5 w-3.5" />
                         In
                       </button>
+                      {canCreate ? (
+                        <button
+                          type="button"
+                          onClick={() => openCopy(row)}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700 hover:bg-sky-100"
+                          title="Sao chép"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Sao chép
+                        </button>
+                      ) : null}
                       {canEdit ? (
                         <button
                           type="button"
@@ -1010,10 +1353,10 @@ export default function MixingNormMaterialsTab() {
 
       {showForm && (canCreate || (canEdit && editingId)) ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="max-h-[94vh] w-full max-w-7xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
-                {editingId ? 'Sửa phiếu trộn định mức' : 'Thêm phiếu trộn định mức'}
+                {copySourceTitle || (editingId ? 'Sửa phiếu trộn định mức' : 'Thêm phiếu trộn định mức')}
               </h3>
               <button
                 type="button"
@@ -1025,6 +1368,11 @@ export default function MixingNormMaterialsTab() {
             </div>
 
             <div className="space-y-4 p-4">
+              {error && !errorProductKey ? (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                  {error}
+                </p>
+              ) : null}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <label className="space-y-1.5">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày</span>
@@ -1105,6 +1453,11 @@ export default function MixingNormMaterialsTab() {
               <div className="space-y-3">
                 {form.products.map((product, productIndex) => {
                   const productSelected = Boolean(product.maSp.trim());
+                  const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
+                  const standardBatch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
+                  const mixingRoundCount = productTotal > 0 && standardBatch > 0
+                    ? Math.ceil(productTotal / standardBatch)
+                    : 1;
                   return (
                     <div
                       key={product.key}
@@ -1128,77 +1481,87 @@ export default function MixingNormMaterialsTab() {
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <label className="space-y-1 sm:col-span-2">
+                          {error && errorProductKey === product.key ? (
+                            <span className="block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold normal-case tracking-normal text-rose-700">
+                              {error}
+                            </span>
+                          ) : null}
                           <span className="text-[11px] font-bold text-zinc-500">Mã sản phẩm</span>
-                          <select
+                          <SearchableSelect
                             value={product.maSp}
-                            onChange={event => selectProductCode(product.key, event.target.value)}
-                            className={inputClass}
-                          >
-                            <option value="">
-                              {productOptions.length === 0
-                                ? 'Chưa có sản phẩm — kiểm tra lệnh SX'
-                                : 'Chọn mã SP...'}
-                            </option>
-                            {product.maSp &&
-                              !productOptions.some(item => item.code === product.maSp) && (
-                                <option value={product.maSp}>
-                                  {product.maSp}
-                                  {product.tenSp ? ` — ${product.tenSp}` : ''} (đã lưu)
-                                </option>
-                              )}
-                            {productOptions.map(option => (
-                              <option key={option.code} value={option.code}>
-                                {option.code}
-                                {option.name ? ` — ${option.name}` : ''}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={value => selectProductCode(product.key, value)}
+                            options={productOptions}
+                            placeholder={productOptions.length ? 'Tìm mã SP...' : 'Chưa có sản phẩm — kiểm tra lệnh SX'}
+                            getValue={item => (item as ProductOption).code}
+                            getLabel={item => `${(item as ProductOption).code} — ${(item as ProductOption).name}`}
+                            getSearchText={item => `${(item as ProductOption).code} ${(item as ProductOption).name}`}
+                            inputClassName={inputClass}
+                            displaySelectedAsValue
+                          />
                           {product.tenSp ? (
-                            <p className="text-[11px] font-semibold text-zinc-500">
+                            <p className="space-x-3 text-[11px] font-semibold text-zinc-500">
                               Tên SP: <span className="font-bold text-zinc-800">{product.tenSp}</span>
+                              <span>Hao hụt: <strong className="text-rose-600">{product.haoHut || '0'}%</strong></span>
                             </p>
                           ) : null}
                         </label>
                         <label className="space-y-1">
-                          <span className="text-[11px] font-bold text-zinc-500">Tổng TL (kg)</span>
+                          <span className="text-[11px] font-bold text-zinc-500">SL quy đổi trước hao hụt (kg)</span>
                           <input
-                            value={product.tongTrongLuong}
-                            onChange={event =>
-                              updateProduct(product.key, { tongTrongLuong: event.target.value })
-                            }
-                            className={inputClass}
-                            placeholder="VD: 1000"
+                            value={product.soLuongTuDong && product.soLuongGoc
+                              ? formatKhoiLuongDisplay(parseNumberOrNull(product.soLuongGoc))
+                              : product.soLuongGoc}
+                            onChange={event => updateManualSourceQuantity(product.key, event.target.value)}
+                            readOnly={product.soLuongTuDong}
                             inputMode="decimal"
+                            className={`${inputClass} ${product.soLuongTuDong ? 'bg-zinc-100' : 'bg-amber-50'}`}
+                            placeholder="Chưa quy đổi được — nhập SL kg"
                           />
                         </label>
                         <label className="space-y-1">
-                          <span className="text-[11px] font-bold text-zinc-500">Ghi chú SP</span>
+                          <span className="text-[11px] font-bold text-zinc-500">Tổng SL sau trừ hao hụt (kg)</span>
                           <input
-                            value={product.ghiChu}
-                            onChange={event =>
-                              updateProduct(product.key, { ghiChu: event.target.value })
-                            }
+                            value={product.tongTrongLuong ? formatKhoiLuongDisplay(parseNumberOrNull(product.tongTrongLuong)) : ''}
+                            readOnly
+                            className={`${inputClass} bg-zinc-100 font-black text-[#ef1b2d]`}
+                            placeholder="Tự tính, không nhập tay"
+                          />
+                        </label>
+                        <label className="space-y-1 sm:col-span-2">
+                          <span className="text-[11px] font-bold text-zinc-500">Định lượng 1 cối trộn tiêu chuẩn (kg)</span>
+                          <input
+                            value={product.dinhLuongCoi}
+                            onChange={event => updateMixingBatch(product.key, event.target.value)}
                             className={inputClass}
+                            inputMode="decimal"
+                            placeholder="VD: 500"
                           />
                         </label>
                       </div>
 
                       {productSelected ? (
-                        <div className="mt-3 rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2.5">
+                        <div className="mt-3 overflow-x-auto pb-2">
+                          <div className="flex min-w-max items-start gap-3">
+                          {Array.from({ length: mixingRoundCount }, (_, roundIndex) => {
+                            const roundTotal = standardBatch > 0
+                              ? Math.min(standardBatch, Math.max(0, productTotal - standardBatch * roundIndex))
+                              : productTotal;
+                            return (
+                        <div key={`${product.key}-round-${roundIndex}`} className="w-[600px] shrink-0 rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2">
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                              NVL trong {product.maSp}
+                              Lần trộn thứ {roundIndex + 1} · {formatKhoiLuongDisplay(roundTotal)}
                             </p>
                             <button
                               type="button"
-                              onClick={() => addLine(product.key)}
+                              onClick={() => addLine(product.key, roundIndex)}
                               className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-white px-2 text-[10px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
                             >
                               <Plus className="h-3 w-3" />
                               Thêm NVL
                             </button>
                           </div>
-                          <p className="mb-1.5 hidden text-[10px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_0.7fr_0.5fr_0.75fr_auto] sm:gap-2 sm:px-2">
+                          <p className="mb-1.5 hidden text-[9px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_48px_40px_60px_30px] sm:gap-1 sm:px-1">
                             <span>Mã NVL</span>
                             <span>Tên NVL</span>
                             <span>Giá trị</span>
@@ -1207,36 +1570,26 @@ export default function MixingNormMaterialsTab() {
                             <span />
                           </p>
                           <div className="space-y-2">
-                            {product.lines.map((line, index) => {
-                              const codeInCatalog = Boolean(line.maNvl && materialsByCode.has(line.maNvl));
-                              const tong = parseNumberOrNull(product.tongTrongLuong);
+                            {(product.roundLines[roundIndex] ?? product.lines).map((line, index) => {
+                              const tong = roundTotal;
                               const gia = parseNumberOrNull(line.giaTri);
                               const khoiLuong = calcNvlKhoiLuong(tong, gia, line.donVi);
                               return (
                                 <div
-                                  key={line.key}
-                                  className="grid grid-cols-1 gap-2 rounded-lg border border-zinc-200 bg-white p-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_0.7fr_0.5fr_0.75fr_auto]"
+                                  key={`${line.key}-round-${roundIndex}`}
+                                  className="grid grid-cols-1 gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_48px_40px_60px_30px]"
                                 >
-                                  <select
+                                  <SearchableSelect
                                     value={line.maNvl}
-                                    onChange={event =>
-                                      selectMaterialCode(product.key, line.key, event.target.value)
-                                    }
-                                    className={inputClass}
-                                  >
-                                    <option value="">{`Chọn mã NVL #${index + 1}`}</option>
-                                    {line.maNvl && !codeInCatalog && (
-                                      <option value={line.maNvl}>
-                                        {line.maNvl} (không còn trong kho)
-                                      </option>
-                                    )}
-                                    {materials.map(material => (
-                                      <option key={material.code} value={material.code}>
-                                        {material.code}
-                                        {material.name ? ` — ${material.name}` : ''}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onChange={value => selectMaterialCode(product.key, roundIndex, line.key, value)}
+                                    options={materials}
+                                    placeholder={`Tìm mã NVL #${index + 1}`}
+                                    getValue={item => (item as MaterialOption).code}
+                                    getLabel={item => `${(item as MaterialOption).code} — ${(item as MaterialOption).name}`}
+                                    getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name}`}
+                                    inputClassName={inputClass}
+                                    displaySelectedAsValue
+                                  />
                                   <input
                                     value={line.tenNvl}
                                     readOnly
@@ -1246,11 +1599,11 @@ export default function MixingNormMaterialsTab() {
                                   <input
                                     value={line.giaTri}
                                     onChange={event =>
-                                      updateLine(product.key, line.key, {
+                                      updateLine(product.key, roundIndex, line.key, {
                                         giaTri: event.target.value
                                       })
                                     }
-                                    className={inputClass}
+                                    className={`${inputClass} h-8 px-1 text-[10px]`}
                                     placeholder={line.donVi === '%' ? '%' : 'kg'}
                                     inputMode="decimal"
                                     title="Giá trị định mức"
@@ -1258,11 +1611,11 @@ export default function MixingNormMaterialsTab() {
                                   <select
                                     value={line.donVi}
                                     onChange={event =>
-                                      updateLine(product.key, line.key, {
+                                      updateLine(product.key, roundIndex, line.key, {
                                         donVi: event.target.value === '%' ? '%' : 'kg'
                                       })
                                     }
-                                    className={inputClass}
+                                    className={`${inputClass} h-8 px-0.5 text-[10px]`}
                                   >
                                     <option value="kg">kg</option>
                                     <option value="%">%</option>
@@ -1274,7 +1627,7 @@ export default function MixingNormMaterialsTab() {
                                         : formatKhoiLuongDisplay(khoiLuong)
                                     }
                                     readOnly
-                                    className={`${inputClass} bg-zinc-50 font-black text-[#ef1b2d]`}
+                                    className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-[#ef1b2d]`}
                                     placeholder={
                                       line.donVi === '%' && tong === null
                                         ? 'Nhập Tổng TL'
@@ -1288,9 +1641,9 @@ export default function MixingNormMaterialsTab() {
                                   />
                                   <button
                                     type="button"
-                                    onClick={() => removeLine(product.key, line.key)}
-                                    disabled={product.lines.length <= 1}
-                                    className="inline-flex h-10 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                    onClick={() => removeLine(product.key, roundIndex, line.key)}
+                                    disabled={(product.roundLines[roundIndex] ?? product.lines).length <= 1}
+                                    className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
                                     title="Xóa dòng NVL"
                                   >
                                     <Trash2 className="h-4 w-4" />
@@ -1298,6 +1651,10 @@ export default function MixingNormMaterialsTab() {
                                 </div>
                               );
                             })}
+                          </div>
+                        </div>
+                            );
+                          })}
                           </div>
                         </div>
                       ) : (
