@@ -48,3 +48,8 @@ create policy "kho_nvl_delete_all"
 comment on table public.kho_nvl is 'Kho nguyen vat lieu (NPL).';
 comment on column public.kho_nvl.ma_npl is 'Ma nguyen phu lieu.';
 comment on column public.kho_nvl.ten_npl is 'Ten nguyen phu lieu.';
+
+
+alter table public.kho_nvl
+  add column if not exists ten_nvl_sx text;
+comment on column public.kho_nvl.ten_nvl_sx is 'Ten nguyen vat lieu su dung trong san xuat.';

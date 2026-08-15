@@ -49,6 +49,7 @@ export interface MaterialRow {
   id: string;
   code: string;
   name: string;
+  productionName: string;
   unit: string;
   totalWeight: string;
   plasticWeight: string;
@@ -131,6 +132,7 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
           : code || rawId || name,
         code,
         name,
+        productionName: String(record.ten_nvl_sx ?? '').trim(),
         unit: formatCell(record.don_vi),
         totalWeight: formatCell(record.tong_trong_luong),
         plasticWeight: formatCell(record.trong_luong_nhua),
@@ -149,6 +151,7 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
 export type MaterialFormState = {
   code: string;
   name: string;
+  productionName: string;
   unit: string;
   totalWeight: string;
   plasticWeight: string;
@@ -164,6 +167,7 @@ export type MaterialFormState = {
 const emptyMaterialForm = (): MaterialFormState => ({
   code: '',
   name: '',
+  productionName: '',
   unit: '',
   totalWeight: '',
   plasticWeight: '',
@@ -184,6 +188,7 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
   return {
     code: materialCellToInput(material.code),
     name: materialCellToInput(material.name),
+    productionName: materialCellToInput(material.productionName),
     unit: materialCellToInput(material.unit),
     totalWeight: materialCellToInput(material.totalWeight),
     plasticWeight: materialCellToInput(material.plasticWeight),
@@ -611,6 +616,7 @@ export function MaterialViewModal({
   const infoRows: Array<[string, string]> = [
     ['Mã NPL', material.code],
     ['Tên NVL', material.name],
+    ['Tên NVL sản xuất', material.productionName || '-'],
     ['Đơn vị', material.unit],
     ['Tồn đầu', material.openingStock],
     ['Nhập', inboundDisplay],
@@ -839,7 +845,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       const matchesUnit = selectedUnit === 'all' || material.unit === selectedUnit;
       const matchesSearch =
         !normalizedSearch ||
-        `${material.code} ${material.name} ${material.unit}`.toLowerCase().includes(normalizedSearch);
+        `${material.code} ${material.name} ${material.productionName} ${material.unit}`.toLowerCase().includes(normalizedSearch);
       return matchesUnit && matchesSearch;
     });
   }, [materials, normalizedSearch, selectedUnit]);
@@ -1062,6 +1068,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
 
   const materialFormFields: Array<{ key: keyof MaterialFormState; label: string; required?: boolean; placeholder?: string }> = [
     { key: 'name', label: 'Tên nguyên phụ liệu', required: true, placeholder: 'VD: Màng PE' },
+    { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', placeholder: 'Tên dùng trong sản xuất' },
     { key: 'totalWeight', label: 'Tổng kg' },
     { key: 'plasticWeight', label: 'Kg nhựa' },
     { key: 'bagWeight', label: 'Kg túi' },
@@ -1285,6 +1292,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         <TableHead>
           <TableHeadCell>Mã NPL</TableHeadCell>
           <TableHeadCell>Tên nguyên phụ liệu</TableHeadCell>
+          <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
           <TableHeadCell>ĐV</TableHeadCell>
           <TableHeadCell align="center">Tổng kg</TableHeadCell>
           <TableHeadCell>Tồn đầu</TableHeadCell>
@@ -1299,6 +1307,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               <TableRow>
                 <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-900">{material.name || '-'}</td>
+                <td className="px-4 py-3 font-semibold text-zinc-700">{material.productionName || '-'}</td>
                 <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
                 <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
                 <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.openingStock}</td>
@@ -1351,7 +1360,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           ))}
 
           {!isLoadingMaterials && filteredMaterials.length === 0 && (
-            <TableEmptyRow colSpan={9}>
+            <TableEmptyRow colSpan={10}>
               Không có nguyên phụ liệu phù hợp bộ lọc.
             </TableEmptyRow>
           )}

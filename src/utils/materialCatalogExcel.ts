@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 export type MaterialCatalogExcelRow = {
   code: string;
   name: string;
+  productionName: string;
   unit: string;
   totalWeight: string;
   plasticWeight: string;
@@ -24,6 +25,7 @@ export type MaterialCatalogExcelRow = {
 export const MATERIAL_CATALOG_EXCEL_HEADERS = [
   'Mã NPL',
   'Tên nguyên phụ liệu',
+  'Tên NVL sản xuất',
   'ĐV',
   'Tổng kg',
   'Tồn đầu',
@@ -39,6 +41,7 @@ export const MATERIAL_CATALOG_EXCEL_HEADERS = [
 const HEADER_ALIASES: Record<keyof Omit<MaterialCatalogExcelRow, 'rowNumber'>, string[]> = {
   code: ['ma npl', 'ma_npl', 'ma nvl', 'ma_nvl', 'code'],
   name: ['ten nguyen phu lieu', 'ten_npl', 'ten npl', 'ten nvl', 'name'],
+  productionName: ['ten nvl san xuat', 'ten nvl sx', 'ten_nvl_sx', 'production name'],
   unit: ['don vi', 'don_vi', 'dv', 'unit'],
   totalWeight: ['tong kg', 'tong trong luong', 'tong_trong_luong', 'tong tl', 'total weight'],
   plasticWeight: ['kg nhua', 'trong luong nhua', 'trong_luong_nhua', 'plastic weight'],
@@ -125,6 +128,7 @@ export async function parseMaterialCatalogExcel(file: File): Promise<MaterialCat
       return {
         code: get('code'),
         name: get('name'),
+        productionName: get('productionName'),
         unit: get('unit'),
         totalWeight: get('totalWeight'),
         plasticWeight: get('plasticWeight'),
@@ -147,6 +151,7 @@ export function downloadMaterialCatalogExcelTemplate() {
     [
       'NPL-001',
       'Màng PE',
+      'Màng PE sản xuất',
       'kg',
       '1.25',
       '100',
@@ -159,7 +164,7 @@ export function downloadMaterialCatalogExcelTemplate() {
       ''
     ],
     // Dòng gần trống — vẫn đẩy lên được khi đã có mã + tên
-    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '']
+    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '']
   ]);
   worksheet['!cols'] = MATERIAL_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(28, Math.max(10, header.length + 2))
@@ -174,6 +179,7 @@ export function materialCatalogRowToPayload(row: MaterialCatalogExcelRow) {
   return {
     code: row.code.trim(),
     name: row.name.trim(),
+    productionName: row.productionName.trim(),
     unit: row.unit.trim(),
     totalWeight: row.totalWeight.trim(),
     plasticWeight: row.plasticWeight.trim(),

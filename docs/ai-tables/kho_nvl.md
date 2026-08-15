@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `kho_nvl` |
 | **Tab** | `materials` → `/kho-nvl` |
-| **SQL** | `supabase-kho-nvl.sql` |
+| **SQL** | `supabase-kho-nvl.sql`, `supabase-kho-nvl-ten-nvl-sx.sql` |
 | **Fix precision** | `supabase-kho-nvl-precision.sql` (giữ số lẻ, không bị làm tròn) |
 
 ## API (`server.ts`)
@@ -30,10 +30,12 @@
 
 Phiếu xuất nhập (`phieu_xuat_nhap_kho`) cập nhật tồn kho NVL.
 
+`ten_nvl_sx`: tên nguyên vật liệu sử dụng trong sản xuất; được sao chép sang thành phần NVL của sản phẩm khi chọn mã NPL.
+
 ### Excel danh mục NVL
 
 - **Tải mẫu Excel** / **Tải Excel lên** — `src/utils/materialCatalogExcel.ts`
-- Cột khớp bảng + form: Mã NPL, Tên, ĐV, Tổng kg, Tồn đầu, Nhập, Xuất, Kg nhựa/túi/lõi, Khổ cuộn, Chiều dài ĐV
+- Cột khớp bảng + form: Mã NPL, Tên, Tên NVL sản xuất, ĐV, Tổng kg, Tồn đầu, Nhập, Xuất, Kg nhựa/túi/lõi, Khổ cuộn, Chiều dài ĐV
 - Ô trống vẫn đẩy lên (null); tạo mới cần Mã + Tên; cập nhật thiếu tên thì giữ tên cũ
 - Upsert theo `ma_npl`
 - Mẫu 2 cột cũ tách riêng: **Mẫu cập nhật Tổng kg** / **Nhập Tổng kg**

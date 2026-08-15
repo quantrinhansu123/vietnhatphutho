@@ -37,6 +37,7 @@ export type ProductNplAmountType = 'percent' | 'quantity';
 export interface ProductNplItem {
   code: string;
   name: string;
+  productionName?: string;
   amountType: ProductNplAmountType;
   percent: number | null;
   quantity: number | null;
@@ -46,6 +47,7 @@ export interface ProductNplItem {
 export interface MaterialOption {
   code: string;
   name: string;
+  productionName?: string;
   unit: string;
   /** Tổng khối lượng (kg/ĐVT) từ kho NVL — dùng để quy đổi số lượng sang kg khi ĐVT ≠ kg. */
   totalWeight?: string;
@@ -111,6 +113,7 @@ export function parseProductNplItems(raw: unknown): ProductNplItem[] {
       const record = entry as Record<string, unknown>;
       const code = String(record.ma_npl ?? record.code ?? record.ma ?? '').trim();
       const name = String(record.ten_npl ?? record.name ?? record.ten ?? '').trim();
+      const productionName = String(record.ten_nvl_sx ?? record.productionName ?? '').trim();
       const unit = String(record.don_vi ?? record.unit ?? '').trim() || '-';
       const amountType = resolveProductNplAmountType(record);
 
@@ -122,6 +125,7 @@ export function parseProductNplItems(raw: unknown): ProductNplItem[] {
         return {
           code,
           name,
+          productionName,
           amountType: 'quantity',
           percent: null,
           quantity,
@@ -134,6 +138,7 @@ export function parseProductNplItems(raw: unknown): ProductNplItem[] {
       return {
         code,
         name,
+        productionName,
         amountType: 'percent',
         percent: roundNplNumber(percent),
         quantity: null,
@@ -153,6 +158,7 @@ export function productNplItemsToJson(items: ProductNplItem[]) {
     const base = {
       ma_npl: item.code,
       ten_npl: item.name,
+      ten_nvl_sx: item.productionName?.trim() || '',
       loai: item.amountType === 'quantity' ? 'so_luong' : 'phan_tram',
       don_vi: item.unit && item.unit !== '-' ? item.unit : null
     };
@@ -182,10 +188,12 @@ export function excelRowsToProductNplItems(
       option => normalizeProductCodeKey(option.code) === normalizeProductCodeKey(row.code)
     );
     const name = row.name || material?.name || '';
+    const productionName = material?.productionName || '';
     if (row.amountType === 'quantity') {
       return {
         code: row.code.trim(),
         name,
+        productionName,
         amountType: 'quantity',
         percent: null,
         quantity: row.value,
@@ -196,6 +204,7 @@ export function excelRowsToProductNplItems(
     return {
       code: row.code.trim(),
       name,
+      productionName,
       amountType: 'percent',
       percent: row.value,
       quantity: null,
@@ -219,6 +228,7 @@ export function bulkExcelRowsToProductMap(
         ? {
             code: material?.code || row.componentName.trim(),
             name: row.componentName || material?.name || '',
+            productionName: material?.productionName || '',
             amountType: 'quantity',
             percent: null,
             quantity: row.value,
@@ -227,6 +237,7 @@ export function bulkExcelRowsToProductMap(
         : {
             code: material?.code || row.componentName.trim(),
             name: row.componentName || material?.name || '',
+            productionName: material?.productionName || '',
             amountType: 'percent',
             percent: row.value,
             quantity: null,

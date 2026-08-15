@@ -25,7 +25,7 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
   "tong_trong_luong": 1000,
   "dinh_luong_coi": 500,
   "so_lan_tron": 2,
-  "nvl": [{ "ma_nvl", "ten_nvl", "gia_tri", "don_vi", "khoi_luong" }]
+  "nvl": [{ "ma_nvl", "ten_nvl", "ten_nvl_san_xuat", "gia_tri", "don_vi", "khoi_luong" }]
 }]
 ```
 

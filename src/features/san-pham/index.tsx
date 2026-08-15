@@ -128,6 +128,9 @@ export function ProductNplItemFormModal({
 }) {
   const [code, setCode] = useState(initialItem?.code ?? '');
   const [name, setName] = useState(initialItem?.name ?? '');
+  const [productionName, setProductionName] = useState(
+    initialItem?.productionName || materialOptions.find(option => option.code === initialItem?.code)?.productionName || ''
+  );
   const [amountType, setAmountType] = useState<ProductNplAmountType>(initialItem?.amountType ?? 'percent');
   const [amountValue, setAmountValue] = useState(() => {
     if (!initialItem) return '';
@@ -144,6 +147,7 @@ export function ProductNplItemFormModal({
     const material = materialOptions.find(option => option.code === nextCode);
     if (material) {
       setName(material.name);
+      setProductionName(material.productionName ?? '');
       if (material.unit && material.unit !== '-') {
         setUnit(material.unit);
       }
@@ -190,6 +194,7 @@ export function ProductNplItemFormModal({
       await onSave({
         code: trimmedCode,
         name: name.trim() || material?.name || '',
+        productionName: productionName.trim() || material?.productionName || '',
         amountType,
         percent: amountType === 'percent' ? roundNplNumber(numericValue) : null,
         quantity: amountType === 'quantity' ? numericValue : null,
@@ -238,6 +243,10 @@ export function ProductNplItemFormModal({
           <label className="block space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên NVL</span>
             <input value={name} onChange={e => setName(e.target.value)} className={productFieldClass} placeholder="Tên nguyên vật liệu" />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên NVL SX</span>
+            <input value={productionName} readOnly className={`${productFieldClass} bg-zinc-50`} placeholder="Lấy từ Kho NVL" />
           </label>
           <label className="block space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại định lượng *</span>
@@ -829,6 +838,7 @@ export function ProductViewModal({
                   <TableHeadCell>STT</TableHeadCell>
                   <TableHeadCell>Mã NPL</TableHeadCell>
                   <TableHeadCell>Tên NVL</TableHeadCell>
+                  <TableHeadCell>Tên NVL SX</TableHeadCell>
                   <TableHeadCell>Loại</TableHeadCell>
                   <TableHeadCell>Giá trị</TableHeadCell>
                   <TableHeadCell>Khối lượng (kg)</TableHeadCell>
@@ -842,6 +852,9 @@ export function ProductViewModal({
                         <td className="px-4 py-3 font-bold text-zinc-600">{index + 1}</td>
                         <td className="px-4 py-3 font-black text-zinc-950">{item.code}</td>
                         <td className="px-4 py-3 font-semibold text-zinc-800">{item.name || '-'}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-700">
+                          {item.productionName || materialOptions.find(option => option.code === item.code)?.productionName || '-'}
+                        </td>
                         <td className="px-4 py-3">
                           <StatusBadge label={productNplAmountTypeLabel(item.amountType)} color="zinc" />
                         </td>
@@ -898,7 +911,7 @@ export function ProductViewModal({
                     </React.Fragment>
                   ))}
                   {items.length === 0 && (
-                    <TableEmptyRow colSpan={8}>Chưa khai báo thành phần NVL.</TableEmptyRow>
+                    <TableEmptyRow colSpan={9}>Chưa khai báo thành phần NVL.</TableEmptyRow>
                   )}
                 </TableBody>
               </TableShell>
@@ -921,6 +934,7 @@ export function ProductViewModal({
               {[
                 ['Mã NPL', detailItem.code],
                 ['Tên NVL', detailItem.name || '-'],
+                ['Tên NVL SX', detailItem.productionName || materialOptions.find(option => option.code === detailItem.code)?.productionName || '-'],
                 ['Loại', productNplAmountTypeLabel(detailItem.amountType)],
                 ['Giá trị', formatProductNplAmount(detailItem)],
                 ['Khối lượng', formatItemWeight(detailItem)],
@@ -1332,6 +1346,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       const options = materials.map(material => ({
         code: material.code,
         name: material.name,
+        productionName: material.productionName,
         unit: material.unit && material.unit !== '-' ? material.unit : '',
         totalWeight: material.totalWeight
       }));
