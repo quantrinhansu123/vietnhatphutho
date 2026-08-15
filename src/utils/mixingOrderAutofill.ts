@@ -6,6 +6,7 @@ import type { MixingPhoiTron, MixingReportLine, MixingRoundItem } from '../compo
 export type MixingBomItem = {
   code: string;
   name: string;
+  productionName: string;
   unit: string;
   amountType: 'percent' | 'quantity';
   percent: number | null;
@@ -123,6 +124,7 @@ export function parseMixingProductBom(raw: unknown): MixingBomItem[] {
       const record = entry as Record<string, unknown>;
       const code = String(record.ma_npl ?? record.code ?? record.ma ?? '').trim();
       const name = String(record.ten_npl ?? record.name ?? record.ten ?? '').trim();
+      const productionName = String(record.ten_nvl_sx ?? record.productionName ?? '').trim();
       const unit = String(record.don_vi ?? record.unit ?? '').trim() || 'kg';
       const amountType = resolveBomAmountType(record);
       if (!code) return null;
@@ -133,6 +135,7 @@ export function parseMixingProductBom(raw: unknown): MixingBomItem[] {
         return {
           code,
           name,
+          productionName,
           unit,
           amountType: 'quantity',
           percent: null,
@@ -145,6 +148,7 @@ export function parseMixingProductBom(raw: unknown): MixingBomItem[] {
       return {
         code,
         name,
+        productionName,
         unit,
         amountType: 'percent',
         percent: roundNplNumber(percent),

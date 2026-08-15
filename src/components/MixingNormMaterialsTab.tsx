@@ -21,6 +21,7 @@ import { convertProductQuantity, type ProductConversionFactors } from '../utils/
 export type MixingNormLine = {
   ma_nvl: string;
   ten_nvl: string;
+  ten_nvl_san_xuat?: string;
   gia_tri: number | null;
   don_vi: string;
   /** kg — %: tong_tl × giá trị / 100; đơn vị kg: = giá trị */
@@ -53,6 +54,7 @@ export type MixingNormRow = {
 type MaterialOption = {
   code: string;
   name: string;
+  productionName: string;
   unit: string;
 };
 
@@ -77,6 +79,7 @@ type LineForm = {
   key: string;
   maNvl: string;
   tenNvl: string;
+  tenNvlSanXuat: string;
   giaTri: string;
   donVi: 'kg' | '%';
 };
@@ -109,6 +112,7 @@ const emptyLine = (): LineForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   maNvl: '',
   tenNvl: '',
+  tenNvlSanXuat: '',
   giaTri: '',
   donVi: 'kg'
 });
@@ -138,12 +142,17 @@ const emptyForm = (): NormForm => ({
   products: [emptyProduct()]
 });
 
-function productToForm(product: MixingNormProduct, idHint = ''): ProductForm {
+function productToForm(
+  product: MixingNormProduct,
+  idHint = '',
+  materialsByCode: Map<string, MaterialOption> = new Map()
+): ProductForm {
   const baseLines = product.chi_tiet.length > 0
     ? product.chi_tiet.map(line => ({
         key: `${idHint}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
         maNvl: line.ma_nvl,
         tenNvl: line.ten_nvl,
+        tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
         giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
         donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
       }))
@@ -165,6 +174,7 @@ function productToForm(product: MixingNormProduct, idHint = ''): ProductForm {
       key: `${idHint}-round-${round.lan}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
       maNvl: line.ma_nvl,
       tenNvl: line.ten_nvl,
+      tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
       giaTri: line.gia_tri == null ? '' : String(line.gia_tri),
       donVi: line.don_vi === '%' ? '%' : 'kg'
     }))) ?? []
@@ -184,11 +194,13 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
       const row = item as Record<string, unknown>;
       const code = String(row.ma_npl ?? row.ma_nvl ?? row.code ?? '').trim();
       const name = String(row.ten_npl ?? row.ten_nvl ?? row.name ?? '').trim();
+      const productionName = String(row.ten_nvl_sx ?? row.productionName ?? '').trim();
       if (!code && !name) return null;
       const unitRaw = String(row.don_vi ?? 'kg').trim();
       return {
         code,
         name,
+        productionName,
         unit: unitRaw === '%' ? '%' : 'kg'
       };
     })
@@ -282,6 +294,7 @@ function bomToLineForms(items: MixingBomItem[]): LineForm[] {
     key: `${Date.now()}-${item.code}-${Math.random().toString(36).slice(2, 6)}`,
     maNvl: item.code,
     tenNvl: item.name,
+    tenNvlSanXuat: item.productionName,
     giaTri: String(item.amountType === 'percent' ? item.percent ?? '' : item.quantity ?? ''),
     donVi: item.amountType === 'percent' ? '%' as const : 'kg' as const
   }));
@@ -296,6 +309,7 @@ function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): Mix
       const line = item as Record<string, unknown>;
       const ma_nvl = String(line.ma_nvl ?? '').trim();
       const ten_nvl = String(line.ten_nvl ?? '').trim();
+      const ten_nvl_san_xuat = String(line.ten_nvl_san_xuat ?? line.tenNvlSanXuat ?? '').trim();
       if (!ma_nvl && !ten_nvl) return null;
       const gia_tri = parseNumberOrNull(line.gia_tri ?? line.dinh_muc);
       const don_vi = String(line.don_vi ?? 'kg').trim() === '%' ? '%' : 'kg';
@@ -303,6 +317,7 @@ function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): Mix
       return {
         ma_nvl,
         ten_nvl,
+        ten_nvl_san_xuat,
         gia_tri,
         don_vi,
         khoi_luong: saved ?? calcNvlKhoiLuong(tongTrongLuong, gia_tri, don_vi)
@@ -739,7 +754,7 @@ export default function MixingNormMaterialsTab() {
       ghiChu: row.ghi_chu,
       products:
         row.products.length > 0
-          ? row.products.map(product => productToForm(product, row.id))
+          ? row.products.map(product => productToForm(product, row.id, materialsByCode))
           : [emptyProduct()]
     });
     setShowForm(true);
@@ -760,7 +775,7 @@ export default function MixingNormMaterialsTab() {
       maLenhSx: row.ma_lenh_sx,
       ghiChu: row.ghi_chu,
       products: row.products.length > 0
-        ? row.products.map(product => productToForm(product, `${row.id}-copy`))
+        ? row.products.map(product => productToForm(product, `${row.id}-copy`, materialsByCode))
         : [emptyProduct()]
     });
     setShowForm(true);
@@ -923,7 +938,8 @@ export default function MixingNormMaterialsTab() {
     const material = materialsByCode.get(code);
     updateLine(productKey, roundIndex, lineKey, {
       maNvl: code,
-      tenNvl: material?.name ?? ''
+      tenNvl: material?.name ?? '',
+      tenNvlSanXuat: material?.productionName ?? ''
     });
   };
 
@@ -1041,6 +1057,7 @@ export default function MixingNormMaterialsTab() {
           return {
             ma_nvl: line.maNvl.trim(),
             ten_nvl: line.tenNvl.trim(),
+            ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
             gia_tri,
             don_vi: line.donVi,
             khoi_luong: calcNvlKhoiLuong(roundWeight, gia_tri, line.donVi)
@@ -1562,8 +1579,8 @@ export default function MixingNormMaterialsTab() {
                             </button>
                           </div>
                           <p className="mb-1.5 hidden text-[9px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_48px_40px_60px_30px] sm:gap-1 sm:px-1">
-                            <span>Mã NVL</span>
-                            <span>Tên NVL</span>
+                            <span>Mã NVL - Tên NVL</span>
+                            <span>Tên NVL sản xuất</span>
                             <span>Giá trị</span>
                             <span>ĐV</span>
                             <span>Khối lượng</span>
@@ -1583,18 +1600,19 @@ export default function MixingNormMaterialsTab() {
                                     value={line.maNvl}
                                     onChange={value => selectMaterialCode(product.key, roundIndex, line.key, value)}
                                     options={materials}
-                                    placeholder={`Tìm mã NVL #${index + 1}`}
+                                    placeholder={`Tìm mã hoặc tên NVL #${index + 1}`}
                                     getValue={item => (item as MaterialOption).code}
-                                    getLabel={item => `${(item as MaterialOption).code} — ${(item as MaterialOption).name}`}
+                                    getLabel={item => `${(item as MaterialOption).code} - ${(item as MaterialOption).name}`}
                                     getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name}`}
                                     inputClassName={inputClass}
-                                    displaySelectedAsValue
                                   />
                                   <input
-                                    value={line.tenNvl}
-                                    readOnly
-                                    className={`${inputClass} bg-zinc-50 text-zinc-600`}
-                                    placeholder="Tên NVL (tự điền)"
+                                    value={line.tenNvlSanXuat}
+                                    onChange={event => updateLine(product.key, roundIndex, line.key, {
+                                      tenNvlSanXuat: event.target.value
+                                    })}
+                                    className={inputClass}
+                                    placeholder="Nhập tên NVL sản xuất"
                                   />
                                   <input
                                     value={line.giaTri}

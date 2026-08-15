@@ -1935,6 +1935,7 @@ function respondSupabaseReadError(
 type ProductNplPhanTramItem = {
   ma_npl: string;
   ten_npl: string;
+  ten_nvl_sx: string;
   loai: 'phan_tram' | 'so_luong';
   phan_tram: number | null;
   so_luong: number | null;
@@ -2002,6 +2003,7 @@ function parseProductNplPhanTramInput(raw: unknown): { error: string } | { items
     const record = entry as Record<string, unknown>;
     const maNpl = String(record.ma_npl ?? record.code ?? record.ma ?? '').trim();
     const tenNpl = String(record.ten_npl ?? record.name ?? record.ten ?? '').trim();
+    const tenNvlSx = String(record.ten_nvl_sx ?? record.productionName ?? '').trim();
     const donVi = String(record.don_vi ?? record.unit ?? '').trim() || null;
     const loai = resolveServerNplAmountType(record);
 
@@ -2017,6 +2019,7 @@ function parseProductNplPhanTramInput(raw: unknown): { error: string } | { items
       items.push({
         ma_npl: maNpl,
         ten_npl: tenNpl,
+        ten_nvl_sx: tenNvlSx,
         loai: 'so_luong',
         phan_tram: null,
         so_luong: Math.round(quantity * 100) / 100,
@@ -2033,6 +2036,7 @@ function parseProductNplPhanTramInput(raw: unknown): { error: string } | { items
     items.push({
       ma_npl: maNpl,
       ten_npl: tenNpl,
+      ten_nvl_sx: tenNvlSx,
       loai: 'phan_tram',
       phan_tram: Math.round(percent * 100) / 100,
       so_luong: null,
@@ -2041,6 +2045,41 @@ function parseProductNplPhanTramInput(raw: unknown): { error: string } | { items
   }
 
   return { items };
+}
+
+async function enrichProductNplProductionNames(
+  items: ProductNplPhanTramItem[]
+): Promise<{ error: string } | { items: ProductNplPhanTramItem[] }> {
+  if (!supabase || items.length === 0) return { items };
+
+  const materialCodes = [...new Set(items.map(item => item.ma_npl.trim()).filter(Boolean))];
+  if (materialCodes.length === 0) return { items };
+
+  const { data, error } = await supabase
+    .from(SUPABASE_MATERIALS_TABLE)
+    .select('ma_npl, ten_nvl_sx')
+    .in('ma_npl', materialCodes);
+
+  if (error) {
+    console.error('Supabase kho_nvl production-name lookup error:', error);
+    return { error: `Không thể lấy Tên NVL SX từ Kho NVL. ${error.message}` };
+  }
+
+  const productionNameByCode = new Map<string, string>();
+  (data || []).forEach(row => {
+    const code = String(row.ma_npl ?? '').trim().toLocaleLowerCase('vi');
+    const productionName = String(row.ten_nvl_sx ?? '').trim();
+    if (code && productionName) productionNameByCode.set(code, productionName);
+  });
+
+  return {
+    items: items.map(item => ({
+      ...item,
+      ten_nvl_sx:
+        productionNameByCode.get(item.ma_npl.trim().toLocaleLowerCase('vi')) ||
+        item.ten_nvl_sx.trim()
+    }))
+  };
 }
 
 function parseProductWastePercent(value: unknown): { error: string } | { value: number | null } {
@@ -2907,6 +2946,9 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         const line = item as Record<string, unknown>;
         const ma_nvl = String(line.ma_nvl ?? line.maNvl ?? '').trim();
         const ten_nvl = String(line.ten_nvl ?? line.tenNvl ?? '').trim();
+        const ten_nvl_san_xuat = String(
+          line.ten_nvl_san_xuat ?? line.tenNvlSanXuat ?? ''
+        ).trim();
         if (!ma_nvl && !ten_nvl) return null;
         const giaTriRaw = line.gia_tri ?? line.giaTri ?? line.dinh_muc ?? line.value;
         let gia_tri: number | null = null;
@@ -2931,6 +2973,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         return {
           ma_nvl: ma_nvl || null,
           ten_nvl: ten_nvl || null,
+          ten_nvl_san_xuat: ten_nvl_san_xuat || null,
           gia_tri,
           don_vi,
           khoi_luong
@@ -2949,6 +2992,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       ): item is {
         ma_nvl: string | null;
         ten_nvl: string | null;
+        ten_nvl_san_xuat: string | null;
         gia_tri: number | null;
         don_vi: string;
         khoi_luong: number | null;
@@ -3897,6 +3941,7 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
   const record: Record<string, string | number | null> = {
     ma_npl: code,
     ten_npl: name,
+    ten_nvl_sx: parseMaterialText(source.productionName ?? source.ten_nvl_sx) || null,
     don_vi: parseMaterialText(source.unit) || null,
     tong_trong_luong: parseOptionalMaterialDecimalText(source.totalWeight),
     trong_luong_nhua: parseOptionalMaterialDecimalText(source.plasticWeight),
@@ -5656,9 +5701,24 @@ export function createApp() {
         return res.status(400).json({ error: parsedProduct.error });
       }
 
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const nplInput = body.npl_phan_tram ?? body.nplPhanTram ?? body.nplItems;
+      const insertRecord: Record<string, unknown> = { ...parsedProduct.record };
+      if (nplInput !== undefined && nplInput !== null) {
+        const parsedNpl = parseProductNplPhanTramInput(nplInput);
+        if ('error' in parsedNpl) {
+          return res.status(400).json({ error: parsedNpl.error });
+        }
+        const enrichedNpl = await enrichProductNplProductionNames(parsedNpl.items);
+        if ('error' in enrichedNpl) {
+          return res.status(500).json({ error: enrichedNpl.error });
+        }
+        insertRecord.npl_phan_tram = enrichedNpl.items;
+      }
+
       const { data, error } = await supabase
         .from(SUPABASE_PRODUCTS_TABLE)
-        .insert(parsedProduct.record)
+        .insert(insertRecord)
         .select('*')
         .single();
 
@@ -5742,7 +5802,11 @@ export function createApp() {
         if ('error' in parsedNpl) {
           return res.status(400).json({ error: parsedNpl.error });
         }
-        updateRecord.npl_phan_tram = parsedNpl.items;
+        const enrichedNpl = await enrichProductNplProductionNames(parsedNpl.items);
+        if ('error' in enrichedNpl) {
+          return res.status(500).json({ error: enrichedNpl.error });
+        }
+        updateRecord.npl_phan_tram = enrichedNpl.items;
       }
 
       const productFieldKeys = [
