@@ -483,12 +483,62 @@ function summarizeLines(lines: MixingNormLine[]) {
     .join(' · ');
 }
 
+type SummarizedMaterial = {
+  ma_nvl: string;
+  ten_nvl: string;
+  khoi_luong: number | null;
+  gia_tri: number | null;
+  don_vi: string;
+};
+
+/** Cộng khối lượng cùng NVL qua toàn bộ cối trộn; phiếu cũ dùng chi_tiet. */
+function summarizeProductMaterials(product: MixingNormProduct): SummarizedMaterial[] {
+  const hasMixingRounds = Boolean(product.lan_tron?.length);
+  const sourceLines = hasMixingRounds
+    ? product.lan_tron!.flatMap(round => round.nvl)
+    : product.chi_tiet;
+  const byMaterial = new Map<string, SummarizedMaterial>();
+
+  sourceLines.forEach((line, index) => {
+    const key = `${line.ma_nvl.trim().toLocaleLowerCase('vi')}|${line.ten_nvl.trim().toLocaleLowerCase('vi')}`
+      || `line-${index}`;
+    const current = byMaterial.get(key);
+    const weight = line.khoi_luong;
+    if (!current) {
+      byMaterial.set(key, {
+        ma_nvl: line.ma_nvl,
+        ten_nvl: line.ten_nvl,
+        khoi_luong: weight,
+        gia_tri: line.gia_tri,
+        don_vi: line.don_vi
+      });
+      return;
+    }
+    current.khoi_luong = current.khoi_luong === null || current.khoi_luong === undefined
+      ? weight
+      : weight === null || weight === undefined
+        ? current.khoi_luong
+        : current.khoi_luong + weight;
+  });
+
+  return [...byMaterial.values()];
+}
+
 function summarizeProductsNvl(products: MixingNormProduct[]) {
   if (products.length === 0) return '—';
   return products
     .map(product => {
       const label = product.ma_sp || product.ten_sp || 'SP';
-      return `${label}: ${summarizeLines(product.chi_tiet)}`;
+      const materials = summarizeProductMaterials(product);
+      const details = materials.length === 0
+        ? 'Chưa có NVL'
+        : materials.map(line => {
+            const name = line.ten_nvl || line.ma_nvl || 'NVL';
+            return `${name}: ${line.khoi_luong == null
+              ? `${line.gia_tri ?? '—'} ${line.don_vi || 'kg'}`
+              : formatKhoiLuongDisplay(line.khoi_luong)}`;
+          }).join(' · ');
+      return `${label}: ${details}`;
     })
     .join(' | ');
 }
@@ -702,7 +752,7 @@ export default function MixingNormMaterialsTab() {
     if (!canCreate) return;
     setEditingId('');
     setCopySourceTitle(
-      `Copy phiếu trộn định mức · ${row.ngay || 'Chưa có ngày'} · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
+      `Sao chép phiếu trộn định mức · ${row.ngay || 'Chưa có ngày'} · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
     );
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
@@ -1189,16 +1239,18 @@ export default function MixingNormMaterialsTab() {
                       <span className="text-zinc-400">—</span>
                     ) : (
                       <div className="space-y-2">
-                        {row.products.map((product, pIndex) => (
+                        {row.products.map((product, pIndex) => {
+                          const materials = summarizeProductMaterials(product);
+                          return (
                           <div key={`${row.id}-nvl-${pIndex}`}>
                             <p className="mb-0.5 font-black text-zinc-800">
                               {product.ma_sp || product.ten_sp || `SP #${pIndex + 1}`}
                             </p>
-                            {product.chi_tiet.length === 0 ? (
+                            {materials.length === 0 ? (
                               <span className="text-zinc-400">Chưa có NVL</span>
                             ) : (
                               <div className="space-y-0.5">
-                                {product.chi_tiet.map((line, index) => (
+                                {materials.map((line, index) => (
                                   <div
                                     key={`${row.id}-${pIndex}-${index}`}
                                     className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
@@ -1208,21 +1260,19 @@ export default function MixingNormMaterialsTab() {
                                     </span>
                                     <span>{line.ten_nvl || '—'}</span>
                                     <span className="font-black text-[#ef1b2d]">
-                                      {line.gia_tri === null || line.gia_tri === undefined
-                                        ? '—'
-                                        : `${line.gia_tri} ${line.don_vi || 'kg'}`}
+                                      {line.khoi_luong !== null && line.khoi_luong !== undefined
+                                        ? formatKhoiLuongDisplay(line.khoi_luong)
+                                        : line.gia_tri === null || line.gia_tri === undefined
+                                          ? '—'
+                                          : `${line.gia_tri} ${line.don_vi || 'kg'}`}
                                     </span>
-                                    {line.khoi_luong !== null && line.khoi_luong !== undefined ? (
-                                      <span className="text-zinc-500">
-                                        → {formatKhoiLuongDisplay(line.khoi_luong)}
-                                      </span>
-                                    ) : null}
                                   </div>
                                 ))}
                               </div>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </td>
@@ -1243,7 +1293,7 @@ export default function MixingNormMaterialsTab() {
                           type="button"
                           onClick={() => openCopy(row)}
                           className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700 hover:bg-sky-100"
-                          title="Sao chép thành phiếu định mức mới"
+                          title="Sao chép"
                         >
                           <Copy className="h-3.5 w-3.5" />
                           Sao chép
