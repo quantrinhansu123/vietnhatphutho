@@ -61,6 +61,7 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
 /**
  * Cột mẫu khớp bảng `/san-pham` + form thêm/sửa / DB `san_pham`.
  * Ô trống = vẫn đẩy lên (null / bỏ trống), không bắt buộc đủ giá trị.
+ * Trùng Mã AMIS vẫn hợp lệ — không chặn import.
  */
 export const PRODUCT_CATALOG_EXCEL_HEADERS = [
   'Mã SP',

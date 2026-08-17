@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `san_pham` |
 | **Tab** | `products` → `/san-pham` |
-| **SQL** | `supabase-san-pham.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-ty-le-hao-hut.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql` |
+| **SQL** | `supabase-san-pham.sql`, `supabase-san-pham-ma-amis-khong-unique.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-ty-le-hao-hut.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql` |
 
 ## API (`server.ts`)
 
@@ -40,7 +40,8 @@ Danh sách chỉ hiển thị `Thành phẩm`; mỗi sản phẩm là nhóm dòn
 - Nút **Tải mẫu Excel** / **Tải Excel lên** (và **Tải mẫu Excel SP**) — `src/utils/productCatalogExcel.ts`
 - Cột khớp bảng UI trước: Mã SP, Tên, Tính chất, Nhóm, Đơn vị, Tổng TL, Tồn đầu, Nhập, Xuất, Tồn, Tồn TT + thêm định mức (AMIS, khổ cuộn, TL lõi/túi/nhựa…)
 - **Ô trống vẫn đẩy lên** (chỉ bắt buộc có Mã SP hoặc Tên)
-- Upsert theo `ma_sp`
+- Upsert theo `ma_sp` — **trùng mã AMIS vẫn thêm/cập nhật, không chặn**
+- Nếu DB còn unique `ma_amis`: chạy `supabase-san-pham-ma-amis-khong-unique.sql`
 - File mẫu cũ kiểu Tên NVL/Loại/Giá trị → báo lỗi hướng dẫn dùng mẫu danh mục
 - Định mức NVL riêng: **Mẫu định mức NVL** / **Nhập định mức NVL**
 

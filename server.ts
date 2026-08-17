@@ -2190,12 +2190,23 @@ function parseProductPatchBody(
   return { record };
 }
 
+function productUniqueViolationColumn(error: { code?: string; message?: string; details?: string }) {
+  if (error.code !== '23505') return null;
+  const text = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+  if (text.includes('ma_amis')) return 'ma_amis';
+  if (text.includes('ma_sp')) return 'ma_sp';
+  return 'unknown';
+}
+
 function productWriteErrorMessage(error: { code?: string; message?: string; details?: string }) {
   if (isMissingTableError(error)) {
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} chưa tồn tại trên Supabase.`;
   }
   if (isMissingColumnError(error)) {
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy các migration san_pham liên quan, gồm supabase-san-pham-ty-le-hao-hut.sql.`;
+  }
+  if (productUniqueViolationColumn(error) === 'ma_amis') {
+    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang chặn trùng mã AMIS. Hãy chạy supabase-san-pham-ma-amis-khong-unique.sql trong Supabase SQL Editor rồi tải Excel lại.`;
   }
   return `Không thể lưu sản phẩm vào ${SUPABASE_PRODUCTS_TABLE}. ${error.message}${error.details ? ` (${error.details})` : ''}`;
 }
@@ -5723,6 +5734,31 @@ export function createApp() {
         .single();
 
       if (error) {
+        const uniqueColumn = productUniqueViolationColumn(error);
+        const existingCode = String(insertRecord.ma_sp ?? '').trim();
+        // Trùng ma_sp → cập nhật dòng đã có. Trùng ma_amis thì vẫn thêm mới (không unique).
+        if (uniqueColumn === 'ma_sp' && existingCode) {
+          const { data: existing, error: lookupError } = await supabase
+            .from(SUPABASE_PRODUCTS_TABLE)
+            .select('id')
+            .eq('ma_sp', existingCode)
+            .maybeSingle();
+          if (!lookupError && existing?.id) {
+            const { data: updated, error: updateError } = await supabase
+              .from(SUPABASE_PRODUCTS_TABLE)
+              .update(insertRecord)
+              .eq('id', existing.id)
+              .select('*')
+              .single();
+            if (!updateError && updated) {
+              return res.status(200).json({ success: true, product: updated, upserted: true });
+            }
+            if (updateError) {
+              console.error('Supabase san_pham upsert-after-unique error:', updateError);
+              return res.status(500).json({ error: productWriteErrorMessage(updateError) });
+            }
+          }
+        }
         console.error('Supabase san_pham insert error:', error);
         return res.status(500).json({ error: productWriteErrorMessage(error) });
       }

@@ -1576,6 +1576,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         }
 
         const payload = productCatalogRowToPayload(row);
+        // Chỉ khớp theo Mã SP — trùng Mã AMIS vẫn thêm dòng mới, không chặn import.
         const existing = code ? byCode.get(normalizeProductCodeKey(code)) : undefined;
 
         const res = existing
@@ -1594,7 +1595,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
           continue;
         }
-        if (existing) updated += 1;
+        const saved = data.product && typeof data.product === 'object' ? data.product : null;
+        const savedId = saved ? String(saved.id ?? '').trim() : '';
+        const savedCode = saved ? String(saved.ma_sp ?? code).trim() : code;
+        if (savedId && savedCode) {
+          byCode.set(normalizeProductCodeKey(savedCode), { id: savedId } as ProductRow);
+        }
+        if (existing || data.upserted) updated += 1;
         else created += 1;
       }
 
@@ -2220,7 +2227,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
               const value = convertProductQuantity(quantity, product.unit, unit, conversion);
               return value === null ? '—' : formatNumber(value, 3);
             };
-            return <React.Fragment key={`${product.code}-${product.name}`}>
+            return <React.Fragment key={product.id || `${product.code}-${product.name}`}>
               <tr className="border-t-2 border-zinc-300 bg-white transition-colors hover:bg-emerald-50/40">
                 <td rowSpan={rowSpan} className="px-3 py-3.5 text-center align-middle">
                   <input
