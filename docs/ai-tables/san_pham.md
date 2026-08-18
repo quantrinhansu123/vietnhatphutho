@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `san_pham` |
 | **Tab** | `products` → `/san-pham` |
-| **SQL** | `supabase-san-pham.sql`, `supabase-san-pham-ma-amis-khong-unique.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-ty-le-hao-hut.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql` |
+| **SQL** | `supabase-san-pham.sql`, `supabase-san-pham-ma-amis-khong-unique.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-nhom-vthh-kinh-doanh.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql` |
 
 ## API (`server.ts`)
 

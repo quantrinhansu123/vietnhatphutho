@@ -409,6 +409,7 @@ export function productAmisDisplayCode(product: Pick<ProductRow, 'amisCode' | 'c
 
 export function ProductViewModal({
   product,
+  conversions,
   initialTab = 'info',
   materialOptions,
   isLoadingMaterials,
@@ -421,6 +422,7 @@ export function ProductViewModal({
   canEditComponents: canEditComponentsProp
 }: {
   product: ProductRow;
+  conversions: ProductConversionFactors[];
   initialTab?: ProductViewTab;
   materialOptions: MaterialOption[];
   isLoadingMaterials: boolean;
@@ -755,6 +757,16 @@ export function ProductViewModal({
                   </div>
                 )}
               </section>
+
+              <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+                <div className="border-b border-zinc-200 bg-zinc-50 px-3 py-2"><p className="text-[10px] font-black uppercase tracking-wider text-zinc-700">Bảng quy đổi sản phẩm</p></div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-[1250px] text-[10px]">
+                    <thead className="bg-zinc-950 text-white"><tr>{['ĐVT','Khổ tấm rộng (m)','Khổ tấm dài (m/tấm)','Khổ cuộn rộng (m)','Khổ cuộn dài (m)','Diện tích (m²)','kg/1 m dài','kg/m²','kg/tấm','kg/Cuộn'].map(label => <th key={label} className="px-2 py-2 text-center font-black">{label}</th>)}</tr></thead>
+                    <tbody>{conversions.length === 0 ? <tr><td colSpan={10} className="px-3 py-5 text-center font-semibold text-zinc-500">Chưa có dữ liệu quy đổi.</td></tr> : conversions.map((item, index) => <tr key={`${item.donViTinh}-${index}`} className="border-t border-zinc-200"><td className="px-2 py-2 text-center font-black">{item.donViTinh || '—'}</td>{[item.khoTamRongM,item.khoTamDaiM,item.khoCuonRongM,item.khoCuonDaiM,item.dienTichM2,item.trongLuongKgMDai,item.trongLuongKgM2,item.trongLuongKgTam,item.trongLuongKgCuon].map((value, valueIndex) => <td key={valueIndex} className="px-2 py-2 text-right font-semibold">{value === null || value === undefined ? '—' : formatNumber(Number(value), 3)}</td>)}</tr>)}</tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1048,13 +1060,44 @@ export type ProductFormState = {
   minStock: string;
   origin: string;
   description: string;
+  conversions: ProductConversionForm[];
 };
+
+type ProductConversionForm = {
+  khoTamRongM: string;
+  khoTamDaiM: string;
+  khoCuonRongM: string;
+  khoCuonDaiM: string;
+  dienTichM2: string;
+  trongLuongKgMDai: string;
+  trongLuongKgM2: string;
+  trongLuongKgTam: string;
+  trongLuongKgCuon: string;
+};
+
+const PRODUCT_GROUP_RULES = {
+  'TP; PX Rỗng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '13' },
+  'TP; PX Đặc': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '13' },
+  'TP; PX Sóng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '2' },
+  'TP; NVL': { units: [], primaryUnit: '', wastePercent: '' },
+  'NVL': { units: [], primaryUnit: '', wastePercent: '' }
+} as const;
+
+type ProductGroup = keyof typeof PRODUCT_GROUP_RULES;
+const PRODUCT_GROUPS = Object.keys(PRODUCT_GROUP_RULES) as ProductGroup[];
+const emptyConversion = (): ProductConversionForm => ({ khoTamRongM: '', khoTamDaiM: '', khoCuonRongM: '', khoCuonDaiM: '', dienTichM2: '', trongLuongKgMDai: '', trongLuongKgM2: '', trongLuongKgTam: '', trongLuongKgCuon: '' });
+const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => ({
+  khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
+  khoCuonRongM: String(item.khoCuonRongM ?? ''), khoCuonDaiM: String(item.khoCuonDaiM ?? ''), dienTichM2: String(item.dienTichM2 ?? ''),
+  trongLuongKgMDai: String(item.trongLuongKgMDai ?? ''), trongLuongKgM2: String(item.trongLuongKgM2 ?? ''), trongLuongKgTam: String(item.trongLuongKgTam ?? ''),
+  trongLuongKgCuon: String(item.trongLuongKgCuon ?? '')
+});
 
 export function productCellToInput(value: string) {
   return value === '-' ? '' : value;
 }
 
-export function productToForm(product: ProductRow): ProductFormState {
+export function productToForm(product: ProductRow, conversions: ProductConversionFactors[] = []): ProductFormState {
   return {
     code: productCellToInput(product.code),
     newCode: productCellToInput(product.newCode),
@@ -1077,7 +1120,8 @@ export function productToForm(product: ProductRow): ProductFormState {
     stock: productCellToInput(product.stock),
     minStock: productCellToInput(product.minStock),
     origin: productCellToInput(product.origin),
-    description: productCellToInput(product.description)
+    description: productCellToInput(product.description),
+    conversions: conversions.length > 0 ? [conversionToForm(conversions[0])] : [emptyConversion()]
   };
 }
 
@@ -1104,7 +1148,8 @@ export function emptyProductForm(): ProductFormState {
     stock: '',
     minStock: '',
     origin: '',
-    description: ''
+    description: '',
+    conversions: [emptyConversion()]
   };
 }
 
@@ -1131,13 +1176,20 @@ export function productFormToPayload(form: ProductFormState) {
     stock: form.stock.trim(),
     minStock: form.minStock.trim(),
     origin: form.origin.trim(),
-    description: form.description.trim()
+    description: form.description.trim(),
+    conversions: form.conversions.map(item => ({
+      sheetWidthM: item.khoTamRongM.trim(), sheetLengthM: item.khoTamDaiM.trim(),
+      rollWidthM: item.khoCuonRongM.trim(), rollLengthM: item.khoCuonDaiM.trim(), areaM2: item.dienTichM2.trim(),
+      kgPerLinearM: item.trongLuongKgMDai.trim(), kgPerM2: item.trongLuongKgM2.trim(), kgPerSheet: item.trongLuongKgTam.trim(), kgPerRoll: item.trongLuongKgCuon.trim()
+    }))
   };
 }
 
 export function ProductEditModal({
   mode,
   product,
+  products,
+  productConversions,
   isSaving,
   formError,
   onClose,
@@ -1145,30 +1197,29 @@ export function ProductEditModal({
 }: {
   mode: 'add' | 'edit';
   product: ProductRow | null;
+  products: ProductRow[];
+  productConversions: ProductConversionFactors[];
   isSaving: boolean;
   formError: string;
   onClose: () => void;
   onSave: (form: ProductFormState) => Promise<void>;
 }) {
   const [form, setForm] = useState<ProductFormState>(() =>
-    mode === 'edit' && product ? productToForm(product) : emptyProductForm()
+    mode === 'edit' && product ? productToForm(product, productConversions.filter(item => item.sanPhamId === product.id)) : emptyProductForm()
   );
+  const [amisOpen, setAmisOpen] = useState(false);
 
   useEffect(() => {
-    setForm(mode === 'edit' && product ? productToForm(product) : emptyProductForm());
-  }, [mode, product?.id]);
+    setForm(mode === 'edit' && product ? productToForm(product, productConversions.filter(item => item.sanPhamId === product.id)) : emptyProductForm());
+  }, [mode, product?.id, productConversions]);
 
-  const fields: Array<{ key: keyof ProductFormState; label: string; required?: boolean; span?: boolean }> = [
+  const fields: Array<{ key: Exclude<keyof ProductFormState, 'conversions'>; label: string; required?: boolean; span?: boolean }> = [
     { key: 'code', label: 'Mã SP', required: true },
-    { key: 'amisCode', label: 'Mã AMIS' },
     { key: 'newCode', label: 'Mã mới' },
     { key: 'name', label: 'Tên sản phẩm', required: true },
     { key: 'productionName', label: 'Tên sản xuất' },
     { key: 'nature', label: 'Tính chất' },
-    { key: 'group', label: 'Nhóm VTHH' },
-    { key: 'unit', label: 'Đơn vị tính' },
     { key: 'totalWeight', label: 'Tổng trọng lượng TP (kg)' },
-    { key: 'wastePercent', label: '% tỷ lệ hao hụt' },
     { key: 'rollWidth', label: 'Khổ cuộn (m)' },
     { key: 'rollLength', label: 'Chiều dài mét/cuộn (m)' },
     { key: 'coreWeight', label: 'Trọng lượng lõi (kg)' },
@@ -1186,6 +1237,27 @@ export function ProductEditModal({
   const handleSave = async () => {
     await onSave(form);
   };
+
+  const applyGroup = (group: string) => {
+    const rule = PRODUCT_GROUP_RULES[group as ProductGroup];
+    if (!rule) return setForm(prev => ({ ...prev, group }));
+    setForm(prev => {
+      return {
+        ...prev,
+        group,
+        unit: rule.primaryUnit || prev.unit,
+        wastePercent: rule.wastePercent,
+        conversions: [prev.conversions[0] || emptyConversion()]
+      };
+    });
+  };
+
+  const updateCustomUnit = (unit: string) => setForm(prev => ({ ...prev, unit }));
+  const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => setForm(prev => ({ ...prev, conversions: prev.conversions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) }));
+  const amisOptions = products.filter(item => item.amisCode.trim());
+  const filteredAmisOptions = amisOptions.filter(item => `${item.amisCode} ${item.name} ${item.productionName}`.toLocaleLowerCase('vi').includes(form.amisCode.trim().toLocaleLowerCase('vi'))).slice(0, 20);
+  const selectedGroupRule = PRODUCT_GROUP_RULES[form.group as ProductGroup];
+  const displayedUnit = selectedGroupRule?.units.length ? selectedGroupRule.units.join(', ') : form.unit;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -1207,23 +1279,61 @@ export function ProductEditModal({
           </div>
         )}
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+          <label className="relative block space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã AMIS</span>
+            <input
+              value={form.amisCode}
+              onChange={event => {
+                const amisCode = event.target.value;
+                setForm(prev => ({ ...prev, amisCode }));
+                setAmisOpen(true);
+              }}
+              onFocus={() => setAmisOpen(true)}
+              onBlur={() => window.setTimeout(() => setAmisOpen(false), 150)}
+              placeholder="Tìm hoặc nhập Mã AMIS"
+              className={productFieldClass}
+            />
+            {amisOpen && filteredAmisOptions.length > 0 && <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-auto rounded-lg border border-zinc-200 bg-white shadow-xl">
+              {filteredAmisOptions.map(item => <button key={item.id} type="button" onMouseDown={event => event.preventDefault()} onClick={() => { setForm(prev => ({ ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName })); setAmisOpen(false); }} className="block w-full px-3 py-2 text-left hover:bg-red-50">
+                <span className="block text-xs font-black text-zinc-900">{item.amisCode}</span><span className="block text-[11px] font-semibold text-zinc-500">{item.name || '—'} · {item.productionName || '—'}</span>
+              </button>)}
+            </div>}
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhóm VTHH *</span>
+            <select value={form.group} onChange={event => applyGroup(event.target.value)} className={productFieldClass}>
+              <option value="">Chọn Nhóm VTHH</option>
+              {PRODUCT_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
+            </select>
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị tính *</span>
+            <input value={displayedUnit} onChange={event => updateCustomUnit(event.target.value)} readOnly={Boolean(selectedGroupRule?.primaryUnit)} className={`${productFieldClass} read-only:bg-zinc-100`} placeholder={form.group ? 'Nhập ĐVT' : 'Chọn Nhóm VTHH trước'} />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tỷ lệ hàng hỏng (%)</span>
+            <input value={form.wastePercent} onChange={event => setForm(prev => ({ ...prev, wastePercent: event.target.value }))} readOnly={PRODUCT_GROUP_RULES[form.group as ProductGroup]?.wastePercent !== '' && Boolean(PRODUCT_GROUP_RULES[form.group as ProductGroup])} className={`${productFieldClass} read-only:bg-zinc-100`} />
+          </label>
           {fields.map(field => (
             <label key={field.key} className={`block space-y-1.5 ${field.span ? 'sm:col-span-2' : ''}`}>
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 {field.label}{field.required ? ' *' : ''}
               </span>
-              {field.key === 'unit' ? (
-                <select value={form.unit} onChange={event => setForm(prev => ({ ...prev, unit: event.target.value }))} className={productFieldClass}>
-                  <option value="">Chọn đơn vị tính</option>
-                  <option value="m">m</option>
-                  <option value="m2">m2</option>
-                  <option value="Tấm">Tấm</option>
-                </select>
-              ) : (
-                <input value={form[field.key]} onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))} className={productFieldClass} />
-              )}
+              <input value={String(form[field.key])} onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))} className={productFieldClass} />
             </label>
           ))}
+          <section className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:col-span-2">
+            <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước.</p></div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {([
+                ['khoTamRongM', 'Khổ tấm rộng (m rộng)'], ['khoTamDaiM', 'Khổ tấm dài (m dài / tấm)'],
+                ['khoCuonRongM', 'Khổ cuộn rộng (m rộng)'], ['khoCuonDaiM', 'Khổ cuộn dài (m dài)'],
+                ['dienTichM2', 'Khổ diện tích mét vuông (m2)'], ['trongLuongKgMDai', 'Trọng lượng (kg/1 m dài)'],
+                ['trongLuongKgM2', 'Trọng lượng (kg/m2)'], ['trongLuongKgTam', 'Trọng lượng (kg/Tấm)'],
+                ['trongLuongKgCuon', 'Trọng lượng (kg/Cuộn)']
+              ] as Array<[keyof ProductConversionForm, string]>).map(([key, label]) => <label key={key} className="space-y-1.5"><span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">{label}</span><input inputMode="decimal" value={(form.conversions[0] || emptyConversion())[key]} onChange={event => updateConversion(0, key, event.target.value)} className={productFieldClass} /></label>)}
+            </div>
+          </section>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
           <BackButton onClick={onClose} className="h-10 rounded-lg bg-white" />
@@ -1303,30 +1413,25 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     loadProducts();
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadConversions = async () => {
-      try {
-        const all: ProductConversionFactors[] = [];
-        for (let page = 1; ; page += 1) {
-          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error('Không thể tải bảng quy đổi.');
-          const items = Array.isArray(data.items) ? data.items as ProductConversionFactors[] : [];
-          all.push(...items);
-          if (all.length >= Number(data.total || 0)) break;
-        }
-        if (!cancelled) setProductConversions(all);
-      } catch {
-        if (!cancelled) {
-          setProductConversions([]);
-          showAppToast('Không thể tải bảng quy đổi. Dữ liệu sản phẩm gốc vẫn được hiển thị.', 'error');
-        }
+  const loadProductConversions = async () => {
+    try {
+      const all: ProductConversionFactors[] = [];
+      for (let page = 1; ; page += 1) {
+        const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error('Không thể tải bảng quy đổi.');
+        const items = Array.isArray(data.items) ? data.items as ProductConversionFactors[] : [];
+        all.push(...items);
+        if (all.length >= Number(data.total || 0)) break;
       }
-    };
-    void loadConversions();
-    return () => { cancelled = true; };
-  }, []);
+      setProductConversions(all);
+    } catch {
+      setProductConversions([]);
+      showAppToast('Không thể tải bảng quy đổi. Dữ liệu sản phẩm gốc vẫn được hiển thị.', 'error');
+    }
+  };
+
+  useEffect(() => { void loadProductConversions(); }, []);
 
   useEffect(() => {
     if (!viewingProduct) return;
@@ -1404,8 +1509,16 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       setProductFormError('Vui lòng nhập mã SP hoặc tên sản phẩm.');
       return;
     }
+    if (!PRODUCT_GROUPS.includes(form.group as ProductGroup)) {
+      setProductFormError('Vui lòng chọn Nhóm VTHH.');
+      return;
+    }
+    if (!form.unit.trim()) {
+      setProductFormError('Vui lòng nhập đơn vị tính.');
+      return;
+    }
     if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
-      setProductFormError('% tỷ lệ hao hụt phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+      setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
       return;
     }
 
@@ -1427,6 +1540,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       closeProductForm();
       setProductActionMessage('Đã thêm sản phẩm mới.');
       await loadProducts();
+      await loadProductConversions();
     } catch (error: any) {
       setProductFormError(error.message || 'Không thể thêm sản phẩm.');
     } finally {
@@ -1440,8 +1554,12 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       setProductFormError('Vui lòng nhập mã SP hoặc tên sản phẩm.');
       return;
     }
+    if (!PRODUCT_GROUPS.includes(form.group as ProductGroup) || !form.unit.trim()) {
+      setProductFormError('Vui lòng chọn Nhóm VTHH và nhập đơn vị tính hợp lệ.');
+      return;
+    }
     if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
-      setProductFormError('% tỷ lệ hao hụt phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+      setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
       return;
     }
 
@@ -1463,6 +1581,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       closeProductForm();
       setProductActionMessage('Đã cập nhật sản phẩm.');
       await loadProducts();
+      await loadProductConversions();
     } catch (error: any) {
       setProductFormError(error.message || 'Không thể cập nhật sản phẩm.');
     } finally {
@@ -1577,7 +1696,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
         const payload = productCatalogRowToPayload(row);
         // Chỉ khớp theo Mã SP — trùng Mã AMIS vẫn thêm dòng mới, không chặn import.
-        const existing = code ? byCode.get(normalizeProductCodeKey(code)) : undefined;
+        const existing = code ? byCode.get(normalizeProductCodeKey(code)) as ProductRow | undefined : undefined;
 
         const res = existing
           ? await fetch(`/api/san-pham/${existing.id}`, {
@@ -1767,7 +1886,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
-      const isFinishedProduct = product.nature.trim().toLocaleLowerCase('vi') === 'thành phẩm';
       const matchesGroup = selectedGroup === 'all' || product.group === selectedGroup;
       const matchesNature = selectedNatures.size === 0 || selectedNatures.has(product.nature);
       const matchesSearch =
@@ -1775,7 +1893,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         `${product.code} ${product.newCode} ${product.name} ${product.productionName} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`
           .toLowerCase()
           .includes(normalizedSearch);
-      return isFinishedProduct && matchesGroup && matchesNature && matchesSearch;
+      return matchesGroup && matchesNature && matchesSearch;
     });
   }, [normalizedSearch, products, selectedGroup, selectedNatures]);
 
@@ -2325,6 +2443,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         <ProductEditModal
           mode={productFormMode}
           product={editingProduct}
+          products={products}
+          productConversions={productConversions}
           isSaving={isSavingProduct}
           formError={productFormError}
           onClose={closeProductForm}
@@ -2335,6 +2455,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       {viewingProduct && (
         <ProductViewModal
           product={viewingProduct}
+          conversions={productConversions.filter(item => item.sanPhamId === viewingProduct.id)}
           initialTab={productViewTab}
           materialOptions={materialOptions}
           isLoadingMaterials={isLoadingMaterialOptions}

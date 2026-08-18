@@ -14,6 +14,7 @@ export type ProductConversion = {
   trongLuongKgMDai: number | null;
   trongLuongKgM2: number | null;
   trongLuongKgTam: number | null;
+  trongLuongKgCuon: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -28,7 +29,6 @@ export type ProductOption = {
 
 export type ProductConversionInput = {
   productId: string;
-  unit: string;
   sheetWidthM: string;
   sheetLengthM: string;
   rollWidthM: string;
@@ -37,10 +37,11 @@ export type ProductConversionInput = {
   kgPerLinearM: string;
   kgPerM2: string;
   kgPerSheet: string;
+  kgPerRoll: string;
 };
 
 export const EMPTY_CONVERSION_INPUT: ProductConversionInput = {
-  productId: '', unit: '', sheetWidthM: '', sheetLengthM: '', rollWidthM: '',
-  rollLengthM: '', areaM2: '', kgPerLinearM: '', kgPerM2: '', kgPerSheet: ''
+  productId: '', sheetWidthM: '', sheetLengthM: '', rollWidthM: '',
+  rollLengthM: '', areaM2: '', kgPerLinearM: '', kgPerM2: '', kgPerSheet: '', kgPerRoll: ''
 };
 

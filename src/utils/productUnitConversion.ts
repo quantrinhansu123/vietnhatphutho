@@ -1,5 +1,6 @@
 export type ProductConversionFactors = {
   sanPhamId: string;
+  donViTinh?: string;
   khoTamRongM: number | null;
   khoTamDaiM: number | null;
   khoCuonRongM: number | null;
@@ -8,6 +9,7 @@ export type ProductConversionFactors = {
   trongLuongKgMDai: number | null;
   trongLuongKgM2: number | null;
   trongLuongKgTam: number | null;
+  trongLuongKgCuon: number | null;
 };
 
 export type ProductConvertedUnit = 'm' | 'm2' | 'Tấm' | 'kg';
