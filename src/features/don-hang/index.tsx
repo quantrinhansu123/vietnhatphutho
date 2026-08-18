@@ -168,74 +168,55 @@ function calculateOrderConversion(quantityText: string, inputUnitText: string, c
   const quantity = parsePercentInput(quantityText);
   if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
   const inputUnit = resolveConversionUnit(inputUnitText);
-  const sheetLength = conversion.khoTamDaiM;
-  const rollLength = conversion.khoCuonDaiM;
-  const rollWidth = conversion.khoCuonRongM;
-  const kgPerMeter = conversion.trongLuongKgMDai;
   const kgPerSheet = conversion.trongLuongKgTam;
   const kgPerRoll = conversion.trongLuongKgCuon;
-  const kgPerM2 = conversion.trongLuongKgM2;
-  const areaPerRoll = conversion.dienTichM2 || (rollWidth && rollLength ? rollWidth * rollLength : null);
-  let weight: number | null = null;
-  let linearLength: number | null = null;
-
-  // ĐVT nguồn lấy từ san_pham; đầu ra chuẩn hóa duy nhất là kg.
-  if (inputUnit === 'sheet') {
-    if (sheetLength) linearLength = quantity * sheetLength;
-    if (kgPerSheet) weight = quantity * kgPerSheet;
-    else if (sheetLength && kgPerMeter) weight = quantity * sheetLength * kgPerMeter;
-  } else if (inputUnit === 'roll') {
-    if (rollLength) linearLength = quantity * rollLength;
-    if (kgPerRoll) weight = quantity * kgPerRoll;
-    else if (areaPerRoll && kgPerM2) weight = quantity * areaPerRoll * kgPerM2;
-    else if (rollLength && kgPerMeter) weight = quantity * rollLength * kgPerMeter;
-  } else if (inputUnit === 'meter') {
-    linearLength = quantity;
-    if (kgPerMeter) weight = quantity * kgPerMeter;
-    else if (rollWidth && kgPerM2) weight = quantity * rollWidth * kgPerM2;
-    else if (conversion.khoTamRongM && kgPerM2) weight = quantity * conversion.khoTamRongM * kgPerM2;
-  } else if (inputUnit === 'squareMeter' && kgPerM2) {
-    const width = conversion.khoTamRongM || rollWidth;
-    if (width) linearLength = quantity / width;
-    weight = quantity * kgPerM2;
-  } else if (inputUnit === 'kg') {
-    weight = quantity;
-    if (kgPerMeter) linearLength = quantity / kgPerMeter;
-    else if (kgPerM2) {
-      const width = conversion.khoTamRongM || rollWidth;
-      if (width) linearLength = quantity / kgPerM2 / width;
-    }
-  }
-  const sheetArea = conversion.dienTichM2 || (conversion.khoTamRongM && conversion.khoTamDaiM ? conversion.khoTamRongM * conversion.khoTamDaiM : null);
-  const squareMeters = inputUnit === 'squareMeter'
-    ? quantity
-    : inputUnit === 'sheet' && sheetArea
-      ? quantity * sheetArea
-      : inputUnit === 'roll' && areaPerRoll
-        ? quantity * areaPerRoll
-        : linearLength && (rollWidth || conversion.khoTamRongM)
-          ? linearLength * (rollWidth || conversion.khoTamRongM)!
-          : null;
+  const kgPerMeter = conversion.trongLuongKgMDai;
   const results: Array<[string, number, string]> = [];
-  if (weight !== null) results.push(['Quy đổi', weight, 'kg']);
+  const addKg = (value: number | null) => {
+    if (value !== null && Number.isFinite(value) && value > 0) results.push(['Quy đổi', value, 'kg']);
+  };
+
   if (group === 'TP; PX Đặc') {
-    if (squareMeters !== null) results.push(['Quy đổi', squareMeters, 'm2']);
+    const weight = inputUnit === 'roll'
+      ? (kgPerRoll === null ? null : quantity * kgPerRoll)
+      : inputUnit === 'sheet'
+        ? (kgPerSheet === null ? null : quantity * kgPerSheet)
+        : null;
+    addKg(weight);
+    if (weight !== null && conversion.trongLuongKgM2 !== null && conversion.trongLuongKgM2 > 0) {
+      results.push(['Quy đổi', weight / conversion.trongLuongKgM2, 'm2']);
+    }
     return results;
   }
-  if (group === 'TP; PX Sóng' || group === 'TP; PX Rỗng') return results.filter(([, , unit]) => unit === 'kg');
-  if (linearLength !== null) results.push(['Quy đổi', linearLength, 'm dài']);
-  if (squareMeters !== null && inputUnit !== 'squareMeter') results.push(['Quy đổi', squareMeters, 'm2']);
+
+  if (group === 'TP; PX Rỗng') {
+    if (inputUnit === 'sheet') addKg(kgPerSheet === null ? null : quantity * kgPerSheet);
+    return results;
+  }
+
+  if (group === 'TP; PX Sóng') {
+    if (inputUnit !== 'sheet' || kgPerSheet === null || kgPerMeter === null || kgPerMeter <= 0) return results;
+    const weight = quantity * kgPerSheet;
+    addKg(weight);
+    results.push(['Quy đổi', weight / kgPerMeter, 'm dài']);
+    return results;
+  }
+
+  // NVL và TP; NVL đã là kg, không thực hiện quy đổi.
+  if ((group === 'NVL' || group === 'TP; NVL' || !group) && inputUnit === 'kg') return results;
+
+  // Nhóm Khác dùng ĐVT của sản phẩm: Tấm/Cuộn tính theo trọng lượng trên đơn vị.
+  if (inputUnit === 'sheet') addKg(kgPerSheet === null ? null : quantity * kgPerSheet);
+  else if (inputUnit === 'roll') addKg(kgPerRoll === null ? null : quantity * kgPerRoll);
   return results;
 }
 
 function conversionSupportsUnit(conversion: OrderProductConversion, unitText: string) {
   const unit = resolveConversionUnit(unitText);
-  if (unit === 'sheet') return Boolean(conversion.trongLuongKgTam || (conversion.khoTamDaiM && conversion.trongLuongKgMDai));
-  const areaPerRoll = conversion.dienTichM2 || (conversion.khoCuonRongM && conversion.khoCuonDaiM ? conversion.khoCuonRongM * conversion.khoCuonDaiM : null);
-  const hasRollAreaCase = Boolean(conversion.khoCuonDaiM && areaPerRoll && conversion.trongLuongKgM2);
-  if (unit === 'roll') return Boolean(conversion.trongLuongKgCuon || (conversion.khoCuonDaiM && conversion.trongLuongKgMDai) || hasRollAreaCase);
+  if (unit === 'sheet') return Boolean(conversion.trongLuongKgTam);
+  if (unit === 'roll') return Boolean(conversion.trongLuongKgCuon);
   if (unit === 'squareMeter') return Boolean(conversion.trongLuongKgM2);
-  if (unit === 'meter') return Boolean(conversion.trongLuongKgMDai || ((conversion.khoTamRongM || conversion.khoCuonRongM) && conversion.trongLuongKgM2));
+  if (unit === 'meter') return Boolean(conversion.trongLuongKgMDai);
   if (unit === 'kg') return true;
   return false;
 }
@@ -876,9 +857,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     item.maSp.trim().toLocaleLowerCase('vi') === normalizedCode ||
                     item.maAmis.trim().toLocaleLowerCase('vi') === normalizedCode
                   );
-                  const matchedConversion = productConversionOptions[0];
+                  const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
                   const allowedUnits = allowedOrderUnits(matchedLineProduct, matchedConversion);
                   const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, line.unit, matchedConversion, matchedLineProduct?.group) : [];
+                  const noConversionRequired = ['NVL', 'TP; NVL', 'Khác'].includes(matchedLineProduct?.group || '') && resolveConversionUnit(line.unit) === 'kg';
                   return (
                     <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
                       <div className="col-span-2 min-w-0 md:col-span-1">
@@ -898,6 +880,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             const product = item as OrderProductOption;
                             return product.code;
                           }}
+                          getOptionLabel={item => {
+                            const product = item as OrderProductOption;
+                            return `${product.code}${product.name ? ` - ${product.name}` : ''}`;
+                          }}
+                          displaySelectedAsValue
                           resolveSelectedItem={(options, value) =>
                             findOrderProductByCode(options as OrderProductOption[], value)
                           }
@@ -928,7 +915,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         />
                       </div>
                       <div className="col-span-2 flex min-w-0 gap-1 md:col-span-1">
-                        {line.quantity && calculatedConversion.length > 0 ? calculatedConversion.map(([, value, unit]) => <div key={unit} className="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1"><span className="block truncate text-[9px] font-black uppercase text-emerald-700">{unit}</span><span className="block truncate text-xs font-black text-emerald-950">{formatNumber(value, 3)}</span></div>) : <div className="flex h-11 w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-semibold text-zinc-400">{line.quantity ? 'Chưa đủ hệ số quy đổi' : 'Nhập SL để quy đổi'}</div>}
+                        {line.quantity && calculatedConversion.length > 0 ? calculatedConversion.map(([, value, unit]) => <div key={unit} className="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1"><span className="block truncate text-[9px] font-black uppercase text-emerald-700">{unit}</span><span className="block truncate text-xs font-black text-emerald-950">{formatNumber(value, 3)}</span></div>) : <div className="flex h-11 w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-semibold text-zinc-400">{line.quantity ? (noConversionRequired ? 'Không cần quy đổi' : 'Chưa đủ hệ số quy đổi') : 'Nhập SL để quy đổi'}</div>}
                       </div>
                       {orderForm.productLines.length > 1 ? (
                         <button
