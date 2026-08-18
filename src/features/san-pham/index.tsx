@@ -1080,7 +1080,8 @@ const PRODUCT_GROUP_RULES = {
   'TP; PX Đặc': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '13' },
   'TP; PX Sóng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '2' },
   'TP; NVL': { units: [], primaryUnit: '', wastePercent: '' },
-  'NVL': { units: [], primaryUnit: '', wastePercent: '' }
+  'NVL': { units: [], primaryUnit: '', wastePercent: '' },
+  'Khác': { units: [], primaryUnit: '', wastePercent: '' }
 } as const;
 
 type ProductGroup = keyof typeof PRODUCT_GROUP_RULES;

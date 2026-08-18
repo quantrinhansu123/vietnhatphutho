@@ -21,6 +21,7 @@ export interface OrderRow {
   unit: string;
   quantity: string;
   note: string;
+  deliveryDate: string;
   orderDate: string;
   createdAt: string;
   productionOrder?: string;
@@ -55,14 +56,22 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
           const row = item as Record<string, unknown>;
           const productCode = pickText(row, ['ma_sp', 'ma_hang', 'productCode', 'code'], '');
           const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
+          const productionName = pickText(row, ['ten_san_xuat', 'productionName'], '');
           const unit = formatCell(row.don_vi ?? row.unit);
           const quantity = formatCell(row.so_luong ?? row.quantity);
           if (!productCode && !productName) return null;
           return {
             productCode,
             productName,
+            productionName,
             unit,
             quantity,
+            conversionResults: Array.isArray(row.ket_qua_quy_doi)
+              ? row.ket_qua_quy_doi.map(item => {
+                  const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+                  return { unit: pickText(result, ['don_vi', 'unit'], ''), value: Number(result.gia_tri ?? result.value) };
+                }).filter(item => item.unit && Number.isFinite(item.value))
+              : undefined,
             orderRef: pickText(row, ['ma_don_hang', 'orderRef', 'order_code'], '')
           };
         })

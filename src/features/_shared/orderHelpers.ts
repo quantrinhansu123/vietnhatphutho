@@ -22,6 +22,8 @@ export interface CustomerOption {
 export interface OrderProductOption {
   code: string;
   name: string;
+  productionName: string;
+  group: string;
   unit: string;
   newCode: string;
 }
@@ -99,11 +101,13 @@ export function normalizeCustomerOptions(data: unknown): CustomerOption[] {
 
 export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
   return normalizeProducts(data).map(product => ({
-    code: product.code,
+    code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
     name: product.name,
+    productionName: product.productionName,
+    group: product.group,
     unit: product.unit === '-' ? '' : product.unit,
     newCode: product.newCode
-  }));
+  })).filter(product => product.code);
 }
 
 export function findOrderProductByCode(products: OrderProductOption[], code: string) {
@@ -128,12 +132,14 @@ export function resolveOrderProductFields(
   if (!match) {
     return {
       productName: productCode.trim() ? '' : (fallback.productName ?? ''),
+      productionName: '',
       unit: fallback.unit ?? ''
     };
   }
 
   return {
     productName: match.name,
+    productionName: match.productionName,
     unit: match.unit || fallback.unit || ''
   };
 }

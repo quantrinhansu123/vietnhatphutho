@@ -50,7 +50,7 @@ import {
 export type { OrderProductLine, OrderRow };
 
 const orderProductGridClass =
-  'grid-cols-2 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1.5fr)_6rem_6rem_2.5rem]';
+  'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_6rem_6rem_minmax(8rem,1fr)_2.5rem]';
 export {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -112,6 +112,7 @@ export function normalizeOrders(data: unknown): OrderRow[] {
         unit: summary.unit,
         quantity: summary.quantity,
         note: pickText(record, ['ghi_chu', 'note'], ''),
+        deliveryDate: pickText(record, ['ngay_giao_hang', 'deliveryDate', 'delivery_date'], ''),
         productionOrder: pickText(record, ['lenh_sx', 'production_order', 'productionOrder'], '-'),
         orderDate: (() => {
           const raw =
@@ -133,6 +134,7 @@ export type OrderProductFormLine = {
   key: string;
   productCode: string;
   productName: string;
+  productionName: string;
   unit: string;
   quantity: string;
 };
@@ -143,6 +145,7 @@ type OrderProductConversion = {
   khoCuonRongM: number | null; khoCuonDaiM: number | null;
   dienTichM2: number | null; trongLuongKgMDai: number | null;
   trongLuongKgM2: number | null; trongLuongKgTam: number | null;
+  trongLuongKgCuon: number | null;
 };
 
 function normalizeConversionUnit(value: string) {
@@ -161,7 +164,7 @@ function resolveConversionUnit(value: string): ConversionUnit {
   return 'unsupported';
 }
 
-function calculateOrderConversion(quantityText: string, inputUnitText: string, conversion: OrderProductConversion) {
+function calculateOrderConversion(quantityText: string, inputUnitText: string, conversion: OrderProductConversion, group = '') {
   const quantity = parsePercentInput(quantityText);
   if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
   const inputUnit = resolveConversionUnit(inputUnitText);
@@ -170,6 +173,7 @@ function calculateOrderConversion(quantityText: string, inputUnitText: string, c
   const rollWidth = conversion.khoCuonRongM;
   const kgPerMeter = conversion.trongLuongKgMDai;
   const kgPerSheet = conversion.trongLuongKgTam;
+  const kgPerRoll = conversion.trongLuongKgCuon;
   const kgPerM2 = conversion.trongLuongKgM2;
   const areaPerRoll = conversion.dienTichM2 || (rollWidth && rollLength ? rollWidth * rollLength : null);
   let weight: number | null = null;
@@ -182,7 +186,8 @@ function calculateOrderConversion(quantityText: string, inputUnitText: string, c
     else if (sheetLength && kgPerMeter) weight = quantity * sheetLength * kgPerMeter;
   } else if (inputUnit === 'roll') {
     if (rollLength) linearLength = quantity * rollLength;
-    if (areaPerRoll && kgPerM2) weight = quantity * areaPerRoll * kgPerM2;
+    if (kgPerRoll) weight = quantity * kgPerRoll;
+    else if (areaPerRoll && kgPerM2) weight = quantity * areaPerRoll * kgPerM2;
     else if (rollLength && kgPerMeter) weight = quantity * rollLength * kgPerMeter;
   } else if (inputUnit === 'meter') {
     linearLength = quantity;
@@ -201,9 +206,25 @@ function calculateOrderConversion(quantityText: string, inputUnitText: string, c
       if (width) linearLength = quantity / kgPerM2 / width;
     }
   }
+  const sheetArea = conversion.dienTichM2 || (conversion.khoTamRongM && conversion.khoTamDaiM ? conversion.khoTamRongM * conversion.khoTamDaiM : null);
+  const squareMeters = inputUnit === 'squareMeter'
+    ? quantity
+    : inputUnit === 'sheet' && sheetArea
+      ? quantity * sheetArea
+      : inputUnit === 'roll' && areaPerRoll
+        ? quantity * areaPerRoll
+        : linearLength && (rollWidth || conversion.khoTamRongM)
+          ? linearLength * (rollWidth || conversion.khoTamRongM)!
+          : null;
   const results: Array<[string, number, string]> = [];
-  if (weight !== null) results.push(['Trọng lượng quy đổi', weight, 'kg']);
-  if (linearLength !== null) results.push(['Chiều dài quy đổi', linearLength, 'm dài']);
+  if (weight !== null) results.push(['Quy đổi', weight, 'kg']);
+  if (group === 'TP; PX Đặc') {
+    if (squareMeters !== null) results.push(['Quy đổi', squareMeters, 'm2']);
+    return results;
+  }
+  if (group === 'TP; PX Sóng' || group === 'TP; PX Rỗng') return results.filter(([, , unit]) => unit === 'kg');
+  if (linearLength !== null) results.push(['Quy đổi', linearLength, 'm dài']);
+  if (squareMeters !== null && inputUnit !== 'squareMeter') results.push(['Quy đổi', squareMeters, 'm2']);
   return results;
 }
 
@@ -212,11 +233,19 @@ function conversionSupportsUnit(conversion: OrderProductConversion, unitText: st
   if (unit === 'sheet') return Boolean(conversion.trongLuongKgTam || (conversion.khoTamDaiM && conversion.trongLuongKgMDai));
   const areaPerRoll = conversion.dienTichM2 || (conversion.khoCuonRongM && conversion.khoCuonDaiM ? conversion.khoCuonRongM * conversion.khoCuonDaiM : null);
   const hasRollAreaCase = Boolean(conversion.khoCuonDaiM && areaPerRoll && conversion.trongLuongKgM2);
-  if (unit === 'roll') return Boolean((conversion.khoCuonDaiM && conversion.trongLuongKgMDai) || hasRollAreaCase);
+  if (unit === 'roll') return Boolean(conversion.trongLuongKgCuon || (conversion.khoCuonDaiM && conversion.trongLuongKgMDai) || hasRollAreaCase);
   if (unit === 'squareMeter') return Boolean(conversion.trongLuongKgM2);
   if (unit === 'meter') return Boolean(conversion.trongLuongKgMDai || ((conversion.khoTamRongM || conversion.khoCuonRongM) && conversion.trongLuongKgM2));
   if (unit === 'kg') return true;
   return false;
+}
+
+function allowedOrderUnits(product: OrderProductOption | null, conversion?: OrderProductConversion) {
+  if (!product) return [];
+  if (product.group === 'TP; PX Đặc') return ['Tấm', 'Cuộn'];
+  if (product.group === 'TP; PX Sóng' || product.group === 'TP; PX Rỗng') return ['Tấm'];
+  const candidates = [product.unit, 'Tấm', 'Cuộn', 'm', 'm2', 'kg'].filter(Boolean);
+  return [...new Set(candidates.filter(unit => !conversion || conversionSupportsUnit(conversion, unit)))];
 }
 
 export function newOrderProductFormLine(): OrderProductFormLine {
@@ -224,6 +253,7 @@ export function newOrderProductFormLine(): OrderProductFormLine {
     key: `order-product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     productCode: '',
     productName: '',
+    productionName: '',
     unit: '',
     quantity: ''
   };
@@ -238,6 +268,7 @@ export type OrderFormState = {
   note: string;
   status: string;
   createdAt: string;
+  deliveryDate: string;
 };
 
 const emptyOrderForm = (): OrderFormState => ({
@@ -248,7 +279,8 @@ const emptyOrderForm = (): OrderFormState => ({
   productLines: [newOrderProductFormLine()],
   note: '',
   status: ORDER_STATUS_DEFAULT,
-  createdAt: new Date().toISOString().slice(0, 10)
+  createdAt: new Date().toISOString().slice(0, 10),
+  deliveryDate: ''
 });
 
 function orderCreatedAtToInput(value: string): string {
@@ -267,6 +299,7 @@ export function orderProductLinesToPayload(lines: OrderProductFormLine[], produc
     .map(line => {
       const resolved = resolveOrderProductFields(productOptions, line.productCode, {
         productName: line.productName,
+        productionName: line.productionName,
         unit: line.unit
       });
       const productCode = line.productCode.trim();
@@ -277,6 +310,7 @@ export function orderProductLinesToPayload(lines: OrderProductFormLine[], produc
       return {
         ma_sp: productCode,
         ten_sp: productName,
+        ten_san_xuat: line.productionName.trim() || resolved.productionName || '',
         don_vi: unit,
         so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null
       };
@@ -301,6 +335,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
     productCode: orderCellToInput(line.productCode),
     productName: orderCellToInput(line.productName),
+    productionName: orderCellToInput(line.productionName || ''),
     unit: orderCellToInput(line.unit),
     quantity: orderCellToInput(line.quantity)
   }));
@@ -317,7 +352,8 @@ export function orderToForm(order: OrderRow): OrderFormState {
       : order.status && order.status !== '-'
         ? order.status
         : ORDER_STATUS_DEFAULT,
-    createdAt: orderCreatedAtToInput(order.createdAt || order.orderDate)
+    createdAt: orderCreatedAtToInput(order.createdAt || order.orderDate),
+    deliveryDate: order.deliveryDate || ''
   };
 }
 
@@ -523,7 +559,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     updateProductLine(key, {
       productCode,
       productName: resolved.productName,
-      unit: resolved.unit || match?.unit || ''
+      productionName: match?.productionName || '',
+      unit: allowedOrderUnits(match, productConversions.find(item => item.maAmis.toLocaleLowerCase('vi') === productCode.toLocaleLowerCase('vi')))[0] || resolved.unit || ''
     });
   };
 
@@ -558,29 +595,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }
     }
 
-    const productsWithConversion: Array<(typeof products)[number] & { kq_quy_doi?: { don_vi_nguon: string; so_luong_nguon: number; don_vi_dich: 'kg'; trong_luong_kg: number; chieu_dai_m: number } }> = [];
+    const productsWithConversion: Array<(typeof products)[number] & { ket_qua_quy_doi?: Array<{ don_vi: string; gia_tri: number }> }> = [];
     for (const product of products) {
       const conversionOptions = productConversions.filter(item => {
         const code = product.ma_sp.trim().toLocaleLowerCase('vi');
         return item.maSp.trim().toLocaleLowerCase('vi') === code || item.maAmis.trim().toLocaleLowerCase('vi') === code;
       });
       const conversion = conversionOptions.find(item => conversionSupportsUnit(item, product.don_vi));
-      const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion) : [];
-      const kgResult = result.find(([, , unit]) => unit === 'kg');
-      const meterResult = result.find(([, , unit]) => unit === 'm dài');
-      if (!kgResult || !meterResult) {
+      const option = productOptions.find(item => item.code.toLocaleLowerCase('vi') === product.ma_sp.toLocaleLowerCase('vi'));
+      const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion, option?.group) : [];
+      if (result.length === 0) {
         productsWithConversion.push(product);
         continue;
       }
       productsWithConversion.push({
         ...product,
-        kq_quy_doi: {
-          don_vi_nguon: product.don_vi,
-          so_luong_nguon: product.so_luong as number,
-          don_vi_dich: 'kg',
-          trong_luong_kg: Math.round(kgResult[1] * 1_000_000) / 1_000_000,
-          chieu_dai_m: Math.round(meterResult[1] * 1_000_000) / 1_000_000
-        }
+        ket_qua_quy_doi: result.map(([, value, unit]) => ({ don_vi: unit, gia_tri: Math.round(value * 1_000_000) / 1_000_000 }))
       });
     }
 
@@ -592,7 +622,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       products: productsWithConversion,
       note: orderForm.note,
       status: orderForm.status,
-      createdAt: orderForm.createdAt
+      createdAt: orderForm.createdAt,
+      deliveryDate: orderForm.deliveryDate
     };
 
     setIsSavingOrder(true);
@@ -735,6 +766,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 />
               </label>
               <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giao hàng</span>
+                <input type="date" value={orderForm.deliveryDate} onChange={e => setOrderForm(prev => ({ ...prev, deliveryDate: e.target.value }))} className={orderFieldClass} />
+              </label>
+              <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại đơn</span>
                 <SearchableSelect
                   value={orderForm.orderType}
@@ -806,6 +841,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 ) : null}
               </label>
 
+              <label className="col-span-2 space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú đơn hàng</span>
+                <textarea value={orderForm.note} onChange={e => setOrderForm(prev => ({ ...prev, note: e.target.value }))} className={`${orderFieldClass} min-h-20 py-2`} placeholder="Nhập ghi chú đơn hàng" />
+              </label>
+
               <RepeatableLinesBlock
                 className="col-span-2"
                 title="Sản phẩm"
@@ -820,10 +860,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 }
                 addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
                 columns={[
-                  { key: 'code', label: 'Mã SP', required: true },
-                  { key: 'name', label: 'Tên SP' },
+                  { key: 'code', label: 'Mã AMIS', required: true },
+                  { key: 'name', label: 'Tên sản phẩm' },
+                  { key: 'productionName', label: 'Tên sản xuất' },
                   { key: 'unit', label: 'ĐVT' },
                   { key: 'qty', label: 'SL', required: true },
+                  { key: 'conversion', label: 'Đơn vị quy đổi' },
                   { key: 'actions', label: '' }
                 ]}
               >
@@ -834,8 +876,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     item.maSp.trim().toLocaleLowerCase('vi') === normalizedCode ||
                     item.maAmis.trim().toLocaleLowerCase('vi') === normalizedCode
                   );
-                  const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit));
-                  const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, line.unit, matchedConversion) : [];
+                  const matchedConversion = productConversionOptions[0];
+                  const allowedUnits = allowedOrderUnits(matchedLineProduct, matchedConversion);
+                  const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, line.unit, matchedConversion, matchedLineProduct?.group) : [];
                   return (
                     <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
                       <div className="col-span-2 min-w-0 md:col-span-1">
@@ -843,17 +886,17 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           value={line.productCode}
                           onChange={productCode => pickOrderProduct(line.key, productCode)}
                           options={productOptions}
-                          placeholder="Gõ để tìm mã SP"
+                          placeholder="Tìm Mã AMIS"
                           isLoading={isLoadingLookups}
                           inputClassName={orderFieldClass}
                           getValue={item => (item as OrderProductOption).code}
                           getSearchText={item => {
                             const product = item as OrderProductOption;
-                            return `${product.code} ${product.newCode} ${product.name}`;
+                            return `${product.code} ${product.name} ${product.productionName}`;
                           }}
                           getLabel={item => {
                             const product = item as OrderProductOption;
-                            return `${product.code} · ${product.name}`;
+                            return product.code;
                           }}
                           resolveSelectedItem={(options, value) =>
                             findOrderProductByCode(options as OrderProductOption[], value)
@@ -869,18 +912,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
                         />
                       </div>
+                      <div className="col-span-2 min-w-0 md:col-span-1">
+                        <input value={matchedLineProduct ? matchedLineProduct.productionName : line.productionName} readOnly={Boolean(matchedLineProduct)} onChange={e => updateProductLine(line.key, { productionName: e.target.value })} className={`${orderFieldClass} ${matchedLineProduct ? 'bg-zinc-50 text-zinc-800' : 'bg-white'}`} placeholder="Tên sản xuất" />
+                      </div>
                       <div className="col-span-1 min-w-0">
-                        <input
-                          value={line.unit}
-                          readOnly={Boolean(matchedLineProduct)}
-                          onChange={e => updateProductLine(line.key, { unit: e.target.value })}
-                          onBlur={e => {
-                            const trimmed = e.target.value.trim();
-                            if (trimmed) saveUnitSuggestion(trimmed);
-                          }}
-                          className={`${orderFieldClass} ${matchedLineProduct ? 'cursor-not-allowed bg-zinc-100 text-zinc-600' : 'bg-white'}`}
-                          placeholder={matchedLineProduct ? 'Theo danh mục sản phẩm' : 'ĐVT'}
-                        />
+                        {matchedLineProduct ? <select value={line.unit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                       </div>
                       <div className="col-span-1 min-w-0">
                         <input
@@ -890,6 +926,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           className={`${orderFieldClass} bg-white`}
                           placeholder="0"
                         />
+                      </div>
+                      <div className="col-span-2 flex min-w-0 gap-1 md:col-span-1">
+                        {line.quantity && calculatedConversion.length > 0 ? calculatedConversion.map(([, value, unit]) => <div key={unit} className="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1"><span className="block truncate text-[9px] font-black uppercase text-emerald-700">{unit}</span><span className="block truncate text-xs font-black text-emerald-950">{formatNumber(value, 3)}</span></div>) : <div className="flex h-11 w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-semibold text-zinc-400">{line.quantity ? 'Chưa đủ hệ số quy đổi' : 'Nhập SL để quy đổi'}</div>}
                       </div>
                       {orderForm.productLines.length > 1 ? (
                         <button
@@ -906,24 +945,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <Trash2 className="h-4 w-4" />
                           <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
                         </button>
-                      ) : null}
-                      {formMode && line.productCode.trim() && line.unit.trim() ? (
-                        <div className={`col-span-2 rounded-lg border px-3 py-2 md:col-span-5 ${matchedConversion ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-                          {matchedConversion ? (
-                            calculatedConversion.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-semibold text-emerald-900">
-                                <span className="font-black">Kết quả quy đổi:</span>
-                                {calculatedConversion.map(([label, value, unit]) => (
-                                  <span key={label}>{label}: <strong>{formatNumber(value, 3)} {unit}</strong></span>
-                                ))}
-                              </div>
-                            ) : <p className="text-xs font-semibold text-emerald-800">Nhập số lượng lớn hơn 0 để xem kết quả quy đổi.</p>
-                          ) : productConversionOptions.length > 0 ? (
-                            <p className="text-xs font-bold text-amber-800">Không đủ hệ số để quy đổi từ đơn vị “{line.unit}”. Vui lòng kiểm tra chiều dài tấm và hệ số trọng lượng trong bảng quy đổi.</p>
-                          ) : (
-                            <p className="text-xs font-bold text-amber-800">Sản phẩm này chưa có dữ liệu trong bảng quy đổi.</p>
-                          )}
-                        </div>
                       ) : null}
                     </RepeatableLineRow>
                   );
@@ -975,6 +996,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               {[
                 ['Mã đơn', viewingOrder.orderCode],
                 ['Ngày tạo', formatOrderCreatedAt(viewingOrder.createdAt)],
+                ['Ngày giao hàng', viewingOrder.deliveryDate ? formatOrderCreatedAt(viewingOrder.deliveryDate) : '-'],
                 ['Loại đơn', viewingOrder.orderType],
                 ['Trạng thái', viewingOrder.status],
                 ['Nhân viên', viewingOrder.staffName],
@@ -992,10 +1014,20 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   {getOrderProductLines(viewingOrder).map(line => (
                     <div key={`${line.productCode}-${line.quantity}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm">
                       <p className="font-bold text-zinc-900">{line.productCode || '-'} · {line.productName || '-'}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || '-'}</p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
                       </p>
+                      {line.conversionResults?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {line.conversionResults.map(result => (
+                            <span key={result.unit} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800">
+                              {formatNumber(result.value, 3)} {result.unit}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

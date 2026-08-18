@@ -65,7 +65,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
             </tr>
             <tr>
               <th>Thời hạn giao hàng</th>
-              <td colSpan={3} />
+              <td colSpan={3}>{order.deliveryDate ? formatOrderCreatedAt(order.deliveryDate) : '—'}</td>
             </tr>
           </tbody>
         </table>
@@ -95,13 +95,16 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                 <tr key={`${line.productCode}-${idx}`}>
                   <td className="order-print-center">{idx + 1}</td>
                   <td className="order-print-mono">{displayCell(line.productCode)}</td>
-                  <td className="order-print-product-name">{displayCell(line.productName)}</td>
+                  <td className="order-print-product-name">
+                    {displayCell(line.productName)}
+                    {displayCell(line.productionName) ? <div>{displayCell(line.productionName)}</div> : null}
+                  </td>
                   <td />
                   <td className="order-print-center">{displayCell(line.unit)}</td>
                   <td className="order-print-center order-print-qty">
                     {displayCell(line.quantity) || '—'}
                   </td>
-                  <td />
+                  <td>{order.deliveryDate ? formatOrderCreatedAt(order.deliveryDate) : ''}</td>
                   <td>{idx === 0 ? orderNote : ''}</td>
                 </tr>
               ))

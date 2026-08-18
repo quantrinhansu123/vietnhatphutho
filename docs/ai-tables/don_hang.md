@@ -31,5 +31,6 @@ Tạo lệnh SX: `POST /api/lenh-sx/from-don-hang/:id`
 ### Form đơn hàng
 
 - **Khách hàng**: sổ xuống (`<select>`) lấy từ `/api/khach-hang` (bảng danh mục Khách hàng), bắt buộc chọn.
-- **Quy đổi khi thêm mới**: tải `san_pham_quy_doi`, khớp mã SP + đơn vị và hiển thị mét dài, m², kg có thể tính. Kế hoạch/công thức: `tinh_toan_quy_doi.md`.
-- Dòng JSON `san_pham` có `kq_quy_doi` khi tính được; thiếu cấu hình quy đổi vẫn cho phép thêm/cập nhật đơn hàng.
+- **Quy đổi khi thêm/sửa**: tải `san_pham_quy_doi`, áp dụng quy tắc nhóm VTHH và công thức tại `.ai/spec/tinh_toan_quy_doi.md`.
+- Dòng JSON `san_pham` lưu mã AMIS, `ten_san_xuat` và mảng `ket_qua_quy_doi`; thiếu cấu hình quy đổi vẫn cho phép lưu đơn.
+- **Ngày giao hàng**: cột `ngay_giao_hang`, migration `supabase-don-hang-ngay-giao-hang.sql`.

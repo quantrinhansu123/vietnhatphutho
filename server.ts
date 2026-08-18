@@ -2096,7 +2096,8 @@ const PRODUCT_VTHH_RULES: Record<string, { group: string; units: string[]; prima
   'tp; px đặc': { group: 'TP; PX Đặc', units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: 13 },
   'tp; px sóng': { group: 'TP; PX Sóng', units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: 2 },
   'tp; nvl': { group: 'TP; NVL', units: [] },
-  'nvl': { group: 'NVL', units: [] }
+  'nvl': { group: 'NVL', units: [] },
+  'khác': { group: 'Khác', units: [] }
 };
 
 function normalizeProductVthhGroup(value: unknown) {
@@ -2144,7 +2145,7 @@ function parseProductPatchBody(
   }
   if (Object.prototype.hasOwnProperty.call(source, 'group') || Object.prototype.hasOwnProperty.call(source, 'nhom_vthh')) {
     const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
-    if (!rule) return { error: 'Nhóm VTHH phải là TP; PX Rỗng, TP; PX Đặc, TP; PX Sóng, TP; NVL hoặc NVL.' };
+    if (!rule) return { error: 'Nhóm VTHH phải là TP; PX Rỗng, TP; PX Đặc, TP; PX Sóng, TP; NVL, NVL hoặc Khác.' };
     record.nhom_vthh = rule.group;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'unit') || Object.prototype.hasOwnProperty.call(source, 'don_vi')) {
@@ -2152,7 +2153,7 @@ function parseProductPatchBody(
     const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
     if (rule?.primaryUnit) record.don_vi = rule.primaryUnit;
     else {
-      if (!unit) return { error: 'Vui lòng nhập đơn vị tính cho nhóm TP; NVL hoặc NVL.' };
+      if (!unit) return { error: 'Vui lòng nhập đơn vị tính cho nhóm TP; NVL, NVL hoặc Khác.' };
       record.don_vi = unit;
     }
   }
@@ -4631,6 +4632,7 @@ type OrderProductRecord = {
   ma_don_hang?: string;
   ma_sp: string;
   ten_sp: string;
+  ten_san_xuat?: string;
   don_vi: string;
   so_luong: number | null;
   kq_quy_doi?: {
@@ -4640,6 +4642,7 @@ type OrderProductRecord = {
     trong_luong_kg: number;
     chieu_dai_m: number;
   };
+  ket_qua_quy_doi?: Array<{ don_vi: string; gia_tri: number }>;
 };
 
 function parseOrderProductsInput(
@@ -4662,10 +4665,20 @@ function parseOrderProductsInput(
     const row = item as Record<string, unknown>;
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
+    const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
     const rawConversion = row.kq_quy_doi ?? row.conversionResult;
+    const conversionResults = Array.isArray(row.ket_qua_quy_doi)
+      ? row.ket_qua_quy_doi.flatMap(item => {
+          if (!item || typeof item !== 'object') return [];
+          const result = item as Record<string, unknown>;
+          const don_vi = pickRowField(result, ['don_vi', 'unit']);
+          const gia_tri = parseOrderQuantity(result.gia_tri ?? result.value);
+          return don_vi && gia_tri !== null && gia_tri >= 0 ? [{ don_vi, gia_tri }] : [];
+        })
+      : [];
 
     if (!ma_sp && !ten_sp) {
       return { error: 'Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.' };
@@ -4674,7 +4687,7 @@ function parseOrderProductsInput(
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
     if (!rawConversion || typeof rawConversion !== 'object') {
-      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      products.push({ ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
     const conversion = rawConversion as Record<string, unknown>;
@@ -4686,10 +4699,10 @@ function parseOrderProductsInput(
       && Math.abs(sourceQuantity - so_luong) <= 0.000001
       && sourceUnit.trim().toLocaleLowerCase('vi') === don_vi.trim().toLocaleLowerCase('vi');
     if (!conversionIsValid) {
-      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      products.push({ ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
-    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong, kq_quy_doi: {
+    products.push({ ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
       don_vi_nguon: sourceUnit, so_luong_nguon: sourceQuantity, don_vi_dich: 'kg',
       trong_luong_kg: convertedWeight, chieu_dai_m: convertedLength
     } });
@@ -4735,6 +4748,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ma_don_hang: pickRowField(record, ['ma_don_hang', 'orderRef', 'order_code']),
           ma_sp,
           ten_sp,
+          ten_san_xuat: pickRowField(record, ['ten_san_xuat', 'productionName']),
           don_vi: pickRowField(record, ['don_vi', 'unit']),
           so_luong: parseOrderQuantity(record.so_luong ?? record.quantity)
         };
@@ -4796,6 +4810,10 @@ function parseOrderBody(
     san_pham: products,
     ghi_chu: typeof source.note === 'string' ? source.note.trim() : ''
   };
+  if (typeof source.deliveryDate === 'string') {
+    const deliveryDate = source.deliveryDate.trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
+    record.ngay_giao_hang = deliveryDate || null;
+  }
 
   if (Object.prototype.hasOwnProperty.call(source, 'stockQuantity')) {
     record.so_luong_ton = parseOrderQuantity(source.stockQuantity);
