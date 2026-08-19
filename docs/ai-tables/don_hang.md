@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `don_hang` |
 | **Tab** | `orders` → `/don-hang` |
-| **SQL** | `supabase-don-hang-*.sql` |
+| **SQL** | `supabase-don-hang-*.sql` (bao gồm `supabase-don-hang-updated-at.sql`) |
 
 ## API (`server.ts`)
 

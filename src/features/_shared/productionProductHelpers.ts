@@ -1,4 +1,5 @@
 export interface OrderProductLine {
+  productId?: string;
   productCode: string;
   productName: string;
   productionName?: string;

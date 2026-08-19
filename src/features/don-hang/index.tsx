@@ -5,6 +5,7 @@ import { Eye, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react'
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { waitForPrintImagesReady } from '../../utils/printReady';
+import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
@@ -15,6 +16,7 @@ import {
   ORDER_STATUS_DEFAULT,
   orderFieldClass,
   normalizeOrderProducts,
+  findOrderProductById,
   findOrderProductByCode,
   resolveOrderProductFields,
   readUnitSuggestions,
@@ -95,6 +97,7 @@ export function normalizeOrders(data: unknown): OrderRow[] {
       if (!item || typeof item !== 'object') return null;
       const record = item as Record<string, unknown>;
       const orderCode = pickText(record, ['ma_don_hang', 'order_code', 'code'], '');
+      const updatedRaw = record.updated_at ?? record.updatedAt;
       const products = parseOrderProductsFromRecord(record);
       const summary = summarizeOrderProducts(products);
       if (!orderCode && products.length === 0) return null;
@@ -124,14 +127,24 @@ export function normalizeOrders(data: unknown): OrderRow[] {
           if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
           return '';
         })(),
-        createdAt: formatCell(record.created_at)
+        createdAt: formatCell(record.created_at),
+        updatedAt: updatedRaw ? formatCell(updatedRaw) : ''
       };
     })
-    .filter((order): order is OrderRow => Boolean(order));
+    .filter((order): order is OrderRow => Boolean(order))
+    .sort((a, b) => {
+      const timeOf = (order: OrderRow) => {
+        const value = order.updatedAt || order.createdAt || order.orderDate;
+        const time = new Date(value).getTime();
+        return Number.isFinite(time) ? time : 0;
+      };
+      return timeOf(b) - timeOf(a);
+    });
 }
 
 export type OrderProductFormLine = {
   key: string;
+  productId: string;
   productCode: string;
   productName: string;
   productionName: string;
@@ -140,7 +153,7 @@ export type OrderProductFormLine = {
 };
 
 type OrderProductConversion = {
-  id: number; maSp: string; maAmis: string; donViTinh: string;
+  id: number; sanPhamId: string; maSp: string; maAmis: string; donViTinh: string;
   khoTamRongM: number | null; khoTamDaiM: number | null;
   khoCuonRongM: number | null; khoCuonDaiM: number | null;
   dienTichM2: number | null; trongLuongKgMDai: number | null;
@@ -167,48 +180,20 @@ function resolveConversionUnit(value: string): ConversionUnit {
 function calculateOrderConversion(quantityText: string, inputUnitText: string, conversion: OrderProductConversion, group = '') {
   const quantity = parsePercentInput(quantityText);
   if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
-  const inputUnit = resolveConversionUnit(inputUnitText);
-  const kgPerSheet = conversion.trongLuongKgTam;
-  const kgPerRoll = conversion.trongLuongKgCuon;
-  const kgPerMeter = conversion.trongLuongKgMDai;
-  const results: Array<[string, number, string]> = [];
-  const addKg = (value: number | null) => {
-    if (value !== null && Number.isFinite(value) && value > 0) results.push(['Quy đổi', value, 'kg']);
-  };
-
-  if (group === 'TP; PX Đặc') {
-    const weight = inputUnit === 'roll'
-      ? (kgPerRoll === null ? null : quantity * kgPerRoll)
-      : inputUnit === 'sheet'
-        ? (kgPerSheet === null ? null : quantity * kgPerSheet)
-        : null;
-    addKg(weight);
-    if (weight !== null && conversion.trongLuongKgM2 !== null && conversion.trongLuongKgM2 > 0) {
-      results.push(['Quy đổi', weight / conversion.trongLuongKgM2, 'm2']);
-    }
-    return results;
-  }
-
-  if (group === 'TP; PX Rỗng') {
-    if (inputUnit === 'sheet') addKg(kgPerSheet === null ? null : quantity * kgPerSheet);
-    return results;
-  }
-
-  if (group === 'TP; PX Sóng') {
-    if (inputUnit !== 'sheet' || kgPerSheet === null || kgPerMeter === null || kgPerMeter <= 0) return results;
-    const weight = quantity * kgPerSheet;
-    addKg(weight);
-    results.push(['Quy đổi', weight / kgPerMeter, 'm dài']);
-    return results;
-  }
-
-  // NVL và TP; NVL đã là kg, không thực hiện quy đổi.
-  if ((group === 'NVL' || group === 'TP; NVL' || !group) && inputUnit === 'kg') return results;
-
-  // Nhóm Khác dùng ĐVT của sản phẩm: Tấm/Cuộn tính theo trọng lượng trên đơn vị.
-  if (inputUnit === 'sheet') addKg(kgPerSheet === null ? null : quantity * kgPerSheet);
-  else if (inputUnit === 'roll') addKg(kgPerRoll === null ? null : quantity * kgPerRoll);
-  return results;
+  const normalizedGroup = group.replace(/\s+/g, '').toLocaleLowerCase('vi');
+  const targetUnits: ProductConvertedUnit[] = normalizedGroup === 'tp;pxđặc'
+    ? ['kg', 'm2']
+    : normalizedGroup === 'tp;pxsóng'
+      ? ['m', 'kg']
+      : normalizedGroup === 'tp;pxrỗng'
+        ? ['kg']
+        : availableConvertedUnits(inputUnitText, conversion);
+  return targetUnits.flatMap(unit => {
+    const value = convertProductQuantity(quantity, inputUnitText, unit, conversion);
+    return value !== null && Number.isFinite(value) && value > 0
+      ? [['Quy đổi', value, unit === 'm' ? 'm dài' : unit] as [string, number, string]]
+      : [];
+  });
 }
 
 function conversionSupportsUnit(conversion: OrderProductConversion, unitText: string) {
@@ -221,17 +206,32 @@ function conversionSupportsUnit(conversion: OrderProductConversion, unitText: st
   return false;
 }
 
-function allowedOrderUnits(product: OrderProductOption | null, conversion?: OrderProductConversion) {
+function allowedOrderUnits(product: OrderProductOption | null) {
   if (!product) return [];
-  if (product.group === 'TP; PX Đặc') return ['Tấm', 'Cuộn'];
-  if (product.group === 'TP; PX Sóng' || product.group === 'TP; PX Rỗng') return ['Tấm'];
-  const candidates = [product.unit, 'Tấm', 'Cuộn', 'm', 'm2', 'kg'].filter(Boolean);
-  return [...new Set(candidates.filter(unit => !conversion || conversionSupportsUnit(conversion, unit)))];
+  const group = product.group.replace(/\s+/g, '').toLocaleLowerCase('vi');
+  if (group === 'tp;pxđặc') return ['Tấm', 'Cuộn'];
+  if (group === 'tp;pxsóng' || group === 'tp;pxrỗng') return ['Tấm'];
+  return ['kg'];
+}
+
+function resolveOrderLineProduct(products: OrderProductOption[], line: Pick<OrderProductFormLine, 'productId' | 'productCode' | 'productName' | 'productionName' | 'unit'>) {
+  const byId = findOrderProductById(products, line.productId);
+  if (byId) return byId;
+  const normalizedCode = line.productCode.trim().toLocaleLowerCase('vi');
+  if (!normalizedCode) return null;
+  const candidates = products.filter(product => product.code.toLocaleLowerCase('vi') === normalizedCode || product.newCode.toLocaleLowerCase('vi') === normalizedCode);
+  if (candidates.length <= 1) return candidates[0] ?? null;
+  return candidates.find(product =>
+    (!line.productName.trim() || product.name === line.productName.trim()) &&
+    (!line.productionName.trim() || product.productionName === line.productionName.trim()) &&
+    (!line.unit.trim() || product.unit === line.unit.trim())
+  ) ?? null;
 }
 
 export function newOrderProductFormLine(): OrderProductFormLine {
   return {
     key: `order-product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    productId: '',
     productCode: '',
     productName: '',
     productionName: '',
@@ -278,20 +278,21 @@ export function orderProductLinesToPayload(lines: OrderProductFormLine[], produc
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
     .map(line => {
+      const selectedProduct = resolveOrderLineProduct(productOptions, line);
       const resolved = resolveOrderProductFields(productOptions, line.productCode, {
         productName: line.productName,
-        productionName: line.productionName,
         unit: line.unit
       });
       const productCode = line.productCode.trim();
-      const productName = resolved.productName || line.productName.trim();
-      const unit = line.unit.trim() || resolved.unit;
+      const productName = selectedProduct?.name || resolved.productName || line.productName.trim();
+      const unit = selectedProduct ? allowedOrderUnits(selectedProduct)[0] || 'kg' : line.unit.trim() || resolved.unit;
       const quantity = parsePercentInput(line.quantity);
 
       return {
+        san_pham_id: selectedProduct?.id || line.productId.trim() || undefined,
         ma_sp: productCode,
         ten_sp: productName,
-        ten_san_xuat: line.productionName.trim() || resolved.productionName || '',
+        ten_san_xuat: line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '',
         don_vi: unit,
         so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null
       };
@@ -314,6 +315,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
 
   const productLines = getOrderProductLines(order).map(line => ({
     key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
+    productId: line.productId || '',
     productCode: orderCellToInput(line.productCode),
     productName: orderCellToInput(line.productName),
     productionName: orderCellToInput(line.productionName || ''),
@@ -534,14 +536,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }));
   };
 
-  const pickOrderProduct = (key: string, productCode: string) => {
-    const resolved = resolveOrderProductFields(productOptions, productCode, {});
-    const match = findOrderProductByCode(productOptions, productCode);
+  const pickOrderProduct = (key: string, productId: string) => {
+    const match = findOrderProductById(productOptions, productId);
+    const productCode = match?.code || '';
     updateProductLine(key, {
+      productId,
       productCode,
-      productName: resolved.productName,
+      productName: match?.name || '',
       productionName: match?.productionName || '',
-      unit: allowedOrderUnits(match, productConversions.find(item => item.maAmis.toLocaleLowerCase('vi') === productCode.toLocaleLowerCase('vi')))[0] || resolved.unit || ''
+      unit: allowedOrderUnits(match)[0] || match?.unit || ''
     });
   };
 
@@ -578,12 +581,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
     const productsWithConversion: Array<(typeof products)[number] & { ket_qua_quy_doi?: Array<{ don_vi: string; gia_tri: number }> }> = [];
     for (const product of products) {
-      const conversionOptions = productConversions.filter(item => {
-        const code = product.ma_sp.trim().toLocaleLowerCase('vi');
-        return item.maSp.trim().toLocaleLowerCase('vi') === code || item.maAmis.trim().toLocaleLowerCase('vi') === code;
-      });
-      const conversion = conversionOptions.find(item => conversionSupportsUnit(item, product.don_vi));
-      const option = productOptions.find(item => item.code.toLocaleLowerCase('vi') === product.ma_sp.toLocaleLowerCase('vi'));
+      const option = findOrderProductById(productOptions, product.san_pham_id || '');
+      const conversion = productConversions.find(item => item.sanPhamId === option?.id && conversionSupportsUnit(item, product.don_vi));
       const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion, option?.group) : [];
       if (result.length === 0) {
         productsWithConversion.push(product);
@@ -851,27 +850,24 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 ]}
               >
                 {orderForm.productLines.map(line => {
-                  const matchedLineProduct = findOrderProductByCode(productOptions, line.productCode);
-                  const normalizedCode = line.productCode.trim().toLocaleLowerCase('vi');
-                  const productConversionOptions = productConversions.filter(item =>
-                    item.maSp.trim().toLocaleLowerCase('vi') === normalizedCode ||
-                    item.maAmis.trim().toLocaleLowerCase('vi') === normalizedCode
-                  );
+                  const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
+                  const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
-                  const allowedUnits = allowedOrderUnits(matchedLineProduct, matchedConversion);
-                  const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, line.unit, matchedConversion, matchedLineProduct?.group) : [];
-                  const noConversionRequired = ['NVL', 'TP; NVL', 'Khác'].includes(matchedLineProduct?.group || '') && resolveConversionUnit(line.unit) === 'kg';
+                  const allowedUnits = allowedOrderUnits(matchedLineProduct);
+                  const effectiveUnit = matchedLineProduct ? allowedUnits[0] || 'kg' : line.unit;
+                  const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, matchedLineProduct?.group) : [];
+                  const noConversionRequired = Boolean(matchedLineProduct) && resolveConversionUnit(effectiveUnit) === 'kg';
                   return (
                     <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
                       <div className="col-span-2 min-w-0 md:col-span-1">
                         <SearchableSelect
-                          value={line.productCode}
-                          onChange={productCode => pickOrderProduct(line.key, productCode)}
+                          value={matchedLineProduct?.id || line.productId}
+                          onChange={productId => pickOrderProduct(line.key, productId)}
                           options={productOptions}
                           placeholder="Tìm Mã AMIS"
                           isLoading={isLoadingLookups}
                           inputClassName={orderFieldClass}
-                          getValue={item => (item as OrderProductOption).code}
+                          getValue={item => (item as OrderProductOption).id}
                           getSearchText={item => {
                             const product = item as OrderProductOption;
                             return `${product.code} ${product.name} ${product.productionName}`;
@@ -884,10 +880,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             const product = item as OrderProductOption;
                             return `${product.code}${product.name ? ` - ${product.name}` : ''}`;
                           }}
-                          displaySelectedAsValue
-                          resolveSelectedItem={(options, value) =>
-                            findOrderProductByCode(options as OrderProductOption[], value)
-                          }
+                          resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
                         />
                       </div>
                       <div className="col-span-2 min-w-0 md:col-span-1">
@@ -903,7 +896,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <input value={matchedLineProduct ? matchedLineProduct.productionName : line.productionName} readOnly={Boolean(matchedLineProduct)} onChange={e => updateProductLine(line.key, { productionName: e.target.value })} className={`${orderFieldClass} ${matchedLineProduct ? 'bg-zinc-50 text-zinc-800' : 'bg-white'}`} placeholder="Tên sản xuất" />
                       </div>
                       <div className="col-span-1 min-w-0">
-                        {matchedLineProduct ? <select value={line.unit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
+                        {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                       </div>
                       <div className="col-span-1 min-w-0">
                         <input

@@ -4630,6 +4630,7 @@ function parseOrderQuantity(value: unknown): number | null {
 }
 
 type OrderProductRecord = {
+  san_pham_id?: string;
   ma_don_hang?: string;
   ma_sp: string;
   ten_sp: string;
@@ -4664,6 +4665,7 @@ function parseOrderProductsInput(
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
+    const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
@@ -4688,7 +4690,7 @@ function parseOrderProductsInput(
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
     if (!rawConversion || typeof rawConversion !== 'object') {
-      products.push({ ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
     const conversion = rawConversion as Record<string, unknown>;
@@ -4700,10 +4702,10 @@ function parseOrderProductsInput(
       && Math.abs(sourceQuantity - so_luong) <= 0.000001
       && sourceUnit.trim().toLocaleLowerCase('vi') === don_vi.trim().toLocaleLowerCase('vi');
     if (!conversionIsValid) {
-      products.push({ ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
-    products.push({ ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
+    products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
       don_vi_nguon: sourceUnit, so_luong_nguon: sourceQuantity, don_vi_dich: 'kg',
       trong_luong_kg: convertedWeight, chieu_dai_m: convertedLength
     } });
@@ -4809,7 +4811,8 @@ function parseOrderBody(
     nhan_vien: typeof source.staffName === 'string' ? source.staffName.trim() : '',
     khach_hang: typeof source.customer === 'string' ? source.customer.trim() : '',
     san_pham: products,
-    ghi_chu: typeof source.note === 'string' ? source.note.trim() : ''
+    ghi_chu: typeof source.note === 'string' ? source.note.trim() : '',
+    updated_at: new Date().toISOString()
   };
   if (typeof source.deliveryDate === 'string') {
     const deliveryDate = source.deliveryDate.trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
@@ -6426,7 +6429,8 @@ export function createApp() {
       const { data, error } = await supabase
         .from(SUPABASE_ORDERS_TABLE)
         .select('*')
-        .order('ma_don_hang', { ascending: true });
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false });
 
       if (error) {
         return respondSupabaseReadError(res, error, SUPABASE_ORDERS_TABLE, { orders: [], total: 0 });

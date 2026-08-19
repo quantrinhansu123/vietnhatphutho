@@ -1309,7 +1309,14 @@ export function ProductEditModal({
           </label>
           <label className="block space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị tính *</span>
-            <input value={displayedUnit} onChange={event => updateCustomUnit(event.target.value)} readOnly={Boolean(selectedGroupRule?.primaryUnit)} className={`${productFieldClass} read-only:bg-zinc-100`} placeholder={form.group ? 'Nhập ĐVT' : 'Chọn Nhóm VTHH trước'} />
+            {form.group === 'TP; PX Đặc' ? (
+              <select value={form.unit} onChange={event => updateCustomUnit(event.target.value)} className={productFieldClass}>
+                <option value="Tấm">Tấm</option>
+                <option value="Cuộn">Cuộn</option>
+              </select>
+            ) : (
+              <input value={displayedUnit} onChange={event => updateCustomUnit(event.target.value)} readOnly={Boolean(selectedGroupRule?.primaryUnit)} className={`${productFieldClass} read-only:bg-zinc-100`} placeholder={form.group ? 'Nhập ĐVT' : 'Chọn Nhóm VTHH trước'} />
+            )}
           </label>
           <label className="block space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tỷ lệ hàng hỏng (%)</span>
@@ -2336,7 +2343,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         <TableBody>
           {filteredProducts.map(product => {
             const conversion = conversionByProductId.get(product.id);
-            const convertedUnits = conversion ? availableConvertedUnits(product.unit, conversion) : [];
+            const convertedUnits: ProductConvertedUnit[] = product.group === 'TP; PX Đặc'
+              ? ['kg', 'm2']
+              : product.group === 'TP; PX Sóng'
+                ? ['m', 'kg']
+                : product.group === 'TP; PX Rỗng'
+                  ? ['kg']
+                  : conversion ? availableConvertedUnits(product.unit, conversion) : [];
             const rowSpan = 1 + convertedUnits.length;
             const quantityFields = [product.openingStock, product.inbound, product.outbound, product.stock, product.minStock];
             const renderConvertedValue = (raw: string, unit: ProductConvertedUnit) => {
@@ -2425,7 +2438,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
               </tr>
               {convertedUnits.map(unit => (
                 <tr key={`${product.id}-${unit}`} className="border-t border-zinc-100 bg-zinc-50/70 text-zinc-700">
-                  <td className="px-4 py-2.5 text-center font-bold text-zinc-700">{unit}</td>
+                  <td className="px-4 py-2.5 text-center font-bold text-zinc-700">{unit === 'm' ? 'm dài' : unit}</td>
                   <td className="px-3 py-2.5 text-center font-mono font-bold text-zinc-400">—</td>
                   {quantityFields.map((raw, index) => <td key={index} title={renderConvertedValue(raw, unit) === '—' ? 'Chưa đủ hệ số quy đổi' : undefined} className="px-3 py-2.5 text-center font-mono font-bold">{renderConvertedValue(raw, unit)}</td>)}
                 </tr>

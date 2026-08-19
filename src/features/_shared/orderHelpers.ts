@@ -20,6 +20,7 @@ export interface CustomerOption {
 }
 
 export interface OrderProductOption {
+  id: string;
   code: string;
   name: string;
   productionName: string;
@@ -101,6 +102,7 @@ export function normalizeCustomerOptions(data: unknown): CustomerOption[] {
 
 export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
   return normalizeProducts(data).map(product => ({
+    id: product.id,
     code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
     name: product.name,
     productionName: product.productionName,
@@ -108,6 +110,12 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     unit: product.unit === '-' ? '' : product.unit,
     newCode: product.newCode
   })).filter(product => product.code);
+}
+
+export function findOrderProductById(products: OrderProductOption[], id: string) {
+  const normalized = id.trim();
+  if (!normalized) return null;
+  return products.find(product => product.id === normalized) ?? null;
 }
 
 export function findOrderProductByCode(products: OrderProductOption[], code: string) {

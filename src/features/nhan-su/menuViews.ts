@@ -60,7 +60,6 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'weighing-summary-list', label: 'Phiếu cân ca' },
       { tab: 'can-tu-dong', label: 'Dữ liệu cân tự động' },
       { tab: 'acceptance-report-list', label: 'Kiểm tra kho thành phẩm' },
-      { tab: 'product-conversions', label: 'Bảng quy đổi sản phẩm' },
     ]
   },
   {

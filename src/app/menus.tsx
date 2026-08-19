@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, Calculator
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
@@ -532,13 +532,6 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
 
 export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Bảng quy đổi sản phẩm',
-    desc: 'Quản lý đơn vị, kích thước và trọng lượng quy đổi theo sản phẩm.',
-    icon: Calculator,
-    icon3d: abacus3d,
-    tab: 'product-conversions'
-  },
-  {
     title: 'BOM và tỷ lệ phối trộn',
     desc: 'Tỷ lệ trộn theo mặt hàng, theo lệnh và theo mẻ.',
     icon: Layers,
@@ -896,7 +889,6 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Phiếu cân ca', tab: 'weighing-summary-list' },
       { label: 'Dữ liệu cân tự động', tab: 'can-tu-dong' },
       { label: 'Kiểm tra kho thành phẩm', tab: 'acceptance-report-list' },
-      { label: 'Bảng quy đổi sản phẩm', tab: 'product-conversions' },
       { label: 'Báo cáo chất lượng', tab: 'factory-qc', disabled: true }
     ]
   },
@@ -970,7 +962,6 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'materials-inventory': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
   'products': { group: 'Kinh doanh', sub: 'Sản phẩm' },
   'inventory-limits': { group: 'Kinh doanh', sub: 'Tồn kho tối thiểu - Tồn kho tối đa' },
-  'product-conversions': { group: 'QC', sub: 'Bảng quy đổi sản phẩm' },
   'machines': { group: 'Trang chủ', sub: 'Quản lý máy' },
   'warehouse-slip': { group: 'Kho', sub: 'Phiếu xuất nhập kho' },
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
