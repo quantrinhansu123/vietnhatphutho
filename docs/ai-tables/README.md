@@ -27,11 +27,11 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `quan_ly_kho` | `/quan-ly-kho` | [quan_ly_kho.md](./quan_ly_kho.md) |
 | `bao_cao_hang_hong` | `/bao-cao-hang-hong` | [bao_cao_hang_hong.md](./bao_cao_hang_hong.md) |
 | `san_pham` | `/san-pham` | [san_pham.md](./san_pham.md) |
-| `san_pham_quy_doi` | `/bang-quy-doi-san-pham` | [san_pham_quy_doi.md](./san_pham_quy_doi.md) |
 | `danh_sach_may` | `/danh-sach-may` | [danh_sach_may.md](./danh_sach_may.md) |
 | `kho_nvl` | `/kho-nvl` | [kho_nvl.md](./kho_nvl.md) |
 | `phieu_xuat_nhap_kho` | `/phieu-xuat-nhap-kho` | [phieu_xuat_nhap_kho.md](./phieu_xuat_nhap_kho.md) |
 | `don_hang` | `/don-hang` | [don_hang.md](./don_hang.md) |
+| `ton_kho_toi_thieu_toi_da` | `/ton-kho-toi-thieu-toi-da` | [ton_kho_toi_thieu_toi_da.md](./ton_kho_toi_thieu_toi_da.md) |
 | `khach_hang` | `/khach-hang` | [khach_hang.md](./khach_hang.md) |
 | `lenh_xuat_hang` | `/lenh-xuat-hang` | [lenh_xuat_hang.md](./lenh_xuat_hang.md) |
 | `lenh_sx` | `/lenh-san-xuat` | [lenh_sx.md](./lenh_sx.md) |

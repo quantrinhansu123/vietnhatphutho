@@ -6,7 +6,6 @@ export type ProductConversionCsvRow = {
   rowNumber: number;
   productCode: string;
   amisCode: string;
-  unit: string;
   sheetWidthM: string;
   sheetLengthM: string;
   rollWidthM: string;
@@ -15,13 +14,13 @@ export type ProductConversionCsvRow = {
   kgPerLinearM: string;
   kgPerM2: string;
   kgPerSheet: string;
+  kgPerRoll: string;
 };
 
 const HEADERS = [
   'Stt',
   'Mã amis',
   'Tên sản phẩm',
-  'Đơn vị tính',
   'Khổ tấm rộng (m rộng)',
   'Khổ tấm dài (m dài / tấm)',
   'Khổ cuộn rộng (m rộng)',
@@ -29,7 +28,8 @@ const HEADERS = [
   'Khổ diện tính mét vuông (m2)',
   'Trọng lượng (kg/1 m dài )',
   'Trọng lượng (kg/m2 )',
-  'Trọng lượng (kg/Tấm )'
+  'Trọng lượng (kg/Tấm )',
+  'Trọng lượng (kg/Cuộn)'
 ];
 
 function normalizeHeader(value: string) {
@@ -68,17 +68,17 @@ export async function parseProductConversionCsv(file: File): Promise<ProductConv
   const headers = matrix[0].map(normalizeHeader);
   const find = (name: string) => headers.indexOf(normalizeHeader(name));
   const indexes = HEADERS.map(find);
-  if (indexes[1] < 0 || indexes[3] < 0) {
-    throw new Error('CSV cần có cột Mã amis và Đơn vị tính.');
+  if (indexes[1] < 0) {
+    throw new Error('CSV cần có cột Mã amis.');
   }
   return matrix.slice(1).map((cells, index) => {
     const get = (position: number) => indexes[position] >= 0 ? String(cells[indexes[position]] ?? '').trim() : '';
     return {
-      rowNumber: index + 2, productCode: '', amisCode: get(1), unit: get(3),
-      sheetWidthM: get(4), sheetLengthM: get(5), rollWidthM: get(6), rollLengthM: get(7),
-      areaM2: get(8), kgPerLinearM: get(9), kgPerM2: get(10), kgPerSheet: get(11)
+      rowNumber: index + 2, productCode: '', amisCode: get(1),
+      sheetWidthM: get(3), sheetLengthM: get(4), rollWidthM: get(5), rollLengthM: get(6),
+      areaM2: get(7), kgPerLinearM: get(8), kgPerM2: get(9), kgPerSheet: get(10), kgPerRoll: get(11)
     };
-  }).filter(row => row.productCode || row.amisCode || row.unit);
+  }).filter(row => row.productCode || row.amisCode);
 }
 
 function csvCell(value: unknown) {
@@ -88,8 +88,8 @@ function csvCell(value: unknown) {
 
 export function downloadProductConversionsCsv(rows: ProductConversion[], filename = `bang-quy-doi-san-pham-${new Date().toISOString().slice(0, 10)}.csv`) {
   const lines = [HEADERS, ...rows.map((row, index) => [
-    index + 1, row.maAmis, row.tenSp, row.donViTinh, row.khoTamRongM, row.khoTamDaiM, row.khoCuonRongM,
-    row.khoCuonDaiM, row.dienTichM2, row.trongLuongKgMDai, row.trongLuongKgM2, row.trongLuongKgTam
+    index + 1, row.maAmis, row.tenSp, row.khoTamRongM, row.khoTamDaiM, row.khoCuonRongM,
+    row.khoCuonDaiM, row.dienTichM2, row.trongLuongKgMDai, row.trongLuongKgM2, row.trongLuongKgTam, row.trongLuongKgCuon
   ])].map(columns => columns.map(csvCell).join(';'));
   const blob = new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -98,7 +98,7 @@ export function downloadProductConversionsCsv(rows: ProductConversion[], filenam
 }
 
 export function downloadProductConversionCsvTemplate() {
-  const example = ['1', 'AMIS001', 'Tên sản phẩm mẫu', 'tấm', '1.08', '6', '', '', '6.48', '0.82', '', '4.92'];
+  const example = ['1', 'AMIS001', 'Tên sản phẩm mẫu', '1.08', '6', '', '', '6.48', '0.82', '', '4.92', ''];
   const content = [HEADERS, example].map(columns => columns.map(csvCell).join(';')).join('\r\n');
   const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);

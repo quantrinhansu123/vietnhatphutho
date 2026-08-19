@@ -63,7 +63,7 @@ import {
   getActivePageMeta
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
-import { ProductConversionsPanel } from './features/bang-quy-doi-san-pham';
+import { InventoryLimitsPanel } from './features/ton-kho-toi-thieu-toi-da';
 import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsInventoryPanel } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
@@ -978,7 +978,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Công nhân" desc="Nhập và xem báo cáo theo ca sản xuất." />
+                <MenuPageHeader title="Sản xuất" desc="Nhập và xem báo cáo theo ca sản xuất." />
                 <MenuCardGrid items={filterMenuItems(FACTORY_CONG_NHAN_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'factory-kho' ? (
@@ -1318,17 +1318,18 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <ProductsPanel onBack={() => goBack('factory-kho')} />
+                <ProductsPanel onBack={() => goBack('business')} />
               </motion.div>
-            ) : activeTab === 'product-conversions' ? (
+            ) : activeTab === 'inventory-limits' ? (
               <motion.div
-                key="product-conversions"
+                key="inventory-limits"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
+                className="flex h-full min-h-0 flex-col"
               >
-                <ProductConversionsPanel onBack={() => goBack('factory-qc')} />
+                <InventoryLimitsPanel onBack={() => goBack('business')} />
               </motion.div>
             ) : activeTab === 'machines' ? (
               <motion.div

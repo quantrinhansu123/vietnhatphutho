@@ -10,11 +10,11 @@ export type TableId =
   | 'quan_ly_kho'
   | 'bao_cao_hang_hong'
   | 'san_pham'
-  | 'san_pham_quy_doi'
   | 'danh_sach_may'
   | 'kho_nvl'
   | 'phieu_xuat_nhap_kho'
   | 'don_hang'
+  | 'ton_kho_toi_thieu_toi_da'
   | 'khach_hang'
   | 'lenh_xuat_hang'
   | 'lenh_sx'
@@ -117,24 +117,13 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   san_pham: {
     table: 'san_pham',
     label: 'Danh mục sản phẩm',
-    sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-ty-le-hao-hut.sql', 'supabase-san-pham-ton-dau-ky.sql', 'supabase-san-pham-kiem-kho-dong-bo.sql'],
+    sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-nhom-vthh-kinh-doanh.sql', 'supabase-san-pham-nhom-vthh-them-khac.sql', 'supabase-san-pham-ton-dau-ky.sql', 'supabase-san-pham-kiem-kho-dong-bo.sql'],
     apiPrefix: '/api/san-pham',
     serverLines: '3507–3695',
     appTab: 'products',
     appLines: 'src/features/san-pham/index.tsx, src/features/san-pham/types.ts, src/features/san-pham/productFieldClass.ts',
     components: ['src/components/ProductQrScanner.tsx', 'src/components/LineEditorSheet.tsx'],
     utils: ['src/utils/productNplComponentsExcel.ts', 'src/utils/productCatalogExcel.ts']
-  },
-  san_pham_quy_doi: {
-    table: 'san_pham_quy_doi',
-    label: 'Bảng quy đổi sản phẩm',
-    sql: ['supabase-san-pham-quy-doi.sql'],
-    apiPrefix: '/api/bang-quy-doi-san-pham',
-    serverLines: 'tìm theo api/bang-quy-doi-san-pham',
-    appTab: 'product-conversions',
-    appLines: 'src/features/bang-quy-doi-san-pham/index.tsx',
-    components: [],
-    utils: ['src/utils/productConversionCsv.ts']
   },
   danh_sach_may: {
     table: 'danh_sach_may',
@@ -181,6 +170,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '3872–3999',
     appTab: 'orders',
     appLines: 'src/features/don-hang/index.tsx, src/features/_shared/orderHelpers.ts',
+    components: [],
+    utils: []
+  },
+  ton_kho_toi_thieu_toi_da: {
+    table: 'ton_kho_toi_thieu_toi_da',
+    label: 'Tồn kho tối thiểu - Tồn kho tối đa',
+    sql: ['supabase-ton-kho-toi-thieu-toi-da.sql'],
+    apiPrefix: '/api/ton-kho-toi-thieu-toi-da',
+    serverLines: '5720–5830',
+    appTab: 'inventory-limits',
+    appLines: 'src/features/ton-kho-toi-thieu-toi-da/index.tsx',
     components: [],
     utils: []
   },

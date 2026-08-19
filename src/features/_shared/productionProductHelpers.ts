@@ -1,9 +1,12 @@
 export interface OrderProductLine {
+  productId?: string;
   productCode: string;
   productName: string;
+  productionName?: string;
   unit: string;
   quantity: string;
   orderRef?: string;
+  conversionResults?: Array<{ unit: string; value: number }>;
 }
 
 export function splitProductionProductCodes(raw: string): string[] {

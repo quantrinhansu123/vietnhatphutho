@@ -71,7 +71,7 @@ export const PRODUCT_CATALOG_EXCEL_HEADERS = [
   'Nhóm',
   'Đơn vị',
   'Tổng TL (kg)',
-  '% tỷ lệ hao hụt',
+  'Tỷ lệ hàng hỏng (%)',
   'Tồn đầu',
   'Nhập',
   'Xuất',

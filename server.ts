@@ -45,6 +45,7 @@ const SUPABASE_KIEM_KHO_TABLE = process.env.SUPABASE_KIEM_KHO_TABLE || 'kiem_kho
 const SUPABASE_QUAN_LY_KHO_TABLE = process.env.SUPABASE_QUAN_LY_KHO_TABLE || 'quan_ly_kho';
 const SUPABASE_DAMAGED_GOODS_TABLE = process.env.SUPABASE_DAMAGED_GOODS_TABLE || 'bao_cao_hang_hong';
 const SUPABASE_PRODUCTS_TABLE = process.env.SUPABASE_PRODUCTS_TABLE || 'san_pham';
+const SUPABASE_INVENTORY_LIMITS_TABLE = process.env.SUPABASE_INVENTORY_LIMITS_TABLE || 'ton_kho_toi_thieu_toi_da';
 const SUPABASE_PRODUCT_CONVERSIONS_TABLE = process.env.SUPABASE_PRODUCT_CONVERSIONS_TABLE || 'san_pham_quy_doi';
 /** Sửa typo env phổ biến: anh_sach_may → danh_sach_may */
 const SUPABASE_MACHINES_TABLE = (() => {
@@ -2086,9 +2087,23 @@ function parseProductWastePercent(value: unknown): { error: string } | { value: 
   const raw = String(value ?? '').trim();
   if (!raw) return { value: null };
   if (!/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(raw)) {
-    return { error: '% tỷ lệ hao hụt phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.' };
+    return { error: 'Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.' };
   }
   return { value: Number(raw.replace(',', '.')) };
+}
+
+const PRODUCT_VTHH_RULES: Record<string, { group: string; units: string[]; primaryUnit?: string; wastePercent?: number }> = {
+  'tp; px rỗng': { group: 'TP; PX Rỗng', units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: 13 },
+  'tp; px đặc': { group: 'TP; PX Đặc', units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: 13 },
+  'tp; px sóng': { group: 'TP; PX Sóng', units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: 2 },
+  'tp; nvl': { group: 'TP; NVL', units: [] },
+  'nvl': { group: 'NVL', units: [] },
+  'khác': { group: 'Khác', units: [] }
+};
+
+function normalizeProductVthhGroup(value: unknown) {
+  const text = parseMaterialText(value);
+  return PRODUCT_VTHH_RULES[text.toLocaleLowerCase('vi')] || null;
 }
 
 function parseProductPatchBody(
@@ -2130,14 +2145,18 @@ function parseProductPatchBody(
     record.tinh_chat = parseMaterialText(source.nature ?? source.tinh_chat) || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'group') || Object.prototype.hasOwnProperty.call(source, 'nhom_vthh')) {
-    record.nhom_vthh = parseMaterialText(source.group ?? source.nhom_vthh) || null;
+    const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
+    if (!rule) return { error: 'Nhóm VTHH phải là TP; PX Rỗng, TP; PX Đặc, TP; PX Sóng, TP; NVL, NVL hoặc Khác.' };
+    record.nhom_vthh = rule.group;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'unit') || Object.prototype.hasOwnProperty.call(source, 'don_vi')) {
     const unit = parseMaterialText(source.unit ?? source.don_vi);
-    const normalizedUnit = unit.toLocaleLowerCase('vi').replace('m²', 'm2');
-    const allowedUnit = normalizedUnit === 'm' ? 'm' : normalizedUnit === 'm2' ? 'm2' : normalizedUnit === 'tấm' || normalizedUnit === 'tam' ? 'Tấm' : '';
-    if (unit && !allowedUnit) return { error: 'Đơn vị tính chỉ được phép là m, m2 hoặc Tấm.' };
-    record.don_vi = allowedUnit || null;
+    const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
+    if (rule?.primaryUnit) record.don_vi = rule.primaryUnit;
+    else {
+      if (!unit) return { error: 'Vui lòng nhập đơn vị tính cho nhóm TP; NVL, NVL hoặc Khác.' };
+      record.don_vi = unit;
+    }
   }
   if (Object.prototype.hasOwnProperty.call(source, 'openingStock') || Object.prototype.hasOwnProperty.call(source, 'ton_dau_ky')) {
     record.ton_dau_ky = parseOptionalMaterialNumber(source.openingStock ?? source.ton_dau_ky);
@@ -2167,9 +2186,13 @@ function parseProductPatchBody(
     record.tong_trong_luong = parseOptionalMaterialDecimalText(source.totalWeight ?? source.tong_trong_luong);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'wastePercent') || Object.prototype.hasOwnProperty.call(source, 'ty_le_hao_hut')) {
-    const parsedWastePercent = parseProductWastePercent(source.ty_le_hao_hut ?? source.wastePercent);
-    if ('error' in parsedWastePercent) return parsedWastePercent;
-    record.ty_le_hao_hut = parsedWastePercent.value;
+    const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
+    if (rule?.wastePercent !== undefined) record.ty_le_hao_hut = rule.wastePercent;
+    else {
+      const parsedWastePercent = parseProductWastePercent(source.ty_le_hao_hut ?? source.wastePercent);
+      if ('error' in parsedWastePercent) return parsedWastePercent;
+      record.ty_le_hao_hut = parsedWastePercent.value;
+    }
   }
   if (Object.prototype.hasOwnProperty.call(source, 'rollWidth') || Object.prototype.hasOwnProperty.call(source, 'kho_cuon')) {
     record.kho_cuon = parseOptionalMaterialDecimalText(source.rollWidth ?? source.kho_cuon);
@@ -2237,9 +2260,7 @@ function parseProductConversionBody(body: unknown) {
     return { error: 'Không được phép sửa tên sản phẩm trong bảng quy đổi.' } as const;
   }
   const sanPhamId = String(source.productId ?? source.sanPhamId ?? source.san_pham_id ?? '').trim();
-  const donViTinh = String(source.unit ?? source.donViTinh ?? source.don_vi_tinh ?? '').trim();
   if (!sanPhamId) return { error: 'Vui lòng chọn sản phẩm.' } as const;
-  if (!donViTinh) return { error: 'Vui lòng nhập đơn vị tính.' } as const;
   const fields: Array<[string, unknown]> = [
     ['kho_tam_rong_m', source.sheetWidthM ?? source.khoTamRongM ?? source.kho_tam_rong_m],
     ['kho_tam_dai_m', source.sheetLengthM ?? source.khoTamDaiM ?? source.kho_tam_dai_m],
@@ -2248,15 +2269,43 @@ function parseProductConversionBody(body: unknown) {
     ['dien_tich_m2', source.areaM2 ?? source.dienTichM2 ?? source.dien_tich_m2],
     ['trong_luong_kg_m_dai', source.kgPerLinearM ?? source.trongLuongKgMDai ?? source.trong_luong_kg_m_dai],
     ['trong_luong_kg_m2', source.kgPerM2 ?? source.trongLuongKgM2 ?? source.trong_luong_kg_m2],
-    ['trong_luong_kg_tam', source.kgPerSheet ?? source.trongLuongKgTam ?? source.trong_luong_kg_tam]
+    ['trong_luong_kg_tam', source.kgPerSheet ?? source.trongLuongKgTam ?? source.trong_luong_kg_tam],
+    ['trong_luong_kg_cuon', source.kgPerRoll ?? source.trongLuongKgCuon ?? source.trong_luong_kg_cuon]
   ];
-  const record: Record<string, string | number | null> = { san_pham_id: sanPhamId, don_vi_tinh: donViTinh };
+  const record: Record<string, string | number | null> = { san_pham_id: sanPhamId };
   for (const [field, raw] of fields) {
     const value = parsePositiveConversionNumber(raw);
     if (value === 'invalid') return { error: `${field} phải là số lớn hơn 0 hoặc để trống.` } as const;
     record[field] = value;
   }
   return { record } as const;
+}
+
+function parseProductConversionsInput(body: Record<string, unknown>) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'conversions')) return { provided: false, records: [] as Record<string, string | number | null>[] } as const;
+  if (!Array.isArray(body.conversions)) return { error: 'Danh sách quy đổi không hợp lệ.' } as const;
+  const source = body.conversions[0];
+  const parsed = parseProductConversionBody({ ...(source && typeof source === 'object' ? source as Record<string, unknown> : {}), san_pham_id: 'pending' });
+  if ('error' in parsed) return { error: parsed.error } as const;
+  const { san_pham_id: _ignored, ...record } = parsed.record;
+  return { provided: true, records: [record] } as const;
+}
+
+async function syncProductConversions(productId: string, records: readonly Record<string, string | number | null>[]) {
+  const existing = await supabase!.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('id').eq('san_pham_id', productId).order('id', { ascending: false });
+  if (existing.error) return existing.error;
+  const current = existing.data?.[0];
+  const values = { ...(records[0] || {}), san_pham_id: productId, updated_at: new Date().toISOString() };
+  const result = current
+    ? await supabase!.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).update(values).eq('id', current.id)
+    : await supabase!.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).insert(values);
+  if (result.error) return result.error;
+  const obsoleteIds = (existing.data || []).slice(1).map(row => row.id);
+  if (obsoleteIds.length) {
+    const removed = await supabase!.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).delete().in('id', obsoleteIds);
+    if (removed.error) return removed.error;
+  }
+  return null;
 }
 
 function normalizeProductConversionRow(raw: Record<string, unknown>) {
@@ -2267,11 +2316,12 @@ function normalizeProductConversionRow(raw: Record<string, unknown>) {
     sanPhamId: String(raw.san_pham_id ?? ''),
     maSp: String(product?.ma_sp ?? ''), maAmis: String(product?.ma_amis ?? ''),
     tenSp: String(product?.ten_sp ?? ''), donViSanPham: String(product?.don_vi ?? ''),
-    donViTinh: String(raw.don_vi_tinh ?? ''),
+    donViTinh: String(product?.don_vi ?? ''),
     khoTamRongM: raw.kho_tam_rong_m, khoTamDaiM: raw.kho_tam_dai_m,
     khoCuonRongM: raw.kho_cuon_rong_m, khoCuonDaiM: raw.kho_cuon_dai_m,
     dienTichM2: raw.dien_tich_m2, trongLuongKgMDai: raw.trong_luong_kg_m_dai,
     trongLuongKgM2: raw.trong_luong_kg_m2, trongLuongKgTam: raw.trong_luong_kg_tam,
+    trongLuongKgCuon: raw.trong_luong_kg_cuon,
     createdAt: String(raw.created_at ?? ''), updatedAt: String(raw.updated_at ?? '')
   };
 }
@@ -4580,9 +4630,11 @@ function parseOrderQuantity(value: unknown): number | null {
 }
 
 type OrderProductRecord = {
+  san_pham_id?: string;
   ma_don_hang?: string;
   ma_sp: string;
   ten_sp: string;
+  ten_san_xuat?: string;
   don_vi: string;
   so_luong: number | null;
   kq_quy_doi?: {
@@ -4592,6 +4644,7 @@ type OrderProductRecord = {
     trong_luong_kg: number;
     chieu_dai_m: number;
   };
+  ket_qua_quy_doi?: Array<{ don_vi: string; gia_tri: number }>;
 };
 
 function parseOrderProductsInput(
@@ -4612,12 +4665,23 @@ function parseOrderProductsInput(
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
+    const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
+    const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
     const rawConversion = row.kq_quy_doi ?? row.conversionResult;
+    const conversionResults = Array.isArray(row.ket_qua_quy_doi)
+      ? row.ket_qua_quy_doi.flatMap(item => {
+          if (!item || typeof item !== 'object') return [];
+          const result = item as Record<string, unknown>;
+          const don_vi = pickRowField(result, ['don_vi', 'unit']);
+          const gia_tri = parseOrderQuantity(result.gia_tri ?? result.value);
+          return don_vi && gia_tri !== null && gia_tri >= 0 ? [{ don_vi, gia_tri }] : [];
+        })
+      : [];
 
     if (!ma_sp && !ten_sp) {
       return { error: 'Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.' };
@@ -4626,7 +4690,7 @@ function parseOrderProductsInput(
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
     if (!rawConversion || typeof rawConversion !== 'object') {
-      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
     const conversion = rawConversion as Record<string, unknown>;
@@ -4638,10 +4702,10 @@ function parseOrderProductsInput(
       && Math.abs(sourceQuantity - so_luong) <= 0.000001
       && sourceUnit.trim().toLocaleLowerCase('vi') === don_vi.trim().toLocaleLowerCase('vi');
     if (!conversionIsValid) {
-      products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
-    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong, kq_quy_doi: {
+    products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
       don_vi_nguon: sourceUnit, so_luong_nguon: sourceQuantity, don_vi_dich: 'kg',
       trong_luong_kg: convertedWeight, chieu_dai_m: convertedLength
     } });
@@ -4687,6 +4751,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ma_don_hang: pickRowField(record, ['ma_don_hang', 'orderRef', 'order_code']),
           ma_sp,
           ten_sp,
+          ten_san_xuat: pickRowField(record, ['ten_san_xuat', 'productionName']),
           don_vi: pickRowField(record, ['don_vi', 'unit']),
           so_luong: parseOrderQuantity(record.so_luong ?? record.quantity)
         };
@@ -4746,8 +4811,13 @@ function parseOrderBody(
     nhan_vien: typeof source.staffName === 'string' ? source.staffName.trim() : '',
     khach_hang: typeof source.customer === 'string' ? source.customer.trim() : '',
     san_pham: products,
-    ghi_chu: typeof source.note === 'string' ? source.note.trim() : ''
+    ghi_chu: typeof source.note === 'string' ? source.note.trim() : '',
+    updated_at: new Date().toISOString()
   };
+  if (typeof source.deliveryDate === 'string') {
+    const deliveryDate = source.deliveryDate.trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
+    record.ngay_giao_hang = deliveryDate || null;
+  }
 
   if (Object.prototype.hasOwnProperty.call(source, 'stockQuantity')) {
     record.so_luong_ton = parseOrderQuantity(source.stockQuantity);
@@ -5644,6 +5714,90 @@ export function createApp() {
     }
   });
 
+  type InventoryLimitRecord = {
+    id?: string;
+    san_pham_id: string;
+    quy_cach: string;
+    don_vi: 'Tấm' | 'Cuộn';
+    ton_kho_toi_thieu: number;
+    ton_kho_toi_da: number;
+    thang: number;
+    nam: number;
+  };
+
+  function parseInventoryLimitRecord(raw: unknown): { error: string } | { record: InventoryLimitRecord } {
+    const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const san_pham_id = String(source.san_pham_id ?? source.productId ?? source.product_id ?? '').trim();
+    const quy_cach = String(source.quy_cach ?? source.specification ?? '').trim();
+    const don_vi = String(source.don_vi ?? source.unit ?? '').trim();
+    const thang = Number(source.thang ?? source.month);
+    const nam = Number(source.nam ?? source.year);
+    const ton_kho_toi_thieu = Number(source.ton_kho_toi_thieu ?? source.minStock);
+    const ton_kho_toi_da = Number(source.ton_kho_toi_da ?? source.maxStock);
+    if (!san_pham_id) return { error: 'Vui lòng chọn đúng sản phẩm theo Mã AMIS.' };
+    if (don_vi !== 'Tấm' && don_vi !== 'Cuộn') return { error: 'Đơn vị chỉ được là Tấm hoặc Cuộn.' };
+    if (!Number.isInteger(thang) || thang < 1 || thang > 12) return { error: 'Tháng không hợp lệ.' };
+    if (!Number.isInteger(nam) || nam < 2000 || nam > 9999) return { error: 'Năm phải từ 2000 đến 9999.' };
+    if (!Number.isInteger(ton_kho_toi_thieu) || ton_kho_toi_thieu < 0) return { error: 'Tồn kho tối thiểu phải là số nguyên không âm.' };
+    if (!Number.isInteger(ton_kho_toi_da) || ton_kho_toi_da < 0) return { error: 'Tồn kho tối đa phải là số nguyên không âm.' };
+    if (ton_kho_toi_thieu > ton_kho_toi_da) return { error: 'Tồn kho tối thiểu không được lớn hơn tồn kho tối đa.' };
+    return { record: { san_pham_id, quy_cach, don_vi, ton_kho_toi_thieu, ton_kho_toi_da, thang, nam } };
+  }
+
+  async function validateInventoryProductCodes(records: InventoryLimitRecord[]) {
+    const ids = [...new Set(records.map(record => record.san_pham_id))];
+    const { data, error } = await supabase!.from(SUPABASE_PRODUCTS_TABLE).select('id').in('id', ids);
+    if (error) return isMissingTableError(error) ? `Bảng ${SUPABASE_PRODUCTS_TABLE} chưa tồn tại.` : error.message;
+    const available = new Set((data || []).map(row => String((row as Record<string, unknown>).id || '').trim()));
+    const missing = ids.find(id => !available.has(id));
+    return missing ? `Sản phẩm có ID ${missing} không tồn tại trong danh sách sản phẩm.` : null;
+  }
+
+  app.get('/api/ton-kho-toi-thieu-toi-da', async (_req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local' });
+    const { data, error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).select('*').order('nam', { ascending: false }).order('thang', { ascending: false }).order('san_pham_id', { ascending: true });
+    if (error) return respondSupabaseReadError(res, error, SUPABASE_INVENTORY_LIMITS_TABLE, { items: [], total: 0 });
+    return res.json({ items: data || [], total: data?.length || 0, source: 'supabase' });
+  });
+
+  app.post('/api/ton-kho-toi-thieu-toi-da', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items : [req.body];
+    const parsed = rawItems.map(parseInventoryLimitRecord);
+    const invalid = parsed.find(item => 'error' in item);
+    if (invalid && 'error' in invalid) return res.status(400).json({ error: invalid.error });
+    const records = parsed.map(item => (item as { record: InventoryLimitRecord }).record);
+    const productError = await validateInventoryProductCodes(records);
+    if (productError) return res.status(400).json({ error: productError });
+    const seen = new Set<string>();
+    for (const record of records) {
+      const key = `${record.san_pham_id}|${record.thang}|${record.nam}`;
+      if (seen.has(key)) return res.status(400).json({ error: 'Trùng sản phẩm trong cùng tháng/năm.' });
+      seen.add(key);
+    }
+    const { data, error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).insert(records).select('*');
+    if (error) return res.status(400).json({ error: isMissingTableError(error) ? `Bảng ${SUPABASE_INVENTORY_LIMITS_TABLE} chưa tồn tại. Hãy chạy migration tồn kho.` : error.message });
+    return res.status(201).json({ success: true, items: data || [] });
+  });
+
+  app.patch('/api/ton-kho-toi-thieu-toi-da/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseInventoryLimitRecord(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const productError = await validateInventoryProductCodes([parsed.record]);
+    if (productError) return res.status(400).json({ error: productError });
+    const { data, error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).update(parsed.record).eq('id', req.params.id).select('*').single();
+    if (error) return res.status(400).json({ error: error.message });
+    return res.json({ success: true, item: data });
+  });
+
+  app.delete('/api/ton-kho-toi-thieu-toi-da/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const { error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).delete().eq('id', req.params.id);
+    if (error) return res.status(400).json({ error: error.message });
+    return res.json({ success: true });
+  });
+
   app.get('/api/san-pham', async (req, res) => {
     if (!supabase) {
       return res.json([]);
@@ -5713,6 +5867,8 @@ export function createApp() {
       }
 
       const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const parsedConversions = parseProductConversionsInput(body);
+      if ('error' in parsedConversions) return res.status(400).json({ error: parsedConversions.error });
       const nplInput = body.npl_phan_tram ?? body.nplPhanTram ?? body.nplItems;
       const insertRecord: Record<string, unknown> = { ...parsedProduct.record };
       if (nplInput !== undefined && nplInput !== null) {
@@ -5751,6 +5907,10 @@ export function createApp() {
               .select('*')
               .single();
             if (!updateError && updated) {
+              if (parsedConversions.provided) {
+                const conversionError = await syncProductConversions(String(updated.id), parsedConversions.records);
+                if (conversionError) return res.status(500).json({ error: `Không thể lưu quy đổi sản phẩm. ${conversionError.message}` });
+              }
               return res.status(200).json({ success: true, product: updated, upserted: true });
             }
             if (updateError) {
@@ -5763,6 +5923,13 @@ export function createApp() {
         return res.status(500).json({ error: productWriteErrorMessage(error) });
       }
 
+      if (parsedConversions.provided) {
+        const conversionError = await syncProductConversions(String(data.id), parsedConversions.records);
+        if (conversionError) {
+          await supabase.from(SUPABASE_PRODUCTS_TABLE).delete().eq('id', data.id);
+          return res.status(500).json({ error: `Không thể lưu quy đổi sản phẩm. Đã hoàn tác sản phẩm mới. ${conversionError.message}` });
+        }
+      }
       return res.status(201).json({ success: true, product: data });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tạo sản phẩm.' });
@@ -5818,6 +5985,8 @@ export function createApp() {
       }
 
       const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const parsedConversions = parseProductConversionsInput(body);
+      if ('error' in parsedConversions) return res.status(400).json({ error: parsedConversions.error });
       const nplInput = body.npl_phan_tram ?? body.nplPhanTram ?? body.nplItems;
       const hasNplInput = nplInput !== undefined && nplInput !== null;
       const updateRecord: Record<string, unknown> = {};
@@ -5863,15 +6032,16 @@ export function createApp() {
         Object.assign(updateRecord, parsedProduct.record);
       }
 
-      if (Object.keys(updateRecord).length === 0) {
+      if (Object.keys(updateRecord).length === 0 && !parsedConversions.provided) {
         return res.status(400).json({ error: 'Không có dữ liệu để cập nhật.' });
       }
-      const { data, error } = await supabase
-        .from(SUPABASE_PRODUCTS_TABLE)
-        .update(updateRecord)
-        .eq('id', id)
-        .select('*')
-        .single();
+      const currentResult = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('*').eq('id', id).maybeSingle();
+      if (currentResult.error) return res.status(500).json({ error: currentResult.error.message });
+      if (!currentResult.data) return res.status(404).json({ error: 'Không tìm thấy sản phẩm cần cập nhật.' });
+      const mutation = Object.keys(updateRecord).length
+        ? supabase.from(SUPABASE_PRODUCTS_TABLE).update(updateRecord).eq('id', id).select('*').single()
+        : Promise.resolve({ data: currentResult.data, error: null });
+      const { data, error } = await mutation;
 
       if (error) {
         console.error('Supabase san_pham update error:', error);
@@ -5880,6 +6050,14 @@ export function createApp() {
 
       if (!data) {
         return res.status(404).json({ error: 'Không tìm thấy sản phẩm cần cập nhật.' });
+      }
+
+      if (parsedConversions.provided) {
+        const conversionError = await syncProductConversions(id, parsedConversions.records);
+        if (conversionError) {
+          if (Object.keys(updateRecord).length) await supabase.from(SUPABASE_PRODUCTS_TABLE).update(currentResult.data).eq('id', id);
+          return res.status(500).json({ error: `Không thể lưu quy đổi sản phẩm. Đã hoàn tác thông tin sản phẩm. ${conversionError.message}` });
+        }
       }
 
       return res.json({ success: true, product: data });
@@ -5906,10 +6084,8 @@ export function createApp() {
       let query = supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE)
         .select(PRODUCT_CONVERSION_SELECT, { count: 'exact' });
       if (key) {
-        const escaped = key.replace(/[,%()]/g, '');
-        query = productIds.length > 0
-          ? query.or(`don_vi_tinh.ilike.%${escaped}%,san_pham_id.in.(${productIds.join(',')})`)
-          : query.ilike('don_vi_tinh', `%${escaped}%`);
+        if (productIds.length === 0) return res.json({ items: [], page, pageSize, total: 0 });
+        query = query.in('san_pham_id', productIds);
       }
       const from = (page - 1) * pageSize;
       const { data, error, count } = await query.order('id', { ascending: false }).range(from, from + pageSize - 1);
@@ -5936,24 +6112,22 @@ export function createApp() {
       for (let from = 0; ; from += 1000) {
         let query = supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select(PRODUCT_CONVERSION_SELECT);
         if (key) {
-          const escaped = key.replace(/[,%()]/g, '');
-          query = productIds.length > 0
-            ? query.or(`don_vi_tinh.ilike.%${escaped}%,san_pham_id.in.(${productIds.join(',')})`)
-            : query.ilike('don_vi_tinh', `%${escaped}%`);
+          if (productIds.length === 0) break;
+          query = query.in('san_pham_id', productIds);
         }
         const result = await query.order('id', { ascending: false }).range(from, from + 999);
         if (result.error) return res.status(500).json({ error: result.error.message });
         rows.push(...((result.data || []) as Record<string, unknown>[]));
         if ((result.data || []).length < 1000) break;
       }
-      const headers = ['Stt','Mã amis','Tên sản phẩm','Đơn vị tính','Khổ tấm rộng (m rộng)','Khổ tấm dài (m dài / tấm)','Khổ cuộn rộng (m rộng)','Khổ cuộn dài (m dài)','Khổ diện tính mét vuông (m2)','Trọng lượng (kg/1 m dài )','Trọng lượng (kg/m2 )','Trọng lượng (kg/Tấm )'];
+      const headers = ['Stt','Mã amis','Tên sản phẩm','Khổ tấm rộng (m rộng)','Khổ tấm dài (m dài / tấm)','Khổ cuộn rộng (m rộng)','Khổ cuộn dài (m dài)','Khổ diện tính mét vuông (m2)','Trọng lượng (kg/1 m dài )','Trọng lượng (kg/m2 )','Trọng lượng (kg/Tấm )','Trọng lượng (kg/Cuộn)'];
       const csvCell = (value: unknown) => {
         const text = value === null || value === undefined ? '' : String(value);
         return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
       };
       const lines = [headers, ...rows.map((raw, index) => {
         const row = normalizeProductConversionRow(raw);
-        return [index + 1,row.maAmis,row.tenSp,row.donViTinh,row.khoTamRongM,row.khoTamDaiM,row.khoCuonRongM,row.khoCuonDaiM,row.dienTichM2,row.trongLuongKgMDai,row.trongLuongKgM2,row.trongLuongKgTam];
+        return [index + 1,row.maAmis,row.tenSp,row.khoTamRongM,row.khoTamDaiM,row.khoCuonRongM,row.khoCuonDaiM,row.dienTichM2,row.trongLuongKgMDai,row.trongLuongKgM2,row.trongLuongKgTam,row.trongLuongKgCuon];
       })].map(columns => columns.map(csvCell).join(';'));
       const filename = `bang-quy-doi-san-pham-${new Date().toISOString().slice(0, 10)}.csv`;
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -5979,13 +6153,13 @@ export function createApp() {
     });
     const productIds = [...new Set(valid.map(item => String(item.record.san_pham_id)))];
     const existingResult = productIds.length
-      ? await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('id,san_pham_id,don_vi_tinh').in('san_pham_id', productIds)
+      ? await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('id,san_pham_id').in('san_pham_id', productIds)
       : { data: [], error: null };
     if (existingResult.error) return res.status(500).json({ error: existingResult.error.message });
-    const existing = new Map((existingResult.data || []).map(row => [`${row.san_pham_id}::${String(row.don_vi_tinh).trim().toLowerCase()}`, Number(row.id)]));
+    const existing = new Map((existingResult.data || []).map(row => [String(row.san_pham_id), Number(row.id)]));
     let created = 0, updated = 0;
     const processItem = async (item: { rowNumber: number; record: Record<string, unknown> }) => {
-      const mapKey = `${item.record.san_pham_id}::${String(item.record.don_vi_tinh).trim().toLowerCase()}`;
+      const mapKey = String(item.record.san_pham_id);
       const id = existing.get(mapKey);
       if (id) {
         const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).update({ ...item.record, updated_at: new Date().toISOString() }).eq('id', id);
@@ -6019,12 +6193,9 @@ export function createApp() {
     const product = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id,don_vi').eq('id', parsed.record.san_pham_id).maybeSingle();
     if (product.error) return res.status(500).json({ error: product.error.message });
     if (!product.data) return res.status(400).json({ error: 'Sản phẩm không tồn tại.' });
-    if (String(product.data.don_vi ?? '').trim().toLocaleLowerCase('vi') !== String(parsed.record.don_vi_tinh).trim().toLocaleLowerCase('vi')) {
-      return res.status(400).json({ error: 'Đơn vị tính phải lấy theo danh mục sản phẩm.' });
-    }
     const { data, error } = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE)
       .insert(parsed.record).select(PRODUCT_CONVERSION_SELECT).single();
-    if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'Sản phẩm đã có quy đổi cho đơn vị này.' : error.message });
+    if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'Sản phẩm đã có bảng quy đổi.' : error.message });
     return res.status(201).json({ success: true, item: normalizeProductConversionRow(data as Record<string, unknown>) });
   });
 
@@ -6034,14 +6205,11 @@ export function createApp() {
     if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ID quy đổi không hợp lệ.' });
     const parsed = parseProductConversionBody(req.body);
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
-    const current = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('san_pham_id,don_vi_tinh').eq('id', id).maybeSingle();
+    const current = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('san_pham_id').eq('id', id).maybeSingle();
     if (current.error) return res.status(500).json({ error: current.error.message });
     if (!current.data) return res.status(404).json({ error: 'Không tìm thấy dòng quy đổi.' });
     if (String(current.data.san_pham_id) !== String(parsed.record.san_pham_id)) {
       return res.status(400).json({ error: 'Không được phép thay đổi sản phẩm của dòng quy đổi.' });
-    }
-    if (String(current.data.don_vi_tinh).trim().toLocaleLowerCase('vi') !== String(parsed.record.don_vi_tinh).trim().toLocaleLowerCase('vi')) {
-      return res.status(400).json({ error: 'Không được phép thay đổi đơn vị tính của dòng quy đổi.' });
     }
     const product = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id').eq('id', parsed.record.san_pham_id).maybeSingle();
     if (!product.data) return res.status(400).json({ error: 'Sản phẩm không tồn tại.' });
@@ -6261,7 +6429,8 @@ export function createApp() {
       const { data, error } = await supabase
         .from(SUPABASE_ORDERS_TABLE)
         .select('*')
-        .order('ma_don_hang', { ascending: true });
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false });
 
       if (error) {
         return respondSupabaseReadError(res, error, SUPABASE_ORDERS_TABLE, { orders: [], total: 0 });

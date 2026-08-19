@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, Calculator
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
@@ -110,7 +110,7 @@ export const MAIN_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'factory-qc'
   },
   {
-    title: 'Công nhân',
+    title: 'Sản xuất',
     desc: 'Công việc được giao, nhập báo cáo ca và lịch sử công việc.',
     icon: UserRound,
     icon3d: worker3d,
@@ -417,6 +417,13 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
 
 export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Sản phẩm',
+    desc: 'Tạo mặt hàng, khai báo Nhóm VTHH, đơn vị và thông số quy đổi.',
+    icon: Package,
+    icon3d: bentoBox3d,
+    tab: 'products'
+  },
+  {
     title: 'Khách hàng',
     desc: 'Xem danh sách khách hàng phục vụ lập và tra cứu đơn hàng.',
     icon: BriefcaseBusiness,
@@ -436,6 +443,13 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
     icon: Truck,
     icon3d: articulatedLorry3d,
     tab: 'shipping-orders'
+  },
+  {
+    title: 'Tồn kho tối thiểu - Tồn kho tối đa',
+    desc: 'Thiết lập ngưỡng tồn kho theo sản phẩm và tháng/năm.',
+    icon: Boxes,
+    icon3d: bentoBox3d,
+    tab: 'inventory-limits'
   },
   {
     title: 'Báo cáo kinh doanh',
@@ -463,7 +477,7 @@ export const FACTORY_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'factory-qc'
   },
   {
-    title: 'Công nhân',
+    title: 'Sản xuất',
     desc: 'Nhập và xem báo cáo sản xuất theo ca làm việc.',
     icon: UserRound,
     icon3d: worker3d,
@@ -517,13 +531,6 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
 ];
 
 export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
-  {
-    title: 'Bảng quy đổi sản phẩm',
-    desc: 'Quản lý đơn vị, kích thước và trọng lượng quy đổi theo sản phẩm.',
-    icon: Calculator,
-    icon3d: abacus3d,
-    tab: 'product-conversions'
-  },
   {
     title: 'BOM và tỷ lệ phối trộn',
     desc: 'Tỷ lệ trộn theo mặt hàng, theo lệnh và theo mẻ.',
@@ -607,13 +614,6 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     icon: Boxes,
     icon3d: inventory3d,
     tab: 'materials'
-  },
-  {
-    title: 'Kho thành phẩm',
-    desc: 'Danh mục sản phẩm, mã hàng, đơn vị và tồn kho.',
-    icon: Package,
-    icon3d: bentoBox3d,
-    tab: 'products'
   },
   {
     title: 'Phiếu xuất nhập kho',
@@ -860,9 +860,11 @@ export const PRIMARY_NAV_GROUPS: {
     icon: BriefcaseBusiness,
     tab: 'business',
     children: [
+      { label: 'Sản phẩm', tab: 'products' },
       { label: 'Khách hàng', tab: 'customers' },
       { label: 'Đơn đặt hàng', tab: 'orders' },
       { label: 'Lệnh giao / xuất hàng', tab: 'shipping-orders' },
+      { label: 'Tồn kho tối thiểu - Tồn kho tối đa', tab: 'inventory-limits' },
       { label: 'Báo cáo kinh doanh', tab: 'business', disabled: true }
     ]
   },
@@ -887,12 +889,11 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Phiếu cân ca', tab: 'weighing-summary-list' },
       { label: 'Dữ liệu cân tự động', tab: 'can-tu-dong' },
       { label: 'Kiểm tra kho thành phẩm', tab: 'acceptance-report-list' },
-      { label: 'Bảng quy đổi sản phẩm', tab: 'product-conversions' },
       { label: 'Báo cáo chất lượng', tab: 'factory-qc', disabled: true }
     ]
   },
   {
-    title: 'Công nhân',
+    title: 'Sản xuất',
     icon: UserRound,
     tab: 'factory-cong-nhan',
     children: [
@@ -908,7 +909,6 @@ export const PRIMARY_NAV_GROUPS: {
     children: [
       { label: 'Danh mục kho', tab: 'quan-ly-kho' },
       { label: 'Kho nguyên vật liệu', tab: 'materials' },
-      { label: 'Kho thành phẩm', tab: 'products' },
       { label: 'Phiếu xuất nhập kho', tab: 'warehouse-slip' },
       { label: 'Kiểm kho', tab: 'kiem-kho' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
@@ -935,33 +935,33 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'hcns': { group: 'Trang chủ', sub: 'HCNS' },
   'business': { group: 'Trang chủ', sub: 'Kinh doanh' },
   'control-board': { group: 'Quản Đốc', sub: 'Theo dõi sản xuất' },
-  'report-forms': { group: 'Công nhân', sub: 'Nhập báo cáo ca' },
-  'form': { group: 'Công nhân', sub: 'Nhập báo cáo ca' },
-  'report-lists': { group: 'Công nhân', sub: 'Lịch sử công việc' },
+  'report-forms': { group: 'Sản xuất', sub: 'Nhập báo cáo ca' },
+  'form': { group: 'Sản xuất', sub: 'Nhập báo cáo ca' },
+  'report-lists': { group: 'Sản xuất', sub: 'Lịch sử công việc' },
   'acceptance-report-list': { group: 'QC', sub: 'Kiểm tra kho thành phẩm' },
-  'weighing-summary': { group: 'Công nhân', sub: 'Phiếu cân' },
+  'weighing-summary': { group: 'Sản xuất', sub: 'Phiếu cân' },
   'weighing-summary-list': { group: 'QC', sub: 'Phiếu cân ca' },
   'can-tu-dong': { group: 'QC', sub: 'Dữ liệu cân tự động' },
   'kiem-kho': { group: 'Kho', sub: 'Kiểm kho' },
   'quan-ly-kho': { group: 'Kho', sub: 'Danh mục kho' },
-  'damaged-goods-report': { group: 'Công nhân', sub: 'Báo cáo hàng hư' },
+  'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
   'damaged-goods-report-list': { group: 'QC', sub: 'Kiểm soát hàng hỏng' },
-  'mixing-report': { group: 'Công nhân', sub: 'Báo cáo trộn' },
+  'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },
   'mixing-report-list': { group: 'QC', sub: 'BOM và tỷ lệ phối trộn' },
-  'machine-nvl-report': { group: 'Công nhân', sub: 'Báo cáo máy-NVL' },
+  'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
   'machine-nvl-report-list': { group: 'Kho', sub: 'Báo cáo tồn máy' },
-  'acceptance-report': { group: 'Công nhân', sub: 'Phiếu nghiệm thu' },
-  'machine-downtime-report': { group: 'Công nhân', sub: 'Báo cáo máy dừng' },
+  'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
+  'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },
   'machine-downtime-list': { group: 'Quản Đốc', sub: 'DS máy dừng' },
-  'machine-run-log': { group: 'Công nhân', sub: 'Nhật ký chạy máy' },
+  'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
   'machine-run-log-list': { group: 'Quản Đốc', sub: 'DS nhật ký chạy máy' },
   'production-plan-history': { group: 'Quản Đốc', sub: 'Kế hoạch sản xuất' },
   'facility-management': { group: 'Kho', sub: 'Quản lý CSVC' },
   'factory': { group: 'Trang chủ', sub: 'Chọn vai trò' },
   'materials': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
   'materials-inventory': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
-  'products': { group: 'Kho', sub: 'Kho thành phẩm' },
-  'product-conversions': { group: 'QC', sub: 'Bảng quy đổi sản phẩm' },
+  'products': { group: 'Kinh doanh', sub: 'Sản phẩm' },
+  'inventory-limits': { group: 'Kinh doanh', sub: 'Tồn kho tối thiểu - Tồn kho tối đa' },
   'machines': { group: 'Trang chủ', sub: 'Quản lý máy' },
   'warehouse-slip': { group: 'Kho', sub: 'Phiếu xuất nhập kho' },
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
@@ -974,7 +974,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'production-orders': { group: 'Quản Đốc', sub: 'Lệnh sản xuất' },
   'factory-quan-doc': { group: 'Trang chủ', sub: 'Quản Đốc' },
   'factory-qc': { group: 'Trang chủ', sub: 'QC' },
-  'factory-cong-nhan': { group: 'Trang chủ', sub: 'Công nhân' },
+  'factory-cong-nhan': { group: 'Trang chủ', sub: 'Sản xuất' },
   'factory-kho': { group: 'Trang chủ', sub: 'Kho' },
   'dashboard': { group: 'Quản trị', sub: 'Dashboard quản trị' }
 };
