@@ -95,6 +95,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'orders': 'business',
   'customers': 'business',
   'shipping-orders': 'business',
+  'inventory-limits': 'business',
   'production-orders': 'factory-quan-doc',
   'production-plan-history': 'factory-quan-doc',
   'control-board': 'factory-quan-doc',

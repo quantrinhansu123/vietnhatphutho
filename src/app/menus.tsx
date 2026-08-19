@@ -445,6 +445,13 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'shipping-orders'
   },
   {
+    title: 'Tồn kho tối thiểu - Tồn kho tối đa',
+    desc: 'Thiết lập ngưỡng tồn kho theo sản phẩm và tháng/năm.',
+    icon: Boxes,
+    icon3d: bentoBox3d,
+    tab: 'inventory-limits'
+  },
+  {
     title: 'Báo cáo kinh doanh',
     desc: 'Báo cáo tổng hợp kinh doanh.',
     icon: BarChart3,
@@ -864,6 +871,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Khách hàng', tab: 'customers' },
       { label: 'Đơn đặt hàng', tab: 'orders' },
       { label: 'Lệnh giao / xuất hàng', tab: 'shipping-orders' },
+      { label: 'Tồn kho tối thiểu - Tồn kho tối đa', tab: 'inventory-limits' },
       { label: 'Báo cáo kinh doanh', tab: 'business', disabled: true }
     ]
   },
@@ -961,6 +969,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'materials': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
   'materials-inventory': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
   'products': { group: 'Kinh doanh', sub: 'Sản phẩm' },
+  'inventory-limits': { group: 'Kinh doanh', sub: 'Tồn kho tối thiểu - Tồn kho tối đa' },
   'product-conversions': { group: 'QC', sub: 'Bảng quy đổi sản phẩm' },
   'machines': { group: 'Trang chủ', sub: 'Quản lý máy' },
   'warehouse-slip': { group: 'Kho', sub: 'Phiếu xuất nhập kho' },

@@ -63,6 +63,7 @@ import {
   getActivePageMeta
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
+import { InventoryLimitsPanel } from './features/ton-kho-toi-thieu-toi-da';
 import { ProductConversionsPanel } from './features/bang-quy-doi-san-pham';
 import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsInventoryPanel } from './features/kho-nvl';
@@ -1319,6 +1320,17 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <ProductsPanel onBack={() => goBack('business')} />
+              </motion.div>
+            ) : activeTab === 'inventory-limits' ? (
+              <motion.div
+                key="inventory-limits"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="flex h-full min-h-0 flex-col"
+              >
+                <InventoryLimitsPanel onBack={() => goBack('business')} />
               </motion.div>
             ) : activeTab === 'product-conversions' ? (
               <motion.div

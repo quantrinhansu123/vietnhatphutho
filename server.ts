@@ -45,6 +45,7 @@ const SUPABASE_KIEM_KHO_TABLE = process.env.SUPABASE_KIEM_KHO_TABLE || 'kiem_kho
 const SUPABASE_QUAN_LY_KHO_TABLE = process.env.SUPABASE_QUAN_LY_KHO_TABLE || 'quan_ly_kho';
 const SUPABASE_DAMAGED_GOODS_TABLE = process.env.SUPABASE_DAMAGED_GOODS_TABLE || 'bao_cao_hang_hong';
 const SUPABASE_PRODUCTS_TABLE = process.env.SUPABASE_PRODUCTS_TABLE || 'san_pham';
+const SUPABASE_INVENTORY_LIMITS_TABLE = process.env.SUPABASE_INVENTORY_LIMITS_TABLE || 'ton_kho_toi_thieu_toi_da';
 const SUPABASE_PRODUCT_CONVERSIONS_TABLE = process.env.SUPABASE_PRODUCT_CONVERSIONS_TABLE || 'san_pham_quy_doi';
 /** Sửa typo env phổ biến: anh_sach_may → danh_sach_may */
 const SUPABASE_MACHINES_TABLE = (() => {
@@ -5708,6 +5709,90 @@ export function createApp() {
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Lỗi hệ thống không xác định' });
     }
+  });
+
+  type InventoryLimitRecord = {
+    id?: string;
+    san_pham_id: string;
+    quy_cach: string;
+    don_vi: 'Tấm' | 'Cuộn';
+    ton_kho_toi_thieu: number;
+    ton_kho_toi_da: number;
+    thang: number;
+    nam: number;
+  };
+
+  function parseInventoryLimitRecord(raw: unknown): { error: string } | { record: InventoryLimitRecord } {
+    const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const san_pham_id = String(source.san_pham_id ?? source.productId ?? source.product_id ?? '').trim();
+    const quy_cach = String(source.quy_cach ?? source.specification ?? '').trim();
+    const don_vi = String(source.don_vi ?? source.unit ?? '').trim();
+    const thang = Number(source.thang ?? source.month);
+    const nam = Number(source.nam ?? source.year);
+    const ton_kho_toi_thieu = Number(source.ton_kho_toi_thieu ?? source.minStock);
+    const ton_kho_toi_da = Number(source.ton_kho_toi_da ?? source.maxStock);
+    if (!san_pham_id) return { error: 'Vui lòng chọn đúng sản phẩm theo Mã AMIS.' };
+    if (don_vi !== 'Tấm' && don_vi !== 'Cuộn') return { error: 'Đơn vị chỉ được là Tấm hoặc Cuộn.' };
+    if (!Number.isInteger(thang) || thang < 1 || thang > 12) return { error: 'Tháng không hợp lệ.' };
+    if (!Number.isInteger(nam) || nam < 2000 || nam > 9999) return { error: 'Năm phải từ 2000 đến 9999.' };
+    if (!Number.isInteger(ton_kho_toi_thieu) || ton_kho_toi_thieu < 0) return { error: 'Tồn kho tối thiểu phải là số nguyên không âm.' };
+    if (!Number.isInteger(ton_kho_toi_da) || ton_kho_toi_da < 0) return { error: 'Tồn kho tối đa phải là số nguyên không âm.' };
+    if (ton_kho_toi_thieu > ton_kho_toi_da) return { error: 'Tồn kho tối thiểu không được lớn hơn tồn kho tối đa.' };
+    return { record: { san_pham_id, quy_cach, don_vi, ton_kho_toi_thieu, ton_kho_toi_da, thang, nam } };
+  }
+
+  async function validateInventoryProductCodes(records: InventoryLimitRecord[]) {
+    const ids = [...new Set(records.map(record => record.san_pham_id))];
+    const { data, error } = await supabase!.from(SUPABASE_PRODUCTS_TABLE).select('id').in('id', ids);
+    if (error) return isMissingTableError(error) ? `Bảng ${SUPABASE_PRODUCTS_TABLE} chưa tồn tại.` : error.message;
+    const available = new Set((data || []).map(row => String((row as Record<string, unknown>).id || '').trim()));
+    const missing = ids.find(id => !available.has(id));
+    return missing ? `Sản phẩm có ID ${missing} không tồn tại trong danh sách sản phẩm.` : null;
+  }
+
+  app.get('/api/ton-kho-toi-thieu-toi-da', async (_req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local' });
+    const { data, error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).select('*').order('nam', { ascending: false }).order('thang', { ascending: false }).order('san_pham_id', { ascending: true });
+    if (error) return respondSupabaseReadError(res, error, SUPABASE_INVENTORY_LIMITS_TABLE, { items: [], total: 0 });
+    return res.json({ items: data || [], total: data?.length || 0, source: 'supabase' });
+  });
+
+  app.post('/api/ton-kho-toi-thieu-toi-da', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items : [req.body];
+    const parsed = rawItems.map(parseInventoryLimitRecord);
+    const invalid = parsed.find(item => 'error' in item);
+    if (invalid && 'error' in invalid) return res.status(400).json({ error: invalid.error });
+    const records = parsed.map(item => (item as { record: InventoryLimitRecord }).record);
+    const productError = await validateInventoryProductCodes(records);
+    if (productError) return res.status(400).json({ error: productError });
+    const seen = new Set<string>();
+    for (const record of records) {
+      const key = `${record.san_pham_id}|${record.thang}|${record.nam}`;
+      if (seen.has(key)) return res.status(400).json({ error: 'Trùng sản phẩm trong cùng tháng/năm.' });
+      seen.add(key);
+    }
+    const { data, error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).insert(records).select('*');
+    if (error) return res.status(400).json({ error: isMissingTableError(error) ? `Bảng ${SUPABASE_INVENTORY_LIMITS_TABLE} chưa tồn tại. Hãy chạy migration tồn kho.` : error.message });
+    return res.status(201).json({ success: true, items: data || [] });
+  });
+
+  app.patch('/api/ton-kho-toi-thieu-toi-da/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseInventoryLimitRecord(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const productError = await validateInventoryProductCodes([parsed.record]);
+    if (productError) return res.status(400).json({ error: productError });
+    const { data, error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).update(parsed.record).eq('id', req.params.id).select('*').single();
+    if (error) return res.status(400).json({ error: error.message });
+    return res.json({ success: true, item: data });
+  });
+
+  app.delete('/api/ton-kho-toi-thieu-toi-da/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const { error } = await supabase.from(SUPABASE_INVENTORY_LIMITS_TABLE).delete().eq('id', req.params.id);
+    if (error) return res.status(400).json({ error: error.message });
+    return res.json({ success: true });
   });
 
   app.get('/api/san-pham', async (req, res) => {

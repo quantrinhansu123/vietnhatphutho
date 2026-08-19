@@ -15,6 +15,7 @@ export type TableId =
   | 'kho_nvl'
   | 'phieu_xuat_nhap_kho'
   | 'don_hang'
+  | 'ton_kho_toi_thieu_toi_da'
   | 'khach_hang'
   | 'lenh_xuat_hang'
   | 'lenh_sx'
@@ -181,6 +182,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '3872–3999',
     appTab: 'orders',
     appLines: 'src/features/don-hang/index.tsx, src/features/_shared/orderHelpers.ts',
+    components: [],
+    utils: []
+  },
+  ton_kho_toi_thieu_toi_da: {
+    table: 'ton_kho_toi_thieu_toi_da',
+    label: 'Tồn kho tối thiểu - Tồn kho tối đa',
+    sql: ['supabase-ton-kho-toi-thieu-toi-da.sql'],
+    apiPrefix: '/api/ton-kho-toi-thieu-toi-da',
+    serverLines: '5720–5830',
+    appTab: 'inventory-limits',
+    appLines: 'src/features/ton-kho-toi-thieu-toi-da/index.tsx',
     components: [],
     utils: []
   },

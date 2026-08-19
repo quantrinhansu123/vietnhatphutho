@@ -1001,7 +1001,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   {getOrderProductLines(viewingOrder).map(line => (
                     <div key={`${line.productCode}-${line.quantity}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm">
                       <p className="font-bold text-zinc-900">{line.productCode || '-'} · {line.productName || '-'}</p>
-                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || '-'}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || '-'}</p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
