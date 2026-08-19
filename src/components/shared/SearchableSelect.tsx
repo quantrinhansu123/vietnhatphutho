@@ -34,7 +34,8 @@ export function SearchableSelect({
   getOptionLabel,
   getSearchText,
   displaySelectedAsValue = false,
-  desktopAutoFlip = false
+  desktopAutoFlip = false,
+  allowCustomValue = false
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -54,6 +55,8 @@ export function SearchableSelect({
   displaySelectedAsValue?: boolean;
   /** Trên desktop, tự mở menu lên trên nếu phía dưới không đủ chỗ. */
   desktopAutoFlip?: boolean;
+  /** Cho phép gõ giá trị tự do không có trong danh sách — giữ nguyên khi blur thay vì revert. */
+  allowCustomValue?: boolean;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,6 +76,9 @@ export function SearchableSelect({
 
   const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
+  // Vừa mở dropdown (focus/click) chưa gõ gì → hiện toàn bộ danh sách như select thường,
+  // không lọc theo text đang hiển thị trong ô (giá trị đã chọn trước đó).
+  const [justOpened, setJustOpened] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -81,7 +87,7 @@ export function SearchableSelect({
   }, [selectedLabel, open]);
 
   const filteredOptions = useMemo(() => {
-    const normalized = normalizeSearchText(query.trim());
+    const normalized = justOpened ? '' : normalizeSearchText(query.trim());
     const list = normalized
       ? options.filter(item => {
           const label = normalizeSearchText((getSearchText ?? getLabel)(item));
@@ -90,7 +96,7 @@ export function SearchableSelect({
         })
       : options;
     return list.slice(0, maxResults);
-  }, [options, query, getLabel, getSearchText, getValue, maxResults]);
+  }, [options, query, getLabel, getSearchText, getValue, maxResults, justOpened]);
 
   const commitValue = (nextValue: string, item: unknown | null = null) => {
     const trimmed = nextValue.trim();
@@ -149,6 +155,11 @@ export function SearchableSelect({
 
       if (filteredOptions.length === 1) {
         commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
+        return;
+      }
+
+      if (allowCustomValue) {
+        commitValue(query.trim(), null);
         return;
       }
 
@@ -291,9 +302,13 @@ export function SearchableSelect({
         onChange={event => {
           setQuery(event.target.value);
           setOpen(true);
+          setJustOpened(false);
         }}
         onFocus={() => {
-          if (!isDisabled) setOpen(true);
+          if (!isDisabled) {
+            setOpen(true);
+            setJustOpened(true);
+          }
         }}
         onBlur={handleBlur}
         disabled={isDisabled}

@@ -7,6 +7,11 @@ export interface OrderProductLine {
   quantity: string;
   orderRef?: string;
   conversionResults?: Array<{ unit: string; value: number }>;
+  /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
+  doLi?: string;
+  kho?: string;
+  daiM?: string;
+  note?: string;
 }
 
 export function splitProductionProductCodes(raw: string): string[] {

@@ -61,6 +61,10 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
           const productionName = pickText(row, ['ten_san_xuat', 'productionName'], '');
           const unit = formatCell(row.don_vi ?? row.unit);
           const quantity = formatCell(row.so_luong ?? row.quantity);
+          const doLi = pickText(row, ['do_li', 'doLi'], '');
+          const kho = pickText(row, ['kho'], '');
+          const daiM = pickText(row, ['dai_m', 'daiM'], '');
+          const note = pickText(row, ['ghi_chu', 'note'], '');
           if (!productCode && !productName) return null;
           return {
             productId,
@@ -69,6 +73,10 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
             productionName,
             unit,
             quantity,
+            doLi: doLi || undefined,
+            kho: kho || undefined,
+            daiM: daiM || undefined,
+            note: note || undefined,
             conversionResults: Array.isArray(row.ket_qua_quy_doi)
               ? row.ket_qua_quy_doi.map(item => {
                   const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};
