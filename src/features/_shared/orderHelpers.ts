@@ -2,7 +2,8 @@ import { pickText } from './recordHelpers';
 import { normalizeHrBranches } from './hr';
 import { normalizeProducts } from '../san-pham';
 
-export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất'] as const;
+export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt'] as const;
+export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
 export const ORDER_STATUS_DEFAULT = 'Chờ sx';
 export const ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'] as const;
 export const STORAGE_ORDER_UNIT_KEY = 'order_unit_suggestions_v1';

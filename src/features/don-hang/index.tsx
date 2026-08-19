@@ -14,6 +14,7 @@ import {
   ORDER_TYPE_OPTIONS,
   ORDER_STATUS_OPTIONS,
   ORDER_STATUS_DEFAULT,
+  CUT_ORDER_TYPE,
   orderFieldClass,
   normalizeOrderProducts,
   findOrderProductById,
@@ -53,6 +54,8 @@ export type { OrderProductLine, OrderRow };
 
 const orderProductGridClass =
   'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_6rem_6rem_minmax(8rem,1fr)_2.5rem]';
+const orderCutProductGridClass =
+  'grid-cols-2 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_minmax(6rem,1fr)_2.5rem]';
 export {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -150,6 +153,11 @@ export type OrderProductFormLine = {
   productionName: string;
   unit: string;
   quantity: string;
+  /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
+  doLi: string;
+  kho: string;
+  daiM: string;
+  note: string;
 };
 
 type OrderProductConversion = {
@@ -236,7 +244,11 @@ export function newOrderProductFormLine(): OrderProductFormLine {
     productName: '',
     productionName: '',
     unit: '',
-    quantity: ''
+    quantity: '',
+    doLi: '',
+    kho: '',
+    daiM: '',
+    note: ''
   };
 }
 
@@ -274,7 +286,12 @@ function orderCreatedAtToInput(value: string): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function orderProductLinesToPayload(lines: OrderProductFormLine[], productOptions: OrderProductOption[]) {
+export function orderProductLinesToPayload(
+  lines: OrderProductFormLine[],
+  productOptions: OrderProductOption[],
+  orderType?: string
+) {
+  const isCutOrder = orderType === CUT_ORDER_TYPE;
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
     .map(line => {
@@ -285,8 +302,16 @@ export function orderProductLinesToPayload(lines: OrderProductFormLine[], produc
       });
       const productCode = line.productCode.trim();
       const productName = selectedProduct?.name || resolved.productName || line.productName.trim();
-      const unit = selectedProduct ? allowedOrderUnits(selectedProduct)[0] || 'kg' : line.unit.trim() || resolved.unit;
+      const unit = isCutOrder
+        ? 'Tấm'
+        : selectedProduct
+          ? allowedOrderUnits(selectedProduct)[0] || 'kg'
+          : line.unit.trim() || resolved.unit;
       const quantity = parsePercentInput(line.quantity);
+      const doLi = line.doLi.trim();
+      const kho = parsePercentInput(line.kho);
+      const daiM = parsePercentInput(line.daiM);
+      const note = line.note.trim();
 
       return {
         san_pham_id: selectedProduct?.id || line.productId.trim() || undefined,
@@ -294,7 +319,15 @@ export function orderProductLinesToPayload(lines: OrderProductFormLine[], produc
         ten_sp: productName,
         ten_san_xuat: line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '',
         don_vi: unit,
-        so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null
+        so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
+        ...(isCutOrder
+          ? {
+              do_li: doLi || undefined,
+              kho: Number.isFinite(kho) && kho > 0 ? kho : undefined,
+              dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined,
+              ghi_chu: note || undefined
+            }
+          : {})
       };
     })
     .filter(item => item.ma_sp || item.ten_sp);
@@ -320,7 +353,11 @@ export function orderToForm(order: OrderRow): OrderFormState {
     productName: orderCellToInput(line.productName),
     productionName: orderCellToInput(line.productionName || ''),
     unit: orderCellToInput(line.unit),
-    quantity: orderCellToInput(line.quantity)
+    quantity: orderCellToInput(line.quantity),
+    doLi: line.doLi || '',
+    kho: line.kho || '',
+    daiM: line.daiM || '',
+    note: line.note || ''
   }));
 
   return {
@@ -499,6 +536,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     );
   }, [orders, productOptions]);
 
+  const getProductionNameOptions = (productCode: string) => {
+    const normalizedCode = productCode.trim();
+    const source = normalizedCode
+      ? productOptions.filter(product => product.code === normalizedCode)
+      : productOptions;
+    const names = source.map(product => product.productionName).filter(name => Boolean(name));
+    return [...new Set([...names])].sort((a, b) => a.localeCompare(b, 'vi'));
+  };
+
   const handlePrintOrder = async (order: OrderRow) => {
     setPendingPrint(false);
     setPrintOrder(order);
@@ -548,6 +594,17 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     });
   };
 
+  const pickCutOrderProduct = (key: string, productId: string) => {
+    const match = findOrderProductById(productOptions, productId);
+    updateProductLine(key, {
+      productId,
+      productCode: match?.code || '',
+      productName: match?.name || '',
+      productionName: match?.productionName || '',
+      unit: 'Tấm'
+    });
+  };
+
   const handleSaveOrder = async () => {
     if (!orderForm.orderCode.trim()) {
       setFormError('Vui lòng nhập mã đơn hàng.');
@@ -562,7 +619,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       return;
     }
 
-    const products = orderProductLinesToPayload(orderForm.productLines, productOptions);
+    const isCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
+    const products = orderProductLinesToPayload(orderForm.productLines, productOptions, orderForm.orderType);
     if (products.length === 0) {
       setFormError('Vui lòng thêm ít nhất một sản phẩm.');
       return;
@@ -580,18 +638,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
 
     const productsWithConversion: Array<(typeof products)[number] & { ket_qua_quy_doi?: Array<{ don_vi: string; gia_tri: number }> }> = [];
-    for (const product of products) {
-      const option = findOrderProductById(productOptions, product.san_pham_id || '');
-      const conversion = productConversions.find(item => item.sanPhamId === option?.id && conversionSupportsUnit(item, product.don_vi));
-      const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion, option?.group) : [];
-      if (result.length === 0) {
-        productsWithConversion.push(product);
-        continue;
+    if (isCutOrder) {
+      productsWithConversion.push(...products);
+    } else {
+      for (const product of products) {
+        const option = findOrderProductById(productOptions, product.san_pham_id || '');
+        const conversion = productConversions.find(item => item.sanPhamId === option?.id && conversionSupportsUnit(item, product.don_vi));
+        const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion, option?.group) : [];
+        if (result.length === 0) {
+          productsWithConversion.push(product);
+          continue;
+        }
+        productsWithConversion.push({
+          ...product,
+          ket_qua_quy_doi: result.map(([, value, unit]) => ({ don_vi: unit, gia_tri: Math.round(value * 1_000_000) / 1_000_000 }))
+        });
       }
-      productsWithConversion.push({
-        ...product,
-        ket_qua_quy_doi: result.map(([, value, unit]) => ({ don_vi: unit, gia_tri: Math.round(value * 1_000_000) / 1_000_000 }))
-      });
     }
 
     const payload = {
@@ -696,6 +758,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const value = Number(order.quantity);
     return Number.isFinite(value) ? sum + value : sum;
   }, 0);
+
+  const isFormCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-white">
@@ -831,7 +895,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 title="Sản phẩm"
                 required
                 showColumnHeaders
-                gridTemplateClass={orderProductGridClass}
+                gridTemplateClass={isFormCutOrder ? orderCutProductGridClass : orderProductGridClass}
                 onAdd={() =>
                   setOrderForm(prev => ({
                     ...prev,
@@ -839,17 +903,140 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   }))
                 }
                 addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
-                columns={[
-                  { key: 'code', label: 'Mã AMIS', required: true },
-                  { key: 'name', label: 'Tên sản phẩm' },
-                  { key: 'productionName', label: 'Tên sản xuất' },
-                  { key: 'unit', label: 'ĐVT' },
-                  { key: 'qty', label: 'SL', required: true },
-                  { key: 'conversion', label: 'Đơn vị quy đổi' },
-                  { key: 'actions', label: '' }
-                ]}
+                columns={
+                  isFormCutOrder
+                    ? [
+                        { key: 'code', label: 'Mã AMIS', required: true },
+                        { key: 'productionName', label: 'Tên sản xuất' },
+                        { key: 'unit', label: 'ĐVT' },
+                        { key: 'doLi', label: 'Độ li' },
+                        { key: 'kho', label: 'Khổ' },
+                        { key: 'daiM', label: 'Dài (m)' },
+                        { key: 'qty', label: 'SL', required: true },
+                        { key: 'note', label: 'Ghi chú' },
+                        { key: 'actions', label: '' }
+                      ]
+                    : [
+                        { key: 'code', label: 'Mã AMIS', required: true },
+                        { key: 'name', label: 'Tên sản phẩm' },
+                        { key: 'productionName', label: 'Tên sản xuất' },
+                        { key: 'unit', label: 'ĐVT' },
+                        { key: 'qty', label: 'SL', required: true },
+                        { key: 'conversion', label: 'Đơn vị quy đổi' },
+                        { key: 'actions', label: '' }
+                      ]
+                }
               >
-                {orderForm.productLines.map(line => {
+                {isFormCutOrder
+                  ? orderForm.productLines.map(line => (
+                      <RepeatableLineRow key={line.key} gridTemplateClass={orderCutProductGridClass}>
+                        <div className="col-span-2 min-w-0 md:col-span-1">
+                          <SearchableSelect
+                            value={line.productId}
+                            onChange={productId => pickCutOrderProduct(line.key, productId)}
+                            options={productOptions}
+                            placeholder="Tìm Mã AMIS"
+                            isLoading={isLoadingLookups}
+                            inputClassName={orderFieldClass}
+                            getValue={item => (item as OrderProductOption).id}
+                            getSearchText={item => {
+                              const product = item as OrderProductOption;
+                              return `${product.code} ${product.name} ${product.productionName}`;
+                            }}
+                            getLabel={item => {
+                              const product = item as OrderProductOption;
+                              return product.code;
+                            }}
+                            getOptionLabel={item => {
+                              const product = item as OrderProductOption;
+                              return `${product.code}${product.name ? ` - ${product.name}` : ''}`;
+                            }}
+                            resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
+                          />
+                        </div>
+                        <div className="col-span-2 min-w-0 md:col-span-1">
+                          <SearchableSelect
+                            value={line.productionName}
+                            onChange={productionName => updateProductLine(line.key, { productionName })}
+                            options={getProductionNameOptions(line.productCode)}
+                            placeholder="Chọn hoặc nhập tên sản xuất"
+                            allowCustomValue
+                            inputClassName={orderFieldClass}
+                            getLabel={item => String(item)}
+                            getValue={item => String(item)}
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            value="Tấm"
+                            readOnly
+                            className={`${orderFieldClass} bg-zinc-100 text-center font-bold text-zinc-600`}
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            value={line.doLi}
+                            onChange={e => updateProductLine(line.key, { doLi: e.target.value })}
+                            className={orderFieldClass}
+                            placeholder="8"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={line.kho}
+                            onChange={e => updateProductLine(line.key, { kho: e.target.value })}
+                            className={orderFieldClass}
+                            placeholder="1.22"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={line.daiM}
+                            onChange={e => updateProductLine(line.key, { daiM: e.target.value })}
+                            className={orderFieldClass}
+                            placeholder="2.8"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="number"
+                            value={line.quantity}
+                            onChange={e => updateProductLine(line.key, { quantity: e.target.value })}
+                            className={`${orderFieldClass} bg-white`}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="col-span-2 min-w-0 md:col-span-1">
+                          <input
+                            value={line.note}
+                            onChange={e => updateProductLine(line.key, { note: e.target.value })}
+                            className={orderFieldClass}
+                            placeholder="Ghi chú"
+                          />
+                        </div>
+                        {orderForm.productLines.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOrderForm(prev => ({
+                                ...prev,
+                                productLines: prev.productLines.filter(item => item.key !== line.key)
+                              }))
+                            }
+                            title="Xóa dòng"
+                            className="col-span-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 md:col-span-1 md:h-10 md:w-10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
+                          </button>
+                        ) : null}
+                      </RepeatableLineRow>
+                    ))
+                  : orderForm.productLines.map(line => {
                   const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
                   const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
@@ -893,7 +1080,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         />
                       </div>
                       <div className="col-span-2 min-w-0 md:col-span-1">
-                        <input value={matchedLineProduct ? matchedLineProduct.productionName : line.productionName} readOnly={Boolean(matchedLineProduct)} onChange={e => updateProductLine(line.key, { productionName: e.target.value })} className={`${orderFieldClass} ${matchedLineProduct ? 'bg-zinc-50 text-zinc-800' : 'bg-white'}`} placeholder="Tên sản xuất" />
+                        <SearchableSelect
+                          value={line.productionName}
+                          onChange={productionName => updateProductLine(line.key, { productionName })}
+                          options={getProductionNameOptions(line.productCode)}
+                          placeholder="Chọn hoặc nhập tên sản xuất"
+                          allowCustomValue
+                          inputClassName={orderFieldClass}
+                          getLabel={item => String(item)}
+                          getValue={item => String(item)}
+                        />
                       </div>
                       <div className="col-span-1 min-w-0">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
@@ -999,6 +1195,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
                       </p>
+                      {line.doLi || line.kho || line.daiM ? (
+                        <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                          Quy cách: {[line.doLi, line.kho ? `Khổ ${line.kho}` : '', line.daiM ? `Dài ${line.daiM}m` : ''].filter(Boolean).join(' · ')}
+                        </p>
+                      ) : null}
+                      {line.note ? (
+                        <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note}</p>
+                      ) : null}
                       {line.conversionResults?.length ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {line.conversionResults.map(result => (
@@ -1132,17 +1336,25 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-3 py-2.5 align-top font-bold text-zinc-800">{order.customer}</td>
                   <td className="px-3 py-2.5 align-top">
                     <div className="divide-y divide-zinc-100">
-                      {getOrderProductLines(order).map((line, index) => (
-                        <div
-                          key={`${order.id}-${line.productCode}-${line.productName}-${index}`}
-                          className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 py-1.5 text-xs font-semibold text-zinc-700 first:pt-0 last:pb-0"
-                        >
-                          <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                          <span className="text-zinc-800">{line.productName || '-'}</span>
-                          <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
-                          <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
-                        </div>
-                      ))}
+                      {getOrderProductLines(order).map((line, index) => {
+                        const sizeText = line.kho && line.daiM
+                          ? `${line.kho} × ${line.daiM}m`
+                          : line.kho || line.daiM
+                            ? `${line.kho || line.daiM}m`
+                            : '';
+                        const specText = [line.doLi, sizeText].filter(Boolean).join(' · ');
+                        return (
+                          <div key={`${order.id}-${line.productCode}-${line.productName}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
+                            <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
+                              <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
+                              <span className="text-zinc-800">{line.productName || '-'}</span>
+                              <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
+                              <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
+                            </div>
+                            {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   </td>
                   <td className="px-3 py-2.5 align-top font-semibold text-zinc-500">{order.note || '-'}</td>

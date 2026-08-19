@@ -4637,6 +4637,10 @@ type OrderProductRecord = {
   ten_san_xuat?: string;
   don_vi: string;
   so_luong: number | null;
+  do_li?: string | null;
+  kho?: number | null;
+  dai_m?: number | null;
+  ghi_chu?: string | null;
   kq_quy_doi?: {
     don_vi_nguon: string;
     so_luong_nguon: number;
@@ -4672,6 +4676,16 @@ function parseOrderProductsInput(
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
+    const do_li = pickRowField(row, ['do_li', 'doLi']);
+    const kho = parseOrderQuantity(row.kho);
+    const dai_m = parseOrderQuantity(row.dai_m ?? row.daiM);
+    const ghi_chu = pickRowField(row, ['ghi_chu', 'note']);
+    const cutFields: Partial<OrderProductRecord> = {
+      ...(do_li ? { do_li } : {}),
+      ...(kho !== null && kho > 0 ? { kho } : {}),
+      ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
+      ...(ghi_chu ? { ghi_chu } : {})
+    };
     const rawConversion = row.kq_quy_doi ?? row.conversionResult;
     const conversionResults = Array.isArray(row.ket_qua_quy_doi)
       ? row.ket_qua_quy_doi.flatMap(item => {
@@ -4690,7 +4704,7 @@ function parseOrderProductsInput(
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
     if (!rawConversion || typeof rawConversion !== 'object') {
-      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
     const conversion = rawConversion as Record<string, unknown>;
@@ -4702,10 +4716,10 @@ function parseOrderProductsInput(
       && Math.abs(sourceQuantity - so_luong) <= 0.000001
       && sourceUnit.trim().toLocaleLowerCase('vi') === don_vi.trim().toLocaleLowerCase('vi');
     if (!conversionIsValid) {
-      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
-    products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
+    products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
       don_vi_nguon: sourceUnit, so_luong_nguon: sourceQuantity, don_vi_dich: 'kg',
       trong_luong_kg: convertedWeight, chieu_dai_m: convertedLength
     } });
@@ -4747,13 +4761,21 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         const ma_sp = pickRowField(record, ['ma_sp', 'ma_hang', 'productCode', 'code']);
         const ten_sp = pickRowField(record, ['ten_sp', 'ten_hang', 'productName', 'name']);
         if (!ma_sp && !ten_sp) return null;
+        const do_li = pickRowField(record, ['do_li', 'doLi']);
+        const kho = parseOrderQuantity(record.kho);
+        const dai_m = parseOrderQuantity(record.dai_m ?? record.daiM);
+        const ghi_chu = pickRowField(record, ['ghi_chu', 'note']);
         return {
           ma_don_hang: pickRowField(record, ['ma_don_hang', 'orderRef', 'order_code']),
           ma_sp,
           ten_sp,
           ten_san_xuat: pickRowField(record, ['ten_san_xuat', 'productionName']),
           don_vi: pickRowField(record, ['don_vi', 'unit']),
-          so_luong: parseOrderQuantity(record.so_luong ?? record.quantity)
+          so_luong: parseOrderQuantity(record.so_luong ?? record.quantity),
+          ...(do_li ? { do_li } : {}),
+          ...(kho !== null && kho > 0 ? { kho } : {}),
+          ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
+          ...(ghi_chu ? { ghi_chu } : {})
         };
       })
       .filter((item): item is OrderProductRecord => Boolean(item));
