@@ -2,7 +2,6 @@ import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
-import { CUT_ORDER_TYPE } from '../features/_shared/orderHelpers';
 
 function formatOrderCreatedAt(value: string): string {
   const trimmed = String(value || '').trim();
@@ -26,16 +25,6 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
   const productLines = getOrderProductLines(order);
   const totalQuantity = productLines.reduce((sum, item) => sum + parsePercentInput(item.quantity), 0);
   const orderNote = displayCell(order.note);
-  const isCutOrder = order.orderType === CUT_ORDER_TYPE;
-
-  const formatLineSpec = (line: ReturnType<typeof getOrderProductLines>[number]) => {
-    const parts = [
-      displayCell(line.doLi),
-      displayCell(line.kho) ? `Khổ ${displayCell(line.kho)}` : '',
-      displayCell(line.daiM) ? `Dài ${displayCell(line.daiM)}m` : ''
-    ].filter(Boolean);
-    return parts.join(' · ');
-  };
 
   return (
     <div className="order-print-sheet">
@@ -54,7 +43,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
           </div>
         </header>
 
-        <h1 className="order-print-title">{isCutOrder ? 'ĐƠN ĐẶT CẮT LẺ' : 'ĐƠN ĐẶT HÀNG SẢN XUẤT'}</h1>
+        <h1 className="order-print-title">ĐƠN ĐẶT HÀNG SẢN XUẤT</h1>
 
         <table className="order-print-meta-table">
           <tbody>
@@ -110,13 +99,13 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                     {displayCell(line.productName)}
                     {displayCell(line.productionName) ? <div>{displayCell(line.productionName)}</div> : null}
                   </td>
-                  <td>{formatLineSpec(line)}</td>
+                  <td />
                   <td className="order-print-center">{displayCell(line.unit)}</td>
                   <td className="order-print-center order-print-qty">
                     {displayCell(line.quantity) || '—'}
                   </td>
                   <td>{order.deliveryDate ? formatOrderCreatedAt(order.deliveryDate) : ''}</td>
-                  <td>{displayCell(line.note) || (idx === 0 ? orderNote : '')}</td>
+                  <td>{idx === 0 ? orderNote : ''}</td>
                 </tr>
               ))
             )}
