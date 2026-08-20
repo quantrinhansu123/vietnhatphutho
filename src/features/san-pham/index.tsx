@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -11,6 +11,8 @@ import { normalizeMaterialsInventory } from '../kho-nvl';
 import {
   FilterCombobox,
   MultiSelectFilter,
+  TablePagination,
+  usePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -25,13 +27,17 @@ import {
 import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, QrCode, RefreshCw, X } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
 import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType } from './types';
-import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber } from './types';
+import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber, buildProductIdentityKey } from './types';
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseBulkProductNplComponentsExcel, parseProductNplComponentsExcel } from '../../utils/productNplComponentsExcel';
 import {
   downloadProductCatalogExcelTemplate,
   parseProductCatalogExcel,
   productCatalogRowToPayload
 } from '../../utils/productCatalogExcel';
+import {
+  downloadProductConversionExcelTemplate,
+  parseProductConversionExcel
+} from '../../utils/productConversionExcel';
 import { showAppToast } from '../../lib/appToast';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { availableConvertedUnits, convertProductQuantity, type ProductConversionFactors, type ProductConvertedUnit } from '../../utils/productUnitConversion';
@@ -1098,6 +1104,24 @@ export function productCellToInput(value: string) {
   return value === '-' ? '' : value;
 }
 
+export function normalizeUnitForForm(unit: string): string {
+  if (!unit) return '';
+  const normalized = unit.trim().toLowerCase();
+  if (normalized === 'm' || normalized === 'm dài' || normalized === 'm dai' || normalized === 'mét' || normalized === 'met') {
+    return 'm';
+  }
+  if (normalized === 'm2' || normalized === 'm²' || normalized === 'mét vuông' || normalized === 'met vuong') {
+    return 'm2';
+  }
+  if (normalized === 'tấm' || normalized === 'tam') {
+    return 'Tấm';
+  }
+  if (normalized === 'cuộn' || normalized === 'cuon') {
+    return 'Cuộn';
+  }
+  return unit; // Trả về giá trị gốc nếu không khớp
+}
+
 export function productToForm(product: ProductRow, conversions: ProductConversionFactors[] = []): ProductFormState {
   return {
     code: productCellToInput(product.code),
@@ -1107,7 +1131,7 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     productionName: productCellToInput(product.productionName),
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
-    unit: productCellToInput(product.unit),
+    unit: normalizeUnitForForm(product.unit),
     totalWeight: productCellToInput(product.totalWeight),
     wastePercent: productCellToInput(product.wastePercent),
     rollWidth: productCellToInput(product.rollWidth),
@@ -1365,8 +1389,12 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [productConversions, setProductConversions] = useState<ProductConversionFactors[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(1000);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productError, setProductError] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
@@ -1395,6 +1423,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const catalogFileInputRef = useRef<HTMLInputElement>(null);
   const [isImportingBulkProductComponents, setIsImportingBulkProductComponents] = useState(false);
   const [isImportingProductCatalog, setIsImportingProductCatalog] = useState(false);
+  const [isImportingConversions, setIsImportingConversions] = useState(false);
+  const conversionFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadProducts = async () => {
     setIsLoadingProducts(true);
@@ -1420,6 +1450,15 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      setDebouncedSearchText(searchText);
+      setIsSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   const loadProductConversions = async () => {
     try {
@@ -1679,9 +1718,10 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         throw new Error('File Excel không có dòng sản phẩm hợp lệ.');
       }
 
-      const byCode = new Map(
+      // Build map từ cả 3 trường: Mã SP + Tên SP + Tên sản xuất
+      const byIdentity = new Map(
         products
-          .map(product => [normalizeProductCodeKey(product.code), product] as const)
+          .map(product => [buildProductIdentityKey(product.code, product.name, product.productionName), product] as const)
           .filter(([key]) => Boolean(key))
       );
 
@@ -1692,10 +1732,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       for (const row of rows) {
         const code = row.code.trim();
         const name = row.name.trim();
+        const productionName = row.productionName.trim();
+
         if (!code && !name) {
           failures.push(`dòng ${row.rowNumber}: thiếu mã SP và tên`);
           continue;
         }
+
         const rawWaste = row.wastePercent.trim();
         if (rawWaste && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(rawWaste)) {
           failures.push(`dòng ${row.rowNumber}: giá trị hao hụt "${rawWaste}" không hợp lệ (phải từ 0 đến 100, tối đa 2 chữ số thập phân)`);
@@ -1703,8 +1746,18 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         }
 
         const payload = productCatalogRowToPayload(row);
-        // Chỉ khớp theo Mã SP — trùng Mã AMIS vẫn thêm dòng mới, không chặn import.
-        const existing = code ? byCode.get(normalizeProductCodeKey(code)) as ProductRow | undefined : undefined;
+
+        // Logic UPDATE vs INSERT:
+        // - UPDATE: Cả 3 trường (Mã SP, Tên SP, Tên sản xuất) đều có dữ liệu VÀ khớp sản phẩm trong DB
+        // - INSERT: Bất kỳ trường nào rỗng, HOẶC không khớp sản phẩm nào
+        let existing: ProductRow | undefined;
+
+        if (code && name && productionName) {
+          // Cả 3 trường đều có dữ liệu → kiểm tra khớp
+          const identityKey = buildProductIdentityKey(code, name, productionName);
+          existing = identityKey ? byIdentity.get(identityKey) as ProductRow | undefined : undefined;
+        }
+        // Nếu bất kỳ trường nào rỗng → existing = undefined → INSERT
 
         const res = existing
           ? await fetch(`/api/san-pham/${existing.id}`, {
@@ -1717,18 +1770,28 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
             });
+
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
           continue;
         }
+
         const saved = data.product && typeof data.product === 'object' ? data.product : null;
         const savedId = saved ? String(saved.id ?? '').trim() : '';
         const savedCode = saved ? String(saved.ma_sp ?? code).trim() : code;
+        const savedName = saved ? String(saved.ten_sp ?? name).trim() : name;
+        const savedProductionName = saved ? String(saved.ten_san_xuat ?? productionName).trim() : productionName;
+
         if (savedId && savedCode) {
-          byCode.set(normalizeProductCodeKey(savedCode), { id: savedId } as ProductRow);
+          const savedIdentityKey = buildProductIdentityKey(savedCode, savedName, savedProductionName);
+          if (savedIdentityKey) {
+            byIdentity.set(savedIdentityKey, { id: savedId } as ProductRow);
+          }
         }
-        if (existing || data.upserted) updated += 1;
+
+        // Chỉ dựa vào existing (có gửi PATCH hay không), không dựa vào data.upserted
+        if (existing) updated += 1;
         else created += 1;
       }
 
@@ -1755,6 +1818,136 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     } finally {
       setIsImportingProductCatalog(false);
       if (catalogFileInputRef.current) catalogFileInputRef.current.value = '';
+    }
+  };
+
+  const handleImportConversions = async (file?: File | null) => {
+    if ((!canCreate && !canEdit) || !file) return;
+
+    setIsImportingConversions(true);
+    setProductError('');
+    setProductActionMessage('');
+
+    try {
+      const rows = await parseProductConversionExcel(file);
+      if (rows.length === 0) {
+        throw new Error('File Excel không có dòng quy đổi hợp lệ.');
+      }
+
+      const productsByIdentity = new Map<string, ProductRow>();
+      const productsByAmisName = new Map<string, ProductRow>();
+      const productsByAmis = new Map<string, ProductRow>();
+
+      products.forEach(product => {
+        const identityKey = buildProductIdentityKey(product.code, product.name, product.productionName);
+        if (identityKey) productsByIdentity.set(identityKey, product);
+        const amisNameKey = `${product.code.trim().toLowerCase()}|${product.name.trim().toLowerCase()}`;
+        if (amisNameKey) productsByAmisName.set(amisNameKey, product);
+        if (product.code) productsByAmis.set(product.code.trim().toLowerCase(), product);
+      });
+
+      let created = 0;
+      let updated = 0;
+      const failures: string[] = [];
+
+      for (const row of rows) {
+        const amis = row.amisCode.trim();
+        const name = row.productName.trim();
+        const production = row.productionName.trim();
+
+        if (!amis) {
+          failures.push(`dòng ${row.rowNumber}: thiếu mã amis`);
+          continue;
+        }
+
+        let product: ProductRow | undefined;
+
+        if (amis && name && production) {
+          const identityKey = buildProductIdentityKey(amis, name, production);
+          if (identityKey) product = productsByIdentity.get(identityKey);
+        }
+
+        if (!product && amis && name) {
+          const amisNameKey = `${amis.toLowerCase()}|${name.toLowerCase()}`;
+          product = productsByAmisName.get(amisNameKey);
+        }
+
+        if (!product && amis) {
+          product = productsByAmis.get(amis.toLowerCase());
+        }
+
+        if (!product) {
+          failures.push(`dòng ${row.rowNumber}: không tìm thấy sản phẩm với mã ${amis}`);
+          continue;
+        }
+
+        const validateNum = (val: string) => {
+          if (!val.trim()) return null;
+          const num = Number(val.replace(',', '.'));
+          return Number.isFinite(num) && num > 0 ? num : 'invalid';
+        };
+
+        const fields: Record<string, unknown> = { san_pham_id: product.id };
+        const fieldMaps = [
+          ['sheetWidthM', 'kho_tam_rong_m'],
+          ['sheetLengthM', 'kho_tam_dai_m'],
+          ['rollWidthM', 'kho_cuon_rong_m'],
+          ['rollLengthM', 'kho_cuon_dai_m'],
+          ['areaM2', 'dien_tich_m2'],
+          ['kgPerLinearM', 'trong_luong_kg_m_dai'],
+          ['kgPerM2', 'trong_luong_kg_m2'],
+          ['kgPerSheet', 'trong_luong_kg_tam'],
+          ['kgPerRoll', 'trong_luong_kg_cuon']
+        ] as const;
+
+        let hasError = false;
+        for (const [csvField, dbField] of fieldMaps) {
+          const val = validateNum(row[csvField as keyof typeof row] as string);
+          if (val === 'invalid') {
+            failures.push(`dòng ${row.rowNumber}: ${dbField} phải là số lớn hơn 0 hoặc để trống`);
+            hasError = true;
+            break;
+          }
+          fields[dbField] = val;
+        }
+
+        if (hasError) continue;
+
+        const res = await fetch('/api/bang-quy-doi-san-pham/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: [{ rowNumber: row.rowNumber, ...fields }] })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
+          continue;
+        }
+
+        created += Number(data.created) || 0;
+        updated += Number(data.updated) || 0;
+      }
+
+      const summary = [
+        created > 0 || updated > 0 ? `Đã nhập Excel quy đổi: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
+      ]
+        .filter(Boolean)
+        .join(' ');
+      setProductActionMessage(summary);
+      if (created > 0 || updated > 0) showAppToast(summary);
+      else if (failures.length > 0) {
+        setProductError(summary);
+        showAppToast(failures[0], 'error');
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Không thể đọc hoặc nhập Excel quy đổi.';
+      setProductError(message);
+      showAppToast(message, 'error');
+    } finally {
+      setIsImportingConversions(false);
+      if (conversionFileInputRef.current) conversionFileInputRef.current.value = '';
     }
   };
 
@@ -1891,7 +2084,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     () => Array.from(new Set(products.map(product => product.nature))).sort((a, b) => String(a).localeCompare(String(b), 'vi')),
     [products]
   );
-  const normalizedSearch = searchText.trim().toLowerCase();
+  const normalizedSearch = debouncedSearchText.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const matchesGroup = selectedGroup === 'all' || product.group === selectedGroup;
@@ -1904,6 +2097,12 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       return matchesGroup && matchesNature && matchesSearch;
     });
   }, [normalizedSearch, products, selectedGroup, selectedNatures]);
+
+  const { paginatedItems: paginatedProducts, totalPages: productTotalPages } = usePagination(
+    filteredProducts,
+    productPage,
+    productPageSize
+  );
 
   const conversionByProductId = useMemo(() => {
     const map = new Map<string, ProductConversionFactors>();
@@ -1923,14 +2122,19 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     setSelectedGroup('all');
     setSelectedNatures(new Set());
     setSearchText('');
+    setProductPage(1);
   };
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [selectedGroup, selectedNatures, normalizedSearch]);
 
   useEffect(() => {
     let cancelled = false;
 
     const generateQrImages = async () => {
       const nextEntries = await Promise.all(
-        products
+        paginatedProducts
           .filter(product => product.code)
           .map(async product => {
             const url = await QRCode.toDataURL(product.code, {
@@ -1951,7 +2155,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       }
     };
 
-    if (products.length > 0) {
+    if (paginatedProducts.length > 0) {
       generateQrImages();
     } else {
       setQrImages({});
@@ -1960,7 +2164,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [products]);
+  }, [paginatedProducts]);
 
   const toggleProduct = (productId: string) => {
     setSelectedProductIds(prev => {
@@ -2167,6 +2371,35 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           className="hidden"
           onChange={event => void handleImportProductCatalog(event.target.files?.[0])}
         />
+        {canCreate || canEdit ? (
+          <button
+            type="button"
+            onClick={downloadProductConversionExcelTemplate}
+            disabled={isImportingConversions || isLoadingProducts}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-extrabold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            Tải mẫu Quy đổi
+          </button>
+        ) : null}
+        {canCreate || canEdit ? (
+          <button
+            type="button"
+            onClick={() => conversionFileInputRef.current?.click()}
+            disabled={isImportingConversions || isLoadingProducts}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isImportingConversions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {isImportingConversions ? 'Đang nhập...' : 'Tải Excel Quy đổi'}
+          </button>
+        ) : null}
+        <input
+          ref={conversionFileInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={event => void handleImportConversions(event.target.files?.[0])}
+        />
         {canCreate ? (
           <button
             type="button"
@@ -2191,6 +2424,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           onChange={setSearchText}
           placeholder="Tìm mã, tên, nhóm, nguồn gốc..."
           disabled={isLoadingProducts || products.length === 0}
+          isLoading={isSearching}
         />
 
         <FilterCombobox
@@ -2312,7 +2546,19 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <TableShell minWidthClassName="min-w-[1400px]">
+      <div className="relative">
+        {(isLoadingProducts || isSearching) && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-gradient-to-br from-zinc-950/10 via-zinc-950/5 to-transparent backdrop-blur-md transition-opacity duration-300">
+            <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-zinc-200/50 bg-white px-8 py-6 shadow-lg">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#ef1b2d]/10 to-[#ef1b2d]/5">
+                <Loader2 className="h-7 w-7 animate-spin text-[#ef1b2d]" />
+              </div>
+              <p className="text-sm font-bold text-zinc-900">{isSearching ? 'Đang tìm kiếm...' : 'Đang tải dữ liệu...'}</p>
+              <p className="text-[11px] font-medium text-zinc-500">Vui lòng chờ</p>
+            </div>
+          </div>
+        )}
+        <TableShell minWidthClassName="min-w-[1400px]">
         <TableHead>
           <TableHeadCell align="center" className="w-14">
             <input
@@ -2341,7 +2587,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           </TableHeadCell>
         </TableHead>
         <TableBody>
-          {filteredProducts.map(product => {
+          {paginatedProducts.map(product => {
             const conversion = conversionByProductId.get(product.id);
             const convertedUnits: ProductConvertedUnit[] = product.group === 'TP; PX Đặc'
               ? ['kg', 'm2']
@@ -2451,6 +2697,25 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           )}
         </TableBody>
       </TableShell>
+      </div>
+
+      {filteredProducts.length > 0 && (
+        <div className="mt-4 flex justify-center rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+          <TablePagination
+            totalRecords={filteredProducts.length}
+            currentPage={productPage}
+            totalPages={productTotalPages}
+            pageSize={productPageSize}
+            onPageChange={setProductPage}
+            onPageSizeChange={(size) => {
+              setProductPageSize(size);
+              setProductPage(1);
+            }}
+            pageSizeOptions={[100, 500, 1000, 3000]}
+            noBorderTop={true}
+          />
+        </div>
+      )}
 
 
       {productFormMode && (

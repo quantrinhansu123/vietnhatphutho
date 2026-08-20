@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
@@ -13,7 +14,8 @@ export function TablePagination({
   pageSize,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
+  noBorderTop = false
 }: {
   totalRecords: number;
   currentPage: number;
@@ -22,9 +24,10 @@ export function TablePagination({
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   pageSizeOptions?: number[];
+  noBorderTop?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-t border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
+    <div className={`flex flex-col gap-3 bg-white px-4 py-3 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between ${!noBorderTop ? 'border-t border-zinc-200' : ''}`}>
       <div className="flex flex-wrap items-center gap-4">
         <span>
           Tổng: <strong className="text-zinc-900">{totalRecords}</strong> bản ghi
@@ -90,10 +93,12 @@ export function TablePagination({
   );
 }
 
-/** Hook nhỏ dùng chung để tính toán phân trang từ danh sách đã lọc. */
+/** Hook dùng chung để tính toán phân trang từ danh sách đã lọc (đã memoize để tham chiếu ổn định). */
 export function usePagination<T>(items: T[], page: number, pageSize: number) {
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const startIndex = (page - 1) * pageSize;
-  const paginatedItems = items.slice(startIndex, startIndex + pageSize);
-  return { totalPages, paginatedItems };
+  return useMemo(() => {
+    const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+    const startIndex = (page - 1) * pageSize;
+    const paginatedItems = items.slice(startIndex, startIndex + pageSize);
+    return { totalPages, paginatedItems };
+  }, [items, page, pageSize]);
 }

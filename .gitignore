@@ -6,6 +6,7 @@ api/_handler.cjs
 coverage/
 .DS_Store
 *.log
+log.txt
 .env*
 !.env.example
 .ai/
