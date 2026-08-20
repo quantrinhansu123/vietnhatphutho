@@ -24,6 +24,7 @@ export type ProductOption = {
   code: string;
   amisCode: string;
   name: string;
+  productionName: string;
   unit: string;
 };
 

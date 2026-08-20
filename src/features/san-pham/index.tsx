@@ -32,6 +32,10 @@ import {
   parseProductCatalogExcel,
   productCatalogRowToPayload
 } from '../../utils/productCatalogExcel';
+import {
+  downloadProductConversionExcelTemplate,
+  parseProductConversionExcel
+} from '../../utils/productConversionExcel';
 import { showAppToast } from '../../lib/appToast';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { availableConvertedUnits, convertProductQuantity, type ProductConversionFactors, type ProductConvertedUnit } from '../../utils/productUnitConversion';
@@ -1413,6 +1417,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const catalogFileInputRef = useRef<HTMLInputElement>(null);
   const [isImportingBulkProductComponents, setIsImportingBulkProductComponents] = useState(false);
   const [isImportingProductCatalog, setIsImportingProductCatalog] = useState(false);
+  const [isImportingConversions, setIsImportingConversions] = useState(false);
+  const conversionFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadProducts = async () => {
     setIsLoadingProducts(true);
@@ -1797,6 +1803,136 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     } finally {
       setIsImportingProductCatalog(false);
       if (catalogFileInputRef.current) catalogFileInputRef.current.value = '';
+    }
+  };
+
+  const handleImportConversions = async (file?: File | null) => {
+    if ((!canCreate && !canEdit) || !file) return;
+
+    setIsImportingConversions(true);
+    setProductError('');
+    setProductActionMessage('');
+
+    try {
+      const rows = await parseProductConversionExcel(file);
+      if (rows.length === 0) {
+        throw new Error('File Excel không có dòng quy đổi hợp lệ.');
+      }
+
+      const productsByIdentity = new Map<string, ProductRow>();
+      const productsByAmisName = new Map<string, ProductRow>();
+      const productsByAmis = new Map<string, ProductRow>();
+
+      products.forEach(product => {
+        const identityKey = buildProductIdentityKey(product.code, product.name, product.productionName);
+        if (identityKey) productsByIdentity.set(identityKey, product);
+        const amisNameKey = `${product.code.trim().toLowerCase()}|${product.name.trim().toLowerCase()}`;
+        if (amisNameKey) productsByAmisName.set(amisNameKey, product);
+        if (product.code) productsByAmis.set(product.code.trim().toLowerCase(), product);
+      });
+
+      let created = 0;
+      let updated = 0;
+      const failures: string[] = [];
+
+      for (const row of rows) {
+        const amis = row.amisCode.trim();
+        const name = row.productName.trim();
+        const production = row.productionName.trim();
+
+        if (!amis) {
+          failures.push(`dòng ${row.rowNumber}: thiếu mã amis`);
+          continue;
+        }
+
+        let product: ProductRow | undefined;
+
+        if (amis && name && production) {
+          const identityKey = buildProductIdentityKey(amis, name, production);
+          if (identityKey) product = productsByIdentity.get(identityKey);
+        }
+
+        if (!product && amis && name) {
+          const amisNameKey = `${amis.toLowerCase()}|${name.toLowerCase()}`;
+          product = productsByAmisName.get(amisNameKey);
+        }
+
+        if (!product && amis) {
+          product = productsByAmis.get(amis.toLowerCase());
+        }
+
+        if (!product) {
+          failures.push(`dòng ${row.rowNumber}: không tìm thấy sản phẩm với mã ${amis}`);
+          continue;
+        }
+
+        const validateNum = (val: string) => {
+          if (!val.trim()) return null;
+          const num = Number(val.replace(',', '.'));
+          return Number.isFinite(num) && num > 0 ? num : 'invalid';
+        };
+
+        const fields: Record<string, unknown> = { san_pham_id: product.id };
+        const fieldMaps = [
+          ['sheetWidthM', 'kho_tam_rong_m'],
+          ['sheetLengthM', 'kho_tam_dai_m'],
+          ['rollWidthM', 'kho_cuon_rong_m'],
+          ['rollLengthM', 'kho_cuon_dai_m'],
+          ['areaM2', 'dien_tich_m2'],
+          ['kgPerLinearM', 'trong_luong_kg_m_dai'],
+          ['kgPerM2', 'trong_luong_kg_m2'],
+          ['kgPerSheet', 'trong_luong_kg_tam'],
+          ['kgPerRoll', 'trong_luong_kg_cuon']
+        ] as const;
+
+        let hasError = false;
+        for (const [csvField, dbField] of fieldMaps) {
+          const val = validateNum(row[csvField as keyof typeof row] as string);
+          if (val === 'invalid') {
+            failures.push(`dòng ${row.rowNumber}: ${dbField} phải là số lớn hơn 0 hoặc để trống`);
+            hasError = true;
+            break;
+          }
+          fields[dbField] = val;
+        }
+
+        if (hasError) continue;
+
+        const res = await fetch('/api/bang-quy-doi-san-pham/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: [{ rowNumber: row.rowNumber, ...fields }] })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
+          continue;
+        }
+
+        created += Number(data.created) || 0;
+        updated += Number(data.updated) || 0;
+      }
+
+      const summary = [
+        created > 0 || updated > 0 ? `Đã nhập Excel quy đổi: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
+      ]
+        .filter(Boolean)
+        .join(' ');
+      setProductActionMessage(summary);
+      if (created > 0 || updated > 0) showAppToast(summary);
+      else if (failures.length > 0) {
+        setProductError(summary);
+        showAppToast(failures[0], 'error');
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Không thể đọc hoặc nhập Excel quy đổi.';
+      setProductError(message);
+      showAppToast(message, 'error');
+    } finally {
+      setIsImportingConversions(false);
+      if (conversionFileInputRef.current) conversionFileInputRef.current.value = '';
     }
   };
 
@@ -2208,6 +2344,35 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           accept=".xlsx,.xls"
           className="hidden"
           onChange={event => void handleImportProductCatalog(event.target.files?.[0])}
+        />
+        {canCreate || canEdit ? (
+          <button
+            type="button"
+            onClick={downloadProductConversionExcelTemplate}
+            disabled={isImportingConversions || isLoadingProducts}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-extrabold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            Tải mẫu Quy đổi
+          </button>
+        ) : null}
+        {canCreate || canEdit ? (
+          <button
+            type="button"
+            onClick={() => conversionFileInputRef.current?.click()}
+            disabled={isImportingConversions || isLoadingProducts}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isImportingConversions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {isImportingConversions ? 'Đang nhập...' : 'Tải Excel Quy đổi'}
+          </button>
+        ) : null}
+        <input
+          ref={conversionFileInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={event => void handleImportConversions(event.target.files?.[0])}
         />
         {canCreate ? (
           <button
