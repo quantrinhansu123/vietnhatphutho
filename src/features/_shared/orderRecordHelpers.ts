@@ -26,6 +26,7 @@ export interface OrderRow {
   createdAt: string;
   updatedAt?: string;
   productionOrder?: string;
+  khu_vuc?: string;
 }
 
 export function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderProductLine[] {

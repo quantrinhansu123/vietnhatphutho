@@ -4866,6 +4866,7 @@ function parseOrderBody(
     khach_hang: typeof source.customer === 'string' ? source.customer.trim() : '',
     san_pham: products,
     ghi_chu: typeof source.note === 'string' ? source.note.trim() : '',
+    khu_vuc: typeof source.khu_vuc === 'string' ? source.khu_vuc.trim() : '',
     updated_at: new Date().toISOString()
   };
   if (typeof source.deliveryDate === 'string') {
@@ -6520,6 +6521,21 @@ export function createApp() {
         source.orderCode = await generateNextOrderCodeFromDb();
       }
 
+      const staffName = String(source.staffName ?? '').trim();
+      if (staffName) {
+        const { data: staffData } = await supabase
+          .from('nhan_su')
+          .select('khu_vuc')
+          .eq('nhan_su', staffName)
+          .maybeSingle();
+
+        if (staffData) {
+          source.khu_vuc = staffData.khu_vuc || '';
+        } else {
+          source.khu_vuc = '';
+        }
+      }
+
       const parsed = parseOrderBody(source, { isCreate: true });
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
@@ -6553,7 +6569,23 @@ export function createApp() {
         return res.status(400).json({ error: 'Thiếu ID đơn hàng.' });
       }
 
-      const parsed = parseOrderBody(req.body);
+      const source = req.body && typeof req.body === 'object' ? { ...(req.body as Record<string, unknown>) } : {};
+      const staffName = String(source.staffName ?? '').trim();
+      if (staffName) {
+        const { data: staffData } = await supabase
+          .from('nhan_su')
+          .select('khu_vuc')
+          .eq('nhan_su', staffName)
+          .maybeSingle();
+
+        if (staffData) {
+          source.khu_vuc = staffData.khu_vuc || '';
+        } else {
+          source.khu_vuc = '';
+        }
+      }
+
+      const parsed = parseOrderBody(source);
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
       }

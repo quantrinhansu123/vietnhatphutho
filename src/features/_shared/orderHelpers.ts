@@ -11,7 +11,9 @@ export const orderFieldClass =
   'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 export interface StaffOption {
+  code: string;
   name: string;
+  region?: string;
 }
 
 export interface CustomerOption {
@@ -46,12 +48,14 @@ export function normalizeStaffOptions(data: unknown): StaffOption[] {
     .map((item): StaffOption | null => {
       if (typeof item === 'string') {
         const name = item.trim();
-        return name ? { name } : null;
+        return name ? { code: name, name } : null;
       }
       if (!item || typeof item !== 'object') return null;
       const record = item as Record<string, unknown>;
+      const code = pickText(record, ['code', 'ma_nhan_su', 'id'], '') || pickText(record, ['name', 'nhan_su', 'ho_ten', 'ten'], '');
       const name = pickText(record, ['name', 'nhan_su', 'ho_ten', 'ten'], '');
-      return name ? { name } : null;
+      const region = pickText(record, ['region', 'khu_vuc'], '');
+      return name && code ? { code, name, region: region || undefined } : null;
     })
     .filter((item): item is StaffOption => Boolean(item));
 }
@@ -65,7 +69,14 @@ export function normalizeDaNangBusinessStaffOptions(data: unknown): StaffOption[
     return branch.departments.flatMap(department => {
       const departmentText = normalizeLookupText(department.name);
       if (!departmentText.includes('kinh doanh')) return [];
-      return department.members.map(member => ({ name: member.name }));
+      return department.members.map(member => {
+        const code = member.code || member.id || member.name;
+        return {
+          code: String(code).trim(),
+          name: member.name,
+          region: member.region || ''
+        };
+      });
     });
   });
 
