@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -11,6 +11,8 @@ import { normalizeMaterialsInventory } from '../kho-nvl';
 import {
   FilterCombobox,
   MultiSelectFilter,
+  TablePagination,
+  usePagination,
   TableToolbar,
   TableSearchInput,
   TableShell,
@@ -1387,8 +1389,12 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [productConversions, setProductConversions] = useState<ProductConversionFactors[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(1000);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productError, setProductError] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
@@ -1444,6 +1450,15 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      setDebouncedSearchText(searchText);
+      setIsSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   const loadProductConversions = async () => {
     try {
@@ -2069,7 +2084,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     () => Array.from(new Set(products.map(product => product.nature))).sort((a, b) => String(a).localeCompare(String(b), 'vi')),
     [products]
   );
-  const normalizedSearch = searchText.trim().toLowerCase();
+  const normalizedSearch = debouncedSearchText.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const matchesGroup = selectedGroup === 'all' || product.group === selectedGroup;
@@ -2082,6 +2097,12 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       return matchesGroup && matchesNature && matchesSearch;
     });
   }, [normalizedSearch, products, selectedGroup, selectedNatures]);
+
+  const { paginatedItems: paginatedProducts, totalPages: productTotalPages } = usePagination(
+    filteredProducts,
+    productPage,
+    productPageSize
+  );
 
   const conversionByProductId = useMemo(() => {
     const map = new Map<string, ProductConversionFactors>();
@@ -2101,14 +2122,19 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     setSelectedGroup('all');
     setSelectedNatures(new Set());
     setSearchText('');
+    setProductPage(1);
   };
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [selectedGroup, selectedNatures, normalizedSearch]);
 
   useEffect(() => {
     let cancelled = false;
 
     const generateQrImages = async () => {
       const nextEntries = await Promise.all(
-        products
+        paginatedProducts
           .filter(product => product.code)
           .map(async product => {
             const url = await QRCode.toDataURL(product.code, {
@@ -2129,7 +2155,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       }
     };
 
-    if (products.length > 0) {
+    if (paginatedProducts.length > 0) {
       generateQrImages();
     } else {
       setQrImages({});
@@ -2138,7 +2164,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [products]);
+  }, [paginatedProducts]);
 
   const toggleProduct = (productId: string) => {
     setSelectedProductIds(prev => {
@@ -2398,6 +2424,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           onChange={setSearchText}
           placeholder="Tìm mã, tên, nhóm, nguồn gốc..."
           disabled={isLoadingProducts || products.length === 0}
+          isLoading={isSearching}
         />
 
         <FilterCombobox
@@ -2519,7 +2546,19 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <TableShell minWidthClassName="min-w-[1400px]">
+      <div className="relative">
+        {(isLoadingProducts || isSearching) && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-gradient-to-br from-zinc-950/10 via-zinc-950/5 to-transparent backdrop-blur-md transition-opacity duration-300">
+            <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-zinc-200/50 bg-white px-8 py-6 shadow-lg">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#ef1b2d]/10 to-[#ef1b2d]/5">
+                <Loader2 className="h-7 w-7 animate-spin text-[#ef1b2d]" />
+              </div>
+              <p className="text-sm font-bold text-zinc-900">{isSearching ? 'Đang tìm kiếm...' : 'Đang tải dữ liệu...'}</p>
+              <p className="text-[11px] font-medium text-zinc-500">Vui lòng chờ</p>
+            </div>
+          </div>
+        )}
+        <TableShell minWidthClassName="min-w-[1400px]">
         <TableHead>
           <TableHeadCell align="center" className="w-14">
             <input
@@ -2548,7 +2587,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           </TableHeadCell>
         </TableHead>
         <TableBody>
-          {filteredProducts.map(product => {
+          {paginatedProducts.map(product => {
             const conversion = conversionByProductId.get(product.id);
             const convertedUnits: ProductConvertedUnit[] = product.group === 'TP; PX Đặc'
               ? ['kg', 'm2']
@@ -2658,6 +2697,25 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           )}
         </TableBody>
       </TableShell>
+      </div>
+
+      {filteredProducts.length > 0 && (
+        <div className="mt-4 flex justify-center rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+          <TablePagination
+            totalRecords={filteredProducts.length}
+            currentPage={productPage}
+            totalPages={productTotalPages}
+            pageSize={productPageSize}
+            onPageChange={setProductPage}
+            onPageSizeChange={(size) => {
+              setProductPageSize(size);
+              setProductPage(1);
+            }}
+            pageSizeOptions={[100, 500, 1000, 3000]}
+            noBorderTop={true}
+          />
+        </div>
+      )}
 
 
       {productFormMode && (

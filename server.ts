@@ -14,6 +14,9 @@ dotenv.config();
 const DB_FILE_PATH = process.env.VERCEL
   ? path.join('/tmp', 'reports-db.json')
   : path.join(process.cwd(), 'reports-db.json');
+const LOG_FILE_PATH = process.env.VERCEL
+  ? path.join('/tmp', 'log.txt')
+  : path.join(process.cwd(), 'log.txt');
 const WEIGHING_DB_FILE_PATH = process.env.VERCEL
   ? path.join('/tmp', 'phieu-can-dinh-ki-db.json')
   : path.join(process.cwd(), 'phieu-can-dinh-ki-db.json');
@@ -5852,18 +5855,27 @@ export function createApp() {
     try {
       const format = typeof req.query.format === 'string' ? req.query.format : 'list';
       if (format === 'table') {
-        const { data, error } = await supabase
-          .from(SUPABASE_PRODUCTS_TABLE)
-          .select('*')
-          .order('ten_sp', { ascending: true });
+        // PostgREST giới hạn mặc định 1000 dòng/query -> phân trang để lấy hết dữ liệu.
+        const PAGE_SIZE = 1000;
+        const allData: Record<string, unknown>[] = [];
+        for (let from = 0; ; from += PAGE_SIZE) {
+          const { data: page, error } = await supabase
+            .from(SUPABASE_PRODUCTS_TABLE)
+            .select('*')
+            .order('ten_sp', { ascending: true })
+            .range(from, from + PAGE_SIZE - 1);
 
-        if (error) {
-          return respondSupabaseReadError(res, error, SUPABASE_PRODUCTS_TABLE, { products: [], total: 0 });
+          if (error) {
+            return respondSupabaseReadError(res, error, SUPABASE_PRODUCTS_TABLE, { products: [], total: 0 });
+          }
+
+          allData.push(...(page || []));
+          if (!page || page.length < PAGE_SIZE) break;
         }
 
         return res.json({
-          products: data || [],
-          total: data?.length || 0,
+          products: allData || [],
+          total: allData?.length || 0,
           source: 'supabase'
         });
       }
@@ -7663,17 +7675,26 @@ export function createApp() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from(SUPABASE_MATERIALS_TABLE)
-        .select('*')
-        .order('ma_npl', { ascending: true });
+      // PostgREST giới hạn mặc định 1000 dòng/query -> phân trang để lấy hết dữ liệu.
+      const PAGE_SIZE = 1000;
+      const allData: Record<string, unknown>[] = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data: page, error } = await supabase
+          .from(SUPABASE_MATERIALS_TABLE)
+          .select('*')
+          .order('ma_npl', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
 
-      if (error) {
-        return respondSupabaseReadError(res, error, SUPABASE_MATERIALS_TABLE, { materials: [], total: 0 });
+        if (error) {
+          return respondSupabaseReadError(res, error, SUPABASE_MATERIALS_TABLE, { materials: [], total: 0 });
+        }
+
+        allData.push(...(page || []));
+        if (!page || page.length < PAGE_SIZE) break;
       }
 
       const movementTotals = await buildMaterialMovementTotals();
-      const materials = applyMaterialMovementTotals(data || [], movementTotals);
+      const materials = applyMaterialMovementTotals(allData || [], movementTotals);
 
       return res.json({
         materials,

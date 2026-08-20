@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 
 /**
  * Khung bộ lọc dùng chung phía trên bảng: viền bo tròn, các control cùng hàng, nút "Xóa lọc".
@@ -61,22 +61,28 @@ export function TableSearchInput({
   value,
   onChange,
   placeholder = 'Tìm kiếm...',
-  disabled
+  disabled,
+  isLoading = false
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  isLoading?: boolean;
 }) {
   return (
-    <label className="flex h-11 min-w-[320px] flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
-      <Search className="h-4 w-4 text-zinc-400" />
+    <label className="flex h-11 min-w-[320px] flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 transition focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+      {isLoading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-[#ef1b2d]" />
+      ) : (
+        <Search className="h-4 w-4 text-zinc-400" />
+      )}
       <input
         value={value}
         onChange={event => onChange(event.target.value)}
         placeholder={placeholder}
-        disabled={disabled}
-        className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+        disabled={disabled || isLoading}
+        className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none disabled:opacity-60"
       />
     </label>
   );
