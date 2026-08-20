@@ -2150,12 +2150,30 @@ function parseProductPatchBody(
     record.nhom_vthh = rule.group;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'unit') || Object.prototype.hasOwnProperty.call(source, 'don_vi')) {
-    const unit = parseMaterialText(source.unit ?? source.don_vi);
-    const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
-    if (rule?.primaryUnit) record.don_vi = rule.primaryUnit;
-    else {
-      if (!unit) return { error: 'Vui lòng nhập đơn vị tính cho nhóm TP; NVL, NVL hoặc Khác.' };
+    let unit = parseMaterialText(source.unit ?? source.don_vi);
+    // Normalize đơn vị tính: chuyển các biến thể thành dạng chuẩn
+    if (unit) {
+      const normalized = unit.trim().toLowerCase();
+      if (normalized === 'm' || normalized === 'm dài' || normalized === 'm dai' || normalized === 'mét' || normalized === 'met') {
+        unit = 'm';
+      } else if (normalized === 'm2' || normalized === 'm²' || normalized === 'mét vuông' || normalized === 'met vuong') {
+        unit = 'm2';
+      } else if (normalized === 'tấm' || normalized === 'tam') {
+        unit = 'Tấm';
+      } else if (normalized === 'cuộn' || normalized === 'cuon') {
+        unit = 'Cuộn';
+      }
+    }
+    // Chỉ dùng primaryUnit nếu user không cung cấp giá trị mới
+    if (unit) {
       record.don_vi = unit;
+    } else {
+      const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
+      if (rule?.primaryUnit) {
+        record.don_vi = rule.primaryUnit;
+      } else {
+        return { error: 'Vui lòng nhập đơn vị tính cho nhóm TP; NVL, NVL hoặc Khác.' };
+      }
     }
   }
   if (Object.prototype.hasOwnProperty.call(source, 'openingStock') || Object.prototype.hasOwnProperty.call(source, 'ton_dau_ky')) {
@@ -2186,12 +2204,18 @@ function parseProductPatchBody(
     record.tong_trong_luong = parseOptionalMaterialDecimalText(source.totalWeight ?? source.tong_trong_luong);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'wastePercent') || Object.prototype.hasOwnProperty.call(source, 'ty_le_hao_hut')) {
-    const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
-    if (rule?.wastePercent !== undefined) record.ty_le_hao_hut = rule.wastePercent;
-    else {
-      const parsedWastePercent = parseProductWastePercent(source.ty_le_hao_hut ?? source.wastePercent);
+    // Nếu user cung cấp giá trị, dùng giá trị đó; nếu không, dùng mặc định từ nhóm
+    const userValue = source.ty_le_hao_hut ?? source.wastePercent;
+    if (userValue !== undefined && userValue !== null && userValue !== '') {
+      const parsedWastePercent = parseProductWastePercent(userValue);
       if ('error' in parsedWastePercent) return parsedWastePercent;
       record.ty_le_hao_hut = parsedWastePercent.value;
+    } else {
+      const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
+      if (rule?.wastePercent !== undefined) {
+        record.ty_le_hao_hut = rule.wastePercent;
+      }
+      // Nếu không có user value và không có rule mặc định, không set gì (giữ giá trị cũ)
     }
   }
   if (Object.prototype.hasOwnProperty.call(source, 'rollWidth') || Object.prototype.hasOwnProperty.call(source, 'kho_cuon')) {
@@ -6013,16 +6037,7 @@ export function createApp() {
       const hasNplInput = nplInput !== undefined && nplInput !== null;
       const updateRecord: Record<string, unknown> = {};
 
-      const hasWastePercentInput =
-        Object.prototype.hasOwnProperty.call(body, 'ty_le_hao_hut') ||
-        Object.prototype.hasOwnProperty.call(body, 'wastePercent');
-      if (hasWastePercentInput) {
-        const parsedWastePercent = parseProductWastePercent(body.ty_le_hao_hut ?? body.wastePercent);
-        if ('error' in parsedWastePercent) {
-          return res.status(400).json({ error: parsedWastePercent.error });
-        }
-        updateRecord.ty_le_hao_hut = parsedWastePercent.value;
-      }
+      // Note: ty_le_hao_hut được xử lý trong parseProductPatchBody, không xử lý riêng ở đây để tránh xung đột
 
       if (hasNplInput) {
         const parsedNpl = parseProductNplPhanTramInput(nplInput);

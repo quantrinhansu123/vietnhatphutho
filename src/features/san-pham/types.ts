@@ -5,6 +5,34 @@ export function normalizeProductCodeKey(code: string) {
   return code.trim().replace(/\s+/g, '').toUpperCase();
 }
 
+function normalizeStringForComparison(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+export function buildProductIdentityKey(code: string, name: string, productionName: string) {
+  const trimmedCode = code.trim();
+  const trimmedName = name.trim();
+  const trimmedProductionName = productionName.trim();
+
+  // Chỉ tạo key nếu cả 3 trường đều có dữ liệu
+  if (!trimmedCode || !trimmedName || !trimmedProductionName) {
+    return '';
+  }
+
+  return [
+    normalizeStringForComparison(trimmedCode).toUpperCase(),
+    normalizeStringForComparison(trimmedName),
+    normalizeStringForComparison(trimmedProductionName)
+  ].join('|');
+}
+
 export interface ProductRow {
   id: string;
   code: string;

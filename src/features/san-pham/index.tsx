@@ -25,7 +25,7 @@ import {
 import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, QrCode, RefreshCw, X } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
 import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType } from './types';
-import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber } from './types';
+import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, excelRowsToProductNplItems, bulkExcelRowsToProductMap, productNplAmountTypeLabel, formatProductNplAmount, roundNplNumber, buildProductIdentityKey } from './types';
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseBulkProductNplComponentsExcel, parseProductNplComponentsExcel } from '../../utils/productNplComponentsExcel';
 import {
   downloadProductCatalogExcelTemplate,
@@ -1098,6 +1098,24 @@ export function productCellToInput(value: string) {
   return value === '-' ? '' : value;
 }
 
+export function normalizeUnitForForm(unit: string): string {
+  if (!unit) return '';
+  const normalized = unit.trim().toLowerCase();
+  if (normalized === 'm' || normalized === 'm dài' || normalized === 'm dai' || normalized === 'mét' || normalized === 'met') {
+    return 'm';
+  }
+  if (normalized === 'm2' || normalized === 'm²' || normalized === 'mét vuông' || normalized === 'met vuong') {
+    return 'm2';
+  }
+  if (normalized === 'tấm' || normalized === 'tam') {
+    return 'Tấm';
+  }
+  if (normalized === 'cuộn' || normalized === 'cuon') {
+    return 'Cuộn';
+  }
+  return unit; // Trả về giá trị gốc nếu không khớp
+}
+
 export function productToForm(product: ProductRow, conversions: ProductConversionFactors[] = []): ProductFormState {
   return {
     code: productCellToInput(product.code),
@@ -1107,7 +1125,7 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     productionName: productCellToInput(product.productionName),
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
-    unit: productCellToInput(product.unit),
+    unit: normalizeUnitForForm(product.unit),
     totalWeight: productCellToInput(product.totalWeight),
     wastePercent: productCellToInput(product.wastePercent),
     rollWidth: productCellToInput(product.rollWidth),
@@ -1679,9 +1697,10 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         throw new Error('File Excel không có dòng sản phẩm hợp lệ.');
       }
 
-      const byCode = new Map(
+      // Build map từ cả 3 trường: Mã SP + Tên SP + Tên sản xuất
+      const byIdentity = new Map(
         products
-          .map(product => [normalizeProductCodeKey(product.code), product] as const)
+          .map(product => [buildProductIdentityKey(product.code, product.name, product.productionName), product] as const)
           .filter(([key]) => Boolean(key))
       );
 
@@ -1692,10 +1711,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       for (const row of rows) {
         const code = row.code.trim();
         const name = row.name.trim();
+        const productionName = row.productionName.trim();
+
         if (!code && !name) {
           failures.push(`dòng ${row.rowNumber}: thiếu mã SP và tên`);
           continue;
         }
+
         const rawWaste = row.wastePercent.trim();
         if (rawWaste && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(rawWaste)) {
           failures.push(`dòng ${row.rowNumber}: giá trị hao hụt "${rawWaste}" không hợp lệ (phải từ 0 đến 100, tối đa 2 chữ số thập phân)`);
@@ -1703,8 +1725,18 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         }
 
         const payload = productCatalogRowToPayload(row);
-        // Chỉ khớp theo Mã SP — trùng Mã AMIS vẫn thêm dòng mới, không chặn import.
-        const existing = code ? byCode.get(normalizeProductCodeKey(code)) as ProductRow | undefined : undefined;
+
+        // Logic UPDATE vs INSERT:
+        // - UPDATE: Cả 3 trường (Mã SP, Tên SP, Tên sản xuất) đều có dữ liệu VÀ khớp sản phẩm trong DB
+        // - INSERT: Bất kỳ trường nào rỗng, HOẶC không khớp sản phẩm nào
+        let existing: ProductRow | undefined;
+
+        if (code && name && productionName) {
+          // Cả 3 trường đều có dữ liệu → kiểm tra khớp
+          const identityKey = buildProductIdentityKey(code, name, productionName);
+          existing = identityKey ? byIdentity.get(identityKey) as ProductRow | undefined : undefined;
+        }
+        // Nếu bất kỳ trường nào rỗng → existing = undefined → INSERT
 
         const res = existing
           ? await fetch(`/api/san-pham/${existing.id}`, {
@@ -1717,18 +1749,28 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
             });
+
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
           continue;
         }
+
         const saved = data.product && typeof data.product === 'object' ? data.product : null;
         const savedId = saved ? String(saved.id ?? '').trim() : '';
         const savedCode = saved ? String(saved.ma_sp ?? code).trim() : code;
+        const savedName = saved ? String(saved.ten_sp ?? name).trim() : name;
+        const savedProductionName = saved ? String(saved.ten_san_xuat ?? productionName).trim() : productionName;
+
         if (savedId && savedCode) {
-          byCode.set(normalizeProductCodeKey(savedCode), { id: savedId } as ProductRow);
+          const savedIdentityKey = buildProductIdentityKey(savedCode, savedName, savedProductionName);
+          if (savedIdentityKey) {
+            byIdentity.set(savedIdentityKey, { id: savedId } as ProductRow);
+          }
         }
-        if (existing || data.upserted) updated += 1;
+
+        // Chỉ dựa vào existing (có gửi PATCH hay không), không dựa vào data.upserted
+        if (existing) updated += 1;
         else created += 1;
       }
 
