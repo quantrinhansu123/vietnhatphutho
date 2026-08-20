@@ -1114,7 +1114,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           type="text"
                           value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
                           readOnly
-                          className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-1 text-xs font-semibold text-zinc-800 text-center"
+                          className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>
                       <div className="col-span-1 min-w-0">
@@ -1122,7 +1122,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           type="text"
                           value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
                           readOnly
-                          className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-1 text-xs font-semibold text-zinc-800 text-center"
+                          className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>
                       <div className="col-span-1 min-w-0">
@@ -1130,7 +1130,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           type="text"
                           value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
                           readOnly
-                          className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-1 text-xs font-semibold text-zinc-800 text-center"
+                          className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>
                       {orderForm.productLines.length > 1 ? (
