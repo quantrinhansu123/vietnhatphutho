@@ -30,18 +30,22 @@
 
 ### Nhân sự theo vai trò
 
-Các cột `truong_ca`, `nhan_su_chinh`, `tho_phu`, `hoc_viec` được nhập trong form thêm/sửa lệnh.
-Cột `nhan_su` vẫn giữ chuỗi tổng hợp để tương thích báo cáo và dữ liệu cũ.
+Phân công nhân sự được lưu trong **cột `phan_cong_nhan_su` (JSON, nguồn dữ liệu duy nhất)** dưới dạng mảng `AssignedPersonnel[]`.
+Mỗi entry: `{ id, role, personnelId, date, time, removable }` — `personnelId` có thể là staff ID thật hoặc tên (nếu migrate từ dữ liệu cũ).
 
-Form **Thêm / Sửa lệnh SX**: Trưởng ca / Nhân sự chính / Thợ phụ / Học việc là sổ xuống
-từ nhân sự phòng **PHÂN XƯỞNG SẢN XUẤT** (nhận thêm biến thể tên `Sản xuất` / có chữ Phân xưởng).
-API tải ` /api/nhan-su?format=groups&scope=all` rồi lọc phòng trên client (tránh mất NV vì filter chi nhánh mặc định).
-Cột «Nhân sự» tự tổng hợp theo các vai trò đã chọn.
+Các cột cũ `truong_ca`, `nhan_su_chinh`, `tho_phu`, `hoc_viec` vẫn tồn tại vật lý ở DB nhưng **không còn được dùng** ở tầng ứng dụng (giữ làm đường lui).
+Cột `nhan_su` vẫn được tổng hợp từ toàn bộ mảng `personnel` để tương thích báo cáo, control-board, snapshot kế hoạch SX.
+
+Form **Thêm / Sửa lệnh SX**: Phân công nhân sự dùng giao diện động (2 người/dòng, thêm/xóa được), mỗi entry có Ngày + Giờ riêng.
+Dữ liệu cũ (trước khi cấu trúc này được áp dụng): lần đầu load qua `GET /api/lenh-sx`, server tự dựng lại mảng từ 4 cột cũ (lazy migration),
+ghi ngược vào DB bất đồng bộ, client luôn nhận dữ liệu chuẩn hóa trong response.
 
 ### Lọc theo đăng nhập
 
 - Nếu `cong_viec` / chức vụ đăng nhập đúng **Nhân Viên** (không phân biệt hoa thường, bỏ dấu khi so):
-  chỉ hiện lệnh SX có tên người đó trong bất kỳ cột phân công nào (`nhan_su`, `truong_ca`, `nhan_su_chinh`, `tho_phu`, `hoc_viec`).
+  chỉ hiện lệnh SX nếu `currentUser.id` khớp với **bất kỳ entry nào** trong mảng `phan_cong_nhan_su` (so theo ID trước).
+  Nếu không khớp ID, fallback so tên: resolve mỗi entry (ID → tên qua danh sách nhân sự) rồi so với `currentUser.name` (tokenize, chuẩn hóa dấu như cũ).
+  Cách này hỗ trợ dữ liệu cũ mà `personnelId` có thể là tên chứ không phải ID thật.
 - Admin / fullAccess vẫn xem tất cả.
 
 ### Danh sách lệnh SX
