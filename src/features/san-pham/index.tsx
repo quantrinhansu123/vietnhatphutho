@@ -1,3 +1,17 @@
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elementName: string]: any;
+    }
+  }
+}
+
+declare module 'react/jsx-runtime' {
+  export const Fragment: any;
+  export const jsx: (...args: any[]) => any;
+  export const jsxs: (...args: any[]) => any;
+}
+
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1240,22 +1254,8 @@ export function ProductEditModal({
 
   const fields: Array<{ key: Exclude<keyof ProductFormState, 'conversions'>; label: string; required?: boolean; span?: boolean }> = [
     { key: 'code', label: 'Mã SP', required: true },
-    { key: 'newCode', label: 'Mã mới' },
     { key: 'name', label: 'Tên sản phẩm', required: true },
     { key: 'productionName', label: 'Tên sản xuất' },
-    { key: 'nature', label: 'Tính chất' },
-    { key: 'totalWeight', label: 'Tổng trọng lượng TP (kg)' },
-    { key: 'rollWidth', label: 'Khổ cuộn (m)' },
-    { key: 'rollLength', label: 'Chiều dài mét/cuộn (m)' },
-    { key: 'coreWeight', label: 'Trọng lượng lõi (kg)' },
-    { key: 'bagWeight', label: 'Trọng lượng túi (kg)' },
-    { key: 'plasticWeight', label: 'Trọng lượng nhựa + phụ gia (kg)' },
-    { key: 'openingStock', label: 'Tồn đầu' },
-    { key: 'inbound', label: 'Nhập' },
-    { key: 'outbound', label: 'Xuất' },
-    { key: 'stock', label: 'Tồn kho' },
-    { key: 'minStock', label: 'Tồn tối thiểu' },
-    { key: 'origin', label: 'Nguồn gốc' },
     { key: 'description', label: 'Mô tả', span: true }
   ];
 
