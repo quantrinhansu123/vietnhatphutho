@@ -90,7 +90,7 @@ export function PersonnelAssignmentBlock({
                   title="Bắt đầu (24 giờ)"
                   value={item.time}
                   onChange={(e) => onChange(item.id, { time: e.target.value })}
-                  className="h-11 w-[100px] shrink-0 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 placeholder-zinc-400"
+                  className="h-11 w-[130px] shrink-0 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 placeholder-zinc-400"
                 />
                 <input
                   type="time"
@@ -98,7 +98,7 @@ export function PersonnelAssignmentBlock({
                   title="Kết thúc (24 giờ)"
                   value={item.endTime || ''}
                   onChange={(e) => onChange(item.id, { endTime: e.target.value })}
-                  className="h-11 w-[100px] shrink-0 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 placeholder-zinc-400"
+                  className="h-11 w-[130px] shrink-0 rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 placeholder-zinc-400"
                 />
               </div>
             </div>
