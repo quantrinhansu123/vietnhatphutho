@@ -1143,6 +1143,7 @@ export type StaffFormState = {
   username: string;
   password: string;
   signatureUrl: string;
+  region: string;
   viewPermissions: StaffViewPermissions;
 };
 
@@ -1158,6 +1159,7 @@ export function emptyStaffForm(defaults?: { branch?: string; department?: string
     username: '',
     password: '',
     signatureUrl: '',
+    region: '',
     viewPermissions: []
   };
 }
@@ -1209,6 +1211,7 @@ export function AddStaffModal({
         username: member.username || '',
         password: member.password || '',
         signatureUrl: member.signatureUrl || '',
+        region: member.region || '',
         viewPermissions: member.viewPermissions || []
       });
       setFormError('');
@@ -1281,6 +1284,7 @@ export function AddStaffModal({
         ten_dang_nhap: form.username.trim(),
         mat_khau: form.password.trim(),
         link_chu_ky: form.signatureUrl.trim(),
+        khu_vuc: form.region.trim(),
         quyen_xem: form.viewPermissions
       };
 
@@ -1434,6 +1438,22 @@ export function AddStaffModal({
               {['Đang làm', 'Nghỉ phép', 'Nghỉ việc'].map(status => (
                 <option key={status} value={status}>
                   {status}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khu vực phụ trách kinh doanh</span>
+            <select
+              value={form.region}
+              onChange={event => setForm(prev => ({ ...prev, region: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            >
+              <option value="">-- Chọn khu vực --</option>
+              {['Bắc', 'Trung', 'Nam'].map(region => (
+                <option key={region} value={region}>
+                  {region}
                 </option>
               ))}
             </select>

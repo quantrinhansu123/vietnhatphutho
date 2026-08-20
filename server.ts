@@ -1303,6 +1303,10 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
   const explicitViTri = pickRowField(source, ['vi_tri', 'position', 'ma_vi_tri'], '');
   const viTri = explicitViTri || buildStaffViTriLabel(department, congViec);
 
+  const regionRaw = pickRowField(source, ['khu_vuc', 'region'], '').trim();
+  const validRegions = ['Bắc', 'Trung', 'Nam'];
+  const region = regionRaw && validRegions.includes(regionRaw) ? regionRaw : null;
+
   const record: Record<string, unknown> = {
     nhan_su: name,
     phong_ban: department,
@@ -1313,7 +1317,8 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
     trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang làm'),
     ma_nhan_su: code || null,
     ten_dang_nhap: pickRowField(source, ['ten_dang_nhap', 'username', 'login'], '') || null,
-    link_chu_ky: pickRowField(source, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '') || null
+    link_chu_ky: pickRowField(source, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '') || null,
+    khu_vuc: region
   };
 
   // Chỉ ghi mật khẩu khi client gửi rõ — tránh Excel/PUT vô tình xóa mật khẩu cũ

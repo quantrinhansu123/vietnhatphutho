@@ -16,6 +16,7 @@ export interface HrMember {
   username?: string;
   password?: string;
   signatureUrl?: string;
+  region?: string;
   viewPermissions: StaffViewPermissions;
   assignedPositions?: StaffAssignablePosition[];
 }
@@ -77,6 +78,7 @@ export function normalizeHrBranches(data: unknown): HrBranch[] {
                     memberRecord.chu_ky_url ??
                     ''
                   ).trim() || undefined,
+                  region: String(memberRecord.region ?? memberRecord.khu_vuc ?? '').trim() || undefined,
                   viewPermissions: normalizeStaffViewPermissions(
                     memberRecord.viewPermissions ?? memberRecord.quyen_xem
                   ),
