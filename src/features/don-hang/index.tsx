@@ -53,7 +53,7 @@ import {
 export type { OrderProductLine, OrderRow };
 
 const orderProductGridClass =
-  'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_6rem_6rem_minmax(8rem,1fr)_2.5rem]';
+  'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_6rem_6rem_4rem_4rem_4rem_2.5rem]';
 const orderCutProductGridClass =
   'grid-cols-2 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_minmax(6rem,1fr)_2.5rem]';
 export {
@@ -922,7 +922,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'qty', label: 'SL', required: true },
-                        { key: 'conversion', label: 'Đơn vị quy đổi' },
+                        { key: 'kg', label: 'KG' },
+                        { key: 'm2', label: 'M2' },
+                        { key: 'mdai', label: 'M dài' },
                         { key: 'actions', label: '' }
                       ]
                 }
@@ -1043,7 +1045,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const allowedUnits = allowedOrderUnits(matchedLineProduct);
                   const effectiveUnit = matchedLineProduct ? allowedUnits[0] || 'kg' : line.unit;
                   const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, matchedLineProduct?.group) : [];
-                  const noConversionRequired = Boolean(matchedLineProduct) && resolveConversionUnit(effectiveUnit) === 'kg';
+
+                  const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
+                  const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
+                  const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
+
                   return (
                     <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
                       <div className="col-span-2 min-w-0 md:col-span-1">
@@ -1103,8 +1109,29 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="0"
                         />
                       </div>
-                      <div className="col-span-2 flex min-w-0 gap-1 md:col-span-1">
-                        {line.quantity && calculatedConversion.length > 0 ? calculatedConversion.map(([, value, unit]) => <div key={unit} className="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1"><span className="block truncate text-[9px] font-black uppercase text-emerald-700">{unit}</span><span className="block truncate text-xs font-black text-emerald-950">{formatNumber(value, 3)}</span></div>) : <div className="flex h-11 w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-semibold text-zinc-400">{line.quantity ? (noConversionRequired ? 'Không cần quy đổi' : 'Chưa đủ hệ số quy đổi') : 'Nhập SL để quy đổi'}</div>}
+                      <div className="col-span-1 min-w-0">
+                        <input
+                          type="text"
+                          value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
+                          readOnly
+                          className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-1 text-xs font-semibold text-zinc-800 text-center"
+                        />
+                      </div>
+                      <div className="col-span-1 min-w-0">
+                        <input
+                          type="text"
+                          value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
+                          readOnly
+                          className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-1 text-xs font-semibold text-zinc-800 text-center"
+                        />
+                      </div>
+                      <div className="col-span-1 min-w-0">
+                        <input
+                          type="text"
+                          value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
+                          readOnly
+                          className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-1 text-xs font-semibold text-zinc-800 text-center"
+                        />
                       </div>
                       {orderForm.productLines.length > 1 ? (
                         <button
@@ -1122,7 +1149,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
                         </button>
                       ) : null}
-                    </RepeatableLineRow>
+                      </RepeatableLineRow>
                   );
                 })}
               </RepeatableLinesBlock>
