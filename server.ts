@@ -5267,6 +5267,9 @@ async function saveProductionPlanSnapshot(options: {
   planDate: string;
   note: string;
   createdBy: string;
+  maSo?: string;
+  ngayLienLac?: string;
+  dacTa?: string;
   lines: ProductionPlanSnapshotLine[];
 }) {
   if (!supabase) {
@@ -5280,6 +5283,9 @@ async function saveProductionPlanSnapshot(options: {
     so_lenh: options.lines.length,
     ghi_chu: options.note,
     nguoi_lap: options.createdBy,
+    ma_so: options.maSo || null,
+    ngay_lien_lac: options.ngayLienLac || null,
+    dac_ta: options.dacTa || null,
     updated_at: new Date().toISOString()
   };
 
@@ -7028,6 +7034,9 @@ export function createApp() {
       const planDate = parseProductionPlanDateInput(source.ngay_ke_hoach ?? source.planDate) ?? todayDateString();
       const planNote = typeof source.ghi_chu === 'string' ? source.ghi_chu.trim() : '';
       const createdBy = pickRowField(source, ['nguoi_lap', 'createdBy', 'staff'], '');
+      const planMaSo = typeof source.ma_so === 'string' ? source.ma_so.trim() : '';
+      const planNgayLienLac = typeof source.ngay_lien_lac === 'string' ? source.ngay_lien_lac : '';
+      const planDacTa = typeof source.dac_ta === 'string' ? source.dac_ta.trim() : '';
 
       const updates: Array<{ id: string; vi_tri: string | null; thu_tu_uu_tien: number; ghi_chu: string }> = [];
       const snapshotLines: ProductionPlanSnapshotLine[] = [];
@@ -7080,6 +7089,9 @@ export function createApp() {
           planDate,
           note: planNote,
           createdBy,
+          maSo: planMaSo,
+          ngayLienLac: planNgayLienLac,
+          dacTa: planDacTa,
           lines: snapshotLines.length > 0 ? snapshotLines : updates.map((item, index) => ({
             lenh_sx_id: Number(item.id),
             thu_tu_uu_tien: item.thu_tu_uu_tien || index + 1,

@@ -14,7 +14,10 @@ alter table public.ke_hoach_san_xuat
   add column if not exists trang_thai text default 'Đã lập',
   add column if not exists so_lenh integer default 0,
   add column if not exists ghi_chu text,
-  add column if not exists nguoi_lap text;
+  add column if not exists nguoi_lap text,
+  add column if not exists ma_so text,
+  add column if not exists ngay_lien_lac date,
+  add column if not exists dac_ta text;
 
 create table if not exists public.ke_hoach_san_xuat_dong (
   id uuid primary key default gen_random_uuid(),

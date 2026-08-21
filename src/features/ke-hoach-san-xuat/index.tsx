@@ -1970,6 +1970,10 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
       ]);
       if (!detailRes.ok || !orderRes.ok || !machineRes.ok) throw new Error('Không thể tải dữ liệu để sửa kế hoạch.');
       const historyLines = normalizeProductionPlanHistoryLines(detailData);
+      const planRecord = detailData?.plan as Record<string, unknown> | undefined;
+      const planMaSo = typeof planRecord?.ma_so === 'string' ? planRecord.ma_so : '';
+      const planNgayLienLac = typeof planRecord?.ngay_lien_lac === 'string' ? planRecord.ngay_lien_lac : '';
+      const planDacTa = typeof planRecord?.dac_ta === 'string' ? planRecord.dac_ta : '';
       setCreateOrders(normalizeProductionOrders(orderData));
       setCreateMachines(normalizeMachines(machineData));
       setEditLines(historyLines.map(line => ({
@@ -1984,7 +1988,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         status: '', orderRef: line.orderRef, position: line.machine !== '-' ? line.machine : line.position,
         staff: line.staff, shift: line.shift, priority: line.priority, note: line.note
       })));
-      setEditingPlan(plan);
+      setEditingPlan({ ...plan, maSo: planMaSo, ngayLienLac: planNgayLienLac, dacTa: planDacTa } as any);
       setShowCreateModal(true);
     } catch (error: any) {
       setLoadError(error.message || 'Không thể mở form sửa kế hoạch.');
@@ -2302,6 +2306,9 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         initialLines={editingPlan ? editLines : undefined}
         initialPlanDate={editingPlan?.planDate}
         initialNote={editingPlan?.note}
+        initialMaSo={(editingPlan as any)?.maSo}
+        initialNgayLienLac={(editingPlan as any)?.ngayLienLac}
+        initialDacTa={(editingPlan as any)?.dacTa}
       />
       <ProductionPlanModal
         open={Boolean(printingPlan)}
@@ -2333,6 +2340,9 @@ export function ProductionPlanModal({
   initialLines,
   initialPlanDate,
   initialNote,
+  initialMaSo,
+  initialNgayLienLac,
+  initialDacTa,
   printOnly = false,
   planCode,
   anchorElement
@@ -2347,6 +2357,9 @@ export function ProductionPlanModal({
   initialLines?: ProductionPlanLine[];
   initialPlanDate?: string;
   initialNote?: string;
+  initialMaSo?: string;
+  initialNgayLienLac?: string;
+  initialDacTa?: string;
   printOnly?: boolean;
   planCode?: string;
   anchorElement?: HTMLElement | null;
@@ -2378,6 +2391,9 @@ export function ProductionPlanModal({
   const [showQrPrintModal, setShowQrPrintModal] = useState(false);
   const [planDate, setPlanDate] = useState(todayDateInputValue());
   const [planHeaderNote, setPlanHeaderNote] = useState('');
+  const [planMaSo, setPlanMaSo] = useState('');
+  const [planNgayLienLac, setPlanNgayLienLac] = useState('');
+  const [planDacTa, setPlanDacTa] = useState('');
   const [pendingStaffAssignmentPrint, setPendingStaffAssignmentPrint] = useState(false);
   const [isLoadingRelatedPrint, setIsLoadingRelatedPrint] = useState(false);
   const [relatedPrintData, setRelatedPrintData] = useState<ProductionPlanRelatedReports | null>(null);
@@ -2458,6 +2474,9 @@ export function ProductionPlanModal({
     setShowQrPrintModal(false);
     setPlanDate(initialDate);
     setPlanHeaderNote(initialHeaderNote);
+    setPlanMaSo(initialMaSo || '');
+    setPlanNgayLienLac(initialNgayLienLac || '');
+    setPlanDacTa(initialDacTa || '');
     setPendingStaffAssignmentPrint(false);
     setIsLoadingRelatedPrint(false);
     setRelatedPrintData(null);
@@ -2480,7 +2499,7 @@ export function ProductionPlanModal({
       .then(res => (res.ok ? res.json() : null))
       .then(data => setRelatedShiftOptions(data ? getProductionShiftOptions(normalizeShiftSettings(data)) : []))
       .catch(() => setRelatedShiftOptions([]));
-  }, [open, productionOrders, machines, editPlanId, initialLines, initialPlanDate, initialNote, printOnly]);
+  }, [open, productionOrders, machines, editPlanId, initialLines, initialPlanDate, initialNote, initialMaSo, initialNgayLienLac, initialDacTa, printOnly]);
 
   useEffect(() => {
     if (checkAllRef.current) checkAllRef.current.indeterminate = someLinesSelected;
@@ -2702,6 +2721,9 @@ export function ProductionPlanModal({
           id: editPlanId,
           ngay_ke_hoach: planDate,
           ghi_chu: planHeaderNote.trim(),
+          ma_so: planMaSo.trim(),
+          ngay_lien_lac: planNgayLienLac,
+          dac_ta: planDacTa.trim(),
           items: buildProductionPlanSaveItems(selectedLines)
         })
       });
@@ -3074,24 +3096,57 @@ export function ProductionPlanModal({
               </p>
             )}
 
-            {!printOnly && <div className="mb-4 grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
+            {!printOnly && <div className="mb-4 space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày kế hoạch</span>
+                  <input
+                    type="date"
+                    value={planDate}
+                    onChange={event => setPlanDate(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã số</span>
+                  <input
+                    type="text"
+                    value={planMaSo}
+                    onChange={event => setPlanMaSo(event.target.value)}
+                    placeholder="Nhập mã số"
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày liên lạc</span>
+                  <input
+                    type="date"
+                    value={planNgayLienLac}
+                    onChange={event => setPlanNgayLienLac(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú kế hoạch</span>
+                  <input
+                    type="text"
+                    value={planHeaderNote}
+                    onChange={event => setPlanHeaderNote(event.target.value)}
+                    placeholder="Ghi chú chung khi lưu snapshot"
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+              </div>
               <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày kế hoạch</span>
-                <input
-                  type="date"
-                  value={planDate}
-                  onChange={event => setPlanDate(event.target.value)}
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú kế hoạch</span>
-                <input
-                  type="text"
-                  value={planHeaderNote}
-                  onChange={event => setPlanHeaderNote(event.target.value)}
-                  placeholder="Ghi chú chung khi lưu snapshot"
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đặc tả</span>
+                <textarea
+                  value={planDacTa}
+                  onChange={event => setPlanDacTa(event.target.value)}
+                  placeholder="Nhập đặc tả"
+                  rows={2}
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
             </div>}
