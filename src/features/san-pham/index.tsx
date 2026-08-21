@@ -1456,7 +1456,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     const timer = setTimeout(() => {
       setDebouncedSearchText(searchText);
       setIsSearching(false);
-    }, 300);
+    }, 1500);
     return () => clearTimeout(timer);
   }, [searchText]);
 
