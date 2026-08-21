@@ -3322,7 +3322,7 @@ export function ProductionPlanModal({
                         <td className="px-2 py-2 font-black text-emerald-700">{index + 1}</td>
                         <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
-                        <td className="px-2 py-2 text-zinc-600">{line.staff && line.staff !== '-' ? (staffMap.get(line.staff) || line.staff) : '-'}</td>
+                        <td className="px-2 py-2 text-zinc-600">{productionOrderStaffDisplay(line, staffMap)}</td>
                         <td className="px-2 py-2 font-mono text-xs font-bold text-zinc-900">
                           {formatProductionPlanProductCodes(line)}
                         </td>
