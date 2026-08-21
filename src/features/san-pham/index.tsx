@@ -2424,7 +2424,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           onChange={setSearchText}
           placeholder="Tìm mã, tên, nhóm, nguồn gốc..."
           disabled={isLoadingProducts || products.length === 0}
-          isLoading={isSearching}
         />
 
         <FilterCombobox
