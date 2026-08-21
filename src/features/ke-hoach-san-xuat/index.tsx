@@ -416,12 +416,14 @@ export function ProductionPlanPrintSheet({
   lines,
   materialsByLine,
   planDate = '',
-  planNote = ''
+  planNote = '',
+  staffMap
 }: {
   lines: ProductionPlanLine[];
   materialsByLine: Record<string, ProductionOrderMaterialLine[]>;
   planDate?: string;
   planNote?: string;
+  staffMap?: Map<string, string>;
 }) {
   const printRows = buildProductionPlanPrintRows(lines);
   const printDate = formatProductionPlanPrintDate(planDate);
@@ -494,7 +496,7 @@ export function ProductionPlanPrintSheet({
                     </td>
                   )}
                   <td>{row.line.shift && row.line.shift !== '-' ? row.line.shift : '-'}</td>
-                  <td>{row.line.staff && row.line.staff !== '-' ? row.line.staff : '-'}</td>
+                  <td>{row.line.staff && row.line.staff !== '-' ? (staffMap?.get(row.line.staff) || row.line.staff) : '-'}</td>
                   <td>
                     {getProductionPlanProductCodes(row.line).map(code => (
                       <div key={`${row.line.id}-${code}`} className="production-plan-print-product-name font-mono">
@@ -580,11 +582,13 @@ function productionPlanSnapshotSignature(snapshot: ProductionPlanFormSnapshot): 
 export function StaffAssignmentPrintSheet({
   rows,
   planDate,
-  planNote
+  planNote,
+  staffMap
 }: {
   rows: StaffAssignmentRow[];
   planDate: string;
   planNote: string;
+  staffMap?: Map<string, string>;
 }) {
   const parsedPlanDate = planDate ? new Date(planDate) : null;
   const printDate =
@@ -624,7 +628,7 @@ export function StaffAssignmentPrintSheet({
             {rows.map((row, index) => (
               <tr key={row.key}>
                 <td className="production-plan-print-center">{index + 1}</td>
-                <td>{row.staff}</td>
+                <td>{row.staff && row.staff !== '-' ? (staffMap?.get(row.staff) || row.staff) : '-'}</td>
                 <td>{row.shift}</td>
                 <td>{row.machine}</td>
                 <td className="font-mono">{row.order}</td>
@@ -3456,7 +3460,7 @@ export function ProductionPlanModal({
       </div>
 
       {pendingStaffAssignmentPrint && (
-        <StaffAssignmentPrintSheet rows={staffAssignmentRows} planDate={planDate} planNote={planHeaderNote} />
+        <StaffAssignmentPrintSheet rows={staffAssignmentRows} planDate={planDate} planNote={planHeaderNote} staffMap={staffMap} />
       )}
 
       {(relatedPrintOrders.length > 0 || relatedPrintCustomerOrders.length > 0 || relatedPrintData) &&
@@ -3477,6 +3481,7 @@ export function ProductionPlanModal({
                   materialsByLine={printMaterialsByLine}
                   planDate={planDate}
                   planNote={planHeaderNote}
+                  staffMap={staffMap}
                 />
               </div>
             ) : null}
@@ -3515,6 +3520,7 @@ export function ProductionPlanModal({
           materialsByLine={printMaterialsByLine}
           planDate={planDate}
           planNote={planHeaderNote}
+          staffMap={staffMap}
         />
       )}
 
