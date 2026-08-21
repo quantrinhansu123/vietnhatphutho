@@ -81,7 +81,7 @@ export function TableSearchInput({
         value={value}
         onChange={event => onChange(event.target.value)}
         placeholder={placeholder}
-        disabled={disabled || isLoading}
+        disabled={disabled}
         className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none disabled:opacity-60"
       />
     </label>
