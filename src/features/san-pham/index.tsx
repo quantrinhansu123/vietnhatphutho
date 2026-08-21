@@ -1389,8 +1389,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [productConversions, setProductConversions] = useState<ProductConversionFactors[]>([]);
   const [searchText, setSearchText] = useState('');
-  const [debouncedSearchText, setDebouncedSearchText] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
   const [productPage, setProductPage] = useState(1);
@@ -1450,15 +1448,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     loadProducts();
   }, []);
-
-  useEffect(() => {
-    setIsSearching(true);
-    const timer = setTimeout(() => {
-      setDebouncedSearchText(searchText);
-      setIsSearching(false);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [searchText]);
 
   const loadProductConversions = async () => {
     try {
@@ -2084,7 +2073,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     () => Array.from(new Set(products.map(product => product.nature))).sort((a, b) => String(a).localeCompare(String(b), 'vi')),
     [products]
   );
-  const normalizedSearch = debouncedSearchText.trim().toLowerCase();
+  const normalizedSearch = searchText.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const matchesGroup = selectedGroup === 'all' || product.group === selectedGroup;
@@ -2546,13 +2535,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       </section>
 
       <div className="relative">
-        {(isLoadingProducts || isSearching) && (
+        {isLoadingProducts && (
           <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-gradient-to-br from-zinc-950/10 via-zinc-950/5 to-transparent backdrop-blur-md transition-opacity duration-300">
             <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-zinc-200/50 bg-white px-8 py-6 shadow-lg">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#ef1b2d]/10 to-[#ef1b2d]/5">
                 <Loader2 className="h-7 w-7 animate-spin text-[#ef1b2d]" />
               </div>
-              <p className="text-sm font-bold text-zinc-900">{isSearching ? 'Đang tìm kiếm...' : 'Đang tải dữ liệu...'}</p>
+              <p className="text-sm font-bold text-zinc-900">Đang tải dữ liệu...</p>
               <p className="text-[11px] font-medium text-zinc-500">Vui lòng chờ</p>
             </div>
           </div>
