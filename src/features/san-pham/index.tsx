@@ -2459,7 +2459,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         />
       </TableToolbar>
 
-      <section className="flex flex-wrap items-center gap-2">
+      <section className="flex w-full flex-wrap items-center gap-2 justify-end">
         <div className="flex flex-wrap items-center gap-2">
           {canEdit ? (
             <button
@@ -2549,6 +2549,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
             <QrCode className="h-4 w-4" />
             In QR đã chọn
           </button>
+        </div>
       </section>
 
       <div className="relative">
