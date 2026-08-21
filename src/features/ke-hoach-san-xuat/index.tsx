@@ -1439,12 +1439,14 @@ export function ProductionPlanQrPrintModal({
   open,
   onClose,
   lines,
-  planDate = ''
+  planDate = '',
+  staffMap
 }: {
   open: boolean;
   onClose: () => void;
   lines: ProductionPlanLine[];
   planDate?: string;
+  staffMap?: Map<string, string>;
 }) {
   const shiftOptions = useMemo(
     () =>
@@ -3549,6 +3551,7 @@ export function ProductionPlanModal({
         onClose={() => setShowQrPrintModal(false)}
         lines={displayLines}
         planDate={planDate}
+        staffMap={staffMap}
       />
     </>
   );
