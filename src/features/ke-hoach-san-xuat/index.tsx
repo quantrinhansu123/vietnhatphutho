@@ -28,6 +28,7 @@ import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch, type HrMember } from '../_shared/hr';
 import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';
 import { buildControlBoardShiftSummary, type ControlBoardShiftSummaryRow } from '../../utils/controlBoardShiftSummary';
+import { ProductionPlanPrintPreviewModal } from './PrintPreviewModal';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import {
   normalizeProducts,
@@ -1718,12 +1719,16 @@ export function buildProductionPlanSaveItems(lines: ProductionPlanLine[]) {
       ca: line.shift && line.shift !== '-' ? line.shift : '',
       may: line.position && line.position !== '-' ? line.position : '',
       nhan_su: line.staff && line.staff !== '-' ? line.staff : '',
-      san_pham: products.map(product => ({
-        ma_sp: product.productCode,
-        ten_sp: product.productName,
-        don_vi: product.unit && product.unit !== '-' ? product.unit : '',
-        so_luong: parseProductionOrderQuantity(product.quantity)
-      }))
+      san_pham: products.map(product => {
+        const sanPhamId = product.productId?.trim() ? product.productId : null;
+        return {
+          san_pham_id: sanPhamId,
+          ma_sp: product.productCode,
+          ten_sp: product.productName,
+          don_vi: product.unit && product.unit !== '-' ? product.unit : '',
+          so_luong: parseProductionOrderQuantity(product.quantity)
+        };
+      })
     };
   });
 }
@@ -1842,6 +1847,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
   const [printLines, setPrintLines] = useState<ProductionPlanLine[]>([]);
   const [loadingPrintPlanId, setLoadingPrintPlanId] = useState('');
   const [printAnchorElement, setPrintAnchorElement] = useState<HTMLElement | null>(null);
+  const [previewPlanId, setPreviewPlanId] = useState('');
 
   const loadPlans = async (options?: { ngay?: string; tuNgay?: string; denNgay?: string }) => {
     setIsLoading(true);
@@ -2215,6 +2221,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-zinc-200/70 pt-2">
                           <button type="button" onClick={() => void loadPlanDetail(plan.id)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700"><Eye className="h-3.5 w-3.5" />Xem</button>
                           {canEdit ? <button type="button" onClick={() => void openEditPlan(plan)} disabled={isLoadingCreate} className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Sửa</button> : null}
+                          <button type="button" onClick={() => setPreviewPlanId(plan.id)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 text-[11px] font-bold text-indigo-700"><Eye className="h-3.5 w-3.5" />Xem trước khi in</button>
                           <button type="button" onClick={event => void openPrintPlan(plan, event.currentTarget)} disabled={Boolean(loadingPrintPlanId)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[11px] font-bold text-emerald-700 disabled:opacity-50">{loadingPrintPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}In</button>
                           {canDelete ? <button type="button" onClick={() => void deletePlan(plan)} disabled={deletingPlanId === plan.id} className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 disabled:opacity-50">{deletingPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Xóa</button> : null}
                         </div>
@@ -2324,6 +2331,11 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         printOnly
         planCode={printingPlan?.code}
         anchorElement={printAnchorElement}
+      />
+      <ProductionPlanPrintPreviewModal
+        open={Boolean(previewPlanId)}
+        planId={previewPlanId}
+        onClose={() => setPreviewPlanId('')}
       />
     </div>
   );
@@ -4340,13 +4352,18 @@ export function buildProductionEntryLine(
   productCode: string,
   productName = '',
   unit = ''
-): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'quantity' | 'unit'> {
+): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'quantity' | 'unit' | 'productId'> {
   const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode);
+  const line = orders
+    .filter(order => order.orderCode === orderRef)
+    .flatMap(order => getOrderProductLines(order))
+    .find(item => item.productCode === productCode);
   return {
     productCode,
     productName,
     quantity: remaining > 0 ? String(remaining) : '',
-    unit: unit || getOrderProductUnit(orders, orderRef, productCode)
+    unit: unit || getOrderProductUnit(orders, orderRef, productCode),
+    productId: line?.productId
   };
 }
 
@@ -4409,20 +4426,22 @@ export function listProductOptionsForOrder(
       getOrderProductLines(order).map(line => ({
         code: line.productCode,
         name: line.productName,
-        unit: line.unit && line.unit !== '-' ? line.unit : ''
+        unit: line.unit && line.unit !== '-' ? line.unit : '',
+        productId: line.productId || undefined
       }))
     )
     .filter(item => item.code && item.code !== '-');
 
-  const unique = new Map<string, { name: string; unit: string }>();
-  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, unit: item.unit }));
+  const unique = new Map<string, { name: string; unit: string; productId?: string }>();
+  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, unit: item.unit, productId: item.productId }));
 
   if (unique.size === 0) {
     catalogProducts.forEach(product => {
       if (product.code) {
         unique.set(product.code, {
           name: product.name || product.code,
-          unit: product.unit && product.unit !== '-' ? product.unit : ''
+          unit: product.unit && product.unit !== '-' ? product.unit : '',
+          productId: product.id
         });
       }
     });
@@ -4433,6 +4452,7 @@ export function listProductOptionsForOrder(
       code,
       name: meta.name,
       unit: meta.unit,
+      productId: meta.productId,
       orderQty: getOrderProductQuantity(orders, orderRef, code),
       remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code)
     }))
@@ -4442,6 +4462,7 @@ export function listProductOptionsForOrder(
 export type ProductionOrderEntryLine = {
   key: string;
   orderRef: string;
+  productId?: string;
   productCode: string;
   productName: string;
   quantity: string;
@@ -4551,6 +4572,7 @@ export function productionOrderFormToCreatePayload(
 ) {
   const staff = staffText || form.selectedStaffIds.join(', ');
   const products = lines.map(line => ({
+    san_pham_id: line.productId || null,
     ma_don_hang: line.orderRef.trim(),
     ma_sp: line.productCode.trim(),
     ten_sp: line.productName.trim(),

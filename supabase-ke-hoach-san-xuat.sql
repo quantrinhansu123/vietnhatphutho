@@ -17,7 +17,8 @@ alter table public.ke_hoach_san_xuat
   add column if not exists nguoi_lap text,
   add column if not exists ma_so text,
   add column if not exists ngay_lien_lac date,
-  add column if not exists dac_ta text;
+  add column if not exists dac_ta text,
+  add column if not exists lan_ban_hanh text;
 
 create table if not exists public.ke_hoach_san_xuat_dong (
   id uuid primary key default gen_random_uuid(),
@@ -26,6 +27,7 @@ create table if not exists public.ke_hoach_san_xuat_dong (
 
 alter table public.ke_hoach_san_xuat_dong
   add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now(),
   add column if not exists ke_hoach_id uuid references public.ke_hoach_san_xuat (id) on delete cascade,
   add column if not exists lenh_sx_id bigint,
   add column if not exists thu_tu_uu_tien integer default 0,
