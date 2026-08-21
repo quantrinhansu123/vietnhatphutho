@@ -310,8 +310,10 @@ export function ControlBoardPanel({
       for (const department of departments) {
         const members = department.members || [];
         for (const member of members) {
-          if (member.id && member.name) {
-            map.set(member.id, member.name);
+          if (member.name) {
+            if (member.id) map.set(member.id, member.name);
+            if (member.code) map.set(member.code, member.name);
+            map.set(member.name, member.name);
           }
         }
       }

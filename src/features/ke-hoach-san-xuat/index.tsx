@@ -1333,7 +1333,8 @@ export function buildProductionPlanQrLabels(
   lines: ProductionPlanLine[],
   selectedShift: string,
   products: ProductRow[],
-  planDate = ''
+  planDate = '',
+  staffMap?: Map<string, string>
 ): ProductionPlanQrLabel[] {
   const labels: ProductionPlanQrLabel[] = [];
   const usedPayloads = new Set<string>();
@@ -1350,7 +1351,7 @@ export function buildProductionPlanQrLabels(
       const displayCode = product?.code || line.productCode || '-';
       const displayName = product?.name || line.productName || line.name || '-';
       const shift = line.shift && line.shift !== '-' ? line.shift : selectedShift;
-      const staff = line.staff && line.staff !== '-' ? line.staff : '—';
+      const staff = line.staff && line.staff !== '-' ? (staffMap?.get(line.staff) || line.staff) : '—';
 
       for (let index = 0; index < quantity; index += 1) {
         let qrPayload = '';
@@ -1503,7 +1504,7 @@ export function ProductionPlanQrPrintModal({
         const displayCode = product?.code || line.productCode || '-';
         const displayName = product?.name || line.productName || line.name || '-';
         const quantity = Math.max(0, Math.floor(parseProductionOrderQuantity(line.quantity)));
-        const staff = line.staff && line.staff !== '-' ? line.staff : '—';
+        const staff = line.staff && line.staff !== '-' ? (staffMap.get(line.staff) || line.staff) : '—';
 
         return {
           id: line.id,
@@ -1518,7 +1519,7 @@ export function ProductionPlanQrPrintModal({
         };
       })
       .filter(group => group.quantity > 0);
-  }, [lines, selectedShift, products, planDate]);
+  }, [lines, selectedShift, products, planDate, staffMap]);
 
   const totalQrCount = useMemo(
     () => previewGroups.reduce((sum, group) => sum + group.quantity, 0),
@@ -1547,7 +1548,7 @@ export function ProductionPlanQrPrintModal({
       return;
     }
 
-    const labels = buildProductionPlanQrLabels(lines, selectedShift, products, planDate);
+    const labels = buildProductionPlanQrLabels(lines, selectedShift, products, planDate, staffMap);
     if (labels.length === 0) {
       setFormError('Không có sản phẩm nào trong ca đã chọn để in QR.');
       return;
@@ -2314,7 +2315,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                       </td>
                       <td className="px-3 py-2 text-zinc-700">{line.machine !== '-' ? line.machine : line.position}</td>
                       <td className="px-3 py-2 text-zinc-700">{line.shift}</td>
-                      <td className="px-3 py-2 text-zinc-600">{line.staff}</td>
+                      <td className="px-3 py-2 text-zinc-600">{productionOrderStaffDisplay(line, staffMap)}</td>
                       <td className="px-3 py-2 text-zinc-800">{formatProductionPlanHistoryProducts(line.products)}</td>
                       <td className="px-3 py-2 text-zinc-600">{line.note || '-'}</td>
                     </tr>
@@ -3315,7 +3316,7 @@ export function ProductionPlanModal({
                         <td className="px-2 py-2 font-black text-emerald-700">{index + 1}</td>
                         <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
-                        <td className="px-2 py-2 text-zinc-600">{line.staff && line.staff !== '-' ? line.staff : '-'}</td>
+                        <td className="px-2 py-2 text-zinc-600">{line.staff && line.staff !== '-' ? (staffMap.get(line.staff) || line.staff) : '-'}</td>
                         <td className="px-2 py-2 font-mono text-xs font-bold text-zinc-900">
                           {formatProductionPlanProductCodes(line)}
                         </td>
@@ -5837,7 +5838,36 @@ export function AddProductionOrderModal({
     </div>
   );
 }
+function resolvePersonnelName(personnelId: string, staffMap: Map<string, string>): string {
+  if (!personnelId) return '';
+  // Thử match với id thật trước
+  if (staffMap.has(personnelId)) {
+    return staffMap.get(personnelId) || '';
+  }
+  // Nếu không khớp, coi như đã là tên (dữ liệu cũ)
+  return personnelId;
+}
 
+function productionOrderStaffDisplay(row: ProductionOrderRow, staffMap: Map<string, string>) {
+  if (row.staff === 'Chưa phân công') {
+    return row.staff;
+  }
+
+  if (row.staff && row.staff !== '') {
+    const personnelIds = row.staff
+      .split(',')
+      .map(id => id.trim())
+      .slice(0, 4);
+
+    const names = personnelIds
+      .map(id => resolvePersonnelName(id, staffMap))
+      .filter(Boolean);
+
+    return names.length > 0 ? names.join(', ') : '-';
+  }
+
+  return '-';
+}
 export function ProductionOrderViewModal({
   row,
   onClose,
