@@ -112,6 +112,7 @@ export function ControlBoardPanel({
   const [damagedRecords, setDamagedRecords] = useState<WeighingRecord[]>([]);
   const [machineNvlReports, setMachineNvlReports] = useState<MachineNvlSavedReport[]>([]);
   const [shiftSummaryWarehouseMovements, setShiftSummaryWarehouseMovements] = useState<WarehouseMovementRow[]>([]);
+  const [staffBranches, setStaffBranches] = useState<any[]>([]);
   const defaultShiftSummaryRange = defaultShiftSummaryDateRange(14);
   const [shiftSummaryDateFrom, setShiftSummaryDateFrom] = useState(defaultShiftSummaryRange.from);
   const [shiftSummaryDateTo, setShiftSummaryDateTo] = useState(defaultShiftSummaryRange.to);
@@ -284,6 +285,39 @@ export function ControlBoardPanel({
   useEffect(() => {
     loadBoard();
   }, [shiftSummaryDateFrom, shiftSummaryDateTo]);
+
+  useEffect(() => {
+    const loadStaff = async () => {
+      try {
+        const res = await fetch('/api/nhan-su?format=groups&scope=all');
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data) {
+          setStaffBranches(data);
+        }
+      } catch (error) {
+        console.error('Failed to load staff:', error);
+      }
+    };
+    loadStaff();
+  }, []);
+
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!staffBranches || typeof staffBranches !== 'object') return map;
+    const branches = (staffBranches as any).branches || [];
+    for (const branch of branches) {
+      const departments = branch.departments || [];
+      for (const department of departments) {
+        const members = department.members || [];
+        for (const member of members) {
+          if (member.id && member.name) {
+            map.set(member.id, member.name);
+          }
+        }
+      }
+    }
+    return map;
+  }, [staffBranches]);
 
   const shiftSummaryWarehouseMovementRefs = useMemo(
     () => mapWarehouseMovementsForShiftSummary(shiftSummaryWarehouseMovements),
@@ -1103,6 +1137,7 @@ export function ControlBoardPanel({
       <ProductionOrderViewModal
         row={viewingProductionOrder}
         onClose={() => setViewingProductionOrder(null)}
+        staffMap={staffMap}
       />
 
       <EditProductionOrderModal
@@ -1123,6 +1158,7 @@ export function ControlBoardPanel({
         onOpenWarehouseSlip={() => onNavigate('warehouse-slip')}
         productionOrders={selectedProductionOrdersForPlan}
         machines={machines}
+        staffMap={staffMap}
       />
 
       {printingOrder && (
@@ -1133,6 +1169,7 @@ export function ControlBoardPanel({
           product={printingProduct}
           productCatalog={printingProductCatalog}
           shiftSettings={shiftSettings}
+          staffMap={staffMap}
         />
       )}
 
@@ -1141,6 +1178,7 @@ export function ControlBoardPanel({
           items={printingBatchOrders}
           shiftSettings={productionOrderSettings}
           productCatalog={printingBatchProductCatalog}
+          staffMap={staffMap}
         />
       )}
     </div>

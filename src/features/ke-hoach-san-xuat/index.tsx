@@ -1848,6 +1848,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
   const [loadingPrintPlanId, setLoadingPrintPlanId] = useState('');
   const [printAnchorElement, setPrintAnchorElement] = useState<HTMLElement | null>(null);
   const [previewPlanId, setPreviewPlanId] = useState('');
+  const [staffBranches, setStaffBranches] = useState<any[]>([]);
 
   const loadPlans = async (options?: { ngay?: string; tuNgay?: string; denNgay?: string }) => {
     setIsLoading(true);
@@ -1908,6 +1909,21 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
     void loadPlans();
   }, []);
 
+  useEffect(() => {
+    const loadStaff = async () => {
+      try {
+        const res = await fetch('/api/nhan-su?format=groups&scope=all');
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data) {
+          setStaffBranches(data);
+        }
+      } catch (error) {
+        console.error('Failed to load staff:', error);
+      }
+    };
+    loadStaff();
+  }, []);
+
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) ?? null;
   const plansByDate = useMemo(() => {
     const map = new Map<string, ProductionPlanHistorySummary[]>();
@@ -1918,6 +1934,24 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
     });
     return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0], 'vi'));
   }, [plans]);
+
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!staffBranches || typeof staffBranches !== 'object') return map;
+    const branches = (staffBranches as any).branches || [];
+    for (const branch of branches) {
+      const departments = branch.departments || [];
+      for (const department of departments) {
+        const members = department.members || [];
+        for (const member of members) {
+          if (member.id && member.name) {
+            map.set(member.id, member.name);
+          }
+        }
+      }
+    }
+    return map;
+  }, [staffBranches]);
 
   const applyFilters = () => {
     if (filterDate) {
@@ -2316,6 +2350,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         initialMaSo={(editingPlan as any)?.maSo}
         initialNgayLienLac={(editingPlan as any)?.ngayLienLac}
         initialDacTa={(editingPlan as any)?.dacTa}
+        staffMap={staffMap}
       />
       <ProductionPlanModal
         open={Boolean(printingPlan)}
@@ -2331,6 +2366,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         printOnly
         planCode={printingPlan?.code}
         anchorElement={printAnchorElement}
+        staffMap={staffMap}
       />
       <ProductionPlanPrintPreviewModal
         open={Boolean(previewPlanId)}
@@ -2357,7 +2393,8 @@ export function ProductionPlanModal({
   initialDacTa,
   printOnly = false,
   planCode,
-  anchorElement
+  anchorElement,
+  staffMap
 }: {
   open: boolean;
   onClose: () => void;
@@ -2375,6 +2412,7 @@ export function ProductionPlanModal({
   printOnly?: boolean;
   planCode?: string;
   anchorElement?: HTMLElement | null;
+  staffMap?: Map<string, string>;
 }) {
   const { canCreate } = useTabAccess('production-plan-history');
   const [planLines, setPlanLines] = useState<ProductionPlanLine[]>([]);
@@ -3452,6 +3490,7 @@ export function ProductionPlanModal({
                   product={item.product}
                   productCatalog={relatedPrintCatalog}
                   showActualQuantity
+                  staffMap={staffMap}
                 />
               </div>
             ))}
@@ -3884,7 +3923,8 @@ export function ProductionOrderPrintSheet({
   product,
   productCatalog = [],
   shiftSettings = [],
-  showActualQuantity = false
+  showActualQuantity = false,
+  staffMap
 }: {
   order: ProductionOrderRow;
   materials: ProductionOrderMaterialLine[];
@@ -3894,15 +3934,36 @@ export function ProductionOrderPrintSheet({
   shiftSettings?: ProductionOrderLookupSetting[];
   /** Hiện cột KL thực tế lấy từ Lệnh xuất vật tư cùng ngày + ca. */
   showActualQuantity?: boolean;
+  staffMap?: Map<string, string>;
 }) {
   const printDate = formatProductionOrderPrintDate(order.startDate);
   const orderQuantity = parseProductionOrderQuantity(order.quantity);
   const shiftLabel = formatProductionOrderShiftLabel(order.shift, shiftSettings);
   const productLines = getProductionOrderProductLines(order);
-  const staffLabel =
-    order.staff && order.staff !== '-'
-      ? order.staff.replace(/,/g, ' + ')
-      : '-';
+
+  const resolveStaffName = (personnelId: string): string => {
+    if (!personnelId || personnelId === '-') return '-';
+    if (staffMap?.has(personnelId)) {
+      return staffMap.get(personnelId) || personnelId;
+    }
+    return personnelId;
+  };
+
+  const getStaffLabel = (): string => {
+    if (order.staff && order.staff !== '-') {
+      // Try to resolve each staff ID
+      const staffIds = order.staff.split(',').map(s => s.trim());
+      const resolved = staffIds.map(id => resolveStaffName(id));
+      return resolved.join(' + ');
+    }
+    const names = order.personnel
+      .slice(0, 4)
+      .map(p => resolveStaffName(p.personnelId))
+      .filter(Boolean);
+    return names.length > 0 ? names.join(' + ') : '-';
+  };
+
+  const staffLabel = getStaffLabel();
   const machineName =
     machineLabel && machineLabel !== '-'
       ? machineLabel
@@ -4080,11 +4141,13 @@ export type PrintableProductionOrder = {
 export function ProductionOrderBatchPrintSheets({
   items,
   shiftSettings = [],
-  productCatalog = []
+  productCatalog = [],
+  staffMap
 }: {
   items: PrintableProductionOrder[];
   shiftSettings?: ProductionOrderLookupSetting[];
   productCatalog?: ProductRow[];
+  staffMap?: Map<string, string>;
 }) {
   if (items.length === 0) return null;
 
@@ -4099,6 +4162,7 @@ export function ProductionOrderBatchPrintSheets({
             product={item.product}
             productCatalog={productCatalog}
             shiftSettings={shiftSettings}
+            staffMap={staffMap}
           />
         </div>
       ))}
@@ -5776,14 +5840,37 @@ export function AddProductionOrderModal({
 
 export function ProductionOrderViewModal({
   row,
-  onClose
+  onClose,
+  staffMap
 }: {
   row: ProductionOrderRow | null;
   onClose: () => void;
+  staffMap?: Map<string, string>;
 }) {
   if (!row) return null;
 
   const productLines = getProductionOrderProductLines(row);
+
+  const resolveStaffName = (personnelId: string): string => {
+    if (!personnelId || personnelId === '-') return '-';
+    if (staffMap?.has(personnelId)) {
+      return staffMap.get(personnelId) || personnelId;
+    }
+    return personnelId;
+  };
+
+  const getTotalStaffDisplay = (): string => {
+    if (row.staff == "Chưa phân công") return row.staff;
+
+    if (row.staff && row.staff !== '-') {
+      const names = row.personnel
+      .slice(0, 4)
+      .map(p => resolveStaffName(p.personnelId))
+      .filter(Boolean);
+      return names.length > 0 ? names.join(', ') : '-';
+    }
+    return '-';
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -5805,11 +5892,11 @@ export function ProductionOrderViewModal({
             ['Khách hàng', row.customer],
             ['Đơn hàng', row.orderRef],
             ['Ca', row.shift],
-            ['Trưởng ca', row.shiftLead],
-            ['Nhân sự chính', row.mainStaff],
-            ['Thợ phụ', row.assistantStaff],
-            ['Học việc', row.traineeStaff],
-            ['Tổng nhân sự', row.staff],
+            ['Trưởng ca', resolveStaffName(row.shiftLead)],
+            ['Nhân sự chính', resolveStaffName(row.mainStaff)],
+            ['Thợ phụ', resolveStaffName(row.assistantStaff)],
+            ['Học việc', resolveStaffName(row.traineeStaff)],
+            ['Tổng nhân sự', getTotalStaffDisplay()],
             ['Bắt đầu', row.startDate],
             ['Kết thúc', row.endDate],
             ['Máy', row.machine],

@@ -104,12 +104,15 @@ function resolvePersonnelName(personnelId: string, staffMap: Map<string, string>
 }
 
 function productionOrderStaffDisplay(row: ProductionOrderRow, staffMap: Map<string, string>) {
-  if (row.staff && row.staff !== '-') return row.staff;
-  const names = row.personnel
+  if (row.staff == "Chưa phân công") return row.staff;
+  if (row.staff && row.staff !== '') {
+    const names = row.personnel
     .slice(0, 4)
     .map(p => resolvePersonnelName(p.personnelId, staffMap))
     .filter(Boolean);
-  return names.length > 0 ? names.join(', ') : '-';
+    return names.length > 0 ? names.join(', ') : '-';
+  }
+  return '-';
 }
 
 export function ProductionOrdersPanel({
