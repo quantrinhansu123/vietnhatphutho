@@ -86,6 +86,8 @@ const SUPABASE_PRODUCTION_ORDERS_TABLE = process.env.SUPABASE_PRODUCTION_ORDERS_
 const SUPABASE_PRODUCTION_PLANS_TABLE = process.env.SUPABASE_PRODUCTION_PLANS_TABLE || 'ke_hoach_san_xuat';
 const SUPABASE_PRODUCTION_PLAN_LINES_TABLE =
   process.env.SUPABASE_PRODUCTION_PLAN_LINES_TABLE || 'ke_hoach_san_xuat_dong';
+const SUPABASE_PRODUCTION_PLAN_DETAILS_TABLE =
+  process.env.SUPABASE_PRODUCTION_PLAN_DETAILS_TABLE || 'ke_hoach_san_xuat_chi_tiet';
 const SUPABASE_WAREHOUSE_MOVEMENTS_TABLE = process.env.SUPABASE_WAREHOUSE_MOVEMENTS_TABLE || 'phieu_xuat_nhap_kho';
 const SUPABASE_MIXING_REPORTS_TABLE = process.env.SUPABASE_MIXING_REPORTS_TABLE || 'bao_cao_phoi_tron';
 const SUPABASE_MIXING_NORM_TABLE =
@@ -4674,6 +4676,8 @@ type OrderProductRecord = {
   kho?: number | null;
   dai_m?: number | null;
   ghi_chu?: string | null;
+  kg_cuon?: number | null;
+  tl_tam?: number | null;
   kq_quy_doi?: {
     don_vi_nguon: string;
     so_luong_nguon: number;
@@ -4794,6 +4798,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         const ma_sp = pickRowField(record, ['ma_sp', 'ma_hang', 'productCode', 'code']);
         const ten_sp = pickRowField(record, ['ten_sp', 'ten_hang', 'productName', 'name']);
         if (!ma_sp && !ten_sp) return null;
+        const san_pham_id = pickRowField(record, ['san_pham_id', 'productId', 'product_id']);
         const do_li = pickRowField(record, ['do_li', 'doLi']);
         const kho = parseOrderQuantity(record.kho);
         const dai_m = parseOrderQuantity(record.dai_m ?? record.daiM);
@@ -4805,6 +4810,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ten_san_xuat: pickRowField(record, ['ten_san_xuat', 'productionName']),
           don_vi: pickRowField(record, ['don_vi', 'unit']),
           so_luong: parseOrderQuantity(record.so_luong ?? record.quantity),
+          ...(san_pham_id ? { san_pham_id } : {}),
           ...(do_li ? { do_li } : {}),
           ...(kho !== null && kho > 0 ? { kho } : {}),
           ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
@@ -4818,13 +4824,15 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
   const ten_sp = pickRowField(row, ['ten_hang', 'ten_sp', 'productName']);
   if (!ma_sp && !ten_sp) return [];
 
+  const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
   return [
     {
       ma_don_hang: pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']),
       ma_sp,
       ten_sp,
       don_vi: pickRowField(row, ['don_vi', 'unit']),
-      so_luong: parseOrderQuantity(row.so_luong ?? row.quantity)
+      so_luong: parseOrderQuantity(row.so_luong ?? row.quantity),
+      ...(san_pham_id ? { san_pham_id } : {})
     }
   ];
 }
@@ -4834,6 +4842,73 @@ function getOrderedQuantityFromOrderRow(row: Record<string, unknown>, productCod
     if (item.ma_sp !== productCode) return sum;
     return sum + (item.so_luong ?? 0);
   }, 0);
+}
+
+async function fetchConversionMapBySanPhamIds(
+  sanPhamIds: string[]
+): Promise<Map<string, { kg_cuon: number | null; tl_tam: number | null }>> {
+  if (!supabase || sanPhamIds.length === 0) return new Map();
+
+  try {
+    const uniqueIds = Array.from(new Set(sanPhamIds.filter(Boolean)));
+    const { data: conversions, error } = await supabase
+      .from('san_pham_quy_doi')
+      .select('san_pham_id, trong_luong_kg_cuon, trong_luong_kg_tam')
+      .in('san_pham_id', uniqueIds);
+
+    if (error) {
+      console.error('Error fetching san_pham_quy_doi:', error);
+      return new Map();
+    }
+
+    const conversionMap = new Map<string, { kg_cuon: number | null; tl_tam: number | null }>();
+    if (conversions) {
+      conversions.forEach(row => {
+        const spId = String(row.san_pham_id || '');
+        if (spId) {
+          conversionMap.set(spId, {
+            kg_cuon: row.trong_luong_kg_cuon || null,
+            tl_tam: row.trong_luong_kg_tam || null
+          });
+        }
+      });
+    }
+    return conversionMap;
+  } catch (err) {
+    console.error('Error fetching conversion map:', err);
+    return new Map();
+  }
+}
+
+async function enrichOrderProductsWithConversionData(
+  products: OrderProductRecord[]
+): Promise<OrderProductRecord[]> {
+  if (!supabase || products.length === 0) return products;
+
+  try {
+    const sanPhamIds = products
+      .map(p => String(p.san_pham_id || '').trim())
+      .filter(Boolean);
+
+    const conversionMap = await fetchConversionMapBySanPhamIds(sanPhamIds);
+
+    return products.map(product => {
+      const spId = String(product.san_pham_id || '').trim();
+      if (!spId) return product;
+
+      const conversion = conversionMap.get(spId);
+      if (!conversion) return product;
+
+      return {
+        ...product,
+        kg_cuon: conversion.kg_cuon,
+        tl_tam: conversion.tl_tam
+      };
+    });
+  } catch (err) {
+    console.error('Error enriching products with conversion data:', err);
+    return products;
+  }
 }
 
 function parseOrderBody(
@@ -5030,6 +5105,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
+    const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
@@ -5043,7 +5119,11 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       return null;
     }
 
-    products.push({ ma_don_hang, ma_sp, ten_sp, don_vi, so_luong });
+    const product: OrderProductRecord = { ma_don_hang, ma_sp, ten_sp, don_vi, so_luong };
+    if (san_pham_id) {
+      product.san_pham_id = san_pham_id;
+    }
+    products.push(product);
   }
 
   return products.length > 0 ? products : null;
@@ -5267,6 +5347,9 @@ async function saveProductionPlanSnapshot(options: {
   planDate: string;
   note: string;
   createdBy: string;
+  maSo?: string;
+  ngayLienLac?: string;
+  dacTa?: string;
   lines: ProductionPlanSnapshotLine[];
 }) {
   if (!supabase) {
@@ -5280,6 +5363,9 @@ async function saveProductionPlanSnapshot(options: {
     so_lenh: options.lines.length,
     ghi_chu: options.note,
     nguoi_lap: options.createdBy,
+    ma_so: options.maSo || null,
+    ngay_lien_lac: options.ngayLienLac || null,
+    dac_ta: options.dacTa || null,
     updated_at: new Date().toISOString()
   };
 
@@ -5308,19 +5394,118 @@ async function saveProductionPlanSnapshot(options: {
     if (clearError) throw new Error(productionPlanWriteErrorMessage(clearError));
   }
 
-  const detailRows = options.lines.map(line => ({
-    ke_hoach_id: planId,
-    lenh_sx_id: line.lenh_sx_id,
-    thu_tu_uu_tien: line.thu_tu_uu_tien,
-    vi_tri: line.vi_tri,
-    ghi_chu: line.ghi_chu,
-    ma_lenh_sx: line.ma_lenh_sx,
-    ma_don_hang: line.ma_don_hang,
-    ca: line.ca,
-    may: line.may,
-    nhan_su: line.nhan_su,
-    san_pham: line.san_pham
-  }));
+  // Extract unique ma_don_hang and query don_hang for enriched san_pham data
+  const maDonHangSet = new Set<string>();
+  options.lines.forEach(line => {
+    if (line.ma_don_hang) {
+      line.ma_don_hang.split(',').forEach(code => {
+        const trimmed = code.trim();
+        if (trimmed) maDonHangSet.add(trimmed);
+      });
+    }
+  });
+
+  const sanPhamMapByMaDonHang = new Map<string, unknown[]>();
+  const khuVucMapByMaDonHang = new Map<string, string>(); // ma_don_hang -> khu_vuc
+  const productMapByCode = new Map<string, string>(); // Code -> ID mapping
+
+  if (maDonHangSet.size > 0) {
+    const { data: orders, error: ordersError } = await supabase
+      .from(SUPABASE_ORDERS_TABLE)
+      .select('ma_don_hang, san_pham, khu_vuc')
+      .in('ma_don_hang', Array.from(maDonHangSet));
+
+    if (!ordersError && orders) {
+      orders.forEach(order => {
+        const code = String(order.ma_don_hang || '').trim();
+        if (code && Array.isArray(order.san_pham)) {
+          sanPhamMapByMaDonHang.set(code, order.san_pham);
+        }
+        if (code && order.khu_vuc) {
+          khuVucMapByMaDonHang.set(code, String(order.khu_vuc).trim());
+        }
+      });
+    }
+  }
+
+  // Fetch product IDs for enrichment
+  const productCodes = new Set<string>();
+  options.lines.forEach(line => {
+    if (line.san_pham && Array.isArray(line.san_pham)) {
+      line.san_pham.forEach((item: any) => {
+        if (item.ma_sp) productCodes.add(String(item.ma_sp).trim());
+      });
+    }
+  });
+
+  if (productCodes.size > 0) {
+    const { data: products } = await supabase
+      .from(SUPABASE_PRODUCTS_TABLE)
+      .select('id, ma_sp')
+      .in('ma_sp', Array.from(productCodes));
+
+    if (products) {
+      products.forEach((product: any) => {
+        const code = String(product.ma_sp || '').trim();
+        const id = String(product.id || '').trim();
+        if (code && id) {
+          productMapByCode.set(code, id);
+        }
+      });
+    }
+  }
+
+  const detailRows = options.lines.map(line => {
+    let enrichedSanPham = line.san_pham || [];
+    const maDonHang = String(line.ma_don_hang || '').trim();
+
+    // If ma_don_hang is single code, use enriched data from don_hang
+    if (maDonHang) {
+      const codes = maDonHang.split(',').map(c => c.trim()).filter(Boolean);
+      if (codes.length === 1 && sanPhamMapByMaDonHang.has(codes[0])) {
+        enrichedSanPham = sanPhamMapByMaDonHang.get(codes[0])!;
+      }
+      // For multiple ma_don_hang, keep original (not simple to merge)
+    }
+
+    // Lấy khu_vuc từ don_hang
+    const khuVuc = khuVucMapByMaDonHang.get(maDonHang) || '';
+
+    // Enrich san_pham_id và khu_vuc
+    enrichedSanPham = enrichedSanPham.map((item: any) => {
+      const sanPhamId = item.san_pham_id?.trim() ? item.san_pham_id : null;
+      const enrichedItem: any = {
+        ...item,
+        san_pham_id: sanPhamId
+      };
+
+      // Thêm san_pham_id từ product code nếu thiếu
+      if (!sanPhamId && item.ma_sp && productMapByCode.has(String(item.ma_sp).trim())) {
+        enrichedItem.san_pham_id = productMapByCode.get(String(item.ma_sp).trim());
+      }
+
+      // Thêm khu_vuc từ don_hang
+      if (khuVuc) {
+        enrichedItem.khu_vuc = khuVuc;
+      }
+
+      return enrichedItem;
+    });
+
+    return {
+      ke_hoach_id: planId,
+      lenh_sx_id: line.lenh_sx_id,
+      thu_tu_uu_tien: line.thu_tu_uu_tien,
+      vi_tri: line.vi_tri,
+      ghi_chu: line.ghi_chu,
+      ma_lenh_sx: line.ma_lenh_sx,
+      ma_don_hang: line.ma_don_hang,
+      ca: line.ca,
+      may: line.may,
+      nhan_su: line.nhan_su,
+      san_pham: enrichedSanPham
+    };
+  });
 
   const { error: detailError } = await supabase.from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE).insert(detailRows);
   if (detailError) {
@@ -6537,6 +6722,14 @@ export function createApp() {
         }
       }
 
+      const productsInput = parseOrderProductsInput(source);
+      if ('error' in productsInput) {
+        return res.status(400).json({ error: productsInput.error });
+      }
+
+      const enrichedProducts = await enrichOrderProductsWithConversionData(productsInput.products);
+      source.products = enrichedProducts;
+
       const parsed = parseOrderBody(source, { isCreate: true });
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
@@ -6585,6 +6778,14 @@ export function createApp() {
           source.khu_vuc = '';
         }
       }
+
+      const productsInput = parseOrderProductsInput(source);
+      if ('error' in productsInput) {
+        return res.status(400).json({ error: productsInput.error });
+      }
+
+      const enrichedProducts = await enrichOrderProductsWithConversionData(productsInput.products);
+      source.products = enrichedProducts;
 
       const parsed = parseOrderBody(source);
       if ('error' in parsed) {
@@ -6946,6 +7147,95 @@ export function createApp() {
     }
   });
 
+  type ProductionPlanPreviewBaseRow = {
+    key: string;
+    stt: number;
+    ma_don_hang: string;
+    san_pham_id: string | null;
+    item_index: number;
+    ten_sp: string;
+    ten_san_xuat_raw: string;
+    don_vi: string;
+    tong_sx: number;
+    kg_cuon: number | null;
+    tl_tam: number | null;
+    khu_vuc: string;
+  };
+
+  async function assembleProductionPlanPreviewRows(
+    planId: string
+  ): Promise<ProductionPlanPreviewBaseRow[]> {
+    if (!supabase) return [];
+
+    try {
+      // Load từ ke_hoach_san_xuat_dong thay vì don_hang
+      const { data: planLines, error: linesError } = await supabase
+        .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+        .select('san_pham')
+        .eq('ke_hoach_id', planId)
+        .order('created_at', { ascending: true });
+
+      if (linesError) {
+        console.error('Error fetching plan lines:', linesError);
+        return [];
+      }
+
+      if (!planLines || planLines.length === 0) return [];
+
+      const baseRows: ProductionPlanPreviewBaseRow[] = [];
+      let globalStt = 0;
+
+      // Parse san_pham JSON từ ke_hoach_san_xuat_dong
+      planLines.forEach(line => {
+        const sanPhamArray = Array.isArray(line.san_pham) ? line.san_pham : [];
+
+        sanPhamArray.forEach((item: any, idx: number) => {
+          globalStt++;
+          const spId = String(item.san_pham_id || '').trim() || null;
+          const maDonHang = String(item.ma_don_hang || '').trim();
+          const key = `${maDonHang}__${spId || ''}__${idx}`;
+
+          baseRows.push({
+            key,
+            stt: globalStt,
+            ma_don_hang: maDonHang,
+            san_pham_id: spId,
+            item_index: idx,
+            ten_sp: String(item.ten_sp || '').trim(),
+            ten_san_xuat_raw: String(item.ten_san_xuat || item.ten_sp || '').trim(),
+            don_vi: String(item.don_vi || '').trim(),
+            tong_sx: Number(item.so_luong) || 0,
+            kg_cuon: null,
+            tl_tam: null,
+            khu_vuc: String(item.khu_vuc || '').trim()
+          });
+        });
+      });
+
+      if (baseRows.length === 0) return [];
+
+      const sanPhamIds = baseRows
+        .map(r => r.san_pham_id)
+        .filter(Boolean) as string[];
+
+      if (sanPhamIds.length > 0) {
+        const conversionMap = await fetchConversionMapBySanPhamIds(sanPhamIds);
+        baseRows.forEach(row => {
+          if (row.san_pham_id && conversionMap.has(row.san_pham_id)) {
+            const conv = conversionMap.get(row.san_pham_id)!;
+            row.kg_cuon = conv.kg_cuon;
+            row.tl_tam = conv.tl_tam;
+          }
+        });
+      }
+
+      return baseRows;
+    } catch (err) {
+      console.error('Error assembling production plan preview:', err);
+      return [];
+    }
+  }
+
   app.get('/api/ke-hoach-sx', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -7028,6 +7318,9 @@ export function createApp() {
       const planDate = parseProductionPlanDateInput(source.ngay_ke_hoach ?? source.planDate) ?? todayDateString();
       const planNote = typeof source.ghi_chu === 'string' ? source.ghi_chu.trim() : '';
       const createdBy = pickRowField(source, ['nguoi_lap', 'createdBy', 'staff'], '');
+      const planMaSo = typeof source.ma_so === 'string' ? source.ma_so.trim() : '';
+      const planNgayLienLac = typeof source.ngay_lien_lac === 'string' ? source.ngay_lien_lac : '';
+      const planDacTa = typeof source.dac_ta === 'string' ? source.dac_ta.trim() : '';
 
       const updates: Array<{ id: string; vi_tri: string | null; thu_tu_uu_tien: number; ghi_chu: string }> = [];
       const snapshotLines: ProductionPlanSnapshotLine[] = [];
@@ -7080,6 +7373,9 @@ export function createApp() {
           planDate,
           note: planNote,
           createdBy,
+          maSo: planMaSo,
+          ngayLienLac: planNgayLienLac,
+          dacTa: planDacTa,
           lines: snapshotLines.length > 0 ? snapshotLines : updates.map((item, index) => ({
             lenh_sx_id: Number(item.id),
             thu_tu_uu_tien: item.thu_tu_uu_tien || index + 1,
@@ -10995,6 +11291,234 @@ export function createApp() {
     if (!res.headersSent) {
       const message = err instanceof Error ? err.message : 'Lỗi server API.';
       res.status(500).json({ error: message });
+    }
+  });
+
+  app.get('/api/ke-hoach-sx/:id/print-preview', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const planId = String(req.params.id || '').trim();
+      if (!planId) return res.status(400).json({ error: 'Thiếu ID kế hoạch.' });
+
+      const { data: plan, error: planError } = await supabase
+        .from(SUPABASE_PRODUCTION_PLANS_TABLE)
+        .select('id, ma_ke_hoach, ngay_ke_hoach, lan_ban_hanh, ma_so, ngay_lien_lac, dac_ta')
+        .eq('id', planId)
+        .single();
+
+      if (planError || !plan) {
+        console.error('Error fetching plan:', planError);
+        return res.status(404).json({ error: 'Không tìm thấy kế hoạch sản xuất.' });
+      }
+
+      const baseRows = await assembleProductionPlanPreviewRows(planId);
+
+      // Load ke_hoach_san_xuat_dong để lấy ma_don_hang, san_pham JSON
+      const { data: planLines, error: linesError } = await supabase
+        .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+        .select('ma_don_hang, san_pham')
+        .eq('ke_hoach_id', planId);
+
+      if (linesError) {
+        console.error('Error fetching plan lines:', linesError);
+        return res.status(500).json({ error: 'Không thể tải dữ liệu dòng kế hoạch.' });
+      }
+
+      // Build map của san_pham từ JSON
+      const sanPhamMap = new Map<string, any>();
+      (planLines || []).forEach(line => {
+        const sanPhamArray = Array.isArray(line.san_pham) ? line.san_pham : [];
+        sanPhamArray.forEach((item: any, idx: number) => {
+          const maDonHang = String(item.ma_don_hang || '').trim();
+          const spId = String(item.san_pham_id || '').trim();
+          const key = `${maDonHang}__${spId}__${idx}`;
+          sanPhamMap.set(key, item);
+        });
+      });
+
+      const rows = baseRows.map(baseRow => {
+        const saved = sanPhamMap.get(baseRow.key);
+        if (saved && saved.sl_sx) {
+          return {
+            ...baseRow,
+            slsx_bac: Number(saved.sl_sx.bac) || 0,
+            slsx_trung: Number(saved.sl_sx.trung) || 0,
+            slsx_nam: Number(saved.sl_sx.nam) || 0,
+            ghi_chu: saved.ghi_chu || '',
+            has_saved_detail: true
+          };
+        }
+
+        // Lấy khu_vuc từ JSON (đã lưu khi tạo kế hoạch)
+        const khuVucFromJson = String(saved?.khu_vuc || baseRow.khu_vuc || '').trim();
+        const defaultAlloc = (() => {
+          if (khuVucFromJson === 'Bắc') return { bac: baseRow.tong_sx, trung: 0, nam: 0 };
+          if (khuVucFromJson === 'Trung') return { bac: 0, trung: baseRow.tong_sx, nam: 0 };
+          if (khuVucFromJson === 'Nam') return { bac: 0, trung: 0, nam: baseRow.tong_sx };
+          return { bac: 0, trung: 0, nam: 0 };
+        })();
+
+        return {
+          ...baseRow,
+          slsx_bac: defaultAlloc.bac,
+          slsx_trung: defaultAlloc.trung,
+          slsx_nam: defaultAlloc.nam,
+          ghi_chu: '',
+          has_saved_detail: false
+        };
+      });
+
+      return res.json({
+        plan: {
+          id: plan.id,
+          ma_ke_hoach: plan.ma_ke_hoach || '',
+          ngay_ke_hoach: plan.ngay_ke_hoach || '',
+          lan_ban_hanh: plan.lan_ban_hanh || '01',
+          ma_so: plan.ma_so || '',
+          ngay_lien_lac: plan.ngay_lien_lac || '',
+          dac_ta: plan.dac_ta || ''
+        },
+        rows
+      });
+    } catch (err: any) {
+      console.error('Error loading print preview:', err);
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải xem trước in.' });
+    }
+  });
+
+  app.post('/api/ke-hoach-sx/:id/print-preview', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const planId = String(req.params.id || '').trim();
+      if (!planId) return res.status(400).json({ error: 'Thiếu ID kế hoạch.' });
+
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const lanBanHanh = String(body.lan_ban_hanh || '01').trim();
+      const rowsInput = Array.isArray(body.rows) ? body.rows : [];
+
+      if (rowsInput.length === 0) {
+        return res.status(400).json({ error: 'Không có dòng nào để lưu.' });
+      }
+
+      const baseRows = await assembleProductionPlanPreviewRows(planId);
+      const baseRowMap = new Map<string, ProductionPlanPreviewBaseRow>();
+      baseRows.forEach(row => {
+        baseRowMap.set(row.key, row);
+      });
+
+      for (let i = 0; i < rowsInput.length; i++) {
+        const rowInput = rowsInput[i];
+        const bac = Number(rowInput.slsx_bac) || 0;
+        const trung = Number(rowInput.slsx_trung) || 0;
+        const nam = Number(rowInput.slsx_nam) || 0;
+        const totalInput = bac + trung + nam;
+
+        const key = `${String(rowInput.ma_don_hang || '').trim()}__${String(rowInput.san_pham_id || '').trim() || ''}__${Number(rowInput.item_index) || 0}`;
+        const baseRow = baseRowMap.get(key);
+
+        if (!baseRow) {
+          console.warn(`Preview row ${i} not found (key: ${key}), skipping validation`);
+          continue;
+        }
+
+        if (totalInput > baseRow.tong_sx + 0.0001) {
+          const tenSp = baseRow.ten_sp || 'không xác định';
+          return res.status(400).json({
+            error: `Dòng ${i + 1} (${tenSp}): tổng SL SX (${totalInput.toFixed(2)}) vượt quá Tổng SX (${baseRow.tong_sx.toFixed(2)}).`
+          });
+        }
+      }
+
+      // Update lan_ban_hanh
+      const { error: planError } = await supabase
+        .from(SUPABASE_PRODUCTION_PLANS_TABLE)
+        .update({ lan_ban_hanh: lanBanHanh, updated_at: new Date().toISOString() })
+        .eq('id', planId);
+
+      if (planError) {
+        console.error('Error updating plan lan_ban_hanh:', planError);
+        return res.status(500).json({ error: 'Không thể cập nhật lần ban hành.' });
+      }
+
+      // Load ke_hoach_san_xuat_dong để update san_pham JSON
+      const { data: planLines, error: loadError } = await supabase
+        .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+        .select('id, san_pham')
+        .eq('ke_hoach_id', planId);
+
+      if (loadError) {
+        console.error('Error loading plan lines:', loadError);
+        return res.status(500).json({ error: 'Không thể tải dữ liệu dòng kế hoạch.' });
+      }
+
+      if (!planLines || planLines.length === 0) {
+        return res.status(400).json({ error: 'Không có dòng kế hoạch để lưu.' });
+      }
+
+      // Map input rows theo key
+      const inputMap = new Map<string, any>();
+      rowsInput.forEach((row: any) => {
+        const key = `${String(row.ma_don_hang || '').trim()}__${String(row.san_pham_id || '').trim()}__${Number(row.item_index) || 0}`;
+        inputMap.set(key, row);
+      });
+
+      // Update san_pham JSON trong mỗi line
+      let updatedCount = 0;
+      for (const line of planLines) {
+        const sanPhamArray = Array.isArray(line.san_pham) ? line.san_pham : [];
+        let updated = false;
+
+        const updatedSanPham = sanPhamArray.map((item: any, idx: number) => {
+          const maDonHang = String(item.ma_don_hang || '').trim();
+          const spId = String(item.san_pham_id || '').trim();
+          const key = `${maDonHang}__${spId}__${idx}`;
+          const inputRow = inputMap.get(key);
+
+          if (inputRow) {
+            updated = true;
+            return {
+              ...item,
+              ghi_chu: String(inputRow.ghi_chu || '').trim() || null,
+              khu_vuc: String(inputRow.khu_vuc || '').trim() || item.khu_vuc,
+              sl_sx: {
+                bac: Math.max(0, Number(inputRow.slsx_bac) || 0),
+                trung: Math.max(0, Number(inputRow.slsx_trung) || 0),
+                nam: Math.max(0, Number(inputRow.slsx_nam) || 0)
+              }
+            };
+          }
+          return item;
+        });
+
+        if (updated) {
+          const { error: updateError } = await supabase
+            .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+            .update({ san_pham: updatedSanPham })
+            .eq('id', line.id);
+
+          if (updateError) {
+            console.error('Error updating plan line san_pham:', updateError);
+            return res.status(500).json({ error: 'Không thể lưu dữ liệu sản phẩm.' });
+          }
+
+          updatedCount++;
+        }
+      }
+
+      return res.json({
+        success: true,
+        updated: updatedCount,
+        lan_ban_hanh: lanBanHanh
+      });
+    } catch (err: any) {
+      console.error('Error saving print preview:', err);
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu xem trước in.' });
     }
   });
 

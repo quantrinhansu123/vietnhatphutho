@@ -104,12 +104,15 @@ function resolvePersonnelName(personnelId: string, staffMap: Map<string, string>
 }
 
 function productionOrderStaffDisplay(row: ProductionOrderRow, staffMap: Map<string, string>) {
-  if (row.staff && row.staff !== '-') return row.staff;
-  const names = row.personnel
+  if (row.staff == "Chưa phân công") return row.staff;
+  if (row.staff && row.staff !== '') {
+    const names = row.personnel
     .slice(0, 4)
     .map(p => resolvePersonnelName(p.personnelId, staffMap))
     .filter(Boolean);
-  return names.length > 0 ? names.join(', ') : '-';
+    return names.length > 0 ? names.join(', ') : '-';
+  }
+  return '-';
 }
 
 export function ProductionOrdersPanel({
@@ -272,8 +275,10 @@ export function ProductionOrdersPanel({
       for (const department of departments) {
         const members = department.members || [];
         for (const member of members) {
-          if (member.id && member.name) {
-            map.set(member.id, member.name);
+          if (member.name) {
+            if (member.id) map.set(member.id, member.name);
+            if (member.code) map.set(member.code, member.name);
+            map.set(member.name, member.name);
           }
         }
       }
@@ -495,7 +500,7 @@ export function ProductionOrdersPanel({
         onCreated={loadProductionOrders}
       />
 
-      <ProductionOrderViewModal row={viewingRow} onClose={() => setViewingRow(null)} />
+      <ProductionOrderViewModal row={viewingRow} onClose={() => setViewingRow(null)} staffMap={staffMap} />
 
       <EditProductionOrderModal
         open={Boolean(editingRow)}
@@ -668,6 +673,7 @@ export function ProductionOrdersPanel({
           product={printingProduct}
           productCatalog={printingProductCatalog}
           shiftSettings={shiftSettings}
+          staffMap={staffMap}
         />
       )}
     </div>

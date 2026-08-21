@@ -28,6 +28,7 @@ import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch, type HrMember } from '../_shared/hr';
 import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';
 import { buildControlBoardShiftSummary, type ControlBoardShiftSummaryRow } from '../../utils/controlBoardShiftSummary';
+import { ProductionPlanPrintPreviewModal } from './PrintPreviewModal';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import {
   normalizeProducts,
@@ -415,12 +416,14 @@ export function ProductionPlanPrintSheet({
   lines,
   materialsByLine,
   planDate = '',
-  planNote = ''
+  planNote = '',
+  staffMap
 }: {
   lines: ProductionPlanLine[];
   materialsByLine: Record<string, ProductionOrderMaterialLine[]>;
   planDate?: string;
   planNote?: string;
+  staffMap?: Map<string, string>;
 }) {
   const printRows = buildProductionPlanPrintRows(lines);
   const printDate = formatProductionPlanPrintDate(planDate);
@@ -493,7 +496,7 @@ export function ProductionPlanPrintSheet({
                     </td>
                   )}
                   <td>{row.line.shift && row.line.shift !== '-' ? row.line.shift : '-'}</td>
-                  <td>{row.line.staff && row.line.staff !== '-' ? row.line.staff : '-'}</td>
+                  <td>{row.line.staff && row.line.staff !== '-' ? (staffMap?.get(row.line.staff) || row.line.staff) : '-'}</td>
                   <td>
                     {getProductionPlanProductCodes(row.line).map(code => (
                       <div key={`${row.line.id}-${code}`} className="production-plan-print-product-name font-mono">
@@ -579,11 +582,13 @@ function productionPlanSnapshotSignature(snapshot: ProductionPlanFormSnapshot): 
 export function StaffAssignmentPrintSheet({
   rows,
   planDate,
-  planNote
+  planNote,
+  staffMap
 }: {
   rows: StaffAssignmentRow[];
   planDate: string;
   planNote: string;
+  staffMap?: Map<string, string>;
 }) {
   const parsedPlanDate = planDate ? new Date(planDate) : null;
   const printDate =
@@ -623,7 +628,7 @@ export function StaffAssignmentPrintSheet({
             {rows.map((row, index) => (
               <tr key={row.key}>
                 <td className="production-plan-print-center">{index + 1}</td>
-                <td>{row.staff}</td>
+                <td>{row.staff && row.staff !== '-' ? (staffMap?.get(row.staff) || row.staff) : '-'}</td>
                 <td>{row.shift}</td>
                 <td>{row.machine}</td>
                 <td className="font-mono">{row.order}</td>
@@ -1332,7 +1337,8 @@ export function buildProductionPlanQrLabels(
   lines: ProductionPlanLine[],
   selectedShift: string,
   products: ProductRow[],
-  planDate = ''
+  planDate = '',
+  staffMap?: Map<string, string>
 ): ProductionPlanQrLabel[] {
   const labels: ProductionPlanQrLabel[] = [];
   const usedPayloads = new Set<string>();
@@ -1349,7 +1355,7 @@ export function buildProductionPlanQrLabels(
       const displayCode = product?.code || line.productCode || '-';
       const displayName = product?.name || line.productName || line.name || '-';
       const shift = line.shift && line.shift !== '-' ? line.shift : selectedShift;
-      const staff = line.staff && line.staff !== '-' ? line.staff : '—';
+      const staff = line.staff && line.staff !== '-' ? (staffMap?.get(line.staff) || line.staff) : '—';
 
       for (let index = 0; index < quantity; index += 1) {
         let qrPayload = '';
@@ -1433,12 +1439,14 @@ export function ProductionPlanQrPrintModal({
   open,
   onClose,
   lines,
-  planDate = ''
+  planDate = '',
+  staffMap
 }: {
   open: boolean;
   onClose: () => void;
   lines: ProductionPlanLine[];
   planDate?: string;
+  staffMap?: Map<string, string>;
 }) {
   const shiftOptions = useMemo(
     () =>
@@ -1502,7 +1510,7 @@ export function ProductionPlanQrPrintModal({
         const displayCode = product?.code || line.productCode || '-';
         const displayName = product?.name || line.productName || line.name || '-';
         const quantity = Math.max(0, Math.floor(parseProductionOrderQuantity(line.quantity)));
-        const staff = line.staff && line.staff !== '-' ? line.staff : '—';
+        const staff = line.staff && line.staff !== '-' ? (staffMap.get(line.staff) || line.staff) : '—';
 
         return {
           id: line.id,
@@ -1517,7 +1525,7 @@ export function ProductionPlanQrPrintModal({
         };
       })
       .filter(group => group.quantity > 0);
-  }, [lines, selectedShift, products, planDate]);
+  }, [lines, selectedShift, products, planDate, staffMap]);
 
   const totalQrCount = useMemo(
     () => previewGroups.reduce((sum, group) => sum + group.quantity, 0),
@@ -1546,7 +1554,7 @@ export function ProductionPlanQrPrintModal({
       return;
     }
 
-    const labels = buildProductionPlanQrLabels(lines, selectedShift, products, planDate);
+    const labels = buildProductionPlanQrLabels(lines, selectedShift, products, planDate, staffMap);
     if (labels.length === 0) {
       setFormError('Không có sản phẩm nào trong ca đã chọn để in QR.');
       return;
@@ -1718,12 +1726,16 @@ export function buildProductionPlanSaveItems(lines: ProductionPlanLine[]) {
       ca: line.shift && line.shift !== '-' ? line.shift : '',
       may: line.position && line.position !== '-' ? line.position : '',
       nhan_su: line.staff && line.staff !== '-' ? line.staff : '',
-      san_pham: products.map(product => ({
-        ma_sp: product.productCode,
-        ten_sp: product.productName,
-        don_vi: product.unit && product.unit !== '-' ? product.unit : '',
-        so_luong: parseProductionOrderQuantity(product.quantity)
-      }))
+      san_pham: products.map(product => {
+        const sanPhamId = product.productId?.trim() ? product.productId : null;
+        return {
+          san_pham_id: sanPhamId,
+          ma_sp: product.productCode,
+          ten_sp: product.productName,
+          don_vi: product.unit && product.unit !== '-' ? product.unit : '',
+          so_luong: parseProductionOrderQuantity(product.quantity)
+        };
+      })
     };
   });
 }
@@ -1842,6 +1854,8 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
   const [printLines, setPrintLines] = useState<ProductionPlanLine[]>([]);
   const [loadingPrintPlanId, setLoadingPrintPlanId] = useState('');
   const [printAnchorElement, setPrintAnchorElement] = useState<HTMLElement | null>(null);
+  const [previewPlanId, setPreviewPlanId] = useState('');
+  const [staffBranches, setStaffBranches] = useState<any[]>([]);
 
   const loadPlans = async (options?: { ngay?: string; tuNgay?: string; denNgay?: string }) => {
     setIsLoading(true);
@@ -1902,6 +1916,21 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
     void loadPlans();
   }, []);
 
+  useEffect(() => {
+    const loadStaff = async () => {
+      try {
+        const res = await fetch('/api/nhan-su?format=groups&scope=all');
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data) {
+          setStaffBranches(data);
+        }
+      } catch (error) {
+        console.error('Failed to load staff:', error);
+      }
+    };
+    loadStaff();
+  }, []);
+
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) ?? null;
   const plansByDate = useMemo(() => {
     const map = new Map<string, ProductionPlanHistorySummary[]>();
@@ -1912,6 +1941,24 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
     });
     return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0], 'vi'));
   }, [plans]);
+
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!staffBranches || typeof staffBranches !== 'object') return map;
+    const branches = (staffBranches as any).branches || [];
+    for (const branch of branches) {
+      const departments = branch.departments || [];
+      for (const department of departments) {
+        const members = department.members || [];
+        for (const member of members) {
+          if (member.id && member.name) {
+            map.set(member.id, member.name);
+          }
+        }
+      }
+    }
+    return map;
+  }, [staffBranches]);
 
   const applyFilters = () => {
     if (filterDate) {
@@ -1970,6 +2017,10 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
       ]);
       if (!detailRes.ok || !orderRes.ok || !machineRes.ok) throw new Error('Không thể tải dữ liệu để sửa kế hoạch.');
       const historyLines = normalizeProductionPlanHistoryLines(detailData);
+      const planRecord = detailData?.plan as Record<string, unknown> | undefined;
+      const planMaSo = typeof planRecord?.ma_so === 'string' ? planRecord.ma_so : '';
+      const planNgayLienLac = typeof planRecord?.ngay_lien_lac === 'string' ? planRecord.ngay_lien_lac : '';
+      const planDacTa = typeof planRecord?.dac_ta === 'string' ? planRecord.dac_ta : '';
       setCreateOrders(normalizeProductionOrders(orderData));
       setCreateMachines(normalizeMachines(machineData));
       setEditLines(historyLines.map(line => ({
@@ -1984,7 +2035,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         status: '', orderRef: line.orderRef, position: line.machine !== '-' ? line.machine : line.position,
         staff: line.staff, shift: line.shift, priority: line.priority, note: line.note
       })));
-      setEditingPlan(plan);
+      setEditingPlan({ ...plan, maSo: planMaSo, ngayLienLac: planNgayLienLac, dacTa: planDacTa } as any);
       setShowCreateModal(true);
     } catch (error: any) {
       setLoadError(error.message || 'Không thể mở form sửa kế hoạch.');
@@ -2211,6 +2262,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-zinc-200/70 pt-2">
                           <button type="button" onClick={() => void loadPlanDetail(plan.id)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700"><Eye className="h-3.5 w-3.5" />Xem</button>
                           {canEdit ? <button type="button" onClick={() => void openEditPlan(plan)} disabled={isLoadingCreate} className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Sửa</button> : null}
+                          <button type="button" onClick={() => setPreviewPlanId(plan.id)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 text-[11px] font-bold text-indigo-700"><Eye className="h-3.5 w-3.5" />Xem trước khi in</button>
                           <button type="button" onClick={event => void openPrintPlan(plan, event.currentTarget)} disabled={Boolean(loadingPrintPlanId)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[11px] font-bold text-emerald-700 disabled:opacity-50">{loadingPrintPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}In</button>
                           {canDelete ? <button type="button" onClick={() => void deletePlan(plan)} disabled={deletingPlanId === plan.id} className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 disabled:opacity-50">{deletingPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Xóa</button> : null}
                         </div>
@@ -2269,7 +2321,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                       </td>
                       <td className="px-3 py-2 text-zinc-700">{line.machine !== '-' ? line.machine : line.position}</td>
                       <td className="px-3 py-2 text-zinc-700">{line.shift}</td>
-                      <td className="px-3 py-2 text-zinc-600">{line.staff}</td>
+                      <td className="px-3 py-2 text-zinc-600">{productionOrderStaffDisplay(line, staffMap)}</td>
                       <td className="px-3 py-2 text-zinc-800">{formatProductionPlanHistoryProducts(line.products)}</td>
                       <td className="px-3 py-2 text-zinc-600">{line.note || '-'}</td>
                     </tr>
@@ -2302,6 +2354,10 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         initialLines={editingPlan ? editLines : undefined}
         initialPlanDate={editingPlan?.planDate}
         initialNote={editingPlan?.note}
+        initialMaSo={(editingPlan as any)?.maSo}
+        initialNgayLienLac={(editingPlan as any)?.ngayLienLac}
+        initialDacTa={(editingPlan as any)?.dacTa}
+        staffMap={staffMap}
       />
       <ProductionPlanModal
         open={Boolean(printingPlan)}
@@ -2317,6 +2373,12 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         printOnly
         planCode={printingPlan?.code}
         anchorElement={printAnchorElement}
+        staffMap={staffMap}
+      />
+      <ProductionPlanPrintPreviewModal
+        open={Boolean(previewPlanId)}
+        planId={previewPlanId}
+        onClose={() => setPreviewPlanId('')}
       />
     </div>
   );
@@ -2333,9 +2395,13 @@ export function ProductionPlanModal({
   initialLines,
   initialPlanDate,
   initialNote,
+  initialMaSo,
+  initialNgayLienLac,
+  initialDacTa,
   printOnly = false,
   planCode,
-  anchorElement
+  anchorElement,
+  staffMap
 }: {
   open: boolean;
   onClose: () => void;
@@ -2347,9 +2413,13 @@ export function ProductionPlanModal({
   initialLines?: ProductionPlanLine[];
   initialPlanDate?: string;
   initialNote?: string;
+  initialMaSo?: string;
+  initialNgayLienLac?: string;
+  initialDacTa?: string;
   printOnly?: boolean;
   planCode?: string;
   anchorElement?: HTMLElement | null;
+  staffMap?: Map<string, string>;
 }) {
   const { canCreate } = useTabAccess('production-plan-history');
   const [planLines, setPlanLines] = useState<ProductionPlanLine[]>([]);
@@ -2378,6 +2448,9 @@ export function ProductionPlanModal({
   const [showQrPrintModal, setShowQrPrintModal] = useState(false);
   const [planDate, setPlanDate] = useState(todayDateInputValue());
   const [planHeaderNote, setPlanHeaderNote] = useState('');
+  const [planMaSo, setPlanMaSo] = useState('');
+  const [planNgayLienLac, setPlanNgayLienLac] = useState('');
+  const [planDacTa, setPlanDacTa] = useState('');
   const [pendingStaffAssignmentPrint, setPendingStaffAssignmentPrint] = useState(false);
   const [isLoadingRelatedPrint, setIsLoadingRelatedPrint] = useState(false);
   const [relatedPrintData, setRelatedPrintData] = useState<ProductionPlanRelatedReports | null>(null);
@@ -2458,6 +2531,9 @@ export function ProductionPlanModal({
     setShowQrPrintModal(false);
     setPlanDate(initialDate);
     setPlanHeaderNote(initialHeaderNote);
+    setPlanMaSo(initialMaSo || '');
+    setPlanNgayLienLac(initialNgayLienLac || '');
+    setPlanDacTa(initialDacTa || '');
     setPendingStaffAssignmentPrint(false);
     setIsLoadingRelatedPrint(false);
     setRelatedPrintData(null);
@@ -2480,7 +2556,7 @@ export function ProductionPlanModal({
       .then(res => (res.ok ? res.json() : null))
       .then(data => setRelatedShiftOptions(data ? getProductionShiftOptions(normalizeShiftSettings(data)) : []))
       .catch(() => setRelatedShiftOptions([]));
-  }, [open, productionOrders, machines, editPlanId, initialLines, initialPlanDate, initialNote, printOnly]);
+  }, [open, productionOrders, machines, editPlanId, initialLines, initialPlanDate, initialNote, initialMaSo, initialNgayLienLac, initialDacTa, printOnly]);
 
   useEffect(() => {
     if (checkAllRef.current) checkAllRef.current.indeterminate = someLinesSelected;
@@ -2702,6 +2778,9 @@ export function ProductionPlanModal({
           id: editPlanId,
           ngay_ke_hoach: planDate,
           ghi_chu: planHeaderNote.trim(),
+          ma_so: planMaSo.trim(),
+          ngay_lien_lac: planNgayLienLac,
+          dac_ta: planDacTa.trim(),
           items: buildProductionPlanSaveItems(selectedLines)
         })
       });
@@ -3074,24 +3153,57 @@ export function ProductionPlanModal({
               </p>
             )}
 
-            {!printOnly && <div className="mb-4 grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
+            {!printOnly && <div className="mb-4 space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày kế hoạch</span>
+                  <input
+                    type="date"
+                    value={planDate}
+                    onChange={event => setPlanDate(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã số</span>
+                  <input
+                    type="text"
+                    value={planMaSo}
+                    onChange={event => setPlanMaSo(event.target.value)}
+                    placeholder="Nhập mã số"
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày liên lạc</span>
+                  <input
+                    type="date"
+                    value={planNgayLienLac}
+                    onChange={event => setPlanNgayLienLac(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú kế hoạch</span>
+                  <input
+                    type="text"
+                    value={planHeaderNote}
+                    onChange={event => setPlanHeaderNote(event.target.value)}
+                    placeholder="Ghi chú chung khi lưu snapshot"
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+              </div>
               <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày kế hoạch</span>
-                <input
-                  type="date"
-                  value={planDate}
-                  onChange={event => setPlanDate(event.target.value)}
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú kế hoạch</span>
-                <input
-                  type="text"
-                  value={planHeaderNote}
-                  onChange={event => setPlanHeaderNote(event.target.value)}
-                  placeholder="Ghi chú chung khi lưu snapshot"
-                  className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đặc tả</span>
+                <textarea
+                  value={planDacTa}
+                  onChange={event => setPlanDacTa(event.target.value)}
+                  placeholder="Nhập đặc tả"
+                  rows={2}
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
             </div>}
@@ -3210,7 +3322,7 @@ export function ProductionPlanModal({
                         <td className="px-2 py-2 font-black text-emerald-700">{index + 1}</td>
                         <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
-                        <td className="px-2 py-2 text-zinc-600">{line.staff && line.staff !== '-' ? line.staff : '-'}</td>
+                        <td className="px-2 py-2 text-zinc-600">{productionOrderStaffDisplay(line, staffMap)}</td>
                         <td className="px-2 py-2 font-mono text-xs font-bold text-zinc-900">
                           {formatProductionPlanProductCodes(line)}
                         </td>
@@ -3350,7 +3462,7 @@ export function ProductionPlanModal({
       </div>
 
       {pendingStaffAssignmentPrint && (
-        <StaffAssignmentPrintSheet rows={staffAssignmentRows} planDate={planDate} planNote={planHeaderNote} />
+        <StaffAssignmentPrintSheet rows={staffAssignmentRows} planDate={planDate} planNote={planHeaderNote} staffMap={staffMap} />
       )}
 
       {(relatedPrintOrders.length > 0 || relatedPrintCustomerOrders.length > 0 || relatedPrintData) &&
@@ -3371,6 +3483,7 @@ export function ProductionPlanModal({
                   materialsByLine={printMaterialsByLine}
                   planDate={planDate}
                   planNote={planHeaderNote}
+                  staffMap={staffMap}
                 />
               </div>
             ) : null}
@@ -3385,6 +3498,7 @@ export function ProductionPlanModal({
                   product={item.product}
                   productCatalog={relatedPrintCatalog}
                   showActualQuantity
+                  staffMap={staffMap}
                 />
               </div>
             ))}
@@ -3408,6 +3522,7 @@ export function ProductionPlanModal({
           materialsByLine={printMaterialsByLine}
           planDate={planDate}
           planNote={planHeaderNote}
+          staffMap={staffMap}
         />
       )}
 
@@ -3436,6 +3551,7 @@ export function ProductionPlanModal({
         onClose={() => setShowQrPrintModal(false)}
         lines={displayLines}
         planDate={planDate}
+        staffMap={staffMap}
       />
     </>
   );
@@ -3817,7 +3933,8 @@ export function ProductionOrderPrintSheet({
   product,
   productCatalog = [],
   shiftSettings = [],
-  showActualQuantity = false
+  showActualQuantity = false,
+  staffMap
 }: {
   order: ProductionOrderRow;
   materials: ProductionOrderMaterialLine[];
@@ -3827,15 +3944,36 @@ export function ProductionOrderPrintSheet({
   shiftSettings?: ProductionOrderLookupSetting[];
   /** Hiện cột KL thực tế lấy từ Lệnh xuất vật tư cùng ngày + ca. */
   showActualQuantity?: boolean;
+  staffMap?: Map<string, string>;
 }) {
   const printDate = formatProductionOrderPrintDate(order.startDate);
   const orderQuantity = parseProductionOrderQuantity(order.quantity);
   const shiftLabel = formatProductionOrderShiftLabel(order.shift, shiftSettings);
   const productLines = getProductionOrderProductLines(order);
-  const staffLabel =
-    order.staff && order.staff !== '-'
-      ? order.staff.replace(/,/g, ' + ')
-      : '-';
+
+  const resolveStaffName = (personnelId: string): string => {
+    if (!personnelId || personnelId === '-') return '-';
+    if (staffMap?.has(personnelId)) {
+      return staffMap.get(personnelId) || personnelId;
+    }
+    return personnelId;
+  };
+
+  const getStaffLabel = (): string => {
+    if (order.staff && order.staff !== '-') {
+      // Try to resolve each staff ID
+      const staffIds = order.staff.split(',').map(s => s.trim());
+      const resolved = staffIds.map(id => resolveStaffName(id));
+      return resolved.join(' + ');
+    }
+    const names = order.personnel
+      .slice(0, 4)
+      .map(p => resolveStaffName(p.personnelId))
+      .filter(Boolean);
+    return names.length > 0 ? names.join(' + ') : '-';
+  };
+
+  const staffLabel = getStaffLabel();
   const machineName =
     machineLabel && machineLabel !== '-'
       ? machineLabel
@@ -4013,11 +4151,13 @@ export type PrintableProductionOrder = {
 export function ProductionOrderBatchPrintSheets({
   items,
   shiftSettings = [],
-  productCatalog = []
+  productCatalog = [],
+  staffMap
 }: {
   items: PrintableProductionOrder[];
   shiftSettings?: ProductionOrderLookupSetting[];
   productCatalog?: ProductRow[];
+  staffMap?: Map<string, string>;
 }) {
   if (items.length === 0) return null;
 
@@ -4032,6 +4172,7 @@ export function ProductionOrderBatchPrintSheets({
             product={item.product}
             productCatalog={productCatalog}
             shiftSettings={shiftSettings}
+            staffMap={staffMap}
           />
         </div>
       ))}
@@ -4285,13 +4426,18 @@ export function buildProductionEntryLine(
   productCode: string,
   productName = '',
   unit = ''
-): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'quantity' | 'unit'> {
+): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'quantity' | 'unit' | 'productId'> {
   const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode);
+  const line = orders
+    .filter(order => order.orderCode === orderRef)
+    .flatMap(order => getOrderProductLines(order))
+    .find(item => item.productCode === productCode);
   return {
     productCode,
     productName,
     quantity: remaining > 0 ? String(remaining) : '',
-    unit: unit || getOrderProductUnit(orders, orderRef, productCode)
+    unit: unit || getOrderProductUnit(orders, orderRef, productCode),
+    productId: line?.productId
   };
 }
 
@@ -4354,20 +4500,22 @@ export function listProductOptionsForOrder(
       getOrderProductLines(order).map(line => ({
         code: line.productCode,
         name: line.productName,
-        unit: line.unit && line.unit !== '-' ? line.unit : ''
+        unit: line.unit && line.unit !== '-' ? line.unit : '',
+        productId: line.productId || undefined
       }))
     )
     .filter(item => item.code && item.code !== '-');
 
-  const unique = new Map<string, { name: string; unit: string }>();
-  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, unit: item.unit }));
+  const unique = new Map<string, { name: string; unit: string; productId?: string }>();
+  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, unit: item.unit, productId: item.productId }));
 
   if (unique.size === 0) {
     catalogProducts.forEach(product => {
       if (product.code) {
         unique.set(product.code, {
           name: product.name || product.code,
-          unit: product.unit && product.unit !== '-' ? product.unit : ''
+          unit: product.unit && product.unit !== '-' ? product.unit : '',
+          productId: product.id
         });
       }
     });
@@ -4378,6 +4526,7 @@ export function listProductOptionsForOrder(
       code,
       name: meta.name,
       unit: meta.unit,
+      productId: meta.productId,
       orderQty: getOrderProductQuantity(orders, orderRef, code),
       remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code)
     }))
@@ -4387,6 +4536,7 @@ export function listProductOptionsForOrder(
 export type ProductionOrderEntryLine = {
   key: string;
   orderRef: string;
+  productId?: string;
   productCode: string;
   productName: string;
   quantity: string;
@@ -4496,6 +4646,7 @@ export function productionOrderFormToCreatePayload(
 ) {
   const staff = staffText || form.selectedStaffIds.join(', ');
   const products = lines.map(line => ({
+    san_pham_id: line.productId || null,
     ma_don_hang: line.orderRef.trim(),
     ma_sp: line.productCode.trim(),
     ten_sp: line.productName.trim(),
@@ -5696,17 +5847,69 @@ export function AddProductionOrderModal({
     </div>
   );
 }
+function resolvePersonnelName(personnelId: string, staffMap: Map<string, string>): string {
+  if (!personnelId) return '';
+  // Thử match với id thật trước
+  if (staffMap.has(personnelId)) {
+    return staffMap.get(personnelId) || '';
+  }
+  // Nếu không khớp, coi như đã là tên (dữ liệu cũ)
+  return personnelId;
+}
 
+function productionOrderStaffDisplay(row: ProductionOrderRow, staffMap: Map<string, string>) {
+  if (row.staff === 'Chưa phân công') {
+    return row.staff;
+  }
+
+  if (row.staff && row.staff !== '') {
+    const personnelIds = row.staff
+      .split(',')
+      .map(id => id.trim())
+      .slice(0, 4);
+
+    const names = personnelIds
+      .map(id => resolvePersonnelName(id, staffMap))
+      .filter(Boolean);
+
+    return names.length > 0 ? names.join(', ') : '-';
+  }
+
+  return '-';
+}
 export function ProductionOrderViewModal({
   row,
-  onClose
+  onClose,
+  staffMap
 }: {
   row: ProductionOrderRow | null;
   onClose: () => void;
+  staffMap?: Map<string, string>;
 }) {
   if (!row) return null;
 
   const productLines = getProductionOrderProductLines(row);
+
+  const resolveStaffName = (personnelId: string): string => {
+    if (!personnelId || personnelId === '-') return '-';
+    if (staffMap?.has(personnelId)) {
+      return staffMap.get(personnelId) || personnelId;
+    }
+    return personnelId;
+  };
+
+  const getTotalStaffDisplay = (): string => {
+    if (row.staff == "Chưa phân công") return row.staff;
+
+    if (row.staff && row.staff !== '-') {
+      const names = row.personnel
+      .slice(0, 4)
+      .map(p => resolveStaffName(p.personnelId))
+      .filter(Boolean);
+      return names.length > 0 ? names.join(', ') : '-';
+    }
+    return '-';
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -5728,11 +5931,11 @@ export function ProductionOrderViewModal({
             ['Khách hàng', row.customer],
             ['Đơn hàng', row.orderRef],
             ['Ca', row.shift],
-            ['Trưởng ca', row.shiftLead],
-            ['Nhân sự chính', row.mainStaff],
-            ['Thợ phụ', row.assistantStaff],
-            ['Học việc', row.traineeStaff],
-            ['Tổng nhân sự', row.staff],
+            ['Trưởng ca', resolveStaffName(row.shiftLead)],
+            ['Nhân sự chính', resolveStaffName(row.mainStaff)],
+            ['Thợ phụ', resolveStaffName(row.assistantStaff)],
+            ['Học việc', resolveStaffName(row.traineeStaff)],
+            ['Tổng nhân sự', getTotalStaffDisplay()],
             ['Bắt đầu', row.startDate],
             ['Kết thúc', row.endDate],
             ['Máy', row.machine],
