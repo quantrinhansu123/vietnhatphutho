@@ -2123,7 +2123,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     () => products.filter(product => selectedProductIds.has(product.id)),
     [products, selectedProductIds]
   );
-  const allFilteredSelected = filteredProducts.length > 0 && filteredProducts.every(product => selectedProductIds.has(product.id));
+  const allPaginatedSelected = paginatedProducts.length > 0 && paginatedProducts.every(product => selectedProductIds.has(product.id));
 
   const hasActiveFilters = selectedGroup !== 'all' || selectedNatures.size > 0 || Boolean(searchText);
 
@@ -2192,13 +2192,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     });
   };
 
-  const toggleFilteredProducts = () => {
+  const togglePaginatedProducts = () => {
     setSelectedProductIds(prev => {
       const next = new Set(prev);
-      if (allFilteredSelected) {
-        filteredProducts.forEach(product => next.delete(product.id));
+      if (allPaginatedSelected) {
+        paginatedProducts.forEach(product => next.delete(product.id));
       } else {
-        filteredProducts.forEach(product => next.add(product.id));
+        paginatedProducts.forEach(product => next.add(product.id));
       }
       return next;
     });
@@ -2530,11 +2530,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           />
           <button
             type="button"
-            onClick={toggleFilteredProducts}
-            disabled={filteredProducts.length === 0}
+            onClick={togglePaginatedProducts}
+            disabled={paginatedProducts.length === 0}
             className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {allFilteredSelected ? 'Bỏ chọn bộ lọc' : 'Chọn các dòng đang lọc'}
+            {allPaginatedSelected ? 'Bỏ chọn trang này' : 'Chọn trang này'}
           </button>
           {canDelete ? (
             <button
@@ -2576,8 +2576,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell align="center" className="w-14">
             <input
               type="checkbox"
-              checked={allFilteredSelected}
-              onChange={toggleFilteredProducts}
+              checked={allPaginatedSelected}
+              onChange={togglePaginatedProducts}
               className="h-4 w-4 accent-[#ef1b2d]"
               aria-label="Chọn tất cả sản phẩm đang lọc"
             />
