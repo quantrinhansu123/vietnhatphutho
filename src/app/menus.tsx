@@ -527,6 +527,13 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
     icon: BarChart3,
     icon3d: spiralNotepad3d,
     tab: 'production-reports'
+  },
+  {
+    title: 'Điều động nhân sự',
+    desc: 'Điều động nhân sự giữa các máy trong lệnh sản xuất theo ca.',
+    icon: UsersRound,
+    icon3d: people3d,
+    tab: 'dieu-dong-nhan-su'
   }
 ];
 
@@ -876,7 +883,8 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Kế hoạch sản xuất', tab: 'production-plan-history' },
       { label: 'Lệnh sản xuất', tab: 'production-orders' },
       { label: 'Theo dõi sản xuất', tab: 'control-board' },
-      { label: 'Báo cáo sản xuất', tab: 'production-reports' }
+      { label: 'Báo cáo sản xuất', tab: 'production-reports' },
+      { label: 'Điều động nhân sự', tab: 'dieu-dong-nhan-su' }
     ]
   },
   {
@@ -972,6 +980,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
   'shipping-orders': { group: 'Kinh doanh', sub: 'Lệnh giao / xuất hàng' },
   'production-orders': { group: 'Quản Đốc', sub: 'Lệnh sản xuất' },
+  'dieu-dong-nhan-su': { group: 'Quản Đốc', sub: 'Điều động nhân sự' },
   'factory-quan-doc': { group: 'Trang chủ', sub: 'Quản Đốc' },
   'factory-qc': { group: 'Trang chủ', sub: 'QC' },
   'factory-cong-nhan': { group: 'Trang chủ', sub: 'Sản xuất' },

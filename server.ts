@@ -92,6 +92,7 @@ const SUPABASE_WAREHOUSE_MOVEMENTS_TABLE = process.env.SUPABASE_WAREHOUSE_MOVEME
 const SUPABASE_MIXING_REPORTS_TABLE = process.env.SUPABASE_MIXING_REPORTS_TABLE || 'bao_cao_phoi_tron';
 const SUPABASE_MIXING_NORM_TABLE =
   process.env.SUPABASE_MIXING_NORM_TABLE || 'bang_tron_vat_tu_dinh_muc';
+const SUPABASE_DISPATCH_TABLE = process.env.SUPABASE_DISPATCH_TABLE || 'dieu_dong_nhan_su';
 const SUPABASE_ACTUAL_MIXING_SHEET_TABLE =
   process.env.SUPABASE_ACTUAL_MIXING_SHEET_TABLE || 'phieu_tron_thuc_te';
 const ACTUAL_MIXING_WEIGHT_FORMAT_ERROR = 'Trọng lượng thực tế không đúng định dạng. Ví dụ: 123.56';
@@ -9174,6 +9175,224 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa xe.' });
+    }
+  });
+
+  // Điều động nhân sự (dieu_dong_nhan_su) — helpers & routes
+  type DispatchTimeRange = { start: string; end: string };
+
+  function timeToMinutes(value: string): number {
+    const [h, m] = String(value).split(':').map(Number);
+    return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+  }
+
+  function rangesOverlap(a: DispatchTimeRange, b: DispatchTimeRange): boolean {
+    const aStart = timeToMinutes(a.start);
+    const aEnd = timeToMinutes(a.end);
+    const bStart = timeToMinutes(b.start);
+    const bEnd = timeToMinutes(b.end);
+    return aStart < bEnd && bStart < aEnd;
+  }
+
+  function parseDispatchBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const ngayLamViec = pickRowField(source, ['ngay_lam_viec', 'ngayLamViec', 'ngay_bat_dau', 'ngayBatDau'], '');
+    const ca = pickRowField(source, ['ca', 'shift'], '');
+    const maLenhSx = pickRowField(source, ['ma_lenh_sx', 'maLenhSx'], '');
+    const maNhanSu = pickRowField(source, ['ma_nhan_su', 'maNhanSu', 'personnel_id', 'personnelId'], '');
+    const vaiTro = pickRowField(source, ['vai_tro', 'vaiTro', 'role'], '');
+    const mayGoc = pickRowField(source, ['may_goc', 'mayGoc'], '');
+    const mayDieuDong = pickRowField(source, ['may_dieu_dong', 'mayDieuDong'], '');
+    const batDau = pickRowField(source, ['thoi_gian_bat_dau', 'thoiGianBatDau', 'start'], '');
+    const ketThuc = pickRowField(source, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
+    const ghiChu = pickRowField(source, ['ghi_chu', 'note'], '');
+
+    if (!ngayLamViec) return { error: 'Thiếu ngày.' };
+    if (!ca) return { error: 'Thiếu ca làm việc.' };
+    if (!maLenhSx) return { error: 'Thiếu lệnh sản xuất.' };
+    if (!maNhanSu) return { error: 'Thiếu nhân sự.' };
+    if (!mayGoc) return { error: 'Thiếu máy gốc.' };
+    if (!mayDieuDong) return { error: 'Vui lòng chọn máy chuyển đến.' };
+    if (mayDieuDong === mayGoc) return { error: 'Máy chuyển đến phải khác máy gốc.' };
+    if (!/^\d{1,2}:\d{2}$/.test(batDau)) return { error: 'Giờ bắt đầu không hợp lệ.' };
+    if (!/^\d{1,2}:\d{2}$/.test(ketThuc)) return { error: 'Giờ kết thúc không hợp lệ.' };
+    if (batDau >= ketThuc) return { error: 'Giờ bắt đầu phải nhỏ hơn giờ kết thúc.' };
+
+    return {
+      record: {
+        ngay_lam_viec: ngayLamViec,
+        ca,
+        ma_lenh_sx: maLenhSx,
+        ma_nhan_su: maNhanSu,
+        vai_tro: vaiTro || null,
+        may_goc: mayGoc,
+        may_dieu_dong: mayDieuDong,
+        thoi_gian_bat_dau: batDau,
+        thoi_gian_ket_thuc: ketThuc,
+        ghi_chu: ghiChu || null
+      }
+    };
+  }
+
+  async function findOverlappingDispatch(
+    ngayLamViec: string,
+    maNhanSu: string,
+    range: DispatchTimeRange,
+    excludeId?: string
+  ): Promise<boolean> {
+    if (!supabase) return false;
+    let query = supabase
+      .from(SUPABASE_DISPATCH_TABLE)
+      .select('id, thoi_gian_bat_dau, thoi_gian_ket_thuc')
+      .eq('ngay_lam_viec', ngayLamViec)
+      .eq('ma_nhan_su', maNhanSu);
+    if (excludeId) query = query.neq('id', excludeId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).some(row =>
+      rangesOverlap(range, {
+        start: String(row.thoi_gian_bat_dau).slice(0, 5),
+        end: String(row.thoi_gian_ket_thuc).slice(0, 5)
+      })
+    );
+  }
+
+  async function validateDispatchAgainstLenhSx(record: Record<string, unknown>): Promise<string | null> {
+    if (!supabase) return 'Supabase chưa được cấu hình.';
+
+    // Lấy tất cả LSX cùng ca cùng ngày
+    const { data: allRowsThisDay, error: errorAllRows } = await supabase
+      .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+      .select('vi_tri, may, phan_cong_nhan_su, ma_lenh_sx')
+      .eq('ngay_bat_dau', record.ngay_lam_viec)
+      .eq('ca', record.ca);
+    if (errorAllRows) throw errorAllRows;
+    const allRows = allRowsThisDay || [];
+
+    // Lấy riêng LSX hiện tại để kiểm nhân sự
+    const { data: currentLsxRows, error: errorCurrent } = await supabase
+      .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+      .select('vi_tri, may, phan_cong_nhan_su')
+      .eq('ma_lenh_sx', record.ma_lenh_sx)
+      .eq('ngay_bat_dau', record.ngay_lam_viec)
+      .eq('ca', record.ca);
+    if (errorCurrent) throw errorCurrent;
+    const currentRows = currentLsxRows || [];
+    if (currentRows.length === 0) return 'Không tìm thấy lệnh sản xuất tương ứng.';
+
+    // Máy gốc phải nằm trong LSX hiện tại
+    const machinesCurrentLsx = [...new Set(currentRows.map(r => String(r.vi_tri || r.may || '').trim()).filter(Boolean))];
+    if (!machinesCurrentLsx.includes(String(record.may_goc))) return 'Máy gốc không thuộc lệnh sản xuất này.';
+
+    // Máy chuyển đến phải nằm trong tất cả máy cùng ca cùng ngày (từ bất kỳ LSX nào)
+    const machinesThisShift = [...new Set(allRows.map(r => String(r.vi_tri || r.may || '').trim()).filter(Boolean))];
+    if (!machinesThisShift.includes(String(record.may_dieu_dong))) return 'Máy chuyển đến không tồn tại trong ca này.';
+
+    // Nhân sự phải nằm trong LSX hiện tại
+    const personnelExists = currentRows.some(r => {
+      try {
+        const list = JSON.parse(String(r.phan_cong_nhan_su || '[]'));
+        return Array.isArray(list) && list.some((p: any) => String(p?.personnelId || '') === record.ma_nhan_su);
+      } catch { return false; }
+    });
+    if (!personnelExists) return 'Nhân sự không thuộc phân công của lệnh sản xuất này.';
+    return null;
+  }
+
+  function dispatchWriteError(error: { code?: string; message?: string }, table: string) {
+    if (isMissingTableError(error)) return `Bảng ${table} chưa tồn tại. Hãy chạy file supabase-dieu-dong-nhan-su.sql trong Supabase SQL Editor.`;
+    if (isMissingColumnError(error)) return `Bảng ${table} đang thiếu cột. Hãy chạy lại file supabase-dieu-dong-nhan-su.sql.`;
+    return `Không thể lưu dữ liệu vào ${table}. ${error.message || ''}`.trim();
+  }
+
+  app.get('/api/dieu-dong-nhan-su', async (req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local', warning: 'Supabase chưa được cấu hình.' });
+    try {
+      const ngayLamViec = typeof req.query.ngay_lam_viec === 'string' ? req.query.ngay_lam_viec : (typeof req.query.ngay_bat_dau === 'string' ? req.query.ngay_bat_dau : '');
+      const ca = typeof req.query.ca === 'string' ? req.query.ca : '';
+      const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx : '';
+      let query = supabase.from(SUPABASE_DISPATCH_TABLE).select('*').order('created_at', { ascending: true });
+      if (ngayLamViec) query = query.eq('ngay_lam_viec', ngayLamViec);
+      if (ca) query = query.eq('ca', ca);
+      if (maLenhSx) query = query.eq('ma_lenh_sx', maLenhSx);
+      const { data, error } = await query;
+      if (error) return respondSupabaseReadError(res, error, SUPABASE_DISPATCH_TABLE, { items: [], total: 0 });
+      return res.json({ items: data || [], total: data?.length || 0, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải lịch sử điều động.' });
+    }
+  });
+
+  app.post('/api/dieu-dong-nhan-su', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const parsed = parseDispatchBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const validationError = await validateDispatchAgainstLenhSx(parsed.record);
+      if (validationError) return res.status(400).json({ error: validationError });
+
+      const hasOverlap = await findOverlappingDispatch(
+        String(parsed.record.ngay_lam_viec),
+        String(parsed.record.ma_nhan_su),
+        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc) }
+      );
+      if (hasOverlap) return res.status(409).json({ error: 'Nhân sự đã có khoảng điều động trùng giờ trong ngày này.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_DISPATCH_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) return res.status(500).json({ error: dispatchWriteError(error, SUPABASE_DISPATCH_TABLE) });
+      return res.status(201).json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu điều động.' });
+    }
+  });
+
+  app.put('/api/dieu-dong-nhan-su/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID điều động.' });
+    try {
+      const parsed = parseDispatchBody(req.body);
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const validationError = await validateDispatchAgainstLenhSx(parsed.record);
+      if (validationError) return res.status(400).json({ error: validationError });
+
+      const hasOverlap = await findOverlappingDispatch(
+        String(parsed.record.ngay_lam_viec),
+        String(parsed.record.ma_nhan_su),
+        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc) },
+        id
+      );
+      if (hasOverlap) return res.status(409).json({ error: 'Nhân sự đã có khoảng điều động trùng giờ trong ngày này.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_DISPATCH_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) return res.status(500).json({ error: dispatchWriteError(error, SUPABASE_DISPATCH_TABLE) });
+      return res.json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật điều động.' });
+    }
+  });
+
+  app.delete('/api/dieu-dong-nhan-su/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID điều động.' });
+    try {
+      const { error } = await supabase.from(SUPABASE_DISPATCH_TABLE).delete().eq('id', id);
+      if (error) return res.status(500).json({ error: dispatchWriteError(error, SUPABASE_DISPATCH_TABLE) });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa điều động.' });
     }
   });
 

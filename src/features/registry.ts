@@ -33,6 +33,7 @@ export type TableId =
   | 'bao_cao_may_nvl_ton'
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
+  | 'dieu_dong_nhan_su'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -403,6 +404,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appTab: 'machine-run-log | machine-run-log-list',
     appLines: 'src/components/MachineRunLogPanel.tsx',
     components: ['src/components/MachineRunLogPanel.tsx', 'src/components/MachineRunLogPrintSheet.tsx'],
+    utils: []
+  },
+  dieu_dong_nhan_su: {
+    table: 'dieu_dong_nhan_su',
+    label: 'Điều động nhân sự (Quản đốc)',
+    sql: ['supabase-dieu-dong-nhan-su.sql'],
+    apiPrefix: '/api/dieu-dong-nhan-su',
+    serverLines: '9181–9347',
+    appTab: 'dieu-dong-nhan-su',
+    appLines: 'src/features/dieu-dong-nhan-su/index.tsx',
+    components: ['src/features/dieu-dong-nhan-su/MachineCardRow.tsx', 'src/features/dieu-dong-nhan-su/DispatchFormInline.tsx'],
     utils: []
   },
   control_board: {
