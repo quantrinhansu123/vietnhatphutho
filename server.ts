@@ -1168,6 +1168,7 @@ function mapStaffRecord(row: Record<string, unknown>) {
   const username = pickStaffField(row, ['ten_dang_nhap', 'username', 'login'], '');
   const password = pickStaffField(row, ['mat_khau', 'password'], '');
   const signatureUrl = pickStaffField(row, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '');
+  const region = pickStaffField(row, ['khu_vuc', 'region'], '');
 
   return {
     id: code || name,
@@ -1183,6 +1184,8 @@ function mapStaffRecord(row: Record<string, unknown>) {
     password,
     signatureUrl,
     link_chu_ky: signatureUrl,
+    region,
+    khu_vuc: region,
     viewPermissions: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     assignedPositions: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions),
@@ -1303,9 +1306,7 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
   const explicitViTri = pickRowField(source, ['vi_tri', 'position', 'ma_vi_tri'], '');
   const viTri = explicitViTri || buildStaffViTriLabel(department, congViec);
 
-  const regionRaw = pickRowField(source, ['khu_vuc', 'region'], '').trim();
-  const validRegions = ['Bắc', 'Trung', 'Nam'];
-  const region = regionRaw && validRegions.includes(regionRaw) ? regionRaw : null;
+  const region = pickRowField(source, ['khu_vuc', 'region'], '') || null;
 
   const record: Record<string, unknown> = {
     nhan_su: name,
