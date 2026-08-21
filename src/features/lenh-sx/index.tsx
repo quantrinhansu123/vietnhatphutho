@@ -272,8 +272,10 @@ export function ProductionOrdersPanel({
       for (const department of departments) {
         const members = department.members || [];
         for (const member of members) {
-          if (member.id && member.name) {
-            map.set(member.id, member.name);
+          if (member.name) {
+            if (member.id) map.set(member.id, member.name);
+            if (member.code) map.set(member.code, member.name);
+            map.set(member.name, member.name);
           }
         }
       }
@@ -495,7 +497,7 @@ export function ProductionOrdersPanel({
         onCreated={loadProductionOrders}
       />
 
-      <ProductionOrderViewModal row={viewingRow} onClose={() => setViewingRow(null)} />
+      <ProductionOrderViewModal row={viewingRow} onClose={() => setViewingRow(null)} staffMap={staffMap} />
 
       <EditProductionOrderModal
         open={Boolean(editingRow)}
@@ -668,6 +670,7 @@ export function ProductionOrdersPanel({
           product={printingProduct}
           productCatalog={printingProductCatalog}
           shiftSettings={shiftSettings}
+          staffMap={staffMap}
         />
       )}
     </div>
