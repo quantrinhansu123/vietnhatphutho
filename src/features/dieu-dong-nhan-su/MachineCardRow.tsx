@@ -49,14 +49,14 @@ export function MachineCardRow({
             ) : (
               <div className="divide-y divide-zinc-100">
                 {group.personnel.map((person, idx) => {
-                  const personKey: SelectedPersonnelKey = `${group.machineValue}-${person.personnelId}`;
+                  const personKey: SelectedPersonnelKey = `${group.machineValue}-${person.ma_nhan_su}`;
                   const isSelected = selectedKeys.has(personKey);
-                  const personName = staffMap.get(person.personnelId) || person.personnelId || '-';
-                  const timeRange = formatTimeRange(person.time, person.endTime);
+                  const personName = staffMap.get(person.ma_nhan_su) || person.ma_nhan_su || '-';
+                  const timeRange = formatTimeRange(person.thoi_gian_bat_dau, person.thoi_gian_ket_thuc);
 
                   return (
                     <label
-                      key={`${idx}-${person.personnelId}`}
+                      key={`${idx}-${person.ma_nhan_su}`}
                       className={`px-4 py-3 cursor-pointer transition-colors flex gap-3 items-start ${
                         isSelected ? 'bg-blue-50' : 'hover:bg-zinc-50'
                       }`}

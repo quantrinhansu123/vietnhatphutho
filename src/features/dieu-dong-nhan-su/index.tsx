@@ -60,7 +60,7 @@ function formatDispatchTimeRange(start: unknown, end: unknown): string {
 function parseAssignedPersonnel(jsonStr: unknown): AssignedPersonnel[] {
   try {
     const list = JSON.parse(String(jsonStr || '[]'));
-    return Array.isArray(list) ? list.filter((p: any) => String(p?.personnelId || '').trim()) : [];
+    return Array.isArray(list) ? list.filter((p: any) => String(p?.ma_nhan_su || '').trim()) : [];
   } catch {
     return [];
   }
@@ -273,7 +273,7 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
   };
 
   const handleTogglePersonnel = (machineValue: string, person: AssignedPersonnel, checked: boolean) => {
-    const key: SelectedPersonnelKey = `${machineValue}-${person.personnelId}`;
+    const key: SelectedPersonnelKey = `${machineValue}-${person.ma_nhan_su}`;
     if (checked) {
       setSelectedPersonnelKeys(prev => new Set(prev).add(key));
       setSelectedPersonnelWithForms(prev => [
@@ -317,25 +317,25 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
     // Validate all items
     for (const item of selectedPersonnelWithForms) {
       if (!item.mayDieuDong || !item.thoiGianBatDau || !item.thoiGianKetThuc) {
-        setFormError(`${resolvePersonnelName(item.person.personnelId, staffMap)}: Vui lòng điền đầy đủ các trường bắt buộc.`);
+        setFormError(`${resolvePersonnelName(item.person.ma_nhan_su, staffMap)}: Vui lòng điền đầy đủ các trường bắt buộc.`);
         return;
       }
 
       if (item.mayDieuDong === item.machineValue) {
-        setFormError(`${resolvePersonnelName(item.person.personnelId, staffMap)}: Máy chuyển đến phải khác máy gốc.`);
+        setFormError(`${resolvePersonnelName(item.person.ma_nhan_su, staffMap)}: Máy chuyển đến phải khác máy gốc.`);
         return;
       }
 
       const startMins = timeToMinutes(item.thoiGianBatDau);
       const endMins = timeToMinutes(item.thoiGianKetThuc);
       if (startMins >= endMins) {
-        setFormError(`${resolvePersonnelName(item.person.personnelId, staffMap)}: Giờ bắt đầu phải nhỏ hơn giờ kết thúc.`);
+        setFormError(`${resolvePersonnelName(item.person.ma_nhan_su, staffMap)}: Giờ bắt đầu phải nhỏ hơn giờ kết thúc.`);
         return;
       }
 
       // Overlap check
       const clientOverlap = history.some(h => {
-        if (h.ma_nhan_su !== item.person.personnelId) return false;
+        if (h.ma_nhan_su !== item.person.ma_nhan_su) return false;
         if (h.ngay_lam_viec !== selectedDate) return false;
         return rangesOverlap(
           { start: item.thoiGianBatDau, end: item.thoiGianKetThuc },
@@ -343,7 +343,7 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
         );
       });
       if (clientOverlap) {
-        setFormError(`${resolvePersonnelName(item.person.personnelId, staffMap)}: Nhân sự đã có khoảng điều động trùng giờ trong ngày này.`);
+        setFormError(`${resolvePersonnelName(item.person.ma_nhan_su, staffMap)}: Nhân sự đã có khoảng điều động trùng giờ trong ngày này.`);
         return;
       }
     }
@@ -356,7 +356,7 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
           ngay_lam_viec: selectedDate,
           ca: selectedShift,
           ma_lenh_sx: selectedOrderCode,
-          ma_nhan_su: item.person.personnelId,
+          ma_nhan_su: item.person.ma_nhan_su,
           vai_tro: item.person.role,
           may_goc: item.machineValue,
           may_dieu_dong: item.mayDieuDong,
@@ -372,7 +372,7 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
 
         if (!res.ok) {
           const err = await res.json();
-          setFormError(`${resolvePersonnelName(item.person.personnelId, staffMap)}: ${err.error || 'Lỗi khi lưu.'}`);
+          setFormError(`${resolvePersonnelName(item.person.ma_nhan_su, staffMap)}: ${err.error || 'Lỗi khi lưu.'}`);
           return;
         }
       }

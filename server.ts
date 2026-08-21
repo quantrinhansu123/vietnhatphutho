@@ -6864,10 +6864,10 @@ export function createApp() {
     const traineeStaff = String(row.hoc_viec ?? '').trim();
 
     const defaults = [
-      { id: 'role-0', role: 'Trưởng ca', personnelId: '', date: '', time: '', removable: false },
-      { id: 'role-1', role: 'Nhân sự chính', personnelId: '', date: '', time: '', removable: false },
-      { id: 'role-2', role: 'Thợ phụ', personnelId: '', date: '', time: '', removable: false },
-      { id: 'role-3', role: 'Học việc', personnelId: '', date: '', time: '', removable: false }
+      { id: 'role-0', role: 'Trưởng ca', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false },
+      { id: 'role-1', role: 'Nhân sự chính', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false },
+      { id: 'role-2', role: 'Thợ phụ', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false },
+      { id: 'role-3', role: 'Học việc', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false }
     ];
 
     if (!shiftLead && !mainStaff && !assistantStaff && !traineeStaff) {
@@ -6888,9 +6888,10 @@ export function createApp() {
         personnel.push({
           id: `role-${index}`,
           role,
-          personnelId: '',
-          date: '',
-          time: '',
+          ma_nhan_su: '',
+          ngay_lam_viec: '',
+          thoi_gian_bat_dau: '',
+          thoi_gian_ket_thuc: '',
           removable: false
         });
       } else {
@@ -6904,18 +6905,20 @@ export function createApp() {
             personnel.push({
               id: `role-${index}`,
               role,
-              personnelId: names[i],
-              date: '',
-              time: '',
+              ma_nhan_su: names[i],
+              ngay_lam_viec: '',
+              thoi_gian_bat_dau: '',
+              thoi_gian_ket_thuc: '',
               removable: false
             });
           } else {
             personnel.push({
               id: `personnel-${Date.now()}-${nextId++}`,
               role: `Nhân sự ${personnel.length + 1}`,
-              personnelId: names[i],
-              date: '',
-              time: '',
+              ma_nhan_su: names[i],
+              ngay_lam_viec: '',
+              thoi_gian_bat_dau: '',
+              thoi_gian_ket_thuc: '',
               removable: true
             });
           }
@@ -9287,15 +9290,7 @@ export function createApp() {
     // Máy chuyển đến phải nằm trong tất cả máy cùng ca cùng ngày (từ bất kỳ LSX nào)
     const machinesThisShift = [...new Set(allRows.map(r => String(r.vi_tri || r.may || '').trim()).filter(Boolean))];
     if (!machinesThisShift.includes(String(record.may_dieu_dong))) return 'Máy chuyển đến không tồn tại trong ca này.';
-
-    // Nhân sự phải nằm trong LSX hiện tại
-    const personnelExists = currentRows.some(r => {
-      try {
-        const list = JSON.parse(String(r.phan_cong_nhan_su || '[]'));
-        return Array.isArray(list) && list.some((p: any) => String(p?.personnelId || '') === record.ma_nhan_su);
-      } catch { return false; }
-    });
-    if (!personnelExists) return 'Nhân sự không thuộc phân công của lệnh sản xuất này.';
+  
     return null;
   }
 

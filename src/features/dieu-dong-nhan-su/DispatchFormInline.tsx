@@ -69,7 +69,7 @@ export function DispatchFormInline({
           </thead>
           <tbody>
             {selectedList.map(item => {
-              const personName = staffMap.get(item.person.personnelId) || item.person.personnelId || '-';
+              const personName = staffMap.get(item.person.ma_nhan_su) || item.person.ma_nhan_su || '-';
               const otherMachines = otherMachinesPerMachine[item.machineValue] || [];
               const isDisabled = otherMachines.length === 0;
 
@@ -132,7 +132,7 @@ export function DispatchFormInline({
       {/* Mobile: Stack Layout */}
       <div className="md:hidden space-y-3 mb-4">
         {selectedList.map(item => {
-          const personName = staffMap.get(item.person.personnelId) || item.person.personnelId || '-';
+          const personName = staffMap.get(item.person.ma_nhan_su) || item.person.ma_nhan_su || '-';
           const otherMachines = otherMachinesPerMachine[item.machineValue] || [];
           const isDisabled = otherMachines.length === 0;
 

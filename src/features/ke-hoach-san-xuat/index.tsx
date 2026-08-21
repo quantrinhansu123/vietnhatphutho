@@ -98,10 +98,10 @@ export {
 export type AssignedPersonnel = {
   id: string;
   role: string;
-  personnelId: string;
-  date: string;
-  time: string;
-  endTime: string;
+  ma_nhan_su: string;
+  ngay_lam_viec: string;
+  thoi_gian_bat_dau: string;
+  thoi_gian_ket_thuc: string;
   removable: boolean;
 };
 
@@ -139,10 +139,10 @@ export function createDefaultPersonnelList(): AssignedPersonnel[] {
   return DEFAULT_PERSONNEL_ROLE_LABELS.map((role, index) => ({
     id: `role-${index}`,
     role,
-    personnelId: '',
-    date: '',
-    time: '',
-    endTime: '',
+    ma_nhan_su: '',
+    ngay_lam_viec: '',
+    thoi_gian_bat_dau: '',
+    thoi_gian_ket_thuc: '',
     removable: false
   }));
 }
@@ -3596,10 +3596,10 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         machine: pickText(record, ['may', 'ten_may', 'ma_may', 'machine'], '-'),
         shift: pickText(record, ['ca', 'shift'], '-'),
         staff: pickText(record, ['nhan_su', 'staff', 'nhan_vien'], '-'),
-        shiftLead: personnel[0]?.personnelId || '-',
-        mainStaff: personnel[1]?.personnelId || '-',
-        assistantStaff: personnel[2]?.personnelId || '-',
-        traineeStaff: personnel[3]?.personnelId || '-',
+        shiftLead: personnel[0]?.ma_nhan_su || '-',
+        mainStaff: personnel[1]?.ma_nhan_su || '-',
+        assistantStaff: personnel[2]?.ma_nhan_su || '-',
+        traineeStaff: personnel[3]?.ma_nhan_su || '-',
         note: pickText(record, ['ghi_chu', 'note', 'mo_ta'], ''),
         position: pickText(record, ['vi_tri', 'position'], '-'),
         priority: Number(record.thu_tu_uu_tien ?? record.priority ?? 0) || 0,
@@ -3968,7 +3968,7 @@ export function ProductionOrderPrintSheet({
     }
     const names = order.personnel
       .slice(0, 4)
-      .map(p => resolveStaffName(p.personnelId))
+      .map(p => resolveStaffName(p.ma_nhan_su))
       .filter(Boolean);
     return names.length > 0 ? names.join(' + ') : '-';
   };
@@ -4673,7 +4673,7 @@ export function productionOrderFormToCreatePayload(
 
   const first4Staff = form.personnel.slice(0, 4);
   const allStaffNames = form.personnel
-    .map(p => (staffRoles && staffRoles[p.role.toLowerCase().replace(' ', '') as keyof typeof staffRoles]) || p.personnelId || '')
+    .map(p => (staffRoles && staffRoles[p.role.toLowerCase().replace(' ', '') as keyof typeof staffRoles]) || p.ma_nhan_su || '')
     .filter(Boolean)
     .join(', ');
 
@@ -4874,7 +4874,7 @@ export function AddProductionOrderModal({
   const selectedStaffNames = useMemo(
     () => {
       const names = form.personnel
-        .map(p => staffOptions.find(s => s.id === p.personnelId)?.name || '')
+        .map(p => staffOptions.find(s => s.id === p.ma_nhan_su)?.name || '')
         .filter(Boolean);
       return [...new Set(names)].join(', ');
     },
@@ -5904,7 +5904,7 @@ export function ProductionOrderViewModal({
     if (row.staff && row.staff !== '-') {
       const names = row.personnel
       .slice(0, 4)
-      .map(p => resolveStaffName(p.personnelId))
+      .map(p => resolveStaffName(p.ma_nhan_su))
       .filter(Boolean);
       return names.length > 0 ? names.join(', ') : '-';
     }
@@ -6070,7 +6070,7 @@ export function EditProductionOrderModal({
   const workshopStaff = useMemo(() => collectProductionWorkshopStaff(staffBranches), [staffBranches]);
 
   const staffText = useMemo(
-    () => [...new Set(form.personnel.map(p => workshopStaff.find(s => s.id === p.personnelId)?.name || '').filter(Boolean))].join(', '),
+    () => [...new Set(form.personnel.map(p => workshopStaff.find(s => s.id === p.ma_nhan_su)?.name || '').filter(Boolean))].join(', '),
     [form.personnel, workshopStaff]
   );
 

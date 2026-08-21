@@ -73,12 +73,12 @@ function productionOrderAssignedToPerson(row: ProductionOrderRow, personName: st
   // So khớp theo ID trước (chính xác) — kiểm tra xem personName có trùng với bất kỳ personnelId nào không
   // (thực chất personName là tên, nhưng có thể là "id-string" ở dữ liệu hybrid cũ)
   const personId = Array.from(staffMap.entries()).find(([id, name]) => name === personName)?.[0];
-  if (personId && row.personnel.some(p => p.personnelId === personId)) {
+  if (personId && row.personnel.some(p => p.ma_nhan_su === personId)) {
     return true;
   }
 
-  // Fallback: so khớp theo tên (để handle dữ liệu cũ mà personnelId là tên thôi)
-  const fields = [row.staff, ...row.personnel.map(p => resolvePersonnelName(p.personnelId, staffMap))];
+  // Fallback: so khớp theo tên (để handle dữ liệu cũ mà ma_nhan_su là tên thôi)
+  const fields = [row.staff, ...row.personnel.map(p => resolvePersonnelName(p.ma_nhan_su, staffMap))];
   for (const field of fields) {
     const raw = String(field || '').trim();
     if (!raw || raw === '-' || /^chưa phân công$/i.test(raw)) continue;
@@ -108,7 +108,7 @@ function productionOrderStaffDisplay(row: ProductionOrderRow, staffMap: Map<stri
   if (row.staff && row.staff !== '') {
     const names = row.personnel
     .slice(0, 4)
-    .map(p => resolvePersonnelName(p.personnelId, staffMap))
+    .map(p => resolvePersonnelName(p.ma_nhan_su, staffMap))
     .filter(Boolean);
     return names.length > 0 ? names.join(', ') : '-';
   }
@@ -335,7 +335,7 @@ export function ProductionOrdersPanel({
         const matchesFrom = !fromTime || (rowStartTime !== null && rowStartTime >= fromTime);
         const matchesTo = !toTime || (rowStartTime !== null && rowStartTime <= toTime);
         const personnelNames = row.personnel
-          .map(p => resolvePersonnelName(p.personnelId, staffMap))
+          .map(p => resolvePersonnelName(p.ma_nhan_su, staffMap))
           .filter(Boolean)
           .join(' ');
         const matchesSearch =
