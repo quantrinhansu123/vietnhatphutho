@@ -1253,7 +1253,6 @@ export function ProductEditModal({
   }, [mode, product?.id, productConversions]);
 
   const fields: Array<{ key: Exclude<keyof ProductFormState, 'conversions'>; label: string; required?: boolean; span?: boolean }> = [
-    { key: 'code', label: 'Mã SP', required: true },
     { key: 'name', label: 'Tên sản phẩm', required: true },
     { key: 'productionName', label: 'Tên sản xuất' },
     { key: 'description', label: 'Mô tả', span: true }
@@ -2460,14 +2459,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         />
       </TableToolbar>
 
-      <section className="grid gap-3 rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="min-w-0">
-          <p className="text-sm font-black text-zinc-950">Thao tác hàng loạt</p>
-          <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-            Đã tick {selectedProducts.length} dòng. Excel danh mục SP khớp cột bảng (ô trống vẫn nhập được). Excel định mức NVL riêng.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      <section className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canEdit ? (
             <button
               type="button"
@@ -2556,7 +2549,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
             <QrCode className="h-4 w-4" />
             In QR đã chọn
           </button>
-        </div>
       </section>
 
       <div className="relative">
