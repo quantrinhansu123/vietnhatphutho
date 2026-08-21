@@ -2720,7 +2720,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
               setProductPageSize(size);
               setProductPage(1);
             }}
-            pageSizeOptions={[100, 500, 1000, 3000]}
             noBorderTop={true}
           />
         </div>

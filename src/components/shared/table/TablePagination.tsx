@@ -32,19 +32,21 @@ export function TablePagination({
         <span>
           Tổng: <strong className="text-zinc-900">{totalRecords}</strong> bản ghi
         </span>
-        <label className="flex items-center gap-2">
-          <span>Hiển thị</span>
-          <select
-            value={pageSize}
-            onChange={event => onPageSizeChange(Number(event.target.value))}
-            className="h-10 rounded-lg border border-zinc-200 bg-white px-3 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
-          >
-            {pageSizeOptions.map(size => (
-              <option key={size} value={size}>{size}</option>
-            ))}
-          </select>
-          <span>/ trang</span>
-        </label>
+        {pageSizeOptions.length > 0 && (
+          <label className="flex items-center gap-2">
+            <span>Hiển thị</span>
+            <select
+              value={pageSize}
+              onChange={event => onPageSizeChange(Number(event.target.value))}
+              className="h-10 rounded-lg border border-zinc-200 bg-white px-3 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
+            >
+              {pageSizeOptions.map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+            <span>/ trang</span>
+          </label>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5">
