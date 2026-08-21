@@ -165,7 +165,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
           role: member.role || '',
           shift: member.shift || '',
           status: member.status || '',
-          username: member.username || ''
+          username: member.username || '',
+          region: member.region || ''
         }))
       )
     );
@@ -224,7 +225,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
           vi_tri: buildStaffViTri(department, role),
           ca_lam: row.shift.trim() || 'Ca 1',
           trang_thai: row.status.trim() || 'Đang làm',
-          ten_dang_nhap: row.username.trim()
+          ten_dang_nhap: row.username.trim(),
+          khu_vuc: row.region?.trim() || ''
         };
         if (row.password.trim()) {
           payload.mat_khau = row.password.trim();
@@ -707,6 +709,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 <TableHeadCell>Phòng ban</TableHeadCell>
                 <TableHeadCell>Chức vụ</TableHeadCell>
                 <TableHeadCell>Vị trí</TableHeadCell>
+                <TableHeadCell>Khu vực</TableHeadCell>
                 <TableHeadCell>Ca</TableHeadCell>
                 <TableHeadCell>Tên đăng nhập</TableHeadCell>
                 <TableHeadCell>Mật khẩu</TableHeadCell>
@@ -742,6 +745,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                       <td className="whitespace-nowrap px-4 py-3 font-semibold text-zinc-700">{departmentName}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.role || '—'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.position || '—'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.region || '—'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.shift || '—'}</td>
                       <td className="max-w-[200px] truncate px-4 py-3 font-mono text-zinc-700" title={member.username}>
                         {member.username || '—'}
@@ -833,7 +837,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                   );
                 })}
                 {tableRows.length === 0 && !isLoadingStaff && (
-                  <TableEmptyRow colSpan={canDelete ? 13 : 12}>Không có nhân sự phù hợp bộ lọc.</TableEmptyRow>
+                  <TableEmptyRow colSpan={canDelete ? 14 : 13}>Không có nhân sự phù hợp bộ lọc.</TableEmptyRow>
                 )}
               </TableBody>
             </TableShell>
@@ -912,6 +916,7 @@ function StaffDetailModal({
     ['Phòng ban', departmentName || '—'],
     ['Chức vụ', member.role || '—'],
     ['Vị trí', member.position || '—'],
+    ['Khu vực', member.region || '—'],
     ['Ca làm', member.shift || '—'],
     ['Tên đăng nhập', member.username || '—'],
     ['Mật khẩu', member.password || '—'],
@@ -1143,6 +1148,7 @@ export type StaffFormState = {
   username: string;
   password: string;
   signatureUrl: string;
+  region: string;
   viewPermissions: StaffViewPermissions;
 };
 
@@ -1158,6 +1164,7 @@ export function emptyStaffForm(defaults?: { branch?: string; department?: string
     username: '',
     password: '',
     signatureUrl: '',
+    region: '',
     viewPermissions: []
   };
 }
@@ -1209,6 +1216,7 @@ export function AddStaffModal({
         username: member.username || '',
         password: member.password || '',
         signatureUrl: member.signatureUrl || '',
+        region: member.region || '',
         viewPermissions: member.viewPermissions || []
       });
       setFormError('');
@@ -1281,6 +1289,7 @@ export function AddStaffModal({
         ten_dang_nhap: form.username.trim(),
         mat_khau: form.password.trim(),
         link_chu_ky: form.signatureUrl.trim(),
+        khu_vuc: form.region.trim(),
         quyen_xem: form.viewPermissions
       };
 
@@ -1434,6 +1443,22 @@ export function AddStaffModal({
               {['Đang làm', 'Nghỉ phép', 'Nghỉ việc'].map(status => (
                 <option key={status} value={status}>
                   {status}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khu vực phụ trách kinh doanh</span>
+            <select
+              value={form.region}
+              onChange={event => setForm(prev => ({ ...prev, region: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            >
+              <option value="">-- Chọn khu vực --</option>
+              {['Bắc', 'Trung', 'Nam'].map(region => (
+                <option key={region} value={region}>
+                  {region}
                 </option>
               ))}
             </select>

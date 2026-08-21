@@ -12,6 +12,7 @@ import { SearchableSelect, SimpleSelect } from '../../components/shared/Searchab
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
 import ProductionPlanNvlPrintSheet, { type ProductionPlanNvlPrintShiftGroup } from '../../components/ProductionPlanNvlPrintSheet';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
+import { PersonnelAssignmentBlock } from '../../components/PersonnelAssignmentBlock';
 import {
   loadProductionPlanRelatedReports,
   ProductionPlanRelatedPrintContent,
@@ -93,6 +94,16 @@ export {
   splitProductionFieldValues
 } from '../_shared/productionProductHelpers';
 
+export type AssignedPersonnel = {
+  id: string;
+  role: string;
+  personnelId: string;
+  date: string;
+  time: string;
+  endTime: string;
+  removable: boolean;
+};
+
 export interface ProductionOrderRow {
   id: string;
   code: string;
@@ -118,6 +129,47 @@ export interface ProductionOrderRow {
   note: string;
   position: string;
   priority: number;
+  personnel: AssignedPersonnel[];
+}
+
+export const DEFAULT_PERSONNEL_ROLE_LABELS = ['Trưởng ca', 'Nhân sự chính', 'Thợ phụ', 'Học việc'];
+
+export function createDefaultPersonnelList(): AssignedPersonnel[] {
+  return DEFAULT_PERSONNEL_ROLE_LABELS.map((role, index) => ({
+    id: `role-${index}`,
+    role,
+    personnelId: '',
+    date: '',
+    time: '',
+    endTime: '',
+    removable: false
+  }));
+}
+
+export function addPersonnelEntry(list: AssignedPersonnel[]): AssignedPersonnel[] {
+  const newIndex = list.length + 1;
+  const newId = `personnel-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  return [
+    ...list,
+    {
+      id: newId,
+      role: `Nhân sự ${newIndex}`,
+      personnelId: '',
+      date: '',
+      time: '',
+      endTime: '',
+      removable: true
+    }
+  ];
+}
+
+export function removePersonnelEntry(list: AssignedPersonnel[], id: string): AssignedPersonnel[] {
+  const filtered = list.filter(item => !(item.removable && item.id === id));
+  return filtered.map((item, index) => {
+    if (!item.removable) return item;
+    const newRole = `Nhân sự ${index + 1}`;
+    return item.role === newRole ? item : { ...item, role: newRole };
+  });
 }
 
 export function resolveProductionOrderMachine(row: ProductionOrderRow, machines: MachineRow[] = []): string {
@@ -3406,6 +3458,7 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
 
       const products = parseOrderProductsFromRecord(record);
       const summary = summarizeOrderProducts(products);
+      const personnel = parseProductionPersonnelData(record);
 
       return {
         id: String(record.id ?? '').trim() || code || name || summary.productCode,
@@ -3427,16 +3480,46 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         machine: pickText(record, ['may', 'ten_may', 'ma_may', 'machine'], '-'),
         shift: pickText(record, ['ca', 'shift'], '-'),
         staff: pickText(record, ['nhan_su', 'staff', 'nhan_vien'], '-'),
-        shiftLead: pickText(record, ['truong_ca', 'shiftLead'], '-'),
-        mainStaff: pickText(record, ['nhan_su_chinh', 'mainStaff'], '-'),
-        assistantStaff: pickText(record, ['tho_phu', 'assistantStaff'], '-'),
-        traineeStaff: pickText(record, ['hoc_viec', 'traineeStaff'], '-'),
+        shiftLead: personnel[0]?.personnelId || '-',
+        mainStaff: personnel[1]?.personnelId || '-',
+        assistantStaff: personnel[2]?.personnelId || '-',
+        traineeStaff: personnel[3]?.personnelId || '-',
         note: pickText(record, ['ghi_chu', 'note', 'mo_ta'], ''),
         position: pickText(record, ['vi_tri', 'position'], '-'),
-        priority: Number(record.thu_tu_uu_tien ?? record.priority ?? 0) || 0
+        priority: Number(record.thu_tu_uu_tien ?? record.priority ?? 0) || 0,
+        personnel
       };
     })
     .filter((row): row is ProductionOrderRow => Boolean(row));
+}
+
+function parseProductionPersonnelData(record: Record<string, unknown>): AssignedPersonnel[] {
+  const phanCongText = pickText(record, ['phan_cong_nhan_su'], '');
+  if (phanCongText && phanCongText.trim()) {
+    try {
+      const parsed = JSON.parse(phanCongText);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Fall through to legacy parsing
+    }
+  }
+
+  const defaultList = createDefaultPersonnelList();
+  const shiftLead = pickText(record, ['truong_ca', 'shiftLead'], '').trim();
+  const mainStaff = pickText(record, ['nhan_su_chinh', 'mainStaff'], '').trim();
+  const assistantStaff = pickText(record, ['tho_phu', 'assistantStaff'], '').trim();
+  const traineeStaff = pickText(record, ['hoc_viec', 'traineeStaff'], '').trim();
+
+  if (shiftLead || mainStaff || assistantStaff || traineeStaff) {
+    return [
+      { ...defaultList[0], personnelId: shiftLead },
+      { ...defaultList[1], personnelId: mainStaff },
+      { ...defaultList[2], personnelId: assistantStaff },
+      { ...defaultList[3], personnelId: traineeStaff }
+    ];
+  }
+
+  return defaultList;
 }
 
 /** Hiển thị ngày của lệnh SX theo định dạng Việt Nam, không kèm giờ. */
@@ -4317,10 +4400,7 @@ export type ProductionOrderFormState = {
   status: string;
   shift: string;
   selectedStaffIds: string[];
-  shiftLeadId: string;
-  mainStaffId: string;
-  assistantStaffId: string;
-  traineeStaffId: string;
+  personnel: AssignedPersonnel[];
   startDate: string;
   startDateTime: string;
   endDateTime: string;
@@ -4328,17 +4408,8 @@ export type ProductionOrderFormState = {
   note: string;
 };
 
-type ProductionStaffRoleKey = 'shiftLeadId' | 'mainStaffId' | 'assistantStaffId' | 'traineeStaffId';
-
 /** Phòng ban nguồn cho Trưởng ca / NS chính / Thợ phụ (/ Học việc) trên lệnh SX */
 const PRODUCTION_WORKSHOP_DEPARTMENT = 'PHÂN XƯỞNG SẢN XUẤT';
-
-const PRODUCTION_STAFF_ROLES: Array<{ key: ProductionStaffRoleKey; label: string }> = [
-  { key: 'shiftLeadId', label: 'Trưởng ca' },
-  { key: 'mainStaffId', label: 'Nhân sự chính' },
-  { key: 'assistantStaffId', label: 'Thợ phụ' },
-  { key: 'traineeStaffId', label: 'Học việc' }
-];
 
 function normalizeStaffPositionText(value: string) {
   return String(value || '')
@@ -4403,10 +4474,7 @@ export function emptyProductionOrderForm(): ProductionOrderFormState {
     status: 'Chờ sx',
     shift: '',
     selectedStaffIds: [],
-    shiftLeadId: '',
-    mainStaffId: '',
-    assistantStaffId: '',
-    traineeStaffId: '',
+    personnel: createDefaultPersonnelList(),
     startDate: extractProductionOrderDate(startDateTime),
     startDateTime,
     endDateTime: '',
@@ -4452,7 +4520,13 @@ export function productionOrderFormToCreatePayload(
           .filter(Boolean)
           .join(' + ');
 
-  return {
+  const first4Staff = form.personnel.slice(0, 4);
+  const allStaffNames = form.personnel
+    .map(p => (staffRoles && staffRoles[p.role.toLowerCase().replace(' ', '') as keyof typeof staffRoles]) || p.personnelId || '')
+    .filter(Boolean)
+    .join(', ');
+
+  const payload: Record<string, unknown> = {
     ma_lenh_sx: form.code.trim(),
     ten_lenh_sx: form.name.trim() || (defaultName ? `SX ${defaultName}` : ''),
     san_pham: products,
@@ -4463,16 +4537,15 @@ export function productionOrderFormToCreatePayload(
     trang_thai: form.status,
     ma_don_hang: orderRefs.join(', ') || primaryLine.orderRef.trim(),
     ca: form.shift.trim(),
-    nhan_su: staff,
-    truong_ca: staffRoles?.shiftLead?.trim() || '',
-    nhan_su_chinh: staffRoles?.mainStaff?.trim() || '',
-    tho_phu: staffRoles?.assistantStaff?.trim() || '',
-    hoc_viec: staffRoles?.traineeStaff?.trim() || '',
+    nhan_su: allStaffNames,
     ngay_gio_bat_dau: mergeProductionOrderDateTime(form.startDate, form.startDateTime) || null,
     ngay_gio_ket_thuc: form.endDateTime.trim() || null,
     may: form.machine.trim(),
-    ghi_chu: form.note.trim()
+    ghi_chu: form.note.trim(),
+    phan_cong_nhan_su: JSON.stringify(form.personnel)
   };
+
+  return payload;
 }
 
 export function productionOrderFormToPayload(
@@ -4647,26 +4720,14 @@ export function AddProductionOrderModal({
     return filtered.length > 0 ? filtered : workshopStaff;
   }, [selectedShifts, workshopStaff]);
 
-  const staffOptionsByRole = useMemo(() => {
-    // Trưởng ca / NS chính / Thợ phụ (/ Học việc): sổ từ cùng pool phòng PHÂN XƯỞNG SẢN XUẤT
-    return Object.fromEntries(
-      PRODUCTION_STAFF_ROLES.map(role => [role.key, staffOptions])
-    ) as Record<ProductionStaffRoleKey, HrMember[]>;
-  }, [staffOptions]);
-
-  const selectedStaffRoles = useMemo(() => {
-    const nameById = (id: string) => staffOptions.find(member => member.id === id)?.name || '';
-    return {
-      shiftLead: nameById(form.shiftLeadId),
-      mainStaff: nameById(form.mainStaffId),
-      assistantStaff: nameById(form.assistantStaffId),
-      traineeStaff: nameById(form.traineeStaffId)
-    };
-  }, [form.assistantStaffId, form.mainStaffId, form.shiftLeadId, form.traineeStaffId, staffOptions]);
-
   const selectedStaffNames = useMemo(
-    () => [...new Set(Object.values(selectedStaffRoles).filter(Boolean))].join(', '),
-    [selectedStaffRoles]
+    () => {
+      const names = form.personnel
+        .map(p => staffOptions.find(s => s.id === p.personnelId)?.name || '')
+        .filter(Boolean);
+      return [...new Set(names)].join(', ');
+    },
+    [form.personnel, staffOptions]
   );
 
   const autofillOrderOptions = useMemo(() => {
@@ -4972,7 +5033,7 @@ export function AddProductionOrderModal({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(
-            productionOrderFormToCreatePayload(shiftForm, filledLines, selectedStaffNames, selectedStaffRoles)
+            productionOrderFormToCreatePayload(shiftForm, filledLines)
           )
         });
         const data = await res.json().catch(() => ({}));
@@ -5249,46 +5310,28 @@ export function AddProductionOrderModal({
             )}
           </label>
 
-          <div className="col-span-2 space-y-2">
-            <div>
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Phân công nhân sự</span>
-              <p className="mt-1 text-[11px] font-semibold text-zinc-400">
-                Trưởng ca / Nhân sự chính / Thợ phụ lấy từ phòng ban {PRODUCTION_WORKSHOP_DEPARTMENT}.
-              </p>
-            </div>
-            {staffOptions.length === 0 ? (
-              <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs font-semibold text-zinc-400">
-                Chưa có nhân sự thuộc phòng {PRODUCTION_WORKSHOP_DEPARTMENT}.
-              </p>
-            ) : (
-              <div className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
-                {PRODUCTION_STAFF_ROLES.map(field => (
-                  <label key={field.key} className="space-y-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{field.label}</span>
-                    <select
-                      value={form[field.key]}
-                      onChange={event =>
-                        setForm(prev => ({ ...prev, [field.key]: event.target.value }))
-                      }
-                      className={orderFieldClass}
-                    >
-                      <option value="">Chưa phân công</option>
-                      {staffOptionsByRole[field.key].map(member => {
-                        const roleLabel = member.role || member.position || '';
-                        return (
-                          <option key={`${field.key}-${member.id}`} value={member.id}>
-                            {member.name}
-                            {roleLabel ? ` · ${roleLabel}` : ''}
-                            {member.shift ? ` · ${member.shift}` : ''}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
+          <PersonnelAssignmentBlock
+            items={form.personnel}
+            staffOptions={staffOptions}
+            onChange={(id, patch) => {
+              setForm(prev => ({
+                ...prev,
+                personnel: prev.personnel.map(item => (item.id === id ? { ...item, ...patch } : item))
+              }));
+            }}
+            onAdd={() => {
+              setForm(prev => ({
+                ...prev,
+                personnel: addPersonnelEntry(prev.personnel)
+              }));
+            }}
+            onRemove={(id) => {
+              setForm(prev => ({
+                ...prev,
+                personnel: removePersonnelEntry(prev.personnel, id)
+              }));
+            }}
+          />
 
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
@@ -5760,12 +5803,6 @@ export function EditProductionOrderModal({
   onSaved: () => void | Promise<void>;
 }) {
   const [form, setForm] = useState<ProductionOrderFormState>(emptyProductionOrderForm);
-  const [staffRoles, setStaffRoles] = useState({
-    shiftLead: '',
-    mainStaff: '',
-    assistantStaff: '',
-    traineeStaff: ''
-  });
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [formError, setFormError] = useState('');
@@ -5792,21 +5829,12 @@ export function EditProductionOrderModal({
       status: row.status === '-' ? 'Chờ sx' : row.status,
       shift: row.shift === '-' ? '' : row.shift,
       selectedStaffIds: [],
-      shiftLeadId: '',
-      mainStaffId: '',
-      assistantStaffId: '',
-      traineeStaffId: '',
+      personnel: row.personnel && row.personnel.length > 0 ? row.personnel : createDefaultPersonnelList(),
       startDate: extractProductionOrderDate(startDateTime),
       startDateTime,
       endDateTime: toDatetimeLocalInputValue(row.endDate),
       machine: row.machine === '-' ? '' : row.machine,
       note: row.note === '-' ? '' : row.note || ''
-    });
-    setStaffRoles({
-      shiftLead: row.shiftLead === '-' ? '' : row.shiftLead,
-      mainStaff: row.mainStaff === '-' ? '' : row.mainStaff,
-      assistantStaff: row.assistantStaff === '-' ? '' : row.assistantStaff,
-      traineeStaff: row.traineeStaff === '-' ? '' : row.traineeStaff
     });
     setFormError('');
   }, [open, row]);
@@ -5839,8 +5867,8 @@ export function EditProductionOrderModal({
   const workshopStaff = useMemo(() => collectProductionWorkshopStaff(staffBranches), [staffBranches]);
 
   const staffText = useMemo(
-    () => [...new Set(Object.values(staffRoles).map(name => name.trim()).filter(Boolean))].join(', '),
-    [staffRoles]
+    () => [...new Set(form.personnel.map(p => workshopStaff.find(s => s.id === p.personnelId)?.name || '').filter(Boolean))].join(', '),
+    [form.personnel, workshopStaff]
   );
 
   const orderCodeOptions = useMemo(() => {
@@ -5930,7 +5958,7 @@ export function EditProductionOrderModal({
       const res = await fetch(`/api/lenh-sx/${row.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines, staffText, staffRoles))
+        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines))
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -5945,13 +5973,6 @@ export function EditProductionOrderModal({
       setIsSaving(false);
     }
   };
-
-  const staffRoleFields = [
-    { key: 'shiftLead', label: 'Trưởng ca' },
-    { key: 'mainStaff', label: 'Nhân sự chính' },
-    { key: 'assistantStaff', label: 'Thợ phụ' },
-    { key: 'traineeStaff', label: 'Học việc' }
-  ] as const;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -6123,55 +6144,29 @@ export function EditProductionOrderModal({
               <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
             </label>
 
-            <label className="space-y-1.5 sm:col-span-2">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân sự</span>
-              <input
-                value={staffText}
-                readOnly
-                className={`${orderFieldClass} bg-zinc-50 text-zinc-700`}
-                placeholder="Tự tổng hợp theo các vai trò bên dưới"
-              />
-              <span className="block text-[10px] font-semibold text-zinc-400">
-                Trưởng ca / NS chính / Thợ phụ / Học việc sổ từ phòng {PRODUCTION_WORKSHOP_DEPARTMENT}.
-              </span>
-            </label>
-
-            {staffRoleFields.map(field => {
-              const currentName = staffRoles[field.key];
-              const hasCurrent =
-                Boolean(currentName) &&
-                !workshopStaff.some(member => member.name === currentName);
-              return (
-                <label key={field.key} className="space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">{field.label}</span>
-                  <select
-                    value={currentName}
-                    onChange={event =>
-                      setStaffRoles(prev => ({ ...prev, [field.key]: event.target.value }))
-                    }
-                    disabled={isLoadingStaff}
-                    className={orderFieldClass}
-                  >
-                    <option value="">
-                      {isLoadingStaff ? 'Đang tải nhân sự...' : 'Chưa phân công'}
-                    </option>
-                    {hasCurrent ? <option value={currentName}>{currentName}</option> : null}
-                    {workshopStaff.map(member => (
-                      <option key={`${field.key}-${member.id}`} value={member.name}>
-                        {member.name}
-                        {member.role ? ` · ${member.role}` : ''}
-                        {member.shift ? ` · ${member.shift}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {!isLoadingStaff && workshopStaff.length === 0 ? (
-                    <span className="block text-[10px] font-semibold text-amber-700">
-                      Chưa có nhân sự phòng {PRODUCTION_WORKSHOP_DEPARTMENT}.
-                    </span>
-                  ) : null}
-                </label>
-              );
-            })}
+            <PersonnelAssignmentBlock
+              items={form.personnel}
+              staffOptions={workshopStaff}
+              isLoadingStaff={isLoadingStaff}
+              onChange={(id, patch) => {
+                setForm(prev => ({
+                  ...prev,
+                  personnel: prev.personnel.map(item => (item.id === id ? { ...item, ...patch } : item))
+                }));
+              }}
+              onAdd={() => {
+                setForm(prev => ({
+                  ...prev,
+                  personnel: addPersonnelEntry(prev.personnel)
+                }));
+              }}
+              onRemove={(id) => {
+                setForm(prev => ({
+                  ...prev,
+                  personnel: removePersonnelEntry(prev.personnel, id)
+                }));
+              }}
+            />
 
             <label className="space-y-1.5">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>

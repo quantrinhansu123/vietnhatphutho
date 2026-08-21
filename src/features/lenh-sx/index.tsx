@@ -66,11 +66,19 @@ function isNhanVienRole(role: string) {
 }
 
 /** Tách chuỗi phân công (có thể nhiều tên ngăn bởi , ; / |) rồi khớp đúng tên đăng nhập. */
-function productionOrderAssignedToPerson(row: ProductionOrderRow, personName: string) {
+function productionOrderAssignedToPerson(row: ProductionOrderRow, personName: string, staffMap: Map<string, string>) {
   const target = normalizeStaffMatchKey(personName);
   if (!target) return false;
 
-  const fields = [row.staff, row.shiftLead, row.mainStaff, row.assistantStaff, row.traineeStaff];
+  // So khớp theo ID trước (chính xác) — kiểm tra xem personName có trùng với bất kỳ personnelId nào không
+  // (thực chất personName là tên, nhưng có thể là "id-string" ở dữ liệu hybrid cũ)
+  const personId = Array.from(staffMap.entries()).find(([id, name]) => name === personName)?.[0];
+  if (personId && row.personnel.some(p => p.personnelId === personId)) {
+    return true;
+  }
+
+  // Fallback: so khớp theo tên (để handle dữ liệu cũ mà personnelId là tên thôi)
+  const fields = [row.staff, ...row.personnel.map(p => resolvePersonnelName(p.personnelId, staffMap))];
   for (const field of fields) {
     const raw = String(field || '').trim();
     if (!raw || raw === '-' || /^chưa phân công$/i.test(raw)) continue;
@@ -85,12 +93,23 @@ function productionOrderAssignedToPerson(row: ProductionOrderRow, personName: st
   return false;
 }
 
-function productionOrderStaffDisplay(row: ProductionOrderRow) {
+function resolvePersonnelName(personnelId: string, staffMap: Map<string, string>): string {
+  if (!personnelId) return '';
+  // Thử match với id thật trước
+  if (staffMap.has(personnelId)) {
+    return staffMap.get(personnelId) || '';
+  }
+  // Nếu không khớp, coi như đã là tên (dữ liệu cũ)
+  return personnelId;
+}
+
+function productionOrderStaffDisplay(row: ProductionOrderRow, staffMap: Map<string, string>) {
   if (row.staff && row.staff !== '-') return row.staff;
-  return [...new Set(
-    [row.shiftLead, row.mainStaff, row.assistantStaff, row.traineeStaff]
-      .filter(value => value && value !== '-')
-  )].join(', ') || '-';
+  const names = row.personnel
+    .slice(0, 4)
+    .map(p => resolvePersonnelName(p.personnelId, staffMap))
+    .filter(Boolean);
+  return names.length > 0 ? names.join(', ') : '-';
 }
 
 export function ProductionOrdersPanel({
@@ -133,6 +152,7 @@ export function ProductionOrdersPanel({
     x: number;
     y: number;
   } | null>(null);
+  const [staffBranches, setStaffBranches] = useState<any[]>([]);
   const { printingOrder, printingMaterials, printingProduct, printingProductCatalog, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
 
   const loadProductionOrders = async () => {
@@ -179,6 +199,21 @@ export function ProductionOrdersPanel({
 
   useEffect(() => {
     loadProductionOrders();
+  }, []);
+
+  useEffect(() => {
+    const loadStaff = async () => {
+      try {
+        const res = await fetch('/api/nhan-su?format=groups&scope=all');
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data) {
+          setStaffBranches(data);
+        }
+      } catch (error) {
+        console.error('Failed to load staff:', error);
+      }
+    };
+    loadStaff();
   }, []);
 
   const openEditModal = async (row: ProductionOrderRow) => {
@@ -228,6 +263,24 @@ export function ProductionOrdersPanel({
     }
   };
 
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!staffBranches || typeof staffBranches !== 'object') return map;
+    const branches = (staffBranches as any).branches || [];
+    for (const branch of branches) {
+      const departments = branch.departments || [];
+      for (const department of departments) {
+        const members = department.members || [];
+        for (const member of members) {
+          if (member.id && member.name) {
+            map.set(member.id, member.name);
+          }
+        }
+      }
+    }
+    return map;
+  }, [staffBranches]);
+
   const machineFilters = useMemo(() => {
     const machines = rows
       .map(row => row.machine)
@@ -268,7 +321,7 @@ export function ProductionOrdersPanel({
 
     return rows
       .filter(row => {
-        if (restrictToOwnAssignments && !productionOrderAssignedToPerson(row, personName)) {
+        if (restrictToOwnAssignments && !productionOrderAssignedToPerson(row, personName, staffMap)) {
           return false;
         }
         const matchesStatus = selectedStatus === 'all' || row.status === selectedStatus;
@@ -276,9 +329,13 @@ export function ProductionOrdersPanel({
         const rowStartTime = parseDisplayDate(row.startDate);
         const matchesFrom = !fromTime || (rowStartTime !== null && rowStartTime >= fromTime);
         const matchesTo = !toTime || (rowStartTime !== null && rowStartTime <= toTime);
+        const personnelNames = row.personnel
+          .map(p => resolvePersonnelName(p.personnelId, staffMap))
+          .filter(Boolean)
+          .join(' ');
         const matchesSearch =
           !normalizedSearch ||
-          `${row.code} ${row.name} ${row.productCode} ${row.productName} ${formatProductionOrderProductsSummary(row)} ${row.customer} ${row.orderRef} ${row.machine} ${row.status} ${row.note} ${row.staff} ${row.shiftLead} ${row.mainStaff} ${row.assistantStaff} ${row.traineeStaff}`
+          `${row.code} ${row.name} ${row.productCode} ${row.productName} ${formatProductionOrderProductsSummary(row)} ${row.customer} ${row.orderRef} ${row.machine} ${row.status} ${row.note} ${row.staff} ${personnelNames}`
             .toLowerCase()
             .includes(normalizedSearch);
         return matchesStatus && matchesMachine && matchesFrom && matchesTo && matchesSearch;
@@ -549,7 +606,7 @@ export function ProductionOrdersPanel({
                         <td className="px-4 py-3 align-top text-zinc-600">{row.startDate}</td>
                         <td className="px-4 py-3 align-top text-zinc-600">{row.endDate}</td>
                         <td className="px-4 py-3 align-top font-semibold text-zinc-700">
-                          {productionOrderStaffDisplay(row)}
+                          {productionOrderStaffDisplay(row, staffMap)}
                         </td>
                         <td className="px-4 py-3 align-top text-zinc-600">{row.machine}</td>
                         <td className="px-4 py-3 align-top text-center">

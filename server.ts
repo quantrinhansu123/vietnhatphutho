@@ -1168,6 +1168,7 @@ function mapStaffRecord(row: Record<string, unknown>) {
   const username = pickStaffField(row, ['ten_dang_nhap', 'username', 'login'], '');
   const password = pickStaffField(row, ['mat_khau', 'password'], '');
   const signatureUrl = pickStaffField(row, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '');
+  const region = pickStaffField(row, ['khu_vuc', 'region'], '');
 
   return {
     id: code || name,
@@ -1183,6 +1184,8 @@ function mapStaffRecord(row: Record<string, unknown>) {
     password,
     signatureUrl,
     link_chu_ky: signatureUrl,
+    region,
+    khu_vuc: region,
     viewPermissions: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     assignedPositions: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions),
@@ -1303,6 +1306,8 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
   const explicitViTri = pickRowField(source, ['vi_tri', 'position', 'ma_vi_tri'], '');
   const viTri = explicitViTri || buildStaffViTriLabel(department, congViec);
 
+  const region = pickRowField(source, ['khu_vuc', 'region'], '') || null;
+
   const record: Record<string, unknown> = {
     nhan_su: name,
     phong_ban: department,
@@ -1313,7 +1318,8 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
     trang_thai: pickRowField(source, ['trang_thai', 'status'], 'Đang làm'),
     ma_nhan_su: code || null,
     ten_dang_nhap: pickRowField(source, ['ten_dang_nhap', 'username', 'login'], '') || null,
-    link_chu_ky: pickRowField(source, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '') || null
+    link_chu_ky: pickRowField(source, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '') || null,
+    khu_vuc: region
   };
 
   // Chỉ ghi mật khẩu khi client gửi rõ — tránh Excel/PUT vô tình xóa mật khẩu cũ
@@ -4861,6 +4867,7 @@ function parseOrderBody(
     khach_hang: typeof source.customer === 'string' ? source.customer.trim() : '',
     san_pham: products,
     ghi_chu: typeof source.note === 'string' ? source.note.trim() : '',
+    khu_vuc: typeof source.khu_vuc === 'string' ? source.khu_vuc.trim() : '',
     updated_at: new Date().toISOString()
   };
   if (typeof source.deliveryDate === 'string') {
@@ -4988,6 +4995,13 @@ function buildProductionOrderRecordFromOrder(
   const creator =
     pickRowField(order, ['nguoi_tao', 'created_by', 'nguoi_lap', 'nhan_vien', 'staff'], '') || DEFAULT_PRODUCTION_CREATOR;
 
+  const defaultPersonnel = [
+    { id: 'role-0', role: 'Trưởng ca', personnelId: '', date: '', time: '', removable: false },
+    { id: 'role-1', role: 'Nhân sự chính', personnelId: '', date: '', time: '', removable: false },
+    { id: 'role-2', role: 'Thợ phụ', personnelId: '', date: '', time: '', removable: false },
+    { id: 'role-3', role: 'Học việc', personnelId: '', date: '', time: '', removable: false }
+  ];
+
   return {
     ma_lenh_sx: code,
     ten_lenh_sx: productName ? `SX ${productName}` : `Lệnh SX ${orderCode || code}`,
@@ -5000,6 +5014,7 @@ function buildProductionOrderRecordFromOrder(
     khach_hang: customer,
     cong_nhan: workers,
     nhan_su: workers,
+    phan_cong_nhan_su: JSON.stringify(defaultPersonnel),
     nguoi_tao: creator,
     ma_don_hang: orderCode,
     ngay_bat_dau: todayDateString(),
@@ -5136,6 +5151,7 @@ function parseProductionOrderBody(
       nhan_su_chinh: pickRowField(source, ['nhan_su_chinh', 'mainStaff'], '') || null,
       tho_phu: pickRowField(source, ['tho_phu', 'assistantStaff'], '') || null,
       hoc_viec: pickRowField(source, ['hoc_viec', 'traineeStaff'], '') || null,
+      phan_cong_nhan_su: pickRowField(source, ['phan_cong_nhan_su'], ''),
       nguoi_tao: creator,
       ngay_gio_bat_dau: startDateTime || null,
       ngay_gio_ket_thuc: endDateTime || null,
@@ -6506,6 +6522,21 @@ export function createApp() {
         source.orderCode = await generateNextOrderCodeFromDb();
       }
 
+      const staffName = String(source.staffName ?? '').trim();
+      if (staffName) {
+        const { data: staffData } = await supabase
+          .from('nhan_su')
+          .select('khu_vuc')
+          .eq('nhan_su', staffName)
+          .maybeSingle();
+
+        if (staffData) {
+          source.khu_vuc = staffData.khu_vuc || '';
+        } else {
+          source.khu_vuc = '';
+        }
+      }
+
       const parsed = parseOrderBody(source, { isCreate: true });
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
@@ -6539,7 +6570,23 @@ export function createApp() {
         return res.status(400).json({ error: 'Thiếu ID đơn hàng.' });
       }
 
-      const parsed = parseOrderBody(req.body);
+      const source = req.body && typeof req.body === 'object' ? { ...(req.body as Record<string, unknown>) } : {};
+      const staffName = String(source.staffName ?? '').trim();
+      if (staffName) {
+        const { data: staffData } = await supabase
+          .from('nhan_su')
+          .select('khu_vuc')
+          .eq('nhan_su', staffName)
+          .maybeSingle();
+
+        if (staffData) {
+          source.khu_vuc = staffData.khu_vuc || '';
+        } else {
+          source.khu_vuc = '';
+        }
+      }
+
+      const parsed = parseOrderBody(source);
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
       }
@@ -6599,6 +6646,84 @@ export function createApp() {
     }
   });
 
+  /** Dựng JSON phan_cong_nhan_su từ 4 cột cũ nếu cần (lazy migration). */
+  function buildPersonnelJsonFromLegacyColumns(row: Record<string, unknown>): {
+    json: string;
+    needsUpdate: boolean;
+  } {
+    const existingJson = String(row.phan_cong_nhan_su ?? '').trim();
+    if (existingJson && existingJson !== 'null') {
+      return { json: existingJson, needsUpdate: false }; // Đã có, không cần dựng
+    }
+
+    const shiftLead = String(row.truong_ca ?? '').trim();
+    const mainStaff = String(row.nhan_su_chinh ?? '').trim();
+    const assistantStaff = String(row.tho_phu ?? '').trim();
+    const traineeStaff = String(row.hoc_viec ?? '').trim();
+
+    const defaults = [
+      { id: 'role-0', role: 'Trưởng ca', personnelId: '', date: '', time: '', removable: false },
+      { id: 'role-1', role: 'Nhân sự chính', personnelId: '', date: '', time: '', removable: false },
+      { id: 'role-2', role: 'Thợ phụ', personnelId: '', date: '', time: '', removable: false },
+      { id: 'role-3', role: 'Học việc', personnelId: '', date: '', time: '', removable: false }
+    ];
+
+    if (!shiftLead && !mainStaff && !assistantStaff && !traineeStaff) {
+      return { json: JSON.stringify(defaults), needsUpdate: true };
+    }
+
+    const personnel: any[] = [];
+    const staffInputs = [
+      { index: 0, role: 'Trưởng ca', value: shiftLead },
+      { index: 1, role: 'Nhân sự chính', value: mainStaff },
+      { index: 2, role: 'Thợ phụ', value: assistantStaff },
+      { index: 3, role: 'Học việc', value: traineeStaff }
+    ];
+
+    let nextId = 4;
+    for (const { index, role, value } of staffInputs) {
+      if (!value || value === '-' || /^chưa phân công$/i.test(value)) {
+        personnel.push({
+          id: `role-${index}`,
+          role,
+          personnelId: '',
+          date: '',
+          time: '',
+          removable: false
+        });
+      } else {
+        const names = value
+          .split(/[,;/|]+|\s+[-–—]\s+/)
+          .map((n: string) => n.trim())
+          .filter(Boolean);
+
+        for (let i = 0; i < names.length; i++) {
+          if (i === 0) {
+            personnel.push({
+              id: `role-${index}`,
+              role,
+              personnelId: names[i],
+              date: '',
+              time: '',
+              removable: false
+            });
+          } else {
+            personnel.push({
+              id: `personnel-${Date.now()}-${nextId++}`,
+              role: `Nhân sự ${personnel.length + 1}`,
+              personnelId: names[i],
+              date: '',
+              time: '',
+              removable: true
+            });
+          }
+        }
+      }
+    }
+
+    return { json: JSON.stringify(personnel), needsUpdate: true };
+  }
+
   app.get('/api/lenh-sx', async (_req, res) => {
     if (!supabase) {
       return res.json({ productionOrders: [], total: 0, source: 'local' });
@@ -6633,9 +6758,31 @@ export function createApp() {
         });
       }
 
+      // Lazy migration: populate phan_cong_nhan_su từ 4 cột cũ nếu cần, và fire-and-forget UPDATE
+      const enrichedData = (data || []).map(row => {
+        const { json, needsUpdate } = buildPersonnelJsonFromLegacyColumns(row as Record<string, unknown>);
+        const enriched = { ...row, phan_cong_nhan_su: json };
+
+        // Fire-and-forget UPDATE ngược lại DB nếu cần (không chặn response)
+        if (needsUpdate && row.id) {
+          supabase
+            .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+            .update({ phan_cong_nhan_su: json })
+            .eq('id', row.id)
+            .then(() => {
+              // Silent success
+            })
+            .catch((err: any) => {
+              console.error(`Failed to migrate phan_cong_nhan_su for lenh_sx id ${row.id}:`, err.message);
+            });
+        }
+
+        return enriched;
+      });
+
       return res.json({
-        productionOrders: data || [],
-        total: data?.length || 0,
+        productionOrders: enrichedData,
+        total: enrichedData.length,
         source: 'supabase'
       });
     } catch (err: any) {

@@ -1384,21 +1384,33 @@ export function ProductEditModal({
   );
 }
 
+function formatConvertedValue(
+  raw: string,
+  unit: ProductConvertedUnit,
+  productUnit: string,
+  conversion: ProductConversionFactors | undefined
+): string {
+  if (!conversion || raw === '-' || raw.trim() === '') return '—';
+  const quantity = Number(raw.replace(',', '.'));
+  if (!Number.isFinite(quantity)) return '—';
+  const value = convertProductQuantity(quantity, productUnit, unit, conversion);
+  return value === null ? '—' : formatNumber(value, 3);
+}
+
 export function ProductsPanel({ onBack }: { onBack: () => void }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('products');
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [productConversions, setProductConversions] = useState<ProductConversionFactors[]>([]);
   const [searchText, setSearchText] = useState('');
-  const [debouncedSearchText, setDebouncedSearchText] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
   const [productPage, setProductPage] = useState(1);
-  const [productPageSize, setProductPageSize] = useState(1000);
+  const [productPageSize, setProductPageSize] = useState(100);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productError, setProductError] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
+  const qrCacheRef = useRef(new Map<string, string>());
   const [printQrLabels, setPrintQrLabels] = useState<ProductQrPrintLabel[]>([]);
   const [printQrImages, setPrintQrImages] = useState<Record<string, string>>({});
   const [isGeneratingPrintQr, setIsGeneratingPrintQr] = useState(false);
@@ -1450,15 +1462,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     loadProducts();
   }, []);
-
-  useEffect(() => {
-    setIsSearching(true);
-    const timer = setTimeout(() => {
-      setDebouncedSearchText(searchText);
-      setIsSearching(false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchText]);
 
   const loadProductConversions = async () => {
     try {
@@ -2084,19 +2087,25 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     () => Array.from(new Set(products.map(product => product.nature))).sort((a, b) => String(a).localeCompare(String(b), 'vi')),
     [products]
   );
-  const normalizedSearch = debouncedSearchText.trim().toLowerCase();
+  const normalizedSearch = searchText.trim().toLowerCase();
+  const productSearchIndex = useMemo(() => {
+    const index = new Map<string, string>();
+    products.forEach(product => {
+      const searchStr = `${product.code} ${product.newCode} ${product.name} ${product.productionName} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`.toLowerCase();
+      index.set(product.id, searchStr);
+    });
+    return index;
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const matchesGroup = selectedGroup === 'all' || product.group === selectedGroup;
       const matchesNature = selectedNatures.size === 0 || selectedNatures.has(product.nature);
       const matchesSearch =
-        !normalizedSearch ||
-        `${product.code} ${product.newCode} ${product.name} ${product.productionName} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`
-          .toLowerCase()
-          .includes(normalizedSearch);
+        !normalizedSearch || (productSearchIndex.get(product.id) || '').includes(normalizedSearch);
       return matchesGroup && matchesNature && matchesSearch;
     });
-  }, [normalizedSearch, products, selectedGroup, selectedNatures]);
+  }, [normalizedSearch, products, selectedGroup, selectedNatures, productSearchIndex]);
 
   const { paginatedItems: paginatedProducts, totalPages: productTotalPages } = usePagination(
     filteredProducts,
@@ -2114,7 +2123,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     () => products.filter(product => selectedProductIds.has(product.id)),
     [products, selectedProductIds]
   );
-  const allFilteredSelected = filteredProducts.length > 0 && filteredProducts.every(product => selectedProductIds.has(product.id));
+  const allPaginatedSelected = paginatedProducts.length > 0 && paginatedProducts.every(product => selectedProductIds.has(product.id));
 
   const hasActiveFilters = selectedGroup !== 'all' || selectedNatures.size > 0 || Boolean(searchText);
 
@@ -2133,25 +2142,30 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     let cancelled = false;
 
     const generateQrImages = async () => {
+      const missing = paginatedProducts.filter(
+        product => product.code && !qrCacheRef.current.has(product.id)
+      );
+
+      if (missing.length === 0) return;
+
       const nextEntries = await Promise.all(
-        paginatedProducts
-          .filter(product => product.code)
-          .map(async product => {
-            const url = await QRCode.toDataURL(product.code, {
-              errorCorrectionLevel: 'H',
-              margin: 1,
-              width: 160,
-              color: {
-                dark: '#111111',
-                light: '#ffffff'
-              }
-            });
-            return [product.id, url] as const;
-          })
+        missing.map(async product => {
+          const url = await QRCode.toDataURL(product.code, {
+            errorCorrectionLevel: 'H',
+            margin: 1,
+            width: 160,
+            color: {
+              dark: '#111111',
+              light: '#ffffff'
+            }
+          });
+          qrCacheRef.current.set(product.id, url);
+          return [product.id, url] as const;
+        })
       );
 
       if (!cancelled) {
-        setQrImages(Object.fromEntries(nextEntries));
+        setQrImages(prev => ({ ...prev, ...Object.fromEntries(nextEntries) }));
       }
     };
 
@@ -2178,13 +2192,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     });
   };
 
-  const toggleFilteredProducts = () => {
+  const togglePaginatedProducts = () => {
     setSelectedProductIds(prev => {
       const next = new Set(prev);
-      if (allFilteredSelected) {
-        filteredProducts.forEach(product => next.delete(product.id));
+      if (allPaginatedSelected) {
+        paginatedProducts.forEach(product => next.delete(product.id));
       } else {
-        filteredProducts.forEach(product => next.add(product.id));
+        paginatedProducts.forEach(product => next.add(product.id));
       }
       return next;
     });
@@ -2424,7 +2438,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           onChange={setSearchText}
           placeholder="Tìm mã, tên, nhóm, nguồn gốc..."
           disabled={isLoadingProducts || products.length === 0}
-          isLoading={isSearching}
         />
 
         <FilterCombobox
@@ -2517,11 +2530,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           />
           <button
             type="button"
-            onClick={toggleFilteredProducts}
-            disabled={filteredProducts.length === 0}
+            onClick={togglePaginatedProducts}
+            disabled={paginatedProducts.length === 0}
             className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {allFilteredSelected ? 'Bỏ chọn bộ lọc' : 'Chọn các dòng đang lọc'}
+            {allPaginatedSelected ? 'Bỏ chọn trang này' : 'Chọn trang này'}
           </button>
           {canDelete ? (
             <button
@@ -2547,13 +2560,13 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       </section>
 
       <div className="relative">
-        {(isLoadingProducts || isSearching) && (
+        {isLoadingProducts && (
           <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-gradient-to-br from-zinc-950/10 via-zinc-950/5 to-transparent backdrop-blur-md transition-opacity duration-300">
             <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-zinc-200/50 bg-white px-8 py-6 shadow-lg">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#ef1b2d]/10 to-[#ef1b2d]/5">
                 <Loader2 className="h-7 w-7 animate-spin text-[#ef1b2d]" />
               </div>
-              <p className="text-sm font-bold text-zinc-900">{isSearching ? 'Đang tìm kiếm...' : 'Đang tải dữ liệu...'}</p>
+              <p className="text-sm font-bold text-zinc-900">Đang tải dữ liệu...</p>
               <p className="text-[11px] font-medium text-zinc-500">Vui lòng chờ</p>
             </div>
           </div>
@@ -2563,8 +2576,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell align="center" className="w-14">
             <input
               type="checkbox"
-              checked={allFilteredSelected}
-              onChange={toggleFilteredProducts}
+              checked={allPaginatedSelected}
+              onChange={togglePaginatedProducts}
               className="h-4 w-4 accent-[#ef1b2d]"
               aria-label="Chọn tất cả sản phẩm đang lọc"
             />
@@ -2598,13 +2611,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                   : conversion ? availableConvertedUnits(product.unit, conversion) : [];
             const rowSpan = 1 + convertedUnits.length;
             const quantityFields = [product.openingStock, product.inbound, product.outbound, product.stock, product.minStock];
-            const renderConvertedValue = (raw: string, unit: ProductConvertedUnit) => {
-              if (!conversion || raw === '-' || raw.trim() === '') return '—';
-              const quantity = Number(raw.replace(',', '.'));
-              if (!Number.isFinite(quantity)) return '—';
-              const value = convertProductQuantity(quantity, product.unit, unit, conversion);
-              return value === null ? '—' : formatNumber(value, 3);
-            };
             return <React.Fragment key={product.id || `${product.code}-${product.name}`}>
               <tr className="border-t-2 border-zinc-300 bg-white transition-colors hover:bg-emerald-50/40">
                 <td rowSpan={rowSpan} className="px-3 py-3.5 text-center align-middle">
@@ -2686,7 +2692,10 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                 <tr key={`${product.id}-${unit}`} className="border-t border-zinc-100 bg-zinc-50/70 text-zinc-700">
                   <td className="px-4 py-2.5 text-center font-bold text-zinc-700">{unit === 'm' ? 'm dài' : unit}</td>
                   <td className="px-3 py-2.5 text-center font-mono font-bold text-zinc-400">—</td>
-                  {quantityFields.map((raw, index) => <td key={index} title={renderConvertedValue(raw, unit) === '—' ? 'Chưa đủ hệ số quy đổi' : undefined} className="px-3 py-2.5 text-center font-mono font-bold">{renderConvertedValue(raw, unit)}</td>)}
+                  {quantityFields.map((raw, index) => {
+                    const formatted = formatConvertedValue(raw, unit, product.unit, conversion);
+                    return <td key={index} title={formatted === '—' ? 'Chưa đủ hệ số quy đổi' : undefined} className="px-3 py-2.5 text-center font-mono font-bold">{formatted}</td>;
+                  })}
                 </tr>
               ))}
             </React.Fragment>;
@@ -2711,7 +2720,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
               setProductPageSize(size);
               setProductPage(1);
             }}
-            pageSizeOptions={[100, 500, 1000, 3000]}
             noBorderTop={true}
           />
         </div>

@@ -52,6 +52,10 @@ import {
 
 export type { OrderProductLine, OrderRow };
 
+interface OrderRowExt extends OrderRow {
+  khu_vuc?: string;
+}
+
 const orderProductGridClass =
   'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_6rem_6rem_4rem_4rem_4rem_2.5rem]';
 const orderCutProductGridClass =
@@ -120,6 +124,7 @@ export function normalizeOrders(data: unknown): OrderRow[] {
         note: pickText(record, ['ghi_chu', 'note'], ''),
         deliveryDate: pickText(record, ['ngay_giao_hang', 'deliveryDate', 'delivery_date'], ''),
         productionOrder: pickText(record, ['lenh_sx', 'production_order', 'productionOrder'], '-'),
+        khu_vuc: pickText(record, ['khu_vuc', 'khu_vuc_xuat'], ''),
         orderDate: (() => {
           const raw =
             pickText(record, ['ngay_don_hang', 'ngay_dat_hang', 'order_date', 'ngay'], '') ||
@@ -262,6 +267,7 @@ export type OrderFormState = {
   status: string;
   createdAt: string;
   deliveryDate: string;
+  khu_vuc: string;
 };
 
 const emptyOrderForm = (): OrderFormState => ({
@@ -273,7 +279,8 @@ const emptyOrderForm = (): OrderFormState => ({
   note: '',
   status: ORDER_STATUS_DEFAULT,
   createdAt: new Date().toISOString().slice(0, 10),
-  deliveryDate: ''
+  deliveryDate: '',
+  khu_vuc: ''
 });
 
 function orderCreatedAtToInput(value: string): string {
@@ -373,7 +380,8 @@ export function orderToForm(order: OrderRow): OrderFormState {
         ? order.status
         : ORDER_STATUS_DEFAULT,
     createdAt: orderCreatedAtToInput(order.createdAt || order.orderDate),
-    deliveryDate: order.deliveryDate || ''
+    deliveryDate: order.deliveryDate || '',
+    khu_vuc: order.khu_vuc || ''
   };
 }
 
@@ -847,14 +855,20 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân viên</span>
-                <SimpleSelect
+                <SearchableSelect
                   value={orderForm.staffName}
                   onChange={staffName => setOrderForm(prev => ({ ...prev, staffName }))}
                   options={staffOptions}
-                  placeholder="Chọn nhân viên Phòng Kinh Doanh"
+                  placeholder="Tìm nhân viên Phòng Kinh Doanh"
                   isLoading={isLoadingLookups}
                   getValue={item => (item as StaffOption).name}
                   getLabel={item => (item as StaffOption).name}
+                  getSearchText={item => {
+                    const staff = item as StaffOption;
+                    return `${staff.name}`;
+                  }}
+                  inputClassName={orderFieldClass}
+                  allowCustomValue={false}
                 />
               </label>
               <label className="space-y-1.5">
