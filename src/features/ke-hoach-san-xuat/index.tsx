@@ -1539,7 +1539,6 @@ export function ProductionPlanQrPrintModal({
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
         window.print();
-        setPendingPrint(false);
       });
     }, 200);
     return () => {
@@ -2806,7 +2805,6 @@ export function ProductionPlanModal({
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
         window.print();
-        setPendingPrint(false);
       });
     }, 150);
     return () => {
@@ -2822,7 +2820,6 @@ export function ProductionPlanModal({
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
         window.print();
-        setPendingNvlPrint(false);
       });
     }, 150);
     return () => {
@@ -2838,7 +2835,6 @@ export function ProductionPlanModal({
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
         window.print();
-        setPendingStaffAssignmentPrint(false);
       });
     }, 150);
     return () => {
@@ -2863,7 +2859,6 @@ export function ProductionPlanModal({
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
         window.print();
-        setPendingRelatedPrint(false);
       });
     }, 350);
     return () => {
@@ -2873,7 +2868,10 @@ export function ProductionPlanModal({
   }, [pendingRelatedPrint, relatedPrintData, relatedPrintOrders, relatedPrintCustomerOrders]);
 
   useEffect(() => {
-    const handleAfterPrint = () => {
+    let beforePrintTriggered = false;
+    let printCancelTimeout: NodeJS.Timeout | null = null;
+
+    const resetAllPrintState = () => {
       setPendingPrint(false);
       setPendingNvlPrint(false);
       setPendingStaffAssignmentPrint(false);
@@ -2886,19 +2884,32 @@ export function ProductionPlanModal({
       setRelatedPrintCustomerOrders([]);
       setRelatedPrintCatalog([]);
       setRelatedPrintPlanPreviewData(null);
+      setRelatedShiftSummaryRows([]);
+      setRelatedShiftSummaryFilters(null);
     };
-    window.addEventListener('afterprint', handleAfterPrint);
-    return () => window.removeEventListener('afterprint', handleAfterPrint);
-  }, []);
 
-  useEffect(() => {
-    const handlePrintCancelled = () => {
-      setPendingPrint(false);
-      setPendingNvlPrint(false);
-      setTriggerPrintAfterPreviewSave(false);
+    const handleBeforePrint = () => {
+      beforePrintTriggered = true;
+      printCancelTimeout = window.setTimeout(() => {
+        if (beforePrintTriggered) {
+          resetAllPrintState();
+        }
+      }, 1000);
     };
-    window.addEventListener('afterprint', handlePrintCancelled);
-    return () => window.removeEventListener('afterprint', handlePrintCancelled);
+
+    const handleAfterPrint = () => {
+      beforePrintTriggered = false;
+      if (printCancelTimeout) clearTimeout(printCancelTimeout);
+      resetAllPrintState();
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      if (printCancelTimeout) clearTimeout(printCancelTimeout);
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
   }, []);
 
   const reorderLine = (fromIndex: number, toIndex: number) => {
@@ -4404,7 +4415,6 @@ export function useProductionOrderPrint() {
       waitForPrintImagesReady().then(() => {
         if (cancelled) return;
         window.print();
-        setPendingPrint(false);
       });
     }, 150);
 

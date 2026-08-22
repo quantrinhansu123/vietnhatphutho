@@ -79,7 +79,6 @@ export function ProductionPlanPrintPreviewModal({
     Record<string, { bac: string; trung: string; nam: string; ghiChu: string }>
   >({});
   const [isSaving, setIsSaving] = useState(false);
-  const [pendingPrint, setPendingPrint] = useState(false);
 
   useEffect(() => {
     if (!open || !planId) return;
@@ -218,18 +217,10 @@ export function ProductionPlanPrintPreviewModal({
   async function handleSaveAndPrint() {
     const ok = await handleSave();
     if (ok) {
-      setPendingPrint(true);
       onAfterSaveAndPrint?.();
     }
   }
 
-  useEffect(() => {
-    if (!pendingPrint) return;
-    waitForPrintImagesReady().then(() => {
-      window.print();
-      setPendingPrint(false);
-    });
-  }, [pendingPrint]);
 
   if (!open) return null;
 
