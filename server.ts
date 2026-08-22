@@ -6929,6 +6929,94 @@ export function createApp() {
     return { json: JSON.stringify(personnel), needsUpdate: true };
   }
 
+  /** Lưu phân công nhân sự vào bảng chi tiết */
+  async function savePhanCongNhanSuDetails(
+    lenhSxId: string | number,
+    maLenhSx: string,
+    phanCongJson: string
+  ): Promise<void> {
+    if (!supabase) return;
+
+    try {
+      const phanCongList = JSON.parse(phanCongJson || '[]');
+      if (!Array.isArray(phanCongList) || phanCongList.length === 0) return;
+
+      // Xóa các bản ghi cũ
+      await supabase
+        .from('phan_cong_nhan_su_chi_tiet')
+        .delete()
+        .eq('id_lenh_sx', lenhSxId);
+
+      // Insert bản ghi mới
+      const details = phanCongList
+        .filter((p: any) => String(p.ma_nhan_su || '').trim())
+        .map((p: any) => ({
+          id_lenh_sx: lenhSxId,
+          ma_lenh_sx: maLenhSx,
+          vai_tro: p.role || '',
+          ma_nhan_su: String(p.ma_nhan_su || '').trim(),
+          ngay_lam_viec: p.ngay_lam_viec || null,
+          thoi_gian_bat_dau: p.thoi_gian_bat_dau || null,
+          thoi_gian_ket_thuc: p.thoi_gian_ket_thuc || null,
+          removable: Boolean(p.removable)
+        }));
+
+      if (details.length > 0) {
+        await supabase
+          .from('phan_cong_nhan_su_chi_tiet')
+          .insert(details);
+      }
+    } catch (err) {
+      console.error('Error saving phan_cong_nhan_su details:', err);
+    }
+  }
+
+  app.get('/api/phan-cong-nhan-su', async (req, res) => {
+    if (!supabase) {
+      return res.json({ items: [] });
+    }
+
+    try {
+      let query = supabase.from('phan_cong_nhan_su_chi_tiet').select('*');
+
+      // Có thể filter theo ma_lenh_sx
+      const maLenhSx = String(req.query.ma_lenh_sx || '').trim();
+      if (maLenhSx) {
+        query = query.eq('ma_lenh_sx', maLenhSx);
+      }
+
+      // Filter theo ma_nhan_su
+      const maNhanSu = String(req.query.ma_nhan_su || '').trim();
+      if (maNhanSu) {
+        query = query.eq('ma_nhan_su', maNhanSu);
+      }
+
+      // Filter theo ngay_lam_viec
+      const ngayLamViec = String(req.query.ngay_lam_viec || '').trim();
+      if (ngayLamViec) {
+        query = query.eq('ngay_lam_viec', ngayLamViec);
+      }
+
+      // Filter theo vai_tro
+      const vaiTro = String(req.query.vai_tro || '').trim();
+      if (vaiTro) {
+        query = query.eq('vai_tro', vaiTro);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching phan_cong_nhan_su_chi_tiet:', error);
+        return res.json({ items: [] });
+      }
+
+      return res.json({ items: data || [] });
+    } catch (err: any) {
+      console.error('Error in /api/phan-cong-nhan-su:', err);
+      return res.json({ items: [] });
+    }
+  });
+
   app.get('/api/lenh-sx', async (_req, res) => {
     if (!supabase) {
       return res.json({ productionOrders: [], total: 0, source: 'local' });
@@ -7139,6 +7227,11 @@ export function createApp() {
       if (insertError) {
         console.error('Supabase lenh_sx insert error:', insertError);
         return res.status(500).json({ error: productionOrderWriteErrorMessage(insertError) });
+      }
+
+      // Lưu phân công nhân sự vào bảng chi tiết
+      if (created && created.id && created.phan_cong_nhan_su) {
+        await savePhanCongNhanSuDetails(created.id, String(created.ma_lenh_sx || ''), created.phan_cong_nhan_su);
       }
 
       return res.status(201).json({
@@ -7461,6 +7554,11 @@ export function createApp() {
         return res.status(404).json({ error: 'Production order not found.' });
       }
 
+      // Lưu phân công nhân sự vào bảng chi tiết nếu có cập nhật
+      if (updated && updated.id && updated.phan_cong_nhan_su) {
+        await savePhanCongNhanSuDetails(updated.id, String(updated.ma_lenh_sx || ''), updated.phan_cong_nhan_su);
+      }
+
       return res.json({
         success: true,
         productionOrder: updated
@@ -7497,8 +7595,24 @@ export function createApp() {
       }
 
       const code = String(orderRow.ma_lenh_sx ?? '').trim();
-      const cascade = { planLines: 0, downtimeSlips: 0, orders: 0 };
+      const cascade = { planLines: 0, downtimeSlips: 0, orders: 0, phanCong: 0 };
       const warnings: string[] = [];
+
+      // Xóa phân công nhân sự
+      try {
+        const { data: deletedPhanCong, error: phanCongError } = await supabase
+          .from('phan_cong_nhan_su_chi_tiet')
+          .delete()
+          .eq('id_lenh_sx', id)
+          .select('id');
+        if (phanCongError && !isMissingTableError(phanCongError)) {
+          console.error('Error deleting phan_cong_nhan_su_chi_tiet:', phanCongError);
+          warnings.push(`Chưa xóa được phân công nhân sự: ${phanCongError.message}`);
+        }
+        cascade.phanCong += deletedPhanCong?.length || 0;
+      } catch (err) {
+        console.error('Error deleting phan_cong_nhan_su_chi_tiet:', err);
+      }
 
       // Xóa dữ liệu liên quan trước; lệnh SX xóa sau cùng để lỗi giữa chừng vẫn thử lại được.
       // Cột lenh_sx_id (schema cũ) kiểu bigint — chỉ lọc khi id là số, tránh lỗi khi lệnh SX dùng UUID.
