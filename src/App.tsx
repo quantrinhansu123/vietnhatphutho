@@ -72,6 +72,7 @@ import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
 import { OrdersPanel } from './features/don-hang';
 import { ProductionOrdersPanel } from './features/lenh-sx';
 import { ProductionPlanHistoryPanel } from './features/ke-hoach-san-xuat';
+import { DieuDongNhanSuPanel } from './features/dieu-dong-nhan-su';
 import { SettingsPanel } from './features/cai-dat-thoi-gian';
 import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
@@ -1432,6 +1433,21 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <ProductionPlanHistoryPanel onBack={() => goBack('production-reports')} />
+              </motion.div>
+            ) : activeTab === 'dieu-dong-nhan-su' ? (
+              <motion.div
+                key="dieu-dong-nhan-su"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <DieuDongNhanSuPanel
+                  onBack={() => goBack('factory-quan-doc')}
+                  currentUser={authUser}
+                  canEdit={menuFullAccess || editableMenuTabs.has('dieu-dong-nhan-su')}
+                  canDelete={menuFullAccess || deletableMenuTabs.has('dieu-dong-nhan-su')}
+                />
               </motion.div>
             ) : activeTab === 'settings' ? (
               <motion.div
