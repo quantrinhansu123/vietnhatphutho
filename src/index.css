@@ -750,7 +750,7 @@ input[type="number"] {
 @media print {
   @page {
     size: A4;
-    margin: 8mm;
+    margin: 1cm;
   }
 
   @page shift-summary-page {

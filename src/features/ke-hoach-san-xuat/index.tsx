@@ -28,7 +28,7 @@ import { STANDARD_SHIFTS } from '../../types';
 import { normalizeHrBranches, type HrBranch, type HrMember } from '../_shared/hr';
 import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';
 import { buildControlBoardShiftSummary, type ControlBoardShiftSummaryRow } from '../../utils/controlBoardShiftSummary';
-import { ProductionPlanPrintPreviewModal } from './PrintPreviewModal';
+import { ProductionPlanPrintPreviewModal, splitProductNameAndNote } from './PrintPreviewModal';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import {
   normalizeProducts,
@@ -1826,10 +1826,134 @@ export function normalizeProductionPlanHistoryLines(data: unknown): ProductionPl
     .sort((a, b) => a.priority - b.priority);
 }
 
-export function formatProductionPlanHistoryProducts(products: OrderProductLine[]) {
-  if (products.length === 0) return '-';
-  const codes = products.map(product => product.productCode.trim()).filter(code => code && code !== '-');
-  return codes.length > 0 ? codes.join(', ') : '-';
+function ProductionPlanPrintPreviewTableSheet({ planData, staffMap }: { planData: any; staffMap?: Map<string, string> }) {
+  const header = planData.plan || {};
+  const rows = (planData.rows || []).map((r: any) => ({
+    ...r,
+    slsx_bac: Number(r.slsx_bac) || 0,
+    slsx_trung: Number(r.slsx_trung) || 0,
+    slsx_nam: Number(r.slsx_nam) || 0,
+    ghi_chu: r.ghi_chu || '',
+    tong_sx: Number(r.tong_sx) || 0,
+    kg_cuon: r.kg_cuon !== null ? Number(r.kg_cuon) : null,
+    tl_tam: r.tl_tam !== null ? Number(r.tl_tam) : null
+  }));
+
+  const computedRows = rows.map((row: any) => {
+    const bac = Math.max(0, row.slsx_bac);
+    const trung = Math.max(0, row.slsx_trung);
+    const nam = Math.max(0, row.slsx_nam);
+    const totalSlsx = bac + trung + nam;
+
+    let tongTl = 0;
+    if (row.don_vi === 'Cuộn' || row.don_vi === 'cuộn') {
+      tongTl = totalSlsx * (row.kg_cuon || 0);
+    } else if (row.don_vi === 'Tấm' || row.don_vi === 'tấm') {
+      tongTl = totalSlsx * (row.tl_tam || 0);
+    } else if (row.don_vi === 'kg' || row.don_vi === 'Kg' || row.don_vi === 'KG') {
+      tongTl = totalSlsx;
+    }
+
+    const { name, note } = splitProductNameAndNote(row.ten_san_xuat_raw);
+
+    return {
+      ...row,
+      bac,
+      trung,
+      nam,
+      totalSlsx,
+      tongTl,
+      productName: name,
+      noteFromName: note
+    };
+  });
+
+  return (
+    <div className="p-4 bg-white">
+      {/* Header - Show only when printing */}
+      <div className="hidden print:block mb-0">
+        <div className="flex items-center justify-between p-2 border-b border-gray-300 min-h-16">
+          <div className="w-12 h-12">
+            <img src="/icon-maskable-512.png" alt="VIETNHATIPT" className="w-full h-full object-contain" />
+          </div>
+          <div className="flex-1 text-center">
+            <div className="text-sm font-bold">KỀ HOẠCH SẢN XUẤT</div>
+          </div>
+          <div className="text-left">
+            <div className="text-xs inline-block p-1">
+              <div className="text-[10px]">Mã số: {header?.ma_so || '—'}</div>
+              <div className="text-[10px]">Lần ban hành: {header?.lan_ban_hanh || '01'}</div>
+              <div className="text-[10px]">Ngày liên lạc: {header?.ngay_lien_lac || '—'}</div>
+            </div>
+          </div>
+        </div>
+        <div className="px-2 py-1 text-xs border-b border-gray-300">
+           {header?.dac_ta || ''}
+        </div>
+      </div>
+
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-8">STT</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-left font-semibold min-w-20">Sản Phẩm</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-left font-semibold min-w-48">Ghi chú</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-12">ĐVT</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-12">Tồn kho</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-14">Kg/cuộn</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-14">Tổng SX</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-14">SL.SX Bắc</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-14">SL.SX Trung</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-14">SL.SX Nam</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-12">TL/Tấm</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-14">Tổng TL</th>
+            <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-14">Thực tế SX</th>
+          </tr>
+        </thead>
+        <tbody>
+          {computedRows.map((row: any, rowIdx: number) => (
+            <tr key={`${row.key}-${rowIdx}`}>
+              <td className="border border-gray-300 px-1 py-0.5 text-center font-medium text-xs w-8">
+                {row.stt}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-xs whitespace-normal break-words min-w-20">
+                {row.productName}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-xs min-w-48">
+                {row.noteFromName || row.ghi_chu}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs w-12">
+                {row.don_vi}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs w-12" />
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs w-14">
+                {row.kg_cuon !== null ? row.kg_cuon.toFixed(2) : '—'}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs font-medium w-14">
+                {row.tong_sx.toFixed(2)}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs w-14">
+                {row.bac.toFixed(2)}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs w-14">
+                {row.trung.toFixed(2)}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs w-14">
+                {row.nam.toFixed(2)}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs w-12">
+                {row.tl_tam !== null ? row.tl_tam.toFixed(2) : '—'}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center text-xs font-medium w-14">
+                {row.tongTl.toFixed(2)}
+              </td>
+              <td className="border border-gray-300 px-1 py-0.5 text-center h-7 w-14" />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
@@ -1855,6 +1979,7 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
   const [loadingPrintPlanId, setLoadingPrintPlanId] = useState('');
   const [printAnchorElement, setPrintAnchorElement] = useState<HTMLElement | null>(null);
   const [previewPlanId, setPreviewPlanId] = useState('');
+  const [triggerPrintAfterPreviewSave, setTriggerPrintAfterPreviewSave] = useState(false);
   const [staffBranches, setStaffBranches] = useState<any[]>([]);
 
   const loadPlans = async (options?: { ngay?: string; tuNgay?: string; denNgay?: string }) => {
@@ -2262,7 +2387,6 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-zinc-200/70 pt-2">
                           <button type="button" onClick={() => void loadPlanDetail(plan.id)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700"><Eye className="h-3.5 w-3.5" />Xem</button>
                           {canEdit ? <button type="button" onClick={() => void openEditPlan(plan)} disabled={isLoadingCreate} className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-bold text-amber-700 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Sửa</button> : null}
-                          <button type="button" onClick={() => setPreviewPlanId(plan.id)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 text-[11px] font-bold text-indigo-700"><Eye className="h-3.5 w-3.5" />Xem trước khi in</button>
                           <button type="button" onClick={event => void openPrintPlan(plan, event.currentTarget)} disabled={Boolean(loadingPrintPlanId)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[11px] font-bold text-emerald-700 disabled:opacity-50">{loadingPrintPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}In</button>
                           {canDelete ? <button type="button" onClick={() => void deletePlan(plan)} disabled={deletingPlanId === plan.id} className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-bold text-rose-700 disabled:opacity-50">{deletingPlanId === plan.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Xóa</button> : null}
                         </div>
@@ -2305,7 +2429,6 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                     <th className="px-3 py-2 font-black">Máy</th>
                     <th className="px-3 py-2 font-black">Ca</th>
                     <th className="px-3 py-2 font-black">Nhân sự</th>
-                    <th className="px-3 py-2 font-black">Sản phẩm</th>
                     <th className="px-3 py-2 font-black">Ghi chú</th>
                   </tr>
                 </thead>
@@ -2322,7 +2445,6 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
                       <td className="px-3 py-2 text-zinc-700">{line.machine !== '-' ? line.machine : line.position}</td>
                       <td className="px-3 py-2 text-zinc-700">{line.shift}</td>
                       <td className="px-3 py-2 text-zinc-600">{productionOrderStaffDisplay(line, staffMap)}</td>
-                      <td className="px-3 py-2 text-zinc-800">{formatProductionPlanHistoryProducts(line.products)}</td>
                       <td className="px-3 py-2 text-zinc-600">{line.note || '-'}</td>
                     </tr>
                   ))}
@@ -2374,11 +2496,17 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         planCode={printingPlan?.code}
         anchorElement={printAnchorElement}
         staffMap={staffMap}
+        triggerPrintAfterPreviewSave={triggerPrintAfterPreviewSave}
+        onPrintAfterPreviewSaveHandled={() => setTriggerPrintAfterPreviewSave(false)}
+        setPreviewPlanId={setPreviewPlanId}
       />
       <ProductionPlanPrintPreviewModal
         open={Boolean(previewPlanId)}
         planId={previewPlanId}
         onClose={() => setPreviewPlanId('')}
+        onAfterSaveAndPrint={() => {
+          setTriggerPrintAfterPreviewSave(true);
+        }}
       />
     </div>
   );
@@ -2401,7 +2529,10 @@ export function ProductionPlanModal({
   printOnly = false,
   planCode,
   anchorElement,
-  staffMap
+  staffMap,
+  triggerPrintAfterPreviewSave,
+  onPrintAfterPreviewSaveHandled,
+  setPreviewPlanId
 }: {
   open: boolean;
   onClose: () => void;
@@ -2420,6 +2551,9 @@ export function ProductionPlanModal({
   planCode?: string;
   anchorElement?: HTMLElement | null;
   staffMap?: Map<string, string>;
+  triggerPrintAfterPreviewSave?: boolean;
+  onPrintAfterPreviewSaveHandled?: () => void;
+  setPreviewPlanId?: (id: string) => void;
 }) {
   const { canCreate } = useTabAccess('production-plan-history');
   const [planLines, setPlanLines] = useState<ProductionPlanLine[]>([]);
@@ -2457,6 +2591,7 @@ export function ProductionPlanModal({
   const [relatedPrintOrders, setRelatedPrintOrders] = useState<PrintableProductionOrder[]>([]);
   const [relatedPrintCustomerOrders, setRelatedPrintCustomerOrders] = useState<OrderRow[]>([]);
   const [relatedPrintCatalog, setRelatedPrintCatalog] = useState<ProductRow[]>([]);
+  const [relatedPrintPlanPreviewData, setRelatedPrintPlanPreviewData] = useState<any>(null);
   const [pendingRelatedPrint, setPendingRelatedPrint] = useState(false);
   const [relatedShiftOptions, setRelatedShiftOptions] = useState<ShiftOption[]>([]);
   const [selectedRelatedShifts, setSelectedRelatedShifts] = useState<string[]>([]);
@@ -2621,7 +2756,7 @@ export function ProductionPlanModal({
     displayLines.forEach((line, lineIndex) => {
       const shiftLabel = line.shift && line.shift !== '-' ? line.shift : 'Chưa phân ca';
       const machineLabel = line.position && line.position !== '-' ? line.position : '-';
-      const orderLabel = formatProductionPlanProductCodes(line) || '-';
+      const orderLabel = line.code || '-';
       const names = String(line.staff || '')
         .split(/[,;/]/)
         .map(name => name.trim())
@@ -2655,6 +2790,14 @@ export function ProductionPlanModal({
       return a.shift.localeCompare(b.shift, 'vi', { numeric: true });
     });
   }, [displayLines]);
+
+  useEffect(() => {
+    if (!triggerPrintAfterPreviewSave) return;
+    (async () => {
+      await handlePrintAfterPreviewSaved();
+      onPrintAfterPreviewSaveHandled?.();
+    })();
+  }, [triggerPrintAfterPreviewSave]);
 
   useEffect(() => {
     if (!pendingPrint || displayLines.length === 0) return;
@@ -2742,9 +2885,20 @@ export function ProductionPlanModal({
       setRelatedPrintOrders([]);
       setRelatedPrintCustomerOrders([]);
       setRelatedPrintCatalog([]);
+      setRelatedPrintPlanPreviewData(null);
     };
     window.addEventListener('afterprint', handleAfterPrint);
     return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  useEffect(() => {
+    const handlePrintCancelled = () => {
+      setPendingPrint(false);
+      setPendingNvlPrint(false);
+      setTriggerPrintAfterPreviewSave(false);
+    };
+    window.addEventListener('afterprint', handlePrintCancelled);
+    return () => window.removeEventListener('afterprint', handlePrintCancelled);
   }, []);
 
   const reorderLine = (fromIndex: number, toIndex: number) => {
@@ -2800,16 +2954,19 @@ export function ProductionPlanModal({
 
   const handlePrint = async () => {
     if (displayLines.length === 0) return;
-    setIsLoadingPlanPrint(true);
-    setFormError('');
+    if (!editPlanId) {
+      setFormError('Vui lòng chọn kế hoạch cần in.');
+      return;
+    }
+    setPreviewPlanId?.(editPlanId);
+  };
 
+  const handlePrintAfterPreviewSaved = async () => {
     try {
       setPrintMaterialsByLine(await loadProductionPlanMaterials(displayLines));
       setPendingPrint(true);
     } catch (error: any) {
       setFormError(error.message || 'Không thể tải thành phần sản phẩm để in kế hoạch.');
-    } finally {
-      setIsLoadingPlanPrint(false);
     }
   };
 
@@ -2838,6 +2995,19 @@ export function ProductionPlanModal({
     setFormError('');
 
     try {
+      // Tải dữ liệu preview (chứa dữ liệu đã sửa từ ke_hoach_san_xuat_chi_tiet) để render phiếu kế hoạch sản xuất
+      if (editPlanId) {
+        try {
+          const previewRes = await fetch(`/api/ke-hoach-sx/${editPlanId}/print-preview`);
+          const previewData = await previewRes.json().catch(() => ({}));
+          if (previewRes.ok) {
+            setRelatedPrintPlanPreviewData(previewData);
+          }
+        } catch (e) {
+          // Nếu lỗi, tiếp tục mà không cập nhật relatedPrintPlanPreviewData
+        }
+      }
+
       const machineSet = new Set<string>();
       displayLines.forEach(line => {
         const position = (line.position || '').trim();
@@ -3324,7 +3494,7 @@ export function ProductionPlanModal({
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
                         <td className="px-2 py-2 text-zinc-600">{productionOrderStaffDisplay(line, staffMap)}</td>
                         <td className="px-2 py-2 font-mono text-xs font-bold text-zinc-900">
-                          {formatProductionPlanProductCodes(line)}
+                          {line.code}
                         </td>
                         <td className="px-2 py-2 align-top">
                           <textarea
@@ -3476,7 +3646,14 @@ export function ProductionPlanModal({
             ))}
 
             {/* 2. Kế hoạch sản xuất */}
-            {displayLines.length > 0 ? (
+            {relatedPrintPlanPreviewData?.rows && relatedPrintPlanPreviewData.rows.length > 0 ? (
+              <div className="production-order-print-page">
+                <ProductionPlanPrintPreviewTableSheet
+                  planData={relatedPrintPlanPreviewData}
+                  staffMap={staffMap}
+                />
+              </div>
+            ) : displayLines.length > 0 ? (
               <div className="production-order-print-page">
                 <ProductionPlanPrintSheet
                   lines={displayLines}

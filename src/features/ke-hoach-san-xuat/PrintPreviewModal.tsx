@@ -22,6 +22,7 @@ interface PreviewRow {
   slsx_nam: number;
   ghi_chu: string;
   has_saved_detail: boolean;
+  khu_vuc?: string;
 }
 
 interface ComputedRow extends PreviewRow {
@@ -52,11 +53,13 @@ export function splitProductNameAndNote(raw: string): { name: string; note: stri
 export function ProductionPlanPrintPreviewModal({
   open,
   planId,
-  onClose
+  onClose,
+  onAfterSaveAndPrint
 }: {
   open: boolean;
   planId: string;
   onClose: () => void;
+  onAfterSaveAndPrint?: () => void;
 }) {
   const { canEdit } = useTabAccess('production-plan-history');
 
@@ -214,7 +217,10 @@ export function ProductionPlanPrintPreviewModal({
 
   async function handleSaveAndPrint() {
     const ok = await handleSave();
-    if (ok) setPendingPrint(true);
+    if (ok) {
+      setPendingPrint(true);
+      onAfterSaveAndPrint?.();
+    }
   }
 
   useEffect(() => {
@@ -228,7 +234,7 @@ export function ProductionPlanPrintPreviewModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[90] bg-black/50 flex items-center justify-center">
       <div className="bg-white rounded-lg shadow-2xl w-[95vw] h-[95vh] flex flex-col overflow-hidden">
         {/* Header (non-print) */}
         <div className="border-b border-gray-200 p-4 bg-gray-50 production-plan-preview-noprint">
