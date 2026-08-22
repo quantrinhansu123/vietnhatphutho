@@ -750,7 +750,7 @@ input[type="number"] {
 @media print {
   @page {
     size: A4;
-    margin: 8mm;
+    margin: 1cm;
   }
 
   @page shift-summary-page {
@@ -1072,14 +1072,12 @@ input[type="number"] {
     background: #ffffff;
     color: #111111;
     padding: 0;
-    margin: 0;
   }
 
   .production-plan-print-sheet .production-plan-print-doc,
   .production-plan-nvl-print-sheet .production-plan-print-doc {
     width: 100% !important;
     max-width: 100% !important;
-    margin: 0 !important;
     padding: 0 !important;
     box-sizing: border-box;
   }
@@ -1087,12 +1085,11 @@ input[type="number"] {
   .production-plan-nvl-print-sheet .production-plan-print-doc {
     width: 100% !important;
     max-width: 100% !important;
-    margin: 0 !important;
   }
 
   @page production-plan-preview-page {
     size: A4 landscape;
-    margin: 10mm;
+    margin: 1cm;
   }
 
   .production-plan-preview-print-sheet,
@@ -1420,7 +1417,6 @@ input[type="number"] {
 .production-plan-print-doc {
   width: 100%;
   max-width: 100%;
-  margin: 0;
   box-sizing: border-box;
   font-family: 'Times New Roman', Times, serif;
   font-size: 11pt;

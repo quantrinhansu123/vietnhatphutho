@@ -468,20 +468,6 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
 
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 md:px-6 md:py-4">
-        <button
-          onClick={onBack}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-zinc-100 active:bg-zinc-200"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <div>
-          <h1 className="text-lg font-semibold text-zinc-900">Quản đốc / Điều động nhân sự</h1>
-          <p className="text-sm text-zinc-600">Điều động nhân sự giữa các máy trong lệnh sản xuất theo ca</p>
-        </div>
-      </div>
-
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {/* Filter Bar */}

@@ -7290,7 +7290,7 @@ export function createApp() {
           globalStt++;
           const spId = String(item.san_pham_id || '').trim() || null;
           const maDonHang = String(item.ma_don_hang || '').trim();
-          const key = `${maDonHang}__${spId || ''}__${idx}`;
+          const key = `${planId}__${globalStt}`;
 
           baseRows.push({
             key,
@@ -11657,12 +11657,12 @@ export function createApp() {
 
       // Build map của san_pham từ JSON
       const sanPhamMap = new Map<string, any>();
+      let mapGlobalStt = 0;
       (planLines || []).forEach(line => {
         const sanPhamArray = Array.isArray(line.san_pham) ? line.san_pham : [];
         sanPhamArray.forEach((item: any, idx: number) => {
-          const maDonHang = String(item.ma_don_hang || '').trim();
-          const spId = String(item.san_pham_id || '').trim();
-          const key = `${maDonHang}__${spId}__${idx}`;
+          mapGlobalStt++;
+          const key = `${planId}__${mapGlobalStt}`;
           sanPhamMap.set(key, item);
         });
       });
@@ -11740,21 +11740,29 @@ export function createApp() {
         baseRowMap.set(row.key, row);
       });
 
-      for (let i = 0; i < rowsInput.length; i++) {
-        const rowInput = rowsInput[i];
+      // Map input rows by index (rowsInput order matches baseRows order)
+      const inputMap = new Map<number, any>();
+      rowsInput.forEach((row: any, idx: number) => {
+        inputMap.set(idx, row);
+      });
+
+      for (let i = 0; i < baseRows.length; i++) {
+        const baseRow = baseRows[i];
+        const rowInput = inputMap.get(i);
+
+        if (!rowInput) {
+          continue;
+        }
+
         const bac = Number(rowInput.slsx_bac) || 0;
         const trung = Number(rowInput.slsx_trung) || 0;
         const nam = Number(rowInput.slsx_nam) || 0;
         const totalInput = bac + trung + nam;
 
-        const key = `${String(rowInput.ma_don_hang || '').trim()}__${String(rowInput.san_pham_id || '').trim() || ''}__${Number(rowInput.item_index) || 0}`;
-        const baseRow = baseRowMap.get(key);
-
         if (!baseRow) {
           console.warn(`Preview row ${i} not found (key: ${key}), skipping validation`);
           continue;
         }
-
         if (totalInput > baseRow.tong_sx + 0.0001) {
           const tenSp = baseRow.ten_sp || 'không xác định';
           return res.status(400).json({
@@ -11789,24 +11797,16 @@ export function createApp() {
         return res.status(400).json({ error: 'Không có dòng kế hoạch để lưu.' });
       }
 
-      // Map input rows theo key
-      const inputMap = new Map<string, any>();
-      rowsInput.forEach((row: any) => {
-        const key = `${String(row.ma_don_hang || '').trim()}__${String(row.san_pham_id || '').trim()}__${Number(row.item_index) || 0}`;
-        inputMap.set(key, row);
-      });
-
       // Update san_pham JSON trong mỗi line
       let updatedCount = 0;
+      let updateGlobalStt = 0;
       for (const line of planLines) {
         const sanPhamArray = Array.isArray(line.san_pham) ? line.san_pham : [];
         let updated = false;
 
         const updatedSanPham = sanPhamArray.map((item: any, idx: number) => {
-          const maDonHang = String(item.ma_don_hang || '').trim();
-          const spId = String(item.san_pham_id || '').trim();
-          const key = `${maDonHang}__${spId}__${idx}`;
-          const inputRow = inputMap.get(key);
+          updateGlobalStt++;
+          const inputRow = inputMap.get(updateGlobalStt - 1);
 
           if (inputRow) {
             updated = true;
