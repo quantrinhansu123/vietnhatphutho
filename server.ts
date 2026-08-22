@@ -6933,7 +6933,9 @@ export function createApp() {
   async function savePhanCongNhanSuDetails(
     lenhSxId: string | number,
     maLenhSx: string,
-    phanCongJson: string
+    phanCongJson: string,
+    ca?: string,
+    may?: string
   ): Promise<void> {
     if (!supabase) return;
 
@@ -6958,6 +6960,8 @@ export function createApp() {
           ngay_lam_viec: p.ngay_lam_viec || null,
           thoi_gian_bat_dau: p.thoi_gian_bat_dau || null,
           thoi_gian_ket_thuc: p.thoi_gian_ket_thuc || null,
+          ca_lam_viec: p.ca_lam_viec || ca || null,
+          may: may || null,
           removable: Boolean(p.removable)
         }));
 
@@ -7231,7 +7235,13 @@ export function createApp() {
 
       // Lưu phân công nhân sự vào bảng chi tiết
       if (created && created.id && created.phan_cong_nhan_su) {
-        await savePhanCongNhanSuDetails(created.id, String(created.ma_lenh_sx || ''), created.phan_cong_nhan_su);
+        await savePhanCongNhanSuDetails(
+          created.id,
+          String(created.ma_lenh_sx || ''),
+          created.phan_cong_nhan_su,
+          String(created.ca || ''),
+          String(created.may || '')
+        );
       }
 
       return res.status(201).json({
@@ -7556,7 +7566,13 @@ export function createApp() {
 
       // Lưu phân công nhân sự vào bảng chi tiết nếu có cập nhật
       if (updated && updated.id && updated.phan_cong_nhan_su) {
-        await savePhanCongNhanSuDetails(updated.id, String(updated.ma_lenh_sx || ''), updated.phan_cong_nhan_su);
+        await savePhanCongNhanSuDetails(
+          updated.id,
+          String(updated.ma_lenh_sx || ''),
+          updated.phan_cong_nhan_su,
+          String(updated.ca || ''),
+          String(updated.may || '')
+        );
       }
 
       return res.json({
