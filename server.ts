@@ -9739,8 +9739,13 @@ export function createApp() {
               timeToMinutes(dd.thoi_gian_ket_thuc) > caStartMinutes
             );
 
-            if (dispatchForEmployee) {
-              // Employee is dispatched to another machine - add dispatch note
+            // Only show dispatch note if this dispatch applies to this specific machine (may_goc)
+            const hasDispatchForThisMachine = dispatchForEmployee &&
+              (dispatchForEmployee.may_goc === phanCong.ma_may ||
+               dispatchForEmployee.may_goc === machineName);
+
+            if (hasDispatchForThisMachine) {
+              // Employee is dispatched from this machine - add dispatch note
               const dispatchMachine = mayList.find(m => m.ma_may === dispatchForEmployee.may_dieu_dong);
               const dispatchMachineName = dispatchMachine?.ten_may || dispatchForEmployee.may_dieu_dong;
               const dispatchStart = dispatchForEmployee.thoi_gian_bat_dau?.slice(0, 5) || '';
@@ -9751,7 +9756,7 @@ export function createApp() {
                 dispatch: `(${dispatchStart}-${dispatchEnd} ${lastName} LÀM MÁY ${dispatchMachineName})`
               });
             } else {
-              // Employee stays in original machine
+              // Employee stays in this machine (no dispatch from this machine)
               machineData[machineName][tenCa].push({
                 name: lastName
               });
