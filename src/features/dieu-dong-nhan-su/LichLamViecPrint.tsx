@@ -91,7 +91,7 @@ export function LichLamViecPrint({ ngay, isOpen, onClose }: LichLamViecPrintProp
             <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
               {error}
             </div>
-          ) : data && data.lich && data.lich.length > 0 ? (
+          ) : data && data.ca_list && data.ca_list.length > 0 ? (
             <div
               id="lich-lam-viec-print"
               className="space-y-6"

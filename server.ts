@@ -9635,18 +9635,37 @@ export function createApp() {
       }
 
       const [caRes, mayRes, phanCongRes, dieuDongRes, nhanSuRes] = await Promise.all([
-        supabase.from('cai_dat_thoi_gian').select('*').eq('loai_cai_dat', 'Thời gian').eq('nhom', 'Chung'),
+        supabase.from('cai_dat_thoi_gian').select('*'),
         supabase.from('danh_sach_may').select('*'),
         supabase.from('phan_cong_nhan_su_chi_tiet').select('*').eq('ngay_lam_viec', ngayLamViec),
         supabase.from('dieu_dong_nhan_su').select('*').eq('ngay_lam_viec', ngayLamViec),
         supabase.from('nhan_su').select('ma_nhan_su, nhan_su')
       ]);
 
-      const caList = caRes.data || [];
+      console.log('[lich-lam-viec] caRes.error:', caRes.error, 'caRes.data length:', caRes.data?.length);
+      console.log('[lich-lam-viec] mayRes.error:', mayRes.error, 'mayRes.data length:', mayRes.data?.length);
+
+      let caList = (caRes.data || []) as any[];
       const mayList = mayRes.data || [];
       const phanCongList = phanCongRes.data || [];
       const dieuDongList = dieuDongRes.data || [];
       const nhanSuMap = new Map((nhanSuRes.data || []).map(ns => [String(ns.ma_nhan_su), ns.nhan_su]));
+
+      // Apply shift filter precedence: 'Thời gian' first, then 'Sản xuất', then regex match on name/code
+      const fromTimeSettings = caList.filter(setting => setting.loai_cai_dat === 'Thời gian');
+      if (fromTimeSettings.length > 0) {
+        caList = fromTimeSettings;
+      } else {
+        const fallbackSettings = caList.filter(
+          setting =>
+            setting.loai_cai_dat === 'Sản xuất' ||
+            /ca/i.test(setting.ten_cai_dat || '') ||
+            /ca/i.test(setting.ma_cai_dat || '')
+        );
+        if (fallbackSettings.length > 0) {
+          caList = fallbackSettings;
+        }
+      }
 
       // Sort time slots by start time
       const sortedCaList = [...caList].sort((a, b) => {
@@ -9734,7 +9753,7 @@ export function createApp() {
           }))
         };
       });
-
+      console.log('lichRows', lichRows);
       return res.json({
         ngay: ngayLamViec,
         ca_list: sortedCaList,
