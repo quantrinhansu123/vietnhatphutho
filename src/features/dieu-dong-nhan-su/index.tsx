@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { ChevronLeft, Pencil, Trash2, Loader2, Printer } from 'lucide-react';
 import { AssignedPersonnel } from '../ke-hoach-san-xuat/index';
 import { MachineCardRow } from './MachineCardRow';
 import { DispatchFormInline } from './DispatchFormInline';
 import { EditDispatchModal } from './EditDispatchModal';
+import { LichLamViecPrint } from './LichLamViecPrint';
 
 type RawLenhSxRow = {
   id: string;
@@ -124,6 +125,9 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
   const [selectedShift, setSelectedShift] = useState('');
   const [selectedOrderCode, setSelectedOrderCode] = useState('');
 
+  const [printDate, setPrintDate] = useState('');
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+
   const [selectedPersonnelKeys, setSelectedPersonnelKeys] = useState<Set<SelectedPersonnelKey>>(new Set());
   const [selectedPersonnelWithForms, setSelectedPersonnelWithForms] = useState<SelectedPersonnelWithForm[]>([]);
   const [history, setHistory] = useState<DispatchRecord[]>([]);
@@ -184,6 +188,9 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
   }, [lenhSxRows, selectedOrderCode, selectedDate, selectedShift]);
 
   useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    setPrintDate(today);
+
     const loadData = async () => {
       setIsLoadingLenhSx(true);
       setIsLoadingStaff(true);
@@ -472,6 +479,30 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
       <div className="flex-1 overflow-y-auto">
         {/* Filter Bar */}
         <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-3 md:px-6 md:py-4">
+          {/* Print Schedule Section */}
+          <div className="mb-4 pb-4 border-b border-zinc-200">
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-zinc-700 mb-1.5">Ngày làm việc</label>
+                <input
+                  type="date"
+                  value={printDate}
+                  onChange={e => setPrintDate(e.target.value)}
+                  className="w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none"
+                />
+              </div>
+              <button
+                onClick={() => setIsPrintDialogOpen(true)}
+                disabled={!printDate}
+                className="inline-flex items-center gap-2 rounded bg-[#ef1b2d] px-4 py-2 text-sm font-medium text-white hover:bg-[#d41623] disabled:bg-zinc-300 disabled:cursor-not-allowed"
+              >
+                <Printer className="h-4 w-4" />
+                IN LỊCH LÀM VIỆC
+              </button>
+            </div>
+          </div>
+
+          {/* Dispatch Section */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {/* Ngày */}
             <div>
@@ -554,7 +585,6 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
                 onCancel={() => {
                   setSelectedPersonnelKeys(new Set());
                   setSelectedPersonnelWithForms([]);
-                  setEditingRecordId(null);
                   setFormError('');
                 }}
                 isSaving={isSaving}
@@ -653,6 +683,13 @@ export function DieuDongNhanSuPanel({ onBack, currentUser, canEdit = true, canDe
           setEditingRecord(null);
         }}
         staffMap={staffMap}
+      />
+
+      {/* Print Schedule Modal */}
+      <LichLamViecPrint
+        ngay={printDate}
+        isOpen={isPrintDialogOpen}
+        onClose={() => setIsPrintDialogOpen(false)}
       />
     </div>
   );

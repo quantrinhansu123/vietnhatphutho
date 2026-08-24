@@ -5050,6 +5050,18 @@ function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function timeToMinutes(timeStr: string | null | undefined): number {
+  if (!timeStr) return 0;
+  const [h, m] = String(timeStr).split(':').map(Number);
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+function extractLastName(fullName: string): string {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(/\s+/);
+  return parts[parts.length - 1] || '';
+}
+
 function productionOrderProductLabel(productCode: string, productName: string) {
   if (productName && productCode) return `${productCode} · ${productName}`;
   return productName || productCode || '-';
@@ -6933,7 +6945,10 @@ export function createApp() {
   async function savePhanCongNhanSuDetails(
     lenhSxId: string | number,
     maLenhSx: string,
-    phanCongJson: string
+    phanCongJson: string,
+    ca?: string,
+    may?: string,
+    ma_may?: string
   ): Promise<void> {
     if (!supabase) return;
 
@@ -6958,6 +6973,9 @@ export function createApp() {
           ngay_lam_viec: p.ngay_lam_viec || null,
           thoi_gian_bat_dau: p.thoi_gian_bat_dau || null,
           thoi_gian_ket_thuc: p.thoi_gian_ket_thuc || null,
+          ca_lam_viec: p.ca_lam_viec || ca || null,
+          may: may || null,
+          ma_may: p.ma_may,
           removable: Boolean(p.removable)
         }));
 
@@ -7217,6 +7235,42 @@ export function createApp() {
           });
         }
       }
+      let maMay: string | null = null;
+      // Nếu có phan_cong_nhan_su, thêm ma_may vào JSON
+      let phanCongJson = record.phan_cong_nhan_su;
+      if (phanCongJson) {
+        try {
+          const phanCongList = JSON.parse(String(phanCongJson || '[]'));
+          if (Array.isArray(phanCongList)) {
+            const machineNameToLookup = String(record.may || '').trim() || null;
+
+            // Lookup ma_may từ ten_may
+      
+            if (machineNameToLookup) {
+              const { data: machineData, error: machineError } = await supabase
+                .from('danh_sach_may')
+                .select('ma_may')
+                .eq('ten_may', machineNameToLookup)
+                .maybeSingle();
+
+              if (!machineError && machineData) {
+                maMay = String(machineData.ma_may || '').trim() || null;
+              }
+            }
+
+            // Thêm ma_may vào từng item của JSON
+            const updatedList = phanCongList.map((item: any) => ({
+              ...item,
+              ma_may: maMay
+            }));
+
+            phanCongJson = JSON.stringify(updatedList);
+            record.phan_cong_nhan_su = phanCongJson;
+          }
+        } catch (err) {
+          console.error('Error processing phan_cong_nhan_su:', err);
+        }
+      }
 
       const { data: created, error: insertError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
@@ -7231,7 +7285,14 @@ export function createApp() {
 
       // Lưu phân công nhân sự vào bảng chi tiết
       if (created && created.id && created.phan_cong_nhan_su) {
-        await savePhanCongNhanSuDetails(created.id, String(created.ma_lenh_sx || ''), created.phan_cong_nhan_su);
+        await savePhanCongNhanSuDetails(
+          created.id,
+          String(created.ma_lenh_sx || ''),
+          created.phan_cong_nhan_su,
+          String(created.ca || ''),
+          String(created.may || ''),
+          String(maMay || '')
+        );
       }
 
       return res.status(201).json({
@@ -7538,6 +7599,56 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
+      // Nếu có phan_cong_nhan_su, thêm ma_may vào JSON
+      let phanCongJson = parsed.record.phan_cong_nhan_su;
+      let maMay: string | null = null;
+      if (phanCongJson) {
+        try {
+          const phanCongList = JSON.parse(String(phanCongJson || '[]'));
+          if (Array.isArray(phanCongList)) {
+            // Lấy may từ request hoặc từ order hiện tại
+            let machineNameToLookup = parsed.record.may ? String(parsed.record.may || '').trim() : null;
+
+            // Nếu request không có may, lấy từ order hiện tại
+            if (!machineNameToLookup) {
+              const { data: currentOrder, error: fetchError } = await supabase
+                .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+                .select('may')
+                .eq('id', id)
+                .maybeSingle();
+
+              if (!fetchError && currentOrder) {
+                machineNameToLookup = String(currentOrder.may || '').trim() || null;
+              }
+            }
+
+            // Lookup ma_may từ ten_may
+            if (machineNameToLookup) {
+              const { data: machineData, error: machineError } = await supabase
+                .from('danh_sach_may')
+                .select('ma_may')
+                .eq('ten_may', machineNameToLookup)
+                .maybeSingle();
+
+              if (!machineError && machineData) {
+                maMay = String(machineData.ma_may || '').trim() || null;
+              }
+            }
+
+            // Thêm ma_may vào từng item của JSON
+            const updatedList = phanCongList.map((item: any) => ({
+              ...item,
+              ma_may: maMay
+            }));
+
+            phanCongJson = JSON.stringify(updatedList);
+            parsed.record.phan_cong_nhan_su = phanCongJson;
+          }
+        } catch (err) {
+          console.error('Error processing phan_cong_nhan_su:', err);
+        }
+      }
+
       const { data: updated, error: updateError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
         .update(parsed.record)
@@ -7556,7 +7667,14 @@ export function createApp() {
 
       // Lưu phân công nhân sự vào bảng chi tiết nếu có cập nhật
       if (updated && updated.id && updated.phan_cong_nhan_su) {
-        await savePhanCongNhanSuDetails(updated.id, String(updated.ma_lenh_sx || ''), updated.phan_cong_nhan_su);
+        await savePhanCongNhanSuDetails(
+          updated.id,
+          String(updated.ma_lenh_sx || ''),
+          updated.phan_cong_nhan_su,
+          String(updated.ca || ''),
+          String(updated.may || ''),
+          String(maMay || '')
+        );
       }
 
       return res.json({
@@ -9502,6 +9620,172 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa điều động.' });
+    }
+  });
+
+  app.get('/api/lich-lam-viec', async (req, res) => {
+    if (!supabase) {
+      return res.json({ ngay: '', ca_list: [], may_list: [], lich: [], message: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const ngayLamViec = String(req.query.ngay || '').trim();
+      if (!ngayLamViec) {
+        return res.status(400).json({ error: 'Thiếu tham số ngày (ngay).' });
+      }
+
+      const [caRes, mayRes, phanCongRes, dieuDongRes, nhanSuRes] = await Promise.all([
+        supabase.from('cai_dat_thoi_gian').select('*'),
+        supabase.from('danh_sach_may').select('*'),
+        supabase.from('phan_cong_nhan_su_chi_tiet').select('*').eq('ngay_lam_viec', ngayLamViec),
+        supabase.from('dieu_dong_nhan_su').select('*').eq('ngay_lam_viec', ngayLamViec),
+        supabase.from('nhan_su').select('ma_nhan_su, nhan_su')
+      ]);
+
+      console.log('[lich-lam-viec] caRes.error:', caRes.error, 'caRes.data length:', caRes.data?.length);
+      console.log('[lich-lam-viec] mayRes.error:', mayRes.error, 'mayRes.data length:', mayRes.data?.length);
+
+      let caList = (caRes.data || []) as any[];
+      const mayList = mayRes.data || [];
+      const phanCongList = phanCongRes.data || [];
+      const dieuDongList = dieuDongRes.data || [];
+      const nhanSuMap = new Map((nhanSuRes.data || []).map(ns => [String(ns.ma_nhan_su), ns.nhan_su]));
+
+      // Apply shift filter precedence: 'Thời gian' first, then 'Sản xuất', then regex match on name/code
+      const fromTimeSettings = caList.filter(setting => setting.loai_cai_dat === 'Thời gian');
+      if (fromTimeSettings.length > 0) {
+        caList = fromTimeSettings;
+      } else {
+        const fallbackSettings = caList.filter(
+          setting =>
+            setting.loai_cai_dat === 'Sản xuất' ||
+            /ca/i.test(setting.ten_cai_dat || '') ||
+            /ca/i.test(setting.ma_cai_dat || '')
+        );
+        if (fallbackSettings.length > 0) {
+          caList = fallbackSettings;
+        }
+      }
+
+      // Sort time slots by start time
+      const sortedCaList = [...caList].sort((a, b) => {
+        const aTime = a.gio_bat_dau || '00:00';
+        const bTime = b.gio_bat_dau || '00:00';
+        return aTime.localeCompare(bTime);
+      });
+
+      // Build the schedule grid
+      const lichRows = sortedCaList.map(ca => {
+        const khungGio = ca.khung_gio || '';
+        const tenCa = ca.ten_cai_dat || '';
+        const gioBatDau = ca.gio_bat_dau || '';
+        const gioKetThuc = ca.gio_ket_thuc || '';
+
+        // For each time slot, find employees and their machine assignments
+        // Structure: machineData[tenMay][tenCa] to separate by both machine and shift
+        type MachineShiftData = Record<string, Record<string, Array<{ name: string; dispatch?: string }>>>;
+        const machineData: MachineShiftData = {};
+
+        for (const may of mayList) {
+          machineData[may.ten_may] = {};
+          for (const shiftCa of sortedCaList) {
+            machineData[may.ten_may][shiftCa.ten_cai_dat] = [];
+          }
+        }
+
+        // Find employees assigned to machines in this time period
+        for (const phanCong of phanCongList) {
+          if (!phanCong.ma_may || !phanCong.ma_nhan_su) continue;
+
+          // Filter by shift: check ca_lam_viec matches current shift
+          const assignedCa = String(phanCong.ca_lam_viec || '').trim();
+          if (assignedCa && assignedCa !== tenCa && assignedCa !== ca.ma_cai_dat) {
+            continue;
+          }
+
+          // Also check time overlap if time data exists
+          const startMinutes = timeToMinutes(phanCong.thoi_gian_bat_dau || '');
+          const endMinutes = timeToMinutes(phanCong.thoi_gian_ket_thuc || '');
+          const caStartMinutes = timeToMinutes(gioBatDau);
+          const caEndMinutes = timeToMinutes(gioKetThuc);
+
+          // If both have time data, check overlap
+          if (startMinutes && endMinutes && caStartMinutes && caEndMinutes) {
+            if (startMinutes >= caEndMinutes || endMinutes <= caStartMinutes) {
+              continue;
+            }
+          }
+
+          // Get employee name (last word only)
+          const fullName = nhanSuMap.get(phanCong.ma_nhan_su) || phanCong.ma_nhan_su;
+          const lastName = extractLastName(fullName);
+
+          // Find machine name from ma_may
+          const machine = mayList.find(m => m.ma_may === phanCong.ma_may);
+          const machineName = machine?.ten_may;
+
+          if (!machineName) continue;
+
+          // Always add employee to original machine for this shift
+          if (machineData[machineName]) {
+            if (!machineData[machineName][tenCa]) {
+              machineData[machineName][tenCa] = [];
+            }
+
+            // Check all dispatches for this employee during this time
+            const dispatchesForEmployee = dieuDongList.filter(dd =>
+              dd.ma_nhan_su === phanCong.ma_nhan_su &&
+              timeToMinutes(dd.thoi_gian_bat_dau) < caEndMinutes &&
+              timeToMinutes(dd.thoi_gian_ket_thuc) > caStartMinutes
+            );
+
+            // Filter dispatches that apply to this specific machine (may_goc)
+            const dispatchesForThisMachine = dispatchesForEmployee.filter(dd =>
+              dd.may_goc === phanCong.ma_may ||
+              dd.may_goc === machineName
+            );
+
+            if (dispatchesForThisMachine.length > 0) {
+              // Employee has one or more dispatches from this machine - add all dispatch notes
+              const dispatchNotes = dispatchesForThisMachine.map(dd => {
+                const dispatchMachine = mayList.find(m => m.ma_may === dd.may_dieu_dong);
+                const dispatchMachineName = dispatchMachine?.ten_may || dd.may_dieu_dong;
+                const dispatchStart = dd.thoi_gian_bat_dau?.slice(0, 5) || '';
+                const dispatchEnd = dd.thoi_gian_ket_thuc?.slice(0, 5) || '';
+                return `(${dispatchStart}-${dispatchEnd} ${lastName} LÀM MÁY ${dispatchMachineName})`;
+              });
+
+              machineData[machineName][tenCa].push({
+                name: lastName,
+                dispatch: dispatchNotes.join('\n')
+              });
+            } else {
+              // Employee stays in this machine (no dispatch from this machine)
+              machineData[machineName][tenCa].push({
+                name: lastName
+              });
+            }
+          }
+        }
+
+        return {
+          khungGio,
+          tenCa,
+          machines: mayList.map(may => ({
+            tenMay: may.ten_may,
+            nhanSu: machineData[may.ten_may]?.[tenCa] || []
+          }))
+        };
+      });
+      return res.json({
+        ngay: ngayLamViec,
+        ca_list: sortedCaList,
+        may_list: mayList,
+        lich: lichRows
+      });
+    } catch (err: any) {
+      console.error('Error in /api/lich-lam-viec:', err);
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải lịch làm việc.' });
     }
   });
 

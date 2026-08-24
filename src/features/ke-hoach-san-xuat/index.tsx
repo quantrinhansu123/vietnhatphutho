@@ -102,6 +102,7 @@ export type AssignedPersonnel = {
   ngay_lam_viec: string;
   thoi_gian_bat_dau: string;
   thoi_gian_ket_thuc: string;
+  ca_lam_viec?: string;
   removable: boolean;
 };
 
@@ -5651,6 +5652,8 @@ export function AddProductionOrderModal({
           <PersonnelAssignmentBlock
             items={form.personnel}
             staffOptions={staffOptions}
+            shiftOptions={shiftOptions}
+            shiftSettings={settings}
             onChange={(id, patch) => {
               setForm(prev => ({
                 ...prev,
@@ -6193,8 +6196,11 @@ export function EditProductionOrderModal({
   onSaved: () => void | Promise<void>;
 }) {
   const [form, setForm] = useState<ProductionOrderFormState>(emptyProductionOrderForm);
+  const [selectedShift, setSelectedShift] = useState('');
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
+  const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -6226,35 +6232,64 @@ export function EditProductionOrderModal({
       machine: row.machine === '-' ? '' : row.machine,
       note: row.note === '-' ? '' : row.note || ''
     });
+    setSelectedShift(row.shift === '-' ? '' : row.shift);
     setFormError('');
   }, [open, row]);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    const loadStaff = async () => {
+    const loadData = async () => {
       setIsLoadingStaff(true);
+      setIsLoadingSettings(true);
       try {
-        const res = await fetch('/api/nhan-su?format=groups&scope=all');
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Không thể tải nhân sự.');
-        if (!cancelled) setStaffBranches(normalizeHrBranches(data));
+        const [staffRes, settingRes] = await Promise.all([
+          fetch('/api/nhan-su?format=groups&scope=all'),
+          fetch('/api/cai-dat')
+        ]);
+        const [staffData, settingData] = await Promise.all([
+          staffRes.json().catch(() => ({})),
+          settingRes.json().catch(() => ({}))
+        ]);
+        if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
+        if (!cancelled) {
+          setStaffBranches(normalizeHrBranches(staffData));
+          if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
+        }
       } catch (error: any) {
         if (!cancelled) {
           setStaffBranches([]);
           setFormError(error?.message || 'Không thể tải nhân sự Phân xưởng sản xuất.');
         }
       } finally {
-        if (!cancelled) setIsLoadingStaff(false);
+        if (!cancelled) {
+          setIsLoadingStaff(false);
+          setIsLoadingSettings(false);
+        }
       }
     };
-    loadStaff();
+    loadData();
     return () => {
       cancelled = true;
     };
   }, [open]);
 
   const workshopStaff = useMemo(() => collectProductionWorkshopStaff(staffBranches), [staffBranches]);
+
+  const shiftOptions = useMemo(() => {
+    const fromSettings = settings
+      .filter(
+        setting =>
+          setting.loaiCaiDat === 'Thời gian' ||
+          setting.loaiCaiDat === 'Sản xuất' ||
+          /ca/i.test(setting.name) ||
+          /ca/i.test(setting.code)
+      )
+      .map(setting => setting.name || setting.code)
+      .filter((name, index, arr) => name && arr.indexOf(name) === index);
+
+    return fromSettings.length > 0 ? fromSettings : [...STANDARD_SHIFTS];
+  }, [settings]);
 
   const staffText = useMemo(
     () => [...new Set(form.personnel.map(p => workshopStaff.find(s => s.id === p.ma_nhan_su)?.name || '').filter(Boolean))].join(', '),
@@ -6341,14 +6376,23 @@ export function EditProductionOrderModal({
       }
     }
 
+    if (!selectedShift.trim()) {
+      setFormError('Vui lòng chọn ca.');
+      return;
+    }
+
     setIsSaving(true);
     setFormError('');
 
     try {
+      const payload = productionOrderFormToCreatePayload(
+        { ...form, shift: selectedShift },
+        filledLines
+      );
       const res = await fetch(`/api/lenh-sx/${row.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productionOrderFormToCreatePayload(form, filledLines))
+        body: JSON.stringify(payload)
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -6538,6 +6582,8 @@ export function EditProductionOrderModal({
               items={form.personnel}
               staffOptions={workshopStaff}
               isLoadingStaff={isLoadingStaff}
+              shiftOptions={shiftOptions}
+              shiftSettings={settings}
               onChange={(id, patch) => {
                 setForm(prev => ({
                   ...prev,
