@@ -9682,34 +9682,49 @@ export function createApp() {
         const gioKetThuc = ca.gio_ket_thuc || '';
 
         // For each time slot, find employees and their machine assignments
-        const machineData: Record<string, Array<{ name: string; dispatch?: string }>> = {};
+        // Structure: machineData[tenMay][tenCa] to separate by both machine and shift
+        type MachineShiftData = Record<string, Record<string, Array<{ name: string; dispatch?: string }>>>;
+        const machineData: MachineShiftData = {};
 
         for (const may of mayList) {
-          machineData[may.ten_may] = [];
+          machineData[may.ten_may] = {};
+          for (const shiftCa of sortedCaList) {
+            machineData[may.ten_may][shiftCa.ten_cai_dat] = [];
+          }
         }
 
         // Find employees assigned to machines in this time period
         for (const phanCong of phanCongList) {
           if (!phanCong.ma_may || !phanCong.ma_nhan_su) continue;
 
-          // Check if this time slot overlaps with employee's work time
+          // Filter by shift: check ca_lam_viec matches current shift
+          const assignedCa = String(phanCong.ca_lam_viec || '').trim();
+          if (assignedCa && assignedCa !== tenCa && assignedCa !== ca.ma_cai_dat) {
+            continue;
+          }
+
+          // Also check time overlap if time data exists
           const startMinutes = timeToMinutes(phanCong.thoi_gian_bat_dau || '');
           const endMinutes = timeToMinutes(phanCong.thoi_gian_ket_thuc || '');
           const caStartMinutes = timeToMinutes(gioBatDau);
           const caEndMinutes = timeToMinutes(gioKetThuc);
 
-          // Check overlap
-          if (startMinutes >= caEndMinutes || endMinutes <= caStartMinutes) {
-            continue;
+          // If both have time data, check overlap
+          if (startMinutes && endMinutes && caStartMinutes && caEndMinutes) {
+            if (startMinutes >= caEndMinutes || endMinutes <= caStartMinutes) {
+              continue;
+            }
           }
-
-          // Find machine name
-          const machine = mayList.find(m => m.ma_may === phanCong.ma_may);
-          const machineName = machine?.ten_may || phanCong.ma_may;
 
           // Get employee name (last word only)
           const fullName = nhanSuMap.get(phanCong.ma_nhan_su) || phanCong.ma_nhan_su;
           const lastName = extractLastName(fullName);
+
+          // Find machine name from ma_may
+          const machine = mayList.find(m => m.ma_may === phanCong.ma_may);
+          const machineName = machine?.ten_may;
+
+          if (!machineName) continue;
 
           // Check if employee has dispatch during this time
           const dispatchForEmployee = dieuDongList.find(dd =>
@@ -9725,22 +9740,26 @@ export function createApp() {
             const dispatchStart = dispatchForEmployee.thoi_gian_bat_dau?.slice(0, 5) || '';
             const dispatchEnd = dispatchForEmployee.thoi_gian_ket_thuc?.slice(0, 5) || '';
 
-            // Show in dispatch destination machine
-            if (!machineData[dispatchMachineName]) {
-              machineData[dispatchMachineName] = [];
+            // Show in dispatch destination machine for this shift
+            if (machineData[dispatchMachineName]) {
+              if (!machineData[dispatchMachineName][tenCa]) {
+                machineData[dispatchMachineName][tenCa] = [];
+              }
+              machineData[dispatchMachineName][tenCa].push({
+                name: lastName,
+                dispatch: `(${dispatchStart}-${dispatchEnd} ${lastName} LÀM MÁY ${dispatchMachineName})`
+              });
             }
-            machineData[dispatchMachineName].push({
-              name: lastName,
-              dispatch: `(${dispatchStart}-${dispatchEnd} ${lastName} LÀM MÁY ${dispatchMachineName})`
-            });
           } else {
-            // Employee stays in original machine
-            if (!machineData[machineName]) {
-              machineData[machineName] = [];
+            // Employee stays in original machine for this shift
+            if (machineData[machineName]) {
+              if (!machineData[machineName][tenCa]) {
+                machineData[machineName][tenCa] = [];
+              }
+              machineData[machineName][tenCa].push({
+                name: lastName
+              });
             }
-            machineData[machineName].push({
-              name: lastName
-            });
           }
         }
 
@@ -9749,11 +9768,10 @@ export function createApp() {
           tenCa,
           machines: mayList.map(may => ({
             tenMay: may.ten_may,
-            nhanSu: machineData[may.ten_may] || []
+            nhanSu: machineData[may.ten_may]?.[tenCa] || []
           }))
         };
       });
-      console.log('lichRows', lichRows);
       return res.json({
         ngay: ngayLamViec,
         ca_list: sortedCaList,
