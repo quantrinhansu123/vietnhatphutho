@@ -9731,20 +9731,20 @@ export function createApp() {
             if (!machineData[machineName][tenCa]) {
               machineData[machineName][tenCa] = [];
             }
-
+            console.log('phanCong', phanCong)
+            console.log('dieuDongList', dieuDongList)
             // Check all dispatches for this employee during this time
             const dispatchesForEmployee = dieuDongList.filter(dd =>
               dd.ma_nhan_su === phanCong.ma_nhan_su &&
-              timeToMinutes(dd.thoi_gian_bat_dau) < caEndMinutes &&
-              timeToMinutes(dd.thoi_gian_ket_thuc) > caStartMinutes
+              timeToMinutes(dd.thoi_gian_bat_dau) != caEndMinutes &&
+              timeToMinutes(dd.thoi_gian_ket_thuc) != caStartMinutes
             );
 
             // Filter dispatches that apply to this specific machine (may_goc)
             const dispatchesForThisMachine = dispatchesForEmployee.filter(dd =>
-              dd.may_goc === phanCong.ma_may ||
               dd.may_goc === machineName
             );
-
+            
             if (dispatchesForThisMachine.length > 0) {
               // Employee has one or more dispatches from this machine - add all dispatch notes
               const dispatchNotes = dispatchesForThisMachine.map(dd => {
