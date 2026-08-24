@@ -183,28 +183,35 @@ export function ProductConversionsPanel({ onBack }: { onBack: () => void }) {
     setSaving(true); setError(''); setMessage('');
     try {
       const imported = await parseProductConversionCsv(file);
-      const productMap = new Map<string, ProductOption>();
-      products.forEach(product => {
-        if (product.code) productMap.set(`code:${product.code.trim().toLowerCase()}`, product);
-        if (product.amisCode) productMap.set(`amis:${product.amisCode.trim().toLowerCase()}`, product);
-      });
-      const jobs = imported.map(row => {
-        const product = (row.amisCode ? productMap.get(`amis:${row.amisCode.toLowerCase()}`) : undefined)
-          || (row.productCode ? productMap.get(`code:${row.productCode.toLowerCase()}`) : undefined);
-        return product ? { rowNumber: row.rowNumber, productId: product.id, sheetWidthM: row.sheetWidthM, sheetLengthM: row.sheetLengthM, rollWidthM: row.rollWidthM, rollLengthM: row.rollLengthM, areaM2: row.areaM2, kgPerLinearM: row.kgPerLinearM, kgPerM2: row.kgPerM2, kgPerSheet: row.kgPerSheet, kgPerRoll: row.kgPerRoll } : null;
-      });
-      let created = 0, updated = 0, failed = jobs.filter(job => !job).length, processed = failed;
-      setImportProgress({ processed, total: imported.length, created, updated, failed });
-      const validJobs = jobs.filter((job): job is NonNullable<typeof job> => Boolean(job));
-      for (let index = 0; index < validJobs.length; index += 200) {
-        const batch = validJobs.slice(index, index + 200);
+      const { errors, validRows } = await parseAndValidateRows(imported);
+      if (errors.length > 0 && validRows.length === 0) {
+        setError(`${errors.length} dòng có lỗi, không thể import`);
+        setPreviewData({ errors, validRows: [] });
+        setPreviewOpen(true);
+        setSaving(false);
+        return;
+      }
+      if (errors.length > 0) {
+        setPreviewData({ errors, validRows });
+        setPreviewOpen(true);
+        setSaving(false);
+        return;
+      }
+      const jobs = validRows.map(row => ({ rowNumber: row.rowNumber, ...row.fields }));
+      let created = 0, updated = 0, failed = 0, processed = 0;
+      setImportProgress({ processed, total: validRows.length, created, updated, failed });
+      for (let index = 0; index < jobs.length; index += 200) {
+        const batch = jobs.slice(index, index + 200);
         const res = await fetch('/api/bang-quy-doi-san-pham/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: batch }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Không import được dữ liệu.');
-        processed += Number(data.processed) || batch.length; created += Number(data.created) || 0; updated += Number(data.updated) || 0; failed += Number(data.failed) || 0;
-        setImportProgress({ processed, total: imported.length, created, updated, failed });
+        processed += Number(data.processed) || batch.length;
+        created += Number(data.created) || 0;
+        updated += Number(data.updated) || 0;
+        failed += Number(data.failed) || 0;
+        setImportProgress({ processed, total: validRows.length, created, updated, failed });
       }
-      setMessage(`CSV: ${imported.length} dòng · thêm ${created} · cập nhật ${updated} · lỗi/bỏ qua ${failed}.`);
+      setMessage(`CSV: ${validRows.length} dòng · thêm ${created} · cập nhật ${updated} · lỗi/bỏ qua ${failed}.`);
       await load();
     } catch (e: any) { setError(e.message || 'Không nhập được CSV.'); }
     finally { setSaving(false); if (fileRef.current) fileRef.current.value = ''; }

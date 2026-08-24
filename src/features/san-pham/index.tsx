@@ -1910,9 +1910,9 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
             hasError = true;
             break;
           }
+         
           fields[dbField] = val;
         }
-
         if (hasError) continue;
 
         const res = await fetch('/api/bang-quy-doi-san-pham/import', {

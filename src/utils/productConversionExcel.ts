@@ -40,10 +40,10 @@ const HEADER_ALIASES: Record<keyof Omit<ProductConversionExcelRow, 'rowNumber'>,
   rollWidthM: ['kho cuon rong', 'kho_cuon_rong', 'roll width', 'cuon rong'],
   rollLengthM: ['kho cuon dai', 'kho_cuon_dai', 'roll length', 'cuon dai'],
   areaM2: ['dien tich', 'dien_tich', 'area', 'area m2', 'kho dien tich'],
-  kgPerLinearM: ['tro luong kg m dai', 'tro luong m dai', 'tro luong kg 1 m dai', 'kg m dai', 'kg per linear m'],
-  kgPerM2: ['tro luong kg m2', 'tro luong m2', 'kg m2', 'kg per m2'],
-  kgPerSheet: ['tro luong kg tam', 'tro luong tam', 'kg tam', 'kg per sheet'],
-  kgPerRoll: ['tro luong kg cuon', 'tro luong cuon', 'kg cuon', 'kg per roll']
+  kgPerLinearM: ['trong luong kg m dai', 'trong luong m dai', 'trong luong kg 1 m dai', 'kg m dai', 'kg per linear m'],
+  kgPerM2: ['trong luong kg m2', 'trong luong m2', 'kg m2', 'kg per m2'],
+  kgPerSheet: ['trong luong kg tam', 'trong luong tam', 'kg tam', 'kg per sheet'],
+  kgPerRoll: ['trong luong kg cuon', 'trong luong cuon', 'kg cuon', 'kg per roll']
 };
 
 function normalizeHeader(value: unknown) {
@@ -97,7 +97,7 @@ export async function parseProductConversionExcel(file: File): Promise<ProductCo
       key === 'amisCode' ? amisCodeIndex : findColumn(headers, HEADER_ALIASES[key])
     ])
   ) as Record<keyof typeof HEADER_ALIASES, number>;
-
+ 
   return matrix
     .slice(1)
     .map((row, index) => {
