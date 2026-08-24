@@ -6329,6 +6329,74 @@ export function createApp() {
     }
   });
 
+  app.get('/api/canh-bao-ton-kho', async (_req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local', thang: 0, nam: 0 });
+    try {
+      const now = new Date();
+      const thang = now.getMonth() + 1;
+      const nam = now.getFullYear();
+
+      const { data: inventoryLimits, error: limitsError } = await supabase
+        .from(SUPABASE_INVENTORY_LIMITS_TABLE)
+        .select('*')
+        .eq('thang', thang)
+        .eq('nam', nam);
+
+      if (limitsError) {
+        console.error('Supabase inventory limits query error:', limitsError);
+        return respondSupabaseReadError(res, limitsError, SUPABASE_INVENTORY_LIMITS_TABLE, { items: [], total: 0 });
+      }
+
+      if (!inventoryLimits || inventoryLimits.length === 0) {
+        return res.json({ items: [], total: 0, source: 'supabase', thang, nam });
+      }
+
+      const productIds = inventoryLimits.map(item => String(item.san_pham_id));
+      const { data: products, error: productsError } = await supabase
+        .from(SUPABASE_PRODUCTS_TABLE)
+        .select('id, ma_amis, ten_sp, ten_san_xuat, ton_kho')
+        .in('id', productIds);
+
+      if (productsError) {
+        console.error('Supabase products query error:', productsError);
+        return respondSupabaseReadError(res, productsError, SUPABASE_PRODUCTS_TABLE, { items: [], total: 0 });
+      }
+
+      const productMap = new Map((products || []).map(p => [String(p.id), p]));
+
+      const alerts = inventoryLimits
+        .map(limit => {
+          const product = productMap.get(String(limit.san_pham_id));
+          if (!product) return null;
+
+          const threshold = (limit.ton_kho_toi_thieu * 0.05);
+          const ton_kho = Number(product.ton_kho || 0);
+
+          if (ton_kho <= threshold) {
+            return {
+              id: limit.id,
+              san_pham_id: limit.san_pham_id,
+              ma_amis: product.ma_amis || '',
+              ten_sp: product.ten_sp || '',
+              ten_san_xuat: product.ten_san_xuat || '',
+              ton_kho,
+              ton_kho_toi_thieu: limit.ton_kho_toi_thieu,
+              ton_kho_toi_da: limit.ton_kho_toi_da,
+              thang: limit.thang,
+              nam: limit.nam
+            };
+          }
+          return null;
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+        .sort((a, b) => a.ton_kho - b.ton_kho);
+
+      return res.json({ items: alerts, total: alerts.length, source: 'supabase', thang, nam });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lấy danh sách cảnh báo tồn kho.' });
+    }
+  });
+
   app.get('/api/bang-quy-doi-san-pham', async (req, res) => {
     if (!supabase) return res.json({ items: [], page: 1, pageSize: 50, total: 0 });
     try {

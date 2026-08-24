@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dieu-dong-nhan-su' | 'settings' | 'dashboard';
+export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dieu-dong-nhan-su' | 'settings' | 'dashboard' | 'canh-bao-ton-kho';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -48,7 +48,8 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'production-plan-history': '/ke-hoach-san-xuat',
   'dieu-dong-nhan-su': '/dieu-dong-nhan-su',
   settings: '/cai-dat',
-  dashboard: '/phan-tich'
+  dashboard: '/phan-tich',
+  'canh-bao-ton-kho': '/canh-bao-ton-kho'
 };
 
 const PATH_TO_TAB = new Map<string, AppTab>(
