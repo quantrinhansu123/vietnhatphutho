@@ -9726,36 +9726,32 @@ export function createApp() {
 
           if (!machineName) continue;
 
-          // Check if employee has dispatch during this time
-          const dispatchForEmployee = dieuDongList.find(dd =>
-            dd.ma_nhan_su === phanCong.ma_nhan_su &&
-            timeToMinutes(dd.thoi_gian_bat_dau) < caEndMinutes &&
-            timeToMinutes(dd.thoi_gian_ket_thuc) > caStartMinutes
-          );
+          // Always add employee to original machine for this shift
+          if (machineData[machineName]) {
+            if (!machineData[machineName][tenCa]) {
+              machineData[machineName][tenCa] = [];
+            }
 
-          if (dispatchForEmployee) {
-            // Employee is dispatched to another machine
-            const dispatchMachine = mayList.find(m => m.ma_may === dispatchForEmployee.may_dieu_dong);
-            const dispatchMachineName = dispatchMachine?.ten_may || dispatchForEmployee.may_dieu_dong;
-            const dispatchStart = dispatchForEmployee.thoi_gian_bat_dau?.slice(0, 5) || '';
-            const dispatchEnd = dispatchForEmployee.thoi_gian_ket_thuc?.slice(0, 5) || '';
+            // Check if employee has dispatch during this time
+            const dispatchForEmployee = dieuDongList.find(dd =>
+              dd.ma_nhan_su === phanCong.ma_nhan_su &&
+              timeToMinutes(dd.thoi_gian_bat_dau) < caEndMinutes &&
+              timeToMinutes(dd.thoi_gian_ket_thuc) > caStartMinutes
+            );
 
-            // Show in dispatch destination machine for this shift
-            if (machineData[dispatchMachineName]) {
-              if (!machineData[dispatchMachineName][tenCa]) {
-                machineData[dispatchMachineName][tenCa] = [];
-              }
-              machineData[dispatchMachineName][tenCa].push({
+            if (dispatchForEmployee) {
+              // Employee is dispatched to another machine - add dispatch note
+              const dispatchMachine = mayList.find(m => m.ma_may === dispatchForEmployee.may_dieu_dong);
+              const dispatchMachineName = dispatchMachine?.ten_may || dispatchForEmployee.may_dieu_dong;
+              const dispatchStart = dispatchForEmployee.thoi_gian_bat_dau?.slice(0, 5) || '';
+              const dispatchEnd = dispatchForEmployee.thoi_gian_ket_thuc?.slice(0, 5) || '';
+
+              machineData[machineName][tenCa].push({
                 name: lastName,
                 dispatch: `(${dispatchStart}-${dispatchEnd} ${lastName} LÀM MÁY ${dispatchMachineName})`
               });
-            }
-          } else {
-            // Employee stays in original machine for this shift
-            if (machineData[machineName]) {
-              if (!machineData[machineName][tenCa]) {
-                machineData[machineName][tenCa] = [];
-              }
+            } else {
+              // Employee stays in original machine
               machineData[machineName][tenCa].push({
                 name: lastName
               });
