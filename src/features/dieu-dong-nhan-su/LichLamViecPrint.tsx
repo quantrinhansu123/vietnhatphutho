@@ -150,24 +150,28 @@ export function LichLamViecPrint({ ngay, isOpen, onClose }: LichLamViecPrintProp
                             className="border border-zinc-300 px-2 py-2 text-zinc-700"
                             style={{ verticalAlign: 'top' }}
                           >
-                            {machineCell.nhanSu.length > 0 ? (
-                              <div className="space-y-0.5">
-                                {machineCell.nhanSu.map((person, pidx) => (
-                                  <div key={pidx} className="text-xs leading-tight">
-                                    {person.dispatch ? (
-                                      <>
-                                        <div>{person.name}</div>
-                                        <div className="italic text-zinc-600">
-                                          {person.dispatch}
-                                        </div>
-                                      </>
-                                    ) : (
+                            {machineCell.nhanSu.length > 0 ? (() => {
+                              const withoutDispatch = machineCell.nhanSu.filter(p => !p.dispatch);
+                              const withDispatch = machineCell.nhanSu.filter(p => p.dispatch);
+                              const names = withoutDispatch.map(p => p.name);
+                              return (
+                                <div className="space-y-0.5">
+                                  {names.length > 0 && (
+                                    <div className="text-xs leading-tight">
+                                      {names.join(', ')}
+                                    </div>
+                                  )}
+                                  {withDispatch.map((person, pidx) => (
+                                    <div key={pidx} className="text-xs leading-tight">
                                       <div>{person.name}</div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
+                                      <div className="italic text-zinc-600">
+                                        {person.dispatch}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })() : (
                               <span className="text-zinc-400">-</span>
                             )}
                           </td>
