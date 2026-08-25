@@ -68,6 +68,31 @@ function resolveLinePercentAndKg(
   return { percent, kg: formatNumberVi(kg) };
 }
 
+/** Cối trộn tiêu chuẩn: quy đổi 1 dòng NVL về %Cối trộn, KL/cối và Tổng trọng lượng cả SP. */
+function resolveStandardBatchRow(line: MixingNormLine, product: MixingNormProduct) {
+  const batch = product.dinh_luong_coi ?? null;
+  const tong = product.tong_trong_luong ?? null;
+  const kgPerBatch =
+    line.khoi_luong !== null && line.khoi_luong !== undefined && Number.isFinite(line.khoi_luong)
+      ? line.khoi_luong
+      : line.don_vi === '%' && line.gia_tri != null && batch
+        ? (batch * line.gia_tri) / 100
+        : line.gia_tri ?? null;
+  const percentCoi =
+    line.ty_le_coi !== null && line.ty_le_coi !== undefined && Number.isFinite(line.ty_le_coi)
+      ? line.ty_le_coi
+      : kgPerBatch !== null && batch
+        ? (kgPerBatch / batch) * 100
+        : null;
+  const tongKg =
+    line.tong_khoi_luong !== null && line.tong_khoi_luong !== undefined && Number.isFinite(line.tong_khoi_luong)
+      ? line.tong_khoi_luong
+      : percentCoi !== null && tong
+        ? (percentCoi / 100) * tong
+        : null;
+  return { percentCoi, kgPerBatch, tongKg };
+}
+
 function productTitle(product: MixingNormProduct) {
   const name = (product.ten_sp || product.ma_sp || 'SẢN PHẨM').trim();
   return name.toUpperCase();
@@ -147,8 +172,19 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                     Tổng trọng lượng: <strong>{formatNumberVi(tong)} kg</strong>
                   </p>
                 ) : null}
+                {!doc.isActual && product.dinh_luong_coi ? (
+                  <p className="mixing-norm-ratio-print-tonnage">
+                    Cối trộn tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
+                    {product.so_lan_tron ? (
+                      <>
+                        <span className="mixing-norm-ratio-print-meta-sep">·</span>
+                        Số cối cần trộn: <strong>{product.so_lan_tron}</strong>
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
 
-                {buildMixingRoundWeights(product).length > 0 ? (
+                {doc.isActual && buildMixingRoundWeights(product).length > 0 ? (
                   chunks(buildMixingRoundWeights(product), MIXING_ROUNDS_PER_TABLE).map((rounds, tableIndex) => (
                     <table key={tableIndex} className={`mixing-norm-ratio-print-table mixing-norm-ratio-round-table ${doc.isActual ? 'is-actual' : ''}`}>
                       <colgroup>
@@ -199,7 +235,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                       })()}</tbody>
                     </table>
                   ))
-                ) : (
+                ) : doc.isActual ? (
                 <table className="mixing-norm-ratio-print-table">
                   <thead>
                     <tr>
@@ -208,13 +244,13 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                       <th className="col-name">Tên NVL</th>
                       <th className="col-pct">Tỷ lệ</th>
                       <th className="col-kg">Khối lượng</th>
-                      {doc.isActual ? <th className="col-kg">Thực tế</th> : null}
+                      <th className="col-kg">Thực tế</th>
                     </tr>
                   </thead>
                   <tbody>
                     {product.chi_tiet.length === 0 ? (
                       <tr>
-                        <td colSpan={doc.isActual ? 6 : 5} className="mixing-norm-ratio-print-empty-cell">
+                        <td colSpan={6} className="mixing-norm-ratio-print-empty-cell">
                           Chưa có dòng NVL
                         </td>
                       </tr>
@@ -228,18 +264,70 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                             <td className="col-name">{line.ten_nvl || ''}</td>
                             <td className="col-pct">{percent}</td>
                             <td className="col-kg">{kg ? `${kg} kg` : ''}</td>
-                            {doc.isActual ? (
-                              <td className="col-kg">
-                                {formatActualPercentVi(doc.actualValues?.[index]?.[lineIndex]?.percent)}%
-                                {' · '}
-                                {formatNumberVi(doc.actualValues?.[index]?.[lineIndex]?.weight)} kg
-                              </td>
-                            ) : null}
+                            <td className="col-kg">
+                              {formatActualPercentVi(doc.actualValues?.[index]?.[lineIndex]?.percent)}%
+                              {' · '}
+                              {formatNumberVi(doc.actualValues?.[index]?.[lineIndex]?.weight)} kg
+                            </td>
                           </tr>
                         );
                       })
                     )}
                   </tbody>
+                </table>
+                ) : (
+                <table className="mixing-norm-ratio-print-table">
+                  <thead>
+                    <tr>
+                      <th className="col-stt">STT</th>
+                      <th className="col-code">Mã NVL</th>
+                      <th className="col-name">Tên NVL</th>
+                      <th className="col-pct">% Cối trộn</th>
+                      <th className="col-kg">Giá trị (kg/cối)</th>
+                      <th className="col-kg">Tổng trọng lượng</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {product.chi_tiet.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="mixing-norm-ratio-print-empty-cell">
+                          Chưa có dòng NVL
+                        </td>
+                      </tr>
+                    ) : (
+                      product.chi_tiet.map((line, lineIndex) => {
+                        const { percentCoi, kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
+                        return (
+                          <tr key={`${product.ma_sp}-${line.ma_nvl}-${lineIndex}`}>
+                            <td className="col-stt">{lineIndex + 1}</td>
+                            <td className="col-code">{line.ma_nvl || ''}</td>
+                            <td className="col-name">{line.ten_nvl || ''}</td>
+                            <td className="col-pct">{percentCoi !== null ? `${formatNumberVi(percentCoi)}%` : ''}</td>
+                            <td className="col-kg">{kgPerBatch !== null ? `${formatNumberVi(kgPerBatch)} kg` : ''}</td>
+                            <td className="col-kg">{tongKg !== null ? `${formatNumberVi(tongKg)} kg` : ''}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  {product.chi_tiet.length > 0 ? (
+                    <tfoot>
+                      <tr>
+                        <td colSpan={5} className="mixing-norm-ratio-print-total-label">
+                          Tổng trọng lượng NVL cần
+                        </td>
+                        <td className="col-kg">
+                          {formatNumberVi(
+                            product.chi_tiet.reduce(
+                              (sum, line) => sum + (resolveStandardBatchRow(line, product).tongKg ?? 0),
+                              0
+                            )
+                          )}{' '}
+                          kg
+                        </td>
+                      </tr>
+                    </tfoot>
+                  ) : null}
                 </table>
                 )}
 

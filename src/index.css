@@ -4047,6 +4047,16 @@ input[type="number"] {
 
 .mixing-norm-ratio-round-table .col-stt { width: 5%; }
 .mixing-norm-ratio-round-table .col-code { width: 15%; }
+
+.mixing-norm-ratio-print-total-label {
+  text-align: right;
+  font-weight: 700;
+  background: #f3f3f3;
+}
+
+.mixing-norm-ratio-print-table tfoot .col-kg {
+  font-weight: 700;
+}
 .mixing-norm-ratio-round-table .col-name { width: 20%; }
 .mixing-norm-ratio-round-table .col-round {
   width: 12%;
