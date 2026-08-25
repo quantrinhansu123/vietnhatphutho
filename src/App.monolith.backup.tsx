@@ -10704,7 +10704,7 @@ function ProductionOrderPrintSheet({
           <thead>
             <tr>
               <th>Mã thành phẩm</th>
-              <th>Tên thành phẩm</th>
+              <th>Tên sản xuất</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
               <th>Đối tượng THCP</th>
