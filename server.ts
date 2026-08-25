@@ -3071,13 +3071,24 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
           }
           khoi_luong = n;
         }
+        const parseOptionalPercent = (raw: unknown) => {
+          if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+          const n = Number(String(raw).replace(',', '.'));
+          return Number.isFinite(n) ? n : null;
+        };
+        const ty_le_coi = parseOptionalPercent(line.ty_le_coi ?? line.tyLeCoi);
+        const ty_le_tong = parseOptionalPercent(line.ty_le_tong ?? line.tyLeTong);
+        const tong_khoi_luong = parseOptionalPercent(line.tong_khoi_luong ?? line.tongKhoiLuong);
         return {
           ma_nvl: ma_nvl || null,
           ten_nvl: ten_nvl || null,
           ten_nvl_san_xuat: ten_nvl_san_xuat || null,
           gia_tri,
           don_vi,
-          khoi_luong
+          khoi_luong,
+          ty_le_coi,
+          ty_le_tong,
+          tong_khoi_luong
         };
       })
       .filter(Boolean);
@@ -3097,6 +3108,9 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         gia_tri: number | null;
         don_vi: string;
         khoi_luong: number | null;
+        ty_le_coi: number | null;
+        ty_le_tong: number | null;
+        tong_khoi_luong: number | null;
       } => Boolean(item && typeof item === 'object' && !('error' in (item as object)))
     );
     if (lines.length === 0) return { error: `${label}: cần ít nhất 1 dòng NVL.` };
@@ -3150,7 +3164,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         return { error: `Định lượng 1 cối của SP ${ma_sp} phải lớn hơn 0.` };
       }
       if (so_luong_goc !== null) {
-        tong_trong_luong = Math.round(so_luong_goc * (1 - ty_le_hao_hut / 100) * 1000) / 1000;
+        tong_trong_luong = Math.round(so_luong_goc * (1 + ty_le_hao_hut / 100) * 1000) / 1000;
       }
       const so_lan_tron = tong_trong_luong && dinh_luong_coi
         ? Math.ceil(tong_trong_luong / dinh_luong_coi)

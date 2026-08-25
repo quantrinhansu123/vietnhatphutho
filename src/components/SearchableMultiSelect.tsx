@@ -2,25 +2,41 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
-function normalizeOption(value: string) {
-  return value.trim();
+export type SearchableMultiSelectProps<T> = {
+  values: T[];
+  onChange: (values: T[]) => void;
+  options: T[];
+  placeholder?: string;
+  disabled?: boolean;
+  inputClassName?: string;
+  /** Khoá nhận diện duy nhất cho mỗi item — mặc định coi T là string (identity). */
+  getValue?: (item: T) => string;
+  /** Nhãn hiển thị — mặc định giống getValue. */
+  getLabel?: (item: T) => string;
+  getSearchText?: (item: T) => string;
+  /** Cho phép gõ tự do rồi thêm giá trị mới chưa có trong options (mặc định: true, dùng cho tag tự do). */
+  allowCustomValues?: boolean;
+};
+
+function defaultGetValue<T>(item: T): string {
+  return String(item).trim();
 }
 
-export default function SearchableMultiSelect({
+export default function SearchableMultiSelect<T = string>({
   values,
   onChange,
   options,
   placeholder = 'Gõ để tìm hoặc chọn...',
   disabled,
-  inputClassName
-}: {
-  values: string[];
-  onChange: (values: string[]) => void;
-  options: string[];
-  placeholder?: string;
-  disabled?: boolean;
-  inputClassName?: string;
-}) {
+  inputClassName,
+  getValue = defaultGetValue,
+  getLabel,
+  getSearchText,
+  allowCustomValues = true
+}: SearchableMultiSelectProps<T>) {
+  const resolvedGetLabel = getLabel ?? ((item: T) => String(item));
+  const resolvedGetSearchText = getSearchText ?? resolvedGetLabel;
+
   const fieldClass =
     inputClassName ||
     'min-h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
@@ -30,33 +46,46 @@ export default function SearchableMultiSelect({
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const selectedSet = useMemo(() => new Set(values.map(normalizeOption).filter(Boolean)), [values]);
+  const selectedKeySet = useMemo(
+    () => new Set(values.map(item => getValue(item)).filter(Boolean)),
+    [values, getValue]
+  );
 
-  const allOptions = useMemo(() => {
-    const merged = new Set<string>();
+  /** Gộp options ∪ values hiện tại (phòng khi 1 giá trị đã chọn không còn trong options). */
+  const itemsByKey = useMemo(() => {
+    const map = new Map<string, T>();
     options.forEach(item => {
-      const normalized = normalizeOption(item);
-      if (normalized) merged.add(normalized);
+      const key = getValue(item);
+      if (key) map.set(key, item);
     });
     values.forEach(item => {
-      const normalized = normalizeOption(item);
-      if (normalized) merged.add(normalized);
+      const key = getValue(item);
+      if (key && !map.has(key)) map.set(key, item);
     });
-    return [...merged].sort((a, b) => a.localeCompare(b, 'vi'));
-  }, [options, values]);
+    return map;
+  }, [options, values, getValue]);
 
-  const filteredOptions = useMemo(() => {
+  const allKeys = useMemo(
+    () =>
+      [...itemsByKey.keys()].sort((a, b) =>
+        resolvedGetLabel(itemsByKey.get(a) as T).localeCompare(resolvedGetLabel(itemsByKey.get(b) as T), 'vi')
+      ),
+    [itemsByKey, resolvedGetLabel]
+  );
+
+  const filteredKeys = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     const list = normalized
-      ? allOptions.filter(item => item.toLowerCase().includes(normalized))
-      : allOptions;
+      ? allKeys.filter(key => resolvedGetSearchText(itemsByKey.get(key) as T).toLowerCase().includes(normalized))
+      : allKeys;
     return list.slice(0, 50);
-  }, [allOptions, query]);
+  }, [allKeys, query, itemsByKey, resolvedGetSearchText]);
 
-  const trimmedQuery = normalizeOption(query);
+  const trimmedQuery = query.trim();
   const canCreate =
+    allowCustomValues &&
     Boolean(trimmedQuery) &&
-    !allOptions.some(item => item.toLowerCase() === trimmedQuery.toLowerCase());
+    !allKeys.some(key => resolvedGetLabel(itemsByKey.get(key) as T).toLowerCase() === trimmedQuery.toLowerCase());
 
   const updateMenuPosition = () => {
     const element = containerRef.current;
@@ -82,28 +111,28 @@ export default function SearchableMultiSelect({
       window.removeEventListener('resize', handleReposition);
       window.removeEventListener('scroll', handleReposition, true);
     };
-  }, [open, query, filteredOptions.length, values.length]);
+  }, [open, query, filteredKeys.length, values.length]);
 
-  const toggleValue = (value: string) => {
-    const normalized = normalizeOption(value);
-    if (!normalized) return;
-    if (selectedSet.has(normalized)) {
-      onChange(values.filter(item => normalizeOption(item) !== normalized));
+  const toggleValue = (key: string) => {
+    if (!key) return;
+    if (selectedKeySet.has(key)) {
+      onChange(values.filter(item => getValue(item) !== key));
       return;
     }
-    onChange([...values, normalized]);
+    const item = itemsByKey.get(key);
+    if (!item) return;
+    onChange([...values, item]);
     setQuery('');
   };
 
-  const removeValue = (value: string) => {
-    const normalized = normalizeOption(value);
-    onChange(values.filter(item => normalizeOption(item) !== normalized));
+  const removeValue = (key: string) => {
+    onChange(values.filter(item => getValue(item) !== key));
   };
 
   const addNewValue = () => {
-    if (!trimmedQuery) return;
-    if (!selectedSet.has(trimmedQuery)) {
-      onChange([...values, trimmedQuery]);
+    if (!allowCustomValues || !trimmedQuery) return;
+    if (!selectedKeySet.has(trimmedQuery)) {
+      onChange([...values, trimmedQuery as unknown as T]);
     }
     setQuery('');
     setOpen(true);
@@ -125,16 +154,17 @@ export default function SearchableMultiSelect({
         style={menuStyle}
         onMouseDown={event => event.preventDefault()}
       >
-        {filteredOptions.length === 0 && !canCreate ? (
+        {filteredKeys.length === 0 && !canCreate ? (
           <div className="px-3 py-2 text-xs font-semibold text-zinc-500">Không có lựa chọn phù hợp</div>
         ) : null}
-        {filteredOptions.map(option => {
-          const checked = selectedSet.has(option);
+        {filteredKeys.map(key => {
+          const item = itemsByKey.get(key) as T;
+          const checked = selectedKeySet.has(key);
           return (
             <button
-              key={option}
+              key={key}
               type="button"
-              onClick={() => toggleValue(option)}
+              onClick={() => toggleValue(key)}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
                 checked ? 'bg-red-50/70 font-bold text-[#ef1b2d]' : 'font-semibold text-zinc-800'
               }`}
@@ -146,7 +176,7 @@ export default function SearchableMultiSelect({
               >
                 {checked ? <Check className="h-3 w-3" /> : null}
               </span>
-              <span className="min-w-0 flex-1">{option}</span>
+              <span className="min-w-0 flex-1">{resolvedGetLabel(item)}</span>
             </button>
           );
         })}
@@ -168,24 +198,27 @@ export default function SearchableMultiSelect({
     <div ref={containerRef} className="relative space-y-2" onBlur={handleBlur}>
       {values.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
-          {values.map(value => (
-            <span
-              key={value}
-              className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-[#ef1b2d]"
-            >
-              <span className="truncate">{value}</span>
-              {!disabled ? (
-                <button
-                  type="button"
-                  onClick={() => removeValue(value)}
-                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[#ef1b2d] transition hover:bg-red-100"
-                  title="Bỏ chọn"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              ) : null}
-            </span>
-          ))}
+          {values.map(item => {
+            const key = getValue(item);
+            return (
+              <span
+                key={key}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-[#ef1b2d]"
+              >
+                <span className="truncate">{resolvedGetLabel(item)}</span>
+                {!disabled ? (
+                  <button
+                    type="button"
+                    onClick={() => removeValue(key)}
+                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[#ef1b2d] transition hover:bg-red-100"
+                    title="Bỏ chọn"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </span>
+            );
+          })}
         </div>
       ) : null}
       <input
@@ -205,7 +238,7 @@ export default function SearchableMultiSelect({
           }
         }}
         disabled={disabled}
-        placeholder={values.length > 0 ? 'Gõ thêm lý do...' : placeholder}
+        placeholder={values.length > 0 ? (allowCustomValues ? 'Gõ thêm...' : placeholder) : placeholder}
         className={fieldClass}
       />
       {renderDropdown()}

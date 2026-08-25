@@ -3,6 +3,7 @@ import { Copy, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'l
 import { useTabAccess } from '../app/useTabAccess';
 import { RowActionsMenu } from './shared/table';
 import { SearchableSelect } from './shared/SearchableSelect';
+import SearchableMultiSelect from './SearchableMultiSelect';
 import {
   normalizeMixingProductionOrders,
   parseMixingProductBom,
@@ -26,6 +27,12 @@ export type MixingNormLine = {
   don_vi: string;
   /** kg — %: tong_tl × giá trị / 100; đơn vị kg: = giá trị */
   khoi_luong: number | null;
+  /** % so với Định lượng 1 cối trộn tiêu chuẩn = giá trị (kg) / dinh_luong_coi × 100 */
+  ty_le_coi?: number | null;
+  /** % so với Tổng SL cả phiếu — bằng ty_le_coi vì tỷ lệ phối trộn không đổi theo mẻ */
+  ty_le_tong?: number | null;
+  /** Tổng trọng lượng NVL này cần cho cả SP (kg) = ty_le_tong × tong_trong_luong / 100 */
+  tong_khoi_luong?: number | null;
 };
 
 export type MixingNormProduct = {
@@ -64,6 +71,7 @@ type ProductOption = {
   amisCode?: string;
   newCode?: string;
   name: string;
+  tenSanXuat?: string;
   totalWeight?: number | null;
   wastePercent?: number;
   nplItems?: MixingBomItem[];
@@ -86,6 +94,9 @@ type LineForm = {
 
 type ProductForm = {
   key: string;
+  /** Các mã SP được chọn trong ô "Mã sản phẩm" — có thể chọn nhiều SP dùng chung 1 công thức trộn. */
+  maSpCodes: string[];
+  /** Chuỗi mã SP nối bằng dấu phẩy — dùng để lưu/so trùng, tương thích ma_sp dạng string. */
   maSp: string;
   tenSp: string;
   tongTrongLuong: string;
@@ -93,8 +104,8 @@ type ProductForm = {
   soLuongGoc: string;
   soLuongTuDong: boolean;
   dinhLuongCoi: string;
+  /** Danh sách NVL của 1 cối trộn tiêu chuẩn — dùng chung cho mọi cối, không nhập riêng theo lần. */
   lines: LineForm[];
-  roundLines: LineForm[][];
 };
 
 type NormForm = {
@@ -119,6 +130,7 @@ const emptyLine = (): LineForm => ({
 
 const emptyProduct = (): ProductForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  maSpCodes: [],
   maSp: '',
   tenSp: '',
   tongTrongLuong: '',
@@ -127,11 +139,36 @@ const emptyProduct = (): ProductForm => ({
   soLuongTuDong: false,
   dinhLuongCoi: '',
   lines: [emptyLine()]
-  ,roundLines: []
 });
 
-function cloneLineForms(lines: LineForm[]): LineForm[] {
-  return lines.map(line => ({ ...line, key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }));
+function computeMixingRoundCount(tongTrongLuong: number, dinhLuongCoi: number) {
+  return tongTrongLuong > 0 && dinhLuongCoi > 0 ? Math.ceil(tongTrongLuong / dinhLuongCoi) : 1;
+}
+
+function roundPercent(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+/** % Cối trộn = giá trị / Định lượng 1 cối tiêu chuẩn; % Tổng SL giữ nguyên vì tỷ lệ không đổi theo mẻ. */
+function computeNplPercents(
+  giaTri: number | null,
+  donVi: 'kg' | '%',
+  dinhLuongCoi: number,
+  tongTrongLuong: number | null
+): { ty_le_coi: number | null; ty_le_tong: number | null; tong_khoi_luong: number | null } {
+  if (giaTri === null || !Number.isFinite(giaTri)) {
+    return { ty_le_coi: null, ty_le_tong: null, tong_khoi_luong: null };
+  }
+  const ty_le_coi = donVi === '%'
+    ? roundPercent(giaTri)
+    : dinhLuongCoi > 0
+      ? roundPercent((giaTri / dinhLuongCoi) * 100)
+      : null;
+  const ty_le_tong = ty_le_coi;
+  const tong_khoi_luong = ty_le_tong !== null && tongTrongLuong
+    ? roundMixing((ty_le_tong / 100) * tongTrongLuong)
+    : null;
+  return { ty_le_coi, ty_le_tong, tong_khoi_luong };
 }
 
 const emptyForm = (): NormForm => ({
@@ -159,6 +196,10 @@ function productToForm(
     : [emptyLine()];
   return {
     key: `${idHint}-${product.ma_sp}-${Math.random().toString(36).slice(2, 6)}`,
+    maSpCodes: product.ma_sp
+      .split(',')
+      .map(code => code.trim())
+      .filter(Boolean),
     maSp: product.ma_sp,
     tenSp: product.ten_sp,
     tongTrongLuong:
@@ -169,16 +210,47 @@ function productToForm(
     soLuongGoc: product.so_luong_goc == null ? '' : String(product.so_luong_goc),
     soLuongTuDong: product.so_luong_goc != null,
     dinhLuongCoi: product.dinh_luong_coi == null ? '' : String(product.dinh_luong_coi),
-    lines: baseLines,
-    roundLines: product.lan_tron?.map(round => round.nvl.map(line => ({
-      key: `${idHint}-round-${round.lan}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-      maNvl: line.ma_nvl,
-      tenNvl: line.ten_nvl,
-      tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
-      giaTri: line.gia_tri == null ? '' : String(line.gia_tri),
-      donVi: line.don_vi === '%' ? '%' : 'kg'
-    }))) ?? []
+    lines: baseLines
   };
+}
+
+type MergedNplRow = {
+  key: string;
+  maNvl: string;
+  tenNvl: string;
+  percent: number | null;
+  products: string[];
+};
+
+/** Gộp NPL trùng mã + trùng % giữa các SP trong cùng phiếu; % khác nhau thì tách dòng riêng kèm tên SP. */
+function buildMergedNplSummary(products: ProductForm[]): MergedNplRow[] {
+  const rows = new Map<string, MergedNplRow>();
+  products.forEach(product => {
+    const maSp = product.maSp.trim();
+    if (!maSp) return;
+    const batch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
+    product.lines.forEach(line => {
+      if (!line.maNvl.trim() && !line.tenNvl.trim()) return;
+      const gia = parseNumberOrNull(line.giaTri);
+      const { ty_le_coi } = computeNplPercents(gia, line.donVi, batch, null);
+      const nvlKey = (line.maNvl || line.tenNvl).trim().toLocaleLowerCase('vi');
+      const percentKey = ty_le_coi === null ? '—' : ty_le_coi.toFixed(2);
+      const key = `${nvlKey}|${percentKey}`;
+      const existing = rows.get(key);
+      if (existing) {
+        if (!existing.products.includes(maSp)) existing.products.push(maSp);
+      } else {
+        rows.set(key, {
+          key,
+          maNvl: line.maNvl,
+          tenNvl: line.tenNvl,
+          percent: ty_le_coi,
+          products: [maSp]
+        });
+      }
+    });
+  });
+  return [...rows.values()].sort((a, b) => (a.tenNvl || a.maNvl).localeCompare(b.tenNvl || b.maNvl, 'vi'));
 }
 
 function normalizeMaterials(data: unknown): MaterialOption[] {
@@ -239,6 +311,7 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       amisCode: String(row.ma_amis ?? row.amisCode ?? '').trim(),
       newCode: String(row.ma_sp_moi ?? row.newCode ?? '').trim(),
       name: name || code,
+      tenSanXuat: String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(),
       totalWeight: parseNumberOrNull(row.tong_trong_luong ?? row.totalWeight),
       wastePercent: parseNumberOrNull(row.ty_le_hao_hut ?? row.wastePercent) ?? 0,
       nplItems: parseMixingProductBom(row.npl_phan_tram ?? row.nplPhanTram)
@@ -320,7 +393,10 @@ function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): Mix
         ten_nvl_san_xuat,
         gia_tri,
         don_vi,
-        khoi_luong: saved ?? calcNvlKhoiLuong(tongTrongLuong, gia_tri, don_vi)
+        khoi_luong: saved ?? calcNvlKhoiLuong(tongTrongLuong, gia_tri, don_vi),
+        ty_le_coi: parseNumberOrNull(line.ty_le_coi ?? line.tyLeCoi),
+        ty_le_tong: parseNumberOrNull(line.ty_le_tong ?? line.tyLeTong),
+        tong_khoi_luong: parseNumberOrNull(line.tong_khoi_luong ?? line.tongKhoiLuong)
       };
     })
     .filter((line): line is MixingNormLine => Boolean(line));
@@ -601,35 +677,60 @@ export default function MixingNormMaterialsTab() {
     const add = (code: string, name: string) => {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
-      if (!byCode.has(trimmedCode)) {
-        const catalog = findCatalogProductByAnyCode(catalogProducts, trimmedCode);
-        byCode.set(trimmedCode, catalog
-          ? { ...catalog, code: trimmedCode, name: name.trim() || catalog.name }
-          : { code: trimmedCode, name: name.trim() });
-      }
+      const catalog = findCatalogProductByAnyCode(catalogProducts, trimmedCode);
+      // Gộp theo mã CHUẨN của catalog (ma_sp) khi tìm thấy — tránh trường hợp lệnh SX tham
+      // chiếu SP bằng ma_amis/ma_sp_moi khác chuỗi ma_sp, tạo ra 1 dòng trùng lặp không có
+      // npl_phan_tram bên cạnh dòng catalog đúng, khiến chọn nhầm dòng thì không fill được NVL.
+      const canonicalKey = catalog ? catalog.code : trimmedCode;
+      if (byCode.has(canonicalKey)) return;
+      byCode.set(canonicalKey, catalog
+        ? { ...catalog, name: name.trim() || catalog.name }
+        : { code: trimmedCode, name: name.trim() });
     };
 
+    // Nạp toàn bộ catalog trước — đây là nguồn chuẩn có sẵn npl_phan_tram (nplItems).
+    for (const product of catalogProducts) {
+      add(product.code, product.name);
+    }
+    // Sau đó bổ sung SP theo lệnh SX (nếu có) — chỉ để lấp chỗ cho mã hoàn toàn chưa có trong catalog.
     if (selectedOrder) {
       for (const line of selectedOrder.productLines) {
         add(line.productCode, line.productName);
       }
     }
-
-    if (byCode.size === 0) {
-      for (const order of productionOrders) {
-        for (const line of order.productLines) {
-          add(line.productCode, line.productName);
-        }
-      }
-      for (const product of catalogProducts) {
-        add(product.code, product.name);
+    for (const order of productionOrders) {
+      for (const line of order.productLines) {
+        add(line.productCode, line.productName);
       }
     }
 
     return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
   }, [catalogProducts, productionOrders, selectedOrder]);
 
-  const hasAnyProduct = form.products.some(product => product.maSp.trim());
+  const productLabel = (option: ProductOption) =>
+    `${option.amisCode || option.code} — ${option.tenSanXuat || option.name}`;
+
+  const productSearchText = (option: ProductOption) =>
+    `${option.code} ${option.amisCode ?? ''} ${option.newCode ?? ''} ${option.name} ${option.tenSanXuat ?? ''}`;
+
+  const productOptionsByCode = useMemo(() => {
+    const map = new Map<string, ProductOption>();
+    productOptions.forEach(option => map.set(option.code, option));
+    return map;
+  }, [productOptions]);
+
+  /** Trả về ProductOption cho từng mã đã chọn — dùng luôn để hiển thị chip trong multi-select. */
+  const resolveProductOptionsForCodes = (codes: string[]): ProductOption[] =>
+    codes.map(code => {
+      const fromOptions = productOptionsByCode.get(code);
+      if (fromOptions) return fromOptions;
+      const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+      return catalog ? { ...catalog, code } : { code, name: code };
+    });
+
+  const hasAnyProduct = form.products.some(product => product.maSpCodes.length > 0);
+
+  const mergedNplSummary = useMemo(() => buildMergedNplSummary(form.products), [form.products]);
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -767,7 +868,7 @@ export default function MixingNormMaterialsTab() {
     if (!canCreate) return;
     setEditingId('');
     setCopySourceTitle(
-      `Sao chép phiếu trộn định mức · ${row.ngay || 'Chưa có ngày'} · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
+      `Nhân bản phiếu trộn định mức · ${row.ngay || 'Chưa có ngày'} · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
     );
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
@@ -826,17 +927,17 @@ export default function MixingNormMaterialsTab() {
             const catalog = findCatalogProductByAnyCode(catalogProducts, line.productCode);
             const sourceKg = resolveOrderLineKg(line, catalog);
             const waste = catalog?.wastePercent ?? 0;
-            const total = sourceKg === null ? null : roundMixing(sourceKg * (1 - waste / 100));
+            const total = sourceKg === null ? null : roundMixing(sourceKg * (1 + waste / 100));
             return {
               ...emptyProduct(),
+              maSpCodes: [line.productCode],
               maSp: line.productCode,
-              tenSp: line.productName || catalog?.name || '',
+              tenSp: '',
               soLuongGoc: sourceKg === null ? '' : String(roundMixing(sourceKg)),
               soLuongTuDong: sourceKg !== null,
               haoHut: String(waste),
               tongTrongLuong: total === null ? '' : String(total),
-              lines: bomToLineForms(catalog?.nplItems ?? []),
-              roundLines: []
+              lines: bomToLineForms(catalog?.nplItems ?? [])
             };
           })
     }));
@@ -858,54 +959,108 @@ export default function MixingNormMaterialsTab() {
         if (product.key !== productKey) return product;
         const source = parseNumberOrNull(value);
         const waste = parseNumberOrNull(product.haoHut) ?? 0;
-        const next = {
+        return {
           ...product,
           soLuongGoc: value,
-          tongTrongLuong: source === null ? '' : String(roundMixing(source * (1 - waste / 100)))
+          tongTrongLuong: source === null ? '' : String(roundMixing(source * (1 + waste / 100)))
         };
-        return { ...next, roundLines: resizeProductRounds(next) };
       })
     }));
-  };
-
-  const resizeProductRounds = (product: ProductForm, batchValue = product.dinhLuongCoi) => {
-    const total = parseNumberOrNull(product.tongTrongLuong) ?? 0;
-    const batch = parseNumberOrNull(batchValue) ?? 0;
-    const count = total > 0 && batch > 0 ? Math.ceil(total / batch) : 1;
-    const current = product.roundLines.length ? product.roundLines : [cloneLineForms(product.lines)];
-    return Array.from({ length: count }, (_, index) => current[index] ?? cloneLineForms(current[0] ?? product.lines));
   };
 
   const updateMixingBatch = (productKey: string, value: string) => {
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product => product.key === productKey
-        ? { ...product, dinhLuongCoi: value, roundLines: resizeProductRounds(product, value) }
+        ? { ...product, dinhLuongCoi: value }
         : product)
     }));
   };
 
-  const selectProductCode = (productKey: string, code: string) => {
+  const buildSingleProductFromCode = (code: string): ProductForm => {
     const catalog = findCatalogProductByAnyCode(catalogProducts, code);
     const orderLine = selectedOrder?.productLines.find(item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code));
     const sourceKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
     const waste = catalog?.wastePercent ?? 0;
+    return {
+      ...emptyProduct(),
+      maSpCodes: [code],
+      maSp: code,
+      tenSp: '',
+      soLuongGoc: sourceKg === null ? '' : String(roundMixing(sourceKg)),
+      soLuongTuDong: sourceKg !== null,
+      haoHut: String(waste),
+      tongTrongLuong: sourceKg === null ? '' : String(roundMixing(sourceKg * (1 + waste / 100))),
+      lines: bomToLineForms(catalog?.nplItems ?? [])
+    };
+  };
+
+  /**
+   * Ô "Mã sản phẩm" cho phép chọn nhiều SP dùng chung 1 công thức trộn.
+   * NVL trùng tên/mã giữa các SP được gộp lại chỉ lấy 1 dòng; giá trị (kg/%) KHÔNG tự fill —
+   * người dùng phải tự điền vì mỗi SP có định mức gốc khác nhau.
+   */
+  const buildMergedProductFromCodes = (codes: string[]): ProductForm => {
+    if (codes.length === 0) return emptyProduct();
+    if (codes.length === 1) return buildSingleProductFromCode(codes[0]);
+
+    const entries = codes.map(code => ({ code, catalog: findCatalogProductByAnyCode(catalogProducts, code) }));
+    const waste = entries[0]?.catalog?.wastePercent ?? 0;
+
+    let sumKg: number | null = 0;
+    for (const { code, catalog } of entries) {
+      const orderLine = selectedOrder?.productLines.find(
+        item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
+      );
+      const kg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
+      if (kg === null) {
+        sumKg = null;
+        break;
+      }
+      sumKg = (sumKg ?? 0) + kg;
+    }
+
+    const mergedLines = new Map<string, LineForm>();
+    entries.forEach(({ catalog }) => {
+      (catalog?.nplItems ?? []).forEach(item => {
+        const dedupeKey = normalizeProductLookupKey(item.code || item.name);
+        if (!dedupeKey || mergedLines.has(dedupeKey)) return;
+        mergedLines.set(dedupeKey, {
+          key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          maNvl: item.code,
+          tenNvl: item.name,
+          tenNvlSanXuat: item.productionName,
+          giaTri: '',
+          donVi: 'kg'
+        });
+      });
+    });
+
+    return {
+      ...emptyProduct(),
+      maSpCodes: codes,
+      maSp: codes.join(', '),
+      tenSp: '',
+      soLuongGoc: sumKg === null ? '' : String(roundMixing(sumKg)),
+      soLuongTuDong: sumKg !== null,
+      haoHut: String(waste),
+      tongTrongLuong: sumKg === null ? '' : String(roundMixing(sumKg * (1 + waste / 100))),
+      lines: mergedLines.size > 0 ? [...mergedLines.values()] : [emptyLine()]
+    };
+  };
+
+  /** Chọn nhiều mã SP trong ô "Mã sản phẩm" của 1 dòng SP — dùng chung 1 công thức trộn. */
+  const updateProductCodes = (productKey: string, selected: ProductOption[]) => {
+    const codes = selected.map(option => option.code.trim()).filter(Boolean);
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product => {
         if (product.key !== productKey) return product;
-        const keepLines = product.maSp === code;
-        return {
-          ...product,
-          maSp: code,
-          tenSp: catalog?.name ?? '',
-          soLuongGoc: sourceKg === null ? '' : String(roundMixing(sourceKg)),
-          soLuongTuDong: sourceKg !== null,
-          haoHut: String(waste),
-          tongTrongLuong: sourceKg === null ? '' : String(roundMixing(sourceKg * (1 - waste / 100))),
-          lines: keepLines ? product.lines : bomToLineForms(catalog?.nplItems ?? []),
-          roundLines: keepLines ? product.roundLines : []
-        };
+        const unchanged =
+          codes.length === product.maSpCodes.length &&
+          codes.every((code, index) => code === product.maSpCodes[index]);
+        if (unchanged) return product;
+        return { ...buildMergedProductFromCodes(codes), key: product.key };
       })
     }));
   };
@@ -921,50 +1076,42 @@ export default function MixingNormMaterialsTab() {
     });
   };
 
-  const updateLine = (productKey: string, roundIndex: number, lineKey: string, patch: Partial<LineForm>) => {
+  const updateLine = (productKey: string, lineKey: string, patch: Partial<LineForm>) => {
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product =>
-        product.key !== productKey ? product : (() => {
-          const rounds = resizeProductRounds(product);
-          rounds[roundIndex] = rounds[roundIndex].map(line => line.key === lineKey ? { ...line, ...patch } : line);
-          return { ...product, lines: roundIndex === 0 ? rounds[0] : product.lines, roundLines: rounds };
-        })()
+        product.key !== productKey
+          ? product
+          : { ...product, lines: product.lines.map(line => line.key === lineKey ? { ...line, ...patch } : line) }
       )
     }));
   };
 
-  const selectMaterialCode = (productKey: string, roundIndex: number, lineKey: string, code: string) => {
+  const selectMaterialCode = (productKey: string, lineKey: string, code: string) => {
     const material = materialsByCode.get(code);
-    updateLine(productKey, roundIndex, lineKey, {
+    updateLine(productKey, lineKey, {
       maNvl: code,
       tenNvl: material?.name ?? '',
       tenNvlSanXuat: material?.productionName ?? ''
     });
   };
 
-  const addLine = (productKey: string, roundIndex: number) => {
+  const addLine = (productKey: string) => {
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product =>
-        product.key !== productKey ? product : (() => {
-          const rounds = resizeProductRounds(product);
-          rounds[roundIndex] = [...rounds[roundIndex], emptyLine()];
-          return { ...product, lines: roundIndex === 0 ? rounds[0] : product.lines, roundLines: rounds };
-        })()
+        product.key !== productKey ? product : { ...product, lines: [...product.lines, emptyLine()] }
       )
     }));
   };
 
-  const removeLine = (productKey: string, roundIndex: number, lineKey: string) => {
+  const removeLine = (productKey: string, lineKey: string) => {
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product => {
         if (product.key !== productKey) return product;
-        const rounds = resizeProductRounds(product);
-        const current = rounds[roundIndex];
-        rounds[roundIndex] = current.length <= 1 ? current : current.filter(line => line.key !== lineKey);
-        return { ...product, lines: roundIndex === 0 ? rounds[0] : product.lines, roundLines: rounds };
+        if (product.lines.length <= 1) return product;
+        return { ...product, lines: product.lines.filter(line => line.key !== lineKey) };
       })
     }));
   };
@@ -988,20 +1135,26 @@ export default function MixingNormMaterialsTab() {
       return;
     }
 
-    const codes = products.map(p => p.maSp.trim());
-    if (new Set(codes).size !== codes.length) {
-      const duplicate = products.find((product, index) => codes.indexOf(product.maSp.trim()) !== index);
-      setErrorProductKey(duplicate?.key || products[0].key);
+    const seenCodes = new Set<string>();
+    const duplicateProduct = products.find(product =>
+      product.maSpCodes.some(code => {
+        const key = normalizeProductLookupKey(code);
+        if (seenCodes.has(key)) return true;
+        seenCodes.add(key);
+        return false;
+      })
+    );
+    if (duplicateProduct) {
+      setErrorProductKey(duplicateProduct.key);
       setError('Các sản phẩm trong cùng phiếu không được trùng mã SP.');
       return;
     }
 
     for (const [pIndex, product] of products.entries()) {
-      const rounds = resizeProductRounds(product);
-      const emptyRound = rounds.findIndex(lines => !lines.some(line => line.maNvl.trim() || line.tenNvl.trim()));
-      if (emptyRound >= 0) {
+      const hasMaterial = product.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
+      if (!hasMaterial) {
         setErrorProductKey(product.key);
-        setError(`Sản phẩm #${pIndex + 1} (${product.maSp}), lần trộn ${emptyRound + 1} cần ít nhất 1 dòng NVL.`);
+        setError(`Sản phẩm #${pIndex + 1} (${product.maSp}) cần ít nhất 1 dòng NVL.`);
         return;
       }
       if (parseNumberOrNull(product.soLuongGoc) === null) {
@@ -1015,21 +1168,17 @@ export default function MixingNormMaterialsTab() {
         setError(`Định lượng 1 cối của SP ${product.maSp} phải lớn hơn 0.`);
         return;
       }
-      const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
-      for (const [roundIndex, lines] of rounds.entries()) {
-        const roundLimit = Math.min(batch, Math.max(0, productTotal - batch * roundIndex));
-        const materialTotal = lines.reduce((sum, line) => {
-          const value = parseNumberOrNull(line.giaTri);
-          return sum + (calcNvlKhoiLuong(roundLimit, value, line.donVi) ?? 0);
-        }, 0);
-        if (materialTotal > roundLimit + 0.0005) {
-          setErrorProductKey(product.key);
-          setError(
-            `SP ${product.maSp}, lần trộn ${roundIndex + 1}: tổng khối lượng NVL ` +
-            `${formatKhoiLuongDisplay(materialTotal)} vượt khối lượng cối ${formatKhoiLuongDisplay(roundLimit)}.`
-          );
-          return;
-        }
+      const materialTotal = product.lines.reduce((sum, line) => {
+        const value = parseNumberOrNull(line.giaTri);
+        return sum + (calcNvlKhoiLuong(batch, value, line.donVi) ?? 0);
+      }, 0);
+      if (materialTotal > batch + 0.0005) {
+        setErrorProductKey(product.key);
+        setError(
+          `SP ${product.maSp}: tổng khối lượng NVL trong 1 cối tiêu chuẩn ` +
+          `${formatKhoiLuongDisplay(materialTotal)} vượt Định lượng cối ${formatKhoiLuongDisplay(batch)}.`
+        );
+        return;
       }
     }
 
@@ -1038,7 +1187,6 @@ export default function MixingNormMaterialsTab() {
     setMessage('');
     try {
       const payloadProducts = products.map((product, pIndex) => {
-        const rounds = resizeProductRounds(product);
         const tong =
           product.tongTrongLuong.trim() === ''
             ? null
@@ -1046,6 +1194,7 @@ export default function MixingNormMaterialsTab() {
         if (tong !== null && !Number.isFinite(tong)) {
           throw new Error(`Tổng trọng lượng SP #${pIndex + 1} phải là số.`);
         }
+        const batch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
         const serializeLines = (lines: LineForm[], roundWeight: number) => lines
           .filter(line => line.maNvl.trim() || line.tenNvl.trim())
           .map((line, index) => {
@@ -1054,21 +1203,27 @@ export default function MixingNormMaterialsTab() {
           if (gia_tri !== null && !Number.isFinite(gia_tri)) {
             throw new Error(`Giá trị NVL #${index + 1} của SP ${product.maSp} không hợp lệ.`);
           }
+          const percents = computeNplPercents(gia_tri, line.donVi, batch, tong);
           return {
             ma_nvl: line.maNvl.trim(),
             ten_nvl: line.tenNvl.trim(),
             ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
             gia_tri,
             don_vi: line.donVi,
-            khoi_luong: calcNvlKhoiLuong(roundWeight, gia_tri, line.donVi)
+            khoi_luong: calcNvlKhoiLuong(roundWeight, gia_tri, line.donVi),
+            ty_le_coi: percents.ty_le_coi,
+            ty_le_tong: percents.ty_le_tong,
+            tong_khoi_luong: percents.tong_khoi_luong
           };
         });
-        const batch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
-        const lan_tron = rounds.map((lines, roundIndex) => {
+        // Mọi cối dùng chung 1 công thức chuẩn — chỉ khối lượng của cối cuối được rút gọn theo phần còn lại.
+        const so_lan_tron = tong && batch ? Math.ceil(tong / batch) : 0;
+        const roundCount = Math.max(1, so_lan_tron);
+        const lan_tron = Array.from({ length: roundCount }, (_, roundIndex) => {
           const roundWeight = tong === null || batch <= 0
             ? tong ?? 0
             : Math.min(batch, Math.max(0, tong - batch * roundIndex));
-          return { lan: roundIndex + 1, tong_trong_luong: roundWeight, nvl: serializeLines(lines, roundWeight) };
+          return { lan: roundIndex + 1, tong_trong_luong: roundWeight, nvl: serializeLines(product.lines, roundWeight) };
         });
         const nvl = lan_tron[0]?.nvl ?? [];
         return {
@@ -1078,9 +1233,7 @@ export default function MixingNormMaterialsTab() {
           ty_le_hao_hut: parseNumberOrNull(product.haoHut),
           so_luong_goc: parseNumberOrNull(product.soLuongGoc),
           dinh_luong_coi: parseNumberOrNull(product.dinhLuongCoi),
-          so_lan_tron: tong && parseNumberOrNull(product.dinhLuongCoi)
-            ? Math.ceil(tong / (parseNumberOrNull(product.dinhLuongCoi) as number))
-            : 0,
+          so_lan_tron,
           ghi_chu: product.dinhLuongCoi.trim(),
           lan_tron,
           nvl
@@ -1310,10 +1463,10 @@ export default function MixingNormMaterialsTab() {
                           type="button"
                           onClick={() => openCopy(row)}
                           className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-[11px] font-bold text-sky-700 hover:bg-sky-100"
-                          title="Sao chép"
+                          title="Nhân bản"
                         >
                           <Copy className="h-3.5 w-3.5" />
-                          Sao chép
+                          Nhân bản
                         </button>
                       ) : null}
                       {canEdit ? (
@@ -1469,12 +1622,10 @@ export default function MixingNormMaterialsTab() {
 
               <div className="space-y-3">
                 {form.products.map((product, productIndex) => {
-                  const productSelected = Boolean(product.maSp.trim());
+                  const productSelected = product.maSpCodes.length > 0;
                   const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
                   const standardBatch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
-                  const mixingRoundCount = productTotal > 0 && standardBatch > 0
-                    ? Math.ceil(productTotal / standardBatch)
-                    : 1;
+                  const mixingRoundCount = computeMixingRoundCount(productTotal, standardBatch);
                   return (
                     <div
                       key={product.key}
@@ -1503,22 +1654,34 @@ export default function MixingNormMaterialsTab() {
                               {error}
                             </span>
                           ) : null}
-                          <span className="text-[11px] font-bold text-zinc-500">Mã sản phẩm</span>
-                          <SearchableSelect
-                            value={product.maSp}
-                            onChange={value => selectProductCode(product.key, value)}
+                          <span className="text-[11px] font-bold text-zinc-500">
+                            Mã sản phẩm (có thể chọn nhiều SP dùng chung 1 công thức trộn)
+                          </span>
+                          <SearchableMultiSelect<ProductOption>
+                            values={resolveProductOptionsForCodes(product.maSpCodes)}
+                            onChange={selected => updateProductCodes(product.key, selected)}
                             options={productOptions}
+                            getValue={option => option.code}
+                            getLabel={productLabel}
+                            getSearchText={productSearchText}
+                            allowCustomValues={false}
                             placeholder={productOptions.length ? 'Tìm mã SP...' : 'Chưa có sản phẩm — kiểm tra lệnh SX'}
-                            getValue={item => (item as ProductOption).code}
-                            getLabel={item => `${(item as ProductOption).code} — ${(item as ProductOption).name}`}
-                            getSearchText={item => `${(item as ProductOption).code} ${(item as ProductOption).name}`}
                             inputClassName={inputClass}
-                            displaySelectedAsValue
                           />
-                          {product.tenSp ? (
-                            <p className="space-x-3 text-[11px] font-semibold text-zinc-500">
-                              Tên SP: <span className="font-bold text-zinc-800">{product.tenSp}</span>
-                              <span>Hao hụt: <strong className="text-rose-600">{product.haoHut || '0'}%</strong></span>
+                        </label>
+                        <label className="space-y-1 sm:col-span-2">
+                          <span className="text-[11px] font-bold text-zinc-500">
+                            Tên sản phẩm / tên hiển thị cho công nhân trộn
+                          </span>
+                          <input
+                            value={product.tenSp}
+                            onChange={event => updateProduct(product.key, { tenSp: event.target.value })}
+                            className={inputClass}
+                            placeholder="Nhập tên hiển thị cho công nhân (không tự động điền)"
+                          />
+                          {productSelected ? (
+                            <p className="text-[11px] font-semibold text-zinc-500">
+                              Hao hụt: <strong className="text-rose-600">{product.haoHut || '0'}%</strong>
                             </p>
                           ) : null}
                         </label>
@@ -1536,7 +1699,7 @@ export default function MixingNormMaterialsTab() {
                           />
                         </label>
                         <label className="space-y-1">
-                          <span className="text-[11px] font-bold text-zinc-500">Tổng SL sau trừ hao hụt (kg)</span>
+                          <span className="text-[11px] font-bold text-zinc-500">Tổng SL sau hao hụt (kg)</span>
                           <input
                             value={product.tongTrongLuong ? formatKhoiLuongDisplay(parseNumberOrNull(product.tongTrongLuong)) : ''}
                             readOnly
@@ -1558,121 +1721,117 @@ export default function MixingNormMaterialsTab() {
 
                       {productSelected ? (
                         <div className="mt-3 overflow-x-auto pb-2">
-                          <div className="flex min-w-max items-start gap-3">
-                          {Array.from({ length: mixingRoundCount }, (_, roundIndex) => {
-                            const roundTotal = standardBatch > 0
-                              ? Math.min(standardBatch, Math.max(0, productTotal - standardBatch * roundIndex))
-                              : productTotal;
-                            return (
-                        <div key={`${product.key}-round-${roundIndex}`} className="w-[600px] shrink-0 rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2">
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                              Lần trộn thứ {roundIndex + 1} · {formatKhoiLuongDisplay(roundTotal)}
+                          <div className="w-full min-w-[760px] rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                                Cối trộn tiêu chuẩn · {formatKhoiLuongDisplay(standardBatch)}
+                                {mixingRoundCount > 0 ? ` · Cần trộn ~${mixingRoundCount} cối` : ''}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => addLine(product.key)}
+                                className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-white px-2 text-[10px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
+                              >
+                                <Plus className="h-3 w-3" />
+                                Thêm NVL
+                              </button>
+                            </div>
+                            <p className="mb-1.5 hidden text-[9px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px] sm:gap-1 sm:px-1">
+                              <span>Mã NVL - Tên NVL</span>
+                              <span>Tên NVL sản xuất</span>
+                              <span>Giá trị</span>
+                              <span>ĐV</span>
+                              <span>% Cối trộn</span>
+                              <span>% Tổng SL</span>
+                              <span>Tổng trọng lượng</span>
+                              <span />
                             </p>
-                            <button
-                              type="button"
-                              onClick={() => addLine(product.key, roundIndex)}
-                              className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-white px-2 text-[10px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
-                            >
-                              <Plus className="h-3 w-3" />
-                              Thêm NVL
-                            </button>
-                          </div>
-                          <p className="mb-1.5 hidden text-[9px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_48px_40px_60px_30px] sm:gap-1 sm:px-1">
-                            <span>Mã NVL - Tên NVL</span>
-                            <span>Tên NVL sản xuất</span>
-                            <span>Giá trị</span>
-                            <span>ĐV</span>
-                            <span>Khối lượng</span>
-                            <span />
-                          </p>
-                          <div className="space-y-2">
-                            {(product.roundLines[roundIndex] ?? product.lines).map((line, index) => {
-                              const tong = roundTotal;
-                              const gia = parseNumberOrNull(line.giaTri);
-                              const khoiLuong = calcNvlKhoiLuong(tong, gia, line.donVi);
-                              return (
-                                <div
-                                  key={`${line.key}-round-${roundIndex}`}
-                                  className="grid grid-cols-1 gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_48px_40px_60px_30px]"
-                                >
-                                  <SearchableSelect
-                                    value={line.maNvl}
-                                    onChange={value => selectMaterialCode(product.key, roundIndex, line.key, value)}
-                                    options={materials}
-                                    placeholder={`Tìm mã hoặc tên NVL #${index + 1}`}
-                                    getValue={item => (item as MaterialOption).code}
-                                    getLabel={item => `${(item as MaterialOption).code} - ${(item as MaterialOption).name}`}
-                                    getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name}`}
-                                    inputClassName={inputClass}
-                                  />
-                                  <input
-                                    value={line.tenNvlSanXuat}
-                                    onChange={event => updateLine(product.key, roundIndex, line.key, {
-                                      tenNvlSanXuat: event.target.value
-                                    })}
-                                    className={inputClass}
-                                    placeholder="Nhập tên NVL sản xuất"
-                                  />
-                                  <input
-                                    value={line.giaTri}
-                                    onChange={event =>
-                                      updateLine(product.key, roundIndex, line.key, {
-                                        giaTri: event.target.value
-                                      })
-                                    }
-                                    className={`${inputClass} h-8 px-1 text-[10px]`}
-                                    placeholder={line.donVi === '%' ? '%' : 'kg'}
-                                    inputMode="decimal"
-                                    title="Giá trị định mức"
-                                  />
-                                  <select
-                                    value={line.donVi}
-                                    onChange={event =>
-                                      updateLine(product.key, roundIndex, line.key, {
-                                        donVi: event.target.value === '%' ? '%' : 'kg'
-                                      })
-                                    }
-                                    className={`${inputClass} h-8 px-0.5 text-[10px]`}
+                            <div className="space-y-2">
+                              {product.lines.map((line, index) => {
+                                const gia = parseNumberOrNull(line.giaTri);
+                                const { ty_le_coi, ty_le_tong, tong_khoi_luong } = computeNplPercents(
+                                  gia,
+                                  line.donVi,
+                                  standardBatch,
+                                  productTotal || null
+                                );
+                                return (
+                                  <div
+                                    key={line.key}
+                                    className="grid grid-cols-1 gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px]"
                                   >
-                                    <option value="kg">kg</option>
-                                    <option value="%">%</option>
-                                  </select>
-                                  <input
-                                    value={
-                                      khoiLuong === null
-                                        ? ''
-                                        : formatKhoiLuongDisplay(khoiLuong)
-                                    }
-                                    readOnly
-                                    className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-[#ef1b2d]`}
-                                    placeholder={
-                                      line.donVi === '%' && tong === null
-                                        ? 'Nhập Tổng TL'
-                                        : 'Khối lượng'
-                                    }
-                                    title={
-                                      line.donVi === '%'
-                                        ? 'Khối lượng = Tổng TL × % ÷ 100'
-                                        : 'Khối lượng = giá trị (kg)'
-                                    }
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => removeLine(product.key, roundIndex, line.key)}
-                                    disabled={(product.roundLines[roundIndex] ?? product.lines).length <= 1}
-                                    className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-                                    title="Xóa dòng NVL"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                            );
-                          })}
+                                    <SearchableSelect
+                                      value={line.maNvl}
+                                      onChange={value => selectMaterialCode(product.key, line.key, value)}
+                                      options={materials}
+                                      placeholder={`Tìm mã hoặc tên NVL #${index + 1}`}
+                                      getValue={item => (item as MaterialOption).code}
+                                      getLabel={item => `${(item as MaterialOption).code} - ${(item as MaterialOption).name}`}
+                                      getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name}`}
+                                      inputClassName={inputClass}
+                                    />
+                                    <input
+                                      value={line.tenNvlSanXuat}
+                                      onChange={event => updateLine(product.key, line.key, {
+                                        tenNvlSanXuat: event.target.value
+                                      })}
+                                      className={inputClass}
+                                      placeholder="Nhập tên NVL sản xuất"
+                                    />
+                                    <input
+                                      value={line.giaTri}
+                                      onChange={event =>
+                                        updateLine(product.key, line.key, {
+                                          giaTri: event.target.value
+                                        })
+                                      }
+                                      className={`${inputClass} h-8 px-1 text-[10px]`}
+                                      placeholder={line.donVi === '%' ? '%' : 'kg'}
+                                      inputMode="decimal"
+                                      title="Giá trị NVL cho 1 cối tiêu chuẩn"
+                                    />
+                                    <select
+                                      value={line.donVi}
+                                      onChange={event =>
+                                        updateLine(product.key, line.key, {
+                                          donVi: event.target.value === '%' ? '%' : 'kg'
+                                        })
+                                      }
+                                      className={`${inputClass} h-8 px-0.5 text-[10px]`}
+                                    >
+                                      <option value="kg" selected>kg</option>
+                                    </select>
+                                    <input
+                                      value={ty_le_coi === null ? '' : `${ty_le_coi}%`}
+                                      readOnly
+                                      className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-zinc-700`}
+                                      title="% Cối trộn = giá trị (kg) / Định lượng 1 cối tiêu chuẩn"
+                                    />
+                                    <input
+                                      value={ty_le_tong === null ? '' : `${ty_le_tong}%`}
+                                      readOnly
+                                      className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-zinc-700`}
+                                      title="% Tổng SL — bằng % Cối trộn vì tỷ lệ không đổi theo mẻ"
+                                    />
+                                    <input
+                                      value={tong_khoi_luong === null ? '' : formatKhoiLuongDisplay(tong_khoi_luong)}
+                                      readOnly
+                                      className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-[#ef1b2d]`}
+                                      title="Tổng trọng lượng = % Tổng SL × Tổng SL sau hao hụt"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => removeLine(product.key, line.key)}
+                                      disabled={product.lines.length <= 1}
+                                      className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                      title="Xóa dòng NVL"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
                       ) : (
@@ -1684,6 +1843,41 @@ export default function MixingNormMaterialsTab() {
                   );
                 })}
               </div>
+
+              {mergedNplSummary.length > 0 ? (
+                <div className="rounded-xl border border-zinc-200 bg-white p-3">
+                  <p className="mb-2 text-xs font-black uppercase tracking-wider text-zinc-500">
+                    Tổng hợp NVL toàn phiếu
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[520px] w-full text-left text-xs">
+                      <thead>
+                        <tr className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                          <th className="px-2 py-1">Mã / Tên NVL</th>
+                          <th className="px-2 py-1">% Cối trộn</th>
+                          <th className="px-2 py-1">Dùng cho SP</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {mergedNplSummary.map(row => (
+                          <tr key={row.key}>
+                            <td className="px-2 py-1.5 font-semibold text-zinc-700">
+                              <span className="font-mono text-zinc-500">{row.maNvl || '—'}</span>
+                              {row.tenNvl ? <span className="ml-1">{row.tenNvl}</span> : null}
+                            </td>
+                            <td className="px-2 py-1.5 font-black text-[#ef1b2d]">
+                              {row.percent === null ? '—' : `${row.percent}%`}
+                            </td>
+                            <td className="px-2 py-1.5 font-semibold text-zinc-600">
+                              {row.products.join(', ')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
