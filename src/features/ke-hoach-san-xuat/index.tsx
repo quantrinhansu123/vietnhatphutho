@@ -118,6 +118,7 @@ export interface ProductionOrderRow {
   name: string;
   productCode: string;
   productName: string;
+  productionName: string;
   quantity: string;
   unit: string;
   products: OrderProductLine[];
@@ -3777,6 +3778,7 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         name,
         productCode: summary.productCode,
         productName: summary.productName,
+        productionName: products[0]?.productionName || '',
         quantity: summary.quantity,
         unit: summary.unit,
         products,
@@ -4240,7 +4242,7 @@ export function ProductionOrderPrintSheet({
                 return (
                 <tr key={`${line.productCode}-${index}`}>
                   <td>{line.productCode || '-'}</td>
-                  <td className="production-order-print-product-name-cell">{line.productName || '-'}</td>
+                  <td className="production-order-print-product-name-cell">{line.productionName || line.productName || '-'}</td>
                   <td className="production-order-print-center">{line.unit && line.unit !== '-' ? line.unit : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.quantity)}</td>
                   <td className="production-order-print-right">{norm}</td>
@@ -4619,8 +4621,9 @@ export function buildProductionEntryLine(
   orderRef: string,
   productCode: string,
   productName = '',
-  unit = ''
-): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'quantity' | 'unit' | 'productId'> {
+  unit = '',
+  productionName = ''
+): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'productionName' | 'quantity' | 'unit' | 'productId'> {
   const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode);
   const line = orders
     .filter(order => order.orderCode === orderRef)
@@ -4629,6 +4632,7 @@ export function buildProductionEntryLine(
   return {
     productCode,
     productName,
+    productionName: productionName || line?.productionName || '',
     quantity: remaining > 0 ? String(remaining) : '',
     unit: unit || getOrderProductUnit(orders, orderRef, productCode),
     productId: line?.productId
@@ -4744,6 +4748,7 @@ export type ProductionOrderEntryLine = {
   productId?: string;
   productCode: string;
   productName: string;
+  productionName: string;
   quantity: string;
   unit: string;
 };
@@ -4815,6 +4820,7 @@ export function newProductionOrderEntryLine(): ProductionOrderEntryLine {
     orderRef: '',
     productCode: '',
     productName: '',
+    productionName: '',
     quantity: '',
     unit: ''
   };
@@ -4855,6 +4861,7 @@ export function productionOrderFormToCreatePayload(
     ma_don_hang: line.orderRef.trim(),
     ma_sp: line.productCode.trim(),
     ten_sp: line.productName.trim(),
+    ten_san_xuat: line.productionName.trim(),
     don_vi: line.unit.trim(),
     so_luong: Number(line.quantity)
   }));
@@ -5211,7 +5218,8 @@ export function AddProductionOrderModal({
         product.orderRef,
         product.productCode,
         product.productName,
-        product.unit
+        product.unit,
+        product.productionName
       )
     }));
 
@@ -5307,7 +5315,8 @@ export function AddProductionOrderModal({
           orderRef,
           product.code,
           product.name,
-          product.unit
+          product.unit,
+          product.productionName
         )
       };
     }
@@ -5323,7 +5332,8 @@ export function AddProductionOrderModal({
       orderRef,
       productCode,
       product?.name || '',
-      product?.unit || ''
+      product?.unit || '',
+      product?.productionName || ''
     );
     updateEntryLine(key, built);
   };
@@ -6419,7 +6429,8 @@ export function EditProductionOrderModal({
           orderRef,
           product.code,
           product.name,
-          product.unit
+          product.unit,
+          product.productionName
         )
       };
     }
@@ -6435,7 +6446,8 @@ export function EditProductionOrderModal({
       orderRef,
       productCode,
       product?.name || '',
-      product?.unit || ''
+      product?.unit || '',
+      product?.productionName || ''
     );
     updateEntryLine(key, built);
   };
