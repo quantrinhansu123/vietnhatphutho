@@ -31,6 +31,7 @@ export function convertProductQuantity(quantity: number, sourceUnitText: string,
   if (!sourceUnit) return null;
   if (sourceUnit === targetUnit) return quantity;
   const sheetLength = conversion.khoTamDaiM;
+  const rollLength = conversion.khoCuonDaiM;
   const width = conversion.khoTamRongM || conversion.khoCuonRongM;
   const kgPerMeter = conversion.trongLuongKgMDai;
   const kgPerM2 = conversion.trongLuongKgM2;
@@ -49,6 +50,7 @@ export function convertProductQuantity(quantity: number, sourceUnitText: string,
   if (sourceUnit === 'kg') kg = quantity;
 
   if (sheets !== null && sheetLength) meters = sheets * sheetLength;
+  if (rolls !== null && rollLength) meters = rolls * rollLength;
   if (meters !== null && width) squareMeters = meters * width;
   if (squareMeters !== null && width && meters === null) meters = squareMeters / width;
   if (meters !== null && sheetLength && sheets === null) sheets = meters / sheetLength;
