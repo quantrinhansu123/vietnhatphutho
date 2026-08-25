@@ -1143,6 +1143,15 @@ export default function MixingNormMaterialsTab() {
         setError(`Định lượng 1 cối của SP ${product.maSp} phải lớn hơn 0.`);
         return;
       }
+      const materialTotal = product.lines.reduce((sum, line) => sum + (parseNumberOrNull(line.giaTri) ?? 0), 0);
+      if (materialTotal > batch + 0.0005) {
+        setErrorProductKey(product.key);
+        setError(
+          `SP ${product.maSp}: tổng giá trị NVL (${formatKhoiLuongDisplay(materialTotal)}) ` +
+          `không được lớn hơn Định lượng 1 cối trộn tiêu chuẩn (${formatKhoiLuongDisplay(batch)}).`
+        );
+        return;
+      }
     }
 
     setSaving(true);
