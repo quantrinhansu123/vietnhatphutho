@@ -3175,6 +3175,21 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         `SP ${ma_sp}`
       );
       if ('error' in nvlParsed) return { error: nvlParsed.error };
+
+      if (dinh_luong_coi) {
+        const materialTotal = nvlParsed.lines.reduce((sum, line) => {
+          const value = line.gia_tri;
+          if (value === null) return sum;
+          return sum + (line.don_vi === '%' ? (dinh_luong_coi * value) / 100 : value);
+        }, 0);
+        if (materialTotal > dinh_luong_coi + 0.0005) {
+          return {
+            error: `SP ${ma_sp}: tổng giá trị NVL (${materialTotal} kg) không được lớn hơn ` +
+              `Định lượng 1 cối trộn tiêu chuẩn (${dinh_luong_coi} kg).`
+          };
+        }
+      }
+
       const roundsRaw = Array.isArray(product.lan_tron) ? product.lan_tron : [];
       const lan_tron: Array<Record<string, unknown>> = [];
       for (const [roundIndex, roundItem] of roundsRaw.entries()) {
