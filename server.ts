@@ -4830,11 +4830,13 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
   if (!ma_sp && !ten_sp) return [];
 
   const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
+  const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
   return [
     {
       ma_don_hang: pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']),
       ma_sp,
       ten_sp,
+      ten_san_xuat: ten_san_xuat || undefined,
       don_vi: pickRowField(row, ['don_vi', 'unit']),
       so_luong: parseOrderQuantity(row.so_luong ?? row.quantity),
       ...(san_pham_id ? { san_pham_id } : {})
@@ -5125,6 +5127,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
+    const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
@@ -5136,7 +5139,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       return null;
     }
 
-    const product: OrderProductRecord = { ma_don_hang, ma_sp, ten_sp, don_vi, so_luong };
+    const product: OrderProductRecord = { ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong };
     if (san_pham_id) {
       product.san_pham_id = san_pham_id;
     }
@@ -5190,6 +5193,7 @@ function parseProductionOrderBody(
         ma_don_hang: pickRowField(source, ['ma_don_hang', 'orderRef', 'order_code'], ''),
         ma_sp: productCode,
         ten_sp: productName,
+        ten_san_xuat: pickRowField(source, ['ten_san_xuat', 'productionName'], ''),
         don_vi: pickRowField(source, ['don_vi', 'unit'], ''),
         so_luong: quantity
       }
