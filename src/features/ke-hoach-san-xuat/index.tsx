@@ -6224,7 +6224,7 @@ export function ProductionOrderViewModal({
               <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                 <tr>
                   <th className="px-3 py-2 font-black">Mã hàng</th>
-                  <th className="px-3 py-2 font-black">Tên sản phẩm</th>
+                  <th className="px-3 py-2 font-black">Tên sản xuất</th>
                   <th className="px-3 py-2 text-right font-black">Số lượng</th>
                   <th className="px-3 py-2 font-black">ĐVT</th>
                 </tr>
@@ -6233,7 +6233,7 @@ export function ProductionOrderViewModal({
                 {productLines.map((product, index) => (
                   <tr key={`${product.productCode}-${index}`}>
                     <td className="px-3 py-2 font-black text-zinc-950">{product.productCode || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{product.productName || '-'}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-700">{product.productionName || product.productName || '-'}</td>
                     <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{product.quantity || '-'}</td>
                     <td className="px-3 py-2 text-zinc-600">{product.unit && product.unit !== '-' ? product.unit : '-'}</td>
                   </tr>
