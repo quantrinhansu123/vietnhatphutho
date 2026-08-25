@@ -2270,10 +2270,7 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
   return `Không thể lưu sản phẩm vào ${SUPABASE_PRODUCTS_TABLE}. ${error.message}${error.details ? ` (${error.details})` : ''}`;
 }
 
-const PRODUCT_CONVERSION_SELECT = `
-  *,
-  san_pham:san_pham_id (id, ma_sp, ma_amis, ten_sp, don_vi)
-`;
+const PRODUCT_CONVERSION_SELECT = `*`;
 
 function parsePositiveConversionNumber(value: unknown): number | null | 'invalid' {
   if (value === null || value === undefined || String(value).trim() === '') return null;
@@ -2346,19 +2343,26 @@ async function syncProductConversions(productId: string, records: readonly Recor
 
 function normalizeProductConversionRow(raw: Record<string, unknown>) {
   const joinedRaw = raw.san_pham;
-  const product = (Array.isArray(joinedRaw) ? joinedRaw[0] : joinedRaw) as Record<string, unknown> | null;
+  const product = (Array.isArray(joinedRaw) ? joinedRaw[0] : joinedRaw) as Record<string, unknown> | null | undefined;
   return {
     id: Number(raw.id),
     sanPhamId: String(raw.san_pham_id ?? ''),
-    maSp: String(product?.ma_sp ?? ''), maAmis: String(product?.ma_amis ?? ''),
-    tenSp: String(product?.ten_sp ?? ''), donViSanPham: String(product?.don_vi ?? ''),
-    donViTinh: String(product?.don_vi ?? ''),
-    khoTamRongM: raw.kho_tam_rong_m, khoTamDaiM: raw.kho_tam_dai_m,
-    khoCuonRongM: raw.kho_cuon_rong_m, khoCuonDaiM: raw.kho_cuon_dai_m,
-    dienTichM2: raw.dien_tich_m2, trongLuongKgMDai: raw.trong_luong_kg_m_dai,
-    trongLuongKgM2: raw.trong_luong_kg_m2, trongLuongKgTam: raw.trong_luong_kg_tam,
+    maSp: String(product?.ma_sp ?? raw.ma_sp ?? ''),
+    maAmis: String(product?.ma_amis ?? raw.ma_amis ?? ''),
+    tenSp: String(product?.ten_sp ?? raw.ten_sp ?? ''),
+    donViSanPham: String(product?.don_vi ?? raw.don_vi ?? ''),
+    donViTinh: String(product?.don_vi ?? raw.don_vi ?? ''),
+    khoTamRongM: raw.kho_tam_rong_m,
+    khoTamDaiM: raw.kho_tam_dai_m,
+    khoCuonRongM: raw.kho_cuon_rong_m,
+    khoCuonDaiM: raw.kho_cuon_dai_m,
+    dienTichM2: raw.dien_tich_m2,
+    trongLuongKgMDai: raw.trong_luong_kg_m_dai,
+    trongLuongKgM2: raw.trong_luong_kg_m2,
+    trongLuongKgTam: raw.trong_luong_kg_tam,
     trongLuongKgCuon: raw.trong_luong_kg_cuon,
-    createdAt: String(raw.created_at ?? ''), updatedAt: String(raw.updated_at ?? '')
+    createdAt: String(raw.created_at ?? ''),
+    updatedAt: String(raw.updated_at ?? '')
   };
 }
 
