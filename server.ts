@@ -3185,24 +3185,6 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         const expectedWeight = tong_trong_luong && dinh_luong_coi
           ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
           : tong_trong_luong;
-        if (expectedWeight !== null && expectedWeight !== undefined) {
-          const materialTotal = roundNvl.lines.reduce((sum, line) => {
-            const weight = line.khoi_luong ?? (
-              line.gia_tri === null
-                ? 0
-                : line.don_vi === '%'
-                  ? expectedWeight * line.gia_tri / 100
-                  : line.gia_tri
-            );
-            return sum + weight;
-          }, 0);
-          if (materialTotal > expectedWeight + 0.0005) {
-            return {
-              error: `SP ${ma_sp}, lần trộn ${roundIndex + 1}: tổng khối lượng NVL (${materialTotal} kg) ` +
-                `vượt khối lượng cối (${expectedWeight} kg).`
-            };
-          }
-        }
         lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: roundNvl.lines });
       }
       if (so_lan_tron > 0 && lan_tron.length !== so_lan_tron) {
