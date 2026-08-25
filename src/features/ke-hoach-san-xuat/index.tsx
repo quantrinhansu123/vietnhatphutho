@@ -4220,7 +4220,7 @@ export function ProductionOrderPrintSheet({
           <thead>
             <tr>
               <th>Mã TP</th>
-              <th>Tên thành phẩm</th>
+              <th>Tên sản xuất</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
               <th>Định mức (kg/cuộn)</th>

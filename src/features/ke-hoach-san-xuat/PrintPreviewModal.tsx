@@ -309,7 +309,7 @@ export function ProductionPlanPrintPreviewModal({
               <thead className="bg-gray-100 sticky top-0">
                 <tr>
                   <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-8">STT</th>
-                  <th className="border border-gray-300 px-1 py-0.5 text-left font-semibold min-w-20">Sản Phẩm</th>
+                  <th className="border border-gray-300 px-1 py-0.5 text-left font-semibold min-w-20">Tên sản xuất</th>
                   <th className="border border-gray-300 px-1 py-0.5 text-left font-semibold min-w-48">Ghi chú</th>
                   <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-12">ĐVT</th>
                   <th className="border border-gray-300 px-1 py-0.5 text-center font-semibold w-12">Tồn kho</th>

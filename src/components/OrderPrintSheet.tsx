@@ -86,7 +86,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
             <tr>
               <th>STT</th>
               <th>Mã sản phẩm</th>
-              <th>Tên sản phẩm</th>
+              <th>Tên sản xuất</th>
               <th>Quy cách</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
@@ -107,8 +107,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                   <td className="order-print-center">{idx + 1}</td>
                   <td className="order-print-mono">{displayCell(line.productCode)}</td>
                   <td className="order-print-product-name">
-                    {displayCell(line.productName)}
-                    {displayCell(line.productionName) ? <div>{displayCell(line.productionName)}</div> : null}
+                    {displayCell(line.productionName)}
                   </td>
                   <td>{formatLineSpec(line)}</td>
                   <td className="order-print-center">{displayCell(line.unit)}</td>
