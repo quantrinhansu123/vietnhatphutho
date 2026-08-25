@@ -4861,7 +4861,7 @@ export function productionOrderFormToCreatePayload(
     ma_don_hang: line.orderRef.trim(),
     ma_sp: line.productCode.trim(),
     ten_sp: line.productName.trim(),
-    ten_san_xuat: line.productionName.trim(),
+    ten_san_xuat: (line.productionName || '').trim(),
     don_vi: line.unit.trim(),
     so_luong: Number(line.quantity)
   }));
