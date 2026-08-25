@@ -60,6 +60,7 @@ export interface MaterialRow {
   openingStock: string;
   inbound: string;
   outbound: string;
+  khoNgamDinh: string;
 }
 
 export function parseInventoryNumber(value: string): number | null {
@@ -142,7 +143,8 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
         unitLength: formatCell(record.chieu_dai_don_vi),
         openingStock: formatCell(record.ton_dau_ky),
         inbound: formatCell(record.nhap_trong_ky),
-        outbound: formatCell(record.xuat_trong_ky)
+        outbound: formatCell(record.xuat_trong_ky),
+        khoNgamDinh: formatCell(record.kho_ngam_dinh)
       };
     })
     .filter((material): material is MaterialRow => Boolean(material));
@@ -162,6 +164,7 @@ export type MaterialFormState = {
   openingStock: string;
   inbound: string;
   outbound: string;
+  khoNgamDinh: string;
 };
 
 const emptyMaterialForm = (): MaterialFormState => ({
@@ -177,7 +180,8 @@ const emptyMaterialForm = (): MaterialFormState => ({
   unitLength: '',
   openingStock: '',
   inbound: '',
-  outbound: ''
+  outbound: '',
+  khoNgamDinh: ''
 });
 
 export function materialCellToInput(value: string) {
@@ -198,7 +202,8 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
     unitLength: materialCellToInput(material.unitLength),
     openingStock: materialCellToInput(material.openingStock),
     inbound: materialCellToInput(material.inbound),
-    outbound: materialCellToInput(material.outbound)
+    outbound: materialCellToInput(material.outbound),
+    khoNgamDinh: materialCellToInput(material.khoNgamDinh)
   };
 }
 
@@ -617,6 +622,7 @@ export function MaterialViewModal({
     ['Mã NPL', material.code],
     ['Tên NVL', material.name],
     ['Tên NVL sản xuất', material.productionName || '-'],
+    ['Loại kho', material.khoNgamDinh || '-'],
     ['Đơn vị', material.unit],
     ['Tồn đầu', material.openingStock],
     ['Nhập', inboundDisplay],
@@ -1069,6 +1075,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const materialFormFields: Array<{ key: keyof MaterialFormState; label: string; required?: boolean; placeholder?: string }> = [
     { key: 'name', label: 'Tên nguyên phụ liệu', required: true, placeholder: 'VD: Màng PE' },
     { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', placeholder: 'Tên dùng trong sản xuất' },
+    { key: 'khoNgamDinh', label: 'Loại kho' },
     { key: 'totalWeight', label: 'Tổng kg' },
     { key: 'plasticWeight', label: 'Kg nhựa' },
     { key: 'bagWeight', label: 'Kg túi' },
@@ -1238,12 +1245,24 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                     {field.label}{field.required ? ' *' : ''}
                   </span>
-                  <input
-                    value={materialForm[field.key]}
-                    onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
-                    className={materialFieldClass}
-                    placeholder={field.placeholder}
-                  />
+                  {field.key === 'khoNgamDinh' ? (
+                    <select
+                      value={materialForm[field.key]}
+                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      className={materialFieldClass}
+                    >
+                      <option value="">-- Chọn loại kho --</option>
+                      <option value="Nguyên vật liệu phụ">Nguyên vật liệu phụ</option>
+                      <option value="Nguyên vật liệu chính">Nguyên vật liệu chính</option>
+                    </select>
+                  ) : (
+                    <input
+                      value={materialForm[field.key]}
+                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      className={materialFieldClass}
+                      placeholder={field.placeholder}
+                    />
+                  )}
                 </label>
               ))}
             </div>
@@ -1288,10 +1307,11 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         }}
       />
 
-      <TableShell minWidthClassName="min-w-[900px]">
+      <TableShell minWidthClassName="min-w-[1000px]">
         <TableHead>
           <TableHeadCell>Mã NPL</TableHeadCell>
           <TableHeadCell>Tên nguyên phụ liệu</TableHeadCell>
+          <TableHeadCell>Loại kho</TableHeadCell>
           <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
           <TableHeadCell>ĐV</TableHeadCell>
           <TableHeadCell align="center">Tổng kg</TableHeadCell>
@@ -1307,6 +1327,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
               <TableRow>
                 <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-900">{material.name || '-'}</td>
+                <td className="px-4 py-3 text-xs font-semibold text-zinc-600">{material.khoNgamDinh || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-700">{material.productionName || '-'}</td>
                 <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
                 <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
@@ -1360,7 +1381,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           ))}
 
           {!isLoadingMaterials && filteredMaterials.length === 0 && (
-            <TableEmptyRow colSpan={10}>
+            <TableEmptyRow colSpan={11}>
               Không có nguyên phụ liệu phù hợp bộ lọc.
             </TableEmptyRow>
           )}

@@ -6,6 +6,7 @@ export type MaterialCatalogExcelRow = {
   name: string;
   productionName: string;
   unit: string;
+  khoNgamDinh: string;
   totalWeight: string;
   plasticWeight: string;
   bagWeight: string;
@@ -27,6 +28,7 @@ export const MATERIAL_CATALOG_EXCEL_HEADERS = [
   'Tên nguyên phụ liệu',
   'Tên NVL sản xuất',
   'ĐV',
+  'Kho ngầm định',
   'Tổng kg',
   'Tồn đầu',
   'Nhập',
@@ -43,6 +45,7 @@ const HEADER_ALIASES: Record<keyof Omit<MaterialCatalogExcelRow, 'rowNumber'>, s
   name: ['ten nguyen phu lieu', 'ten_npl', 'ten npl', 'ten nvl', 'name'],
   productionName: ['ten nvl san xuat', 'ten nvl sx', 'ten_nvl_sx', 'production name'],
   unit: ['don vi', 'don_vi', 'dv', 'unit'],
+  khoNgamDinh: ['kho ngam dinh', 'kho_ngam_dinh', 'loai kho', 'loai_kho', 'warehouse type'],
   totalWeight: ['tong kg', 'tong trong luong', 'tong_trong_luong', 'tong tl', 'total weight'],
   plasticWeight: ['kg nhua', 'trong luong nhua', 'trong_luong_nhua', 'plastic weight'],
   bagWeight: ['kg tui', 'trong luong tui', 'trong_luong_tui', 'bag weight'],
@@ -130,6 +133,7 @@ export async function parseMaterialCatalogExcel(file: File): Promise<MaterialCat
         name: get('name'),
         productionName: get('productionName'),
         unit: get('unit'),
+        khoNgamDinh: get('khoNgamDinh'),
         totalWeight: get('totalWeight'),
         plasticWeight: get('plasticWeight'),
         bagWeight: get('bagWeight'),
@@ -153,6 +157,7 @@ export function downloadMaterialCatalogExcelTemplate() {
       'Màng PE',
       'Màng PE sản xuất',
       'kg',
+      'Nguyên vật liệu chính',
       '1.25',
       '100',
       '0',
@@ -164,7 +169,7 @@ export function downloadMaterialCatalogExcelTemplate() {
       ''
     ],
     // Dòng gần trống — vẫn đẩy lên được khi đã có mã + tên
-    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '']
+    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '']
   ]);
   worksheet['!cols'] = MATERIAL_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(28, Math.max(10, header.length + 2))
@@ -181,6 +186,7 @@ export function materialCatalogRowToPayload(row: MaterialCatalogExcelRow) {
     name: row.name.trim(),
     productionName: row.productionName.trim(),
     unit: row.unit.trim(),
+    khoNgamDinh: row.khoNgamDinh.trim(),
     totalWeight: row.totalWeight.trim(),
     plasticWeight: row.plasticWeight.trim(),
     bagWeight: row.bagWeight.trim(),

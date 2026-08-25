@@ -35,7 +35,8 @@ Phiếu xuất nhập (`phieu_xuat_nhap_kho`) cập nhật tồn kho NVL.
 ### Excel danh mục NVL
 
 - **Tải mẫu Excel** / **Tải Excel lên** — `src/utils/materialCatalogExcel.ts`
-- Cột khớp bảng + form: Mã NPL, Tên, Tên NVL sản xuất, ĐV, Tổng kg, Tồn đầu, Nhập, Xuất, Kg nhựa/túi/lõi, Khổ cuộn, Chiều dài ĐV
+- Cột khớp bảng + form: Mã NPL, Tên, Tên NVL sản xuất, ĐV, **Kho ngầm định**, Tổng kg, Tồn đầu, Nhập, Xuất, Kg nhựa/túi/lõi, Khổ cuộn, Chiều dài ĐV
 - Ô trống vẫn đẩy lên (null); tạo mới cần Mã + Tên; cập nhật thiếu tên thì giữ tên cũ
 - Upsert theo `ma_npl`
 - Mẫu 2 cột cũ tách riêng: **Mẫu cập nhật Tổng kg** / **Nhập Tổng kg**
+- **Kho ngầm định**: Nguyên vật liệu phụ hoặc Nguyên vật liệu chính
