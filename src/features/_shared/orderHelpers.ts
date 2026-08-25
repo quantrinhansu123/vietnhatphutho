@@ -1,6 +1,8 @@
 import { pickText } from './recordHelpers';
 import { normalizeHrBranches } from './hr';
 import { normalizeProducts } from '../san-pham';
+import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
+import { parsePercentInput } from '../../utils';
 
 export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
@@ -179,4 +181,66 @@ export function saveUnitSuggestion(unit: string) {
   if (!trimmed) return;
   const next = [...new Set([trimmed, ...readUnitSuggestions()])].slice(0, 30);
   localStorage.setItem(STORAGE_ORDER_UNIT_KEY, JSON.stringify(next));
+}
+
+export type OrderProductConversion = {
+  id: number; sanPhamId: string; maSp: string; maAmis: string; donViTinh: string;
+  khoTamRongM: number | null; khoTamDaiM: number | null;
+  khoCuonRongM: number | null; khoCuonDaiM: number | null;
+  dienTichM2: number | null; trongLuongKgMDai: number | null;
+  trongLuongKgM2: number | null; trongLuongKgTam: number | null;
+  trongLuongKgCuon: number | null;
+};
+
+export function normalizeConversionUnit(value: string) {
+  return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ').replace('m²', 'm2');
+}
+
+export type ConversionUnit = 'sheet' | 'roll' | 'meter' | 'squareMeter' | 'kg' | 'unsupported';
+
+export function resolveConversionUnit(value: string): ConversionUnit {
+  const unit = normalizeConversionUnit(value);
+  if (unit === 'tấm' || unit === 'tam') return 'sheet';
+  if (unit === 'cuộn' || unit === 'cuon') return 'roll';
+  if (unit === 'm' || unit === 'm dài' || unit === 'mét' || unit === 'met') return 'meter';
+  if (unit === 'm2' || unit === 'm 2' || unit === 'mét vuông' || unit === 'met vuong') return 'squareMeter';
+  if (unit === 'kg' || unit === 'kilogram') return 'kg';
+  return 'unsupported';
+}
+
+export function calculateOrderConversion(quantityText: string, inputUnitText: string, conversion: OrderProductConversion, group = '') {
+  const quantity = parsePercentInput(quantityText);
+  if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
+  const normalizedGroup = group.replace(/\s+/g, '').toLocaleLowerCase('vi');
+  const targetUnits: ProductConvertedUnit[] = normalizedGroup === 'tp;pxđặc'
+    ? ['kg', 'm2']
+    : normalizedGroup === 'tp;pxsóng'
+      ? ['m', 'kg']
+      : normalizedGroup === 'tp;pxrỗng'
+        ? ['kg']
+        : availableConvertedUnits(inputUnitText, conversion);
+  return targetUnits.flatMap(unit => {
+    const value = convertProductQuantity(quantity, inputUnitText, unit, conversion);
+    return value !== null && Number.isFinite(value) && value > 0
+      ? [['Quy đổi', value, unit === 'm' ? 'm dài' : unit] as [string, number, string]]
+      : [];
+  });
+}
+
+export function conversionSupportsUnit(conversion: OrderProductConversion, unitText: string) {
+  const unit = resolveConversionUnit(unitText);
+  if (unit === 'sheet') return Boolean(conversion.trongLuongKgTam);
+  if (unit === 'roll') return Boolean(conversion.trongLuongKgCuon);
+  if (unit === 'squareMeter') return Boolean(conversion.trongLuongKgM2);
+  if (unit === 'meter') return Boolean(conversion.trongLuongKgMDai);
+  if (unit === 'kg') return true;
+  return false;
+}
+
+export function allowedOrderUnits(product: OrderProductOption | null) {
+  if (!product) return [];
+  const group = product.group.replace(/\s+/g, '').toLocaleLowerCase('vi');
+  if (group === 'tp;pxđặc') return ['Tấm', 'Cuộn'];
+  if (group === 'tp;pxsóng' || group === 'tp;pxrỗng') return ['Tấm'];
+  return ['kg'];
 }

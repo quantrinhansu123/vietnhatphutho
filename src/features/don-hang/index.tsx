@@ -5,7 +5,6 @@ import { Eye, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react'
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { waitForPrintImagesReady } from '../../utils/printReady';
-import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
@@ -22,7 +21,11 @@ import {
   resolveOrderProductFields,
   readUnitSuggestions,
   saveUnitSuggestion,
+  calculateOrderConversion,
+  conversionSupportsUnit,
+  allowedOrderUnits,
   type OrderProductOption,
+  type OrderProductConversion,
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
@@ -165,67 +168,6 @@ export type OrderProductFormLine = {
   note: string;
 };
 
-type OrderProductConversion = {
-  id: number; sanPhamId: string; maSp: string; maAmis: string; donViTinh: string;
-  khoTamRongM: number | null; khoTamDaiM: number | null;
-  khoCuonRongM: number | null; khoCuonDaiM: number | null;
-  dienTichM2: number | null; trongLuongKgMDai: number | null;
-  trongLuongKgM2: number | null; trongLuongKgTam: number | null;
-  trongLuongKgCuon: number | null;
-};
-
-function normalizeConversionUnit(value: string) {
-  return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ').replace('m²', 'm2');
-}
-
-type ConversionUnit = 'sheet' | 'roll' | 'meter' | 'squareMeter' | 'kg' | 'unsupported';
-
-function resolveConversionUnit(value: string): ConversionUnit {
-  const unit = normalizeConversionUnit(value);
-  if (unit === 'tấm' || unit === 'tam') return 'sheet';
-  if (unit === 'cuộn' || unit === 'cuon') return 'roll';
-  if (unit === 'm' || unit === 'm dài' || unit === 'mét' || unit === 'met') return 'meter';
-  if (unit === 'm2' || unit === 'm 2' || unit === 'mét vuông' || unit === 'met vuong') return 'squareMeter';
-  if (unit === 'kg' || unit === 'kilogram') return 'kg';
-  return 'unsupported';
-}
-
-function calculateOrderConversion(quantityText: string, inputUnitText: string, conversion: OrderProductConversion, group = '') {
-  const quantity = parsePercentInput(quantityText);
-  if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
-  const normalizedGroup = group.replace(/\s+/g, '').toLocaleLowerCase('vi');
-  const targetUnits: ProductConvertedUnit[] = normalizedGroup === 'tp;pxđặc'
-    ? ['kg', 'm2']
-    : normalizedGroup === 'tp;pxsóng'
-      ? ['m', 'kg']
-      : normalizedGroup === 'tp;pxrỗng'
-        ? ['kg']
-        : availableConvertedUnits(inputUnitText, conversion);
-  return targetUnits.flatMap(unit => {
-    const value = convertProductQuantity(quantity, inputUnitText, unit, conversion);
-    return value !== null && Number.isFinite(value) && value > 0
-      ? [['Quy đổi', value, unit === 'm' ? 'm dài' : unit] as [string, number, string]]
-      : [];
-  });
-}
-
-function conversionSupportsUnit(conversion: OrderProductConversion, unitText: string) {
-  const unit = resolveConversionUnit(unitText);
-  if (unit === 'sheet') return Boolean(conversion.trongLuongKgTam);
-  if (unit === 'roll') return Boolean(conversion.trongLuongKgCuon);
-  if (unit === 'squareMeter') return Boolean(conversion.trongLuongKgM2);
-  if (unit === 'meter') return Boolean(conversion.trongLuongKgMDai);
-  if (unit === 'kg') return true;
-  return false;
-}
-
-function allowedOrderUnits(product: OrderProductOption | null) {
-  if (!product) return [];
-  const group = product.group.replace(/\s+/g, '').toLocaleLowerCase('vi');
-  if (group === 'tp;pxđặc') return ['Tấm', 'Cuộn'];
-  if (group === 'tp;pxsóng' || group === 'tp;pxrỗng') return ['Tấm'];
-  return ['kg'];
-}
 
 function resolveOrderLineProduct(products: OrderProductOption[], line: Pick<OrderProductFormLine, 'productId' | 'productCode' | 'productName' | 'productionName' | 'unit'>) {
   const byId = findOrderProductById(products, line.productId);
@@ -801,7 +743,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   value={orderForm.orderCode}
                   onChange={e => setOrderForm(prev => ({ ...prev, orderCode: e.target.value }))}
                   readOnly={formMode === 'add'}
-                  className={`${orderFieldClass} ${formMode === 'add' ? 'bg-zinc-50 font-black text-zinc-900' : ''}`}
+                  className={orderFieldClass}
                   placeholder="DH001"
                 />
                 {formMode === 'add' ? (
@@ -835,23 +777,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+                <SearchableSelect
+                  value={orderForm.status}
+                  onChange={status => setOrderForm(prev => ({ ...prev, status }))}
+                  options={[...ORDER_STATUS_OPTIONS]}
+                  placeholder="Gõ để tìm trạng thái"
+                  getLabel={item => String(item)}
+                  getValue={item => String(item)}
+                  allowEmpty={false}
+                />
                 {formMode === 'add' ? (
-                  <input
-                    value={ORDER_STATUS_DEFAULT}
-                    readOnly
-                    className={`${orderFieldClass} bg-amber-50 font-black text-amber-800`}
-                  />
-                ) : (
-                  <SearchableSelect
-                    value={orderForm.status}
-                    onChange={status => setOrderForm(prev => ({ ...prev, status }))}
-                    options={[...ORDER_STATUS_OPTIONS]}
-                    placeholder="Gõ để tìm trạng thái"
-                    getLabel={item => String(item)}
-                    getValue={item => String(item)}
-                    allowEmpty={false}
-                  />
-                )}
+                  <p className="text-[11px] font-semibold text-zinc-400">Mặc định: {ORDER_STATUS_DEFAULT}</p>
+                ) : null}
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân viên</span>

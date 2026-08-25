@@ -65,7 +65,13 @@ import {
 } from '../danh-sach-may';
 import { normalizeOrders } from '../don-hang';
 import { parseProductionOrderFilterDate, splitProductionOrderStaffNames } from '../cai-dat-thoi-gian';
-import { orderFieldClass } from '../_shared/orderHelpers';
+import {
+  orderFieldClass,
+  calculateOrderConversion,
+  conversionSupportsUnit,
+  allowedOrderUnits,
+  type OrderProductConversion
+} from '../_shared/orderHelpers';
 import {
   ArrowDown,
   ArrowUp,
@@ -4688,36 +4694,47 @@ export function listProductOptionsForOrder(
       getOrderProductLines(order).map(line => ({
         code: line.productCode,
         name: line.productName,
+        productionName: line.productionName || '',
         unit: line.unit && line.unit !== '-' ? line.unit : '',
-        productId: line.productId || undefined
+        productId: line.productId || undefined,
+        group: ''
       }))
     )
     .filter(item => item.code && item.code !== '-');
 
-  const unique = new Map<string, { name: string; unit: string; productId?: string }>();
-  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, unit: item.unit, productId: item.productId }));
+  const unique = new Map<string, { name: string; productionName: string; unit: string; productId?: string; group: string }>();
+  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, productionName: item.productionName, unit: item.unit, productId: item.productId, group: item.group }));
 
   if (unique.size === 0) {
     catalogProducts.forEach(product => {
       if (product.code) {
         unique.set(product.code, {
           name: product.name || product.code,
+          productionName: product.productionName || '',
           unit: product.unit && product.unit !== '-' ? product.unit : '',
-          productId: product.id
+          productId: product.id,
+          group: product.group || ''
         });
       }
     });
   }
 
   return [...unique.entries()]
-    .map(([code, meta]) => ({
-      code,
-      name: meta.name,
-      unit: meta.unit,
-      productId: meta.productId,
-      orderQty: getOrderProductQuantity(orders, orderRef, code),
-      remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code)
-    }))
+    .map(([code, meta]) => {
+      const catalogProduct = catalogProducts.find(p => p.code === code || p.amisCode === code);
+      return {
+        id: catalogProduct?.id || meta.productId || '',
+        code,
+        name: meta.name,
+        productionName: catalogProduct?.productionName || meta.productionName,
+        unit: meta.unit,
+        productId: meta.productId,
+        group: catalogProduct?.group || meta.group,
+        newCode: catalogProduct?.newCode || '',
+        orderQty: getOrderProductQuantity(orders, orderRef, code),
+        remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code)
+      };
+    })
     .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
 }
 
@@ -4915,6 +4932,7 @@ export function AddProductionOrderModal({
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductRow[]>([]);
+  const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [showAutofillOrders, setShowAutofillOrders] = useState(false);
   const [autofillSearch, setAutofillSearch] = useState('');
   const [selectedAutofillOrderCodes, setSelectedAutofillOrderCodes] = useState<string[]>([]);
@@ -4948,13 +4966,14 @@ export function AddProductionOrderModal({
 
     const loadLookups = async () => {
       try {
-        const [orderRes, productionRes, machineRes, settingRes, staffRes, productRes] = await Promise.all([
+        const [orderRes, productionRes, machineRes, settingRes, staffRes, productRes, conversionRes] = await Promise.all([
           fetch('/api/don-hang'),
           fetch('/api/lenh-sx'),
           fetch('/api/danh-sach-may'),
           fetch('/api/cai-dat'),
           fetch('/api/nhan-su?format=groups&scope=all'),
-          fetch('/api/san-pham?format=table')
+          fetch('/api/san-pham?format=table'),
+          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
         ]);
 
         const orderData = await orderRes.json().catch(() => ({}));
@@ -4963,6 +4982,7 @@ export function AddProductionOrderModal({
         const settingData = await settingRes.json().catch(() => ({}));
         const staffData = await staffRes.json().catch(() => ({}));
         const productData = await productRes.json().catch(() => ({}));
+        const conversionData = await conversionRes.json().catch(() => ({}));
 
         if (orderRes.ok) setOrders(normalizeOrders(orderData));
         if (productionRes.ok) setProductionOrders(normalizeProductionOrders(productionData));
@@ -4970,6 +4990,18 @@ export function AddProductionOrderModal({
         if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
         if (staffRes.ok) setStaffBranches(normalizeHrBranches(staffData));
         if (productRes.ok) setCatalogProducts(normalizeProducts(productData));
+
+        if (conversionRes.ok) {
+          const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
+          const conversionTotal = Number(conversionData.total) || conversions.length;
+          for (let page = 2; conversions.length < conversionTotal; page += 1) {
+            const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
+            conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
+          }
+          setProductConversions(conversions);
+        }
       } catch (error: any) {
         setFormError(error?.message || 'Không thể tải dữ liệu đơn hàng, máy, ca và nhân sự.');
       } finally {
@@ -5447,6 +5479,11 @@ export function AddProductionOrderModal({
               className={orderFieldClass}
             />
           </label>
+          <p className="pb-2 text-[11px] font-bold text-zinc-500">
+              {form.startDate
+                ? `Gợi ý đơn hàng cùng ngày ${form.startDate} hoặc còn SL chưa lập lệnh.`
+                : 'Chọn ngày lệnh SX để lọc đơn hàng cùng ngày.'}
+            </p>
 
           <RepeatableLinesBlock
             className="col-span-2"
@@ -5465,20 +5502,18 @@ export function AddProductionOrderModal({
               </button>
             }
             columns={[
-              { key: 'order', label: 'Mã đơn', className: 'min-w-0 flex-[1.1]', required: true },
-              { key: 'code', label: 'Mã hàng', className: 'min-w-0 flex-[1.35]', required: true },
-              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-[1.1]' },
-              { key: 'unit', label: 'ĐV', className: 'w-16 shrink-0 sm:w-20' },
-              { key: 'qty', label: 'SL', className: 'w-20 shrink-0 sm:w-24', required: true },
+              { key: 'order', label: 'Mã đơn', className: 'md:w-32 md:shrink-0', required: true },
+              { key: 'code', label: 'Mã hàng', className: 'md:w-44 md:shrink-0', required: true },
+              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-1' },
+              { key: 'unit', label: 'ĐVT', className: 'w-16 shrink-0 sm:w-20' },
+              { key: 'qty', label: 'SL', className: 'w-16 shrink-0 sm:w-20', required: true },
+              { key: 'kg', label: 'KG', className: 'md:w-14 md:shrink-0' },
+              { key: 'm2', label: 'M2', className: 'md:w-14 md:shrink-0' },
+              { key: 'mdai', label: 'M dài', className: 'md:w-16 md:shrink-0' },
               { key: 'actions', label: '', className: 'w-9 shrink-0' }
             ]}
           >
-            <p className="pb-2 text-[11px] font-bold text-zinc-500">
-              {form.startDate
-                ? `Gợi ý đơn hàng cùng ngày ${form.startDate} hoặc còn SL chưa lập lệnh.`
-                : 'Chọn ngày lệnh SX để lọc đơn hàng cùng ngày.'}
-            </p>
-
+            
             {form.entryLines.map(line => {
               const productOptions = listProductOptionsForOrder(
                 ordersForSelectedDate,
@@ -5487,10 +5522,19 @@ export function AddProductionOrderModal({
                 line.orderRef
               );
               const selectedProduct = productOptions.find(item => item.code === line.productCode);
+              const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
+              const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
+              const allowedUnits = allowedOrderUnits(selectedProduct);
+              const effectiveUnit = selectedProduct ? allowedUnits[0] || 'kg' : line.unit;
+              const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
+
+              const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
+              const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
+              const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
 
               return (
                 <RepeatableLineRow key={line.key}>
-                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
+                  <div className="col-span-2 md:w-32 md:shrink-0">
                     <SearchableSelect
                       value={line.orderRef}
                       onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -5502,7 +5546,7 @@ export function AddProductionOrderModal({
                       getValue={item => String(item)}
                     />
                   </div>
-                  <div className="col-span-2 md:min-w-0 md:flex-[1.35]">
+                  <div className="col-span-2 md:w-44 md:shrink-0">
                     <SearchableSelect
                       value={line.productCode}
                       onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
@@ -5524,23 +5568,18 @@ export function AddProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
+                  <div className="col-span-2 min-w-0 flex-1">
                     <input
-                      value={selectedProduct?.name || line.productName}
+                      value={selectedProduct?.productionName || line.productName}
                       readOnly
                       className={`${orderFieldClass} bg-white text-zinc-800`}
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
                   <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
-                    <input
-                      value={line.unit}
-                      readOnly
-                      className={`${orderFieldClass} bg-white text-zinc-800`}
-                      placeholder="ĐV"
-                    />
+                    {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                   </div>
-                  <div className="col-span-1 md:w-20 md:shrink-0 sm:md:w-24">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-24">
                     <input
                       type="number"
                       min="0"
@@ -5549,6 +5588,30 @@ export function AddProductionOrderModal({
                       onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
                       className={orderFieldClass}
                       placeholder="SL"
+                    />
+                  </div>
+                  <div className="col-span-1 md:w-14 md:shrink-0">
+                    <input
+                      type="text"
+                      value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
+                      readOnly
+                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                    />
+                  </div>
+                  <div className="col-span-1 md:w-14 md:shrink-0">
+                    <input
+                      type="text"
+                      value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
+                      readOnly
+                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                    />
+                  </div>
+                  <div className="col-span-1 md:w-16 md:shrink-0">
+                    <input
+                      type="text"
+                      value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
+                      readOnly
+                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
                   {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
@@ -6199,6 +6262,7 @@ export function EditProductionOrderModal({
   const [selectedShift, setSelectedShift] = useState('');
   const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
+  const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [formError, setFormError] = useState('');
@@ -6243,18 +6307,32 @@ export function EditProductionOrderModal({
       setIsLoadingStaff(true);
       setIsLoadingSettings(true);
       try {
-        const [staffRes, settingRes] = await Promise.all([
+        const [staffRes, settingRes, conversionRes] = await Promise.all([
           fetch('/api/nhan-su?format=groups&scope=all'),
-          fetch('/api/cai-dat')
+          fetch('/api/cai-dat'),
+          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
         ]);
-        const [staffData, settingData] = await Promise.all([
+        const [staffData, settingData, conversionData] = await Promise.all([
           staffRes.json().catch(() => ({})),
-          settingRes.json().catch(() => ({}))
+          settingRes.json().catch(() => ({})),
+          conversionRes.json().catch(() => ({}))
         ]);
         if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
         if (!cancelled) {
           setStaffBranches(normalizeHrBranches(staffData));
           if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
+
+          if (conversionRes.ok) {
+            const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
+            const conversionTotal = Number(conversionData.total) || conversions.length;
+            for (let page = 2; conversions.length < conversionTotal; page += 1) {
+              const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
+              conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
+            }
+            setProductConversions(conversions);
+          }
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -6465,11 +6543,14 @@ export function EditProductionOrderModal({
               }))
             }
             columns={[
-              { key: 'order', label: 'Mã đơn', className: 'min-w-0 flex-[1.1]', required: true },
-              { key: 'code', label: 'Mã hàng', className: 'min-w-0 flex-[1.35]', required: true },
-              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-[1.1]' },
-              { key: 'unit', label: 'ĐV', className: 'w-16 shrink-0 sm:w-20' },
-              { key: 'qty', label: 'SL', className: 'w-20 shrink-0 sm:w-24', required: true },
+              { key: 'order', label: 'Mã đơn', className: 'md:w-32 md:shrink-0', required: true },
+              { key: 'code', label: 'Mã hàng', className: 'md:w-44 md:shrink-0', required: true },
+              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-1' },
+              { key: 'unit', label: 'ĐVT', className: 'w-16 shrink-0 sm:w-20' },
+              { key: 'qty', label: 'SL', className: 'w-16 shrink-0 sm:w-20', required: true },
+              { key: 'kg', label: 'KG', className: 'md:w-14 md:shrink-0' },
+              { key: 'm2', label: 'M2', className: 'md:w-14 md:shrink-0' },
+              { key: 'mdai', label: 'M dài', className: 'md:w-16 md:shrink-0' },
               { key: 'actions', label: '', className: 'w-9 shrink-0' }
             ]}
           >
@@ -6481,10 +6562,19 @@ export function EditProductionOrderModal({
                 line.orderRef
               );
               const selectedProduct = productOptions.find(item => item.code === line.productCode);
+              const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
+              const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
+              const allowedUnits = allowedOrderUnits(selectedProduct);
+              const effectiveUnit = selectedProduct ? allowedUnits[0] || 'kg' : line.unit;
+              const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
+
+              const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
+              const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
+              const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
 
               return (
                 <RepeatableLineRow key={line.key}>
-                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
+                  <div className="col-span-2 md:w-32 md:shrink-0">
                     <SearchableSelect
                       value={line.orderRef}
                       onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -6495,7 +6585,7 @@ export function EditProductionOrderModal({
                       getValue={item => String(item)}
                     />
                   </div>
-                  <div className="col-span-2 md:min-w-0 md:flex-[1.35]">
+                  <div className="col-span-2 md:w-44 md:shrink-0">
                     <SearchableSelect
                       value={line.productCode}
                       onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
@@ -6510,23 +6600,18 @@ export function EditProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="col-span-2 md:min-w-0 md:flex-[1.1]">
+                  <div className="col-span-2 min-w-0 flex-1">
                     <input
-                      value={selectedProduct?.name || line.productName}
+                      value={selectedProduct?.productionName || line.productName}
                       readOnly
                       className={`${orderFieldClass} bg-white text-zinc-800`}
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
                   <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
-                    <input
-                      value={line.unit}
-                      readOnly
-                      className={`${orderFieldClass} bg-white text-zinc-800`}
-                      placeholder="ĐV"
-                    />
+                    {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                   </div>
-                  <div className="col-span-1 md:w-20 md:shrink-0 sm:md:w-24">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
                     <input
                       type="number"
                       min="0"
@@ -6535,6 +6620,30 @@ export function EditProductionOrderModal({
                       onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
                       className={orderFieldClass}
                       placeholder="SL"
+                    />
+                  </div>
+                  <div className="col-span-1 md:w-14 md:shrink-0">
+                    <input
+                      type="text"
+                      value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
+                      readOnly
+                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                    />
+                  </div>
+                  <div className="col-span-1 md:w-14 md:shrink-0">
+                    <input
+                      type="text"
+                      value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
+                      readOnly
+                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                    />
+                  </div>
+                  <div className="col-span-1 md:w-16 md:shrink-0">
+                    <input
+                      type="text"
+                      value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
+                      readOnly
+                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
                   {form.entryLines.length > 1 && (
