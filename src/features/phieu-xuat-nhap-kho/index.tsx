@@ -89,6 +89,7 @@ export interface WarehouseSlipLineDraft {
   quotaQuantity?: string;
   suggestedQuantity?: string;
   lineNote?: string;
+  warehouseClass?: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
 }
@@ -134,6 +135,7 @@ export type WarehouseSlipPrefillDraft = {
       | 'quotaQuantity'
       | 'suggestedQuantity'
       | 'lineNote'
+      | 'warehouseClass'
       | 'sourceInboundLineId'
       | 'sourceInboundSlipCode'
     >
@@ -400,6 +402,7 @@ export function createWarehouseLineDraftFromPrefill(
     | 'quotaQuantity'
     | 'suggestedQuantity'
     | 'lineNote'
+    | 'warehouseClass'
     | 'sourceInboundLineId'
     | 'sourceInboundSlipCode'
   >
@@ -415,6 +418,7 @@ export function createWarehouseLineDraftFromPrefill(
     quotaQuantity: line.quotaQuantity || '',
     suggestedQuantity: line.suggestedQuantity || '',
     lineNote: line.lineNote || '',
+    warehouseClass: line.warehouseClass || '',
     sourceInboundLineId: line.sourceInboundLineId || '',
     sourceInboundSlipCode: line.sourceInboundSlipCode || ''
   };
@@ -511,6 +515,79 @@ export type WarehouseProductionOrderOption = {
   startDate: string;
   lines: Array<{ code: string; name: string; unit: string; quantity: number | null }>;
 };
+
+type NormMaterialLine = {
+  code: string;
+  name: string;
+  unit: string;
+  documentQuantity: number;
+  warehouseClass: string;
+};
+
+function parseNormJson(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter(item => item && typeof item === 'object') as Record<string, unknown>[];
+  if (value && typeof value === 'object') return [value as Record<string, unknown>];
+  if (typeof value === 'string') {
+    try { return parseNormJson(JSON.parse(value)); } catch { return []; }
+  }
+  return [];
+}
+
+function normalizeMaterialKey(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, ' ');
+}
+
+function mergeNormMaterialLines(records: unknown[], materials: MaterialOption[]): NormMaterialLine[] {
+  const byCode = new Map<string, MaterialOption>();
+  const byName = new Map<string, MaterialOption>();
+  materials.forEach(item => {
+    if (item.code) byCode.set(normalizeMaterialKey(item.code), item);
+    if (item.name) byName.set(normalizeMaterialKey(item.name), item);
+  });
+  const merged = new Map<string, NormMaterialLine>();
+  const add = (raw: Record<string, unknown>) => {
+    const code = String(raw.ma_nvl ?? raw.maNvl ?? '').trim();
+    const name = String(raw.ten_nvl ?? raw.tenNvl ?? '').trim();
+    const catalog = byCode.get(normalizeMaterialKey(code)) || byName.get(normalizeMaterialKey(name));
+    const quantity = Number(raw.tong_khoi_luong ?? raw.tongKhoiLuong ?? raw.khoi_luong ?? raw.khoiLuong ?? 0);
+    if ((!code && !name) || !Number.isFinite(quantity) || quantity <= 0) return;
+    const key = normalizeMaterialKey(code || name);
+    const current = merged.get(key);
+    merged.set(key, {
+      code: code || catalog?.code || '',
+      name: name || catalog?.name || '',
+      unit: 'kg',
+      documentQuantity: (current?.documentQuantity || 0) + quantity,
+      warehouseClass: String(raw.kho_ngam_dinh ?? raw.khoNgamDinh ?? catalog?.khoNgamDinh ?? '').trim()
+    });
+  };
+  records.forEach(record => {
+    parseNormJson(record).forEach(product => {
+      // API trả về record.chi_tiet[].nvl[], còn một số phiên bản cũ trả
+      // trực tiếp product.nvl[]. Chuẩn hoá cả hai dạng trước khi cộng dồn.
+      const details = parseNormJson(product.chi_tiet);
+      const products = details.length > 0 ? details : [product];
+      products.forEach(detail => {
+        const directLines = parseNormJson(detail.nvl);
+        if (directLines.length > 0) {
+          directLines.forEach(add);
+          return;
+        }
+        parseNormJson(detail.lan_tron).forEach(round => parseNormJson(round.nvl).forEach(add));
+      });
+    });
+  });
+  return [...merged.values()].sort((a, b) => {
+    const rank = (value: string) => normalizeMaterialKey(value).includes('phu') ? 1 : normalizeMaterialKey(value).includes('chinh') ? 0 : 2;
+    return rank(a.warehouseClass) - rank(b.warehouseClass) || a.code.localeCompare(b.code, 'vi');
+  });
+}
 
 function parseWarehouseProductionOrderLines(record: Record<string, unknown>) {
   let raw: unknown = record.san_pham ?? record.products;
@@ -640,6 +717,8 @@ export function WarehouseSlipPanel({
   const [shiftSettings, setShiftSettings] = useState<ReturnType<typeof normalizeShiftSettings>>([]);
   const [productionOrders, setProductionOrders] = useState<WarehouseProductionOrderOption[]>([]);
   const [isLoadingProductionOrders, setIsLoadingProductionOrders] = useState(true);
+  const [isLoadingNormMaterials, setIsLoadingNormMaterials] = useState(false);
+  const [normLoadMessage, setNormLoadMessage] = useState('');
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
@@ -739,7 +818,8 @@ export function WarehouseSlipPanel({
             materials.map(material => ({
               code: material.code,
               name: material.name,
-              unit: material.unit && material.unit !== '-' ? material.unit : ''
+              unit: material.unit && material.unit !== '-' ? material.unit : '',
+              khoNgamDinh: material.khoNgamDinh
             }))
           );
           setWeightCatalog(materials.map(mapMaterialToWeightCatalogItem));
@@ -895,7 +975,7 @@ export function WarehouseSlipPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNvlExport, slipDate, avgInboundPriceByKey]);
 
-  const applyProductionOrderSelection = (orderCodes: string[]) => {
+  const applyProductionOrderSelection = async (orderCodes: string[]) => {
     setProductionOrderCodes(orderCodes);
     const selectedOrders = productionOrders.filter(item => orderCodes.includes(item.orderCode));
     if (selectedOrders.length === 0) return;
@@ -930,11 +1010,49 @@ export function WarehouseSlipPanel({
           )
         );
       }
+      return;
+    }
+
+    if (warehouseKind !== 'nvl' || slipType !== 'xuat') return;
+    setIsLoadingNormMaterials(true);
+    setNormLoadMessage('');
+    try {
+      const selectedKeys = selectedOrders.map(order => ({
+        ngay: order.startDate,
+        ma_lenh_sx: order.orderCode,
+        ca: order.shift
+      })).filter(item => item.ngay && item.ma_lenh_sx && item.ca);
+      const responses = await Promise.all(selectedKeys.map(async key => {
+        const params = new URLSearchParams({ ...key, exact: '1' });
+        const res = await fetch(`/api/bang-tron-vat-tu-dinh-muc?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Không thể tải định mức NVL.');
+        return { key, records: Array.isArray(data.records) ? data.records : [] };
+      }));
+      const allRecords = responses.flatMap(item => item.records);
+      console.log(allRecords)
+      const merged = mergeNormMaterialLines(allRecords, itemOptions);
+      setLines(merged.map(line => createWarehouseLineDraftFromPrefill({
+        code: line.code,
+        name: line.name,
+        unit: 'kg',
+        documentQuantity: formatNumber(line.documentQuantity, 3),
+        quantity: '',
+        unitPrice: '',
+        lineNote: line.warehouseClass,
+        warehouseClass: line.warehouseClass
+      })));
+      if (merged.length === 0) setNormLoadMessage('Không tìm thấy định mức theo đúng ngày, mã LSX và ca đã chọn.');
+    } catch (error: any) {
+      setLines([createWarehouseLineDraft()]);
+      setNormLoadMessage(error?.message || 'Không thể tải định mức NVL.');
+    } finally {
+      setIsLoadingNormMaterials(false);
     }
   };
 
   const toggleProductionOrder = (orderCode: string) => {
-    applyProductionOrderSelection(toggleWarehouseProductionOrderSelection(productionOrderCodes, orderCode));
+    void applyProductionOrderSelection(toggleWarehouseProductionOrderSelection(productionOrderCodes, orderCode));
   };
 
   const filteredProductionOrders = useMemo(() => {
@@ -1504,7 +1622,15 @@ export function WarehouseSlipPanel({
           </div>
 
           <div className="divide-y divide-zinc-200/80">
-            {lines.map(line => (
+            {normLoadMessage ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{normLoadMessage}</p> : null}
+            {isLoadingNormMaterials ? <p className="flex items-center gap-2 px-1 py-3 text-xs font-bold text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" />Đang tải định mức theo ngày, LSX và ca...</p> : null}
+            {lines.map((line, index) => (
+              <React.Fragment key={line.key}>
+              {isNvlExport && (index === 0 || line.warehouseClass !== lines[index - 1]?.warehouseClass) ? (
+                <div className="border-t border-zinc-200 bg-zinc-100 px-2 py-2 text-xs font-black uppercase tracking-wide text-zinc-700">
+                  {normalizeMaterialKey(line.warehouseClass).includes('phu') ? 'Nguyên vật liệu phụ' : normalizeMaterialKey(line.warehouseClass).includes('chinh') ? 'Nguyên vật liệu chính' : 'Chưa phân loại'}
+                </div>
+              ) : null}
               <div
                 key={line.key}
                 className={
@@ -1652,6 +1778,7 @@ export function WarehouseSlipPanel({
                   </button>
                 ) : null}
               </div>
+              </React.Fragment>
             ))}
           </div>
         </div>
@@ -2458,4 +2585,3 @@ export function WarehouseHistoryPanel({
     </div>
   );
 }
-
