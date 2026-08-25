@@ -23,6 +23,7 @@ export type MixingNormLine = {
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat?: string;
+  kho_ngam_dinh?: string;
   gia_tri: number | null;
   don_vi: string;
   /** kg — %: tong_tl × giá trị / 100; đơn vị kg: = giá trị */
@@ -63,6 +64,7 @@ type MaterialOption = {
   name: string;
   productionName: string;
   unit: string;
+  khoNgamDinh: string;
 };
 
 type ProductOption = {
@@ -90,6 +92,7 @@ type LineForm = {
   tenNvlSanXuat: string;
   giaTri: string;
   donVi: 'kg' | '%';
+  khoNgamDinh: string;
 };
 
 type ProductForm = {
@@ -125,7 +128,8 @@ const emptyLine = (): LineForm => ({
   tenNvl: '',
   tenNvlSanXuat: '',
   giaTri: '',
-  donVi: 'kg'
+  donVi: 'kg',
+  khoNgamDinh: ''
 });
 
 const emptyProduct = (): ProductForm => ({
@@ -203,6 +207,7 @@ function productToForm(
             maNvl: line.ma_nvl,
             tenNvl: line.ten_nvl,
             tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
+            khoNgamDinh: line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.khoNgamDinh || '',
             giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
             donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
           },
@@ -250,7 +255,8 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
         code,
         name,
         productionName,
-        unit: unitRaw === '%' ? '%' : 'kg'
+        unit: unitRaw === '%' ? '%' : 'kg',
+        khoNgamDinh: String(row.kho_ngam_dinh ?? '').trim()
       };
     })
     .filter((item): item is MaterialOption => Boolean(item));
@@ -346,7 +352,8 @@ function bomToLineForms(items: MixingBomItem[]): LineForm[] {
     tenNvl: item.name,
     tenNvlSanXuat: item.productionName,
     giaTri: String(item.amountType === 'percent' ? item.percent ?? '' : item.quantity ?? ''),
-    donVi: item.amountType === 'percent' ? '%' as const : 'kg' as const
+    donVi: item.amountType === 'percent' ? '%' as const : 'kg' as const,
+    khoNgamDinh: ''
   }));
   return lines.length ? lines : [emptyLine()];
 }
@@ -1006,7 +1013,8 @@ export default function MixingNormMaterialsTab() {
           tenNvl: item.name,
           tenNvlSanXuat: item.productionName,
           giaTri: '',
-          donVi: 'kg'
+          donVi: 'kg',
+          khoNgamDinh: ''
         });
       });
     });
@@ -1068,6 +1076,7 @@ export default function MixingNormMaterialsTab() {
       maNvl: code,
       tenNvl: material?.name ?? '',
       tenNvlSanXuat: material?.productionName ?? ''
+      ,khoNgamDinh: material?.khoNgamDinh ?? ''
     });
   };
 
@@ -1171,6 +1180,7 @@ export default function MixingNormMaterialsTab() {
             ma_nvl: line.maNvl.trim(),
             ten_nvl: line.tenNvl.trim(),
             ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
+            kho_ngam_dinh: line.khoNgamDinh.trim() || null,
             gia_tri,
             don_vi: line.donVi,
             khoi_luong: calcNvlKhoiLuong(roundWeight, gia_tri, line.donVi),

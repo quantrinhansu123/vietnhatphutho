@@ -3050,6 +3050,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         const ten_nvl_san_xuat = String(
           line.ten_nvl_san_xuat ?? line.tenNvlSanXuat ?? ''
         ).trim();
+        const kho_ngam_dinh = String(line.kho_ngam_dinh ?? line.khoNgamDinh ?? '').trim();
         if (!ma_nvl && !ten_nvl) return null;
         const giaTriRaw = line.gia_tri ?? line.giaTri ?? line.dinh_muc ?? line.value;
         let gia_tri: number | null = null;
@@ -3083,6 +3084,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
           ma_nvl: ma_nvl || null,
           ten_nvl: ten_nvl || null,
           ten_nvl_san_xuat: ten_nvl_san_xuat || null,
+          kho_ngam_dinh: kho_ngam_dinh || null,
           gia_tri,
           don_vi,
           khoi_luong,
@@ -3105,6 +3107,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         ma_nvl: string | null;
         ten_nvl: string | null;
         ten_nvl_san_xuat: string | null;
+        kho_ngam_dinh: string | null;
         gia_tri: number | null;
         don_vi: string;
         khoi_luong: number | null;
@@ -10926,6 +10929,8 @@ export function createApp() {
       const tuNgay = parseWarehouseSlipDate(req.query.tu_ngay ?? req.query.fromDate);
       const denNgay = parseWarehouseSlipDate(req.query.den_ngay ?? req.query.toDate);
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+      const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
+      const exact = String(req.query.exact ?? '') === '1';
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
 
       const buildQuery = () => {
@@ -11167,6 +11172,8 @@ export function createApp() {
             ? req.query.tu_ngay.trim().slice(0, 10)
             : '';
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+      const exact = String(req.query.exact ?? '') === '1';
+      const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
 
       let query = supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
@@ -11189,7 +11196,15 @@ export function createApp() {
           const value = String((row as Record<string, unknown>).ca ?? '')
             .trim()
             .toLowerCase();
-          return value === needle || value.includes(needle) || needle.includes(value);
+          return exact ? value === needle : value === needle || value.includes(needle) || needle.includes(value);
+        });
+      }
+      if (maLenhSx) {
+        const tokens = maLenhSx.split(/[,;|/]+/).map(value => value.trim().toLowerCase()).filter(Boolean);
+        records = records.filter(row => {
+          const values = String((row as Record<string, unknown>).ma_lenh_sx ?? '')
+            .split(/[,;|/]+/).map(value => value.trim().toLowerCase()).filter(Boolean);
+          return tokens.some(token => values.includes(token));
         });
       }
       if (q) {
