@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
@@ -534,6 +534,13 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
     icon: UsersRound,
     icon3d: people3d,
     tab: 'dieu-dong-nhan-su'
+  },
+  {
+    title: 'Cảnh báo tồn kho',
+    desc: 'Danh sách các sản phẩm sắp hết tồn kho trong tháng.',
+    icon: AlertTriangle,
+    icon3d: noEntry3d,
+    tab: 'canh-bao-ton-kho'
   }
 ];
 
@@ -981,6 +988,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'shipping-orders': { group: 'Kinh doanh', sub: 'Lệnh giao / xuất hàng' },
   'production-orders': { group: 'Quản Đốc', sub: 'Lệnh sản xuất' },
   'dieu-dong-nhan-su': { group: 'Quản Đốc', sub: 'Điều động nhân sự' },
+  'canh-bao-ton-kho': { group: 'Quản Đốc', sub: 'Cảnh báo tồn kho' },
   'factory-quan-doc': { group: 'Trang chủ', sub: 'Quản Đốc' },
   'factory-qc': { group: 'Trang chủ', sub: 'QC' },
   'factory-cong-nhan': { group: 'Trang chủ', sub: 'Sản xuất' },

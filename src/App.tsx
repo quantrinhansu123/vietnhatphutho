@@ -82,6 +82,7 @@ import { CanTuDongPanel } from './features/can-tu-dong';
 import { KiemKhoPanel } from './features/kiem-kho';
 import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
+import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
   date: new Date().toISOString().split('T')[0],
@@ -1448,6 +1449,16 @@ export default function App() {
                   canEdit={menuFullAccess || editableMenuTabs.has('dieu-dong-nhan-su')}
                   canDelete={menuFullAccess || deletableMenuTabs.has('dieu-dong-nhan-su')}
                 />
+              </motion.div>
+            ) : activeTab === 'canh-bao-ton-kho' ? (
+              <motion.div
+                key="canh-bao-ton-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <InventoryAlertPanel onBack={() => goBack('factory-quan-doc')} />
               </motion.div>
             ) : activeTab === 'settings' ? (
               <motion.div
