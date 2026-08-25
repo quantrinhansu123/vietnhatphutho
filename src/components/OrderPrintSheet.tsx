@@ -107,7 +107,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                   <td className="order-print-center">{idx + 1}</td>
                   <td className="order-print-mono">{displayCell(line.productCode)}</td>
                   <td className="order-print-product-name">
-                    {displayCell(line.productionName)}
+                    {displayCell(line.productionName) || displayCell(line.productName)}
                   </td>
                   <td>{formatLineSpec(line)}</td>
                   <td className="order-print-center">{displayCell(line.unit)}</td>
