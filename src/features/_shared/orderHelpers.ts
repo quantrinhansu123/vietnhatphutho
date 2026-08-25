@@ -213,7 +213,7 @@ export function calculateOrderConversion(quantityText: string, inputUnitText: st
   if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
   const normalizedGroup = group.replace(/\s+/g, '').toLocaleLowerCase('vi');
   const targetUnits: ProductConvertedUnit[] = normalizedGroup === 'tp;pxđặc'
-    ? ['kg', 'm2']
+    ? ['kg', 'm2', 'm']
     : normalizedGroup === 'tp;pxsóng'
       ? ['m', 'kg']
       : normalizedGroup === 'tp;pxrỗng'

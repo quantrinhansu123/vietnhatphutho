@@ -4048,7 +4048,8 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
     chieu_dai_don_vi: parseOptionalMaterialDecimalText(source.unitLength),
     ton_dau_ky: parseOptionalMaterialNumber(source.openingStock),
     nhap_trong_ky: parseOptionalMaterialNumber(source.inbound),
-    xuat_trong_ky: parseOptionalMaterialNumber(source.outbound)
+    xuat_trong_ky: parseOptionalMaterialNumber(source.outbound),
+    kho_ngam_dinh: parseMaterialText(source.khoNgamDinh ?? source.kho_ngam_dinh) || null
   };
 
   return { record };

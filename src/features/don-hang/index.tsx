@@ -251,10 +251,11 @@ export function orderProductLinesToPayload(
       });
       const productCode = line.productCode.trim();
       const productName = selectedProduct?.name || resolved.productName || line.productName.trim();
+      const allowedUnits = selectedProduct ? allowedOrderUnits(selectedProduct) : [];
       const unit = isCutOrder
         ? 'Tấm'
         : selectedProduct
-          ? allowedOrderUnits(selectedProduct)[0] || 'kg'
+          ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
           : line.unit.trim() || resolved.unit;
       const quantity = parsePercentInput(line.quantity);
       const doLi = line.doLi.trim();
@@ -994,7 +995,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
                   const allowedUnits = allowedOrderUnits(matchedLineProduct);
-                  const effectiveUnit = matchedLineProduct ? allowedUnits[0] || 'kg' : line.unit;
+                  const effectiveUnit = matchedLineProduct
+                    ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
+                    : line.unit;
                   const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, matchedLineProduct?.group) : [];
 
                   const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
@@ -1288,7 +1291,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <TableHeadCell className="min-w-[420px]">
               <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
                 <span>Mã SP</span>
-                <span>Tên sản phẩm</span>
+                <span>Tên sản xuất</span>
                 <span className="text-right">SL</span>
                 <span>ĐVT</span>
               </div>
@@ -1325,7 +1328,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <div key={`${order.id}-${line.productCode}-${line.productName}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
                             <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
                               <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                              <span className="text-zinc-800">{line.productName || '-'}</span>
+                              <span className="text-zinc-800">{line.productionName || line.productName || '-'}</span>
                               <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                             </div>

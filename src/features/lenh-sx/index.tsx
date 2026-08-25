@@ -552,7 +552,7 @@ export function ProductionOrdersPanel({
                     <TableHeadCell className="min-w-[320px]">
                       <div className="grid grid-cols-[minmax(80px,0.85fr)_minmax(120px,1.5fr)_64px] gap-2">
                         <span>Mã hàng</span>
-                        <span>Tên hàng</span>
+                        <span>Tên sản xuất</span>
                         <span className="text-right">Số lượng</span>
                       </div>
                     </TableHeadCell>
@@ -584,7 +584,7 @@ export function ProductionOrdersPanel({
                                         {product.productCode || '-'}
                                       </td>
                                       <td className="px-2.5 py-1.5 font-semibold text-zinc-700">
-                                        {product.productName || '-'}
+                                        {product.productionName || product.productName || '-'}
                                       </td>
                                       <td className="w-[22%] whitespace-nowrap px-2.5 py-1.5 text-right font-mono font-bold text-zinc-900">
                                         {product.quantity || '-'}
