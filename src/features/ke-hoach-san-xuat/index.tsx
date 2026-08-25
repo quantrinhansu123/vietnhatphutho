@@ -5504,16 +5504,16 @@ export function AddProductionOrderModal({
             columns={[
               { key: 'order', label: 'Mã đơn', className: 'md:w-32 md:shrink-0', required: true },
               { key: 'code', label: 'Mã hàng', className: 'md:w-44 md:shrink-0', required: true },
-              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-1' },
-              { key: 'unit', label: 'ĐVT', className: 'w-16 shrink-0 sm:w-20' },
-              { key: 'qty', label: 'SL', className: 'w-16 shrink-0 sm:w-20', required: true },
-              { key: 'kg', label: 'KG', className: 'md:w-14 md:shrink-0' },
-              { key: 'm2', label: 'M2', className: 'md:w-14 md:shrink-0' },
-              { key: 'mdai', label: 'M dài', className: 'md:w-16 md:shrink-0' },
+              { key: 'name', label: 'Tên sản xuất', className: 'min-w-0' },
+              { key: 'unit', label: '', className: 'w-16 shrink-0 sm:w-20' },
+              { key: 'qty', label: '', className: 'w-16 shrink-0 sm:w-20', required: true },
+              { key: 'kg', label: '', className: 'md:w-14 md:shrink-0' },
+              { key: 'm2', label: '', className: 'md:w-14 md:shrink-0' },
+              { key: 'mdai', label: '', className: 'md:w-16 md:shrink-0' },
               { key: 'actions', label: '', className: 'w-9 shrink-0' }
             ]}
           >
-            
+
             {form.entryLines.map(line => {
               const productOptions = listProductOptionsForOrder(
                 ordersForSelectedDate,
@@ -5568,7 +5568,7 @@ export function AddProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="col-span-2 min-w-0 flex-1">
+                  <div className="col-span-2 min-w-0" style={{flex: '0.8'}}>
                     <input
                       value={selectedProduct?.productionName || line.productName}
                       readOnly
@@ -5576,10 +5576,12 @@ export function AddProductionOrderModal({
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">ĐVT</label>
                     {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-24">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-24 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">SL</label>
                     <input
                       type="number"
                       min="0"
@@ -5590,7 +5592,8 @@ export function AddProductionOrderModal({
                       placeholder="SL"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0">
+                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">KG</label>
                     <input
                       type="text"
                       value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
@@ -5598,7 +5601,8 @@ export function AddProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0">
+                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M2</label>
                     <input
                       type="text"
                       value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
@@ -5606,7 +5610,8 @@ export function AddProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0">
+                  <div className="col-span-1 md:w-16 md:shrink-0 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M dài</label>
                     <input
                       type="text"
                       value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
@@ -6545,12 +6550,12 @@ export function EditProductionOrderModal({
             columns={[
               { key: 'order', label: 'Mã đơn', className: 'md:w-32 md:shrink-0', required: true },
               { key: 'code', label: 'Mã hàng', className: 'md:w-44 md:shrink-0', required: true },
-              { key: 'name', label: 'Tên hàng', className: 'min-w-0 flex-1' },
-              { key: 'unit', label: 'ĐVT', className: 'w-16 shrink-0 sm:w-20' },
-              { key: 'qty', label: 'SL', className: 'w-16 shrink-0 sm:w-20', required: true },
-              { key: 'kg', label: 'KG', className: 'md:w-14 md:shrink-0' },
-              { key: 'm2', label: 'M2', className: 'md:w-14 md:shrink-0' },
-              { key: 'mdai', label: 'M dài', className: 'md:w-16 md:shrink-0' },
+              { key: 'name', label: 'Tên sản xuất', className: 'min-w-0' },
+              { key: 'unit', label: '', className: 'w-16 shrink-0 sm:w-20' },
+              { key: 'qty', label: '', className: 'w-16 shrink-0 sm:w-20', required: true },
+              { key: 'kg', label: '', className: 'md:w-14 md:shrink-0' },
+              { key: 'm2', label: '', className: 'md:w-14 md:shrink-0' },
+              { key: 'mdai', label: '', className: 'md:w-16 md:shrink-0' },
               { key: 'actions', label: '', className: 'w-9 shrink-0' }
             ]}
           >
@@ -6600,7 +6605,7 @@ export function EditProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="col-span-2 min-w-0 flex-1">
+                  <div className="col-span-2 min-w-0" style={{flex: '0.8'}}>
                     <input
                       value={selectedProduct?.productionName || line.productName}
                       readOnly
@@ -6608,10 +6613,12 @@ export function EditProductionOrderModal({
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">ĐVT</label>
                     {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20">
+                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">SL</label>
                     <input
                       type="number"
                       min="0"
@@ -6622,7 +6629,8 @@ export function EditProductionOrderModal({
                       placeholder="SL"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0">
+                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">KG</label>
                     <input
                       type="text"
                       value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
@@ -6630,7 +6638,8 @@ export function EditProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0">
+                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M2</label>
                     <input
                       type="text"
                       value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
@@ -6638,7 +6647,8 @@ export function EditProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0">
+                  <div className="col-span-1 md:w-16 md:shrink-0 space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M dài</label>
                     <input
                       type="text"
                       value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
