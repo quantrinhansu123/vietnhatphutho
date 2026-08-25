@@ -5536,7 +5536,9 @@ export function AddProductionOrderModal({
               const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
               const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
               const allowedUnits = allowedOrderUnits(selectedProduct);
-              const effectiveUnit = selectedProduct ? allowedUnits[0] || 'kg' : line.unit;
+              const effectiveUnit = selectedProduct
+                ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
+                : line.unit;
               const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
 
               const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
@@ -6584,7 +6586,9 @@ export function EditProductionOrderModal({
               const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
               const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
               const allowedUnits = allowedOrderUnits(selectedProduct);
-              const effectiveUnit = selectedProduct ? allowedUnits[0] || 'kg' : line.unit;
+              const effectiveUnit = selectedProduct
+                ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
+                : line.unit;
               const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
 
               const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
@@ -6809,4 +6813,3 @@ export function EditProductionOrderModal({
     </div>
   );
 }
-

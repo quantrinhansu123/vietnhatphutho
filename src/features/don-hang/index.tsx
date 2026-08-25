@@ -251,10 +251,11 @@ export function orderProductLinesToPayload(
       });
       const productCode = line.productCode.trim();
       const productName = selectedProduct?.name || resolved.productName || line.productName.trim();
+      const allowedUnits = selectedProduct ? allowedOrderUnits(selectedProduct) : [];
       const unit = isCutOrder
         ? 'Tấm'
         : selectedProduct
-          ? allowedOrderUnits(selectedProduct)[0] || 'kg'
+          ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
           : line.unit.trim() || resolved.unit;
       const quantity = parsePercentInput(line.quantity);
       const doLi = line.doLi.trim();
@@ -994,7 +995,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
                   const allowedUnits = allowedOrderUnits(matchedLineProduct);
-                  const effectiveUnit = matchedLineProduct ? allowedUnits[0] || 'kg' : line.unit;
+                  const effectiveUnit = matchedLineProduct
+                    ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
+                    : line.unit;
                   const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, matchedLineProduct?.group) : [];
 
                   const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
