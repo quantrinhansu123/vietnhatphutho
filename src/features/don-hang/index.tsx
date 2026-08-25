@@ -1288,7 +1288,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <TableHeadCell className="min-w-[420px]">
               <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
                 <span>Mã SP</span>
-                <span>Tên sản phẩm</span>
+                <span>Tên sản xuất</span>
                 <span className="text-right">SL</span>
                 <span>ĐVT</span>
               </div>
@@ -1325,7 +1325,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <div key={`${order.id}-${line.productCode}-${line.productName}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
                             <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
                               <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                              <span className="text-zinc-800">{line.productName || '-'}</span>
+                              <span className="text-zinc-800">{line.productionName || line.productName || '-'}</span>
                               <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                             </div>
