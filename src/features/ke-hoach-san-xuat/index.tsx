@@ -4730,7 +4730,7 @@ export function listProductOptionsForOrder(
         id: catalogProduct?.id || meta.productId || '',
         code,
         name: meta.name,
-        productionName: catalogProduct?.productionName || meta.productionName,
+        productionName: meta.productionName || catalogProduct?.productionName || '',
         unit: meta.unit,
         productId: meta.productId,
         group: catalogProduct?.group || meta.group,
@@ -5302,6 +5302,7 @@ export function AddProductionOrderModal({
       orderRef,
       productCode: '',
       productName: '',
+      productionName: '',
       quantity: '',
       unit: ''
     };
@@ -5573,7 +5574,7 @@ export function AddProductionOrderModal({
                             : product.orderQty > 0
                               ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0`
                               : '';
-                        return product.code ? `${product.code} · ${product.name}${remaining}` : product.name;
+                        return product.code ? `${product.code} - ${product.productionName || product.name}${remaining}` : product.name;
                       }}
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
@@ -6039,7 +6040,7 @@ export function AddProductionOrderModal({
                     setLineDraftProductCode('');
                   }}
                   options={orderCodeOptions}
-                  placeholder="Gõ để tìm mã đơn"
+                  placeholder="Gõ để tìm mã đơn2"
                   isLoading={isLoadingLookups}
                   inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
                   getLabel={item => String(item)}
@@ -6063,9 +6064,9 @@ export function AddProductionOrderModal({
                   isLoading={isLoadingLookups}
                   inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
                   getLabel={item => {
-                    const product = item as { code: string; name: string; orderQty: number; remainingQty: number };
+                    const product = item as { code: string; name: string; productionName?: string; orderQty: number; remainingQty: number };
                     return product.code
-                      ? `${product.code} · ${product.name}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0` : ''}`
+                      ? `${product.code} - ${product.productionName || product.name}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0` : ''}`
                       : product.name;
                   }}
                   getValue={item => (item as { code: string }).code}
@@ -6416,6 +6417,7 @@ export function EditProductionOrderModal({
       orderRef,
       productCode: '',
       productName: '',
+      productionName: '',
       quantity: '',
       unit: ''
     };
@@ -6612,7 +6614,7 @@ export function EditProductionOrderModal({
                       inputClassName={orderFieldClass}
                       getLabel={item => {
                         const product = item as (typeof productOptions)[number];
-                        return product.code ? `${product.code} · ${product.name}` : product.name;
+                        return product.code ? `${product.code} - ${product.productionName || product.name}` : product.name;
                       }}
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
