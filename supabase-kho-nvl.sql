@@ -53,3 +53,7 @@ comment on column public.kho_nvl.ten_npl is 'Ten nguyen phu lieu.';
 alter table public.kho_nvl
   add column if not exists ten_nvl_sx text;
 comment on column public.kho_nvl.ten_nvl_sx is 'Ten nguyen vat lieu su dung trong san xuat.';
+
+alter table public.kho_nvl
+  add column if not exists kho_ngam_dinh text;
+comment on column public.kho_nvl.kho_ngam_dinh is 'Loai kho: Nguyen vat lieu phu hoac Nguyen vat lieu chinh.';
