@@ -7,7 +7,15 @@
 **API:** `/api/phieu-tron-thuc-te`  
 **UI:** `src/components/ActualMixingSheetTab.tsx`
 
-Mỗi phiếu tham chiếu một `dinh_muc_id` của đúng `ngay` + `ca`.
+Mỗi phiếu tham chiếu một `dinh_muc_id` (FK tới `bang_tron_vat_tu_dinh_muc.id`) — vốn đã 1-1 với `ma_lenh_sx`
+(1 lệnh SX chỉ có 1 phiếu định mức, xem `docs/ai-tables/bang_tron_vat_tu_dinh_muc.md`), và unique theo `dinh_muc_id`
+ở tầng lưu (upsert `onConflict: 'dinh_muc_id'`) nên `phieu_tron_thuc_te` cũng 1-1 theo lệnh SX.
+
+**Ngày (2026-08-26):** Picker chọn phiếu định mức trong `ActualMixingSheetTab.tsx` tìm theo **mã lệnh SX**
+(`SearchableSelect`, không còn lọc theo ngày như trước — vì định mức không còn cố định 1 ngày). Ô "Ngày" trên màn
+này là **ngày thực hiện trộn thực tế** — độc lập với `ngay` của phiếu định mức, do người dùng tự nhập mỗi lần lưu,
+gửi thẳng vào cột `ngay` của `phieu_tron_thuc_te` (không copy từ `bang_tron_vat_tu_dinh_muc.ngay` nữa). `ca` vẫn lấy
+từ phiếu định mức đang chọn (1 lệnh SX = 1 ca cố định).
 
 ## Cối trộn tiêu chuẩn — không sửa, không tự chia cối
 

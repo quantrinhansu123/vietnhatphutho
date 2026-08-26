@@ -94,6 +94,29 @@ export interface WarehouseSlipLineDraft {
   sourceInboundSlipCode?: string;
 }
 
+/** Tham chiếu 1 lệnh SX theo đúng ngày/ca đã chọn để xuất kho NVL. */
+export type WarehouseLenhSxRef = {
+  ma_lenh_sx: string;
+  ngay: string;
+  ca: string;
+};
+
+/** Khóa duy nhất cho 1 tổ hợp (mã lệnh SX, ngày, ca) — dùng làm key chọn trong picker xuất kho NVL. */
+export function lenhSxInstanceKey(ref: WarehouseLenhSxRef): string {
+  return `${ref.ma_lenh_sx}::${ref.ngay}::${ref.ca}`;
+}
+
+function parseLenhSxInstanceKey(key: string): WarehouseLenhSxRef {
+  const [ma_lenh_sx = '', ngay = '', ca = ''] = key.split('::');
+  return { ma_lenh_sx, ngay, ca };
+}
+
+function formatPickerDate(ngay: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(ngay || '');
+  if (!match) return ngay || '';
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
 export type NvlInboundLotOption = {
   id: string;
   ma_phieu: string;
@@ -121,6 +144,8 @@ export type WarehouseSlipPrefillDraft = {
   deliverer?: string;
   warehouseLocation?: string;
   editSlipCode?: string;
+  /** Các lệnh SX (mã + ngày + ca) đã chọn khi lập phiếu xuất kho NVL — dùng để khôi phục đúng lựa chọn khi sửa. */
+  lenhSxDaChon?: WarehouseLenhSxRef[];
   /** Thời điểm tạo draft (Date.now()) — dùng để bỏ qua draft cũ còn sót lại trong localStorage. */
   createdAt?: number;
   lines: Array<
@@ -513,8 +538,29 @@ export type WarehouseProductionOrderOption = {
   shift: string;
   machine: string;
   startDate: string;
+  /** ngay_ket_thuc — rỗng nếu lệnh SX chỉ chạy 1 ngày (startDate). */
+  endDate: string;
   lines: Array<{ code: string; name: string; unit: string; quantity: number | null }>;
 };
+
+/** Chặn trên số ngày sinh ra từ 1 khoảng ngay_bat_dau..ngay_ket_thuc, phòng dữ liệu lỗi. */
+const WAREHOUSE_PRODUCTION_ORDER_MAX_SPAN_DAYS = 60;
+
+/** Sinh danh sách ngày (YYYY-MM-DD) từ startDate đến endDate (bao gồm 2 đầu). */
+export function expandWarehouseProductionOrderDates(startDate: string, endDate: string): string[] {
+  const start = new Date(`${startDate}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return [];
+  const end = endDate ? new Date(`${endDate}T00:00:00`) : start;
+  if (Number.isNaN(end.getTime()) || end < start) return [startDate];
+
+  const days: string[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end && days.length < WAREHOUSE_PRODUCTION_ORDER_MAX_SPAN_DAYS) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
 
 type NormMaterialLine = {
   code: string;
@@ -654,6 +700,7 @@ export function normalizeWarehouseProductionOrders(data: unknown): WarehouseProd
         shift: pickText(record, ['ca', 'shift'], ''),
         machine: pickText(record, ['may', 'ma_may', 'ten_may', 'machine'], ''),
         startDate: pickText(record, ['ngay_gio_bat_dau', 'ngay_bat_dau', 'ngay_san_xuat', 'start_date'], '').slice(0, 10),
+        endDate: pickText(record, ['ngay_gio_ket_thuc', 'ngay_ket_thuc', 'end_date'], '').slice(0, 10),
         lines: parseWarehouseProductionOrderLines(record)
       };
     })
@@ -719,6 +766,11 @@ export function WarehouseSlipPanel({
   const [isLoadingProductionOrders, setIsLoadingProductionOrders] = useState(true);
   const [isLoadingNormMaterials, setIsLoadingNormMaterials] = useState(false);
   const [normLoadMessage, setNormLoadMessage] = useState('');
+  // Tập (ma_lenh_sx, ngay, ca) đã có phiếu xuất kho khác — dùng để ẩn khỏi picker.
+  const [exportedLenhSxKeys, setExportedLenhSxKeys] = useState<Set<string>>(new Set());
+  const [isLoadingExportedLenhSx, setIsLoadingExportedLenhSx] = useState(true);
+  // Lệnh SX (ma_lenh_sx, ngay, ca) mà CHÍNH phiếu đang sửa đã chọn — không bị ẩn dù đã "đã xuất".
+  const [ownInstanceKeys, setOwnInstanceKeys] = useState<Set<string>>(new Set());
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
@@ -737,6 +789,23 @@ export function WarehouseSlipPanel({
       }
     };
     void loadProductionOrders();
+  }, []);
+
+  useEffect(() => {
+    const loadExportedLenhSx = async () => {
+      setIsLoadingExportedLenhSx(true);
+      try {
+        const res = await fetch('/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat');
+        const data = await res.json().catch(() => ({}));
+        const exportedItems: WarehouseLenhSxRef[] = Array.isArray(data.items) ? data.items : [];
+        setExportedLenhSxKeys(new Set(exportedItems.map(lenhSxInstanceKey)));
+      } catch {
+        setExportedLenhSxKeys(new Set());
+      } finally {
+        setIsLoadingExportedLenhSx(false);
+      }
+    };
+    void loadExportedLenhSx();
   }, []);
 
   useEffect(() => {
@@ -769,7 +838,14 @@ export function WarehouseSlipPanel({
       setReason(draft.reason || '');
       setNote(draft.note || '');
       setCreatedBy(draft.createdBy || '');
-      setProductionOrderCodes(parseWarehouseProductionOrderSelection(draft.productionOrderRef));
+      if (Array.isArray(draft.lenhSxDaChon) && draft.lenhSxDaChon.length > 0) {
+        const ownKeys = draft.lenhSxDaChon.map(lenhSxInstanceKey);
+        setProductionOrderCodes(ownKeys);
+        setOwnInstanceKeys(new Set(ownKeys));
+      } else {
+        setProductionOrderCodes(parseWarehouseProductionOrderSelection(draft.productionOrderRef));
+        setOwnInstanceKeys(new Set());
+      }
       setProductionOrderSearch('');
       setMachine(draft.machine || '');
       setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
@@ -841,6 +917,15 @@ export function WarehouseSlipPanel({
     setAvgInboundPriceByKey({});
     setFormError('');
     setActionMessage('');
+    // Đổi loại kho đổi luôn ý nghĩa của lựa chọn lệnh SX (mã đơn thuần vs mã::ngày::ca) — reset để tránh lẫn.
+    setProductionOrderCodes([]);
+    setOwnInstanceKeys(new Set());
+  };
+
+  const handleSlipTypeChange = (type: WarehouseSlipType) => {
+    setSlipType(type);
+    setProductionOrderCodes([]);
+    setOwnInstanceKeys(new Set());
   };
 
   const updateLine = (key: string, patch: Partial<WarehouseSlipLineDraft>) => {
@@ -945,6 +1030,48 @@ export function WarehouseSlipPanel({
 
   const isNvlExport = warehouseKind === 'nvl' && slipType === 'xuat';
 
+  type PickerOption = { key: string; orderCode: string; ngay: string; ca: string; machine: string };
+
+  // Xuất kho NVL: 1 dòng picker / (mã lệnh SX, ngày trong khoảng ngay_bat_dau..ngay_ket_thuc, ca) —
+  // ca/máy lấy từ chính lệnh SX (1 lệnh = 1 ca = 1 máy cố định). Trừ tổ hợp đã có phiếu xuất khác (ẩn),
+  // giữ lại tổ hợp thuộc chính phiếu đang sửa (ownInstanceKeys). Phiếu trộn định mức đi 1-1 theo lệnh SX
+  // (không còn theo ngày) nên không dùng làm nguồn sinh ngày nữa — sinh thẳng từ khoảng ngày của lệnh SX.
+  const nvlExportInstances = useMemo((): PickerOption[] => {
+    return productionOrders
+      .flatMap((order): PickerOption[] => {
+        if (!order.orderCode || !order.startDate) return [];
+        return expandWarehouseProductionOrderDates(order.startDate, order.endDate).map(ngay => ({
+          key: lenhSxInstanceKey({ ma_lenh_sx: order.orderCode, ngay, ca: order.shift }),
+          orderCode: order.orderCode,
+          ngay,
+          ca: order.shift,
+          machine: order.machine
+        }));
+      })
+      .filter(item => !exportedLenhSxKeys.has(item.key) || ownInstanceKeys.has(item.key))
+      .sort(
+        (a, b) =>
+          a.orderCode.localeCompare(b.orderCode, 'vi') ||
+          a.ngay.localeCompare(b.ngay) ||
+          a.ca.localeCompare(b.ca, 'vi')
+      );
+  }, [productionOrders, exportedLenhSxKeys, ownInstanceKeys]);
+
+  const pickerOptions = useMemo((): PickerOption[] => {
+    if (isNvlExport) return nvlExportInstances;
+    return productionOrders.map(order => ({
+      key: order.orderCode,
+      orderCode: order.orderCode,
+      ngay: order.startDate,
+      ca: order.shift,
+      machine: order.machine
+    }));
+  }, [isNvlExport, nvlExportInstances, productionOrders]);
+
+  function formatPickerOptionLabel(option: { orderCode: string; ngay: string; ca: string; machine?: string }): string {
+    return [option.orderCode, formatPickerDate(option.ngay), option.ca, option.machine].filter(Boolean).join(' · ');
+  }
+
   useEffect(() => {
     if (!isNvlExport) return;
     const codes = [...new Set(lines.map(line => String(line.code ?? '').trim()).filter(Boolean))] as string[];
@@ -975,9 +1102,65 @@ export function WarehouseSlipPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNvlExport, slipDate, avgInboundPriceByKey]);
 
-  const applyProductionOrderSelection = async (orderCodes: string[]) => {
-    setProductionOrderCodes(orderCodes);
-    const selectedOrders = productionOrders.filter(item => orderCodes.includes(item.orderCode));
+  const applyProductionOrderSelection = async (selectedKeys: string[]) => {
+    setProductionOrderCodes(selectedKeys);
+
+    if (isNvlExport) {
+      const selectedInstances: PickerOption[] = nvlExportInstances.filter(item => selectedKeys.includes(item.key));
+      if (selectedInstances.length === 0) return;
+
+      const machines = [...new Set(selectedInstances.map(item => item.machine).filter(Boolean))];
+      if (machines.length > 0) setMachine(machines.join(', '));
+
+      const matchedShifts = new Set<string>();
+      for (const instance of selectedInstances) {
+        if (!instance.ca) continue;
+        const matched = shiftOptions
+          .filter(option => shiftNamesMatch(option.value, instance.ca) || shiftNamesMatch(option.label, instance.ca))
+          .map(option => option.value);
+        if (matched.length > 0) matched.forEach(value => matchedShifts.add(value));
+        else matchedShifts.add(instance.ca);
+      }
+      if (matchedShifts.size > 0) setSelectedShifts([...matchedShifts]);
+
+      setIsLoadingNormMaterials(true);
+      setNormLoadMessage('');
+      try {
+        // Phiếu trộn định mức đi 1-1 theo lệnh SX (không còn theo ngày) — tra theo ma_lenh_sx là đủ,
+        // dedupe theo mã lệnh SX để tránh gọi lặp khi 1 phiếu chọn nhiều ngày của cùng 1 lệnh SX.
+        const orderCodes: string[] = [...new Set(selectedInstances.map(item => item.orderCode))];
+        const responses = await Promise.all(
+          orderCodes.map(async (orderCode: string) => {
+            const params = new URLSearchParams({ ma_lenh_sx: orderCode });
+            const res = await fetch(`/api/bang-tron-vat-tu-dinh-muc?${params.toString()}`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Không thể tải định mức NVL.');
+            return Array.isArray(data.records) ? data.records : [];
+          })
+        );
+        const allRecords = responses.flat();
+        const merged = mergeNormMaterialLines(allRecords, itemOptions);
+        setLines(merged.map(line => createWarehouseLineDraftFromPrefill({
+          code: line.code,
+          name: line.name,
+          unit: 'kg',
+          documentQuantity: formatNumber(line.documentQuantity, 3),
+          quantity: '',
+          unitPrice: '',
+          lineNote: line.warehouseClass,
+          warehouseClass: line.warehouseClass
+        })));
+        if (merged.length === 0) setNormLoadMessage('Không tìm thấy định mức NVL theo mã lệnh SX đã chọn.');
+      } catch (error: any) {
+        setLines([createWarehouseLineDraft()]);
+        setNormLoadMessage(error?.message || 'Không thể tải định mức NVL.');
+      } finally {
+        setIsLoadingNormMaterials(false);
+      }
+      return;
+    }
+
+    const selectedOrders = productionOrders.filter(item => selectedKeys.includes(item.orderCode));
     if (selectedOrders.length === 0) return;
 
     const machines = [...new Set(selectedOrders.map(order => order.machine).filter(Boolean))];
@@ -1010,61 +1193,37 @@ export function WarehouseSlipPanel({
           )
         );
       }
-      return;
-    }
-
-    if (warehouseKind !== 'nvl' || slipType !== 'xuat') return;
-    setIsLoadingNormMaterials(true);
-    setNormLoadMessage('');
-    try {
-      const selectedKeys = selectedOrders.map(order => ({
-        ngay: order.startDate,
-        ma_lenh_sx: order.orderCode,
-        ca: order.shift
-      })).filter(item => item.ngay && item.ma_lenh_sx && item.ca);
-      const responses = await Promise.all(selectedKeys.map(async key => {
-        const params = new URLSearchParams({ ...key, exact: '1' });
-        const res = await fetch(`/api/bang-tron-vat-tu-dinh-muc?${params.toString()}`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Không thể tải định mức NVL.');
-        return { key, records: Array.isArray(data.records) ? data.records : [] };
-      }));
-      const allRecords = responses.flatMap(item => item.records);
-      console.log(allRecords)
-      const merged = mergeNormMaterialLines(allRecords, itemOptions);
-      setLines(merged.map(line => createWarehouseLineDraftFromPrefill({
-        code: line.code,
-        name: line.name,
-        unit: 'kg',
-        documentQuantity: formatNumber(line.documentQuantity, 3),
-        quantity: '',
-        unitPrice: '',
-        lineNote: line.warehouseClass,
-        warehouseClass: line.warehouseClass
-      })));
-      if (merged.length === 0) setNormLoadMessage('Không tìm thấy định mức theo đúng ngày, mã LSX và ca đã chọn.');
-    } catch (error: any) {
-      setLines([createWarehouseLineDraft()]);
-      setNormLoadMessage(error?.message || 'Không thể tải định mức NVL.');
-    } finally {
-      setIsLoadingNormMaterials(false);
     }
   };
 
-  const toggleProductionOrder = (orderCode: string) => {
-    void applyProductionOrderSelection(toggleWarehouseProductionOrderSelection(productionOrderCodes, orderCode));
+  const toggleProductionOrder = (key: string) => {
+    void applyProductionOrderSelection(toggleWarehouseProductionOrderSelection(productionOrderCodes, key));
   };
 
   const filteredProductionOrders = useMemo(() => {
     const query = productionOrderSearch.trim().toLowerCase();
-    if (!query) return productionOrders;
-    return productionOrders.filter(order => {
-      const hay = `${order.orderCode} ${order.shift} ${order.machine} ${order.startDate}`.toLowerCase();
+    if (!query) return pickerOptions;
+    // Xuất kho NVL: chỉ lọc theo mã lệnh SX (không cần gõ ngày để lọc — mỗi lệnh SX vẫn liệt kê đủ các ngày).
+    if (isNvlExport) {
+      return pickerOptions.filter(option => option.orderCode.toLowerCase().includes(query));
+    }
+    return pickerOptions.filter(option => {
+      const hay = `${option.orderCode} ${option.ca} ${option.machine} ${option.ngay}`.toLowerCase();
       return hay.includes(query);
     });
-  }, [productionOrders, productionOrderSearch]);
+  }, [pickerOptions, productionOrderSearch, isNvlExport]);
 
-  const productionOrderLabel = formatWarehouseProductionOrderSelection(productionOrderCodes);
+  const productionOrderLabel = useMemo(() => {
+    if (!isNvlExport) return formatWarehouseProductionOrderSelection(productionOrderCodes);
+    return productionOrderCodes
+      .map(key => {
+        const found = nvlExportInstances.find(item => item.key === key);
+        if (found) return formatPickerOptionLabel(found);
+        const parsed = parseLenhSxInstanceKey(key);
+        return formatPickerOptionLabel({ orderCode: parsed.ma_lenh_sx, ngay: parsed.ngay, ca: parsed.ca });
+      })
+      .join('; ');
+  }, [isNvlExport, productionOrderCodes, nvlExportInstances]);
 
   useEffect(() => {
     if (!productionOrderPickerOpen) {
@@ -1159,6 +1318,14 @@ export function WarehouseSlipPanel({
     setActionMessage('');
 
     const isEditing = Boolean(editSlipCode);
+    const lenhSxDaChon: WarehouseLenhSxRef[] = isNvlExport
+      ? productionOrderCodes.map(key => {
+          const found = nvlExportInstances.find(item => item.key === key);
+          return found
+            ? { ma_lenh_sx: found.orderCode, ngay: found.ngay, ca: found.ca }
+            : parseLenhSxInstanceKey(key);
+        }).filter(item => item.ma_lenh_sx && item.ngay)
+      : [];
     const slipPayload = {
       loaiPhieu: slipType,
       loaiKho: warehouseKind,
@@ -1167,7 +1334,8 @@ export function WarehouseSlipPanel({
       ghiChu: note.trim(),
       nguoiLap: createdBy.trim(),
       ca: shiftLabel || null,
-      items: payloadItems
+      items: payloadItems,
+      lenhSxDaChon
     };
 
     try {
@@ -1217,6 +1385,19 @@ export function WarehouseSlipPanel({
         : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}) vào lịch sử.`;
       setActionMessage(okMsg);
       showAppToast(okMsg);
+      if (isNvlExport) {
+        const savedKeys = new Set(lenhSxDaChon.map(lenhSxInstanceKey));
+        setExportedLenhSxKeys(prev => {
+          const next = new Set(prev);
+          // Lệnh SX trước đây thuộc chính phiếu này nhưng vừa bị bỏ chọn → trả lại cho picker.
+          ownInstanceKeys.forEach(key => {
+            if (!savedKeys.has(key)) next.delete(key);
+          });
+          savedKeys.forEach(key => next.add(key));
+          return next;
+        });
+        setOwnInstanceKeys(savedKeys);
+      }
       setEditSlipCode(null);
       setReason('');
       setNote('');
@@ -1340,7 +1521,7 @@ export function WarehouseSlipPanel({
             <button
               key={type}
               type="button"
-              onClick={() => setSlipType(type)}
+              onClick={() => handleSlipTypeChange(type)}
               className={`flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-extrabold transition ${
                 slipType === type
                   ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
@@ -1502,41 +1683,38 @@ export function WarehouseSlipPanel({
                         placeholder="Gõ để lọc mã lệnh SX..."
                       />
                     </div>
-                    {isLoadingProductionOrders ? (
+                    {isLoadingProductionOrders || (isNvlExport && isLoadingExportedLenhSx) ? (
                       <p className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Đang tải lệnh SX...
                       </p>
                     ) : filteredProductionOrders.length === 0 ? (
                       <p className="text-xs font-semibold text-zinc-400">
-                        {productionOrders.length === 0 ? 'Chưa có lệnh SX.' : 'Không khớp bộ lọc.'}
+                        {pickerOptions.length === 0 ? 'Chưa có lệnh SX.' : 'Không khớp bộ lọc.'}
                       </p>
                     ) : (
                       <div className="max-h-52 overflow-y-auto">
                         <div className="flex flex-wrap gap-1.5">
-                          {filteredProductionOrders.map(order => {
-                            const checked = productionOrderCodes.includes(order.orderCode);
-                            const extras = [order.startDate, order.shift, order.machine].filter(Boolean).join(' · ');
+                          {filteredProductionOrders.map(option => {
+                            const checked = productionOrderCodes.includes(option.key);
+                            const label = formatPickerOptionLabel(option);
                             return (
                               <label
-                                key={order.id || order.orderCode}
+                                key={option.key}
                                 className={`inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
                                   checked
                                     ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
                                     : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
                                 }`}
-                                title={extras || order.orderCode}
+                                title={label}
                               >
                                 <input
                                   type="checkbox"
                                   checked={checked}
-                                  onChange={() => toggleProductionOrder(order.orderCode)}
+                                  onChange={() => toggleProductionOrder(option.key)}
                                   className="h-3.5 w-3.5 shrink-0 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
                                 />
-                                <span className="truncate">
-                                  {order.orderCode}
-                                  {extras ? <span className="font-semibold text-zinc-400"> · {extras}</span> : null}
-                                </span>
+                                <span className="truncate">{label}</span>
                               </label>
                             );
                           })}
@@ -2118,10 +2296,22 @@ export function WarehouseHistoryPanel({
     handlePrintSlipByCode(viewingSlipCode, autoPrint);
   };
 
-  const handleEditSlip = (slipCode: string) => {
+  const handleEditSlip = async (slipCode: string) => {
     const rows = filteredMovements.filter(row => row.slipCode === slipCode);
     const draft = buildWarehouseSlipDraftFromHistoryRows(rows, slipCode);
     if (!draft) return;
+
+    if (draft.warehouseKind === 'nvl' && draft.slipType === 'xuat') {
+      try {
+        const res = await fetch(`/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat?ma_phieu=${encodeURIComponent(slipCode)}`);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(data.items)) {
+          draft.lenhSxDaChon = data.items;
+        }
+      } catch {
+        // Bỏ qua — không chặn luồng sửa phiếu nếu API tạm lỗi, ô lệnh SX sẽ trống như trước đây.
+      }
+    }
 
     localStorage.setItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY, JSON.stringify({ ...draft, createdAt: Date.now() }));
     setViewingSlipCode(null);
@@ -2384,7 +2574,7 @@ export function WarehouseHistoryPanel({
                               {canEdit ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleEditSlip(group.slipCode)}
+                                  onClick={() => void handleEditSlip(group.slipCode)}
                                   title="Sửa phiếu"
                                   className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-amber-700 transition hover:bg-amber-50"
                                 >
@@ -2582,7 +2772,7 @@ export function WarehouseHistoryPanel({
                 {canEdit ? (
                   <button
                     type="button"
-                    onClick={() => handleEditSlip(viewingSlipCode!)}
+                    onClick={() => void handleEditSlip(viewingSlipCode!)}
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
                   >
                     <Pencil className="h-4 w-4" />

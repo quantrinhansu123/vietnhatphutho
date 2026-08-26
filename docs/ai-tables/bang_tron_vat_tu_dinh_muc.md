@@ -9,6 +9,14 @@ Query: `ngay`, `ca`, `q`
 **UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx`  
 Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts`
 
+**Lưu ý (2026-08-26):** Theo nghiệp vụ, 1 lệnh SX chỉ có đúng 1 phiếu trộn định mức, kể cả khi lệnh SX chạy nhiều ngày
+(quan hệ 1-1 theo `ma_lenh_sx`, không theo ngày). Đã triển khai:
+- Form tạo (`MixingNormMaterialsTab.tsx`) **bỏ ô chọn Ngày** — `ngay` giờ chỉ còn là ngày tạo phiếu (tự set, không sửa được), không còn ý nghĩa nghiệp vụ theo ngày sản xuất.
+- Validate chặn tạo 2 phiếu cho cùng `ma_lenh_sx`: client-side (so khớp `rows` đang có trước khi lưu) + server-side (`checkDuplicateMixingNormOrder` trong `server.ts`, chạy trong cả POST và PATCH `/api/bang-tron-vat-tu-dinh-muc`).
+- "Nhân bản" (`openCopy`) bỏ trống `ma_lenh_sx` của bản sao, buộc chọn lệnh SX khác (vì bản gốc đã "chiếm" mã lệnh SX cũ).
+- Picker "Mã đơn hàng / Lệnh SX" ở phiếu xuất kho NVL (`src/features/phieu-xuat-nhap-kho/index.tsx`) tra định mức chỉ bằng `ma_lenh_sx` (không còn gửi `ngay`).
+- **Phiếu trộn thực tế** (`ActualMixingSheetTab.tsx`, bảng `phieu_tron_thuc_te`) đã đổi picker từ lọc-theo-ngày sang tìm-theo-mã-lệnh-SX (`SearchableSelect`); ô "Ngày" trên màn đó giờ là **ngày thực hiện trộn thực tế** (độc lập với `ngay` của phiếu định mức, gửi thẳng lên khi lưu) — xem `docs/ai-tables/phieu_tron_thuc_te.md`.
+
 ## Mô hình
 
 **1 form nhập = 1 dòng DB = 1 phiếu**
