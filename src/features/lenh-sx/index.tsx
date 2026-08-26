@@ -156,7 +156,7 @@ export function ProductionOrdersPanel({
     y: number;
   } | null>(null);
   const [staffBranches, setStaffBranches] = useState<any[]>([]);
-  const { printingOrder, printingMaterials, printingProduct, printingProductCatalog, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
+  const { printingOrder, printingMaterials, printingProduct, printingProductCatalog, printingProductConversions, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
 
   const loadProductionOrders = async () => {
     setIsLoading(true);
@@ -672,6 +672,7 @@ export function ProductionOrdersPanel({
           machineLabel={printingMachineLabel}
           product={printingProduct}
           productCatalog={printingProductCatalog}
+          productConversions={printingProductConversions}
           shiftSettings={shiftSettings}
           staffMap={staffMap}
         />

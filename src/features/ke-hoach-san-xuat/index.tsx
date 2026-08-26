@@ -2598,6 +2598,7 @@ export function ProductionPlanModal({
   const [relatedPrintOrders, setRelatedPrintOrders] = useState<PrintableProductionOrder[]>([]);
   const [relatedPrintCustomerOrders, setRelatedPrintCustomerOrders] = useState<OrderRow[]>([]);
   const [relatedPrintCatalog, setRelatedPrintCatalog] = useState<ProductRow[]>([]);
+  const [relatedPrintConversions, setRelatedPrintConversions] = useState<OrderProductConversion[]>([]);
   const [relatedPrintPlanPreviewData, setRelatedPrintPlanPreviewData] = useState<any>(null);
   const [pendingRelatedPrint, setPendingRelatedPrint] = useState(false);
   const [relatedShiftOptions, setRelatedShiftOptions] = useState<ShiftOption[]>([]);
@@ -2682,6 +2683,7 @@ export function ProductionPlanModal({
     setRelatedPrintOrders([]);
     setRelatedPrintCustomerOrders([]);
     setRelatedPrintCatalog([]);
+    setRelatedPrintConversions([]);
     setPendingRelatedPrint(false);
     setSelectedRelatedShifts(initialShifts);
     setInitialFormSnapshot({
@@ -2891,6 +2893,7 @@ export function ProductionPlanModal({
       setRelatedPrintOrders([]);
       setRelatedPrintCustomerOrders([]);
       setRelatedPrintCatalog([]);
+    setRelatedPrintConversions([]);
       setRelatedPrintPlanPreviewData(null);
       setRelatedShiftSummaryRows([]);
       setRelatedShiftSummaryFilters(null);
@@ -3042,7 +3045,10 @@ export function ProductionPlanModal({
         .map(line => productionOrders.find(order => order.id === line.id))
         .filter((order): order is ProductionOrderRow => Boolean(order));
 
-      const productCatalog = await loadProductionOrderProductCatalog();
+      const [productCatalog, productConversions] = await Promise.all([
+        loadProductionOrderProductCatalog(),
+        loadProductionOrderProductConversions()
+      ]);
       const orderRefs = collectProductionPlanOrderRefs([
         ...displayLines.map(line => line.orderRef),
         ...ordersToPrint.map(order => order.orderRef)
@@ -3094,6 +3100,7 @@ export function ProductionPlanModal({
       }
 
       setRelatedPrintCatalog(productCatalog);
+      setRelatedPrintConversions(productConversions);
       setRelatedPrintCustomerOrders(customerOrders);
       setRelatedPrintOrders(applyWarehouseActualQuantities(printableOrders, data.warehouseSlips));
       setRelatedPrintData(data);
@@ -3693,6 +3700,7 @@ export function ProductionPlanModal({
                   machineLabel={item.machineLabel}
                   product={item.product}
                   productCatalog={relatedPrintCatalog}
+                  productConversions={relatedPrintConversions}
                   showActualQuantity
                   staffMap={staffMap}
                 />
@@ -3888,27 +3896,42 @@ export function resolveProductUnitNormKg(product?: Pick<ProductRow, 'totalWeight
   return unitWeight !== null && unitWeight > 0 ? unitWeight : null;
 }
 
-export function formatProductionOrderProductNorm(product?: Pick<ProductRow, 'totalWeight'> | null): string {
-  const normKg = resolveProductUnitNormKg(product);
-  return normKg === null ? '-' : formatProductionOrderPrintQuantity(normKg);
-}
-
-export function resolveFinishedProductDisplay(
+/**
+ * Tổng trọng lượng (kg) để in lệnh SX — quy đổi đúng theo ĐVT (Tấm/Cuộn/m/m2...) bằng cùng công thức
+ * đang dùng ở màn hình Đơn hàng (calculateOrderConversion), vì Cuộn và Tấm dùng hệ số quy đổi khác nhau.
+ * Nếu sản phẩm chưa có dữ liệu quy đổi, fallback về cách tính cũ (Tổng TL SP × số lượng).
+ */
+export function resolveFinishedProductWeightKg(
   quantity: string,
+  unit: string,
   productCode: string,
   productCatalog: ProductRow[],
+  productConversions: OrderProductConversion[],
   fallbackProduct?: ProductRow | null
-) {
+): string {
   const catalogProduct =
     findProductByCode(productCatalog, productCode) ??
     (fallbackProduct && normalizeProductCodeKey(fallbackProduct.code) === normalizeProductCodeKey(productCode)
       ? fallbackProduct
       : null);
+
+  if (catalogProduct) {
+    const conversionOptions = productConversions.filter(item => item.sanPhamId === catalogProduct.id);
+    const matchedConversion =
+      conversionOptions.find(item => conversionSupportsUnit(item, unit)) || conversionOptions[0];
+    if (matchedConversion) {
+      const allowedUnits = allowedOrderUnits(catalogProduct);
+      const effectiveUnit = allowedUnits.includes(unit.trim()) ? unit.trim() : allowedUnits[0] || unit;
+      const calculatedConversion = calculateOrderConversion(quantity, effectiveUnit, matchedConversion, catalogProduct.group);
+      const kgValue = calculatedConversion.find(([, , targetUnit]) => targetUnit === 'kg')?.[1];
+      if (kgValue !== undefined && Number.isFinite(kgValue) && kgValue > 0) {
+        return formatProductionOrderPrintQuantity(roundNplNumber(kgValue));
+      }
+    }
+  }
+
   const orderQuantity = parseProductionOrderQuantity(quantity);
-  return {
-    norm: formatProductionOrderProductNorm(catalogProduct),
-    weight: formatProductionOrderFinishedWeight(orderQuantity, catalogProduct)
-  };
+  return formatProductionOrderFinishedWeight(orderQuantity, catalogProduct);
 }
 
 export function parseProductionOrderQuantity(value: string) {
@@ -3981,6 +4004,43 @@ async function loadProductsForPrint(): Promise<ProductRow[]> {
 
 export async function loadProductionOrderProductCatalog(): Promise<ProductRow[]> {
   return loadProductsForPrint();
+}
+
+let productConversionCache: OrderProductConversion[] | null = null;
+let productConversionCachePromise: Promise<OrderProductConversion[]> | null = null;
+
+async function fetchAllProductConversions(): Promise<OrderProductConversion[]> {
+  const conversions: OrderProductConversion[] = [];
+  let page = 1;
+  let total = Infinity;
+  while (conversions.length < total) {
+    const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Không thể tải bảng quy đổi sản phẩm.');
+    const items = Array.isArray(data.items) ? (data.items as OrderProductConversion[]) : [];
+    if (items.length === 0) break;
+    conversions.push(...items);
+    total = Number(data.total) || conversions.length;
+    page += 1;
+  }
+  return conversions;
+}
+
+/** Bảng quy đổi ĐVT sản phẩm (Tấm/Cuộn/m/m2 → kg) — dùng để tính đúng Tổng trọng lượng khi in lệnh SX. */
+export async function loadProductionOrderProductConversions(): Promise<OrderProductConversion[]> {
+  if (productConversionCache) return productConversionCache;
+  if (productConversionCachePromise) return productConversionCachePromise;
+
+  productConversionCachePromise = fetchAllProductConversions()
+    .then(conversions => {
+      productConversionCache = conversions;
+      return conversions;
+    })
+    .finally(() => {
+      productConversionCachePromise = null;
+    });
+
+  return productConversionCachePromise;
 }
 
 export async function fetchProductPrintData(
@@ -4129,6 +4189,7 @@ export function ProductionOrderPrintSheet({
   machineLabel,
   product,
   productCatalog = [],
+  productConversions = [],
   shiftSettings = [],
   showActualQuantity = false,
   staffMap
@@ -4138,6 +4199,8 @@ export function ProductionOrderPrintSheet({
   machineLabel?: string;
   product?: ProductRow | null;
   productCatalog?: ProductRow[];
+  /** Bảng quy đổi ĐVT sản phẩm — dùng để tính đúng Tổng trọng lượng (kg) theo Tấm/Cuộn/m/m2. */
+  productConversions?: OrderProductConversion[];
   shiftSettings?: ProductionOrderLookupSetting[];
   /** Hiện cột KL thực tế lấy từ Lệnh xuất vật tư cùng ngày + ca. */
   showActualQuantity?: boolean;
@@ -4225,7 +4288,6 @@ export function ProductionOrderPrintSheet({
               <th>Tên sản xuất</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
-              <th>Định mức (kg/cuộn)</th>
               <th>Tổng trọng lượng (kg)</th>
               <th>Đối tượng THCP</th>
             </tr>
@@ -4233,10 +4295,12 @@ export function ProductionOrderPrintSheet({
           <tbody>
             {productLines.length > 0 ? (
               productLines.map((line, index) => {
-                const { norm, weight } = resolveFinishedProductDisplay(
+                const weight = resolveFinishedProductWeightKg(
                   line.quantity,
+                  line.unit,
                   line.productCode,
                   productCatalog,
+                  productConversions,
                   product
                 );
                 return (
@@ -4245,7 +4309,6 @@ export function ProductionOrderPrintSheet({
                   <td className="production-order-print-product-name-cell">{line.productionName || line.productName || '-'}</td>
                   <td className="production-order-print-center">{line.unit && line.unit !== '-' ? line.unit : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.quantity)}</td>
-                  <td className="production-order-print-right">{norm}</td>
                   <td className="production-order-print-right">{weight}</td>
                   <td>{costObject}</td>
                 </tr>
@@ -4253,10 +4316,12 @@ export function ProductionOrderPrintSheet({
               })
             ) : (
               (() => {
-                const { norm, weight } = resolveFinishedProductDisplay(
+                const weight = resolveFinishedProductWeightKg(
                   order.quantity,
+                  order.unit,
                   order.productCode,
                   productCatalog,
+                  productConversions,
                   product
                 );
                 return (
@@ -4265,7 +4330,6 @@ export function ProductionOrderPrintSheet({
                 <td className="production-order-print-product-name-cell">{order.productName || '-'}</td>
                 <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
                 <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
-                <td className="production-order-print-right">{norm}</td>
                 <td className="production-order-print-right">{weight}</td>
                 <td>{costObject}</td>
               </tr>
@@ -4349,11 +4413,13 @@ export function ProductionOrderBatchPrintSheets({
   items,
   shiftSettings = [],
   productCatalog = [],
+  productConversions = [],
   staffMap
 }: {
   items: PrintableProductionOrder[];
   shiftSettings?: ProductionOrderLookupSetting[];
   productCatalog?: ProductRow[];
+  productConversions?: OrderProductConversion[];
   staffMap?: Map<string, string>;
 }) {
   if (items.length === 0) return null;
@@ -4368,6 +4434,7 @@ export function ProductionOrderBatchPrintSheets({
             machineLabel={item.machineLabel}
             product={item.product}
             productCatalog={productCatalog}
+            productConversions={productConversions}
             shiftSettings={shiftSettings}
             staffMap={staffMap}
           />
@@ -4382,6 +4449,7 @@ export function useProductionOrderPrint() {
   const [printingMaterials, setPrintingMaterials] = useState<ProductionOrderMaterialLine[]>([]);
   const [printingProduct, setPrintingProduct] = useState<ProductRow | null>(null);
   const [printingProductCatalog, setPrintingProductCatalog] = useState<ProductRow[]>([]);
+  const [printingProductConversions, setPrintingProductConversions] = useState<OrderProductConversion[]>([]);
   const [printingMachineLabel, setPrintingMachineLabel] = useState('');
   const [shiftSettings, setShiftSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
@@ -4397,14 +4465,16 @@ export function useProductionOrderPrint() {
   const printProductionOrder = async (order: ProductionOrderRow) => {
     setIsLoadingPrint(true);
     try {
-      const [productCatalog, { materials, product }, machineLabel] = await Promise.all([
+      const [productCatalog, productConversions, { materials, product }, machineLabel] = await Promise.all([
         loadProductionOrderProductCatalog(),
+        loadProductionOrderProductConversions(),
         loadProductionOrderPrintMaterials(order),
         resolveProductionOrderMachineLabel(order.machine)
       ]);
       setPrintingMaterials(materials);
       setPrintingProduct(product);
       setPrintingProductCatalog(productCatalog);
+      setPrintingProductConversions(productConversions);
       setPrintingMachineLabel(machineLabel);
       setPrintingOrder(order);
       setPendingPrint(true);
@@ -4439,6 +4509,7 @@ export function useProductionOrderPrint() {
       setPrintingMaterials([]);
       setPrintingProduct(null);
       setPrintingProductCatalog([]);
+      setPrintingProductConversions([]);
       setPrintingMachineLabel('');
       setPendingPrint(false);
     };
@@ -4451,6 +4522,7 @@ export function useProductionOrderPrint() {
     printingMaterials,
     printingProduct,
     printingProductCatalog,
+    printingProductConversions,
     printingMachineLabel,
     shiftSettings,
     isLoadingPrint,

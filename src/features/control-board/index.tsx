@@ -60,11 +60,13 @@ import {
   ProductionOrderBatchPrintSheets,
   loadProductionOrderPrintMaterials,
   loadProductionOrderProductCatalog,
+  loadProductionOrderProductConversions,
   resolveProductionOrderMachineLabel,
   type ProductionOrderRow,
   type ProductionOrderLookupSetting,
   type PrintableProductionOrder
 } from '../ke-hoach-san-xuat';
+import type { OrderProductConversion } from '../_shared/orderHelpers';
 import {
   Factory,
   Eye,
@@ -134,6 +136,7 @@ export function ControlBoardPanel({
   const [selectedProductionOrderIds, setSelectedProductionOrderIds] = useState<string[]>([]);
   const [printingBatchOrders, setPrintingBatchOrders] = useState<PrintableProductionOrder[]>([]);
   const [printingBatchProductCatalog, setPrintingBatchProductCatalog] = useState<ProductRow[]>([]);
+  const [printingBatchProductConversions, setPrintingBatchProductConversions] = useState<OrderProductConversion[]>([]);
   const [pendingBatchPrint, setPendingBatchPrint] = useState(false);
   const [isBatchPrinting, setIsBatchPrinting] = useState(false);
   const {
@@ -141,6 +144,7 @@ export function ControlBoardPanel({
     printingMaterials,
     printingProduct,
     printingProductCatalog,
+    printingProductConversions,
     printingMachineLabel,
     shiftSettings,
     isLoadingPrint,
@@ -818,7 +822,10 @@ export function ControlBoardPanel({
 
     setIsBatchPrinting(true);
     try {
-      const productCatalog = await loadProductionOrderProductCatalog();
+      const [productCatalog, productConversions] = await Promise.all([
+        loadProductionOrderProductCatalog(),
+        loadProductionOrderProductConversions()
+      ]);
       const printableItems = await Promise.all(
         rowsToPrint.map(async order => {
           const [{ materials, product }, machineLabel] = await Promise.all([
@@ -834,6 +841,7 @@ export function ControlBoardPanel({
         })
       );
       setPrintingBatchProductCatalog(productCatalog);
+      setPrintingBatchProductConversions(productConversions);
       setPrintingBatchOrders(printableItems);
       setPendingBatchPrint(true);
     } catch (error) {
@@ -866,6 +874,7 @@ export function ControlBoardPanel({
     const handleAfterPrint = () => {
       setPrintingBatchOrders([]);
       setPrintingBatchProductCatalog([]);
+      setPrintingBatchProductConversions([]);
       setPendingBatchPrint(false);
     };
     window.addEventListener('afterprint', handleAfterPrint);
@@ -1170,6 +1179,7 @@ export function ControlBoardPanel({
           machineLabel={printingMachineLabel}
           product={printingProduct}
           productCatalog={printingProductCatalog}
+          productConversions={printingProductConversions}
           shiftSettings={shiftSettings}
           staffMap={staffMap}
         />
@@ -1180,6 +1190,7 @@ export function ControlBoardPanel({
           items={printingBatchOrders}
           shiftSettings={productionOrderSettings}
           productCatalog={printingBatchProductCatalog}
+          productConversions={printingBatchProductConversions}
           staffMap={staffMap}
         />
       )}
