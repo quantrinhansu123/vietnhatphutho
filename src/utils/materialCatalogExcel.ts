@@ -42,7 +42,7 @@ export const MATERIAL_CATALOG_EXCEL_HEADERS = [
 
 const HEADER_ALIASES: Record<keyof Omit<MaterialCatalogExcelRow, 'rowNumber'>, string[]> = {
   code: ['ma npl', 'ma_npl', 'ma nvl', 'ma_nvl', 'code'],
-  name: ['ten nguyen phu lieu', 'ten_npl', 'ten npl', 'ten nvl', 'name'],
+  name: ['ten nguyen vat lieu', 'ten nguyen phu lieu', 'ten_npl', 'ten npl', 'ten nvl', 'name'],
   productionName: ['ten nvl san xuat', 'ten nvl sx', 'ten_nvl_sx', 'production name'],
   unit: ['don vi', 'don_vi', 'dv', 'unit'],
   khoNgamDinh: ['kho ngam dinh', 'kho_ngam_dinh', 'loai kho', 'loai_kho', 'warehouse type'],
