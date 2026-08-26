@@ -1722,7 +1722,6 @@ export default function MixingNormMaterialsTab() {
                               <span>Mã NVL - Tên NVL</span>
                               <span>Tên NVL sản xuất</span>
                               <span>Giá trị</span>
-                              <span>ĐV</span>
                               <span>% Cối trộn</span>
                               <span>% Tổng SL</span>
                               <span>Tổng trọng lượng</span>
@@ -1772,14 +1771,6 @@ export default function MixingNormMaterialsTab() {
                                       inputMode="decimal"
                                       title="Giá trị NVL cho 1 cối tiêu chuẩn"
                                     />
-                                    <select
-                                      value="kg"
-                                      disabled
-                                      title="Đơn vị luôn là kg"
-                                      className={`${inputClass} h-8 px-0.5 text-[10px] disabled:bg-zinc-100 disabled:text-zinc-500`}
-                                    >
-                                      <option value="kg" selected>kg</option>
-                                    </select>
                                     <input
                                       value={ty_le_coi === null ? '' : `${ty_le_coi}%`}
                                       readOnly

@@ -4569,7 +4569,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   };
 
   const materialFormFields: Array<{ key: keyof MaterialFormState; label: string; required?: boolean; placeholder?: string }> = [
-    { key: 'name', label: 'Tên nguyên phụ liệu', required: true, placeholder: 'VD: Màng PE' },
+    { key: 'name', label: 'Tên nguyên vật liệu', required: true, placeholder: 'VD: Màng PE' },
     { key: 'totalWeight', label: 'Tổng kg' },
     { key: 'plasticWeight', label: 'Kg nhựa' },
     { key: 'bagWeight', label: 'Kg túi' },
@@ -4828,7 +4828,7 @@ function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-600 font-bold">
               <tr>
                 <th className="px-2.5 py-2 font-bold">Mã NPL</th>
-                <th className="px-2.5 py-2 font-bold">Tên nguyên phụ liệu</th>
+                <th className="px-2.5 py-2 font-bold">Tên nguyên vật liệu</th>
                 <th className="px-2.5 py-2 font-bold">ĐV</th>
                 <th className="px-2.5 py-2 text-right font-bold">Tổng kg</th>
                 <th className="px-2.5 py-2 font-bold">Tồn đầu</th>
