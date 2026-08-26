@@ -1221,8 +1221,6 @@ export function WarehouseSlipPanel({
       setReason('');
       setNote('');
       setDeliverer('');
-      setProductionOrderCodes([]);
-      setProductionOrderSearch('');
       setLines([createWarehouseLineDraft()]);
     } catch (error: any) {
       setFormError(showSaveFailure(error, 'Không thể lưu phiếu xuất nhập kho.'));
