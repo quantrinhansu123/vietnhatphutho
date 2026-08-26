@@ -2966,6 +2966,8 @@ input[type="number"] {
   margin-top: 12mm;
   text-align: center;
   font-size: 10pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .production-order-print-signatures p {
