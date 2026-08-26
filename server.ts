@@ -89,6 +89,8 @@ const SUPABASE_PRODUCTION_PLAN_LINES_TABLE =
 const SUPABASE_PRODUCTION_PLAN_DETAILS_TABLE =
   process.env.SUPABASE_PRODUCTION_PLAN_DETAILS_TABLE || 'ke_hoach_san_xuat_chi_tiet';
 const SUPABASE_WAREHOUSE_MOVEMENTS_TABLE = process.env.SUPABASE_WAREHOUSE_MOVEMENTS_TABLE || 'phieu_xuat_nhap_kho';
+const SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE =
+  process.env.SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE || 'phieu_xuat_nhap_kho_lenh_sx';
 const SUPABASE_MIXING_REPORTS_TABLE = process.env.SUPABASE_MIXING_REPORTS_TABLE || 'bao_cao_phoi_tron';
 const SUPABASE_MIXING_NORM_TABLE =
   process.env.SUPABASE_MIXING_NORM_TABLE || 'bang_tron_vat_tu_dinh_muc';
@@ -3277,6 +3279,30 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   };
 }
 
+/**
+ * 1 lệnh SX chỉ có đúng 1 phiếu trộn định mức (quan hệ 1-1 theo ma_lenh_sx, không theo ngày).
+ * Trả về thông báo lỗi nếu đã tồn tại phiếu khác cho cùng lệnh SX, hoặc null nếu hợp lệ.
+ */
+async function checkDuplicateMixingNormOrder(maLenhSx: string, excludeId?: string): Promise<string | null> {
+  if (!supabase || !maLenhSx) return null;
+  let query = supabase
+    .from(SUPABASE_MIXING_NORM_TABLE)
+    .select('id')
+    .eq('ma_lenh_sx', maLenhSx);
+  if (excludeId) query = query.neq('id', excludeId);
+
+  const { data, error } = await query.limit(1);
+  if (error) {
+    if (isMissingTableError(error) || isMissingColumnError(error)) return null;
+    console.error('Supabase mixing norm duplicate check error:', error);
+    return null;
+  }
+  if (data && data.length > 0) {
+    return `Lệnh SX ${maLenhSx} đã có phiếu trộn định mức — mỗi lệnh SX chỉ được lập 1 phiếu.`;
+  }
+  return null;
+}
+
 function parseMachineNvlReportKind(value: unknown): 'dau_ca' | 'cuoi_ca' {
   const raw = String(value ?? 'dau_ca').trim().toLowerCase();
   if (raw === 'cuoi_ca' || raw === 'cuoi' || raw === 'cuoi-ca') return 'cuoi_ca';
@@ -4444,6 +4470,27 @@ function parseWarehouseSlipLines(
   return { items };
 }
 
+type WarehouseSlipLenhSxRef = { ma_lenh_sx: string; ngay: string; ca: string };
+
+function parseWarehouseSlipLenhSxSelection(value: unknown): WarehouseSlipLenhSxRef[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: WarehouseSlipLenhSxRef[] = [];
+  value.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const row = item as Record<string, unknown>;
+    const ma_lenh_sx = String(row.ma_lenh_sx ?? row.maLenhSx ?? '').trim();
+    const ngay = String(row.ngay ?? '').trim().slice(0, 10);
+    const ca = String(row.ca ?? '').trim();
+    if (!ma_lenh_sx || !ngay) return;
+    const key = `${ma_lenh_sx}::${ngay}::${ca}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push({ ma_lenh_sx, ngay, ca });
+  });
+  return result;
+}
+
 function parseWarehouseSlipBody(body: unknown): {
   error: string;
 } | {
@@ -4455,6 +4502,7 @@ function parseWarehouseSlipBody(body: unknown): {
   nguoiLap: string | null;
   ca: string | null;
   items: WarehouseSlipLineInput[];
+  lenhSxDaChon: WarehouseSlipLenhSxRef[];
 } {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const loaiPhieu = parseWarehouseSlipType(source.loaiPhieu ?? source.loai_phieu ?? source.type);
@@ -4480,7 +4528,8 @@ function parseWarehouseSlipBody(body: unknown): {
     ghiChu: String(source.ghiChu ?? source.ghi_chu ?? source.note ?? '').trim() || null,
     nguoiLap: String(source.nguoiLap ?? source.nguoi_lap ?? source.createdBy ?? '').trim() || null,
     ca: String(source.ca ?? source.shift ?? source.ca_san_xuat ?? '').trim() || null,
-    items: parsedItems.items
+    items: parsedItems.items,
+    lenhSxDaChon: parseWarehouseSlipLenhSxSelection(source.lenhSxDaChon ?? source.lenh_sx_da_chon)
   };
 }
 
@@ -4549,6 +4598,50 @@ function generateWarehouseSlipCode(loaiPhieu: 'nhap' | 'xuat') {
   const date = now.toISOString().slice(0, 10).replace(/-/g, '');
   const time = now.toISOString().slice(11, 19).replace(/:/g, '');
   return `${loaiPhieu === 'nhap' ? 'PN' : 'PX'}-${date}-${time}`;
+}
+
+/** Xóa các dòng liên kết lệnh SX của 1 phiếu xuất kho NVL. Không chặn luồng chính nếu lỗi/bảng chưa tồn tại. */
+async function deleteWarehouseLenhSxLinks(maPhieu: string) {
+  if (!supabase || !maPhieu) return;
+  try {
+    const { error } = await supabase
+      .from(SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE)
+      .delete()
+      .eq('ma_phieu', maPhieu);
+    if (error && !isMissingTableError(error)) {
+      console.error('Supabase phieu_xuat_nhap_kho_lenh_sx delete error:', error);
+    }
+  } catch (err) {
+    console.error('deleteWarehouseLenhSxLinks unexpected error:', err);
+  }
+}
+
+/** Thay toàn bộ dòng liên kết lệnh SX của 1 phiếu bằng danh sách mới. Không chặn luồng lưu phiếu nếu lỗi. */
+async function replaceWarehouseLenhSxLinks(maPhieu: string, items: WarehouseSlipLenhSxRef[]) {
+  if (!supabase || !maPhieu) return;
+  await deleteWarehouseLenhSxLinks(maPhieu);
+  if (items.length === 0) return;
+  try {
+    const { error } = await supabase.from(SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE).insert(
+      items.map(item => ({
+        ma_phieu: maPhieu,
+        ma_lenh_sx: item.ma_lenh_sx,
+        ngay: item.ngay,
+        ca: item.ca
+      }))
+    );
+    if (error) {
+      if (isMissingTableError(error)) {
+        console.warn(
+          `Bảng ${SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE} chưa tồn tại. Hãy chạy supabase-phieu-xuat-nhap-kho-lenh-sx.sql để bật tính năng ẩn lệnh SX đã xuất.`
+        );
+      } else {
+        console.error('Supabase phieu_xuat_nhap_kho_lenh_sx insert error:', error);
+      }
+    }
+  } catch (err) {
+    console.error('replaceWarehouseLenhSxLinks unexpected error:', err);
+  }
 }
 
 async function syncMaterialInventoryFromMovements(maNpl: string) {
@@ -6425,7 +6518,7 @@ export function createApp() {
     try {
       const key = String(req.query.key ?? '').trim();
       const page = Math.max(1, Number(req.query.page) || 1);
-      const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+      const pageSize = Math.min(1000, Math.max(1, Number(req.query.pageSize) || 50));
       let productIds: string[] = [];
       if (key) {
         const escaped = key.replace(/[,%()]/g, '');
@@ -8690,6 +8783,49 @@ export function createApp() {
     }
   });
 
+  app.get('/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat', async (req, res) => {
+    if (!supabase) {
+      return res.json({ items: [], total: 0, source: 'local' });
+    }
+
+    try {
+      const maPhieu = String(req.query.ma_phieu ?? req.query.slipCode ?? '').trim();
+
+      let query = supabase
+        .from(SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE)
+        .select('ma_phieu, ma_lenh_sx, ngay, ca');
+      if (maPhieu) query = query.eq('ma_phieu', maPhieu);
+
+      const { data, error } = await query;
+      if (error) {
+        if (isMissingTableError(error)) {
+          return res.json({ items: [], total: 0, source: 'local' });
+        }
+        console.error('Supabase phieu_xuat_nhap_kho_lenh_sx query error:', error);
+        return res.status(500).json({ error: `Không thể tải danh sách lệnh SX đã xuất. ${error.message}` });
+      }
+
+      const seen = new Set<string>();
+      const items: WarehouseSlipLenhSxRef[] = [];
+      (data || []).forEach(row => {
+        const record = row as Record<string, unknown>;
+        const ma_lenh_sx = String(record.ma_lenh_sx ?? '').trim();
+        const ngay = String(record.ngay ?? '').slice(0, 10);
+        const ca = String(record.ca ?? '').trim();
+        if (!ma_lenh_sx || !ngay) return;
+        const key = `${ma_lenh_sx}::${ngay}::${ca}`;
+        // Không dedupe khi lọc theo 1 phiếu cụ thể — cần trả đúng số dòng đã lưu cho phiếu đó.
+        if (!maPhieu && seen.has(key)) return;
+        seen.add(key);
+        items.push({ ma_lenh_sx, ngay, ca });
+      });
+
+      return res.json({ items, total: items.length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách lệnh SX đã xuất.' });
+    }
+  });
+
   app.get('/api/phieu-xuat-nhap-kho', async (req, res) => {
     if (!supabase) {
       return res.json({ movements: [], total: 0, source: 'local' });
@@ -8775,6 +8911,10 @@ export function createApp() {
       if (parsed.loaiKho === 'nvl') {
         const nvlCodes = [...new Set(parsed.items.map(item => item.code.trim()).filter(Boolean))];
         await Promise.all(nvlCodes.map(code => syncMaterialInventoryFromMovements(code)));
+      }
+
+      if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
+        await replaceWarehouseLenhSxLinks(maPhieu, parsed.lenhSxDaChon);
       }
 
       return res.status(201).json({
@@ -8905,6 +9045,11 @@ export function createApp() {
         await Promise.all([...affectedNvlCodes].map(code => syncMaterialInventoryFromMovements(code)));
       }
 
+      await replaceWarehouseLenhSxLinks(
+        slipCode,
+        parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl' ? parsed.lenhSxDaChon : []
+      );
+
       return res.json({
         success: true,
         slipCode,
@@ -8961,6 +9106,8 @@ export function createApp() {
       if (affectedNvlCodes.size > 0) {
         await Promise.all([...affectedNvlCodes].map(code => syncMaterialInventoryFromMovements(code)));
       }
+
+      await deleteWarehouseLenhSxLinks(slipCode);
 
       return res.json({ success: true, deletedCount: existing.length });
     } catch (err: any) {
@@ -11247,6 +11394,12 @@ export function createApp() {
       const parsed = parseMixingNormBody(req.body);
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
 
+      const maLenhSx = String((parsed.record as Record<string, unknown>).ma_lenh_sx ?? '').trim();
+      if (maLenhSx) {
+        const duplicateError = await checkDuplicateMixingNormOrder(maLenhSx);
+        if (duplicateError) return res.status(400).json({ error: duplicateError });
+      }
+
       const { data, error } = await supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
         .insert(parsed.record)
@@ -11275,6 +11428,12 @@ export function createApp() {
     try {
       const parsed = parseMixingNormBody(req.body);
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+      const maLenhSx = String((parsed.record as Record<string, unknown>).ma_lenh_sx ?? '').trim();
+      if (maLenhSx) {
+        const duplicateError = await checkDuplicateMixingNormOrder(maLenhSx, id);
+        if (duplicateError) return res.status(400).json({ error: duplicateError });
+      }
 
       const { data, error } = await supabase
         .from(SUPABASE_MIXING_NORM_TABLE)

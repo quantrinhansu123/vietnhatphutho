@@ -850,12 +850,13 @@ export default function MixingNormMaterialsTab() {
     if (!canCreate) return;
     setEditingId('');
     setCopySourceTitle(
-      `Nhân bản phiếu trộn định mức · ${row.ngay || 'Chưa có ngày'} · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
+      `Nhân bản phiếu trộn định mức · Ca ${row.ca || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
     );
     setForm({
-      ngay: row.ngay || new Date().toISOString().slice(0, 10),
+      ngay: new Date().toISOString().slice(0, 10),
       ca: row.ca,
-      maLenhSx: row.ma_lenh_sx,
+      // Mỗi lệnh SX chỉ có 1 phiếu trộn định mức — bỏ trống để buộc chọn lệnh SX khác khi nhân bản.
+      maLenhSx: '',
       ghiChu: row.ghi_chu,
       products: row.products.length > 0
         ? row.products.map(product => productToForm(product, `${row.id}-copy`, materialsByCode))
@@ -1109,6 +1110,13 @@ export default function MixingNormMaterialsTab() {
     }
     if (!form.maLenhSx.trim()) {
       setError('Vui lòng chọn lệnh SX.');
+      return;
+    }
+    const duplicateOrder = rows.find(
+      row => row.ma_lenh_sx.trim() === form.maLenhSx.trim() && row.id !== editingId
+    );
+    if (duplicateOrder) {
+      setError('Lệnh SX này đã có phiếu trộn định mức — mỗi lệnh SX chỉ được lập 1 phiếu.');
       return;
     }
 
@@ -1525,16 +1533,7 @@ export default function MixingNormMaterialsTab() {
                   {error}
                 </p>
               ) : null}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <label className="space-y-1.5">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày</span>
-                  <input
-                    type="date"
-                    value={form.ngay}
-                    onChange={event => setForm(prev => ({ ...prev, ngay: event.target.value }))}
-                    className={inputClass}
-                  />
-                </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca <span className="text-[#ef1b2d]">*</span></span>
                   <select value={form.ca} onChange={event => setForm(prev => ({ ...prev, ca: event.target.value }))} className={inputClass}>
@@ -1567,6 +1566,11 @@ export default function MixingNormMaterialsTab() {
                     displaySelectedAsValue
                     maxResults={60}
                   />
+                  {!editingId && form.maLenhSx.trim() && rows.some(row => row.ma_lenh_sx.trim() === form.maLenhSx.trim()) ? (
+                    <p className="text-[11px] font-bold text-rose-600">
+                      Lệnh SX này đã có phiếu trộn định mức — mỗi lệnh SX chỉ được lập 1 phiếu.
+                    </p>
+                  ) : null}
                 </label>
                 <label className="space-y-1.5 sm:col-span-2">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">

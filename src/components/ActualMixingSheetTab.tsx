@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, Plus, Printer, Save, Trash2, XCircle } from 'lucide-react';
 import { MixingNormRatioPrintBatch, type MixingNormRatioPrintDoc } from './MixingNormRatioPrintSheet';
+import { Select2 } from './shared/Select2';
 import { waitForPrintImagesReady } from '../utils/printReady';
 
 /** Cối trộn tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
@@ -35,6 +36,7 @@ type ActualRound = {
 type ActualProduct = {
   ma_sp: string;
   ten_sp: string;
+  ten_san_xuat: string;
   /** Tổng SL sau hao hụt — từ định mức, dùng để cảnh báo/chặn khi tổng các cối thực tế vượt quá. */
   tong_trong_luong: number | null;
   dinh_luong_coi: number | null;
@@ -165,6 +167,7 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
       const product = item as Record<string, unknown>;
       const ma_sp = String(product.ma_sp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? '').trim();
+      const ten_san_xuat = String(product.ten_san_xuat ?? product.tenSanXuat ?? '').trim();
       const tong_trong_luong = numberValue(product.tong_trong_luong);
       const dinh_luong_coi = numberValue(product.dinh_luong_coi);
       const rawNvl = Array.isArray(product.nvl)
@@ -176,8 +179,8 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
         .map(entry => parseStandardLine(entry))
         .filter((line): line is StandardLineRaw => Boolean(line))
         .map(line => fillStandardPercents(line, dinh_luong_coi, tong_trong_luong));
-      if (!ma_sp && !ten_sp && standardNvl.length === 0) return null;
-      return { ma_sp, ten_sp, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
+      if (!ma_sp && !ten_sp && !ten_san_xuat && standardNvl.length === 0) return null;
+      return { ma_sp, ten_sp, ten_san_xuat, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
     })
     .filter((product): product is ActualProduct => Boolean(product));
 }
@@ -338,36 +341,37 @@ export default function ActualMixingSheetTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Chỉ lọc theo ngày — ca lấy từ đúng phiếu định mức đang chọn.
+  // Phiếu trộn định mức đi 1-1 theo lệnh SX (không còn theo ngày) — tìm theo mã lệnh SX,
+  // không lọc theo ngày nữa (ngày ở đây là ngày thực hiện trộn thực tế, có thể khác ngày lập định mức).
   const matchingNorms = useMemo(() => {
-    const dayNorms = norms.filter(row => !date || row.ngay === date);
-    return [...dayNorms].sort((left, right) => {
-      const byCa = left.ca.localeCompare(right.ca, 'vi');
-      if (byCa !== 0) return byCa;
-      return left.ma_lenh_sx.localeCompare(right.ma_lenh_sx, 'vi');
+    return [...norms].sort((left, right) => {
+      const byOrder = left.ma_lenh_sx.localeCompare(right.ma_lenh_sx, 'vi');
+      if (byOrder !== 0) return byOrder;
+      return left.ca.localeCompare(right.ca, 'vi');
     });
-  }, [norms, date]);
+  }, [norms]);
 
-  const matchingNormIds = matchingNorms.map(row => row.id).join('|');
+  const orderSelect2Options = useMemo(
+    () => ({
+      allowClear: true,
+      minimumResultsForSearch: 0,
+      placeholder: matchingNorms.length ? 'Gõ để tìm mã lệnh SX...' : 'Chưa có phiếu trộn định mức nào',
+      language: {
+        noResults: () => 'Không tìm thấy lệnh SX phù hợp.',
+        searching: () => 'Đang tìm...'
+      }
+    }),
+    [matchingNorms.length]
+  );
+  const orderSelect2RefreshKey = `${matchingNorms.map(row => row.id).join('|')}::${actuals
+    .map(row => row.dinh_muc_id)
+    .sort()
+    .join('|')}`;
+
   const selectedNorm = useMemo(
     () => norms.find(row => row.id === selectedNormId) || null,
     [norms, selectedNormId]
   );
-
-  useEffect(() => {
-    setError('');
-    setMessage('');
-    if (matchingNorms.length === 0) {
-      setSelectedNormId('');
-      setProducts([]);
-      setNote('');
-      return;
-    }
-    setSelectedNormId(prev => {
-      if (prev && matchingNorms.some(row => row.id === prev)) return prev;
-      return matchingNorms.length === 1 ? matchingNorms[0].id : '';
-    });
-  }, [date, matchingNormIds]);
 
   useEffect(() => {
     if (!selectedNorm) {
@@ -508,7 +512,7 @@ export default function ActualMixingSheetTab() {
   const save = async () => {
     const norm = selectedNorm || norms.find(row => row.id === selectedNormId);
     if (!norm) return setError('Vui lòng chọn đúng dòng phiếu định mức.');
-    if (!norm.ngay) return setError('Phiếu định mức thiếu ngày.');
+    if (!date) return setError('Vui lòng chọn ngày thực hiện trộn thực tế.');
     if (!norm.ca) return setError('Phiếu định mức thiếu ca — sửa phiếu định mức rồi lưu lại.');
     if (products.length === 0 || products.every(product => product.rounds.every(round => round.nvl.length === 0))) {
       return setError('Phiếu không có dòng NVL để lưu.');
@@ -555,7 +559,7 @@ export default function ActualMixingSheetTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: existing?.id,
-          ngay: norm.ngay,
+          ngay: date,
           ca: norm.ca,
           dinh_muc_id: norm.id,
           ma_lenh_sx: norm.ma_lenh_sx,
@@ -690,38 +694,41 @@ export default function ActualMixingSheetTab() {
           />
         </label>
         <label className="grid gap-1 text-xs font-black text-zinc-600">
-          Dòng phiếu định mức
-          <select
+          Lệnh SX (phiếu trộn định mức)
+          <Select2
             value={selectedNormId}
-            onChange={e => {
-              setSelectedNormId(e.target.value);
+            disabled={matchingNorms.length === 0}
+            onValueChange={value => {
+              setSelectedNormId(value);
               setError('');
               setMessage('');
             }}
-            disabled={matchingNorms.length === 0}
-            className={fieldClass}
+            select2Options={orderSelect2Options}
+            refreshKey={orderSelect2RefreshKey}
           >
             <option value="">
-              {matchingNorms.length ? 'Chọn đúng dòng để nhập / lưu' : 'Không có phiếu định mức ngày này'}
+              {matchingNorms.length ? 'Gõ để tìm mã lệnh SX...' : 'Chưa có phiếu trộn định mức nào'}
             </option>
             {matchingNorms.map(row => {
-              const hasActual = actuals.some(item => String(item.dinh_muc_id) === String(row.id));
+              const hasActual = actuals.some(actual => String(actual.dinh_muc_id) === String(row.id));
+              const label =
+                (row.ma_lenh_sx || 'Không có mã lệnh') +
+                (row.ca ? ` · Ca ${row.ca}` : '') +
+                (hasActual ? ' · đã có thực tế' : '');
               return (
                 <option key={row.id} value={row.id}>
-                  {(row.ma_lenh_sx || 'Không có mã lệnh') +
-                    (row.ca ? ` · Ca ${row.ca}` : '') +
-                    (hasActual ? ' · đã có thực tế' : '')}
+                  {label}
                 </option>
               );
             })}
-          </select>
+          </Select2>
         </label>
       </div>
       {selectedNorm ? (
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-700">
           Đang mở dòng:{' '}
           <span className="font-black text-zinc-950">{selectedNorm.ma_lenh_sx || selectedNorm.id}</span>
-          {' · '}Ngày <span className="font-mono font-black">{selectedNorm.ngay}</span>
+          {' · '}Ngày trộn thực tế <span className="font-mono font-black">{date}</span>
           {' · '}Ca <span className="font-black">{selectedNorm.ca || '—'}</span>
           {savedForSelected ? (
             <span className="ml-2 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">
@@ -753,12 +760,13 @@ export default function ActualMixingSheetTab() {
         products.map((product, pi) => {
           const mixed = totalMixed(product);
           const overLimit = product.tong_trong_luong !== null && mixed > product.tong_trong_luong + 0.0005;
+          const productName = product.ten_san_xuat || product.ten_sp;
           return (
             <div key={`${product.ma_sp}-${pi}`} className="overflow-hidden rounded-xl border border-zinc-200">
               <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-100 px-3 py-2 text-sm font-black">
                 <span>
                   Sản phẩm: {product.ma_sp}
-                  {product.ten_sp ? ` · ${product.ten_sp}` : ''}
+                  {productName ? ` · ${productName}` : ''}
                 </span>
                 <span className={`text-xs font-bold ${overLimit ? 'text-rose-600' : 'text-zinc-500'}`}>
                   Đã trộn: {formatNumber(mixed)} / Tổng SL sau hao hụt: {formatNumber(product.tong_trong_luong)} kg
