@@ -26,7 +26,8 @@ import {
 import {
   downloadMaterialCatalogExcelTemplate,
   parseMaterialCatalogExcel,
-  materialCatalogRowToPayload
+  materialCatalogRowToPayload,
+  type MaterialCatalogExcelRow
 } from '../../utils/materialCatalogExcel';
 import { showAppToast } from '../../lib/appToast';
 import { productFieldClass } from '../san-pham/productFieldClass';
@@ -212,6 +213,65 @@ const materialFieldClass =
 
 export function normalizeMaterialCodeKey(code: string) {
   return code.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+export function normalizeMaterialTextKey(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN');
+}
+
+function isEmptyMaterialText(value: string) {
+  const normalized = normalizeMaterialTextKey(value);
+  return !normalized || normalized === '-';
+}
+
+export function findMaterialCatalogMatch(row: MaterialCatalogExcelRow, materials: MaterialRow[]) {
+  const codeKey = normalizeMaterialCodeKey(row.code);
+  const nameKey = normalizeMaterialTextKey(row.name);
+  const productionNameKey = normalizeMaterialTextKey(row.productionName);
+
+  if (!codeKey) {
+    return { material: null, error: 'thiếu mã NPL' } as const;
+  }
+  if (!nameKey || nameKey === '-') {
+    return { material: null, error: 'thiếu tên nguyên vật liệu' } as const;
+  }
+
+  const candidates = materials.filter(
+    material =>
+      normalizeMaterialCodeKey(material.code) === codeKey &&
+      normalizeMaterialTextKey(material.name) === nameKey
+  );
+
+  const material = candidates.find(candidate => {
+    const candidateProductionName = candidate.productionName;
+    return productionNameKey
+      ? normalizeMaterialTextKey(candidateProductionName) === productionNameKey
+      : isEmptyMaterialText(candidateProductionName);
+  });
+
+  return { material, error: null } as const;
+}
+
+type MaterialCatalogPayload = ReturnType<typeof materialCatalogRowToPayload> & { name: string };
+
+function materialWithCatalogPayload(id: string, payload: MaterialCatalogPayload): MaterialRow {
+  return {
+    id,
+    code: payload.code,
+    name: payload.name,
+    productionName: payload.productionName || '-',
+    unit: payload.unit || '-',
+    totalWeight: payload.totalWeight || '-',
+    plasticWeight: payload.plasticWeight || '-',
+    bagWeight: payload.bagWeight || '-',
+    coreWeight: payload.coreWeight || '-',
+    rollWidth: payload.rollWidth || '-',
+    unitLength: payload.unitLength || '-',
+    openingStock: payload.openingStock || '-',
+    inbound: payload.inbound || '-',
+    outbound: payload.outbound || '-',
+    khoNgamDinh: payload.khoNgamDinh || '-'
+  };
 }
 
 export type BulkMaterialTotalWeightPreviewRow = BulkMaterialTotalWeightImportRow & {
@@ -893,29 +953,29 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         throw new Error('File Excel không có dòng NVL hợp lệ (cần cột Mã NPL).');
       }
 
-      const byCode = new Map(
-        materials
-          .map(material => [normalizeMaterialCodeKey(material.code), material] as const)
-          .filter(([key]) => Boolean(key))
-      );
+      // Keep successful imports in the working set so duplicate rows in one file
+      // follow the same match rules as rows already loaded from the database.
+      let workingMaterials = [...materials];
+      const createRecords: MaterialCatalogPayload[] = [];
+      const updateRecords = new Map<string, MaterialCatalogPayload>();
+      const pendingCreateIndexes = new Map<string, number>();
 
-      let created = 0;
-      let updated = 0;
       const failures: string[] = [];
+      const skippedMissingName: number[] = [];
 
       for (const row of rows) {
-        const code = row.code.trim();
-        if (!code) {
-          failures.push(`dòng ${row.rowNumber}: thiếu mã NPL`);
+        const match = findMaterialCatalogMatch(row, workingMaterials);
+        if (match.error) {
+          if (match.error === 'thiếu tên nguyên vật liệu') {
+            skippedMissingName.push(row.rowNumber);
+          } else {
+            failures.push(`dòng ${row.rowNumber}: ${match.error}`);
+          }
           continue;
         }
 
-        const existing = byCode.get(normalizeMaterialCodeKey(code));
-        const name = row.name.trim() || existing?.name || '';
-        if (!name || name === '-') {
-          failures.push(`dòng ${row.rowNumber}: thiếu tên nguyên phụ liệu`);
-          continue;
-        }
+        const existing = match.material;
+        const name = row.name.trim();
 
         const payload = {
           ...materialCatalogRowToPayload(row),
@@ -926,24 +986,42 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           saveUnitSuggestion(payload.unit);
         }
 
-        const res = existing
-          ? await fetch(`/api/kho-nvl/${existing.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            })
-          : await fetch('/api/kho-nvl', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
+        if (existing) {
+          const pendingIndex = pendingCreateIndexes.get(existing.id);
+          if (pendingIndex !== undefined) {
+            createRecords[pendingIndex] = payload;
+          } else {
+            updateRecords.set(existing.id, payload);
+          }
+          workingMaterials = workingMaterials.map(material =>
+            material.id === existing.id ? materialWithCatalogPayload(existing.id, payload) : material
+          );
+        } else {
+          const pendingId = `__pending_material_${row.rowNumber}_${createRecords.length}`;
+          pendingCreateIndexes.set(pendingId, createRecords.length);
+          createRecords.push(payload);
+          workingMaterials = [...workingMaterials, materialWithCatalogPayload(pendingId, payload)];
+        }
+      }
+
+      let created = 0;
+      let updated = 0;
+      if (createRecords.length > 0 || updateRecords.size > 0) {
+        const res = await fetch('/api/kho-nvl/import-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            creates: createRecords,
+            updates: Array.from(updateRecords, ([id, payload]) => ({ id, ...payload }))
+          })
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
-          continue;
+          failures.push(data.error || 'Không lưu được dữ liệu import hàng loạt.');
+        } else {
+          created = Number(data.createdCount) || createRecords.length;
+          updated = Number(data.updatedCount) || updateRecords.size;
         }
-        if (existing) updated += 1;
-        else created += 1;
       }
 
       if (created > 0 || updated > 0) {
@@ -951,7 +1029,10 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       }
 
       const summary = [
-        created || updated ? `Đã nhập Excel NVL: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        created || updated ? `Đã nhập Excel NVL: thêm ${created}, cập nhật ${updated}.` : 'Không có dòng hợp lệ để nhập.',
+        skippedMissingName.length
+          ? `${skippedMissingName.length} dòng bỏ qua do thiếu tên nguyên vật liệu.`
+          : '',
         failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
@@ -961,6 +1042,8 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       else if (failures.length > 0) {
         setMaterialsError(summary);
         showAppToast(failures[0], 'error');
+      } else if (skippedMissingName.length > 0) {
+        showAppToast(summary);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Không thể đọc hoặc nhập Excel danh mục NVL.';

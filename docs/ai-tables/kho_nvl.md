@@ -13,6 +13,7 @@
 |--------|------|------|
 | GET | `/api/kho-nvl` | 4605 |
 | POST | `/api/kho-nvl` | 4633 |
+| POST | `/api/kho-nvl/import-batch` | sau POST danh mục |
 | POST | `/api/kho-nvl/fill-total-kg` | 4661 |
 | PATCH | `/api/kho-nvl/:id` | 4713 |
 | DELETE | `/api/kho-nvl/:id` | 4752 |
@@ -36,7 +37,7 @@ Phiếu xuất nhập (`phieu_xuat_nhap_kho`) cập nhật tồn kho NVL.
 
 - **Tải mẫu Excel** / **Tải Excel lên** — `src/utils/materialCatalogExcel.ts`
 - Cột khớp bảng + form: Mã NPL, Tên, Tên NVL sản xuất, ĐV, **Kho ngầm định**, Tổng kg, Tồn đầu, Nhập, Xuất, Kg nhựa/túi/lõi, Khổ cuộn, Chiều dài ĐV
-- Ô trống vẫn đẩy lên (null); tạo mới cần Mã + Tên; cập nhật thiếu tên thì giữ tên cũ
-- Upsert theo `ma_npl`
+- Ô trống vẫn đẩy lên (null); tạo mới hoặc cập nhật cần Mã + Tên; chỉ có Mã thì từ chối.
+- Import phân loại theo `ma_npl` + `ten_npl` + `ten_nvl_sx`: đủ 3 trường thì match cả 3; mã + tên và tên SX trống thì match thêm `ten_nvl_sx` rỗng; chỉ có mã thì từ chối.
 - Mẫu 2 cột cũ tách riêng: **Mẫu cập nhật Tổng kg** / **Nhập Tổng kg**
 - **Kho ngầm định**: Nguyên vật liệu phụ hoặc Nguyên vật liệu chính

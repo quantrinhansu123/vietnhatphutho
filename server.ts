@@ -8597,6 +8597,85 @@ export function createApp() {
     }
   });
 
+  app.post('/api/kho-nvl/import-batch', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const createsInput = Array.isArray(req.body?.creates) ? req.body.creates : [];
+      const updatesInput = Array.isArray(req.body?.updates) ? req.body.updates : [];
+      if (createsInput.length === 0 && updatesInput.length === 0) {
+        return res.status(400).json({ error: 'Không có dòng nguyên phụ liệu hợp lệ để import.' });
+      }
+
+      const parseBatchRecords = (items: unknown[], includeId: boolean) => {
+        const records: Array<Record<string, string | number | null>> = [];
+        for (let index = 0; index < items.length; index += 1) {
+          const item = items[index];
+          const parsed = parseMaterialBody(item);
+          if ('error' in parsed) {
+            return { error: `Dòng batch ${index + 1}: ${parsed.error}` } as const;
+          }
+
+          if (includeId) {
+            const source = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+            const id = String(source.id ?? '').trim();
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+              return { error: `Dòng batch ${index + 1}: ID nguyên phụ liệu không hợp lệ.` } as const;
+            }
+            records.push({ ...parsed.record, id });
+          } else {
+            records.push(parsed.record);
+          }
+        }
+        return { records, error: null } as const;
+      };
+
+      const parsedCreates = parseBatchRecords(createsInput, false);
+      if (parsedCreates.error) return res.status(400).json({ error: parsedCreates.error });
+      const parsedUpdates = parseBatchRecords(updatesInput, true);
+      if (parsedUpdates.error) return res.status(400).json({ error: parsedUpdates.error });
+
+      let createdMaterials: Record<string, unknown>[] = [];
+      let updatedMaterials: Record<string, unknown>[] = [];
+
+      if (parsedCreates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_MATERIALS_TABLE)
+          .insert(parsedCreates.records)
+          .select('*');
+        if (error) {
+          console.error('Supabase kho_nvl batch insert error:', error);
+          return res.status(500).json({ error: materialWriteErrorMessage(error) });
+        }
+        createdMaterials = (data || []) as Record<string, unknown>[];
+      }
+
+      if (parsedUpdates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_MATERIALS_TABLE)
+          .upsert(parsedUpdates.records, { onConflict: 'id' })
+          .select('*');
+        if (error) {
+          console.error('Supabase kho_nvl batch update error:', error);
+          return res.status(500).json({ error: materialWriteErrorMessage(error) });
+        }
+        updatedMaterials = (data || []) as Record<string, unknown>[];
+      }
+
+      return res.status(200).json({
+        success: true,
+        created: createdMaterials,
+        updated: updatedMaterials,
+        createdCount: createdMaterials.length,
+        updatedCount: updatedMaterials.length
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi import hàng loạt nguyên phụ liệu.' });
+    }
+  });
+
   app.post('/api/kho-nvl/fill-total-kg', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });

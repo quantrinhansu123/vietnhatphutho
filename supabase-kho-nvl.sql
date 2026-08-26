@@ -20,7 +20,10 @@ alter table public.kho_nvl
   add column if not exists nhap_trong_ky numeric,
   add column if not exists xuat_trong_ky numeric;
 
-create unique index if not exists kho_nvl_ma_npl_key on public.kho_nvl (ma_npl);
+-- ma_npl khong con la khoa duy nhat: import phan biet theo ma_npl + ten_npl + ten_nvl_sx.
+alter table public.kho_nvl
+  drop constraint if exists kho_nvl_ma_npl_key,
+drop index if exists public.kho_nvl_ma_npl_key;
 
 alter table public.kho_nvl enable row level security;
 
