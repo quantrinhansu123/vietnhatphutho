@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, Plus, Printer, Save, Trash2, XCircle } from 'lucide-react';
 import { MixingNormRatioPrintBatch, type MixingNormRatioPrintDoc } from './MixingNormRatioPrintSheet';
+import { Select2 } from './shared/Select2';
 import { waitForPrintImagesReady } from '../utils/printReady';
-import { SearchableSelect } from './shared/SearchableSelect';
 
 /** Cối trộn tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
 type StandardLine = {
@@ -36,6 +36,7 @@ type ActualRound = {
 type ActualProduct = {
   ma_sp: string;
   ten_sp: string;
+  ten_san_xuat: string;
   /** Tổng SL sau hao hụt — từ định mức, dùng để cảnh báo/chặn khi tổng các cối thực tế vượt quá. */
   tong_trong_luong: number | null;
   dinh_luong_coi: number | null;
@@ -166,6 +167,7 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
       const product = item as Record<string, unknown>;
       const ma_sp = String(product.ma_sp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? '').trim();
+      const ten_san_xuat = String(product.ten_san_xuat ?? product.tenSanXuat ?? '').trim();
       const tong_trong_luong = numberValue(product.tong_trong_luong);
       const dinh_luong_coi = numberValue(product.dinh_luong_coi);
       const rawNvl = Array.isArray(product.nvl)
@@ -177,8 +179,8 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
         .map(entry => parseStandardLine(entry))
         .filter((line): line is StandardLineRaw => Boolean(line))
         .map(line => fillStandardPercents(line, dinh_luong_coi, tong_trong_luong));
-      if (!ma_sp && !ten_sp && standardNvl.length === 0) return null;
-      return { ma_sp, ten_sp, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
+      if (!ma_sp && !ten_sp && !ten_san_xuat && standardNvl.length === 0) return null;
+      return { ma_sp, ten_sp, ten_san_xuat, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
     })
     .filter((product): product is ActualProduct => Boolean(product));
 }
@@ -348,6 +350,23 @@ export default function ActualMixingSheetTab() {
       return left.ca.localeCompare(right.ca, 'vi');
     });
   }, [norms]);
+
+  const orderSelect2Options = useMemo(
+    () => ({
+      allowClear: true,
+      minimumResultsForSearch: 0,
+      placeholder: matchingNorms.length ? 'Gõ để tìm mã lệnh SX...' : 'Chưa có phiếu trộn định mức nào',
+      language: {
+        noResults: () => 'Không tìm thấy lệnh SX phù hợp.',
+        searching: () => 'Đang tìm...'
+      }
+    }),
+    [matchingNorms.length]
+  );
+  const orderSelect2RefreshKey = `${matchingNorms.map(row => row.id).join('|')}::${actuals
+    .map(row => row.dinh_muc_id)
+    .sort()
+    .join('|')}`;
 
   const selectedNorm = useMemo(
     () => norms.find(row => row.id === selectedNormId) || null,
@@ -676,34 +695,33 @@ export default function ActualMixingSheetTab() {
         </label>
         <label className="grid gap-1 text-xs font-black text-zinc-600">
           Lệnh SX (phiếu trộn định mức)
-          <SearchableSelect
+          <Select2
             value={selectedNormId}
-            onChange={value => {
+            disabled={matchingNorms.length === 0}
+            onValueChange={value => {
               setSelectedNormId(value);
               setError('');
               setMessage('');
             }}
-            options={matchingNorms}
-            placeholder={matchingNorms.length ? 'Gõ để tìm mã lệnh SX...' : 'Chưa có phiếu trộn định mức nào'}
-            disabled={matchingNorms.length === 0}
-            inputClassName={fieldClass}
-            getValue={item => (item as NormRecord).id}
-            getLabel={item => {
-              const row = item as NormRecord;
+            select2Options={orderSelect2Options}
+            refreshKey={orderSelect2RefreshKey}
+          >
+            <option value="">
+              {matchingNorms.length ? 'Gõ để tìm mã lệnh SX...' : 'Chưa có phiếu trộn định mức nào'}
+            </option>
+            {matchingNorms.map(row => {
               const hasActual = actuals.some(actual => String(actual.dinh_muc_id) === String(row.id));
-              return (
+              const label =
                 (row.ma_lenh_sx || 'Không có mã lệnh') +
                 (row.ca ? ` · Ca ${row.ca}` : '') +
-                (hasActual ? ' · đã có thực tế' : '')
+                (hasActual ? ' · đã có thực tế' : '');
+              return (
+                <option key={row.id} value={row.id}>
+                  {label}
+                </option>
               );
-            }}
-            getSearchText={item => {
-              const row = item as NormRecord;
-              return `${row.ma_lenh_sx} ${row.ca}`;
-            }}
-            displaySelectedAsValue
-            maxResults={60}
-          />
+            })}
+          </Select2>
         </label>
       </div>
       {selectedNorm ? (
@@ -742,12 +760,13 @@ export default function ActualMixingSheetTab() {
         products.map((product, pi) => {
           const mixed = totalMixed(product);
           const overLimit = product.tong_trong_luong !== null && mixed > product.tong_trong_luong + 0.0005;
+          const productName = product.ten_san_xuat || product.ten_sp;
           return (
             <div key={`${product.ma_sp}-${pi}`} className="overflow-hidden rounded-xl border border-zinc-200">
               <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-100 px-3 py-2 text-sm font-black">
                 <span>
                   Sản phẩm: {product.ma_sp}
-                  {product.ten_sp ? ` · ${product.ten_sp}` : ''}
+                  {productName ? ` · ${productName}` : ''}
                 </span>
                 <span className={`text-xs font-bold ${overLimit ? 'text-rose-600' : 'text-zinc-500'}`}>
                   Đã trộn: {formatNumber(mixed)} / Tổng SL sau hao hụt: {formatNumber(product.tong_trong_luong)} kg

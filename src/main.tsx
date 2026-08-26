@@ -1,7 +1,8 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
+import 'select2/dist/css/select2.min.css';
 import './index.css';
+import App from './App.tsx';
 import {enableMobileNumericKeyboards} from './utils/mobileNumericKeyboard.ts';
 
 enableMobileNumericKeyboards();

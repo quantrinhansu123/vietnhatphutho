@@ -6518,7 +6518,7 @@ export function createApp() {
     try {
       const key = String(req.query.key ?? '').trim();
       const page = Math.max(1, Number(req.query.page) || 1);
-      const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+      const pageSize = Math.min(1000, Math.max(1, Number(req.query.pageSize) || 50));
       let productIds: string[] = [];
       if (key) {
         const escaped = key.replace(/[,%()]/g, '');

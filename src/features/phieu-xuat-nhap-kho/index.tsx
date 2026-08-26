@@ -556,7 +556,12 @@ export function expandWarehouseProductionOrderDates(startDate: string, endDate: 
   const days: string[] = [];
   const cursor = new Date(start);
   while (cursor <= end && days.length < WAREHOUSE_PRODUCTION_ORDER_MAX_SPAN_DAYS) {
-    days.push(cursor.toISOString().slice(0, 10));
+    // Không dùng toISOString() ở đây vì nó chuyển 00:00 giờ local về ngày trước
+    // ở các múi giờ UTC+, khiến ngày kết thúc (ví dụ ngày 31) bị hiển thị thành ngày 30.
+    const year = cursor.getFullYear();
+    const month = String(cursor.getMonth() + 1).padStart(2, '0');
+    const day = String(cursor.getDate()).padStart(2, '0');
+    days.push(`${year}-${month}-${day}`);
     cursor.setDate(cursor.getDate() + 1);
   }
   return days;
