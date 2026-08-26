@@ -111,13 +111,13 @@ export function downloadBulkOpeningStockTemplate(materials: BulkOpeningStockMate
     .filter(material => material.code && material.code !== '-')
     .sort((a, b) => a.code.localeCompare(b.code, 'vi'))
     .map(material => ({
-      'Mã NPL': material.code,
-      'Tên nguyên phụ liệu': material.name === '-' ? '' : material.name,
+      'Mã NVL': material.code,
+      'Tên nguyên vật liệu': material.name === '-' ? '' : material.name,
       'Tồn đầu': openingStockInput(material.openingStock)
     }));
 
   const worksheet = XLSX.utils.json_to_sheet(rows, {
-    header: ['Mã NPL', 'Tên nguyên phụ liệu', 'Tồn đầu']
+    header: ['Mã NVL', 'Tên nguyên vật liệu', 'Tồn đầu']
   });
   worksheet['!cols'] = [{ wch: 18 }, { wch: 40 }, { wch: 14 }];
 

@@ -1595,7 +1595,7 @@ export function WarehouseSlipPanel({
 
           <div
             className={
-              slipType === 'nhap'
+              slipType === 'nhap' || isNvlExport
                 ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
                 : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
             }
@@ -1611,6 +1611,11 @@ export function WarehouseSlipPanel({
               <>
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Theo chứng từ</span>
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thực nhập *</span>
+              </>
+            ) : isNvlExport ? (
+              <>
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL CT</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL Thực *</span>
               </>
             ) : (
               <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
@@ -1634,7 +1639,7 @@ export function WarehouseSlipPanel({
               <div
                 key={line.key}
                 className={
-                  slipType === 'nhap'
+                  slipType === 'nhap' || isNvlExport
                     ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                     : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                 }
@@ -1688,6 +1693,35 @@ export function WarehouseSlipPanel({
                     <div>
                       <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
                         Thực nhập *
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={line.quantity}
+                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                        className={warehouseFieldClass}
+                        placeholder="SL thực"
+                      />
+                    </div>
+                  </>
+                ) : isNvlExport ? (
+                  <>
+                    <div>
+                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                        SL CT
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={line.documentQuantity || ''}
+                        onChange={event => updateLine(line.key, { documentQuantity: event.target.value })}
+                        className={warehouseFieldClass}
+                        placeholder="SL CT"
+                      />
+                    </div>
+                    <div>
+                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                        SL Thực *
                       </span>
                       <input
                         type="text"

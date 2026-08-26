@@ -1833,7 +1833,7 @@ export default function ControlBoardBbMachineReportTable({
                           <tr className="border-y border-indigo-100 bg-indigo-100/40 text-xs font-black uppercase tracking-wider text-indigo-900">
                             <td />
                             <td className="px-4 py-2 font-black">Mã NVL</td>
-                            <td className="px-4 py-2 font-black">Tên nguyên phụ liệu</td>
+                            <td className="px-4 py-2 font-black">Tên nguyên vật liệu</td>
                             <td className="px-4 py-2 font-black">ĐVT</td>
                             <td className="px-4 py-2 text-right font-black" title="Từ thành phần % SP hoặc tỉ lệ trộn máy">
                               Tỉ lệ ĐM (%)
@@ -2206,7 +2206,7 @@ export default function ControlBoardBbMachineReportTable({
                             <td />
                             <td className="px-4 py-2.5 font-black">Mã NVL</td>
                             <td colSpan={2} className="px-4 py-2.5 font-black">
-                              Tên nguyên phụ liệu (báo cáo phối trộn)
+                              Tên nguyên vật liệu (báo cáo phối trộn)
                             </td>
                             <td className="px-4 py-2.5 font-black">ĐVT</td>
                             <td className="px-4 py-2.5 text-right font-black">Tỉ lệ trộn (%)</td>

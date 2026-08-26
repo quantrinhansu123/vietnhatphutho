@@ -25,7 +25,7 @@ export type MaterialCatalogExcelRow = {
  */
 export const MATERIAL_CATALOG_EXCEL_HEADERS = [
   'Mã NPL',
-  'Tên nguyên phụ liệu',
+  'Tên nguyên vật liệu',
   'Tên NVL sản xuất',
   'ĐV',
   'Kho ngầm định',

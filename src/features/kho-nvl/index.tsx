@@ -1073,7 +1073,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   };
 
   const materialFormFields: Array<{ key: keyof MaterialFormState; label: string; required?: boolean; placeholder?: string }> = [
-    { key: 'name', label: 'Tên nguyên phụ liệu', required: true, placeholder: 'VD: Màng PE' },
+    { key: 'name', label: 'Tên nguyên vật liệu', required: true, placeholder: 'VD: Màng PE' },
     { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', placeholder: 'Tên dùng trong sản xuất' },
     { key: 'khoNgamDinh', label: 'Loại kho' },
     { key: 'totalWeight', label: 'Tổng kg' },
@@ -1310,7 +1310,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       <TableShell minWidthClassName="min-w-[1000px]">
         <TableHead>
           <TableHeadCell>Mã NPL</TableHeadCell>
-          <TableHeadCell>Tên nguyên phụ liệu</TableHeadCell>
+          <TableHeadCell>Tên nguyên vật liệu</TableHeadCell>
           <TableHeadCell>Loại kho</TableHeadCell>
           <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
           <TableHeadCell>ĐV</TableHeadCell>
