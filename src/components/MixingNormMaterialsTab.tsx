@@ -109,6 +109,11 @@ type ProductForm = {
   dinhLuongCoi: string;
   /** Danh sách NVL của 1 cối trộn tiêu chuẩn — dùng chung cho mọi cối, không nhập riêng theo lần. */
   lines: LineForm[];
+  /**
+   * Đã fill NVL từ định mức SP 1 lần rồi → các lần đổi mã SP sau KHÔNG tự fill lại,
+   * giữ nguyên NVL người dùng đang chỉnh. Chỉ "Thêm sản phẩm" mới (block mới) mới được fill.
+   */
+  nvlFilled: boolean;
 };
 
 type NormForm = {
@@ -142,7 +147,8 @@ const emptyProduct = (): ProductForm => ({
   soLuongGoc: '',
   soLuongTuDong: false,
   dinhLuongCoi: '',
-  lines: [emptyLine()]
+  lines: [emptyLine()],
+  nvlFilled: false
 });
 
 function computeMixingRoundCount(tongTrongLuong: number, dinhLuongCoi: number) {
@@ -228,10 +234,12 @@ function productToForm(
         ? ''
         : String(product.tong_trong_luong),
     haoHut: product.ty_le_hao_hut == null ? '0' : String(product.ty_le_hao_hut),
-    soLuongGoc: product.so_luong_goc == null ? '' : String(product.so_luong_goc),
+    soLuongGoc: product.so_luong_goc == null ? '0' : String(product.so_luong_goc),
     soLuongTuDong: product.so_luong_goc != null,
     dinhLuongCoi: product.dinh_luong_coi == null ? '' : String(product.dinh_luong_coi),
-    lines: baseLines
+    lines: baseLines,
+    // Phiếu đã lưu → coi như đã fill, đổi mã SP khi sửa không ghi đè NVL đang có.
+    nvlFilled: true
   };
 }
 
@@ -672,15 +680,23 @@ export default function MixingNormMaterialsTab() {
         : { code: trimmedCode, name: name.trim() });
     };
 
-    // Nạp toàn bộ catalog trước — đây là nguồn chuẩn có sẵn npl_phan_tram (nplItems).
-    for (const product of catalogProducts) {
-      add(product.code, product.name);
-    }
-    // Sau đó bổ sung SP theo lệnh SX (nếu có) — chỉ để lấp chỗ cho mã hoàn toàn chưa có trong catalog.
     if (selectedOrder) {
+      // Đã chọn lệnh SX → chỉ cho chọn SP THUỘC lệnh đó (NVL vẫn được enrich từ catalog trong add()).
       for (const line of selectedOrder.productLines) {
         add(line.productCode, line.productName);
       }
+      // Giữ lại mã SP đã chọn sẵn trong phiếu (khi sửa) kể cả khi mã đó không còn nằm trong lệnh SX.
+      for (const product of form.products) {
+        for (const code of product.maSpCodes) {
+          add(code, findCatalogProductByAnyCode(catalogProducts, code)?.name ?? code);
+        }
+      }
+      return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+    }
+
+    // Chưa chọn lệnh SX → nạp toàn bộ catalog + SP của mọi lệnh SX.
+    for (const product of catalogProducts) {
+      add(product.code, product.name);
     }
     for (const order of productionOrders) {
       for (const line of order.productLines) {
@@ -689,7 +705,7 @@ export default function MixingNormMaterialsTab() {
     }
 
     return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
-  }, [catalogProducts, productionOrders, selectedOrder]);
+  }, [catalogProducts, productionOrders, selectedOrder, form.products]);
 
   const productLabel = (option: ProductOption) =>
     `${option.amisCode || option.code} — ${option.tenSanXuat || option.name}`;
@@ -899,31 +915,39 @@ export default function MixingNormMaterialsTab() {
     return catalog?.totalWeight ? roundMixing(quantity * catalog.totalWeight) : null;
   };
 
+  /**
+   * Hao hụt + SL quy đổi trước hao hụt của TỪNG mã SP đã chọn (lấy theo lệnh SX + danh mục SP).
+   * Dùng để hiển thị mỗi SP 1 dòng và để tính lại "Tổng SL sau hao hụt".
+   */
+  const resolveWasteBreakdown = (codes: string[]) =>
+    codes
+      .map(code => code.trim())
+      .filter(Boolean)
+      .map(code => {
+        const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+        const orderLine = selectedOrder?.productLines.find(
+          item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
+        );
+        // Không quy đổi được ra kg → coi như 0 (null làm sai công thức tổng).
+        const kg = (orderLine ? resolveOrderLineKg(orderLine, catalog) : null) ?? 0;
+        return {
+          code,
+          name: catalog?.name || code,
+          tenSanXuat: catalog?.tenSanXuat?.trim() || catalog?.name || code,
+          waste: catalog?.wastePercent ?? 0,
+          kg
+        };
+      });
+
   const selectOrder = (orderCode: string) => {
-    const order = productionOrders.find(item => item.orderCode === orderCode);
-    setForm(prev => ({
-      ...prev,
-      maLenhSx: orderCode,
-      products: editingId || !order
-        ? prev.products
-        : order.productLines.map(line => {
-            const catalog = findCatalogProductByAnyCode(catalogProducts, line.productCode);
-            const sourceKg = resolveOrderLineKg(line, catalog);
-            const waste = catalog?.wastePercent ?? 0;
-            const total = sourceKg === null ? null : roundMixing(sourceKg * (1 + waste / 100));
-            return {
-              ...emptyProduct(),
-              maSpCodes: [line.productCode],
-              maSp: line.productCode,
-              tenSp: '',
-              soLuongGoc: sourceKg === null ? '' : String(roundMixing(sourceKg)),
-              soLuongTuDong: sourceKg !== null,
-              haoHut: String(waste),
-              tongTrongLuong: total === null ? '' : String(total),
-              lines: bomToLineForms(catalog?.nplItems ?? []).map(line => toKgLineForm(line, 0))
-            };
-          })
-    }));
+    // Chỉ gán lệnh SX — KHÔNG tự fill sản phẩm. SP của lệnh chỉ hiện trong ô "Mã sản phẩm"
+    // (xem productOptions) để người dùng tự chọn sau.
+    // Đổi sang lệnh SX khác → xóa toàn bộ SP + NVL của lệnh cũ, bắt đầu lại từ 1 dòng trống.
+    setForm(prev =>
+      prev.maLenhSx.trim() === orderCode.trim()
+        ? { ...prev, maLenhSx: orderCode }
+        : { ...prev, maLenhSx: orderCode, products: [emptyProduct()] }
+    );
   };
 
   const updateProduct = (productKey: string, patch: Partial<ProductForm>) => {
@@ -963,17 +987,19 @@ export default function MixingNormMaterialsTab() {
   const buildSingleProductFromCode = (code: string): ProductForm => {
     const catalog = findCatalogProductByAnyCode(catalogProducts, code);
     const orderLine = selectedOrder?.productLines.find(item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code));
-    const sourceKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
+    const rawKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
+    // Không quy đổi được ra kg → mặc định 0 (null làm sai công thức); vẫn cho nhập tay để chỉnh.
+    const sourceKg = rawKg ?? 0;
     const waste = catalog?.wastePercent ?? 0;
     return {
       ...emptyProduct(),
       maSpCodes: [code],
       maSp: code,
       tenSp: '',
-      soLuongGoc: sourceKg === null ? '' : String(roundMixing(sourceKg)),
-      soLuongTuDong: sourceKg !== null,
+      soLuongGoc: String(roundMixing(sourceKg)),
+      soLuongTuDong: rawKg !== null,
       haoHut: String(waste),
-      tongTrongLuong: sourceKg === null ? '' : String(roundMixing(sourceKg * (1 + waste / 100))),
+      tongTrongLuong: String(roundMixing(sourceKg * (1 + waste / 100))),
       lines: bomToLineForms(catalog?.nplItems ?? []).map(line => toKgLineForm(line, 0))
     };
   };
@@ -988,20 +1014,29 @@ export default function MixingNormMaterialsTab() {
     if (codes.length === 1) return buildSingleProductFromCode(codes[0]);
 
     const entries = codes.map(code => ({ code, catalog: findCatalogProductByAnyCode(catalogProducts, code) }));
-    const waste = entries[0]?.catalog?.wastePercent ?? 0;
 
-    let sumKg: number | null = 0;
+    // Cộng SL quy đổi trước hao hụt của TỪNG SP trong lệnh SX;
+    // Tổng SL sau hao hụt = Σ (kg_i × (1 + tỷ lệ hao hụt_i / 100)) — mỗi SP một tỷ lệ riêng.
+    let sumKg = 0;
+    let sumAfterWaste = 0;
+    let allConverted = true;
     for (const { code, catalog } of entries) {
       const orderLine = selectedOrder?.productLines.find(
         item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
       );
-      const kg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
-      if (kg === null) {
-        sumKg = null;
-        break;
-      }
-      sumKg = (sumKg ?? 0) + kg;
+      const rawKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
+      // SP không quy đổi được ra kg → tính như 0, không bỏ qua cả tổng.
+      if (rawKg === null) allConverted = false;
+      const kg = rawKg ?? 0;
+      const wastePercent = catalog?.wastePercent ?? 0;
+      sumKg += kg;
+      sumAfterWaste += kg * (1 + wastePercent / 100);
     }
+
+    // Hao hụt gộp (blended) để tương thích cột ty_le_hao_hut dạng 1 số khi lưu.
+    const waste = sumKg > 0
+      ? roundMixing((sumAfterWaste / sumKg - 1) * 100)
+      : entries[0]?.catalog?.wastePercent ?? 0;
 
     const mergedLines = new Map<string, LineForm>();
     entries.forEach(({ catalog }) => {
@@ -1025,10 +1060,10 @@ export default function MixingNormMaterialsTab() {
       maSpCodes: codes,
       maSp: codes.join(', '),
       tenSp: '',
-      soLuongGoc: sumKg === null ? '' : String(roundMixing(sumKg)),
-      soLuongTuDong: sumKg !== null,
+      soLuongGoc: String(roundMixing(sumKg)),
+      soLuongTuDong: allConverted,
       haoHut: String(waste),
-      tongTrongLuong: sumKg === null ? '' : String(roundMixing(sumKg * (1 + waste / 100))),
+      tongTrongLuong: String(roundMixing(sumAfterWaste)),
       lines: mergedLines.size > 0 ? [...mergedLines.values()] : [emptyLine()]
     };
   };
@@ -1044,7 +1079,19 @@ export default function MixingNormMaterialsTab() {
           codes.length === product.maSpCodes.length &&
           codes.every((code, index) => code === product.maSpCodes[index]);
         if (unchanged) return product;
-        return { ...buildMergedProductFromCodes(codes), key: product.key };
+
+        const rebuilt = buildMergedProductFromCodes(codes);
+        const currentHasNvl = product.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
+        // Chỉ fill NVL LẦN ĐẦU (block chưa từng fill VÀ đang trống). Sau đó mọi lần đổi/bỏ chọn
+        // mã SP chỉ cập nhật SL quy đổi · hao hụt · tổng SL — KHÔNG đụng vào danh sách NVL.
+        const keepLines = product.nvlFilled || currentHasNvl;
+        const nextLines = keepLines ? product.lines : rebuilt.lines;
+        return {
+          ...rebuilt,
+          key: product.key,
+          lines: nextLines,
+          nvlFilled: nextLines.some(line => line.maNvl.trim() || line.tenNvl.trim())
+        };
       })
     }));
   };
@@ -1609,6 +1656,9 @@ export default function MixingNormMaterialsTab() {
               <div className="space-y-3">
                 {form.products.map((product, productIndex) => {
                   const productSelected = product.maSpCodes.length > 0;
+                  // NVL đã fill 1 lần thì vẫn hiện bảng NVL kể cả khi bỏ chọn hết mã SP (không bị "mất").
+                  const showNvlEditor = productSelected || product.nvlFilled;
+                  const wasteRows = resolveWasteBreakdown(product.maSpCodes);
                   const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
                   const standardBatch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
                   const mixingRoundCount = computeMixingRoundCount(productTotal, standardBatch);
@@ -1666,9 +1716,26 @@ export default function MixingNormMaterialsTab() {
                             placeholder="Nhập tên hiển thị cho công nhân (không tự động điền)"
                           />
                           {productSelected ? (
-                            <p className="text-[11px] font-semibold text-zinc-500">
-                              Hao hụt: <strong className="text-rose-600">{product.haoHut || '0'}%</strong>
-                            </p>
+                            <div className="space-y-0.5 rounded-lg border border-rose-100 bg-rose-50/60 px-2 py-1.5 text-[11px] font-semibold text-zinc-600">
+                              <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                                Hao hụt theo sản phẩm
+                              </span>
+                              {wasteRows.length > 0 ? (
+                                wasteRows.map(row => (
+                                  <p key={row.code} className="flex flex-wrap items-center gap-1">
+                                    <span>{row.tenSanXuat}:</span>
+                                    <strong className="text-rose-600">{row.waste}%</strong>
+                                    {row.kg !== null ? (
+                                      <span className="text-zinc-400">· SL quy đổi {formatKhoiLuongDisplay(row.kg)}</span>
+                                    ) : null}
+                                  </p>
+                                ))
+                              ) : (
+                                <p>
+                                  Hao hụt: <strong className="text-rose-600">{product.haoHut || '0'}%</strong>
+                                </p>
+                              )}
+                            </div>
                           ) : null}
                         </label>
                         <label className="space-y-1">
@@ -1705,7 +1772,7 @@ export default function MixingNormMaterialsTab() {
                         </label>
                       </div>
 
-                      {productSelected ? (
+                      {showNvlEditor ? (
                         <div className="mt-3 overflow-x-auto pb-2">
                           <div className="w-full min-w-[760px] rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2">
                             <div className="mb-2 flex items-center justify-between gap-2">
