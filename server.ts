@@ -12396,6 +12396,300 @@ export function createApp() {
     }
   });
 
+  const parseLenhSxSanPham = (raw: unknown): any[] => {
+    let value = raw;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      try {
+        value = JSON.parse(trimmed);
+      } catch {
+        return [];
+      }
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nested =
+        (value as Record<string, unknown>).items ??
+        (value as Record<string, unknown>).products ??
+        (value as Record<string, unknown>).san_pham;
+      if (Array.isArray(nested)) value = nested;
+    }
+    return Array.isArray(value) ? (value as any[]) : [];
+  };
+
+  app.get('/api/lenh-sx/:id/print-preview', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID lệnh sản xuất.' });
+
+      let { data: order, error } = await supabase
+        .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+        .select('id, ma_so, ngay_lien_lac, dac_ta, san_pham, ma_don_hang, ma_hang, ten_hang, ten_san_xuat, don_vi, so_luong')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error && isMissingColumnError(error)) {
+        ({ data: order, error } = await supabase
+          .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+          .select('id, san_pham, ma_don_hang, ma_hang, ten_hang, don_vi, so_luong')
+          .eq('id', id)
+          .maybeSingle());
+      }
+
+      if (error) {
+        console.error('Supabase lenh_sx print-preview fetch error:', error);
+        return res.status(500).json({ error: 'Không thể tải xem trước lệnh sản xuất.' });
+      }
+
+      if (!order) {
+        return res.status(404).json({ error: 'Không tìm thấy lệnh sản xuất.' });
+      }
+
+      const orderRecord = order as Record<string, unknown>;
+      let sanPhamArray = parseLenhSxSanPham(orderRecord.san_pham);
+
+      if (sanPhamArray.length === 0 && (orderRecord.ma_hang || orderRecord.ten_hang)) {
+        sanPhamArray = [
+          {
+            ma_don_hang: String(orderRecord.ma_don_hang ?? '').trim(),
+            ma_sp: String(orderRecord.ma_hang ?? '').trim(),
+            ten_sp: String(orderRecord.ten_hang ?? '').trim(),
+            ten_san_xuat: String(orderRecord.ten_san_xuat ?? orderRecord.ten_hang ?? '').trim(),
+            don_vi: String(orderRecord.don_vi ?? '').trim(),
+            so_luong: Number(orderRecord.so_luong) || 0
+          }
+        ];
+      }
+
+      const maDonHangSet = new Set<string>();
+      const orderLevelMaDonHang = String(orderRecord.ma_don_hang ?? '').trim();
+      if (orderLevelMaDonHang) {
+        orderLevelMaDonHang.split(',').forEach(code => {
+          const trimmed = code.trim();
+          if (trimmed) maDonHangSet.add(trimmed);
+        });
+      }
+      sanPhamArray.forEach(item => {
+        const code = String(item?.ma_don_hang ?? '').trim();
+        if (code) maDonHangSet.add(code);
+      });
+
+      const khuVucByMaDonHang = new Map<string, string>();
+      if (maDonHangSet.size > 0) {
+        const { data: orders } = await supabase
+          .from(SUPABASE_ORDERS_TABLE)
+          .select('ma_don_hang, khu_vuc')
+          .in('ma_don_hang', Array.from(maDonHangSet));
+        (orders || []).forEach(row => {
+          const code = String((row as Record<string, unknown>).ma_don_hang ?? '').trim();
+          const khuVuc = String((row as Record<string, unknown>).khu_vuc ?? '').trim();
+          if (code && khuVuc) khuVucByMaDonHang.set(code, khuVuc);
+        });
+      }
+
+      const defaultKhuVuc = orderLevelMaDonHang
+        ? khuVucByMaDonHang.get(orderLevelMaDonHang.split(',')[0].trim()) || ''
+        : '';
+
+      // Resolve san_pham_id cho từng dòng (từ JSON, hoặc tra theo mã hàng) để lấy Kg/cuộn & TL/Tấm.
+      const idByCode = new Map<string, string>();
+      const missingCodes = new Set<string>();
+      sanPhamArray.forEach(item => {
+        const spId = String(item?.san_pham_id ?? '').trim();
+        const code = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim();
+        if (!spId && code) missingCodes.add(code);
+      });
+      if (missingCodes.size > 0) {
+        const { data: products } = await supabase
+          .from(SUPABASE_PRODUCTS_TABLE)
+          .select('id, ma_sp')
+          .in('ma_sp', Array.from(missingCodes));
+        (products || []).forEach(row => {
+          const rec = row as Record<string, unknown>;
+          const code = String(rec.ma_sp ?? '').trim();
+          const pid = String(rec.id ?? '').trim();
+          if (code && pid) idByCode.set(code, pid);
+        });
+      }
+
+      const resolveSanPhamId = (item: any): string => {
+        const spId = String(item?.san_pham_id ?? '').trim();
+        if (spId) return spId;
+        const code = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim();
+        return idByCode.get(code) || '';
+      };
+
+      const conversionSanPhamIds = sanPhamArray
+        .map(item => resolveSanPhamId(item))
+        .filter(Boolean);
+      const conversionMap = conversionSanPhamIds.length > 0
+        ? await fetchConversionMapBySanPhamIds(conversionSanPhamIds)
+        : new Map<string, { kg_cuon: number | null; tl_tam: number | null }>();
+
+      const rows = sanPhamArray.map((item, idx) => {
+        const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
+        const maDonHang = String(item?.ma_don_hang ?? '').trim();
+        const khuVuc = khuVucByMaDonHang.get(maDonHang) || defaultKhuVuc;
+        const conv = conversionMap.get(resolveSanPhamId(item)) || null;
+        const savedSlSx =
+          item?.sl_sx && typeof item.sl_sx === 'object' ? (item.sl_sx as Record<string, unknown>) : null;
+
+        let bac = 0;
+        let trung = 0;
+        let nam = 0;
+        let hasSavedDetail = false;
+
+        if (savedSlSx) {
+          bac = Number(savedSlSx.bac) || 0;
+          trung = Number(savedSlSx.trung) || 0;
+          nam = Number(savedSlSx.nam) || 0;
+          hasSavedDetail = true;
+        } else if (khuVuc === 'Bắc') {
+          bac = soLuong;
+        } else if (khuVuc === 'Trung') {
+          trung = soLuong;
+        } else if (khuVuc === 'Nam') {
+          nam = soLuong;
+        }
+
+        return {
+          key: `${id}__${idx + 1}`,
+          stt: idx + 1,
+          item_index: idx,
+          ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
+          ten_sp: String(item?.ten_sp ?? item?.ten_hang ?? item?.productName ?? '').trim(),
+          ten_san_xuat: String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim(),
+          don_vi: String(item?.don_vi ?? item?.unit ?? '').trim(),
+          so_luong: soLuong,
+          khu_vuc: khuVuc,
+          slsx_bac: bac,
+          slsx_trung: trung,
+          slsx_nam: nam,
+          kg_cuon: conv?.kg_cuon ?? null,
+          tl_tam: conv?.tl_tam ?? null,
+          ghi_chu: String(item?.ghi_chu ?? '').trim(),
+          has_saved_detail: hasSavedDetail
+        };
+      });
+
+      return res.json({
+        plan: {
+          id: orderRecord.id,
+          ma_so: (orderRecord.ma_so as string) || '',
+          ngay_lien_lac: (orderRecord.ngay_lien_lac as string) || '',
+          dac_ta: (orderRecord.dac_ta as string) || ''
+        },
+        rows
+      });
+    } catch (err: any) {
+      console.error('Error loading lenh_sx print preview:', err);
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải xem trước in.' });
+    }
+  });
+
+  app.post('/api/lenh-sx/:id/print-preview', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID lệnh sản xuất.' });
+
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const rowsInput = Array.isArray(body.rows) ? (body.rows as any[]) : [];
+
+      if (rowsInput.length > 0) {
+        const { data: current, error: loadError } = await supabase
+          .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+          .select('san_pham')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (loadError) {
+          console.error('Supabase lenh_sx print-preview load error:', loadError);
+          return res.status(500).json({ error: 'Không thể tải dữ liệu lệnh sản xuất.' });
+        }
+
+        const currentSanPhamRaw = (current as Record<string, unknown>)?.san_pham;
+        const sanPhamArray = parseLenhSxSanPham(currentSanPhamRaw);
+        const storeSanPhamAsString = typeof currentSanPhamRaw === 'string';
+
+        // Lệnh SX cũ chưa có mảng san_pham → bỏ qua phần chia Bắc/Trung/Nam, chỉ lưu phần header.
+        if (sanPhamArray.length > 0) {
+          for (let idx = 0; idx < sanPhamArray.length; idx++) {
+            const rowInput = rowsInput[idx];
+            if (!rowInput) continue;
+            const item = sanPhamArray[idx];
+            const bac = Math.max(0, Number(rowInput.slsx_bac) || 0);
+            const trung = Math.max(0, Number(rowInput.slsx_trung) || 0);
+            const nam = Math.max(0, Number(rowInput.slsx_nam) || 0);
+            const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
+            if (bac + trung + nam > soLuong + 0.0001) {
+              return res.status(400).json({
+                error: `Dòng ${idx + 1} (${String(item?.ten_sp ?? '').trim() || 'không xác định'}): tổng SL SX (${(bac + trung + nam).toFixed(2)}) vượt quá Số lượng (${soLuong.toFixed(2)}).`
+              });
+            }
+          }
+
+          const updatedSanPham = sanPhamArray.map((item, idx) => {
+            const rowInput = rowsInput[idx];
+            if (!rowInput) return item;
+            return {
+              ...item,
+              ghi_chu: String(rowInput.ghi_chu ?? '').trim() || null,
+              sl_sx: {
+                bac: Math.max(0, Number(rowInput.slsx_bac) || 0),
+                trung: Math.max(0, Number(rowInput.slsx_trung) || 0),
+                nam: Math.max(0, Number(rowInput.slsx_nam) || 0)
+              }
+            };
+          });
+
+          const { error: sanPhamError } = await supabase
+            .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+            .update({ san_pham: storeSanPhamAsString ? JSON.stringify(updatedSanPham) : updatedSanPham })
+            .eq('id', id);
+
+          if (sanPhamError) {
+            console.error('Supabase lenh_sx print-preview san_pham update error:', sanPhamError);
+            return res.status(500).json({ error: productionOrderWriteErrorMessage(sanPhamError) });
+          }
+        }
+      }
+
+      const payload = {
+        ma_so: String(body.ma_so ?? '').trim() || null,
+        ngay_lien_lac: String(body.ngay_lien_lac ?? '').trim() || null,
+        dac_ta: String(body.dac_ta ?? '').trim() || null
+      };
+
+      const { error } = await supabase
+        .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+        .update(payload)
+        .eq('id', id);
+
+      if (error) {
+        console.error('Supabase lenh_sx print-preview update error:', error);
+        if (isMissingColumnError(error) || isMissingTableError(error)) {
+          return res.status(400).json({
+            error: `Bảng ${SUPABASE_PRODUCTION_ORDERS_TABLE} thiếu cột Mã số / Ngày liên lạc / Đặc tả. Hãy chạy file supabase-lenh-sx-print-preview.sql trong Supabase SQL Editor.`
+          });
+        }
+        return res.status(500).json({ error: productionOrderWriteErrorMessage(error) });
+      }
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error('Error saving lenh_sx print preview:', err);
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu xem trước in.' });
+    }
+  });
+
   app.use('/api', (_req, res) => {
     res.status(404).json({
       error: 'API route không tồn tại. Hãy chạy npm run dev để khởi động lại server.'

@@ -29,11 +29,10 @@ import {
   getProductionOrderProductLines,
   normalizeProductionOrders,
   PRODUCTION_ORDER_STATUS_OPTIONS,
-  ProductionOrderPrintSheet,
   ProductionOrderViewModal,
-  useProductionOrderPrint,
   type ProductionOrderRow
 } from '../ke-hoach-san-xuat';
+import { ProductionOrderPrintPreviewModal } from './PrintPreviewModal';
 import { normalizeOrders } from '../don-hang';
 import { normalizeProducts } from '../san-pham';
 import type { ProductRow } from '../san-pham/types';
@@ -156,7 +155,7 @@ export function ProductionOrdersPanel({
     y: number;
   } | null>(null);
   const [staffBranches, setStaffBranches] = useState<any[]>([]);
-  const { printingOrder, printingMaterials, printingProduct, printingProductCatalog, printingProductConversions, printingMachineLabel, shiftSettings, isLoadingPrint, printProductionOrder } = useProductionOrderPrint();
+  const [previewOrder, setPreviewOrder] = useState<ProductionOrderRow | null>(null);
 
   const loadProductionOrders = async () => {
     setIsLoading(true);
@@ -652,7 +651,7 @@ export function ProductionOrdersPanel({
           <button type="button" role="menuitem" onClick={() => { setViewingRow(actionMenu.row); setActionMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50">
             <Eye className="h-4 w-4" /> Xem chi tiết
           </button>
-          <button type="button" role="menuitem" onClick={() => { printProductionOrder(actionMenu.row); setActionMenu(null); }} disabled={isLoadingPrint} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" role="menuitem" onClick={() => { setPreviewOrder(actionMenu.row); setActionMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50">
             <Printer className="h-4 w-4" /> In lệnh SX
           </button>
           {canEdit && <button type="button" role="menuitem" onClick={() => { openEditModal(actionMenu.row); setActionMenu(null); }} disabled={isLoadingEdit} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50">
@@ -665,18 +664,13 @@ export function ProductionOrdersPanel({
         document.body
       )}
 
-      {printingOrder && (
-        <ProductionOrderPrintSheet
-          order={printingOrder}
-          materials={printingMaterials}
-          machineLabel={printingMachineLabel}
-          product={printingProduct}
-          productCatalog={printingProductCatalog}
-          productConversions={printingProductConversions}
-          shiftSettings={shiftSettings}
-          staffMap={staffMap}
-        />
-      )}
+      <ProductionOrderPrintPreviewModal
+        open={Boolean(previewOrder)}
+        order={previewOrder}
+        staffMap={staffMap}
+        canEdit={canEdit}
+        onClose={() => setPreviewOrder(null)}
+      />
     </div>
   );
 }
