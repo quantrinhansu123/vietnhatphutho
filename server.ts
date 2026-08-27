@@ -7274,13 +7274,25 @@ export function createApp() {
         query = query.eq('ngay_lam_viec', ngayLamViec);
       }
 
+      // Filter theo ca_lam_viec
+      const caLamViec = String(req.query.ca_lam_viec || '').trim();
+      if (caLamViec) {
+        query = query.eq('ca_lam_viec', caLamViec);
+      }
+
+      // Filter theo ma_may
+      const maMay = String(req.query.ma_may || '').trim();
+      if (maMay) {
+        query = query.eq('ma_may', maMay);
+      }
+
       // Filter theo vai_tro
       const vaiTro = String(req.query.vai_tro || '').trim();
       if (vaiTro) {
         query = query.eq('vai_tro', vaiTro);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false });
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (error) {
         console.error('Error fetching phan_cong_nhan_su_chi_tiet:', error);
@@ -7291,6 +7303,148 @@ export function createApp() {
     } catch (err: any) {
       console.error('Error in /api/phan-cong-nhan-su:', err);
       return res.json({ items: [] });
+    }
+  });
+
+  // ── Sắp xếp lịch làm việc (module 1) ─────────────────────────────────────────
+  // Ghi thẳng vào phan_cong_nhan_su_chi_tiet theo nhóm ma_may + ngay_lam_viec + ca_lam_viec.
+  function phanCongWriteError(error: { code?: string; message?: string }) {
+    if (isMissingTableError(error))
+      return 'Bảng phan_cong_nhan_su_chi_tiet chưa tồn tại. Hãy chạy supabase-phan-cong-nhan-su.sql.';
+    if (isMissingColumnError(error))
+      return 'Bảng phan_cong_nhan_su_chi_tiet đang thiếu cột. Hãy chạy supabase-phan-cong-nhan-su-them-ca-may.sql, supabase-phan-cong-nhan-su-ma-may.sql và supabase-phan-cong-nhan-su-lich-theo-may.sql.';
+    return `Không thể lưu lịch làm việc. ${error.message || ''}`.trim();
+  }
+
+  const PHAN_CONG_TIME_RE = /^\d{1,2}:\d{2}$/;
+
+  /** Best-effort tra lệnh SX chạy máy `may` vào ngày `ngay` (chỉ để điền id_lenh_sx/ma_lenh_sx tham khảo). */
+  async function findLenhSxForMachineDate(may: string, maMay: string, ngay: string): Promise<{ id: unknown; ma_lenh_sx: string } | null> {
+    if (!supabase || (!may && !maMay)) return null;
+    try {
+      const { data } = await supabase
+        .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+        .select('id, ma_lenh_sx, vi_tri, may, ma_may, ngay_bat_dau, ngay_ket_thuc')
+        .limit(500);
+      const rows = (data || []) as Array<Record<string, unknown>>;
+      const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+      const match = rows.find(r => {
+        const machineHit =
+          (maMay && norm(r.ma_may) === norm(maMay)) ||
+          (may && (norm(r.vi_tri) === norm(may) || norm(r.may) === norm(may)));
+        if (!machineHit) return false;
+        const start = String(r.ngay_bat_dau ?? '').slice(0, 10);
+        const end = String(r.ngay_ket_thuc ?? '').slice(0, 10) || start;
+        return !start || (ngay >= start && ngay <= end);
+      });
+      return match ? { id: match.id, ma_lenh_sx: String(match.ma_lenh_sx ?? '').trim() } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  app.post('/api/phan-cong-nhan-su/nhom', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const maMay = pickRowField(body, ['ma_may', 'maMay'], '');
+      const tenMay = pickRowField(body, ['may', 'ten_may', 'tenMay'], '');
+      const ngayLamViec = pickRowField(body, ['ngay_lam_viec', 'ngayLamViec'], '');
+      const caLamViec = pickRowField(body, ['ca_lam_viec', 'caLamViec', 'ca'], '');
+      const ghiChu = pickRowField(body, ['ghi_chu', 'ghiChu', 'note'], '');
+      const nhanSuRaw = Array.isArray(body.nhan_su)
+        ? body.nhan_su
+        : Array.isArray((body as { nhanSu?: unknown }).nhanSu)
+          ? (body as { nhanSu: unknown[] }).nhanSu
+          : [];
+
+      if (!maMay) return res.status(400).json({ error: 'Thiếu máy.' });
+      if (!ngayLamViec) return res.status(400).json({ error: 'Thiếu ngày làm việc.' });
+      if (!caLamViec) return res.status(400).json({ error: 'Thiếu ca làm việc.' });
+
+      const lenh = await findLenhSxForMachineDate(tenMay, maMay, ngayLamViec);
+
+      // Chuẩn hóa từng dòng nhân sự — chỉ giữ dòng đã chọn nhân sự.
+      const rows: Array<Record<string, unknown>> = [];
+      for (const entry of nhanSuRaw) {
+        const item = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
+        const maNhanSu = pickRowField(item, ['ma_nhan_su', 'maNhanSu', 'personnelId'], '');
+        if (!maNhanSu) continue;
+        const batDau = pickRowField(item, ['thoi_gian_bat_dau', 'thoiGianBatDau', 'start'], '');
+        const ketThuc = pickRowField(item, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
+        if (batDau && !PHAN_CONG_TIME_RE.test(batDau))
+          return res.status(400).json({ error: `Giờ bắt đầu không hợp lệ (${maNhanSu}).` });
+        if (ketThuc && !PHAN_CONG_TIME_RE.test(ketThuc))
+          return res.status(400).json({ error: `Giờ kết thúc không hợp lệ (${maNhanSu}).` });
+        if (batDau && ketThuc && batDau >= ketThuc)
+          return res.status(400).json({ error: `Giờ bắt đầu phải nhỏ hơn giờ kết thúc (${maNhanSu}).` });
+        rows.push({
+          id_lenh_sx: lenh ? lenh.id : null,
+          ma_lenh_sx: lenh ? lenh.ma_lenh_sx || null : null,
+          ngay_lam_viec: ngayLamViec,
+          ca_lam_viec: caLamViec,
+          vai_tro: pickRowField(item, ['vai_tro', 'vaiTro', 'role'], '') || null,
+          ma_nhan_su: maNhanSu,
+          ma_may: maMay,
+          may: tenMay || null,
+          thoi_gian_bat_dau: batDau || null,
+          thoi_gian_ket_thuc: ketThuc || null,
+          ghi_chu: ghiChu || null,
+          removable: Boolean((item as { removable?: unknown }).removable)
+        });
+      }
+
+      // Upsert nhóm: xóa dòng cũ của (ma_may + ngay_lam_viec + ca_lam_viec) rồi insert lại.
+      const { error: deleteError } = await supabase
+        .from('phan_cong_nhan_su_chi_tiet')
+        .delete()
+        .eq('ma_may', maMay)
+        .eq('ngay_lam_viec', ngayLamViec)
+        .eq('ca_lam_viec', caLamViec);
+      if (deleteError) return res.status(500).json({ error: phanCongWriteError(deleteError) });
+
+      if (rows.length === 0) return res.json({ success: true, items: [] });
+
+      const insertRes = await supabase.from('phan_cong_nhan_su_chi_tiet').insert(rows).select('*');
+      if (insertRes.error) return res.status(500).json({ error: phanCongWriteError(insertRes.error) });
+
+      return res.status(201).json({ success: true, items: insertRes.data || [] });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi lưu lịch làm việc.' });
+    }
+  });
+
+  app.delete('/api/phan-cong-nhan-su/nhom', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const maMay = String(req.query.ma_may || '').trim();
+      const ngayLamViec = String(req.query.ngay_lam_viec || '').trim();
+      const caLamViec = String(req.query.ca_lam_viec || '').trim();
+      if (!maMay || !ngayLamViec || !caLamViec)
+        return res.status(400).json({ error: 'Thiếu ma_may / ngay_lam_viec / ca_lam_viec.' });
+      const { error } = await supabase
+        .from('phan_cong_nhan_su_chi_tiet')
+        .delete()
+        .eq('ma_may', maMay)
+        .eq('ngay_lam_viec', ngayLamViec)
+        .eq('ca_lam_viec', caLamViec);
+      if (error) return res.status(500).json({ error: phanCongWriteError(error) });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi xóa lịch làm việc.' });
+    }
+  });
+
+  app.delete('/api/phan-cong-nhan-su/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID dòng phân công.' });
+    try {
+      const { error } = await supabase.from('phan_cong_nhan_su_chi_tiet').delete().eq('id', id);
+      if (error) return res.status(500).json({ error: phanCongWriteError(error) });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi xóa dòng phân công.' });
     }
   });
 
@@ -9955,9 +10109,6 @@ export function createApp() {
         supabase.from('nhan_su').select('ma_nhan_su, nhan_su')
       ]);
 
-      console.log('[lich-lam-viec] caRes.error:', caRes.error, 'caRes.data length:', caRes.data?.length);
-      console.log('[lich-lam-viec] mayRes.error:', mayRes.error, 'mayRes.data length:', mayRes.data?.length);
-
       let caList = (caRes.data || []) as any[];
       const mayList = mayRes.data || [];
       const phanCongList = phanCongRes.data || [];
@@ -10044,8 +10195,6 @@ export function createApp() {
             if (!machineData[machineName][tenCa]) {
               machineData[machineName][tenCa] = [];
             }
-            console.log('phanCong', phanCong)
-            console.log('dieuDongList', dieuDongList)
             // Check all dispatches for this employee during this time
             const dispatchesForEmployee = dieuDongList.filter(dd =>
               dd.ma_nhan_su === phanCong.ma_nhan_su &&
@@ -10059,13 +10208,20 @@ export function createApp() {
             );
             
             if (dispatchesForThisMachine.length > 0) {
-              // Employee has one or more dispatches from this machine - add all dispatch notes
+              // Note điều động (trong ngoặc, cạnh tên nhân sự):
+              //  - Cùng máy hiện tại → "{tên} đi làm lúc hh:mm - hh:mm"
+              //  - Sang máy khác     → "{tên} đi làm lúc hh:mm {tên máy được chuyển đến}"
               const dispatchNotes = dispatchesForThisMachine.map(dd => {
-                const dispatchMachine = mayList.find(m => m.ma_may === dd.may_dieu_dong);
-                const dispatchMachineName = dispatchMachine?.ten_may || dd.may_dieu_dong;
-                const dispatchStart = dd.thoi_gian_bat_dau?.slice(0, 5) || '';
-                const dispatchEnd = dd.thoi_gian_ket_thuc?.slice(0, 5) || '';
-                return `(${dispatchStart}-${dispatchEnd} ${lastName} LÀM MÁY ${dispatchMachineName})`;
+                const toMachine = mayList.find(
+                  m => m.ma_may === dd.may_dieu_dong || m.ten_may === dd.may_dieu_dong
+                );
+                const toMachineName = toMachine?.ten_may || dd.may_dieu_dong || '';
+                const dispatchStart = String(dd.thoi_gian_bat_dau || '').slice(0, 5);
+                const dispatchEnd = String(dd.thoi_gian_ket_thuc || '').slice(0, 5);
+                if (!toMachineName || toMachineName === machineName) {
+                  return `(${lastName} đi làm lúc ${dispatchStart} - ${dispatchEnd})`;
+                }
+                return `(${lastName} đi làm lúc ${dispatchStart} ${toMachineName})`;
               });
 
               machineData[machineName][tenCa].push({

@@ -536,6 +536,13 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'dieu-dong-nhan-su'
   },
   {
+    title: 'Sắp xếp lịch làm việc',
+    desc: 'Gom, tạo và cập nhật lịch làm việc nhân viên theo máy, ngày và ca.',
+    icon: UsersRound,
+    icon3d: people3d,
+    tab: 'sap-xep-lich-lam-viec'
+  },
+  {
     title: 'Cảnh báo tồn kho',
     desc: 'Danh sách các sản phẩm sắp hết tồn kho trong tháng.',
     icon: AlertTriangle,
@@ -891,7 +898,8 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Lệnh sản xuất', tab: 'production-orders' },
       { label: 'Theo dõi sản xuất', tab: 'control-board' },
       { label: 'Báo cáo sản xuất', tab: 'production-reports' },
-      { label: 'Điều động nhân sự', tab: 'dieu-dong-nhan-su' }
+      { label: 'Điều động nhân sự', tab: 'dieu-dong-nhan-su' },
+      { label: 'Sắp xếp lịch làm việc', tab: 'sap-xep-lich-lam-viec' }
     ]
   },
   {
@@ -988,6 +996,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'shipping-orders': { group: 'Kinh doanh', sub: 'Lệnh giao / xuất hàng' },
   'production-orders': { group: 'Quản Đốc', sub: 'Lệnh sản xuất' },
   'dieu-dong-nhan-su': { group: 'Quản Đốc', sub: 'Điều động nhân sự' },
+  'sap-xep-lich-lam-viec': { group: 'Quản Đốc', sub: 'Sắp xếp lịch làm việc' },
   'canh-bao-ton-kho': { group: 'Quản Đốc', sub: 'Cảnh báo tồn kho' },
   'factory-quan-doc': { group: 'Trang chủ', sub: 'Quản Đốc' },
   'factory-qc': { group: 'Trang chủ', sub: 'QC' },
