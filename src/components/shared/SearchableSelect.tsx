@@ -34,7 +34,7 @@ export function SearchableSelect({
   getOptionLabel,
   getSearchText,
   displaySelectedAsValue = false,
-  desktopAutoFlip = false,
+  desktopAutoFlip = true,
   allowCustomValue = false
 }: {
   value: string;
@@ -300,9 +300,16 @@ export function SearchableSelect({
         ref={inputRef}
         value={query}
         onChange={event => {
-          setQuery(event.target.value);
+          const nextQuery = event.target.value;
+          setQuery(nextQuery);
           setOpen(true);
           setJustOpened(false);
+          // Propagate clearing immediately so optional fields (for example
+          // production name) can be emptied without blur restoring the old value.
+          if (!nextQuery.trim() && allowEmpty) {
+            onChange('');
+            onSelectOption?.(null);
+          }
         }}
         onFocus={() => {
           if (!isDisabled) {
