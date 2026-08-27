@@ -12428,7 +12428,7 @@ export function createApp() {
 
       let { data: order, error } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-        .select('id, ma_so, ngay_lien_lac, dac_ta, san_pham, ma_don_hang, ma_hang, ten_hang, ten_san_xuat, don_vi, so_luong')
+        .select('id, ma_so, ngay_lien_lac, dac_ta, lan_ban_hanh, san_pham, ma_don_hang, ma_hang, ten_hang, ten_san_xuat, don_vi, so_luong')
         .eq('id', id)
         .maybeSingle();
 
@@ -12581,7 +12581,8 @@ export function createApp() {
           id: orderRecord.id,
           ma_so: (orderRecord.ma_so as string) || '',
           ngay_lien_lac: (orderRecord.ngay_lien_lac as string) || '',
-          dac_ta: (orderRecord.dac_ta as string) || ''
+          dac_ta: (orderRecord.dac_ta as string) || '',
+          lan_ban_hanh: (orderRecord.lan_ban_hanh as string) || '01'
         },
         rows
       });
@@ -12665,7 +12666,8 @@ export function createApp() {
       const payload = {
         ma_so: String(body.ma_so ?? '').trim() || null,
         ngay_lien_lac: String(body.ngay_lien_lac ?? '').trim() || null,
-        dac_ta: String(body.dac_ta ?? '').trim() || null
+        dac_ta: String(body.dac_ta ?? '').trim() || null,
+        lan_ban_hanh: String(body.lan_ban_hanh ?? '').trim() || null
       };
 
       const { error } = await supabase
@@ -12677,7 +12679,7 @@ export function createApp() {
         console.error('Supabase lenh_sx print-preview update error:', error);
         if (isMissingColumnError(error) || isMissingTableError(error)) {
           return res.status(400).json({
-            error: `Bảng ${SUPABASE_PRODUCTION_ORDERS_TABLE} thiếu cột Mã số / Ngày liên lạc / Đặc tả. Hãy chạy file supabase-lenh-sx-print-preview.sql trong Supabase SQL Editor.`
+            error: `Bảng ${SUPABASE_PRODUCTION_ORDERS_TABLE} thiếu cột Mã số / Ngày liên lạc / Đặc tả / Lần ban hành. Hãy chạy file supabase-lenh-sx-print-preview.sql trong Supabase SQL Editor.`
           });
         }
         return res.status(500).json({ error: productionOrderWriteErrorMessage(error) });

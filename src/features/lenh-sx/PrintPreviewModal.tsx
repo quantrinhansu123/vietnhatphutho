@@ -14,6 +14,7 @@ interface ProductionOrderPrintMeta {
   ma_so: string;
   ngay_lien_lac: string;
   dac_ta: string;
+  lan_ban_hanh: string;
 }
 
 interface PreviewRow {
@@ -42,7 +43,7 @@ interface RowEdit {
   ghiChu: string;
 }
 
-const EMPTY_META: ProductionOrderPrintMeta = { ma_so: '', ngay_lien_lac: '', dac_ta: '' };
+const EMPTY_META: ProductionOrderPrintMeta = { ma_so: '', ngay_lien_lac: '', dac_ta: '', lan_ban_hanh: '01' };
 
 function formatNum(value: number | null): string {
   return value !== null && Number.isFinite(value) ? value.toFixed(2) : '—';
@@ -91,7 +92,8 @@ export function ProductionOrderPrintPreviewModal({
         setMeta({
           ma_so: previewData.plan?.ma_so || '',
           ngay_lien_lac: previewData.plan?.ngay_lien_lac || '',
-          dac_ta: previewData.plan?.dac_ta || ''
+          dac_ta: previewData.plan?.dac_ta || '',
+          lan_ban_hanh: previewData.plan?.lan_ban_hanh || '01'
         });
         const previewRows: PreviewRow[] = (previewData.rows || []).map((r: any, idx: number) => ({
           key: String(r.key || `${order.id}__${idx + 1}`),
@@ -274,8 +276,18 @@ export function ProductionOrderPrintPreviewModal({
                 className="w-full px-2 py-1 border rounded text-sm disabled:bg-gray-100"
               />
             </div>
+            <div>
+              <label className="block font-medium text-gray-700">Lần ban hành</label>
+              <input
+                type="text"
+                value={meta.lan_ban_hanh}
+                disabled={!canEdit}
+                onChange={e => setMeta(prev => ({ ...prev, lan_ban_hanh: e.target.value }))}
+                className="w-full px-2 py-1 border rounded text-sm disabled:bg-gray-100"
+              />
+            </div>
             <div className="col-span-2">
-              <label className="block font-medium text-gray-700">Đặc tả</label>
+              <label className="block font-medium text-gray-700">Đặc tả (Ví dụ Số 1: 22 / 7 / 2026 / ĐẶC1)</label>
               <textarea
                 value={meta.dac_ta}
                 disabled={!canEdit}
@@ -321,6 +333,7 @@ export function ProductionOrderPrintPreviewModal({
                 </div>
                 <div className="text-left text-[10px]">
                   <div>Mã số: {meta.ma_so || '—'}</div>
+                  <div>Lần ban hành: {meta.lan_ban_hanh || '—'}</div>
                   <div>Ngày liên lạc: {meta.ngay_lien_lac || '—'}</div>
                 </div>
               </div>
