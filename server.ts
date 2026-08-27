@@ -9899,7 +9899,8 @@ export function createApp() {
   function parseDispatchBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
     const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
     const ngayLamViec = pickRowField(source, ['ngay_lam_viec', 'ngayLamViec', 'ngay_bat_dau', 'ngayBatDau'], '');
-    const ca = pickRowField(source, ['ca', 'shift'], '');
+    const ca = pickRowField(source, ['ca', 'ca_goc', 'caGoc', 'shift'], '');
+    const caDieuDong = pickRowField(source, ['ca_dieu_dong', 'caDieuDong', 'ca_chuyen_den'], '');
     const maLenhSx = pickRowField(source, ['ma_lenh_sx', 'maLenhSx'], '');
     const maNhanSu = pickRowField(source, ['ma_nhan_su', 'maNhanSu', 'personnel_id', 'personnelId'], '');
     const vaiTro = pickRowField(source, ['vai_tro', 'vaiTro', 'role'], '');
@@ -9907,15 +9908,14 @@ export function createApp() {
     const mayDieuDong = pickRowField(source, ['may_dieu_dong', 'mayDieuDong'], '');
     const batDau = pickRowField(source, ['thoi_gian_bat_dau', 'thoiGianBatDau', 'start'], '');
     const ketThuc = pickRowField(source, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
+    const gocBatDau = pickRowField(source, ['goc_bat_dau', 'gocBatDau'], '');
     const ghiChu = pickRowField(source, ['ghi_chu', 'note'], '');
 
     if (!ngayLamViec) return { error: 'Thiếu ngày.' };
-    if (!ca) return { error: 'Thiếu ca làm việc.' };
-    if (!maLenhSx) return { error: 'Thiếu lệnh sản xuất.' };
     if (!maNhanSu) return { error: 'Thiếu nhân sự.' };
     if (!mayGoc) return { error: 'Thiếu máy gốc.' };
     if (!mayDieuDong) return { error: 'Vui lòng chọn máy chuyển đến.' };
-    if (mayDieuDong === mayGoc) return { error: 'Máy chuyển đến phải khác máy gốc.' };
+    
     if (!/^\d{1,2}:\d{2}$/.test(batDau)) return { error: 'Giờ bắt đầu không hợp lệ.' };
     if (!/^\d{1,2}:\d{2}$/.test(ketThuc)) return { error: 'Giờ kết thúc không hợp lệ.' };
     if (batDau >= ketThuc) return { error: 'Giờ bắt đầu phải nhỏ hơn giờ kết thúc.' };
@@ -9923,8 +9923,9 @@ export function createApp() {
     return {
       record: {
         ngay_lam_viec: ngayLamViec,
-        ca,
-        ma_lenh_sx: maLenhSx,
+        ca: ca || null,
+        ca_dieu_dong: caDieuDong || null,
+        ma_lenh_sx: maLenhSx || null,
         ma_nhan_su: maNhanSu,
         vai_tro: vaiTro || null,
         may_goc: mayGoc,
@@ -10023,9 +10024,6 @@ export function createApp() {
       const parsed = parseDispatchBody(req.body);
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
 
-      const validationError = await validateDispatchAgainstLenhSx(parsed.record);
-      if (validationError) return res.status(400).json({ error: validationError });
-
       const hasOverlap = await findOverlappingDispatch(
         String(parsed.record.ngay_lam_viec),
         String(parsed.record.ma_nhan_su),
@@ -10052,9 +10050,6 @@ export function createApp() {
     try {
       const parsed = parseDispatchBody(req.body);
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
-
-      const validationError = await validateDispatchAgainstLenhSx(parsed.record);
-      if (validationError) return res.status(400).json({ error: validationError });
 
       const hasOverlap = await findOverlappingDispatch(
         String(parsed.record.ngay_lam_viec),
@@ -10208,9 +10203,10 @@ export function createApp() {
             );
             
             if (dispatchesForThisMachine.length > 0) {
-              // Note điều động (trong ngoặc, cạnh tên nhân sự):
-              //  - Cùng máy hiện tại → "{tên} đi làm lúc hh:mm - hh:mm"
-              //  - Sang máy khác     → "{tên} đi làm lúc hh:mm {tên máy được chuyển đến}"
+              // Note điều động ghi vào Ô CA CHÍNH của nhân sự (trong ngoặc, cạnh tên):
+              //  5. Cùng máy + cùng ca  → "{tên} đi làm lúc hh:mm - hh:mm"
+              //  6. Sang máy khác        → "{tên} đi làm lúc hh:mm {tên máy được chuyển đến}"
+              //  7. Cùng máy + khác ca   → "{tên} được chuyển đến ca {tên ca} từ hh:mm - hh:mm"
               const dispatchNotes = dispatchesForThisMachine.map(dd => {
                 const toMachine = mayList.find(
                   m => m.ma_may === dd.may_dieu_dong || m.ten_may === dd.may_dieu_dong
@@ -10218,10 +10214,17 @@ export function createApp() {
                 const toMachineName = toMachine?.ten_may || dd.may_dieu_dong || '';
                 const dispatchStart = String(dd.thoi_gian_bat_dau || '').slice(0, 5);
                 const dispatchEnd = String(dd.thoi_gian_ket_thuc || '').slice(0, 5);
-                if (!toMachineName || toMachineName === machineName) {
+                const toCa = String(dd.ca_dieu_dong || '').trim();
+                const homeCa = String(phanCong.ca_lam_viec || '').trim();
+                const sameMachine = !toMachineName || toMachineName === machineName;
+                const sameCa = !toCa || toCa === homeCa;
+                if (!sameMachine) {
+                  return `(${lastName} đi làm lúc ${dispatchStart} ${toMachineName})`;
+                }
+                if (sameCa) {
                   return `(${lastName} đi làm lúc ${dispatchStart} - ${dispatchEnd})`;
                 }
-                return `(${lastName} đi làm lúc ${dispatchStart} ${toMachineName})`;
+                return `(${lastName} được chuyển đến ca ${toCa} từ ${dispatchStart} - ${dispatchEnd})`;
               });
 
               machineData[machineName][tenCa].push({
