@@ -52,6 +52,7 @@ import {
   StatusBadge,
   RowActionsMenu
 } from '../../components/shared/table';
+import { showAppToast } from '../../lib/appToast';
 
 export type { OrderProductLine, OrderRow };
 
@@ -674,6 +675,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
       if (!res.ok) {
         throw new Error(data.error || (isEdit ? 'Không thể cập nhật đơn hàng.' : 'Không thể thêm đơn hàng mới.'));
+      }
+
+      const requestedOrderCode = String(data.requestedOrderCode || payload.orderCode || '').trim();
+      const savedOrderCode = String(data.savedOrderCode || data.order?.ma_don_hang || '').trim();
+      if (!isEdit && requestedOrderCode && savedOrderCode && requestedOrderCode !== savedOrderCode) {
+        showAppToast(`Mã đơn hàng ${requestedOrderCode} đã tồn tại. Đã tạo thành công mã ${savedOrderCode}. Với mã ${savedOrderCode} là đơn hàng mới.`);
+      } else {
+        showAppToast(isEdit ? 'Đã cập nhật đơn hàng.' : 'Đã thêm đơn hàng mới.');
       }
 
       orderForm.productLines.forEach(line => {
