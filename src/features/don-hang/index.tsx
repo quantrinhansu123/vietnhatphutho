@@ -63,6 +63,7 @@ const orderProductGridClass =
   'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_6rem_6rem_4rem_4rem_4rem_2.5rem]';
 const orderCutProductGridClass =
   'grid-cols-2 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_minmax(6rem,1fr)_2.5rem]';
+const ORDER_CONVERSION_PAGE_SIZE = 1000;
 export {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -170,17 +171,28 @@ export type OrderProductFormLine = {
 
 
 function resolveOrderLineProduct(products: OrderProductOption[], line: Pick<OrderProductFormLine, 'productId' | 'productCode' | 'productName' | 'productionName' | 'unit'>) {
-  const byId = findOrderProductById(products, line.productId);
-  if (byId) return byId;
   const normalizedCode = line.productCode.trim().toLocaleLowerCase('vi');
-  if (!normalizedCode) return null;
-  const candidates = products.filter(product => product.code.toLocaleLowerCase('vi') === normalizedCode || product.newCode.toLocaleLowerCase('vi') === normalizedCode);
-  if (candidates.length <= 1) return candidates[0] ?? null;
-  return candidates.find(product =>
-    (!line.productName.trim() || product.name === line.productName.trim()) &&
-    (!line.productionName.trim() || product.productionName === line.productionName.trim()) &&
-    (!line.unit.trim() || product.unit === line.unit.trim())
-  ) ?? null;
+  const normalizedName = line.productName.trim();
+  const normalizedProductionName = line.productionName.trim();
+  const candidates = normalizedCode
+    ? products.filter(product =>
+        (product.code.trim().toLocaleLowerCase('vi') === normalizedCode ||
+          product.newCode.trim().toLocaleLowerCase('vi') === normalizedCode) &&
+        (!normalizedName || product.name.trim() === normalizedName) &&
+        (!normalizedProductionName || product.productionName.trim() === normalizedProductionName)
+      )
+    : [];
+
+  if (candidates.length === 1) return candidates[0];
+
+  // Only use the stored ID when it is still compatible with the selected identity.
+  const byId = findOrderProductById(products, line.productId);
+  if (byId && (!normalizedCode || byId.code.toLocaleLowerCase('vi') === normalizedCode || byId.newCode.toLocaleLowerCase('vi') === normalizedCode) &&
+      (!normalizedName || byId.name.trim() === normalizedName) &&
+      (!normalizedProductionName || byId.productionName.trim() === normalizedProductionName)) {
+    return byId;
+  }
+  return null;
 }
 
 export function newOrderProductFormLine(): OrderProductFormLine {
@@ -391,7 +403,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           fetch('/api/nhan-su?format=groups&scope=all'),
           fetch('/api/khach-hang'),
           fetch('/api/san-pham?format=table'),
-          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
+          fetch(`/api/bang-quy-doi-san-pham?page=1&pageSize=${ORDER_CONVERSION_PAGE_SIZE}`)
         ]);
 
         const staffData = await staffRes.json().catch(() => ({}));
@@ -415,7 +427,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
         const conversionTotal = Number(conversionData.total) || conversions.length;
         for (let page = 2; conversions.length < conversionTotal; page += 1) {
-          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=${ORDER_CONVERSION_PAGE_SIZE}`);
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
           conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
@@ -487,13 +499,42 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     );
   }, [orders, productOptions]);
 
-  const getProductionNameOptions = (productCode: string) => {
+  const getProductionNameOptions = (productCode: string, productName = '') => {
     const normalizedCode = productCode.trim();
+    const normalizedName = productName.trim();
     const source = normalizedCode
-      ? productOptions.filter(product => product.code === normalizedCode)
+      ? productOptions.filter(product =>
+          (product.code.toLocaleLowerCase('vi') === normalizedCode.toLocaleLowerCase('vi') ||
+            product.newCode.toLocaleLowerCase('vi') === normalizedCode.toLocaleLowerCase('vi')) &&
+          (!normalizedName || product.name.trim() === normalizedName)
+        )
       : productOptions;
     const names = source.map(product => product.productionName).filter(name => Boolean(name));
     return [...new Set([...names])].sort((a, b) => a.localeCompare(b, 'vi'));
+  };
+
+  const pickProductionName = (key: string, productionName: string) => {
+    setOrderForm(prev => ({
+      ...prev,
+      productLines: prev.productLines.map(line => {
+        if (line.key !== key) return line;
+        const nextLine = { ...line, productionName };
+        // Re-resolve from the visible identity. Do not fall back to the old ID:
+        // clearing/changing the production name must also clear stale conversion data.
+        const match = resolveOrderLineProduct(productOptions, { ...nextLine, productId: '' });
+        return match
+          ? {
+              ...nextLine,
+              productId: match.id,
+              // Production name is optional. Clearing it must not replace the
+              // AMIS code/name already visible on the order line.
+              productCode: nextLine.productCode,
+              productName: nextLine.productName || match.name,
+              productionName: productionName.trim() ? match.productionName : ''
+            }
+          : { ...nextLine, productId: '' };
+      })
+    }));
   };
 
   const handlePrintOrder = async (order: OrderRow) => {
@@ -886,7 +927,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       <RepeatableLineRow key={line.key} gridTemplateClass={orderCutProductGridClass}>
                         <div className="col-span-2 min-w-0 md:col-span-1">
                           <SearchableSelect
-                            value={line.productId}
+                            value={line.productId || line.productCode}
                             onChange={productId => pickCutOrderProduct(line.key, productId)}
                             options={productOptions}
                             placeholder="Tìm Mã AMIS"
@@ -911,13 +952,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-2 min-w-0 md:col-span-1">
                           <SearchableSelect
                             value={line.productionName}
-                            onChange={productionName => updateProductLine(line.key, { productionName })}
-                            options={getProductionNameOptions(line.productCode)}
+                            onChange={productionName => pickProductionName(line.key, productionName)}
+                            options={getProductionNameOptions(line.productCode, line.productName)}
                             placeholder="Chọn hoặc nhập tên sản xuất"
                             allowCustomValue
                             inputClassName={orderFieldClass}
                             getLabel={item => String(item)}
                             getValue={item => String(item)}
+                            allowEmpty
                           />
                         </div>
                         <div className="col-span-1 min-w-0">
@@ -1008,7 +1050,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
                       <div className="col-span-2 min-w-0 md:col-span-1">
                         <SearchableSelect
-                          value={matchedLineProduct?.id || line.productId}
+                          value={matchedLineProduct?.id || line.productId || line.productCode}
                           onChange={productId => pickOrderProduct(line.key, productId)}
                           options={productOptions}
                           placeholder="Tìm Mã AMIS"
@@ -1042,13 +1084,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       <div className="col-span-2 min-w-0 md:col-span-1">
                         <SearchableSelect
                           value={line.productionName}
-                          onChange={productionName => updateProductLine(line.key, { productionName })}
-                          options={getProductionNameOptions(line.productCode)}
+                          onChange={productionName => pickProductionName(line.key, productionName)}
+                          options={getProductionNameOptions(line.productCode, line.productName)}
                           placeholder="Chọn hoặc nhập tên sản xuất"
                           allowCustomValue
                           inputClassName={orderFieldClass}
                           getLabel={item => String(item)}
                           getValue={item => String(item)}
+                          allowEmpty
                         />
                       </div>
                       <div className="col-span-1 min-w-0">
