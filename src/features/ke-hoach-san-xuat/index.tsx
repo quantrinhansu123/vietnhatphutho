@@ -5347,8 +5347,10 @@ export function AddProductionOrderModal({
     const newLine: ProductionOrderEntryLine = {
       key: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       orderRef,
+      productId: built.productId,
       productCode,
       productName: built.productName || built.productCode,
+      productionName: built.productionName || '',
       quantity: String(quantity),
       unit: built.unit || built.productCode
     };
@@ -6367,14 +6369,25 @@ export function EditProductionOrderModal({
       name: row.name === '-' ? '' : row.name,
       entryLines:
         productLines.length > 0
-          ? productLines.map((product, index) => ({
-              key: `edit-${row.id}-${index}`,
-              orderRef: row.orderRef === '-' ? '' : row.orderRef,
-              productCode: product.productCode === '-' ? '' : product.productCode,
-              productName: product.productName === '-' ? '' : product.productName,
-              quantity: product.quantity === '-' ? '' : product.quantity,
-              unit: product.unit === '-' ? '' : product.unit
-            }))
+          ? productLines.map((product, index) => {
+              const catalogProduct = catalogProducts.find(
+                p => p.code === product.productCode || p.amisCode === product.productCode
+              );
+              const productionName =
+                (product.productionName && product.productionName !== '-' ? product.productionName : '') ||
+                catalogProduct?.productionName ||
+                '';
+              return {
+                key: `edit-${row.id}-${index}`,
+                orderRef: row.orderRef === '-' ? '' : row.orderRef,
+                productCode: product.productCode === '-' ? '' : product.productCode,
+                productName: product.productName === '-' ? '' : product.productName,
+                productionName,
+                quantity: product.quantity === '-' ? '' : product.quantity,
+                unit: product.unit === '-' ? '' : product.unit,
+                productId: catalogProduct?.id || product.productId
+              };
+            })
           : [newProductionOrderEntryLine()],
       status: row.status === '-' ? 'Chờ sx' : row.status,
       shift: row.shift === '-' ? '' : row.shift,

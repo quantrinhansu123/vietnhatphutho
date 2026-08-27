@@ -60,7 +60,7 @@ interface OrderRowExt extends OrderRow {
 }
 
 const orderProductGridClass =
-  'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_6rem_6rem_4rem_4rem_4rem_2.5rem]';
+  'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_5.5rem_5.5rem_4rem_4rem_4rem_2.5rem]';
 const orderCutProductGridClass =
   'grid-cols-2 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_minmax(6rem,1fr)_2.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
@@ -282,12 +282,12 @@ export function orderProductLinesToPayload(
         ten_san_xuat: line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '',
         don_vi: unit,
         so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
+        ghi_chu: note || undefined,
         ...(isCutOrder
           ? {
               do_li: doLi || undefined,
               kho: Number.isFinite(kho) && kho > 0 ? kho : undefined,
-              dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined,
-              ghi_chu: note || undefined
+              dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined
             }
           : {})
       };
@@ -913,6 +913,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'code', label: 'Mã AMIS', required: true },
                         { key: 'name', label: 'Tên sản phẩm' },
                         { key: 'productionName', label: 'Tên sản xuất' },
+                        { key: 'note', label: 'Ghi chú' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'qty', label: 'SL', required: true },
                         { key: 'kg', label: 'KG' },
@@ -1094,6 +1095,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           allowEmpty
                         />
                       </div>
+                      <div className="col-span-2 min-w-0 md:col-span-1">
+                        <input
+                          value={line.note}
+                          onChange={e => updateProductLine(line.key, { note: e.target.value })}
+                          className={orderFieldClass}
+                          placeholder="Ghi chú"
+                        />
+                      </div>
                       <div className="col-span-1 min-w-0">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                       </div>
@@ -1182,8 +1191,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
       {viewingOrder && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-3.5">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết đơn hàng</h3>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">{viewingOrder.orderCode}</p>
@@ -1192,7 +1201,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 Đóng
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-3 p-4 text-sm">
+            <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto p-5 text-sm sm:grid-cols-3">
               {[
                 ['Mã đơn', viewingOrder.orderCode],
                 ['Ngày tạo', formatOrderCreatedAt(viewingOrder.createdAt)],
@@ -1208,13 +1217,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
                 </div>
               ))}
-              <div className="col-span-2 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+              <div className="col-span-2 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 sm:col-span-3">
                 <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Sản phẩm</p>
                 <div className="mt-2 space-y-2">
                   {getOrderProductLines(viewingOrder).map(line => (
                     <div key={`${line.productCode}-${line.quantity}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm">
                       <p className="font-bold text-zinc-900">{line.productCode || '-'} · {line.productName || '-'}</p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || '-'}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note || '-'}</p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
@@ -1223,9 +1233,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <p className="mt-0.5 text-xs font-semibold text-zinc-500">
                           Quy cách: {[line.doLi, line.kho ? `Khổ ${line.kho}` : '', line.daiM ? `Dài ${line.daiM}m` : ''].filter(Boolean).join(' · ')}
                         </p>
-                      ) : null}
-                      {line.note ? (
-                        <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note}</p>
                       ) : null}
                       {line.conversionResults?.length ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1241,7 +1248,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-5 py-3">
               <button
                 type="button"
                 onClick={() => handlePrintOrder(viewingOrder)}
