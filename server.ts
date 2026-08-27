@@ -5092,6 +5092,78 @@ function orderWriteErrorMessage(error: { code?: string; message?: string }) {
   return `Không thể lưu đơn hàng vào ${SUPABASE_ORDERS_TABLE}. ${error.message}`;
 }
 
+function orderUniqueViolationColumn(error: { code?: string; message?: string; details?: string; constraint?: string } | null | undefined) {
+  if (!error || error.code !== '23505') return null;
+  const text = `${error.constraint || ''} ${error.message || ''} ${error.details || ''}`.toLowerCase();
+  if (text.includes('don_hang_ma_don_hang_key') || text.includes('ma_don_hang_key') || text.includes('ma_don_hang')) {
+    return 'ma_don_hang';
+  }
+  return 'unknown';
+}
+
+function isOrderCodeUniqueViolation(error: { code?: string; message?: string; details?: string; constraint?: string } | null | undefined) {
+  return orderUniqueViolationColumn(error) === 'ma_don_hang';
+}
+
+async function insertOrderWithAutoCodeRetry(
+  record: Record<string, string | number | null | OrderProductRecord[]>,
+  requestedOrderCode: string,
+  maxAttempts = 5
+): Promise<
+  | {
+      data: Record<string, unknown>;
+      requestedOrderCode: string;
+      savedOrderCode: string;
+      retried: boolean;
+    }
+  | {
+      error: { code?: string; message?: string; details?: string; constraint?: string } | null;
+    }
+> {
+  if (!supabase) {
+    return { error: { message: 'Supabase chưa được cấu hình.' } };
+  }
+
+  const originalOrderCode = String(requestedOrderCode || '').trim();
+  let currentRecord: Record<string, string | number | null | OrderProductRecord[]> = {
+    ...record,
+    ma_don_hang: String(record.ma_don_hang ?? originalOrderCode).trim()
+  };
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const { data, error } = await supabase
+      .from(SUPABASE_ORDERS_TABLE)
+      .insert(currentRecord)
+      .select('*')
+      .single();
+
+    if (!error && data) {
+      const savedOrderCode = String((data as Record<string, unknown>).ma_don_hang ?? currentRecord.ma_don_hang ?? '').trim();
+      return {
+        data: data as Record<string, unknown>,
+        requestedOrderCode: originalOrderCode || savedOrderCode,
+        savedOrderCode,
+        retried: attempt > 0
+      };
+    }
+
+    if (!isOrderCodeUniqueViolation(error) || attempt === maxAttempts - 1) {
+      return { error };
+    }
+
+    const nextOrderCode = await generateNextOrderCodeFromDb();
+    console.warn(
+      `Supabase ${SUPABASE_ORDERS_TABLE} duplicate ma_don_hang ${String(currentRecord.ma_don_hang || '').trim()} -> retry ${nextOrderCode}`
+    );
+    currentRecord = {
+      ...currentRecord,
+      ma_don_hang: nextOrderCode
+    };
+  }
+
+  return { error: { message: `Không thể lưu đơn hàng vào ${SUPABASE_ORDERS_TABLE}.` } };
+}
+
 const DEFAULT_PRODUCTION_ORDER_STATUS = 'Chờ sx';
 const DEFAULT_PRODUCTION_WORKERS = 'Chưa phân công';
 const DEFAULT_PRODUCTION_CREATOR = 'Hệ thống';
@@ -6932,18 +7004,21 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
-      const { data, error } = await supabase
-        .from(SUPABASE_ORDERS_TABLE)
-        .insert(parsed.record)
-        .select('*')
-        .single();
+      const requestedOrderCode = String(parsed.record.ma_don_hang ?? source.orderCode ?? '').trim();
+      const insertResult = await insertOrderWithAutoCodeRetry(parsed.record, requestedOrderCode);
 
-      if (error) {
-        console.error('Supabase don_hang insert error:', error);
-        return res.status(500).json({ error: orderWriteErrorMessage(error) });
+      if ('error' in insertResult) {
+        console.error('Supabase don_hang insert error:', insertResult.error);
+        return res.status(500).json({ error: orderWriteErrorMessage(insertResult.error || {}) });
       }
 
-      return res.status(201).json({ success: true, order: data });
+      return res.status(201).json({
+        success: true,
+        order: insertResult.data,
+        requestedOrderCode: insertResult.requestedOrderCode,
+        savedOrderCode: insertResult.savedOrderCode,
+        orderCodeRetried: insertResult.retried
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi thêm đơn hàng mới.' });
     }
