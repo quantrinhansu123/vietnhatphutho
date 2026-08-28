@@ -387,8 +387,11 @@ function findCatalogProductForProductionLine(
   const byId = line.productId?.trim()
     ? products.find(product => product.id === line.productId?.trim())
     : undefined;
-  if (byStoredNames) return byStoredNames;
+  // The id is the stable identity when several catalog rows share an
+  // AMIS/new code. Resolve it first so the picker and waste breakdown use
+  // the same product row.
   if (byId && matches.includes(byId)) return byId;
+  if (byStoredNames) return byStoredNames;
   return products.find(product => normalizeProductLookupKey(product.code) === codeKey)
     || products.find(product => normalizeProductLookupKey(product.newCode || '') === codeKey)
     || matches[0];
@@ -941,14 +944,32 @@ export default function MixingNormMaterialsTab() {
 
   const productOptionsByCode = useMemo(() => {
     const map = new Map<string, ProductOption>();
-    productOptions.forEach(option => map.set(option.code, option));
+    productOptions.forEach(option => {
+      [option.code, option.amisCode ?? '', option.newCode ?? '']
+        .map(normalizeProductLookupKey)
+        .filter(Boolean)
+        .forEach(key => {
+          if (!map.has(key)) map.set(key, option);
+        });
+    });
     return map;
   }, [productOptions]);
 
   /** Trả về ProductOption cho từng mã đã chọn — dùng luôn để hiển thị chip trong multi-select. */
   const resolveProductOptionsForCodes = (codes: string[]): ProductOption[] =>
     codes.map(code => {
-      const fromOptions = productOptionsByCode.get(code);
+      const orderLine = selectedOrder?.productLines.find(
+        item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
+      );
+      const orderCatalog = orderLine
+        ? findCatalogProductForProductionLine(catalogProducts, orderLine)
+        : findCatalogProductByAnyCode(catalogProducts, code);
+      const fromOrder = productOptions.find(option =>
+        (orderCatalog?.id && option.id === orderCatalog.id) ||
+        normalizeProductLookupKey(option.code) === normalizeProductLookupKey(orderCatalog?.code || '')
+      );
+      if (fromOrder) return fromOrder;
+      const fromOptions = productOptionsByCode.get(normalizeProductLookupKey(code));
       if (fromOptions) return fromOptions;
       const catalog = findCatalogProductByAnyCode(catalogProducts, code);
       return catalog ? { ...catalog, code } : { code, name: code };
@@ -1157,6 +1178,10 @@ export default function MixingNormMaterialsTab() {
       .filter(Boolean)
       .map(code => {
         const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+        const selectedOption = productOptions.find(option =>
+          [option.code, option.amisCode ?? '', option.newCode ?? '']
+            .some(optionCode => normalizeProductLookupKey(optionCode) === normalizeProductLookupKey(code))
+        );
         const orderLine = selectedOrder?.productLines.find(
           item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
         );
@@ -1164,8 +1189,15 @@ export default function MixingNormMaterialsTab() {
         const kg = (orderLine ? resolveOrderLineKg(orderLine, catalog) : null) ?? 0;
         return {
           code,
-          name: catalog?.name || code,
-          tenSanXuat: catalog?.tenSanXuat?.trim() || catalog?.name || code,
+          name: selectedOption?.name?.trim() || orderLine?.productName?.trim() || catalog?.name || code,
+          // Keep this identical to the selected chip label (ten_san_xuat first).
+          tenSanXuat:
+            selectedOption?.tenSanXuat?.trim() ||
+            orderLine?.productionName?.trim() ||
+            orderLine?.productName?.trim() ||
+            catalog?.tenSanXuat?.trim() ||
+            catalog?.name ||
+            code,
           waste: catalog?.wastePercent ?? 0,
           kg
         };
