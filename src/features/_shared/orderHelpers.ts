@@ -192,6 +192,13 @@ export type OrderProductConversion = {
   trongLuongKgCuon: number | null;
 };
 
+export type CutOrderWeightResult = {
+  kg1Sp: number;
+  tongKg: number;
+  source: 'trong_luong_kg_m_dai' | 'trong_luong_kg_m2' | 'trong_luong_kg_tam' | 'trong_luong_kg_cuon' | 'don_vi_kg';
+  dienTich1SpM2?: number;
+};
+
 export function normalizeConversionUnit(value: string) {
   return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ').replace('m²', 'm2');
 }
@@ -235,6 +242,53 @@ export function conversionSupportsUnit(conversion: OrderProductConversion, unitT
   if (unit === 'meter') return Boolean(conversion.trongLuongKgMDai);
   if (unit === 'kg') return true;
   return false;
+}
+
+export function calculateCutOrderWeight(
+  lengthText: string,
+  quantityText: string,
+  conversion: OrderProductConversion | null | undefined,
+  unitText = 'Tấm'
+): CutOrderWeightResult | null {
+  const length = parsePercentInput(lengthText);
+  const quantity = parsePercentInput(quantityText);
+  if (!conversion || !Number.isFinite(length) || length <= 0 || !Number.isFinite(quantity) || quantity <= 0) return null;
+  const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+  const kgPerMeter = conversion.trongLuongKgMDai;
+  if (Number.isFinite(kgPerMeter) && (kgPerMeter as number) > 0) {
+    const rawKg1Sp = length * (kgPerMeter as number);
+    return { kg1Sp: round(rawKg1Sp), tongKg: round(rawKg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
+  }
+
+  const width = conversion.khoTamRongM || conversion.khoCuonRongM;
+  const kgPerM2 = conversion.trongLuongKgM2;
+  if (Number.isFinite(width) && (width as number) > 0 && Number.isFinite(kgPerM2) && (kgPerM2 as number) > 0) {
+    const dienTich1SpM2 = length * (width as number);
+    const rawKg1Sp = dienTich1SpM2 * (kgPerM2 as number);
+    return { kg1Sp: round(rawKg1Sp), tongKg: round(rawKg1Sp * quantity), source: 'trong_luong_kg_m2', dienTich1SpM2 };
+  }
+
+  const unit = resolveConversionUnit(unitText);
+  const perUnit = unit === 'sheet'
+    ? conversion.trongLuongKgTam
+    : unit === 'roll'
+      ? conversion.trongLuongKgCuon
+      : null;
+  if (Number.isFinite(perUnit) && (perUnit as number) > 0) {
+    const kg1Sp = round(perUnit as number);
+    return {
+      kg1Sp,
+      tongKg: round((perUnit as number) * quantity),
+      source: unit === 'sheet' ? 'trong_luong_kg_tam' : 'trong_luong_kg_cuon'
+    };
+  }
+
+  if (unit === 'kg') {
+    return { kg1Sp: 1, tongKg: round(quantity), source: 'don_vi_kg' };
+  }
+
+  return null;
 }
 
 export function allowedOrderUnits(product: OrderProductOption | null) {

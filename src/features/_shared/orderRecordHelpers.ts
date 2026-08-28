@@ -88,6 +88,9 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
         const doLi = pickText(row, ['do_li', 'doLi'], '');
         const kho = pickText(row, ['kho'], '');
         const daiM = pickText(row, ['dai_m', 'daiM'], '');
+        const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp'], '');
+        const tongKg = pickText(row, ['tong_kg', 'tongKg'], '');
+        const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource'], '');
         const note = pickText(row, ['ghi_chu', 'note'], '');
         if (!productCode && !productName) return null;
         return {
@@ -101,6 +104,9 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
           doLi: doLi || undefined,
           kho: kho || undefined,
           daiM: daiM || undefined,
+          kg1Sp: kg1Sp || undefined,
+          tongKg: tongKg || undefined,
+          conversionSource: conversionSource || undefined,
           note: note || undefined,
           conversionResults: Array.isArray(row.ket_qua_quy_doi)
             ? row.ket_qua_quy_doi.map(item => {

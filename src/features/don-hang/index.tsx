@@ -23,6 +23,7 @@ import {
   readUnitSuggestions,
   saveUnitSuggestion,
   calculateOrderConversion,
+  calculateCutOrderWeight,
   conversionSupportsUnit,
   allowedOrderUnits,
   type OrderProductOption,
@@ -65,7 +66,7 @@ interface OrderRowExt extends OrderRow {
 const orderProductGridClass =
   'grid-cols-2 md:grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_5.5rem_5.5rem_4rem_4rem_4rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-2 md:grid-cols-[2.25rem_minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_minmax(0,1fr)_6.5rem]';
+  'grid-cols-2 md:grid-cols-[2.25rem_minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 export {
   parseOrderProductsFromRecord,
@@ -169,6 +170,9 @@ export type OrderProductFormLine = {
   doLi: string;
   kho: string;
   daiM: string;
+  kg1Sp?: string;
+  tongKg?: string;
+  conversionSource?: string;
   note: string;
 };
 
@@ -393,7 +397,8 @@ function orderCreatedAtToInput(value: string): string {
 export function orderProductLinesToPayload(
   lines: OrderProductFormLine[],
   productOptions: OrderProductOption[],
-  orderType?: string
+  orderType?: string,
+  productConversions: OrderProductConversion[] = []
 ) {
   const isCutOrder = orderType === CUT_ORDER_TYPE;
   return lines
@@ -417,6 +422,9 @@ export function orderProductLinesToPayload(
       const kho = parsePercentInput(line.kho);
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
+      const conversion = productConversions.find(item => item.sanPhamId === selectedProduct?.id);
+      const cutWeight = isCutOrder ? calculateCutOrderWeight(line.daiM, line.quantity, conversion, unit) : null;
+      const roundConversionValue = (value: number) => Math.round(value * 100) / 100;
 
       return {
         san_pham_id: selectedProduct?.id || line.productId.trim() || undefined,
@@ -432,6 +440,17 @@ export function orderProductLinesToPayload(
               do_li: doLi || undefined,
               kho: Number.isFinite(kho) && kho > 0 ? kho : undefined,
               dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined
+            }
+          : {}),
+        ...(cutWeight
+          ? {
+              kg_1_sp: roundConversionValue(cutWeight.kg1Sp),
+              tong_kg: roundConversionValue(cutWeight.tongKg),
+              nguon_quy_doi: cutWeight.source,
+              ket_qua_quy_doi: [
+                { don_vi: 'kg/1 SP', gia_tri: roundConversionValue(cutWeight.kg1Sp) },
+                { don_vi: 'kg', gia_tri: roundConversionValue(cutWeight.tongKg) }
+              ]
             }
           : {})
       };
@@ -463,6 +482,9 @@ export function orderToForm(order: OrderRow): OrderFormState {
     doLi: line.doLi || '',
     kho: line.kho || '',
     daiM: line.daiM || '',
+    kg1Sp: line.kg1Sp || '',
+    tongKg: line.tongKg || '',
+    conversionSource: line.conversionSource || '',
     note: line.note || ''
   }));
 
@@ -797,7 +819,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
 
     const isCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
-    const products = orderProductLinesToPayload(orderForm.productLines, productOptions, orderForm.orderType);
+    const products = orderProductLinesToPayload(orderForm.productLines, productOptions, orderForm.orderType, productConversions);
     if (products.length === 0) {
       setFormError('Vui lòng thêm ít nhất một sản phẩm.');
       return;
@@ -806,6 +828,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     for (const product of products) {
       if (!product.ma_sp && !product.ten_sp) {
         setFormError('Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.');
+        return;
+      }
+      if (isCutOrder && (!product.dai_m || product.dai_m <= 0)) {
+        setFormError(`Dài (m) phải lớn hơn 0 cho sản phẩm ${product.ma_sp || product.ten_sp}.`);
         return;
       }
       if (!product.so_luong || product.so_luong <= 0) {
@@ -1148,6 +1174,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'kho', label: 'Khổ' },
                         { key: 'daiM', label: 'Dài (m)' },
                         { key: 'qty', label: 'SL', required: true },
+                        { key: 'tongKg', label: 'Tổng KG' },
                         { key: 'note', label: 'Ghi chú' },
                         { key: 'actions', label: '' }
                       ]
@@ -1167,8 +1194,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 }
               >
                 {isFormCutOrder
-                  ? orderForm.productLines.map((line, index) =>
-                      renderProductLineShell(
+                  ? orderForm.productLines.map((line, index) => {
+                      const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
+                      const matchedConversion = productConversions.find(item => item.sanPhamId === matchedLineProduct?.id);
+                      const cutWeight = calculateCutOrderWeight(line.daiM, line.quantity, matchedConversion, 'Tấm');
+                      return renderProductLineShell(
                         line,
                         index,
                         orderCutProductGridClass,
@@ -1254,6 +1284,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="0"
                           />
                         </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="text"
+                            value={cutWeight ? formatNumber(cutWeight.tongKg, 2) : ''}
+                            readOnly
+                            title={cutWeight ? `Nguồn: ${cutWeight.source}` : 'Chưa đủ dữ liệu quy đổi'}
+                            className={`${orderFieldClass} bg-zinc-50 text-right`}
+                          />
+                        </div>
                         <div className="col-span-2 min-w-0 md:col-span-1">
                           <input
                             value={line.note}
@@ -1263,8 +1302,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           />
                         </div>
                         </>
-                      )
-                    )
+                      );
+                    })
                   : orderForm.productLines.map((line, index) => {
                   const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
                   const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
@@ -1456,9 +1495,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           Quy cách: {[line.doLi, line.kho ? `Khổ ${line.kho}` : '', line.daiM ? `Dài ${line.daiM}m` : ''].filter(Boolean).join(' · ')}
                         </p>
                       ) : null}
-                      {line.conversionResults?.length ? (
+                      {line.conversionResults?.some(result => result.unit !== 'kg/1 SP') ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {line.conversionResults.map(result => (
+                          {line.conversionResults.filter(result => result.unit !== 'kg/1 SP').map(result => (
                             <span key={result.unit} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800">
                               {formatNumber(result.value, 3)} {result.unit}
                             </span>
