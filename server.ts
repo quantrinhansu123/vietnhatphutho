@@ -5270,13 +5270,6 @@ function buildProductionOrderRecordFromOrder(
   const creator =
     pickRowField(order, ['nguoi_tao', 'created_by', 'nguoi_lap', 'nhan_vien', 'staff'], '') || DEFAULT_PRODUCTION_CREATOR;
 
-  const defaultPersonnel = [
-    { id: 'role-0', role: 'Trưởng ca', personnelId: '', date: '', time: '', removable: false },
-    { id: 'role-1', role: 'Nhân sự chính', personnelId: '', date: '', time: '', removable: false },
-    { id: 'role-2', role: 'Thợ phụ', personnelId: '', date: '', time: '', removable: false },
-    { id: 'role-3', role: 'Học việc', personnelId: '', date: '', time: '', removable: false }
-  ];
-
   return {
     ma_lenh_sx: code,
     ten_lenh_sx: productName ? `SX ${productName}` : `Lệnh SX ${orderCode || code}`,
@@ -5289,10 +5282,12 @@ function buildProductionOrderRecordFromOrder(
     khach_hang: customer,
     cong_nhan: workers,
     nhan_su: workers,
-    phan_cong_nhan_su: JSON.stringify(defaultPersonnel),
     nguoi_tao: creator,
     ma_don_hang: orderCode,
     ngay_bat_dau: todayDateString(),
+    ngay_ket_thuc: todayDateString(),
+    ngay_gio_bat_dau: new Date().toISOString(),
+    ngay_gio_ket_thuc: new Date().toISOString(),
     ghi_chu: pickRowField(order, ['ghi_chu', 'note'])
   };
 }
@@ -5402,6 +5397,19 @@ function parseProductionOrderBody(
   );
   const startDateOnly = startDateTime ? startDateTime.slice(0, 10) : todayDateString();
   const endDateOnly = endDateTime ? endDateTime.slice(0, 10) : '';
+  if (!startDateTime || !String(startDateTime).trim()) {
+    return { error: 'Cần nhập ngày bắt đầu.' };
+  }
+  if (!endDateTime || !String(endDateTime).trim()) {
+    return { error: 'Cần nhập ngày kết thúc.' };
+  }
+  if (startDateTime && endDateTime) {
+    const startMs = new Date(startDateTime).getTime();
+    const endMs = new Date(endDateTime).getTime();
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs < startMs) {
+      return { error: 'Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.' };
+    }
+  }
   const workers =
     pickRowField(source, ['cong_nhan', 'nhan_su', 'staff', 'nhan_vien'], '') || DEFAULT_PRODUCTION_WORKERS;
   const creator =
@@ -5429,11 +5437,6 @@ function parseProductionOrderBody(
       ca: pickRowField(source, ['ca', 'shift'], ''),
       cong_nhan: workers,
       nhan_su: workers,
-      truong_ca: pickRowField(source, ['truong_ca', 'shiftLead'], '') || null,
-      nhan_su_chinh: pickRowField(source, ['nhan_su_chinh', 'mainStaff'], '') || null,
-      tho_phu: pickRowField(source, ['tho_phu', 'assistantStaff'], '') || null,
-      hoc_viec: pickRowField(source, ['hoc_viec', 'traineeStaff'], '') || null,
-      phan_cong_nhan_su: pickRowField(source, ['phan_cong_nhan_su'], ''),
       nguoi_tao: creator,
       ngay_gio_bat_dau: startDateTime || null,
       ngay_gio_ket_thuc: endDateTime || null,
@@ -7120,135 +7123,6 @@ export function createApp() {
     }
   });
 
-  /** Dựng JSON phan_cong_nhan_su từ 4 cột cũ nếu cần (lazy migration). */
-  function buildPersonnelJsonFromLegacyColumns(row: Record<string, unknown>): {
-    json: string;
-    needsUpdate: boolean;
-  } {
-    const existingJson = String(row.phan_cong_nhan_su ?? '').trim();
-    if (existingJson && existingJson !== 'null') {
-      return { json: existingJson, needsUpdate: false }; // Đã có, không cần dựng
-    }
-
-    const shiftLead = String(row.truong_ca ?? '').trim();
-    const mainStaff = String(row.nhan_su_chinh ?? '').trim();
-    const assistantStaff = String(row.tho_phu ?? '').trim();
-    const traineeStaff = String(row.hoc_viec ?? '').trim();
-
-    const defaults = [
-      { id: 'role-0', role: 'Trưởng ca', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false },
-      { id: 'role-1', role: 'Nhân sự chính', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false },
-      { id: 'role-2', role: 'Thợ phụ', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false },
-      { id: 'role-3', role: 'Học việc', ma_nhan_su: '', ngay_lam_viec: '', thoi_gian_bat_dau: '', thoi_gian_ket_thuc: '', removable: false }
-    ];
-
-    if (!shiftLead && !mainStaff && !assistantStaff && !traineeStaff) {
-      return { json: JSON.stringify(defaults), needsUpdate: true };
-    }
-
-    const personnel: any[] = [];
-    const staffInputs = [
-      { index: 0, role: 'Trưởng ca', value: shiftLead },
-      { index: 1, role: 'Nhân sự chính', value: mainStaff },
-      { index: 2, role: 'Thợ phụ', value: assistantStaff },
-      { index: 3, role: 'Học việc', value: traineeStaff }
-    ];
-
-    let nextId = 4;
-    for (const { index, role, value } of staffInputs) {
-      if (!value || value === '-' || /^chưa phân công$/i.test(value)) {
-        personnel.push({
-          id: `role-${index}`,
-          role,
-          ma_nhan_su: '',
-          ngay_lam_viec: '',
-          thoi_gian_bat_dau: '',
-          thoi_gian_ket_thuc: '',
-          removable: false
-        });
-      } else {
-        const names = value
-          .split(/[,;/|]+|\s+[-–—]\s+/)
-          .map((n: string) => n.trim())
-          .filter(Boolean);
-
-        for (let i = 0; i < names.length; i++) {
-          if (i === 0) {
-            personnel.push({
-              id: `role-${index}`,
-              role,
-              ma_nhan_su: names[i],
-              ngay_lam_viec: '',
-              thoi_gian_bat_dau: '',
-              thoi_gian_ket_thuc: '',
-              removable: false
-            });
-          } else {
-            personnel.push({
-              id: `personnel-${Date.now()}-${nextId++}`,
-              role: `Nhân sự ${personnel.length + 1}`,
-              ma_nhan_su: names[i],
-              ngay_lam_viec: '',
-              thoi_gian_bat_dau: '',
-              thoi_gian_ket_thuc: '',
-              removable: true
-            });
-          }
-        }
-      }
-    }
-
-    return { json: JSON.stringify(personnel), needsUpdate: true };
-  }
-
-  /** Lưu phân công nhân sự vào bảng chi tiết */
-  async function savePhanCongNhanSuDetails(
-    lenhSxId: string | number,
-    maLenhSx: string,
-    phanCongJson: string,
-    ca?: string,
-    may?: string,
-    ma_may?: string
-  ): Promise<void> {
-    if (!supabase) return;
-
-    try {
-      const phanCongList = JSON.parse(phanCongJson || '[]');
-      if (!Array.isArray(phanCongList) || phanCongList.length === 0) return;
-
-      // Xóa các bản ghi cũ
-      await supabase
-        .from('phan_cong_nhan_su_chi_tiet')
-        .delete()
-        .eq('id_lenh_sx', lenhSxId);
-
-      // Insert bản ghi mới
-      const details = phanCongList
-        .filter((p: any) => String(p.ma_nhan_su || '').trim())
-        .map((p: any) => ({
-          id_lenh_sx: lenhSxId,
-          ma_lenh_sx: maLenhSx,
-          vai_tro: p.role || '',
-          ma_nhan_su: String(p.ma_nhan_su || '').trim(),
-          ngay_lam_viec: p.ngay_lam_viec || null,
-          thoi_gian_bat_dau: p.thoi_gian_bat_dau || null,
-          thoi_gian_ket_thuc: p.thoi_gian_ket_thuc || null,
-          ca_lam_viec: p.ca_lam_viec || ca || null,
-          may: may || null,
-          ma_may: p.ma_may,
-          removable: Boolean(p.removable)
-        }));
-
-      if (details.length > 0) {
-        await supabase
-          .from('phan_cong_nhan_su_chi_tiet')
-          .insert(details);
-      }
-    } catch (err) {
-      console.error('Error saving phan_cong_nhan_su details:', err);
-    }
-  }
-
   app.get('/api/phan-cong-nhan-su', async (req, res) => {
     if (!supabase) {
       return res.json({ items: [] });
@@ -7618,31 +7492,10 @@ export function createApp() {
         });
       }
 
-      // Lazy migration: populate phan_cong_nhan_su từ 4 cột cũ nếu cần, và fire-and-forget UPDATE
-      const enrichedData = (data || []).map(row => {
-        const { json, needsUpdate } = buildPersonnelJsonFromLegacyColumns(row as Record<string, unknown>);
-        const enriched = { ...row, phan_cong_nhan_su: json };
-
-        // Fire-and-forget UPDATE ngược lại DB nếu cần (không chặn response)
-        if (needsUpdate && row.id) {
-          supabase
-            .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-            .update({ phan_cong_nhan_su: json })
-            .eq('id', row.id)
-            .then(() => {
-              // Silent success
-            })
-            .catch((err: any) => {
-              console.error(`Failed to migrate phan_cong_nhan_su for lenh_sx id ${row.id}:`, err.message);
-            });
-        }
-
-        return enriched;
-      });
-
+      const rows = data || [];
       return res.json({
-        productionOrders: enrichedData,
-        total: enrichedData.length,
+        productionOrders: rows,
+        total: rows.length,
         source: 'supabase'
       });
     } catch (err: any) {
@@ -7784,42 +7637,6 @@ export function createApp() {
           });
         }
       }
-      let maMay: string | null = null;
-      // Nếu có phan_cong_nhan_su, thêm ma_may vào JSON
-      let phanCongJson = record.phan_cong_nhan_su;
-      if (phanCongJson) {
-        try {
-          const phanCongList = JSON.parse(String(phanCongJson || '[]'));
-          if (Array.isArray(phanCongList)) {
-            const machineNameToLookup = String(record.may || '').trim() || null;
-
-            // Lookup ma_may từ ten_may
-      
-            if (machineNameToLookup) {
-              const { data: machineData, error: machineError } = await supabase
-                .from('danh_sach_may')
-                .select('ma_may')
-                .eq('ten_may', machineNameToLookup)
-                .maybeSingle();
-
-              if (!machineError && machineData) {
-                maMay = String(machineData.ma_may || '').trim() || null;
-              }
-            }
-
-            // Thêm ma_may vào từng item của JSON
-            const updatedList = phanCongList.map((item: any) => ({
-              ...item,
-              ma_may: maMay
-            }));
-
-            phanCongJson = JSON.stringify(updatedList);
-            record.phan_cong_nhan_su = phanCongJson;
-          }
-        } catch (err) {
-          console.error('Error processing phan_cong_nhan_su:', err);
-        }
-      }
 
       const { data: created, error: insertError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
@@ -7830,18 +7647,6 @@ export function createApp() {
       if (insertError) {
         console.error('Supabase lenh_sx insert error:', insertError);
         return res.status(500).json({ error: productionOrderWriteErrorMessage(insertError) });
-      }
-
-      // Lưu phân công nhân sự vào bảng chi tiết
-      if (created && created.id && created.phan_cong_nhan_su) {
-        await savePhanCongNhanSuDetails(
-          created.id,
-          String(created.ma_lenh_sx || ''),
-          created.phan_cong_nhan_su,
-          String(created.ca || ''),
-          String(created.may || ''),
-          String(maMay || '')
-        );
       }
 
       return res.status(201).json({
@@ -8148,56 +7953,6 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
-      // Nếu có phan_cong_nhan_su, thêm ma_may vào JSON
-      let phanCongJson = parsed.record.phan_cong_nhan_su;
-      let maMay: string | null = null;
-      if (phanCongJson) {
-        try {
-          const phanCongList = JSON.parse(String(phanCongJson || '[]'));
-          if (Array.isArray(phanCongList)) {
-            // Lấy may từ request hoặc từ order hiện tại
-            let machineNameToLookup = parsed.record.may ? String(parsed.record.may || '').trim() : null;
-
-            // Nếu request không có may, lấy từ order hiện tại
-            if (!machineNameToLookup) {
-              const { data: currentOrder, error: fetchError } = await supabase
-                .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-                .select('may')
-                .eq('id', id)
-                .maybeSingle();
-
-              if (!fetchError && currentOrder) {
-                machineNameToLookup = String(currentOrder.may || '').trim() || null;
-              }
-            }
-
-            // Lookup ma_may từ ten_may
-            if (machineNameToLookup) {
-              const { data: machineData, error: machineError } = await supabase
-                .from('danh_sach_may')
-                .select('ma_may')
-                .eq('ten_may', machineNameToLookup)
-                .maybeSingle();
-
-              if (!machineError && machineData) {
-                maMay = String(machineData.ma_may || '').trim() || null;
-              }
-            }
-
-            // Thêm ma_may vào từng item của JSON
-            const updatedList = phanCongList.map((item: any) => ({
-              ...item,
-              ma_may: maMay
-            }));
-
-            phanCongJson = JSON.stringify(updatedList);
-            parsed.record.phan_cong_nhan_su = phanCongJson;
-          }
-        } catch (err) {
-          console.error('Error processing phan_cong_nhan_su:', err);
-        }
-      }
-
       const { data: updated, error: updateError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
         .update(parsed.record)
@@ -8212,18 +7967,6 @@ export function createApp() {
 
       if (!updated) {
         return res.status(404).json({ error: 'Production order not found.' });
-      }
-
-      // Lưu phân công nhân sự vào bảng chi tiết nếu có cập nhật
-      if (updated && updated.id && updated.phan_cong_nhan_su) {
-        await savePhanCongNhanSuDetails(
-          updated.id,
-          String(updated.ma_lenh_sx || ''),
-          updated.phan_cong_nhan_su,
-          String(updated.ca || ''),
-          String(updated.may || ''),
-          String(maMay || '')
-        );
       }
 
       return res.json({
@@ -10102,7 +9845,7 @@ export function createApp() {
     // Lấy tất cả LSX cùng ca cùng ngày
     const { data: allRowsThisDay, error: errorAllRows } = await supabase
       .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-      .select('vi_tri, may, phan_cong_nhan_su, ma_lenh_sx')
+      .select('vi_tri, may, ma_lenh_sx')
       .eq('ngay_bat_dau', record.ngay_lam_viec)
       .eq('ca', record.ca);
     if (errorAllRows) throw errorAllRows;
@@ -10111,7 +9854,7 @@ export function createApp() {
     // Lấy riêng LSX hiện tại để kiểm nhân sự
     const { data: currentLsxRows, error: errorCurrent } = await supabase
       .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-      .select('vi_tri, may, phan_cong_nhan_su')
+      .select('vi_tri, may')
       .eq('ma_lenh_sx', record.ma_lenh_sx)
       .eq('ngay_bat_dau', record.ngay_lam_viec)
       .eq('ca', record.ca);

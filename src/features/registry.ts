@@ -211,7 +211,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   lenh_sx: {
     table: 'lenh_sx',
     label: 'Lệnh sản xuất',
-    sql: ['supabase-lenh-sx.sql'],
+    sql: ['supabase-lenh-sx.sql', 'supabase-lenh-sx-drop-personnel-columns.sql'],
     apiPrefix: '/api/lenh-sx',
     serverLines: '4001–4434',
     appTab: 'production-orders',
