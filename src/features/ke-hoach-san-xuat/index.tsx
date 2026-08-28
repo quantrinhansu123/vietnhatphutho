@@ -4655,6 +4655,26 @@ export function getRemainingProductionQuantity(
   return Math.max(0, ordered - allocated);
 }
 
+/**
+ * Đơn hàng còn xuất hiện trong luồng lập Lệnh SX nếu còn ít nhất một sản phẩm
+ * có số lượng đặt hàng hợp lệ và chưa được lập đủ Lệnh SX.
+ */
+export function orderHasRemainingProductionQuantity(
+  order: OrderRow,
+  orders: OrderRow[],
+  productionOrders: ProductionOrderRow[]
+): boolean {
+  return getOrderProductLines(order).some(line => {
+    const productCode = line.productCode?.trim();
+    if (!productCode || productCode === '-') return false;
+
+    return (
+      getOrderProductQuantity(orders, order.orderCode, productCode) > 0 &&
+      getRemainingProductionQuantity(orders, productionOrders, order.orderCode, productCode) > 0
+    );
+  });
+}
+
 export function getOrderProductUnit(orders: OrderRow[], orderRef: string, productCode: string): string {
   const line = orders
     .filter(order => order.orderCode === orderRef)
@@ -5008,11 +5028,26 @@ export function AddProductionOrderModal({
     [orders, productionOrders, form.startDate]
   );
 
+  const ordersWithProductionProducts = useMemo(
+    () =>
+      ordersForSelectedDate.filter(order =>
+        getOrderProductLines(order).some(line => {
+          const productCode = line.productCode?.trim();
+          return (
+            Boolean(productCode) &&
+            productCode !== '-' &&
+            getOrderProductQuantity(orders, order.orderCode, productCode) > 0
+          );
+        })
+      ),
+    [ordersForSelectedDate, orders]
+  );
+
   const orderCodeOptions = useMemo(() => {
-    return [...new Set(ordersForSelectedDate.map(order => order.orderCode).filter(code => code && code !== '-'))].sort(
+    return [...new Set(ordersWithProductionProducts.map(order => order.orderCode).filter(code => code && code !== '-'))].sort(
       (a, b) => String(a).localeCompare(String(b), 'vi')
     );
-  }, [ordersForSelectedDate]);
+  }, [ordersWithProductionProducts]);
 
   const shiftOptions = useMemo(() => {
     const fromSettings = settings
@@ -5061,7 +5096,7 @@ export function AddProductionOrderModal({
 
   const autofillOrderOptions = useMemo(() => {
     const normalized = autofillSearch.trim().toLowerCase();
-    return ordersForSelectedDate
+    return ordersWithProductionProducts
       .filter(order => getOrderProductLines(order).length > 0)
       .filter(order => {
         if (!normalized) return true;
@@ -5070,12 +5105,12 @@ export function AddProductionOrderModal({
           .includes(normalized);
       })
       .sort((a, b) => a.orderCode.localeCompare(b.orderCode, 'vi'));
-  }, [autofillSearch, ordersForSelectedDate]);
+  }, [autofillSearch, ordersWithProductionProducts]);
 
   const autofillProductCandidates = useMemo(() => {
     return selectedAutofillOrderCodes.flatMap(orderRef =>
       listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
-        .filter(product => product.orderQty > 0 && product.remainingQty > 0)
+        .filter(product => product.orderQty > 0)
         .map(product => ({
           key: autofillProductKey(orderRef, product.code),
           orderRef,
@@ -5321,22 +5356,8 @@ export function AddProductionOrderModal({
         setFormError(`${productName} không có trong đơn ${line.orderRef} hoặc chưa có số lượng đặt hàng.`);
         return;
       }
-      const remaining = getRemainingProductionQuantity(
-        orders,
-        productionOrders,
-        line.orderRef.trim(),
-        line.productCode
-      );
-      if (remaining <= 0) {
-        setFormError(`${productName} đã được lập đủ lệnh SX cho đơn ${line.orderRef}.`);
-        return;
-      }
-      if (quantity > remaining) {
-        setFormError(
-          `Số lượng ${productName} (đơn ${line.orderRef}) vượt quá còn lại (${formatNumber(remaining, 0)}).`
-        );
-        return;
-      }
+      // Số lượng sản xuất có thể vượt số lượng đặt hàng. “Còn lại” chỉ là
+      // thông tin tham khảo, không được dùng để chặn việc lập lệnh SX.
     }
     if (selectedShifts.length === 0) {
       setFormError('Vui lòng chọn ít nhất một ca.');
