@@ -123,9 +123,11 @@ export function toPrintDoc(row: MixingNormRow): MixingNormRatioPrintDoc {
   return {
     maLenhSx: row.ma_lenh_sx.trim(),
     ngay: row.ngay || new Date().toISOString().slice(0, 10),
-    products: [...row.products].sort((a, b) =>
-      `${a.ma_sp} ${a.ten_sp}`.localeCompare(`${b.ma_sp} ${b.ten_sp}`, 'vi')
-    )
+    products: [...row.products]
+      .filter(product => product.loai !== 'nvl_phu' || (product.nvl_phu?.length ?? 0) > 0)
+      .sort((a, b) =>
+        `${a.ma_sp} ${a.ten_sp}`.localeCompare(`${b.ma_sp} ${b.ten_sp}`, 'vi')
+      )
   };
 }
 
@@ -158,6 +160,9 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
         ) : (
           doc.products.map((product, index) => {
             const tong = product.tong_trong_luong;
+            const displayLines = doc.isActual
+              ? product.chi_tiet
+              : [...product.chi_tiet, ...(product.nvl_phu ?? [])];
             return (
               <section
                 key={`${product.ma_sp}-${index}`}
@@ -210,7 +215,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                       <tbody>{(() => {
                         const roundOffset = tableIndex * MIXING_ROUNDS_PER_TABLE;
                         const normRounds = Array.from({ length: rounds.length }, (_, index) =>
-                          product.lan_tron?.[roundOffset + index]?.nvl ?? product.chi_tiet
+                          product.lan_tron?.[roundOffset + index]?.nvl ?? displayLines
                         );
                         const uniqueLines = new Map<string, MixingNormLine>();
                         normRounds.flat().forEach(line => uniqueLines.set(`${line.ma_nvl}|${line.ten_nvl}`.toLowerCase(), line));
@@ -248,14 +253,14 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                     </tr>
                   </thead>
                   <tbody>
-                    {product.chi_tiet.length === 0 ? (
+                    {displayLines.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="mixing-norm-ratio-print-empty-cell">
                           Chưa có dòng NVL
                         </td>
                       </tr>
                     ) : (
-                      product.chi_tiet.map((line, lineIndex) => {
+                      displayLines.map((line, lineIndex) => {
                         const { percent, kg } = resolveLinePercentAndKg(line, tong);
                         return (
                           <tr key={`${product.ma_sp}-${line.ma_nvl}-${lineIndex}`}>
@@ -288,14 +293,14 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                     </tr>
                   </thead>
                   <tbody>
-                    {product.chi_tiet.length === 0 ? (
+                    {displayLines.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="mixing-norm-ratio-print-empty-cell">
                           Chưa có dòng NVL
                         </td>
                       </tr>
                     ) : (
-                      product.chi_tiet.map((line, lineIndex) => {
+                      displayLines.map((line, lineIndex) => {
                         const { percentCoi, kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
                         return (
                           <tr key={`${product.ma_sp}-${line.ma_nvl}-${lineIndex}`}>
@@ -310,7 +315,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                       })
                     )}
                   </tbody>
-                  {product.chi_tiet.length > 0 ? (
+                  {displayLines.length > 0 ? (
                     <tfoot>
                       <tr>
                         <td colSpan={5} className="mixing-norm-ratio-print-total-label">
@@ -318,7 +323,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                         </td>
                         <td className="col-kg">
                           {formatNumberVi(
-                            product.chi_tiet.reduce(
+                            displayLines.reduce(
                               (sum, line) => sum + (resolveStandardBatchRow(line, product).tongKg ?? 0),
                               0
                             )

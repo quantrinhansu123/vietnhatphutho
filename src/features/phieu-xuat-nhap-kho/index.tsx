@@ -626,10 +626,13 @@ function mergeNormMaterialLines(records: unknown[], materials: MaterialOption[])
       const products = details.length > 0 ? details : [product];
       products.forEach(detail => {
         const directLines = parseNormJson(detail.nvl);
+        const secondaryLines = parseNormJson(detail.nvl_phu ?? detail.nvlPhu);
         if (directLines.length > 0) {
           directLines.forEach(add);
+          secondaryLines.forEach(add);
           return;
         }
+        secondaryLines.forEach(add);
         parseNormJson(detail.lan_tron).forEach(round => parseNormJson(round.nvl).forEach(add));
       });
     });

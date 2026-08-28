@@ -96,7 +96,10 @@ function normalizeProductBlock(item: Record<string, unknown>): MixingNormSuggest
   const ma_sp = String(item.ma_sp ?? '').trim();
   const ten_sp = String(item.ten_sp ?? '').trim();
   const tong_trong_luong = parseNumberOrNull(item.tong_trong_luong);
-  const nvl = normalizeLines(item.nvl ?? item.chi_tiet, tong_trong_luong);
+  const nvl = [
+    ...normalizeLines(item.nvl ?? item.chi_tiet, tong_trong_luong),
+    ...normalizeLines(item.nvl_phu ?? item.nvlPhu, tong_trong_luong)
+  ];
   if (!ma_sp && !ten_sp && nvl.length === 0) return null;
   return { ma_sp, ten_sp, tong_trong_luong, nvl };
 }
@@ -120,11 +123,11 @@ export function normalizeMixingNormSuggestion(row: Record<string, unknown>): Mix
 
     if (isNewFormat) {
       products = rawChiTiet
-        .map(entry =>
-          entry && typeof entry === 'object'
-            ? normalizeProductBlock(entry as Record<string, unknown>)
-            : null
-        )
+        .map(entry => {
+          if (!entry || typeof entry !== 'object') return null;
+          if (String((entry as Record<string, unknown>).loai ?? '').trim() === 'nvl_phu') return null;
+          return normalizeProductBlock(entry as Record<string, unknown>);
+        })
         .filter((p): p is MixingNormSuggestionProduct => Boolean(p));
     } else {
       const tong_trong_luong = parseNumberOrNull(row.tong_trong_luong);
