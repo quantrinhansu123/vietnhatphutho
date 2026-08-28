@@ -64,6 +64,7 @@ export type MixingNormRow = {
 };
 
 type MaterialOption = {
+  id: string;
   code: string;
   name: string;
   productionName: string;
@@ -91,6 +92,7 @@ type MixingProductConversion = ProductConversionFactors & {
 
 type LineForm = {
   key: string;
+  materialId: string;
   maNvl: string;
   tenNvl: string;
   tenNvlSanXuat: string;
@@ -138,6 +140,7 @@ const inputClass =
 
 const emptyLine = (): LineForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  materialId: '',
   maNvl: '',
   tenNvl: '',
   tenNvlSanXuat: '',
@@ -220,6 +223,7 @@ function productToForm(
         toKgLineForm(
           {
             key: `${idHint}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
+            materialId: '',
             maNvl: line.ma_nvl,
             tenNvl: line.ten_nvl,
             tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
@@ -269,6 +273,7 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
       if (!code && !name) return null;
       const unitRaw = String(row.don_vi ?? 'kg').trim();
       return {
+        id: String(row.id ?? '').trim() || `${code}|${name}|${productionName}`,
         code,
         name,
         productionName,
@@ -278,12 +283,14 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
     })
     .filter((item): item is MaterialOption => Boolean(item));
 
-  const byCode = new Map<string, MaterialOption>();
+  const byIdentity = new Map<string, MaterialOption>();
   for (const item of mapped) {
-    if (!item.code) continue;
-    if (!byCode.has(item.code)) byCode.set(item.code, item);
+    const identity = item.id || `${item.code}|${item.name}|${item.productionName}`;
+    if (!byIdentity.has(identity)) byIdentity.set(identity, item);
   }
-  return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+  return [...byIdentity.values()].sort((a, b) =>
+    `${a.code} ${a.name} ${a.productionName}`.localeCompare(`${b.code} ${b.name} ${b.productionName}`, 'vi')
+  );
 }
 
 function normalizeCatalogProducts(data: unknown): ProductOption[] {
@@ -405,6 +412,7 @@ function nvlPhuToLineForms(
     toKgLineForm(
       {
         key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
+        materialId: '',
         maNvl: line.ma_nvl,
         tenNvl: line.ten_nvl,
         tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
@@ -766,7 +774,9 @@ export default function MixingNormMaterialsTab() {
 
   const materialsByCode = useMemo(() => {
     const map = new Map<string, MaterialOption>();
-    for (const item of materials) map.set(item.code, item);
+    for (const item of materials) {
+      if (!map.has(item.code)) map.set(item.code, item);
+    }
     return map;
   }, [materials]);
 
@@ -778,6 +788,39 @@ export default function MixingNormMaterialsTab() {
     () => materials.filter(item => item.khoNgamDinh === 'Nguyên vật liệu phụ'),
     [materials]
   );
+
+  const findMaterialForLine = (line: LineForm) => {
+    const byId = line.materialId ? materials.find(item => item.id === line.materialId) : undefined;
+    if (byId) return byId;
+
+    const code = normalizeProductLookupKey(line.maNvl);
+    const name = line.tenNvl.trim();
+    const productionName = line.tenNvlSanXuat.trim();
+    return materials.find(item =>
+      normalizeProductLookupKey(item.code) === code &&
+      (!name || item.name.trim() === name) &&
+      (!productionName || item.productionName.trim() === productionName)
+    ) ?? materialsByCode.get(line.maNvl);
+  };
+
+  const materialSelectValue = (line: LineForm) => findMaterialForLine(line)?.id || line.maNvl;
+
+  /** Tên NVL sản xuất được lọc theo đúng mã + tên NVL đang chọn, giống form đơn hàng. */
+  const getMaterialProductionNameOptions = (line: LineForm, options: MaterialOption[]) => {
+    const code = normalizeProductLookupKey(line.maNvl);
+    const name = line.tenNvl.trim();
+    const source = code
+      ? options.filter(item =>
+          normalizeProductLookupKey(item.code) === code &&
+          (!name || item.name.trim() === name)
+        )
+      : options;
+    return [...new Set(
+      source
+        .map(item => item.productionName.trim())
+        .filter((value): value is string => Boolean(value))
+    )].sort((a, b) => a.localeCompare(b, 'vi'));
+  };
 
   const selectedOrder = useMemo(
     () => findMixingOrderByCode(productionOrders, form.maLenhSx),
@@ -1248,18 +1291,19 @@ export default function MixingNormMaterialsTab() {
     }));
   };
 
-  const selectMaterialCode = (productKey: string, lineKey: string, code: string) => {
-    const material = materialsByCode.get(code);
+  const selectMaterialCode = (productKey: string, lineKey: string, materialId: string) => {
+    const material = materials.find(item => item.id === materialId) ?? materialsByCode.get(materialId);
     updateLine(productKey, lineKey, {
-      maNvl: code,
+      materialId: material?.id ?? '',
+      maNvl: material?.code ?? '',
       tenNvl: material?.name ?? '',
       tenNvlSanXuat: material?.productionName ?? '',
       khoNgamDinh: material?.khoNgamDinh ?? ''
     });
   };
 
-  const selectSecondaryMaterialCode = (productKey: string, lineKey: string, code: string) => {
-    const material = materialsByCode.get(code);
+  const selectSecondaryMaterialCode = (productKey: string, lineKey: string, materialId: string) => {
+    const material = materials.find(item => item.id === materialId) ?? materialsByCode.get(materialId);
     setForm(prev => ({
       ...prev,
       secondaryProducts: prev.secondaryProducts.map(product =>
@@ -1271,7 +1315,8 @@ export default function MixingNormMaterialsTab() {
                 line.key === lineKey
                   ? {
                       ...line,
-                      maNvl: code,
+                      materialId: material?.id ?? '',
+                      maNvl: material?.code ?? '',
                       tenNvl: material?.name ?? '',
                       tenNvlSanXuat: material?.productionName ?? '',
                       khoNgamDinh: material?.khoNgamDinh ?? ''
@@ -2080,22 +2125,26 @@ export default function MixingNormMaterialsTab() {
                                     className="grid grid-cols-1 gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px]"
                                   >
                                     <SearchableSelect
-                                      value={line.maNvl}
+                                      value={materialSelectValue(line)}
                                       onChange={value => selectMaterialCode(product.key, line.key, value)}
                                       options={mainMaterialOptions}
                                       placeholder={`Tìm mã hoặc tên NVL #${index + 1}`}
-                                      getValue={item => (item as MaterialOption).code}
+                                      getValue={item => (item as MaterialOption).id}
                                       getLabel={item => `${(item as MaterialOption).code} - ${(item as MaterialOption).name}`}
-                                      getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name}`}
+                                      getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name} ${(item as MaterialOption).productionName}`}
                                       inputClassName={inputClass}
                                     />
-                                    <input
+                                    <SearchableSelect
                                       value={line.tenNvlSanXuat}
-                                      onChange={event => updateLine(product.key, line.key, {
-                                        tenNvlSanXuat: event.target.value
-                                      })}
-                                      className={inputClass}
-                                      placeholder="Nhập tên NVL sản xuất"
+                                      onChange={value => updateLine(product.key, line.key, { tenNvlSanXuat: value })}
+                                      options={getMaterialProductionNameOptions(line, mainMaterialOptions)}
+                                      placeholder="Chọn hoặc nhập tên NVL sản xuất"
+                                      allowCustomValue
+                                      getValue={item => String(item)}
+                                      getLabel={item => String(item)}
+                                      getSearchText={item => String(item)}
+                                      allowEmpty
+                                      inputClassName={inputClass}
                                     />
                                     <input
                                       value={line.giaTri}
@@ -2206,13 +2255,13 @@ export default function MixingNormMaterialsTab() {
                                 className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px]"
                               >
                                 <SearchableSelect
-                                  value={line.maNvl}
+                                  value={materialSelectValue(line)}
                                   onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
                                   options={secondaryMaterialOptions}
                                   placeholder={'Tìm NVL phụ #' + (index + 1)}
-                                  getValue={item => (item as MaterialOption).code}
+                                  getValue={item => (item as MaterialOption).id}
                                   getLabel={item => (item as MaterialOption).code + ' - ' + (item as MaterialOption).name}
-                                  getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name}
+                                  getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName}
                                   inputClassName={inputClass}
                                 />
                                 <input
@@ -2221,11 +2270,17 @@ export default function MixingNormMaterialsTab() {
                                   className={inputClass + ' bg-zinc-50'}
                                   placeholder="Tên NVL"
                                 />
-                                <input
+                                <SearchableSelect
                                   value={line.tenNvlSanXuat}
-                                  readOnly
-                                  className={inputClass + ' bg-zinc-50'}
-                                  placeholder="Tên NVL sản xuất"
+                                  onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
+                                  options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
+                                  placeholder="Chọn hoặc nhập tên NVL sản xuất"
+                                  allowCustomValue
+                                  getValue={item => String(item)}
+                                  getLabel={item => String(item)}
+                                  getSearchText={item => String(item)}
+                                  allowEmpty
+                                  inputClassName={inputClass + ' bg-zinc-50'}
                                 />
                                 <input
                                   value={line.giaTri}
