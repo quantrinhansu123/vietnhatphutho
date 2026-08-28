@@ -43,6 +43,8 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
 
 `ten_sp` là ô nhập tự do, **không tự động điền** từ catalog dù chọn 1 hay nhiều mã SP — người dùng luôn phải tự gõ tên hiển thị cho công nhân trộn.
 
+Trong danh sách NVL của form thêm/sửa, ô chọn mã + tên NVL tìm được theo mã, tên và tên NVL sản xuất; ô **Tên NVL sản xuất** là searchable select được lọc theo mã và tên NVL đang chọn, đồng thời cho phép nhập tùy chỉnh.
+
 **Ô "Mã sản phẩm" trong mỗi dòng SP là multi-select, hiển thị `ma_amis — ten_san_xuat`** — 1 dòng SP (1 công thức "cối trộn tiêu chuẩn") có thể gán cho nhiều mã SP cùng lúc (`ma_sp` lưu dạng chuỗi nối bằng dấu phẩy, ví dụ `"A, B"`). **NVL chính không tự điền** khi chọn mã SP (không lấy từ `san_pham.npl_phan_tram`); người dùng tự bấm “Thêm NVL chính”. Đổi/thêm/bớt mã SP trên cùng 1 dòng **không xóa** NVL chính đã nhập.
 
 Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). In A4 ngang: phiếu định mức in 1 bảng cối tiêu chuẩn/SP (kèm dòng "Tổng trọng lượng NVL cần"); phiếu thực tế (`isActual`) vẫn in theo từng lần trộn, tối đa 6 lần trộn mỗi bảng.
