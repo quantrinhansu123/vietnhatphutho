@@ -8,6 +8,30 @@ import {
 
 export type { OrderProductLine };
 
+export function readOrderProductStt(value: unknown, fallbackIndex: number): number {
+  const parsed = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  return fallbackIndex + 1;
+}
+
+export function sortOrderProductLines<T extends { stt?: number }>(lines: T[]): T[] {
+  return lines
+    .map((line, index) => ({
+      line,
+      index,
+      stt: readOrderProductStt(line.stt, index)
+    }))
+    .sort((a, b) => a.stt - b.stt || a.index - b.index)
+    .map(item => item.line);
+}
+
+export function withNormalizedProductStt<T extends { stt?: number }>(lines: T[]): Array<T & { stt: number }> {
+  return sortOrderProductLines(lines).map((line, index) => ({
+    ...line,
+    stt: index + 1
+  }));
+}
+
 export interface OrderRow {
   id: string;
   orderCode: string;
@@ -51,44 +75,51 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
     }
   }
   if (Array.isArray(raw) && raw.length > 0) {
-    return expandProductionOrderProductLines(
-      raw
-        .map((item): OrderProductLine | null => {
-          if (!item || typeof item !== 'object') return null;
-          const row = item as Record<string, unknown>;
-          const productId = pickText(row, ['san_pham_id', 'productId', 'product_id'], '');
-          const productCode = pickText(row, ['ma_sp', 'ma_hang', 'productCode', 'code'], '');
-          const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
-          const productionName = pickText(row, ['ten_san_xuat', 'productionName'], '');
-          const unit = formatCell(row.don_vi ?? row.unit);
-          const quantity = formatCell(row.so_luong ?? row.quantity);
-          const doLi = pickText(row, ['do_li', 'doLi'], '');
-          const kho = pickText(row, ['kho'], '');
-          const daiM = pickText(row, ['dai_m', 'daiM'], '');
-          const note = pickText(row, ['ghi_chu', 'note'], '');
-          if (!productCode && !productName) return null;
-          return {
-            productId,
-            productCode,
-            productName,
-            productionName,
-            unit,
-            quantity,
-            doLi: doLi || undefined,
-            kho: kho || undefined,
-            daiM: daiM || undefined,
-            note: note || undefined,
-            conversionResults: Array.isArray(row.ket_qua_quy_doi)
-              ? row.ket_qua_quy_doi.map(item => {
-                  const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-                  return { unit: pickText(result, ['don_vi', 'unit'], ''), value: Number(result.gia_tri ?? result.value) };
-                }).filter(item => item.unit && Number.isFinite(item.value))
-              : undefined,
-            orderRef: pickText(row, ['ma_don_hang', 'orderRef', 'order_code'], '')
-          };
-        })
-        .filter((line): line is OrderProductLine => Boolean(line))
-    );
+    const parsed = raw
+      .map((item, index): OrderProductLine | null => {
+        if (!item || typeof item !== 'object') return null;
+        const row = item as Record<string, unknown>;
+        const productId = pickText(row, ['san_pham_id', 'productId', 'product_id'], '');
+        const productCode = pickText(row, ['ma_sp', 'ma_hang', 'productCode', 'code'], '');
+        const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
+        const productionName = pickText(row, ['ten_san_xuat', 'productionName'], '');
+        const unit = formatCell(row.don_vi ?? row.unit);
+        const quantity = formatCell(row.so_luong ?? row.quantity);
+        const doLi = pickText(row, ['do_li', 'doLi'], '');
+        const kho = pickText(row, ['kho'], '');
+        const daiM = pickText(row, ['dai_m', 'daiM'], '');
+        const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp'], '');
+        const tongKg = pickText(row, ['tong_kg', 'tongKg'], '');
+        const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource'], '');
+        const note = pickText(row, ['ghi_chu', 'note'], '');
+        if (!productCode && !productName) return null;
+        return {
+          productId,
+          productCode,
+          productName,
+          productionName,
+          unit,
+          quantity,
+          stt: readOrderProductStt(row.stt ?? row.STT, index),
+          doLi: doLi || undefined,
+          kho: kho || undefined,
+          daiM: daiM || undefined,
+          kg1Sp: kg1Sp || undefined,
+          tongKg: tongKg || undefined,
+          conversionSource: conversionSource || undefined,
+          note: note || undefined,
+          conversionResults: Array.isArray(row.ket_qua_quy_doi)
+            ? row.ket_qua_quy_doi.map(item => {
+                const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+                return { unit: pickText(result, ['don_vi', 'unit'], ''), value: Number(result.gia_tri ?? result.value) };
+              }).filter(item => item.unit && Number.isFinite(item.value))
+            : undefined,
+          orderRef: pickText(row, ['ma_don_hang', 'orderRef', 'order_code'], '')
+        };
+      })
+      .filter((line): line is OrderProductLine => Boolean(line));
+
+    return sortOrderProductLines(expandProductionOrderProductLines(sortOrderProductLines(parsed)));
   }
 
   const productCode = pickText(record, ['ma_hang', 'ma_sp', 'product_code'], '');
@@ -125,14 +156,15 @@ export function summarizeOrderProducts(products: OrderProductLine[]) {
 }
 
 export function getOrderProductLines(order: OrderRow): OrderProductLine[] {
-  if (order.products.length > 0) return order.products;
+  if (order.products.length > 0) return sortOrderProductLines(order.products);
   if (!order.productCode && !order.productName) return [];
   return [
     {
       productCode: order.productCode,
       productName: order.productName,
       unit: order.unit,
-      quantity: order.quantity
+      quantity: order.quantity,
+      stt: 1
     }
   ];
 }

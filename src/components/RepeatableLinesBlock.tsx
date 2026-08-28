@@ -22,6 +22,7 @@ type RepeatableLinesBlockProps = {
   children: React.ReactNode;
   addButtonClassName?: string;
   className?: string;
+  linesClassName?: string;
 };
 
 export function RepeatableLinesBlock({
@@ -37,7 +38,8 @@ export function RepeatableLinesBlock({
   columns,
   children,
   addButtonClassName,
-  className = ''
+  className = '',
+  linesClassName
 }: RepeatableLinesBlockProps) {
   const defaultAddClass =
     'flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-100';
@@ -98,7 +100,7 @@ export function RepeatableLinesBlock({
           </div>
         )}
 
-        <div className="divide-y divide-zinc-200/80">{children}</div>
+        <div className={linesClassName || 'divide-y divide-zinc-200/80'}>{children}</div>
 
         {actionsAtBottom && actionButtons ? (
           <div className="flex items-center justify-end gap-2 border-t border-zinc-200/80 pt-2">

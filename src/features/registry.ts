@@ -169,7 +169,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     label: 'Đơn hàng',
     sql: ['supabase-don-hang-*.sql'],
     apiPrefix: '/api/don-hang',
-    serverLines: '3872–3999',
+    serverLines: '4781–5083, 6946–7093',
     appTab: 'orders',
     appLines: 'src/features/don-hang/index.tsx, src/features/_shared/orderHelpers.ts',
     components: ['src/components/shared/Select2.tsx', 'src/components/shared/SearchableSelect.tsx', 'src/components/OrderPrintSheet.tsx'],

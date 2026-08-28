@@ -104,7 +104,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
             ) : (
               productLines.map((line, idx) => (
                 <tr key={`${line.productCode}-${idx}`}>
-                  <td className="order-print-center">{idx + 1}</td>
+                  <td className="order-print-center">{line.stt || idx + 1}</td>
                   <td className="order-print-mono">{displayCell(line.productCode)}</td>
                   <td className="order-print-product-name">
                     {displayCell(line.productionName) || displayCell(line.productName)}
