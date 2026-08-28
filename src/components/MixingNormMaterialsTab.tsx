@@ -479,19 +479,6 @@ function mergeSecondaryProducts(
   return next;
 }
 
-function bomToLineForms(items: MixingBomItem[]): LineForm[] {
-  const lines = items.map(item => ({
-    key: `${Date.now()}-${item.code}-${Math.random().toString(36).slice(2, 6)}`,
-    maNvl: item.code,
-    tenNvl: item.name,
-    tenNvlSanXuat: item.productionName,
-    giaTri: String(item.amountType === 'percent' ? item.percent ?? '' : item.quantity ?? ''),
-    donVi: item.amountType === 'percent' ? '%' as const : 'kg' as const,
-    khoNgamDinh: ''
-  }));
-  return lines.length ? lines : [emptyLine()];
-}
-
 function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): MixingNormLine[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -1164,14 +1151,13 @@ export default function MixingNormMaterialsTab() {
       soLuongTuDong: rawKg !== null,
       haoHut: String(waste),
       tongTrongLuong: String(roundMixing(sourceKg * (1 + waste / 100))),
-      lines: bomToLineForms(catalog?.nplItems ?? []).map(line => toKgLineForm(line, 0))
+      lines: [emptyLine()]
     };
   };
 
   /**
    * Ô "Mã sản phẩm" cho phép chọn nhiều SP dùng chung 1 công thức trộn.
-   * NVL trùng tên/mã giữa các SP được gộp lại chỉ lấy 1 dòng; giá trị (kg/%) KHÔNG tự fill —
-   * người dùng phải tự điền vì mỗi SP có định mức gốc khác nhau.
+   * NVL chính không tự fill từ danh mục SP — người dùng tự thêm từng dòng.
    */
   const buildMergedProductFromCodes = (codes: string[]): ProductForm => {
     if (codes.length === 0) return emptyProduct();
@@ -1200,23 +1186,6 @@ export default function MixingNormMaterialsTab() {
       ? roundMixing((sumAfterWaste / sumKg - 1) * 100)
       : entries[0]?.catalog?.wastePercent ?? 0;
 
-    const mergedLines = new Map<string, LineForm>();
-    entries.forEach(({ catalog }) => {
-      (catalog?.nplItems ?? []).forEach(item => {
-        const dedupeKey = normalizeProductLookupKey(item.code || item.name);
-        if (!dedupeKey || mergedLines.has(dedupeKey)) return;
-        mergedLines.set(dedupeKey, {
-          key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          maNvl: item.code,
-          tenNvl: item.name,
-          tenNvlSanXuat: item.productionName,
-          giaTri: '',
-          donVi: 'kg',
-          khoNgamDinh: ''
-        });
-      });
-    });
-
     return {
       ...emptyProduct(),
       maSpCodes: codes,
@@ -1226,7 +1195,7 @@ export default function MixingNormMaterialsTab() {
       soLuongTuDong: allConverted,
       haoHut: String(waste),
       tongTrongLuong: String(roundMixing(sumAfterWaste)),
-      lines: mergedLines.size > 0 ? [...mergedLines.values()] : [emptyLine()]
+      lines: [emptyLine()]
     };
   };
 
@@ -1245,10 +1214,11 @@ export default function MixingNormMaterialsTab() {
         const rebuilt = buildMergedProductFromCodes(codes);
         const currentHasNvl = product.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
         const keepLines = product.nvlFilled || currentHasNvl;
-        const nextLines = keepLines ? product.lines : rebuilt.lines;
+        const nextLines = keepLines ? product.lines : [emptyLine()];
         return {
           ...rebuilt,
           key: product.key,
+          tenSp: product.tenSp,
           lines: nextLines,
           nvlFilled: nextLines.some(line => line.maNvl.trim() || line.tenNvl.trim())
         };
@@ -1946,7 +1916,7 @@ export default function MixingNormMaterialsTab() {
 
               {!hasAnyProduct ? (
                 <p className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-center text-xs font-bold text-zinc-500">
-                  Thêm sản phẩm → chọn mã SP → mới sổ NVL trong từng SP.
+                  Thêm sản phẩm → chọn mã SP → tự thêm NVL chính (không tự điền từ danh mục).
                 </p>
               ) : null}
 
@@ -2174,7 +2144,7 @@ export default function MixingNormMaterialsTab() {
                         </div>
                       ) : (
                         <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white px-3 py-3 text-center text-[11px] font-bold text-zinc-500">
-                          Chọn mã SP ở trên để sổ danh sách NVL.
+                          Chọn mã SP ở trên rồi bấm “Thêm NVL chính”.
                         </p>
                       )}
                     </div>
@@ -2263,7 +2233,7 @@ export default function MixingNormMaterialsTab() {
                                     giaTri: event.target.value
                                   })}
                                   className={inputClass + ' h-8 px-1 text-[10px]'}
-                                  placeholder="kg"
+                                  placeholder="sp"
                                   inputMode="decimal"
                                   title="Giá trị NVL phụ"
                                 />
