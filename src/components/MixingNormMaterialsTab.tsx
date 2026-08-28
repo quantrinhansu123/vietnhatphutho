@@ -365,6 +365,35 @@ function findCatalogProductByAnyCode(products: ProductOption[], value: string) {
   );
 }
 
+function findCatalogProductForProductionLine(
+  products: ProductOption[],
+  line: Pick<MixingProductionOrder['productLines'][number], 'productId' | 'productCode' | 'productName' | 'productionName'>
+) {
+  const codeKey = normalizeProductLookupKey(line.productCode);
+  const matches = products.filter(product =>
+    [product.code, product.amisCode ?? '', product.newCode ?? '']
+      .some(code => normalizeProductLookupKey(code) === codeKey)
+  );
+  const productName = line.productName.trim().toLocaleLowerCase('vi');
+  const productionName = line.productionName.trim().toLocaleLowerCase('vi');
+  const byProductionName = productionName
+    ? matches.find(product =>
+      (product.tenSanXuat || '').trim().toLocaleLowerCase('vi') === productionName)
+    : undefined;
+  const byProductName = productName
+    ? matches.find(product => product.name.trim().toLocaleLowerCase('vi') === productName)
+    : undefined;
+  const byStoredNames = byProductionName || byProductName;
+  const byId = line.productId?.trim()
+    ? products.find(product => product.id === line.productId?.trim())
+    : undefined;
+  if (byStoredNames) return byStoredNames;
+  if (byId && matches.includes(byId)) return byId;
+  return products.find(product => normalizeProductLookupKey(product.code) === codeKey)
+    || products.find(product => normalizeProductLookupKey(product.newCode || '') === codeKey)
+    || matches[0];
+}
+
 function roundMixing(value: number) {
   return Math.round(value * 1000) / 1000;
 }
@@ -850,23 +879,37 @@ export default function MixingNormMaterialsTab() {
 
   const productOptions = useMemo((): ProductOption[] => {
     const byCode = new Map<string, ProductOption>();
-    const add = (code: string, name: string) => {
+    const add = (code: string, name: string, productId = '', productionName = '') => {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
-      const catalog = findCatalogProductByAnyCode(catalogProducts, trimmedCode);
+      const catalog = findCatalogProductForProductionLine(catalogProducts, {
+        productId,
+        productCode: trimmedCode,
+        productName: name,
+        productionName
+      });
       // Gộp theo mã CHUẨN của catalog (ma_sp) khi tìm thấy — tránh trường hợp lệnh SX tham
       // chiếu SP bằng ma_amis/ma_sp_moi khác chuỗi ma_sp tạo ra một dòng trùng lặp.
       const canonicalKey = catalog ? catalog.code : trimmedCode;
       if (byCode.has(canonicalKey)) return;
       byCode.set(canonicalKey, catalog
-        ? { ...catalog, name: name.trim() || catalog.name }
-        : { code: trimmedCode, name: name.trim() });
+        ? {
+            ...catalog,
+            name: name.trim() || catalog.name,
+            tenSanXuat: productionName.trim() || catalog.tenSanXuat
+          }
+        : {
+            id: productId || undefined,
+            code: trimmedCode,
+            name: name.trim(),
+            tenSanXuat: productionName.trim()
+          });
     };
 
     if (selectedOrder) {
       // Đã chọn lệnh SX → chỉ cho chọn SP THUỘC lệnh đó (NVL vẫn được enrich từ catalog trong add()).
       for (const line of selectedOrder.productLines) {
-        add(line.productCode, line.productName);
+        add(line.productCode, line.productName, line.productId, line.productionName);
       }
       // Giữ lại mã SP đã chọn sẵn trong phiếu (khi sửa) kể cả khi mã đó không còn nằm trong lệnh SX.
       for (const product of form.products) {
@@ -879,11 +922,11 @@ export default function MixingNormMaterialsTab() {
 
     // Chưa chọn lệnh SX → nạp toàn bộ catalog + SP của mọi lệnh SX.
     for (const product of catalogProducts) {
-      add(product.code, product.name);
+      add(product.code, product.name, product.id || '', product.tenSanXuat || '');
     }
     for (const order of productionOrders) {
       for (const line of order.productLines) {
-        add(line.productCode, line.productName);
+        add(line.productCode, line.productName, line.productId, line.productionName);
       }
     }
 

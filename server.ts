@@ -5431,11 +5431,12 @@ function buildProductionOrderRecordFromOrder(
   order: Record<string, unknown>,
   code: string,
   product?: OrderProductRecord
-): Record<string, string | number | null> {
+): Record<string, unknown> {
   const orderCode = pickRowField(order, ['ma_don_hang', 'order_code', 'code']);
   const selectedProduct = product ?? parseOrderProductsFromRow(order)[0];
   const productCode = selectedProduct?.ma_sp ?? '';
   const productName = selectedProduct?.ten_sp ?? '';
+  const productProductionName = selectedProduct?.ten_san_xuat ?? '';
   const customer = pickRowField(order, ['khach_hang', 'customer']);
   const unit = selectedProduct?.don_vi ?? '';
   const workers =
@@ -5448,7 +5449,17 @@ function buildProductionOrderRecordFromOrder(
     ten_lenh_sx: productName ? `SX ${productName}` : `Lệnh SX ${orderCode || code}`,
     ma_hang: productCode,
     ten_hang: productName,
-    san_pham: productionOrderProductLabel(productCode, productName),
+    san_pham: [
+      {
+        san_pham_id: selectedProduct?.san_pham_id || null,
+        ma_don_hang: orderCode,
+        ma_sp: productCode,
+        ten_sp: productName,
+        ten_san_xuat: productProductionName,
+        don_vi: unit,
+        so_luong: selectedProduct?.so_luong ?? null
+      }
+    ],
     so_luong: selectedProduct?.so_luong ?? null,
     don_vi: unit,
     trang_thai: DEFAULT_PRODUCTION_ORDER_STATUS,
@@ -5528,6 +5539,7 @@ function parseProductionOrderBody(
   } else {
     const productCode = pickRowField(source, ['ma_hang', 'productCode', 'ma_sp'], '');
     const productName = pickRowField(source, ['ten_hang', 'productName', 'ten_sp'], '');
+    const productId = pickRowField(source, ['san_pham_id', 'productId', 'product_id'], '');
     if (!productCode && !productName) {
       return { error: 'Cần nhập mã hàng hoặc tên hàng.' };
     }
@@ -5544,7 +5556,8 @@ function parseProductionOrderBody(
         ten_sp: productName,
         ten_san_xuat: pickRowField(source, ['ten_san_xuat', 'productionName'], ''),
         don_vi: pickRowField(source, ['don_vi', 'unit'], ''),
-        so_luong: quantity
+        so_luong: quantity,
+        ...(productId ? { san_pham_id: productId } : {})
       }
     ];
   }
@@ -5619,6 +5632,58 @@ function parseProductionOrderBody(
       ghi_chu: pickRowField(source, ['ghi_chu', 'note'], '')
     }
   };
+}
+
+function normalizeProductionProductKey(value: unknown) {
+  return String(value ?? '').trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
+}
+
+/** Resolve lại ID từ danh mục trước khi ghi lệnh SX, tránh giữ ID cũ bị lệch mã sản phẩm. */
+async function resolveProductionOrderProductIds(products: OrderProductRecord[]) {
+  if (!supabase || products.length === 0) return products;
+
+  const { data: catalogRows, error } = await supabase
+    .from(SUPABASE_PRODUCTS_TABLE)
+    .select('id, ma_sp, ma_amis, ma_sp_moi, ten_sp, ten_san_xuat');
+  if (error || !Array.isArray(catalogRows)) {
+    if (error) console.error('Supabase san_pham resolve production order ID error:', error);
+    return products;
+  }
+
+  return products.map(product => {
+    const codeKey = normalizeProductionProductKey(product.ma_sp);
+    if (!codeKey) return product;
+
+    const matches = catalogRows.filter(row =>
+      [row.ma_sp, row.ma_amis, row.ma_sp_moi].some(value =>
+        normalizeProductionProductKey(value) === codeKey
+      )
+    );
+    if (matches.length === 0) return product;
+
+    const productNameKey = normalizeProductionProductKey(product.ten_sp);
+    const productionNameKey = normalizeProductionProductKey(product.ten_san_xuat);
+    const byProductionName = productionNameKey
+      ? matches.find(row => normalizeProductionProductKey(row.ten_san_xuat) === productionNameKey)
+      : undefined;
+    const byProductName = productNameKey
+      ? matches.find(row => normalizeProductionProductKey(row.ten_sp) === productNameKey)
+      : undefined;
+    const exactCode = matches.find(row =>
+      normalizeProductionProductKey(row.ma_sp) === codeKey ||
+      normalizeProductionProductKey(row.ma_sp_moi) === codeKey
+    );
+    const currentId = String(product.san_pham_id ?? '').trim();
+    const currentProduct = currentId
+      ? matches.find(row => String(row.id ?? '').trim() === currentId)
+      : undefined;
+    const resolved = byProductionName || byProductName || exactCode || currentProduct ||
+      (matches.length === 1 ? matches[0] : undefined);
+
+    return resolved?.id
+      ? { ...product, san_pham_id: String(resolved.id).trim() }
+      : product;
+  });
 }
 
 async function ensureUniqueProductionOrderCode(initialCode: string) {
@@ -7734,7 +7799,8 @@ export function createApp() {
       let code = makeProductionOrderCode(orderCode);
       code = await ensureUniqueProductionOrderCode(code);
 
-      const record = buildProductionOrderRecordFromOrder(orderRow, code, firstProduct);
+      const [resolvedFirstProduct] = await resolveProductionOrderProductIds([firstProduct]);
+      const record = buildProductionOrderRecordFromOrder(orderRow, code, resolvedFirstProduct);
       const { data: created, error: insertError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
         .insert(record)
@@ -7784,6 +7850,7 @@ export function createApp() {
 
       const record = { ...parsed.record };
       record.ma_lenh_sx = await ensureUniqueProductionOrderCode(String(record.ma_lenh_sx));
+      record.san_pham = await resolveProductionOrderProductIds(record.san_pham as OrderProductRecord[]);
 
       const orderRef = String(record.ma_don_hang ?? '').trim();
       const orderProducts = parseOrderProductsFromRow(record);
@@ -8116,9 +8183,12 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
+      const record = { ...parsed.record };
+      record.san_pham = await resolveProductionOrderProductIds(record.san_pham as OrderProductRecord[]);
+
       const { data: updated, error: updateError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-        .update(parsed.record)
+        .update(record)
         .eq('id', id)
         .select('*')
         .maybeSingle();
