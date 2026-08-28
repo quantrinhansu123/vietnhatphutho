@@ -4786,6 +4786,7 @@ type OrderProductRecord = {
   ten_san_xuat?: string;
   don_vi: string;
   so_luong: number | null;
+  stt?: number;
   do_li?: string | null;
   kho?: number | null;
   dai_m?: number | null;
@@ -4831,6 +4832,9 @@ function parseOrderProductsInput(
     const kho = parseOrderQuantity(row.kho);
     const dai_m = parseOrderQuantity(row.dai_m ?? row.daiM);
     const ghi_chu = pickRowField(row, ['ghi_chu', 'note']);
+    const rawStt = row.stt ?? row.STT;
+    const parsedStt = parseOrderQuantity(rawStt);
+    const stt = parsedStt !== null && parsedStt > 0 ? Math.floor(parsedStt) : undefined;
     const cutFields: Partial<OrderProductRecord> = {
       ...(do_li ? { do_li } : {}),
       ...(kho !== null && kho > 0 ? { kho } : {}),
@@ -4855,7 +4859,7 @@ function parseOrderProductsInput(
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
     }
     if (!rawConversion || typeof rawConversion !== 'object') {
-      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(stt ? { stt } : {}), ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
     const conversion = rawConversion as Record<string, unknown>;
@@ -4867,10 +4871,10 @@ function parseOrderProductsInput(
       && Math.abs(sourceQuantity - so_luong) <= 0.000001
       && sourceUnit.trim().toLocaleLowerCase('vi') === don_vi.trim().toLocaleLowerCase('vi');
     if (!conversionIsValid) {
-      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
+      products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(stt ? { stt } : {}), ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
       continue;
     }
-    products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
+    products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(stt ? { stt } : {}), ...cutFields, ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}), kq_quy_doi: {
       don_vi_nguon: sourceUnit, so_luong_nguon: sourceQuantity, don_vi_dich: 'kg',
       trong_luong_kg: convertedWeight, chieu_dai_m: convertedLength
     } });
@@ -4880,7 +4884,21 @@ function parseOrderProductsInput(
     return { error: 'Vui lòng thêm ít nhất một sản phẩm.' };
   }
 
-  return { products };
+  return { products: normalizeOrderProductStt(products) };
+}
+
+function normalizeOrderProductStt(products: OrderProductRecord[]): OrderProductRecord[] {
+  return products
+    .map((product, index) => {
+      const parsed = typeof product.stt === 'number' ? product.stt : Number(product.stt);
+      return {
+        product,
+        index,
+        stt: Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : index + 1
+      };
+    })
+    .sort((a, b) => a.stt - b.stt || a.index - b.index)
+    .map((item, index) => ({ ...item.product, stt: index + 1 }));
 }
 
 function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRecord[] {
@@ -4905,7 +4923,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
     }
   }
   if (Array.isArray(sanPham) && sanPham.length > 0) {
-    return sanPham
+    const fromJson = sanPham
       .map((item): OrderProductRecord | null => {
         if (!item || typeof item !== 'object') return null;
         const record = item as Record<string, unknown>;
@@ -4917,6 +4935,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         const kho = parseOrderQuantity(record.kho);
         const dai_m = parseOrderQuantity(record.dai_m ?? record.daiM);
         const ghi_chu = pickRowField(record, ['ghi_chu', 'note']);
+        const parsedStt = parseOrderQuantity(record.stt ?? record.STT);
         return {
           ma_don_hang: pickRowField(record, ['ma_don_hang', 'orderRef', 'order_code']),
           ma_sp,
@@ -4925,6 +4944,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           don_vi: pickRowField(record, ['don_vi', 'unit']),
           so_luong: parseOrderQuantity(record.so_luong ?? record.quantity),
           ...(san_pham_id ? { san_pham_id } : {}),
+          ...(parsedStt !== null && parsedStt > 0 ? { stt: Math.floor(parsedStt) } : {}),
           ...(do_li ? { do_li } : {}),
           ...(kho !== null && kho > 0 ? { kho } : {}),
           ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
@@ -4932,6 +4952,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         };
       })
       .filter((item): item is OrderProductRecord => Boolean(item));
+    return normalizeOrderProductStt(fromJson);
   }
 
   const ma_sp = pickRowField(row, ['ma_hang', 'ma_sp', 'productCode']);

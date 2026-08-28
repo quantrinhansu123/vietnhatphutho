@@ -7,6 +7,8 @@ export interface OrderProductLine {
   quantity: string;
   orderRef?: string;
   conversionResults?: Array<{ unit: string; value: number }>;
+  /** Thứ tự dòng trong JSON `san_pham` của đơn hàng. */
+  stt?: number;
   /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
   doLi?: string;
   kho?: string;

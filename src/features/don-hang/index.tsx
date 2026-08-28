@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eye, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Eye, GripVertical, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { waitForPrintImagesReady } from '../../utils/printReady';
@@ -35,6 +35,7 @@ import {
   summarizeOrderProducts,
   getOrderProductLines,
   formatOrderProductsSummary,
+  withNormalizedProductStt,
   type OrderRow,
   type OrderProductLine
 } from '../_shared/orderRecordHelpers';
@@ -62,9 +63,9 @@ interface OrderRowExt extends OrderRow {
 }
 
 const orderProductGridClass =
-  'grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_5.5rem_5.5rem_4rem_4rem_4rem_2.5rem]';
+  'grid-cols-2 md:grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_5.5rem_5.5rem_4rem_4rem_4rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-2 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_minmax(6rem,1fr)_2.5rem]';
+  'grid-cols-2 md:grid-cols-[2.25rem_minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_minmax(0,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 export {
   parseOrderProductsFromRecord,
@@ -239,6 +240,146 @@ const emptyOrderForm = (): OrderFormState => ({
   khu_vuc: ''
 });
 
+function reorderList<T>(items: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return items;
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+const orderProductActionBtnClass =
+  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-white transition disabled:pointer-events-none disabled:opacity-35';
+
+function OrderProductActions({
+  index,
+  total,
+  onDelete,
+  onMoveUp,
+  onMoveDown
+}: {
+  index: number;
+  total: number;
+  onDelete: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const canDelete = total > 1;
+  const canMoveUp = index > 0;
+  const canMoveDown = index < total - 1;
+  return (
+    <div className="flex h-11 w-[6.5rem] shrink-0 items-center justify-end gap-1">
+      <button
+        type="button"
+        title="Xóa"
+        disabled={!canDelete}
+        className={`${orderProductActionBtnClass} border-rose-200 text-rose-600 hover:bg-rose-50`}
+        onClick={event => {
+          event.stopPropagation();
+          if (canDelete) onDelete();
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        <span className="sr-only">Xóa</span>
+      </button>
+      <button
+        type="button"
+        title="Lên"
+        disabled={!canMoveUp}
+        className={`${orderProductActionBtnClass} border-zinc-200 text-zinc-700 hover:bg-zinc-100`}
+        onClick={event => {
+          event.stopPropagation();
+          if (canMoveUp) onMoveUp();
+        }}
+      >
+        <ArrowUp className="h-3.5 w-3.5" />
+        <span className="sr-only">Lên</span>
+      </button>
+      <button
+        type="button"
+        title="Xuống"
+        disabled={!canMoveDown}
+        className={`${orderProductActionBtnClass} border-zinc-200 text-zinc-700 hover:bg-zinc-100`}
+        onClick={event => {
+          event.stopPropagation();
+          if (canMoveDown) onMoveDown();
+        }}
+      >
+        <ArrowDown className="h-3.5 w-3.5" />
+        <span className="sr-only">Xuống</span>
+      </button>
+    </div>
+  );
+}
+
+function OrderProductLineShell({
+  index,
+  total,
+  selected,
+  dragging,
+  gridTemplateClass,
+  onSelect,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  children
+}: {
+  index: number;
+  total: number;
+  selected: boolean;
+  dragging: boolean;
+  gridTemplateClass: string;
+  onSelect: () => void;
+  onDelete: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDragStart: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      onDragOver={onDragOver}
+      onDrop={event => {
+        event.preventDefault();
+        onDrop();
+      }}
+      onClick={onSelect}
+      className={`group rounded-lg ${selected ? 'bg-red-50/70' : ''} ${dragging ? 'opacity-70' : ''}`}
+    >
+      <RepeatableLineRow gridTemplateClass={gridTemplateClass} className="!py-2 first:!pt-2 last:!pb-2">
+        <div
+          draggable={total > 1}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onClick={event => event.stopPropagation()}
+          title="Kéo để đổi thứ tự"
+          className="col-span-2 flex h-11 cursor-grab items-center gap-1.5 active:cursor-grabbing md:col-span-1"
+        >
+          <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
+          <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
+        </div>
+        {children}
+        <div className="col-span-2 flex justify-end self-center md:col-span-1">
+          <OrderProductActions
+            index={index}
+            total={total}
+            onDelete={onDelete}
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+          />
+        </div>
+      </RepeatableLineRow>
+    </div>
+  );
+}
+
 function orderCreatedAtToInput(value: string): string {
   const trimmed = String(value || '').trim();
   if (!trimmed) return new Date().toISOString().slice(0, 10);
@@ -257,7 +398,7 @@ export function orderProductLinesToPayload(
   const isCutOrder = orderType === CUT_ORDER_TYPE;
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
-    .map(line => {
+    .map((line, index) => {
       const selectedProduct = resolveOrderLineProduct(productOptions, line);
       const resolved = resolveOrderProductFields(productOptions, line.productCode, {
         productName: line.productName,
@@ -285,6 +426,7 @@ export function orderProductLinesToPayload(
         don_vi: unit,
         so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
         ghi_chu: note || undefined,
+        stt: index + 1,
         ...(isCutOrder
           ? {
               do_li: doLi || undefined,
@@ -366,6 +508,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [lookupError, setLookupError] = useState('');
   const [orderForm, setOrderForm] = useState<OrderFormState>(emptyOrderForm);
   const [orderFormOverlayEl, setOrderFormOverlayEl] = useState<HTMLDivElement | null>(null);
+  const [selectedProductLineKey, setSelectedProductLineKey] = useState<string | null>(null);
+  const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
 
   const loadOrders = async () => {
     setIsLoadingOrders(true);
@@ -474,6 +618,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       orderCode: generateNextOrderCode(orders.map(order => order.orderCode))
     });
     setFormMode('add');
+    setSelectedProductLineKey(null);
+    setDragProductIndex(null);
   };
 
   const openEditForm = (order: OrderRow) => {
@@ -484,12 +630,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     setEditingId(order.id);
     setOrderForm(orderToForm(order));
     setFormMode('edit');
+    setSelectedProductLineKey(null);
+    setDragProductIndex(null);
   };
 
   const closeForm = () => {
     setFormMode(null);
     setEditingId(null);
     setFormError('');
+    setSelectedProductLineKey(null);
+    setDragProductIndex(null);
   };
 
   const unitSuggestions = useMemo(() => {
@@ -577,6 +727,38 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }));
   };
 
+  const moveProductLine = (from: number, to: number) => {
+    setOrderForm(prev => ({
+      ...prev,
+      productLines: reorderList(prev.productLines, from, to)
+    }));
+  };
+
+  const removeProductLine = (key: string) => {
+    setOrderForm(prev => ({
+      ...prev,
+      productLines: prev.productLines.filter(item => item.key !== key)
+    }));
+    setSelectedProductLineKey(current => (current === key ? null : current));
+  };
+
+  const handleProductDragStart = (event: React.DragEvent<HTMLDivElement>, index: number) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(index));
+    setDragProductIndex(index);
+  };
+
+  const handleProductDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleProductDrop = (index: number) => {
+    if (dragProductIndex === null) return;
+    moveProductLine(dragProductIndex, index);
+    setDragProductIndex(null);
+  };
+
   const pickOrderProduct = (key: string, productId: string) => {
     const match = findOrderProductById(productOptions, productId);
     const productCode = match?.code || '';
@@ -656,7 +838,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       orderType: orderForm.orderType,
       staffName: orderForm.staffName,
       customer: orderForm.customer,
-      products: productsWithConversion,
+      products: withNormalizedProductStt(productsWithConversion),
       note: orderForm.note,
       status: orderForm.status,
       createdAt: orderForm.createdAt,
@@ -778,6 +960,32 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const customerSelect2RefreshKey = `${formMode || ''}::${customerOptions
     .map(customer => customer.id || customer.code || customer.name)
     .join('|')}`;
+
+  const renderProductLineShell = (
+    line: OrderProductFormLine,
+    index: number,
+    gridTemplateClass: string,
+    children: React.ReactNode
+  ) => (
+    <OrderProductLineShell
+      key={line.key}
+      index={index}
+      total={orderForm.productLines.length}
+      selected={selectedProductLineKey === line.key}
+      dragging={dragProductIndex === index}
+      gridTemplateClass={gridTemplateClass}
+      onSelect={() => setSelectedProductLineKey(line.key)}
+      onDelete={() => removeProductLine(line.key)}
+      onMoveUp={() => moveProductLine(index, index - 1)}
+      onMoveDown={() => moveProductLine(index, index + 1)}
+      onDragStart={event => handleProductDragStart(event, index)}
+      onDragOver={handleProductDragOver}
+      onDrop={() => handleProductDrop(index)}
+      onDragEnd={() => setDragProductIndex(null)}
+    >
+      {children}
+    </OrderProductLineShell>
+  );
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-white">
@@ -920,6 +1128,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 title="Sản phẩm"
                 required
                 showColumnHeaders
+                linesClassName="flex flex-col gap-2"
                 gridTemplateClass={isFormCutOrder ? orderCutProductGridClass : orderProductGridClass}
                 onAdd={() =>
                   setOrderForm(prev => ({
@@ -931,6 +1140,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 columns={
                   isFormCutOrder
                     ? [
+                        { key: 'stt', label: 'STT' },
                         { key: 'code', label: 'Mã AMIS', required: true },
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
@@ -942,6 +1152,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'actions', label: '' }
                       ]
                     : [
+                        { key: 'stt', label: 'STT' },
                         { key: 'code', label: 'Mã AMIS', required: true },
                         { key: 'name', label: 'Tên sản phẩm' },
                         { key: 'productionName', label: 'Tên sản xuất' },
@@ -956,8 +1167,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 }
               >
                 {isFormCutOrder
-                  ? orderForm.productLines.map(line => (
-                      <RepeatableLineRow key={line.key} gridTemplateClass={orderCutProductGridClass}>
+                  ? orderForm.productLines.map((line, index) =>
+                      renderProductLineShell(
+                        line,
+                        index,
+                        orderCutProductGridClass,
+                        <>
                         <div className="col-span-2 min-w-0 md:col-span-1">
                           <SearchableSelect
                             value={line.productId || line.productCode}
@@ -1047,25 +1262,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="Ghi chú"
                           />
                         </div>
-                        {orderForm.productLines.length > 1 ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOrderForm(prev => ({
-                                ...prev,
-                                productLines: prev.productLines.filter(item => item.key !== line.key)
-                              }))
-                            }
-                            title="Xóa dòng"
-                            className="col-span-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 md:col-span-1 md:h-10 md:w-10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
-                          </button>
-                        ) : null}
-                      </RepeatableLineRow>
-                    ))
-                  : orderForm.productLines.map(line => {
+                        </>
+                      )
+                    )
+                  : orderForm.productLines.map((line, index) => {
                   const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
                   const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
@@ -1079,9 +1279,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
                   const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
 
-                  return (
-                    <RepeatableLineRow key={line.key} gridTemplateClass={orderProductGridClass}>
-                      <div className="col-span-2 min-w-0 md:col-span-1">
+                  return renderProductLineShell(
+                    line,
+                    index,
+                    orderProductGridClass,
+                    <>
+                    <div className="col-span-2 min-w-0 md:col-span-1">
                         <SearchableSelect
                           value={matchedLineProduct?.id || line.productId || line.productCode}
                           onChange={productId => pickOrderProduct(line.key, productId)}
@@ -1171,23 +1374,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>
-                      {orderForm.productLines.length > 1 ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setOrderForm(prev => ({
-                              ...prev,
-                              productLines: prev.productLines.filter(item => item.key !== line.key)
-                            }))
-                          }
-                          title="Xóa dòng"
-                          className="col-span-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 md:col-span-1 md:h-10 md:w-10"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="text-xs font-bold md:hidden">Xóa dòng này</span>
-                        </button>
-                      ) : null}
-                      </RepeatableLineRow>
+                    </>
                   );
                 })}
               </RepeatableLinesBlock>
@@ -1252,9 +1439,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               <div className="col-span-2 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 sm:col-span-3">
                 <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Sản phẩm</p>
                 <div className="mt-2 space-y-2">
-                  {getOrderProductLines(viewingOrder).map(line => (
-                    <div key={`${line.productCode}-${line.quantity}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm">
-                      <p className="font-bold text-zinc-900">{line.productCode || '-'} · {line.productName || '-'}</p>
+                  {getOrderProductLines(viewingOrder).map((line, index) => (
+                    <div key={`${line.productCode}-${line.quantity}-${index}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm">
+                      <p className="font-bold text-zinc-900">
+                        <span className="mr-2 font-black tabular-nums text-zinc-400">{line.stt || index + 1}.</span>
+                        {line.productCode || '-'} · {line.productName || '-'}
+                      </p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || '-'}</p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note || '-'}</p>
                       <p className="mt-0.5 text-zinc-600">
@@ -1370,8 +1560,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <TableHeadCell>Trạng thái</TableHeadCell>
             <TableHeadCell>Nhân viên</TableHeadCell>
             <TableHeadCell>Khách hàng</TableHeadCell>
-            <TableHeadCell className="min-w-[420px]">
-              <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
+            <TableHeadCell className="min-w-[460px]">
+              <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
+                <span>STT</span>
                 <span>Mã SP</span>
                 <span>Tên sản xuất</span>
                 <span className="text-right">SL</span>
@@ -1408,7 +1599,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         const specText = [line.doLi, sizeText].filter(Boolean).join(' · ');
                         return (
                           <div key={`${order.id}-${line.productCode}-${line.productName}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
-                            <div className="grid grid-cols-[minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
+                            <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
+                              <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
                               <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
                               <span className="text-zinc-800">{line.productionName || line.productName || '-'}</span>
                               <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
