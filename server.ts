@@ -3042,7 +3042,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   const caRaw = String(source.ca ?? source.shift ?? '').trim();
   const ca = !caRaw || caRaw === '-' || caRaw === '—' ? null : caRaw;
 
-  const parseNvlLines = (raw: unknown, label: string) => {
+  const parseNvlLines = (raw: unknown, label: string, required = true) => {
     const linesRaw = Array.isArray(raw) ? raw : [];
     const mapped = linesRaw
       .map((item, index) => {
@@ -3119,7 +3119,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         tong_khoi_luong: number | null;
       } => Boolean(item && typeof item === 'object' && !('error' in (item as object)))
     );
-    if (lines.length === 0) return { error: `${label}: cần ít nhất 1 dòng NVL.` };
+    if (required && lines.length === 0) return { error: label + ': cần ít nhất 1 dòng NVL.' };
     return { lines };
   };
 
@@ -3178,9 +3178,15 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
       const nvlParsed = parseNvlLines(
         product.nvl ?? product.lines ?? product.chi_tiet,
-        `SP ${ma_sp}`
+        'SP ' + ma_sp
       );
       if ('error' in nvlParsed) return { error: nvlParsed.error };
+      const nvlPhuParsed = parseNvlLines(
+        product.nvl_phu ?? product.nvlPhu ?? product.secondaryLines,
+        'SP ' + ma_sp + ', NVL phụ',
+        false
+      );
+      if ('error' in nvlPhuParsed) return { error: nvlPhuParsed.error };
 
       if (dinh_luong_coi) {
         const materialTotal = nvlParsed.lines.reduce((sum, line) => {
@@ -3222,7 +3228,8 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         so_lan_tron,
         lan_tron,
         ghi_chu: String(product.ghi_chu ?? product.ghiChu ?? '').trim() || null,
-        nvl: nvlParsed.lines
+        nvl: nvlParsed.lines,
+        nvl_phu: nvlPhuParsed.lines
       });
     }
 
@@ -3278,6 +3285,60 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       ]
     }
   };
+}
+
+async function validateMixingNormMaterialClasses(record: Record<string, unknown>): Promise<string | null> {
+  if (!supabase) return null;
+  const products = Array.isArray(record.chi_tiet) ? record.chi_tiet : [];
+  const references: Array<{ code: string; secondary: boolean; product: string }> = [];
+  for (const item of products) {
+    if (!item || typeof item !== 'object') continue;
+    const product = item as Record<string, unknown>;
+    const productCode = String(product.ma_sp ?? '').trim();
+    const collect = (raw: unknown, secondary: boolean) => {
+      if (!Array.isArray(raw)) return;
+      raw.forEach(line => {
+        if (!line || typeof line !== 'object') return;
+        const row = line as Record<string, unknown>;
+        const code = String(row.ma_nvl ?? '').trim();
+        if (code) references.push({ code, secondary, product: productCode });
+      });
+    };
+    collect(product.nvl, false);
+    collect(product.nvl_phu, true);
+  }
+
+  const codes = [...new Set(references.map(item => item.code))];
+  if (codes.length === 0) return null;
+  const { data, error } = await supabase
+    .from(SUPABASE_MATERIALS_TABLE)
+    .select('ma_npl, kho_ngam_dinh')
+    .in('ma_npl', codes);
+  if (error) {
+    if (isMissingTableError(error) || isMissingColumnError(error)) return null;
+    console.error('Supabase mixing norm material class validation error:', error);
+    return null;
+  }
+
+  const classByCode = new Map(
+    (Array.isArray(data) ? data : []).map(row => [
+      String((row as Record<string, unknown>).ma_npl ?? '').trim().toLocaleLowerCase('vi'),
+      String((row as Record<string, unknown>).kho_ngam_dinh ?? '').trim()
+    ])
+  );
+  for (const reference of references) {
+    const materialClass = classByCode.get(reference.code.toLocaleLowerCase('vi'));
+    if (!materialClass) continue;
+    if (reference.secondary && materialClass !== 'Nguyên vật liệu phụ') {
+      return 'NVL ' + reference.code + ' của SP ' + (reference.product || '(chưa có mã)') +
+        ' không phải Nguyên vật liệu phụ.';
+    }
+    if (!reference.secondary && materialClass === 'Nguyên vật liệu phụ') {
+      return 'NVL ' + reference.code + ' của SP ' + (reference.product || '(chưa có mã)') +
+        ' không được chọn làm NVL chính.';
+    }
+  }
+  return null;
 }
 
 /**
@@ -11722,6 +11783,8 @@ export function createApp() {
     try {
       const parsed = parseMixingNormBody(req.body);
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const materialClassError = await validateMixingNormMaterialClasses(parsed.record);
+      if (materialClassError) return res.status(400).json({ error: materialClassError });
 
       const maLenhSx = String((parsed.record as Record<string, unknown>).ma_lenh_sx ?? '').trim();
       if (maLenhSx) {
@@ -11757,6 +11820,8 @@ export function createApp() {
     try {
       const parsed = parseMixingNormBody(req.body);
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const materialClassError = await validateMixingNormMaterialClasses(parsed.record);
+      if (materialClassError) return res.status(400).json({ error: materialClassError });
 
       const maLenhSx = String((parsed.record as Record<string, unknown>).ma_lenh_sx ?? '').trim();
       if (maLenhSx) {
