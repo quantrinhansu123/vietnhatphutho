@@ -49,7 +49,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'production-orders', label: 'Lệnh sản xuất' },
       { tab: 'control-board', label: 'Theo dõi sản xuất' },
       { tab: 'production-reports', label: 'Báo cáo sản xuất' },
-      { tab: 'dieu-dong-nhan-su', label: 'Điều động nhân sự' }
+      { tab: 'dieu-dong-nhan-su', label: 'Điều động nhân sự' },
+      { tab: 'sap-xep-lich-lam-viec', label: 'Sắp xếp lịch làm việc' }
     ]
   },
   {

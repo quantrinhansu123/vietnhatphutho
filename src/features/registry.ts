@@ -34,6 +34,7 @@ export type TableId =
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
   | 'dieu_dong_nhan_su'
+  | 'phan_cong_nhan_su_chi_tiet'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -210,7 +211,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   lenh_sx: {
     table: 'lenh_sx',
     label: 'Lệnh sản xuất',
-    sql: ['supabase-lenh-sx.sql'],
+    sql: ['supabase-lenh-sx.sql', 'supabase-lenh-sx-drop-personnel-columns.sql'],
     apiPrefix: '/api/lenh-sx',
     serverLines: '4001–4434',
     appTab: 'production-orders',
@@ -415,6 +416,22 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appTab: 'dieu-dong-nhan-su',
     appLines: 'src/features/dieu-dong-nhan-su/index.tsx',
     components: ['src/features/dieu-dong-nhan-su/MachineCardRow.tsx', 'src/features/dieu-dong-nhan-su/DispatchFormInline.tsx'],
+    utils: []
+  },
+  phan_cong_nhan_su_chi_tiet: {
+    table: 'phan_cong_nhan_su_chi_tiet',
+    label: 'Sắp xếp lịch làm việc (Quản đốc)',
+    sql: [
+      'supabase-phan-cong-nhan-su.sql',
+      'supabase-phan-cong-nhan-su-them-ca-may.sql',
+      'supabase-phan-cong-nhan-su-ma-may.sql',
+      'supabase-phan-cong-nhan-su-lich-theo-may.sql'
+    ],
+    apiPrefix: '/api/phan-cong-nhan-su',
+    serverLines: 'GET + POST/DELETE /api/phan-cong-nhan-su(/nhom) — nhóm theo ma_may+ngay+ca',
+    appTab: 'sap-xep-lich-lam-viec',
+    appLines: 'src/features/sap-xep-lich-lam-viec/index.tsx',
+    components: ['src/features/sap-xep-lich-lam-viec/index.tsx'],
     utils: []
   },
   control_board: {

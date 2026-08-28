@@ -73,6 +73,7 @@ import { OrdersPanel } from './features/don-hang';
 import { ProductionOrdersPanel } from './features/lenh-sx';
 import { ProductionPlanHistoryPanel } from './features/ke-hoach-san-xuat';
 import { DieuDongNhanSuPanel } from './features/dieu-dong-nhan-su';
+import SapXepLichLamViecPanel from './features/sap-xep-lich-lam-viec';
 import { SettingsPanel } from './features/cai-dat-thoi-gian';
 import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
@@ -1449,6 +1450,16 @@ export default function App() {
                   canEdit={menuFullAccess || editableMenuTabs.has('dieu-dong-nhan-su')}
                   canDelete={menuFullAccess || deletableMenuTabs.has('dieu-dong-nhan-su')}
                 />
+              </motion.div>
+            ) : activeTab === 'sap-xep-lich-lam-viec' ? (
+              <motion.div
+                key="sap-xep-lich-lam-viec"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SapXepLichLamViecPanel onBack={() => goBack('factory-quan-doc')} />
               </motion.div>
             ) : activeTab === 'canh-bao-ton-kho' ? (
               <motion.div

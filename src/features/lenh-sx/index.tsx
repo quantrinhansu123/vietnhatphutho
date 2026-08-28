@@ -560,7 +560,6 @@ export function ProductionOrdersPanel({
                     <TableHeadCell>Đơn hàng</TableHeadCell>
                     <TableHeadCell>Bắt đầu</TableHeadCell>
                     <TableHeadCell>Kết thúc</TableHeadCell>
-                    <TableHeadCell>Nhân sự phụ trách</TableHeadCell>
                     <TableHeadCell>Máy</TableHeadCell>
                     <TableHeadCell align="center">Thao tác</TableHeadCell>
                   </TableHead>
@@ -609,9 +608,6 @@ export function ProductionOrdersPanel({
                         <td className="px-4 py-3 align-top text-zinc-600">{row.orderRef}</td>
                         <td className="px-4 py-3 align-top text-zinc-600">{row.startDate}</td>
                         <td className="px-4 py-3 align-top text-zinc-600">{row.endDate}</td>
-                        <td className="px-4 py-3 align-top font-semibold text-zinc-700">
-                          {productionOrderStaffDisplay(row, staffMap)}
-                        </td>
                         <td className="px-4 py-3 align-top text-zinc-600">{row.machine}</td>
                         <td className="px-4 py-3 align-top text-center">
                           <button

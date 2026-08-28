@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -12,7 +12,6 @@ import { SearchableSelect, SimpleSelect } from '../../components/shared/Searchab
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
 import ProductionPlanNvlPrintSheet, { type ProductionPlanNvlPrintShiftGroup } from '../../components/ProductionPlanNvlPrintSheet';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
-import { PersonnelAssignmentBlock } from '../../components/PersonnelAssignmentBlock';
 import {
   loadProductionPlanRelatedReports,
   ProductionPlanRelatedPrintContent,
@@ -25,7 +24,6 @@ import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, typ
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storageKeys';
 import type { WarehouseSlipPrefillDraft } from '../phieu-xuat-nhap-kho';
 import { STANDARD_SHIFTS } from '../../types';
-import { normalizeHrBranches, type HrBranch, type HrMember } from '../_shared/hr';
 import { ControlBoardShiftSummaryPrintBatch } from '../../components/ControlBoardShiftSummaryPrintSheet';
 import { buildControlBoardShiftSummary, type ControlBoardShiftSummaryRow } from '../../utils/controlBoardShiftSummary';
 import { ProductionPlanPrintPreviewModal, splitProductNameAndNote } from './PrintPreviewModal';
@@ -116,6 +114,8 @@ export interface ProductionOrderRow {
   id: string;
   code: string;
   name: string;
+  ngay_bat_dau?: string;
+  ngay_gio_bat_dau?: string;
   productCode: string;
   productName: string;
   productionName: string;
@@ -153,32 +153,6 @@ export function createDefaultPersonnelList(): AssignedPersonnel[] {
     thoi_gian_ket_thuc: '',
     removable: false
   }));
-}
-
-export function addPersonnelEntry(list: AssignedPersonnel[]): AssignedPersonnel[] {
-  const newIndex = list.length + 1;
-  const newId = `personnel-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-  return [
-    ...list,
-    {
-      id: newId,
-      role: `Nhân sự ${newIndex}`,
-      personnelId: '',
-      date: '',
-      time: '',
-      endTime: '',
-      removable: true
-    }
-  ];
-}
-
-export function removePersonnelEntry(list: AssignedPersonnel[], id: string): AssignedPersonnel[] {
-  const filtered = list.filter(item => !(item.removable && item.id === id));
-  return filtered.map((item, index) => {
-    if (!item.removable) return item;
-    const newRole = `Nhân sự ${index + 1}`;
-    return item.role === newRole ? item : { ...item, role: newRole };
-  });
 }
 
 export function resolveProductionOrderMachine(row: ProductionOrderRow, machines: MachineRow[] = []): string {
@@ -3796,6 +3770,8 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         startDate: formatProductionOrderDate(
           record.ngay_gio_bat_dau ?? record.ngay_bat_dau ?? record.ngay_san_xuat ?? record.ngay_sx ?? record.start_date
         ),
+        ngay_bat_dau: pickText(record, ['ngay_bat_dau', 'start_date', 'startDate'], ''),
+        ngay_gio_bat_dau: pickText(record, ['ngay_gio_bat_dau', 'startDateTime'], ''),
         endDate: formatProductionOrderDate(record.ngay_gio_ket_thuc ?? record.ngay_ket_thuc ?? record.end_date),
         createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
         machine: pickText(record, ['may', 'ten_may', 'ma_may', 'machine'], '-'),
@@ -3833,10 +3809,10 @@ function parseProductionPersonnelData(record: Record<string, unknown>): Assigned
 
   if (shiftLead || mainStaff || assistantStaff || traineeStaff) {
     return [
-      { ...defaultList[0], personnelId: shiftLead },
-      { ...defaultList[1], personnelId: mainStaff },
-      { ...defaultList[2], personnelId: assistantStaff },
-      { ...defaultList[3], personnelId: traineeStaff }
+      { ...defaultList[0], ma_nhan_su: shiftLead },
+      { ...defaultList[1], ma_nhan_su: mainStaff },
+      { ...defaultList[2], ma_nhan_su: assistantStaff },
+      { ...defaultList[3], ma_nhan_su: traineeStaff }
     ];
   }
 
@@ -4831,60 +4807,12 @@ export type ProductionOrderFormState = {
   entryLines: ProductionOrderEntryLine[];
   status: string;
   shift: string;
-  selectedStaffIds: string[];
-  personnel: AssignedPersonnel[];
   startDate: string;
   startDateTime: string;
   endDateTime: string;
   machine: string;
   note: string;
 };
-
-/** Phòng ban nguồn cho Trưởng ca / NS chính / Thợ phụ (/ Học việc) trên lệnh SX */
-const PRODUCTION_WORKSHOP_DEPARTMENT = 'PHÂN XƯỞNG SẢN XUẤT';
-
-function normalizeStaffPositionText(value: string) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/gi, 'd')
-    .toLowerCase()
-    .replace(/[_/|,;+]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isProductionWorkshopDepartment(name: string) {
-  const normalized = normalizeStaffPositionText(name);
-  if (!normalized) return false;
-  const target = normalizeStaffPositionText(PRODUCTION_WORKSHOP_DEPARTMENT);
-  if (normalized === target || normalized.includes(target) || target.includes(normalized)) return true;
-  // Biến thể tên phòng trên hệ thống / dữ liệu cũ
-  if (normalized.includes('phan xuong')) return true;
-  if (normalized === 'san xuat' || normalized === 'px san xuat') return true;
-  return false;
-}
-
-function collectProductionWorkshopStaff(branches: HrBranch[]): HrMember[] {
-  const byId = new Map<string, HrMember>();
-
-  for (const branch of branches) {
-    for (const department of branch.departments) {
-      const deptMatch = isProductionWorkshopDepartment(department.name);
-      for (const member of department.members) {
-        const assignedMatch = (member.assignedPositions ?? []).some(item =>
-          isProductionWorkshopDepartment(item.department)
-        );
-        if (!deptMatch && !assignedMatch) continue;
-        const key = String(member.id || member.code || member.name);
-        if (!key || byId.has(key)) continue;
-        byId.set(key, member);
-      }
-    }
-  }
-
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-}
 
 export function newProductionOrderEntryLine(): ProductionOrderEntryLine {
   return {
@@ -4899,17 +4827,14 @@ export function newProductionOrderEntryLine(): ProductionOrderEntryLine {
 }
 
 export function emptyProductionOrderForm(): ProductionOrderFormState {
-  const startDateTime = toDatetimeLocalValue();
   return {
     code: '',
     name: '',
     entryLines: [newProductionOrderEntryLine()],
     status: 'Chờ sx',
     shift: '',
-    selectedStaffIds: [],
-    personnel: createDefaultPersonnelList(),
-    startDate: extractProductionOrderDate(startDateTime),
-    startDateTime,
+    startDate: '',
+    startDateTime: '',
     endDateTime: '',
     machine: '',
     note: ''
@@ -4918,16 +4843,8 @@ export function emptyProductionOrderForm(): ProductionOrderFormState {
 
 export function productionOrderFormToCreatePayload(
   form: ProductionOrderFormState,
-  lines: ProductionOrderEntryLine[],
-  staffText = '',
-  staffRoles?: {
-    shiftLead?: string;
-    mainStaff?: string;
-    assistantStaff?: string;
-    traineeStaff?: string;
-  }
+  lines: ProductionOrderEntryLine[]
 ) {
-  const staff = staffText || form.selectedStaffIds.join(', ');
   const products = lines.map(line => ({
     san_pham_id: line.productId || null,
     ma_don_hang: line.orderRef.trim(),
@@ -4955,12 +4872,6 @@ export function productionOrderFormToCreatePayload(
           .filter(Boolean)
           .join(' + ');
 
-  const first4Staff = form.personnel.slice(0, 4);
-  const allStaffNames = form.personnel
-    .map(p => (staffRoles && staffRoles[p.role.toLowerCase().replace(' ', '') as keyof typeof staffRoles]) || p.ma_nhan_su || '')
-    .filter(Boolean)
-    .join(', ');
-
   const payload: Record<string, unknown> = {
     ma_lenh_sx: form.code.trim(),
     ten_lenh_sx: form.name.trim() || (defaultName ? `SX ${defaultName}` : ''),
@@ -4972,12 +4883,10 @@ export function productionOrderFormToCreatePayload(
     trang_thai: form.status,
     ma_don_hang: orderRefs.join(', ') || primaryLine.orderRef.trim(),
     ca: form.shift.trim(),
-    nhan_su: allStaffNames,
     ngay_gio_bat_dau: mergeProductionOrderDateTime(form.startDate, form.startDateTime) || null,
     ngay_gio_ket_thuc: form.endDateTime.trim() || null,
     may: form.machine.trim(),
-    ghi_chu: form.note.trim(),
-    phan_cong_nhan_su: JSON.stringify(form.personnel)
+    ghi_chu: form.note.trim()
   };
 
   return payload;
@@ -4985,10 +4894,9 @@ export function productionOrderFormToCreatePayload(
 
 export function productionOrderFormToPayload(
   form: ProductionOrderFormState,
-  line: ProductionOrderEntryLine,
-  staffText = ''
+  line: ProductionOrderEntryLine
 ) {
-  return productionOrderFormToCreatePayload(form, [line], staffText);
+  return productionOrderFormToCreatePayload(form, [line]);
 }
 
 export function AddProductionOrderModal({
@@ -5009,7 +4917,6 @@ export function AddProductionOrderModal({
   const [productionOrders, setProductionOrders] = useState<ProductionOrderRow[]>([]);
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
-  const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductRow[]>([]);
   const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [showAutofillOrders, setShowAutofillOrders] = useState(false);
@@ -5043,14 +4950,13 @@ export function AddProductionOrderModal({
     setLineDraftError('');
     setIsLoadingLookups(true);
 
-    const loadLookups = async () => {
+  const loadLookups = async () => {
       try {
-        const [orderRes, productionRes, machineRes, settingRes, staffRes, productRes, conversionRes] = await Promise.all([
+        const [orderRes, productionRes, machineRes, settingRes, productRes, conversionRes] = await Promise.all([
           fetch('/api/don-hang'),
           fetch('/api/lenh-sx'),
           fetch('/api/danh-sach-may'),
           fetch('/api/cai-dat'),
-          fetch('/api/nhan-su?format=groups&scope=all'),
           fetch('/api/san-pham?format=table'),
           fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
         ]);
@@ -5059,7 +4965,6 @@ export function AddProductionOrderModal({
         const productionData = await productionRes.json().catch(() => ({}));
         const machineData = await machineRes.json().catch(() => ({}));
         const settingData = await settingRes.json().catch(() => ({}));
-        const staffData = await staffRes.json().catch(() => ({}));
         const productData = await productRes.json().catch(() => ({}));
         const conversionData = await conversionRes.json().catch(() => ({}));
 
@@ -5067,7 +4972,6 @@ export function AddProductionOrderModal({
         if (productionRes.ok) setProductionOrders(normalizeProductionOrders(productionData));
         if (machineRes.ok) setMachines(normalizeMachines(machineData));
         if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
-        if (staffRes.ok) setStaffBranches(normalizeHrBranches(staffData));
         if (productRes.ok) setCatalogProducts(normalizeProducts(productData));
 
         if (conversionRes.ok) {
@@ -5082,7 +4986,7 @@ export function AddProductionOrderModal({
           setProductConversions(conversions);
         }
       } catch (error: any) {
-        setFormError(error?.message || 'Không thể tải dữ liệu đơn hàng, máy, ca và nhân sự.');
+        setFormError(error?.message || 'Không thể tải dữ liệu đơn hàng, máy, ca và quy đổi sản phẩm.');
       } finally {
         setIsLoadingLookups(false);
       }
@@ -5154,31 +5058,6 @@ export function AddProductionOrderModal({
       );
     });
   }, [assignedMachineKeys, machines]);
-
-  const workshopStaff = useMemo(() => collectProductionWorkshopStaff(staffBranches), [staffBranches]);
-
-  const staffOptions = useMemo(() => {
-    if (selectedShifts.length === 0) return workshopStaff;
-
-    const needles = selectedShifts.map(shift => shift.toLowerCase());
-    const filtered = workshopStaff.filter(member => {
-      const memberShift = member.shift.toLowerCase();
-      return needles.some(needle => memberShift.includes(needle) || needle.includes(memberShift));
-    });
-
-    // Giữ trong PHÂN XƯỞNG SẢN XUẤT — không fallback sang phòng ban khác
-    return filtered.length > 0 ? filtered : workshopStaff;
-  }, [selectedShifts, workshopStaff]);
-
-  const selectedStaffNames = useMemo(
-    () => {
-      const names = form.personnel
-        .map(p => staffOptions.find(s => s.id === p.ma_nhan_su)?.name || '')
-        .filter(Boolean);
-      return [...new Set(names)].join(', ');
-    },
-    [form.personnel, staffOptions]
-  );
 
   const autofillOrderOptions = useMemo(() => {
     const normalized = autofillSearch.trim().toLowerCase();
@@ -5471,6 +5350,18 @@ export function AddProductionOrderModal({
       setFormError('Vui lòng chọn ngày.');
       return;
     }
+    if (!form.endDateTime.trim()) {
+      setFormError('Vui lòng chọn ngày giờ kết thúc.');
+      return;
+    }
+    if (form.startDateTime.trim() && form.endDateTime.trim()) {
+      const startMs = new Date(form.startDateTime).getTime();
+      const endMs = new Date(form.endDateTime).getTime();
+      if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs < startMs) {
+        setFormError('Ngày giờ kết thúc phải bằng hoặc sau ngày bắt đầu.');
+        return;
+      }
+    }
 
     setIsSaving(true);
     setFormError('');
@@ -5534,7 +5425,7 @@ export function AddProductionOrderModal({
         {isLoadingLookups && (
           <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Đang tải đơn hàng, máy, ca và nhân sự...
+            Đang tải đơn hàng, máy và ca...
           </div>
         )}
 
@@ -5768,7 +5659,7 @@ export function AddProductionOrderModal({
             )}
             {selectedShifts.length > 1 && (
               <p className="text-[11px] font-semibold text-emerald-700">
-                Sẽ tạo {selectedShifts.length} lệnh SX — mỗi ca một lệnh (cùng sản phẩm, máy, nhân sự, ngày).
+                Sẽ tạo {selectedShifts.length} lệnh SX — mỗi ca một lệnh (cùng sản phẩm, máy, ngày).
               </p>
             )}
           </label>
@@ -5803,31 +5694,6 @@ export function AddProductionOrderModal({
               </p>
             )}
           </label>
-
-          <PersonnelAssignmentBlock
-            items={form.personnel}
-            staffOptions={staffOptions}
-            shiftOptions={shiftOptions}
-            shiftSettings={settings}
-            onChange={(id, patch) => {
-              setForm(prev => ({
-                ...prev,
-                personnel: prev.personnel.map(item => (item.id === id ? { ...item, ...patch } : item))
-              }));
-            }}
-            onAdd={() => {
-              setForm(prev => ({
-                ...prev,
-                personnel: addPersonnelEntry(prev.personnel)
-              }));
-            }}
-            onRemove={(id) => {
-              setForm(prev => ({
-                ...prev,
-                personnel: removePersonnelEntry(prev.personnel, id)
-              }));
-            }}
-          />
 
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
@@ -6222,6 +6088,141 @@ function productionOrderStaffDisplay(row: ProductionOrderRow, staffMap: Map<stri
 
   return '-';
 }
+
+type ProductionOrderScheduleRow = {
+  id: string;
+  ngay_lam_viec: string;
+  ca_lam_viec: string;
+  ma_may: string;
+  may: string;
+  vai_tro: string;
+  ma_nhan_su: string;
+  thoi_gian_bat_dau?: string;
+  thoi_gian_ket_thuc?: string;
+};
+
+type ProductionOrderScheduleGroup = {
+  key: string;
+  shift: string;
+  machine: string;
+  machineCode: string;
+  rows: ProductionOrderScheduleRow[];
+};
+
+type ProductionOrderScheduleDayGroup = {
+  day: string;
+  groups: ProductionOrderScheduleGroup[];
+};
+
+function formatProductionOrderScheduleDate(value: string) {
+  if (!value) return '-';
+  const iso = value.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [year, month, day] = iso.split('-');
+    return `${day}/${month}/${year}`;
+  }
+  return value;
+}
+
+function parseProductionOrderDisplayDate(value: string) {
+  const text = String(value || '').trim();
+  if (!text || text === '-') return '';
+  const iso = text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+  return '';
+}
+
+function addProductionOrderDays(date: string, days: number) {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  parsed.setDate(parsed.getDate() + days);
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildProductionOrderDateRange(startDate: string, endDate: string) {
+  const start = parseProductionOrderDisplayDate(startDate);
+  const end = parseProductionOrderDisplayDate(endDate) || start;
+  if (!start) return [];
+  if (!end) return [start];
+  const dates: string[] = [];
+  let cursor = start;
+  let guard = 0;
+  while (cursor && guard < 1000) {
+    dates.push(cursor);
+    if (cursor === end) break;
+    cursor = addProductionOrderDays(cursor, 1);
+    guard += 1;
+    if (!cursor) break;
+  }
+  return dates;
+}
+
+function resolveProductionOrderScheduleStaffName(
+  personnelId: string,
+  staffMap?: Map<string, string>
+) {
+  const normalized = String(personnelId || '').trim();
+  if (!normalized) return '-';
+  if (staffMap?.has(normalized)) {
+    return staffMap.get(normalized) || normalized;
+  }
+  return normalized;
+}
+
+function groupProductionOrderScheduleRows(rows: ProductionOrderScheduleRow[]) {
+  const dayMap = new Map<string, Map<string, ProductionOrderScheduleRow[]>>();
+
+  for (const row of rows) {
+    const day = String(row.ngay_lam_viec || '').trim();
+    const shift = String(row.ca_lam_viec || '').trim() || '-';
+    const machineCode = String(row.ma_may || '').trim();
+    const machine = String(row.may || '').trim() || machineCode || '-';
+    const groupKey = `${shift}__${machineCode || machine}`;
+    if (!dayMap.has(day)) {
+      dayMap.set(day, new Map<string, ProductionOrderScheduleRow[]>());
+    }
+    const shiftMap = dayMap.get(day)!;
+    if (!shiftMap.has(groupKey)) {
+      shiftMap.set(groupKey, []);
+    }
+    shiftMap.get(groupKey)!.push(row);
+  }
+
+  return [...dayMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, shiftMap]) => ({
+      day,
+      groups: [...shiftMap.entries()]
+        .map(([key, groupRows]) => {
+          const first = groupRows[0];
+          return {
+            key,
+            shift: String(first?.ca_lam_viec || '').trim() || '-',
+            machine: String(first?.may || '').trim() || String(first?.ma_may || '').trim() || '-',
+            machineCode: String(first?.ma_may || '').trim(),
+            rows: groupRows.sort((a, b) => {
+              const startA = String(a.thoi_gian_bat_dau || '').trim();
+              const startB = String(b.thoi_gian_bat_dau || '').trim();
+              if (startA !== startB) return startA.localeCompare(startB);
+              return String(a.vai_tro || '').localeCompare(String(b.vai_tro || ''), 'vi');
+            })
+          };
+        })
+        .sort((a, b) => {
+          const shiftCompare = a.shift.localeCompare(b.shift, 'vi');
+          if (shiftCompare !== 0) return shiftCompare;
+          return a.machine.localeCompare(b.machine, 'vi');
+        })
+    }));
+}
+
 export function ProductionOrderViewModal({
   row,
   onClose,
@@ -6231,34 +6232,60 @@ export function ProductionOrderViewModal({
   onClose: () => void;
   staffMap?: Map<string, string>;
 }) {
+  const [scheduleRows, setScheduleRows] = useState<ProductionOrderScheduleRow[]>([]);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
+
+  useEffect(() => {
+    if (!row) return;
+
+    let cancelled = false;
+    const loadSchedule = async () => {
+      setIsLoadingSchedule(true);
+      setScheduleError('');
+      setScheduleRows([]);
+
+      try {
+        const code = String(row.code || '').trim();
+        if (!code) return;
+
+        const res = await fetch(`/api/phan-cong-nhan-su?ma_lenh_sx=${encodeURIComponent(code)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || 'Không thể tải lịch làm việc của lệnh SX.');
+        }
+
+        const items = Array.isArray(data.items) ? (data.items as ProductionOrderScheduleRow[]) : [];
+        if (!cancelled) {
+          setScheduleRows(items);
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setScheduleError(error?.message || 'Không thể tải lịch làm việc của lệnh SX.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSchedule(false);
+        }
+      }
+    };
+
+    loadSchedule();
+    return () => {
+      cancelled = true;
+    };
+  }, [row?.id, row?.code]);
+
   if (!row) return null;
 
   const productLines = getProductionOrderProductLines(row);
-
-  const resolveStaffName = (personnelId: string): string => {
-    if (!personnelId || personnelId === '-') return '-';
-    if (staffMap?.has(personnelId)) {
-      return staffMap.get(personnelId) || personnelId;
-    }
-    return personnelId;
-  };
-
-  const getTotalStaffDisplay = (): string => {
-    if (row.staff == "Chưa phân công") return row.staff;
-
-    if (row.staff && row.staff !== '-') {
-      const names = row.personnel
-      .slice(0, 4)
-      .map(p => resolveStaffName(p.ma_nhan_su))
-      .filter(Boolean);
-      return names.length > 0 ? names.join(', ') : '-';
-    }
-    return '-';
-  };
+  const scheduleGroupsByDay = new Map(groupProductionOrderScheduleRows(scheduleRows).map(group => [group.day, group.groups] as const));
+  const scheduleDateRange = buildProductionOrderDateRange(row.startDate, row.endDate);
+  const scheduleDays = scheduleDateRange.length > 0 ? scheduleDateRange : [...scheduleGroupsByDay.keys()].sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết lệnh SX</h3>
@@ -6268,7 +6295,7 @@ export function ProductionOrderViewModal({
             Đóng
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-3 p-4 text-sm">
+        <div className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2">
           {[
             ['Mã lệnh', row.code],
             ['Tên lệnh', row.name],
@@ -6276,11 +6303,6 @@ export function ProductionOrderViewModal({
             ['Khách hàng', row.customer],
             ['Đơn hàng', row.orderRef],
             ['Ca', row.shift],
-            ['Trưởng ca', resolveStaffName(row.shiftLead)],
-            ['Nhân sự chính', resolveStaffName(row.mainStaff)],
-            ['Thợ phụ', resolveStaffName(row.assistantStaff)],
-            ['Học việc', resolveStaffName(row.traineeStaff)],
-            ['Tổng nhân sự', getTotalStaffDisplay()],
             ['Bắt đầu', row.startDate],
             ['Kết thúc', row.endDate],
             ['Máy', row.machine],
@@ -6291,6 +6313,77 @@ export function ProductionOrderViewModal({
               <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
             </div>
           ))}
+        </div>
+        <div className="px-4 pb-4">
+          <div className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs font-semibold text-zinc-600">
+            Dữ liệu nhân sự được lấy từ lịch làm việc theo ngày, ca và máy.
+          </div>
+          <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+            Lịch làm việc nhân sự
+          </p>
+          {isLoadingSchedule ? (
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-4 text-center text-xs font-semibold text-zinc-500">
+              Đang tải lịch làm việc...
+            </div>
+          ) : scheduleError ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs font-semibold text-rose-700">
+              {scheduleError}
+            </div>
+          ) : scheduleDays.length === 0 ? (
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-4 text-center text-xs font-semibold text-zinc-500">
+              Chưa có dữ liệu lịch làm việc cho lệnh này.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {scheduleDays.map(day => {
+                const groups = scheduleGroupsByDay.get(day) || [];
+                return (
+                  <div key={day} className="rounded-2xl border border-zinc-200 bg-white">
+                    <div className="border-b border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Ngày</p>
+                      <p className="mt-0.5 text-sm font-bold text-zinc-900">{formatProductionOrderScheduleDate(day)}</p>
+                    </div>
+                    <div className="space-y-2 p-3">
+                      {groups.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-3 text-xs font-semibold text-zinc-500">
+                          Chưa có lịch làm việc cho ngày này.
+                        </div>
+                      ) : (
+                        groups.map(group => (
+                          <div key={group.key} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                                {group.rows.length} ghi chú
+                              </p>
+                            </div>
+                            <div className="mt-2 text-sm font-bold text-zinc-900">
+                              <span>Ngày: {formatProductionOrderScheduleDate(day)}</span>
+                              <span className="mx-2 text-zinc-300">-</span>
+                              <span>Ca: {group.shift}</span>
+                              <span className="mx-2 text-zinc-300">-</span>
+                              <span>Máy: {group.machine}</span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {group.rows.map(item => (
+                                <span
+                                  key={item.id}
+                                  className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700"
+                                >
+                                  <span className="font-black text-zinc-900">{item.vai_tro || '-'}</span>
+                                  <span className="mx-1 text-zinc-400">·</span>
+                                  {resolveProductionOrderScheduleStaffName(item.ma_nhan_su, staffMap)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="px-4 pb-4">
           <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
@@ -6352,10 +6445,8 @@ export function EditProductionOrderModal({
 }) {
   const [form, setForm] = useState<ProductionOrderFormState>(emptyProductionOrderForm);
   const [selectedShift, setSelectedShift] = useState('');
-  const [staffBranches, setStaffBranches] = useState<HrBranch[]>([]);
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
-  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -6363,7 +6454,7 @@ export function EditProductionOrderModal({
   useEffect(() => {
     if (!open || !row) return;
     const productLines = getProductionOrderProductLines(row);
-    const startDateTime = toDatetimeLocalInputValue(row.startDate);
+    const startDateTime = toDatetimeLocalInputValue(row.ngay_gio_bat_dau || row.startDate);
     setForm({
       code: row.code === '-' ? '' : row.code,
       name: row.name === '-' ? '' : row.name,
@@ -6391,9 +6482,7 @@ export function EditProductionOrderModal({
           : [newProductionOrderEntryLine()],
       status: row.status === '-' ? 'Chờ sx' : row.status,
       shift: row.shift === '-' ? '' : row.shift,
-      selectedStaffIds: [],
-      personnel: row.personnel && row.personnel.length > 0 ? row.personnel : createDefaultPersonnelList(),
-      startDate: extractProductionOrderDate(startDateTime),
+      startDate: row.ngay_bat_dau || extractProductionOrderDate(startDateTime),
       startDateTime,
       endDateTime: toDatetimeLocalInputValue(row.endDate),
       machine: row.machine === '-' ? '' : row.machine,
@@ -6407,22 +6496,17 @@ export function EditProductionOrderModal({
     if (!open) return;
     let cancelled = false;
     const loadData = async () => {
-      setIsLoadingStaff(true);
       setIsLoadingSettings(true);
       try {
-        const [staffRes, settingRes, conversionRes] = await Promise.all([
-          fetch('/api/nhan-su?format=groups&scope=all'),
+        const [settingRes, conversionRes] = await Promise.all([
           fetch('/api/cai-dat'),
           fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
         ]);
-        const [staffData, settingData, conversionData] = await Promise.all([
-          staffRes.json().catch(() => ({})),
+        const [settingData, conversionData] = await Promise.all([
           settingRes.json().catch(() => ({})),
           conversionRes.json().catch(() => ({}))
         ]);
-        if (!staffRes.ok) throw new Error(staffData.error || 'Không thể tải nhân sự.');
         if (!cancelled) {
-          setStaffBranches(normalizeHrBranches(staffData));
           if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
 
           if (conversionRes.ok) {
@@ -6439,12 +6523,10 @@ export function EditProductionOrderModal({
         }
       } catch (error: any) {
         if (!cancelled) {
-          setStaffBranches([]);
-          setFormError(error?.message || 'Không thể tải nhân sự Phân xưởng sản xuất.');
+          setFormError(error?.message || 'Không thể tải dữ liệu cần thiết để sửa lệnh sản xuất.');
         }
       } finally {
         if (!cancelled) {
-          setIsLoadingStaff(false);
           setIsLoadingSettings(false);
         }
       }
@@ -6454,8 +6536,6 @@ export function EditProductionOrderModal({
       cancelled = true;
     };
   }, [open]);
-
-  const workshopStaff = useMemo(() => collectProductionWorkshopStaff(staffBranches), [staffBranches]);
 
   const shiftOptions = useMemo(() => {
     const fromSettings = settings
@@ -6471,11 +6551,6 @@ export function EditProductionOrderModal({
 
     return fromSettings.length > 0 ? fromSettings : [...STANDARD_SHIFTS];
   }, [settings]);
-
-  const staffText = useMemo(
-    () => [...new Set(form.personnel.map(p => workshopStaff.find(s => s.id === p.ma_nhan_su)?.name || '').filter(Boolean))].join(', '),
-    [form.personnel, workshopStaff]
-  );
 
   const orderCodeOptions = useMemo(() => {
     return [...new Set(orders.map(order => order.orderCode).filter(code => code && code !== '-'))].sort((a, b) =>
@@ -6563,6 +6638,18 @@ export function EditProductionOrderModal({
     if (!selectedShift.trim()) {
       setFormError('Vui lòng chọn ca.');
       return;
+    }
+    if (!form.endDateTime.trim()) {
+      setFormError('Vui lòng chọn ngày giờ kết thúc.');
+      return;
+    }
+    if (form.startDateTime.trim() && form.endDateTime.trim()) {
+      const startMs = new Date(form.startDateTime).getTime();
+      const endMs = new Date(form.endDateTime).getTime();
+      if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs < startMs) {
+        setFormError('Ngày giờ kết thúc phải bằng hoặc sau ngày bắt đầu.');
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -6795,36 +6882,10 @@ export function EditProductionOrderModal({
               />
             </label>
 
-            <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
-              <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
-            </label>
-
-            <PersonnelAssignmentBlock
-              items={form.personnel}
-              staffOptions={workshopStaff}
-              isLoadingStaff={isLoadingStaff}
-              shiftOptions={shiftOptions}
-              shiftSettings={settings}
-              onChange={(id, patch) => {
-                setForm(prev => ({
-                  ...prev,
-                  personnel: prev.personnel.map(item => (item.id === id ? { ...item, ...patch } : item))
-                }));
-              }}
-              onAdd={() => {
-                setForm(prev => ({
-                  ...prev,
-                  personnel: addPersonnelEntry(prev.personnel)
-                }));
-              }}
-              onRemove={(id) => {
-                setForm(prev => ({
-                  ...prev,
-                  personnel: removePersonnelEntry(prev.personnel, id)
-                }));
-              }}
-            />
+          <label className="space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
+            <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
+          </label>
 
             <label className="space-y-1.5">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>
@@ -6898,3 +6959,4 @@ export function EditProductionOrderModal({
     </div>
   );
 }
+
