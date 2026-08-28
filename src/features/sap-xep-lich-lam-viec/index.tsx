@@ -10,6 +10,7 @@ const DEFAULT_ROLES = ['Trưởng ca', 'Nhân sự chính', 'Thợ phụ', 'Họ
 
 const inputClass =
   'h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+const SCHEDULE_NOTE_MARKER = '__SCHEDULE_NOTE__';
 
 // ── Kiểu dữ liệu ─────────────────────────────────────────────────────────────
 type SchedRow = {
@@ -104,6 +105,7 @@ function normalizeRows(data: unknown): SchedRow[] {
       const r = raw as Record<string, unknown>;
       const id = str(r.id);
       if (!id) return null;
+      if (str(r.ma_nhan_su) === SCHEDULE_NOTE_MARKER) return null;
       return {
         id,
         ma_lenh_sx: str(r.ma_lenh_sx),
