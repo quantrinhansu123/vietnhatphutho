@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dieu-dong-nhan-su' | 'settings' | 'dashboard' | 'canh-bao-ton-kho';
+export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'can-kiem-kho' | 'kiem-kho' | 'kiem-kho-chenh-lech' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'inventory-catalog' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'ton-kho' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dieu-dong-nhan-su' | 'settings' | 'dashboard' | 'canh-bao-ton-kho';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -19,7 +19,9 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'weighing-summary': '/tong-hop-ca',
   'weighing-summary-list': '/danh-sach-phieu-can-ca',
   'can-tu-dong': '/can-tu-dong',
+  'can-kiem-kho': '/can-kiem-kho',
   'kiem-kho': '/kiem-kho',
+  'kiem-kho-chenh-lech': '/xu-ly-chenh-lech',
   'quan-ly-kho': '/quan-ly-kho',
   'damaged-goods-report': '/bao-cao-hang-hong',
   'damaged-goods-report-list': '/danh-sach-bao-cao-hang-hong',
@@ -41,6 +43,8 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   materials: '/kho-nvl',
   'warehouse-slip': '/phieu-xuat-nhap-kho',
   'warehouse-history': '/lich-su-xuat-nhap-kho',
+  'inventory-catalog': '/kho-hang',
+  'ton-kho': '/ton-kho',
   orders: '/don-hang',
   customers: '/khach-hang',
   'shipping-orders': '/lenh-xuat-hang',

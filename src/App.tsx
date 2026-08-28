@@ -66,6 +66,7 @@ import { ProductsPanel } from './features/san-pham';
 import { InventoryLimitsPanel } from './features/ton-kho-toi-thieu-toi-da';
 import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsInventoryPanel } from './features/kho-nvl';
+import { InventoryCatalogPanel } from './features/kho-hang';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
 import { CustomersPanel } from './features/khach-hang';
 import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
@@ -79,7 +80,10 @@ import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
+import { CanKiemKhoPilotPanel } from './features/can-tu-dong/pilot';
 import { KiemKhoPanel } from './features/kiem-kho';
+import { XuLyChenhLechPanel } from './features/xu-ly-chenh-lech';
+import { TonKhoPanel } from './features/ton-kho';
 import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
@@ -1113,6 +1117,10 @@ export default function App() {
               >
                 <KiemKhoPanel onBack={() => goBack('factory-kho')} currentUser={authUser} />
               </motion.div>
+            ) : resolvedTab === 'can-kiem-kho' ? (
+              <motion.div key="can-kiem-kho" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }}>
+                <CanKiemKhoPilotPanel />
+              </motion.div>
             ) : resolvedTab === 'quan-ly-kho' ? (
               <motion.div
                 key="quan-ly-kho"
@@ -1122,6 +1130,14 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <QuanLyKhoPanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : resolvedTab === 'kiem-kho-chenh-lech' ? (
+              <motion.div key="kiem-kho-chenh-lech" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }}>
+                <XuLyChenhLechPanel onBack={() => goBack('factory-kho')} currentUser={authUser} />
+              </motion.div>
+            ) : resolvedTab === 'inventory-catalog' ? (
+              <motion.div key="inventory-catalog" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }}>
+                <InventoryCatalogPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : resolvedTab === 'weighing-summary' ? (
               <motion.div
@@ -1378,6 +1394,10 @@ export default function App() {
                   onBack={() => goBack('factory-kho')}
                   onOpenSlip={() => navigateToTab('warehouse-slip')}
                 />
+              </motion.div>
+            ) : activeTab === 'ton-kho' ? (
+              <motion.div key="ton-kho" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }}>
+                <TonKhoPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'orders' ? (
               <motion.div

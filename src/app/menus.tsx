@@ -55,7 +55,7 @@ import ledger3d from '@iconify-icons/fluent-emoji/ledger';
 import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
-  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
+  CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck, ArrowLeftRight,
   ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle
 } from 'lucide-react';
 import type { AppTab } from '../routes';
@@ -623,11 +623,11 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'quan-ly-kho'
   },
   {
-    title: 'Kho nguyên vật liệu',
-    desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
+    title: 'Kho hàng',
+    desc: 'Quản lý nguyên vật liệu, thành phẩm và kho lưu trữ của từng mặt hàng.',
     icon: Boxes,
     icon3d: inventory3d,
-    tab: 'materials'
+    tab: 'inventory-catalog'
   },
   {
     title: 'Phiếu xuất nhập kho',
@@ -644,11 +644,31 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'kiem-kho'
   },
   {
+    title: 'Cân kiểm kho',
+    desc: 'Mở trạm cân kiểm kho để chụp, đọc khối lượng và lưu phiếu kiểm kho.',
+    icon: Scale,
+    icon3d: scale3d,
+    tab: 'can-kiem-kho'
+  },
+  {
+    title: 'Xử lý chênh lệch',
+    desc: 'Đối chiếu số lượng kiểm kê với tồn cuối và tạo phiếu điều chỉnh.',
+    icon: ArrowLeftRight,
+    tab: 'kiem-kho-chenh-lech'
+  },
+  {
     title: 'Lịch sử xuất nhập',
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
     icon3d: warehouseHistory3d,
     tab: 'warehouse-history'
+  },
+  {
+    title: 'Tồn kho',
+    desc: 'Xem tổng hợp tồn kho theo kho, loại và khoảng ngày.',
+    icon: BarChart3,
+    icon3d: chartIncreasing3d,
+    tab: 'ton-kho'
   },
   {
     title: 'Chuẩn bị xuất hàng',
