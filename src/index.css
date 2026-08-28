@@ -963,6 +963,71 @@ input[type="number"] {
   font-style: italic;
 }
 
+.order-cut-print-doc {
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.order-cut-print-date {
+  margin: 0 0 2mm;
+  text-align: right;
+  font-style: italic;
+}
+
+.order-cut-print-title {
+  margin: 0 0 2mm;
+  text-align: center;
+  font-size: 16pt;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.order-cut-print-subline {
+  margin: 0 0 1mm;
+  text-align: center;
+}
+
+.order-cut-print-request {
+  margin: 4mm 0 1mm;
+  text-align: left;
+}
+
+.order-cut-print-customer {
+  margin: 0 0 3mm;
+  text-align: left;
+  font-weight: 700;
+}
+
+.order-cut-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 10.5pt;
+}
+
+.order-cut-print-table th,
+.order-cut-print-table td {
+  border: 1px solid #222222;
+  padding: 1.8mm 2mm;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.order-cut-print-table thead th {
+  background: #f7f7f7;
+  font-weight: 700;
+  text-align: center;
+}
+
+.order-cut-print-empty {
+  text-align: center;
+  font-style: italic;
+  color: #555555;
+}
+
 .production-plan-qr-print-sheet {
   display: none;
 }
@@ -989,6 +1054,11 @@ input[type="number"] {
   }
 
   @page weighing-slip-page {
+    size: A4;
+    margin: 0;
+  }
+
+  @page order-cut-print-page {
     size: A4;
     margin: 0;
   }
@@ -1160,12 +1230,26 @@ input[type="number"] {
     page: auto;
   }
 
+  .order-cut-print-sheet {
+    page: order-cut-print-page;
+  }
+
   .order-print-doc {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     box-sizing: border-box;
+  }
+
+  /* Ép padding trực tiếp trên nội dung (không chỉ dựa vào @page margin — trình duyệt
+     có thể không áp dụng lề theo named page cho phần tử position:absolute), đảm bảo
+     dữ liệu luôn cách mép giấy 2cm hai bên khi in dù @page có được tôn trọng hay không.
+     Đặt SAU .order-print-doc để thắng cascade (cùng !important, cùng specificity —
+     luật khai báo sau thắng). */
+  .order-cut-print-doc {
+    padding: 15mm 20mm !important;
+    box-sizing: border-box !important;
   }
 
   .production-plan-qr-print-sheet,

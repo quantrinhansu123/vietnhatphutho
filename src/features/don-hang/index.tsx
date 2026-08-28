@@ -39,6 +39,7 @@ import {
 } from '../_shared/orderRecordHelpers';
 import { normalizeDaNangBusinessStaffOptions, normalizeCustomerOptions } from '../khach-hang';
 import OrderPrintSheet from '../../components/OrderPrintSheet';
+import OrderCutPrintSheet from '../../components/OrderCutPrintSheet';
 import {
   FilterCombobox,
   TableToolbar,
@@ -1289,7 +1290,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       )}
 
       {printOrder
-        ? createPortal(<OrderPrintSheet order={printOrder} />, document.body)
+        ? createPortal(
+            printOrder.orderType === CUT_ORDER_TYPE ? (
+              <OrderCutPrintSheet order={printOrder} />
+            ) : (
+              <OrderPrintSheet order={printOrder} />
+            ),
+            document.body
+          )
         : null}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
