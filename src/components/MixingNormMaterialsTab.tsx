@@ -1152,8 +1152,12 @@ export default function MixingNormMaterialsTab() {
     if (quantity === null || !Number.isFinite(quantity) || quantity < 0) return null;
     if (/^kg$/i.test(line.unit.trim())) return quantity;
     const codeKey = normalizeProductLookupKey(line.productCode);
+    // The production-order JSON carries the authoritative san_pham_id. Use
+    // it directly when matching san_pham_quy_doi; catalog resolution can be
+    // ambiguous when codes/AMIS codes are shared by multiple rows.
+    const productId = line.productId?.trim() || catalog?.id?.trim() || '';
     const sameProduct = (item: MixingProductConversion) =>
-      Boolean(catalog?.id && item.sanPhamId === catalog.id) ||
+      Boolean(productId && item.sanPhamId === productId) ||
       normalizeProductLookupKey(item.maSp) === codeKey ||
       normalizeProductLookupKey(item.maAmis) === codeKey;
     const unitKey = line.unit.trim().toLocaleLowerCase('vi').replace('m²', 'm2');
