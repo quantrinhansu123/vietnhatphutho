@@ -4655,12 +4655,72 @@ export function getRemainingProductionQuantity(
   return Math.max(0, ordered - allocated);
 }
 
+/**
+ * Đơn hàng còn xuất hiện trong luồng lập Lệnh SX nếu còn ít nhất một sản phẩm
+ * có số lượng đặt hàng hợp lệ và chưa được lập đủ Lệnh SX.
+ */
+export function orderHasRemainingProductionQuantity(
+  order: OrderRow,
+  orders: OrderRow[],
+  productionOrders: ProductionOrderRow[]
+): boolean {
+  return getOrderProductLines(order).some(line => {
+    const productCode = line.productCode?.trim();
+    if (!productCode || productCode === '-') return false;
+
+    return (
+      getOrderProductQuantity(orders, order.orderCode, productCode) > 0 &&
+      getRemainingProductionQuantity(orders, productionOrders, order.orderCode, productCode) > 0
+    );
+  });
+}
+
 export function getOrderProductUnit(orders: OrderRow[], orderRef: string, productCode: string): string {
   const line = orders
     .filter(order => order.orderCode === orderRef)
     .flatMap(order => getOrderProductLines(order))
     .find(item => item.productCode === productCode);
   return line?.unit && line.unit !== '-' ? line.unit : '';
+}
+
+function productionProductMatchesCode(product: ProductRow, productCode: string) {
+  const key = normalizeProductCodeKey(productCode);
+  if (!key) return false;
+  return [product.code, product.amisCode, product.newCode].some(
+    value => Boolean(value) && normalizeProductCodeKey(value) === key
+  );
+}
+
+/** Ưu tiên mã chuẩn/tên đã lưu; chỉ dùng ID khi ID cũng khớp mã sản phẩm. */
+export function resolveProductionCatalogProduct(
+  catalogProducts: ProductRow[],
+  productCode: string,
+  productId = '',
+  productName = '',
+  productionName = ''
+) {
+  const codeKey = normalizeProductCodeKey(productCode);
+  const idProduct = productId.trim()
+    ? catalogProducts.find(product => product.id === productId.trim())
+    : undefined;
+  const codeMatches = catalogProducts.filter(product => productionProductMatchesCode(product, productCode));
+  const nameKey = productName.trim().toLocaleLowerCase('vi');
+  const productionNameKey = productionName.trim().toLocaleLowerCase('vi');
+  const byProductionName = productionNameKey
+    ? codeMatches.find(product => product.productionName.trim().toLocaleLowerCase('vi') === productionNameKey)
+    : undefined;
+  const byProductName = nameKey
+    ? codeMatches.find(product => product.name.trim().toLocaleLowerCase('vi') === nameKey)
+    : undefined;
+  const namedMatch = byProductionName || byProductName;
+
+  if (namedMatch) return namedMatch;
+  if (idProduct && productionProductMatchesCode(idProduct, productCode)) return idProduct;
+  return (
+    catalogProducts.find(product => normalizeProductCodeKey(product.code) === codeKey) ||
+    catalogProducts.find(product => normalizeProductCodeKey(product.newCode) === codeKey) ||
+    codeMatches[0]
+  );
 }
 
 export function buildProductionEntryLine(
@@ -4670,7 +4730,8 @@ export function buildProductionEntryLine(
   productCode: string,
   productName = '',
   unit = '',
-  productionName = ''
+  productionName = '',
+  productId = ''
 ): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'productionName' | 'quantity' | 'unit' | 'productId'> {
   const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode);
   const line = orders
@@ -4683,7 +4744,7 @@ export function buildProductionEntryLine(
     productionName: productionName || line?.productionName || '',
     quantity: remaining > 0 ? String(remaining) : '',
     unit: unit || getOrderProductUnit(orders, orderRef, productCode),
-    productId: line?.productId
+    productId: productId.trim() || line?.productId
   };
 }
 
@@ -4773,14 +4834,21 @@ export function listProductOptionsForOrder(
 
   return [...unique.entries()]
     .map(([code, meta]) => {
-      const catalogProduct = catalogProducts.find(p => p.code === code || p.amisCode === code);
+      const catalogProduct = resolveProductionCatalogProduct(
+        catalogProducts,
+        code,
+        meta.productId,
+        meta.name,
+        meta.productionName
+      );
+      const resolvedProductId = catalogProduct?.id || meta.productId || '';
       return {
-        id: catalogProduct?.id || meta.productId || '',
+        id: resolvedProductId,
         code,
         name: meta.name,
         productionName: meta.productionName || catalogProduct?.productionName || '',
         unit: meta.unit,
-        productId: meta.productId,
+        productId: resolvedProductId,
         group: catalogProduct?.group || meta.group,
         newCode: catalogProduct?.newCode || '',
         orderQty: getOrderProductQuantity(orders, orderRef, code),
@@ -5008,11 +5076,26 @@ export function AddProductionOrderModal({
     [orders, productionOrders, form.startDate]
   );
 
+  const ordersWithProductionProducts = useMemo(
+    () =>
+      ordersForSelectedDate.filter(order =>
+        getOrderProductLines(order).some(line => {
+          const productCode = line.productCode?.trim();
+          return (
+            Boolean(productCode) &&
+            productCode !== '-' &&
+            getOrderProductQuantity(orders, order.orderCode, productCode) > 0
+          );
+        })
+      ),
+    [ordersForSelectedDate, orders]
+  );
+
   const orderCodeOptions = useMemo(() => {
-    return [...new Set(ordersForSelectedDate.map(order => order.orderCode).filter(code => code && code !== '-'))].sort(
+    return [...new Set(ordersWithProductionProducts.map(order => order.orderCode).filter(code => code && code !== '-'))].sort(
       (a, b) => String(a).localeCompare(String(b), 'vi')
     );
-  }, [ordersForSelectedDate]);
+  }, [ordersWithProductionProducts]);
 
   const shiftOptions = useMemo(() => {
     const fromSettings = settings
@@ -5061,7 +5144,7 @@ export function AddProductionOrderModal({
 
   const autofillOrderOptions = useMemo(() => {
     const normalized = autofillSearch.trim().toLowerCase();
-    return ordersForSelectedDate
+    return ordersWithProductionProducts
       .filter(order => getOrderProductLines(order).length > 0)
       .filter(order => {
         if (!normalized) return true;
@@ -5070,12 +5153,12 @@ export function AddProductionOrderModal({
           .includes(normalized);
       })
       .sort((a, b) => a.orderCode.localeCompare(b.orderCode, 'vi'));
-  }, [autofillSearch, ordersForSelectedDate]);
+  }, [autofillSearch, ordersWithProductionProducts]);
 
   const autofillProductCandidates = useMemo(() => {
     return selectedAutofillOrderCodes.flatMap(orderRef =>
       listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
-        .filter(product => product.orderQty > 0 && product.remainingQty > 0)
+        .filter(product => product.orderQty > 0)
         .map(product => ({
           key: autofillProductKey(orderRef, product.code),
           orderRef,
@@ -5170,7 +5253,8 @@ export function AddProductionOrderModal({
         product.productCode,
         product.productName,
         product.unit,
-        product.productionName
+        product.productionName,
+        product.id
       )
     }));
 
@@ -5214,13 +5298,21 @@ export function AddProductionOrderModal({
       return;
     }
 
+    const selectedProduct = listProductOptionsForOrder(
+      ordersForSelectedDate,
+      productionOrders,
+      catalogProducts,
+      orderRef
+    ).find(item => item.code === productCode);
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
       orderRef,
       productCode,
-      '',
-      ''
+      selectedProduct?.name || '',
+      selectedProduct?.unit || '',
+      selectedProduct?.productionName || '',
+      selectedProduct?.id || ''
     );
 
     const newLine: ProductionOrderEntryLine = {
@@ -5270,7 +5362,8 @@ export function AddProductionOrderModal({
           product.code,
           product.name,
           product.unit,
-          product.productionName
+          product.productionName,
+          product.id
         )
       };
     }
@@ -5287,7 +5380,8 @@ export function AddProductionOrderModal({
       productCode,
       product?.name || '',
       product?.unit || '',
-      product?.productionName || ''
+      product?.productionName || '',
+      product?.id || ''
     );
     updateEntryLine(key, built);
   };
@@ -5321,22 +5415,8 @@ export function AddProductionOrderModal({
         setFormError(`${productName} không có trong đơn ${line.orderRef} hoặc chưa có số lượng đặt hàng.`);
         return;
       }
-      const remaining = getRemainingProductionQuantity(
-        orders,
-        productionOrders,
-        line.orderRef.trim(),
-        line.productCode
-      );
-      if (remaining <= 0) {
-        setFormError(`${productName} đã được lập đủ lệnh SX cho đơn ${line.orderRef}.`);
-        return;
-      }
-      if (quantity > remaining) {
-        setFormError(
-          `Số lượng ${productName} (đơn ${line.orderRef}) vượt quá còn lại (${formatNumber(remaining, 0)}).`
-        );
-        return;
-      }
+      // Số lượng sản xuất có thể vượt số lượng đặt hàng. “Còn lại” chỉ là
+      // thông tin tham khảo, không được dùng để chặn việc lập lệnh SX.
     }
     if (selectedShifts.length === 0) {
       setFormError('Vui lòng chọn ít nhất một ca.');
@@ -6461,8 +6541,12 @@ export function EditProductionOrderModal({
       entryLines:
         productLines.length > 0
           ? productLines.map((product, index) => {
-              const catalogProduct = catalogProducts.find(
-                p => p.code === product.productCode || p.amisCode === product.productCode
+              const catalogProduct = resolveProductionCatalogProduct(
+                catalogProducts,
+                product.productCode,
+                product.productId || '',
+                product.productName,
+                product.productionName
               );
               const productionName =
                 (product.productionName && product.productionName !== '-' ? product.productionName : '') ||
@@ -6594,7 +6678,8 @@ export function EditProductionOrderModal({
           product.code,
           product.name,
           product.unit,
-          product.productionName
+          product.productionName,
+          product.id
         )
       };
     }
@@ -6611,7 +6696,8 @@ export function EditProductionOrderModal({
       productCode,
       product?.name || '',
       product?.unit || '',
-      product?.productionName || ''
+      product?.productionName || '',
+      product?.id || ''
     );
     updateEntryLine(key, built);
   };
