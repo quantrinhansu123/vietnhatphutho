@@ -13,6 +13,8 @@ export type Select2Props = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, '
   select2Options?: Record<string, unknown>;
   /** Đổi giá trị này khi nội dung option thay đổi cần Select2 render lại. */
   refreshKey?: string | number;
+  /** Gắn dropdown vào phần tử này (form overlay/modal) để không bị cắt bởi overflow. */
+  dropdownParent?: HTMLElement | null;
 };
 
 const initializeSelect2 = select2Factory as unknown as (root: Window, jquery: typeof $) => void;
@@ -31,6 +33,7 @@ export function Select2({
   onValueChange,
   select2Options,
   refreshKey,
+  dropdownParent,
   children,
   ...selectProps
 }: Select2Props) {
@@ -48,6 +51,7 @@ export function Select2({
     const select = $(element) as Select2JQuery;
     select.select2({
       width: '100%',
+      ...(dropdownParent ? { dropdownParent: $(dropdownParent) } : {}),
       ...select2Options
     });
 
@@ -62,7 +66,7 @@ export function Select2({
         select.select2('destroy');
       }
     };
-  }, [refreshKey, select2Options]);
+  }, [refreshKey, select2Options, dropdownParent]);
 
   useEffect(() => {
     const element = selectRef.current;

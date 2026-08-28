@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Eye, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react';
@@ -9,6 +9,7 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
+import { Select2 } from '../../components/shared/Select2';
 import {
   ORDER_TYPE_OPTIONS,
   ORDER_STATUS_OPTIONS,
@@ -364,6 +365,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [orderForm, setOrderForm] = useState<OrderFormState>(emptyOrderForm);
+  const [orderFormOverlayEl, setOrderFormOverlayEl] = useState<HTMLDivElement | null>(null);
 
   const loadOrders = async () => {
     setIsLoadingOrders(true);
@@ -761,11 +763,29 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   }, 0);
 
   const isFormCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
+  const customerSelect2Options = useMemo(
+    () => ({
+      allowClear: true,
+      minimumResultsForSearch: 0,
+      placeholder: isLoadingLookups ? 'Đang tải khách hàng...' : 'Gõ để tìm khách hàng',
+      language: {
+        noResults: () => 'Không tìm thấy khách hàng phù hợp.',
+        searching: () => 'Đang tìm...'
+      }
+    }),
+    [isLoadingLookups]
+  );
+  const customerSelect2RefreshKey = `${formMode || ''}::${customerOptions
+    .map(customer => customer.id || customer.code || customer.name)
+    .join('|')}`;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-white">
       {formMode && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+        <div
+          ref={setOrderFormOverlayEl}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+        >
           <div className="flex max-h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 shrink-0">
               <div>
@@ -861,14 +881,17 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khách hàng *</span>
-                <select
+                <Select2
                   value={orderForm.customer}
-                  onChange={event => setOrderForm(prev => ({ ...prev, customer: event.target.value }))}
                   disabled={isLoadingLookups}
+                  onValueChange={customer => setOrderForm(prev => ({ ...prev, customer }))}
+                  select2Options={customerSelect2Options}
+                  refreshKey={customerSelect2RefreshKey}
+                  dropdownParent={orderFormOverlayEl}
                   className={orderFieldClass}
                 >
                   <option value="">
-                    {isLoadingLookups ? 'Đang tải khách hàng...' : 'Chọn khách hàng'}
+                    {isLoadingLookups ? 'Đang tải khách hàng...' : 'Gõ để tìm khách hàng'}
                   </option>
                   {orderForm.customer &&
                   !customerOptions.some(customer => customer.name === orderForm.customer) ? (
@@ -879,7 +902,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       {customer.code ? `${customer.code} · ${customer.name}` : customer.name}
                     </option>
                   ))}
-                </select>
+                </Select2>
                 {!isLoadingLookups && customerOptions.length === 0 ? (
                   <span className="block text-[11px] font-semibold text-amber-700">
                     Chưa có khách hàng trong danh mục /khach-hang.

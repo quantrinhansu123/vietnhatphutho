@@ -172,7 +172,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '3872–3999',
     appTab: 'orders',
     appLines: 'src/features/don-hang/index.tsx, src/features/_shared/orderHelpers.ts',
-    components: [],
+    components: ['src/components/shared/Select2.tsx', 'src/components/shared/SearchableSelect.tsx', 'src/components/OrderPrintSheet.tsx'],
     utils: []
   },
   ton_kho_toi_thieu_toi_da: {
