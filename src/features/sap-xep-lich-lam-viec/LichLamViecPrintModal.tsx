@@ -10,6 +10,7 @@ interface MachineCell {
 interface LichRow {
   khungGio: string;
   tenCa: string;
+  maCa?: string;
   machines: MachineCell[];
 }
 
@@ -83,6 +84,10 @@ function machineLabel(machine: { ma_may?: string; ten_may?: string }) {
 
 function shiftValue(shift: { ten_cai_dat?: string; ma_cai_dat?: string }) {
   return String(shift.ten_cai_dat ?? shift.ma_cai_dat ?? '').trim();
+}
+
+function shiftAliases(shift: { ten_cai_dat?: string; ma_cai_dat?: string }) {
+  return [shift.ten_cai_dat, shift.ma_cai_dat].map(value => String(value ?? '').trim()).filter(Boolean);
 }
 
 function shiftLabel(shift: { ten_cai_dat?: string; ma_cai_dat?: string; khung_gio?: string }) {
@@ -162,15 +167,27 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
 
   const shiftOptions = useMemo(() => {
     const seen = new Set<string>();
-    const out: Array<{ value: string; label: string }> = [];
+    const out: Array<{ value: string; label: string; aliases: string[] }> = [];
     for (const shift of shiftList) {
       const value = shiftValue(shift);
       if (!value || seen.has(value)) continue;
       seen.add(value);
-      out.push({ value, label: shiftLabel(shift) });
+      out.push({ value, label: shiftLabel(shift), aliases: shiftAliases(shift) });
     }
     return out;
   }, [shiftList]);
+
+  const canonicalShift = useCallback(
+    (ca: string) => {
+      const normalized = String(ca || '').trim();
+      if (!normalized) return '';
+      const match = shiftOptions.find(
+        shift => shift.value === normalized || shift.aliases.includes(normalized)
+      );
+      return match?.value || normalized;
+    },
+    [shiftOptions]
+  );
 
   const machineNameByCode = useMemo(() => {
     const map = new Map<string, string>();
@@ -186,6 +203,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
     const map = new Map<string, string>();
     for (const shift of shiftOptions) {
       map.set(shift.value, shift.label);
+      for (const alias of shift.aliases) map.set(alias, shift.label);
     }
     return map;
   }, [shiftOptions]);
@@ -193,19 +211,19 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
   const notesByCell = useMemo(() => {
     const map = new Map<string, ScheduleNote[]>();
     for (const note of notes) {
-      const key = noteCellKey(note.ma_may, note.ca_lam_viec);
+      const key = noteCellKey(note.ma_may, canonicalShift(note.ca_lam_viec));
       const list = map.get(key) ?? [];
       list.push(note);
       map.set(key, list);
     }
     return map;
-  }, [notes]);
+  }, [canonicalShift, notes]);
 
   useEffect(() => {
-    if (!isOpen || !data) return;
+    if (!isOpen || !showNoteForm || !data) return;
     setNoteDraft(prev => {
       const nextMaMay =
-        prev.maMay && machineList.some(machine => String(machine.ma_may ?? '').trim() === prev.maMay)
+        prev.maMay && machineOptions.some(option => option.value === prev.maMay)
           ? prev.maMay
           : machineOptions[0]?.value || '';
       const nextCaLamViec =
@@ -215,7 +233,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
       if (prev.maMay === nextMaMay && prev.caLamViec === nextCaLamViec) return prev;
       return { ...prev, maMay: nextMaMay, caLamViec: nextCaLamViec };
     });
-  }, [data, isOpen, machineList, machineOptions, shiftOptions]);
+  }, [data, isOpen, machineOptions, shiftOptions, showNoteForm]);
 
   const handleAddNote = async () => {
     if (!data?.ngay && !ngay) return;
@@ -362,21 +380,24 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
               <div>
                 <p className="text-[11px] font-black uppercase tracking-wider text-zinc-400">Ghi chú theo máy / ca</p>
                 <p className="text-xs font-semibold text-zinc-500">
-                  Mỗi ghi chú được gắn cho một máy, một ca và một ngày.
+                  Bấm Thêm mới, chọn máy và ca, rồi lưu vào hệ thống. Có thể thêm nhiều ghi chú.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowNoteForm(prev => !prev)}
+                onClick={() => {
+                  setNoteError('');
+                  setShowNoteForm(prev => !prev);
+                }}
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 hover:bg-zinc-50"
               >
                 <Plus className="h-4 w-4" />
-                {showNoteForm ? 'Ẩn form' : 'Thêm ghi chú'}
+                {showNoteForm ? 'Ẩn form' : 'Thêm mới'}
               </button>
             </div>
 
             {showNoteForm ? (
-              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_180px]">
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5">
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Máy</span>
                   <select
@@ -415,7 +436,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                   </select>
                 </label>
 
-                <label className="space-y-1.5 lg:col-span-2">
+                <label className="space-y-1.5 sm:col-span-2">
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Nội dung ghi chú</span>
                   <textarea
                     value={noteDraft.ghiChu}
@@ -426,7 +447,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                   />
                 </label>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 lg:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -452,7 +473,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
 
             <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Danh sách ghi chú chi tiết</h4>
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Danh sách ghi chú đã lưu</h4>
                 <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-black text-zinc-500">{notes.length}</span>
               </div>
               {notes.length === 0 ? (
@@ -465,7 +486,10 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                         <div className="min-w-0 space-y-1">
                           <p className="text-[11px] font-black uppercase tracking-wider text-amber-700">
                             {machineNameByCode.get(note.ma_may) || note.may || note.ma_may}
-                            <span className="text-amber-500"> · {shiftNameByValue.get(note.ca_lam_viec) || note.ca_lam_viec}</span>
+                            <span className="text-amber-500">
+                              {' '}
+                              · {shiftNameByValue.get(note.ca_lam_viec) || note.ca_lam_viec}
+                            </span>
                           </p>
                           <p className="whitespace-pre-line text-sm font-semibold text-zinc-800">{note.ghi_chu}</p>
                         </div>
@@ -520,7 +544,10 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                         {row.machines.map((cell, midx) => {
                           const plain = cell.nhanSu.filter(p => !p.dispatch).map(p => p.name);
                           const dispatched = cell.nhanSu.filter(p => p.dispatch);
-                          const cellNotes = notesByCell.get(noteCellKey(cell.maMay, row.tenCa)) ?? [];
+                          const cellNotes =
+                            notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.tenCa))) ??
+                            notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.maCa || ''))) ??
+                            [];
                           return (
                             <td key={midx} className="border border-zinc-300 px-2 py-2 align-top">
                               {cell.nhanSu.length === 0 && cellNotes.length === 0 ? (

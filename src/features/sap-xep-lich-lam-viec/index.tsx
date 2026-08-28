@@ -335,18 +335,28 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
   const groups = useMemo(() => buildGroups(rows, machineName), [rows, machineName]);
 
-  const filterDates = useMemo(
-    () => uniq(groups.map(g => g.ngay_lam_viec)).sort((a, b) => b.localeCompare(a)),
-    [groups]
+  const groupsForFilterDate = useMemo(
+    () => (filterDate ? groups.filter(g => g.ngay_lam_viec === filterDate) : groups),
+    [groups, filterDate]
   );
   const filterShifts = useMemo(
-    () => uniq(groups.map(g => g.ca_lam_viec)).sort((a, b) => a.localeCompare(b, 'vi')),
-    [groups]
+    () => uniq(groupsForFilterDate.map(g => g.ca_lam_viec)).sort((a, b) => a.localeCompare(b, 'vi')),
+    [groupsForFilterDate]
   );
   const filterMachines = useMemo(
-    () => uniq(groups.map(g => g.ma_may)).sort((a, b) => machineName(a).localeCompare(machineName(b), 'vi')),
-    [groups, machineName]
+    () =>
+      uniq(groupsForFilterDate.map(g => g.ma_may)).sort((a, b) =>
+        machineName(a).localeCompare(machineName(b), 'vi')
+      ),
+    [groupsForFilterDate, machineName]
   );
+
+  useEffect(() => {
+    if (filterShift && !filterShifts.includes(filterShift)) setFilterShift('');
+  }, [filterShift, filterShifts]);
+  useEffect(() => {
+    if (filterMachine && !filterMachines.includes(filterMachine)) setFilterMachine('');
+  }, [filterMachine, filterMachines]);
 
   const filteredGroups = useMemo(
     () =>
@@ -596,12 +606,27 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <label className="space-y-1.5">
               <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
-              <select value={filterDate} onChange={e => setFilterDate(e.target.value)} className={inputClass}>
-                <option value="">Tất cả</option>
-                {filterDates.map(d => (
-                  <option key={d} value={d}>{formatDate(d)}</option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={filterDate}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setFilterDate(next);
+                    if (next) setPrintDate(next);
+                  }}
+                  className={`${inputClass} flex-1`}
+                />
+                {filterDate ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilterDate('')}
+                    className="h-10 shrink-0 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                  >
+                    Tất cả
+                  </button>
+                ) : null}
+              </div>
             </label>
             <label className="space-y-1.5">
               <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
@@ -644,7 +669,9 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
             </div>
           ) : filteredGroups.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-12 text-center text-sm font-bold text-zinc-500">
-              Chưa có lịch làm việc. Bấm “Thêm lịch làm việc”.
+              {filterDate
+                ? `Không có lịch làm việc ngày ${formatDate(filterDate)}.`
+                : 'Chưa có lịch làm việc. Bấm “Thêm lịch làm việc”.'}
             </div>
           ) : (
             filteredGroups.map(group => {

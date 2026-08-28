@@ -7312,7 +7312,7 @@ export function createApp() {
       const { data, error } = await supabase
         .from('phan_cong_nhan_su_chi_tiet')
         .insert({
-          id_lenh_sx: 0,
+          id_lenh_sx: null,
           ma_lenh_sx: 'NOTE',
           vai_tro: SCHEDULE_NOTE_MARKER,
           ma_nhan_su: SCHEDULE_NOTE_MARKER,
@@ -7437,7 +7437,8 @@ export function createApp() {
         .delete()
         .eq('ma_may', maMay)
         .eq('ngay_lam_viec', ngayLamViec)
-        .eq('ca_lam_viec', caLamViec);
+        .eq('ca_lam_viec', caLamViec)
+        .neq('ma_nhan_su', SCHEDULE_NOTE_MARKER);
       if (error) return res.status(500).json({ error: phanCongWriteError(error) });
       return res.json({ success: true });
     } catch (err: any) {
@@ -10142,6 +10143,7 @@ export function createApp() {
         return {
           khungGio,
           tenCa,
+          maCa: String(ca.ma_cai_dat || '').trim(),
           machines: mayListHienThi.map(may => ({
             maMay: may.ma_may,
             tenMay: may.ten_may,
