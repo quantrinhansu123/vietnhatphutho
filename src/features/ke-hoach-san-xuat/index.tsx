@@ -116,6 +116,7 @@ export interface ProductionOrderRow {
   name: string;
   ngay_bat_dau?: string;
   ngay_gio_bat_dau?: string;
+  ngay_gio_ket_thuc?: string;
   productCode: string;
   productName: string;
   productionName: string;
@@ -3772,6 +3773,7 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         ),
         ngay_bat_dau: pickText(record, ['ngay_bat_dau', 'start_date', 'startDate'], ''),
         ngay_gio_bat_dau: pickText(record, ['ngay_gio_bat_dau', 'startDateTime'], ''),
+        ngay_gio_ket_thuc: pickText(record, ['ngay_gio_ket_thuc', 'endDateTime'], ''),
         endDate: formatProductionOrderDate(record.ngay_gio_ket_thuc ?? record.ngay_ket_thuc ?? record.end_date),
         createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
         machine: pickText(record, ['may', 'ten_may', 'ma_may', 'machine'], '-'),
@@ -4552,6 +4554,12 @@ export function toDatetimeLocalInputValue(value: string) {
   if (!raw || raw === '-') return '';
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return raw;
 
+  // Hỗ trợ dữ liệu cũ chỉ còn ngày hiển thị theo định dạng dd/mm/yyyy.
+  const displayDate = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (displayDate) {
+    return `${displayDate[3]}-${displayDate[2]}-${displayDate[1]}T00:00`;
+  }
+
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return '';
   return toDatetimeLocalValue(parsed);
@@ -4574,6 +4582,14 @@ export function mergeProductionOrderDateTime(date: string, datetimeLocal: string
       ? datetimeLocal.split('T')[1]?.slice(0, 5) || '08:00'
       : '08:00';
   return date ? `${date}T${timePart}` : datetimeLocal;
+}
+
+/** Chuẩn hoá giá trị datetime-local trước khi gửi timestamptz lên API/Supabase. */
+export function productionOrderApiDateTimeValue(value: string) {
+  const raw = value.trim();
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
 }
 
 export function settingMatchesShift(setting: ProductionOrderLookupSetting, shift: string) {
@@ -4952,7 +4968,7 @@ export function productionOrderFormToCreatePayload(
     ma_don_hang: orderRefs.join(', ') || primaryLine.orderRef.trim(),
     ca: form.shift.trim(),
     ngay_gio_bat_dau: mergeProductionOrderDateTime(form.startDate, form.startDateTime) || null,
-    ngay_gio_ket_thuc: form.endDateTime.trim() || null,
+    ngay_gio_ket_thuc: productionOrderApiDateTimeValue(form.endDateTime) || null,
     may: form.machine.trim(),
     ghi_chu: form.note.trim()
   };
@@ -6568,7 +6584,9 @@ export function EditProductionOrderModal({
       shift: row.shift === '-' ? '' : row.shift,
       startDate: row.ngay_bat_dau || extractProductionOrderDate(startDateTime),
       startDateTime,
-      endDateTime: toDatetimeLocalInputValue(row.endDate),
+      // Dùng giá trị timestamptz gốc để giữ cả ngày và giờ; endDate chỉ là
+      // chuỗi hiển thị dd/mm/yyyy nên không thể khôi phục lại giờ kết thúc.
+      endDateTime: toDatetimeLocalInputValue(row.ngay_gio_ket_thuc || row.endDate),
       machine: row.machine === '-' ? '' : row.machine,
       note: row.note === '-' ? '' : row.note || ''
     });

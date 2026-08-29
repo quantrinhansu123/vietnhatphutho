@@ -418,10 +418,10 @@ export function ProductionOrderPrintPreviewModal({
               )}
             </div>
 
-            {/* Screen wrapper */}
-            <div className="min-h-full bg-zinc-100 p-4 print:min-h-0 print:bg-transparent print:p-0 sm:p-6">
+            {/* Screen wrapper — min-h-full + sm:p-6 làm thừa trang khi in */}
+            <div className="production-order-preview-print-body bg-zinc-100 p-4 sm:p-6 print:bg-transparent print:p-0">
               <div className="mx-auto max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
-                <div className="overflow-x-auto print:overflow-visible">
+                <div className="overflow-x-auto print:overflow-hidden">
                   <table className="w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">
                     <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wide text-white print:static print:bg-gray-100 print:text-black">
                       <tr>
@@ -429,15 +429,35 @@ export function ProductionOrderPrintPreviewModal({
                         <th className={`${textHeadCell} min-w-40`}>Tên sản xuất</th>
                         <th className={`${textHeadCell} min-w-48`}>Ghi chú</th>
                         <th className={`${numHeadCell} w-14`}>ĐVT</th>
-                        <th className={`${numHeadCell} w-16`}>Tồn kho</th>
-                        <th className={`${numHeadCell} w-16`}>Kg/cuộn</th>
-                        <th className={`${numHeadCell} w-16`}>Tổng SX</th>
-                        <th className={`${numHeadCell} w-20 bg-zinc-900 print:bg-gray-100`}>SL.SX Bắc</th>
-                        <th className={`${numHeadCell} w-20 bg-zinc-900 print:bg-gray-100`}>SL.SX Trung</th>
-                        <th className={`${numHeadCell} w-20 bg-zinc-900 print:bg-gray-100`}>SL.SX Nam</th>
+                        <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
+                          <span className="block leading-tight">Tồn</span>
+                          <span className="block leading-tight">kho</span>
+                        </th>
+                        <th className={`${numHeadCell} production-order-preview-th-nowrap w-16`}>
+                          Kg/cuộn
+                        </th>
+                        <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
+                          <span className="block leading-tight">Tổng</span>
+                          <span className="block leading-tight">SX</span>
+                        </th>
+                        <th className={`${numHeadCell} production-order-preview-th-stack w-16 bg-zinc-900 print:bg-gray-100`}>
+                          <span className="block leading-tight">SLSX</span>
+                          <span className="block leading-tight">Bắc</span>
+                        </th>
+                        <th className={`${numHeadCell} production-order-preview-th-stack w-16 bg-zinc-900 print:bg-gray-100`}>
+                          <span className="block leading-tight">SLSX</span>
+                          <span className="block leading-tight">Trung</span>
+                        </th>
+                        <th className={`${numHeadCell} production-order-preview-th-stack w-16 bg-zinc-900 print:bg-gray-100`}>
+                          <span className="block leading-tight">SLSX</span>
+                          <span className="block leading-tight">Nam</span>
+                        </th>
                         <th className={`${numHeadCell} w-14`}>TL/Tấm</th>
                         <th className={`${numHeadCell} w-16`}>Tổng TL</th>
-                        <th className={`${numHeadCell} w-16`}>Thực tế SX</th>
+                        <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
+                          <span className="block leading-tight">Thực tế</span>
+                          <span className="block leading-tight">SX</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -464,7 +484,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.stt}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {row.productName}
+                                {row.ten_san_xuat || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <input
@@ -531,7 +551,7 @@ export function ProductionOrderPrintPreviewModal({
               </div>
 
               {computedRows.length > 0 && (
-                <div className="mx-auto mt-3 max-w-[1400px] print:hidden">
+                <div className="production-order-preview-noprint mx-auto mt-3 max-w-[1400px]">
                   {hasValidationError ? (
                     <p className="flex items-center gap-1.5 text-xs font-semibold text-rose-600">
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
