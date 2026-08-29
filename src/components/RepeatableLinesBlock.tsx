@@ -16,6 +16,7 @@ type RepeatableLinesBlockProps = {
   hideAddButton?: boolean;
   extraHeaderButtons?: React.ReactNode;
   showColumnHeaders?: boolean;
+  alwaysShowColumnHeaders?: boolean;
   actionsAtBottom?: boolean;
   gridTemplateClass?: string;
   columns: RepeatableLineColumn[];
@@ -33,6 +34,7 @@ export function RepeatableLinesBlock({
   hideAddButton = false,
   extraHeaderButtons,
   showColumnHeaders = false,
+  alwaysShowColumnHeaders = false,
   actionsAtBottom = false,
   gridTemplateClass,
   columns,
@@ -59,7 +61,11 @@ export function RepeatableLinesBlock({
   const headerLayout = gridTemplateClass
     ? `grid ${gridTemplateClass}`
     : 'flex flex-wrap';
-  const headerVisibility = showColumnHeaders
+  const headerVisibility = alwaysShowColumnHeaders
+    ? gridTemplateClass
+      ? 'grid'
+      : 'flex'
+    : showColumnHeaders
     ? gridTemplateClass
       ? 'hidden sm:grid'
       : ''

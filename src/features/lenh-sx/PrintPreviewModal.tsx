@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2, Printer, Save, X } from 'lucide-react';
 import {
   formatProductionOrderPrintDate,
@@ -219,6 +220,7 @@ export function ProductionOrderPrintPreviewModal({
 
   useEffect(() => {
     if (!pendingPrint) return;
+    document.body.classList.add('production-order-preview-print-active');
     let cancelled = false;
     const timer = window.setTimeout(() => {
       waitForPrintImagesReady().then(() => {
@@ -228,6 +230,7 @@ export function ProductionOrderPrintPreviewModal({
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      document.body.classList.remove('production-order-preview-print-active');
     };
   }, [pendingPrint]);
 
@@ -285,9 +288,9 @@ export function ProductionOrderPrintPreviewModal({
   const textHeadCell = 'whitespace-nowrap px-2.5 py-2.5 text-left font-bold';
   const bodyCell = 'border-b border-zinc-200 px-2.5 py-1.5 align-middle';
 
-  return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex h-[100dvh] w-full max-w-[1400px] flex-col overflow-hidden bg-white shadow-2xl sm:h-[94dvh] sm:rounded-2xl">
+  return createPortal(
+    <div className="production-order-preview-print-root fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="production-order-preview-print-frame flex h-[100dvh] w-full max-w-[1400px] flex-col overflow-hidden bg-white shadow-2xl sm:h-[94dvh] sm:rounded-2xl">
         {/* Header (non-print) */}
         <div className="production-order-preview-noprint flex items-center justify-between gap-3 bg-zinc-950 px-5 py-3.5 text-white">
           <div className="min-w-0">
@@ -416,7 +419,7 @@ export function ProductionOrderPrintPreviewModal({
             </div>
 
             {/* Screen wrapper */}
-            <div className="min-h-full bg-zinc-100 p-4 print:bg-transparent print:p-0 sm:p-6">
+            <div className="min-h-full bg-zinc-100 p-4 print:min-h-0 print:bg-transparent print:p-0 sm:p-6">
               <div className="mx-auto max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
                 <div className="overflow-x-auto print:overflow-visible">
                   <table className="w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">
@@ -593,6 +596,7 @@ export function ProductionOrderPrintPreviewModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
