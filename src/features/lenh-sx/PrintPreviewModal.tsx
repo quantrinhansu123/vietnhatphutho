@@ -60,6 +60,39 @@ function formatNum(value: number | null): string {
   return value !== null && Number.isFinite(value) ? value.toFixed(2) : '—';
 }
 
+/**
+ * Tính tổng trọng lượng theo ĐVT của sản phẩm. Tấm/Cuộn dùng số lượng
+ * phân bổ thực tế; riêng kg dùng trực tiếp Tổng SX của dòng.
+ * Các mã ĐVT được chuẩn hoá để không phụ thuộc viết hoa, dấu tiếng Việt
+ * hoặc khoảng trắng (ví dụ: "TẤM", "tam", "Cuộn", "cuon").
+ */
+function calculateTotalWeightByUnit(
+  row: Pick<PreviewRow, 'don_vi' | 'kg_cuon' | 'tl_tam' | 'so_luong'>,
+  quantity: number
+) {
+  const normalizedUnit = row.don_vi
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '');
+  const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+
+  if (normalizedUnit === 'cuon' || normalizedUnit === 'roll') {
+    return safeQuantity * (row.kg_cuon ?? 0);
+  }
+  if (normalizedUnit === 'tam' || normalizedUnit === 'sheet') {
+    return safeQuantity * (row.tl_tam ?? 0);
+  }
+  if (normalizedUnit === 'kg' || normalizedUnit === 'kilogram') {
+    // Với ĐVT kg, Tổng TL phải bằng Tổng SX của dòng (không phụ thuộc
+    // các ô phân bổ Bắc/Trung/Nam có thể đang được nhập thiếu).
+    return Number.isFinite(row.so_luong) && row.so_luong > 0 ? row.so_luong : 0;
+  }
+  return 0;
+}
+
 export function ProductionOrderPrintPreviewModal({
   open,
   order,
@@ -157,15 +190,7 @@ export function ProductionOrderPrintPreviewModal({
       const totalSlsx = bac + trung + nam;
       const overLimit = totalSlsx > row.so_luong + 0.0001;
 
-      const unit = row.don_vi.trim().toLowerCase();
-      let tongTl = 0;
-      if (unit === 'cuộn') {
-        tongTl = totalSlsx * (row.kg_cuon || 0);
-      } else if (unit === 'tấm') {
-        tongTl = totalSlsx * (row.tl_tam || 0);
-      } else if (unit === 'kg') {
-        tongTl = totalSlsx;
-      }
+      const tongTl = calculateTotalWeightByUnit(row, totalSlsx);
 
       const { name } = splitProductNameAndNote(row.ten_san_xuat);
 

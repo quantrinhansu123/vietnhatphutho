@@ -12759,7 +12759,7 @@ export function createApp() {
         const totalInput = bac + trung + nam;
 
         if (!baseRow) {
-          console.warn(`Preview row ${i} not found (key: ${key}), skipping validation`);
+          console.warn(`Preview row ${i} not found (key: ${baseRow?.key ?? i}), skipping validation`);
           continue;
         }
         if (totalInput > baseRow.tong_sx + 0.0001) {
@@ -12957,15 +12957,24 @@ export function createApp() {
         if (!spId && code) missingCodes.add(code);
       });
       if (missingCodes.size > 0) {
-        const { data: products } = await supabase
-          .from(SUPABASE_PRODUCTS_TABLE)
-          .select('id, ma_sp')
-          .in('ma_sp', Array.from(missingCodes));
-        (products || []).forEach(row => {
+        const codeList = Array.from(missingCodes);
+        const [byCode, byAmisCode, byNewCode] = await Promise.all([
+          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_sp_moi').in('ma_sp', codeList),
+          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_sp_moi').in('ma_amis', codeList),
+          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_sp_moi').in('ma_sp_moi', codeList)
+        ]);
+        const products = [...(byCode.data || []), ...(byAmisCode.data || []), ...(byNewCode.data || [])];
+        products.forEach(row => {
           const rec = row as Record<string, unknown>;
-          const code = String(rec.ma_sp ?? '').trim();
           const pid = String(rec.id ?? '').trim();
-          if (code && pid) idByCode.set(code, pid);
+          if (!pid) return;
+          [rec.ma_sp, rec.ma_amis, rec.ma_sp_moi].forEach(value => {
+            const code = String(value ?? '').trim();
+            if (code) {
+              idByCode.set(code, pid);
+              idByCode.set(normalizeProductionProductKey(code), pid);
+            }
+          });
         });
       }
 
@@ -12973,7 +12982,7 @@ export function createApp() {
         const spId = String(item?.san_pham_id ?? '').trim();
         if (spId) return spId;
         const code = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim();
-        return idByCode.get(code) || '';
+        return idByCode.get(code) || idByCode.get(normalizeProductionProductKey(code)) || '';
       };
 
       const conversionSanPhamIds = sanPhamArray
@@ -13022,8 +13031,11 @@ export function createApp() {
           slsx_bac: bac,
           slsx_trung: trung,
           slsx_nam: nam,
-          kg_cuon: conv?.kg_cuon ?? null,
-          tl_tam: conv?.tl_tam ?? null,
+          // `fetchConversionMapBySanPhamIds` trả về OrderProductConversionRecord
+          // với tên thuộc tính khớp tên cột Supabase (trong_luong_kg_*).
+          // Đọc nhầm kg_cuon/tl_tam khiến frontend nhận null và Tổng TL luôn 0.
+          kg_cuon: conv?.trong_luong_kg_cuon ?? null,
+          tl_tam: conv?.trong_luong_kg_tam ?? null,
           ghi_chu: String(item?.ghi_chu ?? '').trim(),
           has_saved_detail: hasSavedDetail
         };
