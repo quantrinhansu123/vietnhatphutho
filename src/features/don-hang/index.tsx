@@ -63,10 +63,11 @@ interface OrderRowExt extends OrderRow {
   khu_vuc?: string;
 }
 
+const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1180px]';
 const orderProductGridClass =
-  'grid-cols-2 md:grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_5.5rem_5.5rem_4rem_4rem_4rem_6.5rem]';
+  'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-2 md:grid-cols-[2.25rem_minmax(0,0.9fr)_minmax(0,1.1fr)_4rem_5rem_5rem_5rem_4.5rem_5.5rem_minmax(0,1fr)_6.5rem]';
+  'grid-cols-[2.25rem_minmax(9.5rem,1fr)_minmax(12rem,1.3fr)_4rem_5rem_5rem_5.5rem_4.75rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 export {
   parseOrderProductsFromRecord,
@@ -364,13 +365,13 @@ function OrderProductLineShell({
           onDragEnd={onDragEnd}
           onClick={event => event.stopPropagation()}
           title="Kéo để đổi thứ tự"
-          className="col-span-2 flex h-11 cursor-grab items-center gap-1.5 active:cursor-grabbing md:col-span-1"
+          className="flex h-11 cursor-grab items-center gap-1.5 active:cursor-grabbing"
         >
           <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
           <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
         </div>
         {children}
-        <div className="col-span-2 flex justify-end self-center md:col-span-1">
+        <div className="flex justify-end self-center">
           <OrderProductActions
             index={index}
             total={total}
@@ -627,6 +628,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
     return () => {
       cancelled = true;
+    };
+  }, [formMode]);
+
+  useEffect(() => {
+    if (!formMode) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
     };
   }, [formMode]);
 
@@ -1015,12 +1025,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-white">
-      {formMode && (
+      {formMode && createPortal(
         <div
           ref={setOrderFormOverlayEl}
-          className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/50 p-3 backdrop-blur-sm"
         >
-          <div className="flex max-h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 shrink-0">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
@@ -1041,7 +1051,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </div>
             )}
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-3 p-4">
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 sm:p-5">
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn *</span>
                 <input
@@ -1113,7 +1123,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   allowCustomValue={false}
                 />
               </label>
-              <label className="space-y-1.5">
+              <label className="space-y-1.5 sm:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khách hàng *</span>
                 <Select2
                   value={orderForm.customer}
@@ -1144,16 +1154,19 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 ) : null}
               </label>
 
-              <label className="col-span-2 space-y-1.5">
+              <label className="col-span-1 space-y-1.5 sm:col-span-2 xl:col-span-4">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú đơn hàng</span>
                 <textarea value={orderForm.note} onChange={e => setOrderForm(prev => ({ ...prev, note: e.target.value }))} className={`${orderFieldClass} min-h-20 py-2`} placeholder="Nhập ghi chú đơn hàng" />
               </label>
 
+              <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-4">
+              <div className="overflow-x-auto">
+              <div className={ORDER_PRODUCT_TABLE_MIN_WIDTH}>
               <RepeatableLinesBlock
-                className="col-span-2"
                 title="Sản phẩm"
                 required
                 showColumnHeaders
+                alwaysShowColumnHeaders
                 linesClassName="flex flex-col gap-2"
                 gridTemplateClass={isFormCutOrder ? orderCutProductGridClass : orderProductGridClass}
                 onAdd={() =>
@@ -1203,7 +1216,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         index,
                         orderCutProductGridClass,
                         <>
-                        <div className="col-span-2 min-w-0 md:col-span-1">
+                        <div className="min-w-0">
                           <SearchableSelect
                             value={line.productId || line.productCode}
                             onChange={productId => pickCutOrderProduct(line.key, productId)}
@@ -1227,7 +1240,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
                           />
                         </div>
-                        <div className="col-span-2 min-w-0 md:col-span-1">
+                        <div className="min-w-0">
                           <SearchableSelect
                             value={line.productionName}
                             onChange={productionName => pickProductionName(line.key, productionName)}
@@ -1293,7 +1306,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             className={`${orderFieldClass} bg-zinc-50 text-right`}
                           />
                         </div>
-                        <div className="col-span-2 min-w-0 md:col-span-1">
+                        <div className="min-w-0">
                           <input
                             value={line.note}
                             onChange={e => updateProductLine(line.key, { note: e.target.value })}
@@ -1323,7 +1336,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     index,
                     orderProductGridClass,
                     <>
-                    <div className="col-span-2 min-w-0 md:col-span-1">
+                    <div className="min-w-0">
                         <SearchableSelect
                           value={matchedLineProduct?.id || line.productId || line.productCode}
                           onChange={productId => pickOrderProduct(line.key, productId)}
@@ -1347,7 +1360,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
                         />
                       </div>
-                      <div className="col-span-2 min-w-0 md:col-span-1">
+                      <div className="min-w-0">
                         <input
                           value={matchedLineProduct ? matchedLineProduct.name : line.productName}
                           readOnly={Boolean(matchedLineProduct)}
@@ -1356,7 +1369,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
                         />
                       </div>
-                      <div className="col-span-2 min-w-0 md:col-span-1">
+                      <div className="min-w-0">
                         <SearchableSelect
                           value={line.productionName}
                           onChange={productionName => pickProductionName(line.key, productionName)}
@@ -1369,7 +1382,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           allowEmpty
                         />
                       </div>
-                      <div className="col-span-2 min-w-0 md:col-span-1">
+                      <div className="min-w-0">
                         <input
                           value={line.note}
                           onChange={e => updateProductLine(line.key, { note: e.target.value })}
@@ -1417,6 +1430,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   );
                 })}
               </RepeatableLinesBlock>
+              </div>
+              </div>
+              </div>
 
               <datalist id="order-unit-suggestions">
                 {unitSuggestions.map(unit => (
@@ -1444,7 +1460,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {viewingOrder && (

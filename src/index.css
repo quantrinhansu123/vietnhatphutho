@@ -1402,6 +1402,8 @@ input[type="number"] {
     display: block !important;
     position: static !important;
     inset: auto !important;
+    position: static !important;
+    inset: auto !important;
     width: 100% !important;
     max-width: 100% !important;
     height: auto !important;

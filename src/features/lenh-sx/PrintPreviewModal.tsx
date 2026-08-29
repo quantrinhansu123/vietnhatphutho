@@ -484,7 +484,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.stt}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {row.productName}
+                                {row.ten_san_xuat || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <input
