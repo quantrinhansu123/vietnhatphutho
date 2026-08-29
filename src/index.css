@@ -1346,16 +1346,57 @@ input[type="number"] {
     margin: 1cm;
   }
 
+  body.production-order-preview-print-active #root,
+  body:has(> .production-order-preview-print-root) #root {
+    display: none !important;
+  }
+
+  .production-order-preview-print-root,
+  .production-order-preview-print-root *,
   .production-order-preview-print-sheet,
   .production-order-preview-print-sheet * {
     visibility: visible !important;
   }
 
+  .production-order-preview-print-root,
+  .production-order-preview-print-frame {
+    position: static !important;
+    inset: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .production-order-preview-noprint {
+    display: none !important;
+  }
+
+  .production-order-preview-print-sheet,
+  .production-order-preview-print-sheet * {
+    overflow: visible !important;
+  }
+
   .production-order-preview-print-sheet {
     display: block !important;
-    position: absolute !important;
-    inset: 0 !important;
+    position: static !important;
+    inset: auto !important;
     width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
     z-index: 9999;
     background: #ffffff;
     color: #111111;
@@ -1364,8 +1405,32 @@ input[type="number"] {
     page: production-order-preview-page;
   }
 
-  .production-order-preview-print-sheet .production-order-preview-noprint {
-    display: none !important;
+  .production-order-preview-print-sheet table {
+    width: 100% !important;
+    height: auto !important;
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  .production-order-preview-print-sheet thead {
+    display: table-header-group !important;
+    position: static !important;
+  }
+
+  .production-order-preview-print-sheet tbody {
+    display: table-row-group !important;
+  }
+
+  .production-order-preview-print-sheet tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    height: auto !important;
+  }
+
+  .production-order-preview-print-sheet th,
+  .production-order-preview-print-sheet td {
+    height: auto !important;
+    max-height: none !important;
   }
 
   .production-order-preview-print-sheet input,
@@ -1373,6 +1438,9 @@ input[type="number"] {
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
   .production-order-print-batch,
