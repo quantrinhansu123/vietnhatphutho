@@ -117,6 +117,13 @@ function productTitle(product: MixingNormProduct) {
   return name.toUpperCase();
 }
 
+function comparePrintProducts(a: MixingNormProduct, b: MixingNormProduct) {
+  const aSecondary = a.loai === 'nvl_phu' ? 1 : 0;
+  const bSecondary = b.loai === 'nvl_phu' ? 1 : 0;
+  if (aSecondary !== bSecondary) return aSecondary - bSecondary;
+  return `${a.ma_sp} ${a.ten_sp}`.localeCompare(`${b.ma_sp} ${b.ten_sp}`, 'vi');
+}
+
 function resolveProductPrintName(
   product: MixingNormProduct,
   resolveName?: (code: string) => string
@@ -159,9 +166,7 @@ export function toPrintDoc(
     ngay: row.ngay || new Date().toISOString().slice(0, 10),
     products: [...row.products]
       .filter(product => product.loai !== 'nvl_phu' || (product.nvl_phu?.length ?? 0) > 0)
-      .sort((a, b) =>
-        `${a.ma_sp} ${a.ten_sp}`.localeCompare(`${b.ma_sp} ${b.ten_sp}`, 'vi')
-      )
+      .sort(comparePrintProducts)
       .map(product => ({
         ...product,
         print_name: resolveProductPrintName(product, resolveProductName)
@@ -169,9 +174,151 @@ export function toPrintDoc(
   };
 }
 
+function NormPrintProductSection({
+  product,
+  index,
+  mode
+}: {
+  product: MixingNormProduct & { print_name?: string };
+  index: number;
+  mode: 'primary' | 'secondary';
+}) {
+  const primaryLines = mode === 'primary' ? product.chi_tiet : [];
+  const secondaryLines = mode === 'secondary' ? (product.nvl_phu ?? []) : [];
+  const showBatchMeta = mode === 'primary';
+  const showNote = Boolean(product.ghi_chu) && (mode === 'primary' || product.loai === 'nvl_phu');
+
+  return (
+    <section className="mixing-norm-ratio-print-block">
+      <h2 className="mixing-norm-ratio-print-product">
+        <span>{index + 1}. {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}</span>
+        {product.print_name ? (
+          <span className="mixing-norm-ratio-print-product-name">
+            ({product.print_name})
+          </span>
+        ) : null}
+      </h2>
+      {showBatchMeta && product.tong_trong_luong !== null && product.tong_trong_luong !== undefined ? (
+        <p className="mixing-norm-ratio-print-tonnage">
+          Tổng trọng lượng: <strong>{formatNumberVi(product.tong_trong_luong)} kg</strong>
+        </p>
+      ) : null}
+      {showBatchMeta && product.dinh_luong_coi ? (
+        <p className="mixing-norm-ratio-print-tonnage">
+          Cối trộn tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
+          {product.so_lan_tron ? (
+            <>
+              <span className="mixing-norm-ratio-print-meta-sep">·</span>
+              Số cối cần trộn: <strong>{product.so_lan_tron}</strong>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {mode === 'primary' && primaryLines.length > 0 ? (
+        <table className="mixing-norm-ratio-print-table">
+          <thead>
+            <tr>
+              <th className="col-stt">STT</th>
+              <th className="col-type">Loại NVL</th>
+              <th className="col-code">Mã NVL</th>
+              <th className="col-name">Tên NVL</th>
+              <th className="col-pct">% Cối trộn</th>
+              <th className="col-kg">Giá trị (kg/cối)</th>
+              <th className="col-kg">Tổng trọng lượng</th>
+            </tr>
+          </thead>
+          <tbody>
+            {primaryLines.map((line, lineIndex) => {
+              const { percentCoi, kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
+              return (
+                <tr key={`${product.ma_sp}-primary-${line.ma_nvl}-${lineIndex}`} className="is-primary-material">
+                  <td className="col-stt">{lineIndex + 1}</td>
+                  <td className="col-type">Nguyên liệu chính</td>
+                  <td className="col-code">{line.ma_nvl || ''}</td>
+                  <td className="col-name">{materialPrintName(line)}</td>
+                  <td className="col-pct">{percentCoi !== null ? `${formatNumberVi(percentCoi)}%` : ''}</td>
+                  <td className="col-kg">{kgPerBatch !== null ? `${formatNumberVi(kgPerBatch)} kg` : ''}</td>
+                  <td className="col-kg">{tongKg !== null ? `${formatNumberVi2(tongKg)} kg` : ''}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={6} className="mixing-norm-ratio-print-total-label">
+                Tổng trọng lượng NVL chính cần
+              </td>
+              <td className="col-kg">
+                {formatNumberVi2(primaryLines.reduce(
+                  (sum, line) => sum + (resolveStandardBatchRow(line, product).tongKg ?? 0),
+                  0
+                ))}{' '}kg
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      ) : null}
+
+      {mode === 'secondary' && secondaryLines.length > 0 ? (
+        <table className="mixing-norm-ratio-print-table is-secondary-only">
+          <thead>
+            <tr>
+              <th className="col-stt">STT</th>
+              <th className="col-type">Loại NVL</th>
+              <th className="col-code">Mã NVL</th>
+              <th className="col-name">Tên NVL</th>
+              <th className="col-kg">Tổng trọng lượng</th>
+            </tr>
+          </thead>
+          <tbody>
+            {secondaryLines.map((line, lineIndex) => {
+              const totalWeight = resolveSecondaryTotalWeight(line);
+              return (
+                <tr key={`${product.ma_sp}-secondary-${line.ma_nvl}-${lineIndex}`} className="is-secondary-material">
+                  <td className="col-stt">{lineIndex + 1}</td>
+                  <td className="col-type">Nguyên liệu phụ</td>
+                  <td className="col-code">{line.ma_nvl || ''}</td>
+                  <td className="col-name">{materialPrintName(line)}</td>
+                  <td className="col-kg">{totalWeight !== null ? `${formatNumberVi(totalWeight)} kg` : ''}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={4} className="mixing-norm-ratio-print-total-label">
+                Tổng trọng lượng NVL phụ cần
+              </td>
+              <td className="col-kg">
+                {formatNumberVi(secondaryLines.reduce(
+                  (sum, line) => sum + (resolveSecondaryTotalWeight(line) ?? 0),
+                  0
+                ))}{' '}kg
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      ) : null}
+
+      {mode === 'primary' && primaryLines.length === 0 ? (
+        <p className="mixing-norm-ratio-print-empty">Chưa có dòng NVL</p>
+      ) : null}
+
+      {showNote ? (
+        <p className="mixing-norm-ratio-print-note">
+          <strong>Ghi chú:</strong> {product.ghi_chu}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDoc }) {
   const dateParts = formatPrintDateLong(doc.ngay || '');
   const intro = doc.intro?.trim() || 'Hiện tại BPSX thay đổi tỷ lệ như sau';
+  const formulaProducts = doc.products.filter(product => product.loai !== 'nvl_phu');
+  const secondaryProducts = doc.products.filter(product => (product.nvl_phu?.length ?? 0) > 0);
 
   return (
     <div className="mixing-norm-ratio-print-sheet">
@@ -195,56 +342,28 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
 
         {doc.products.length === 0 ? (
           <p className="mixing-norm-ratio-print-empty">Chưa có sản phẩm định mức cho lệnh này.</p>
-        ) : (
+        ) : doc.isActual ? (
           doc.products.map((product, index) => {
             const tong = product.tong_trong_luong;
-            const displayLines = doc.isActual
-              ? product.chi_tiet
-              : [...product.chi_tiet, ...(product.nvl_phu ?? [])];
-            const primaryLines = product.loai === 'nvl_phu' ? [] : product.chi_tiet;
-            const secondaryLines = product.nvl_phu ?? [];
+            const displayLines = product.chi_tiet;
             return (
               <section
                 key={`${product.ma_sp}-${index}`}
                 className="mixing-norm-ratio-print-block"
               >
                 <h2 className="mixing-norm-ratio-print-product">
-                  {doc.isActual ? (
-                    <>
-                      {index + 1}. {productTitle(product)}
-                      {product.ma_sp ? ` (${product.ma_sp})` : ''}
-                    </>
-                  ) : (
-                    <>
-                      <span>{index + 1}. {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}</span>
-                      {product.print_name ? (
-                        <span className="mixing-norm-ratio-print-product-name">
-                          ({product.print_name})
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  {index + 1}. {productTitle(product)}
+                  {product.ma_sp ? ` (${product.ma_sp})` : ''}
                 </h2>
                 {tong !== null && tong !== undefined ? (
                   <p className="mixing-norm-ratio-print-tonnage">
                     Tổng trọng lượng: <strong>{formatNumberVi(tong)} kg</strong>
                   </p>
                 ) : null}
-                {!doc.isActual && product.dinh_luong_coi ? (
-                  <p className="mixing-norm-ratio-print-tonnage">
-                    Cối trộn tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
-                    {product.so_lan_tron ? (
-                      <>
-                        <span className="mixing-norm-ratio-print-meta-sep">·</span>
-                        Số cối cần trộn: <strong>{product.so_lan_tron}</strong>
-                      </>
-                    ) : null}
-                  </p>
-                ) : null}
 
-                {doc.isActual && buildMixingRoundWeights(product).length > 0 ? (
+                {buildMixingRoundWeights(product).length > 0 ? (
                   chunks(buildMixingRoundWeights(product), MIXING_ROUNDS_PER_TABLE).map((rounds, tableIndex) => (
-                    <table key={tableIndex} className={`mixing-norm-ratio-print-table mixing-norm-ratio-round-table ${doc.isActual ? 'is-actual' : ''}`}>
+                    <table key={tableIndex} className="mixing-norm-ratio-print-table mixing-norm-ratio-round-table is-actual">
                       <colgroup>
                         <col className="col-stt" />
                         <col className="col-code" />
@@ -252,7 +371,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                         {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, roundIndex) => (
                           <React.Fragment key={roundIndex}>
                             <col className="col-round" />
-                            {doc.isActual ? <col className="col-round col-round-actual" /> : null}
+                            <col className="col-round col-round-actual" />
                           </React.Fragment>
                         ))}
                       </colgroup>
@@ -261,7 +380,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                         {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => (
                           <React.Fragment key={index}>
                             <th className="col-round">{index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1}` : ''}</th>
-                            {doc.isActual ? <th className="col-round col-round-actual">{index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1} TT` : ''}</th> : null}
+                            <th className="col-round col-round-actual">{index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1} TT` : ''}</th>
                           </React.Fragment>
                         ))}
                       </tr></thead>
@@ -277,7 +396,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                             <td className="col-stt">{lineIndex + 1}</td><td className="col-code">{displayLine.ma_nvl}</td><td className="col-name">{materialPrintName(displayLine)}</td>
                             {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, slotIndex) => {
                               const roundWeight = rounds[slotIndex];
-                              if (roundWeight === undefined) return <React.Fragment key={slotIndex}><td className="col-round" />{doc.isActual ? <td className="col-round col-round-actual" /> : null}</React.Fragment>;
+                              if (roundWeight === undefined) return <React.Fragment key={slotIndex}><td className="col-round" /><td className="col-round col-round-actual" /></React.Fragment>;
                               const globalRoundIndex = roundOffset + slotIndex;
                               const normLines = normRounds[slotIndex] ?? [];
                               const normLineIndex = normLines.findIndex(line => `${line.ma_nvl}|${line.ten_nvl}`.toLowerCase() === `${displayLine.ma_nvl}|${displayLine.ten_nvl}`.toLowerCase());
@@ -286,14 +405,14 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                                 ? normLine.khoi_luong ?? (normLine.don_vi === '%' && normLine.gia_tri != null ? roundWeight * normLine.gia_tri / 100 : normLine.gia_tri)
                                 : null;
                               const actualWeight = normLineIndex >= 0 ? doc.actualRounds?.[index]?.[globalRoundIndex]?.[normLineIndex]?.weight : null;
-                              return <React.Fragment key={slotIndex}><td className="col-round">{formatNumberVi(kg)}</td>{doc.isActual ? <td className="col-round col-round-actual">{formatNumberVi(actualWeight)}</td> : null}</React.Fragment>;
+                              return <React.Fragment key={slotIndex}><td className="col-round">{formatNumberVi(kg)}</td><td className="col-round col-round-actual">{formatNumberVi(actualWeight)}</td></React.Fragment>;
                             })}
                           </tr>
                         ));
                       })()}</tbody>
                     </table>
                   ))
-                ) : doc.isActual ? (
+                ) : (
                 <table className="mixing-norm-ratio-print-table">
                   <thead>
                     <tr>
@@ -333,98 +452,6 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                     )}
                   </tbody>
                 </table>
-                ) : (
-                <>
-                  {primaryLines.length > 0 ? (
-                    <table className="mixing-norm-ratio-print-table">
-                      <thead>
-                        <tr>
-                          <th className="col-stt">STT</th>
-                          <th className="col-type">Loại NVL</th>
-                          <th className="col-code">Mã NVL</th>
-                          <th className="col-name">Tên NVL</th>
-                          <th className="col-pct">% Cối trộn</th>
-                          <th className="col-kg">Giá trị (kg/cối)</th>
-                          <th className="col-kg">Tổng trọng lượng</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {primaryLines.map((line, lineIndex) => {
-                          const { percentCoi, kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
-                          return (
-                            <tr key={`${product.ma_sp}-primary-${line.ma_nvl}-${lineIndex}`} className="is-primary-material">
-                              <td className="col-stt">{lineIndex + 1}</td>
-                              <td className="col-type">Nguyên liệu chính</td>
-                              <td className="col-code">{line.ma_nvl || ''}</td>
-                              <td className="col-name">{materialPrintName(line)}</td>
-                              <td className="col-pct">{percentCoi !== null ? `${formatNumberVi(percentCoi)}%` : ''}</td>
-                              <td className="col-kg">{kgPerBatch !== null ? `${formatNumberVi(kgPerBatch)} kg` : ''}</td>
-                              <td className="col-kg">{tongKg !== null ? `${formatNumberVi2(tongKg)} kg` : ''}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={6} className="mixing-norm-ratio-print-total-label">
-                            Tổng trọng lượng NVL chính cần
-                          </td>
-                          <td className="col-kg">
-                            {formatNumberVi2(primaryLines.reduce(
-                              (sum, line) => sum + (resolveStandardBatchRow(line, product).tongKg ?? 0),
-                              0
-                            ))}{' '}kg
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  ) : null}
-
-                  {secondaryLines.length > 0 ? (
-                    <table className="mixing-norm-ratio-print-table is-secondary-only">
-                      <thead>
-                        <tr>
-                          <th className="col-stt">STT</th>
-                          <th className="col-type">Loại NVL</th>
-                          <th className="col-code">Mã NVL</th>
-                          <th className="col-name">Tên NVL</th>
-                          <th className="col-kg">Tổng trọng lượng</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {secondaryLines.map((line, lineIndex) => {
-                          const totalWeight = resolveSecondaryTotalWeight(line);
-                          return (
-                            <tr key={`${product.ma_sp}-secondary-${line.ma_nvl}-${lineIndex}`} className="is-secondary-material">
-                              <td className="col-stt">{lineIndex + 1}</td>
-                              <td className="col-type">Nguyên liệu phụ</td>
-                              <td className="col-code">{line.ma_nvl || ''}</td>
-                              <td className="col-name">{materialPrintName(line)}</td>
-                              <td className="col-kg">{totalWeight !== null ? `${formatNumberVi(totalWeight)} kg` : ''}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={4} className="mixing-norm-ratio-print-total-label">
-                            Tổng trọng lượng NVL phụ cần
-                          </td>
-                          <td className="col-kg">
-                            {formatNumberVi(secondaryLines.reduce(
-                              (sum, line) => sum + (resolveSecondaryTotalWeight(line) ?? 0),
-                              0
-                            ))}{' '}kg
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  ) : null}
-
-                  {primaryLines.length === 0 && secondaryLines.length === 0 ? (
-                    <p className="mixing-norm-ratio-print-empty">Chưa có dòng NVL</p>
-                  ) : null}
-                </>
                 )}
 
                 {product.ghi_chu ? (
@@ -435,6 +462,33 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               </section>
             );
           })
+        ) : (
+          <>
+            {formulaProducts.length > 0 && secondaryProducts.length > 0 ? (
+              <h2 className="mixing-norm-ratio-print-group-title">Nguyên liệu chính</h2>
+            ) : null}
+            {formulaProducts.map((product, index) => (
+              <NormPrintProductSection
+                key={`primary-${product.ma_sp}-${index}`}
+                product={product}
+                index={index}
+                mode="primary"
+              />
+            ))}
+            {secondaryProducts.length > 0 ? (
+              <>
+                <h2 className="mixing-norm-ratio-print-group-title">Nguyên liệu phụ</h2>
+                {secondaryProducts.map((product, index) => (
+                  <NormPrintProductSection
+                    key={`secondary-${product.ma_sp}-${index}`}
+                    product={product}
+                    index={index}
+                    mode="secondary"
+                  />
+                ))}
+              </>
+            ) : null}
+          </>
         )}
 
         {doc.isActual ? <p className="mixing-norm-ratio-print-legend"><strong>Ghi chú:</strong> TT là Thực tế.</p> : null}
