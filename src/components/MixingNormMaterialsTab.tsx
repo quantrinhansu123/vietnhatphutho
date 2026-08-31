@@ -380,10 +380,13 @@ function expandProductCodeLookupKeys(
 function findCatalogProductByAnyCode(products: ProductOption[], value: string) {
   const key = normalizeProductLookupKey(value);
   if (!key) return undefined;
-  return products.find(product =>
-    [product.code, product.amisCode ?? '', product.newCode ?? '']
-      .some(code => normalizeProductLookupKey(code) === key)
-  );
+  const byMaSp = products.find(product => normalizeProductLookupKey(product.code) === key);
+  if (byMaSp) return byMaSp;
+  const byNewCode = products.find(product => normalizeProductLookupKey(product.newCode || '') === key);
+  if (byNewCode) return byNewCode;
+  const amisMatches = products.filter(product => normalizeProductLookupKey(product.amisCode || '') === key);
+  if (amisMatches.length === 1) return amisMatches[0];
+  return amisMatches.find(product => normalizeProductLookupKey(product.code) === key) ?? amisMatches[0];
 }
 
 function findCatalogProductForProductionLine(
@@ -938,9 +941,28 @@ export default function MixingNormMaterialsTab() {
         add(line.productCode, line.productName, line.productId, line.productionName);
       }
       // Giữ lại mã SP đã chọn sẵn trong phiếu (khi sửa) kể cả khi mã đó không còn nằm trong lệnh SX.
+      // Khớp theo đúng dòng lệnh SX / ma_sp — không lấy thêm SP khác cùng mã AMIS.
       for (const product of form.products) {
         for (const code of product.maSpCodes) {
-          add(code, findCatalogProductByAnyCode(catalogProducts, code)?.name ?? code);
+          const codeKey = normalizeProductLookupKey(code);
+          const alreadyKept = [...byCode.values()].some(option =>
+            productOptionLookupKeys(option).includes(codeKey)
+          );
+          if (alreadyKept) continue;
+          const orderLine = selectedOrder.productLines.find(
+            item =>
+              normalizeProductLookupKey(item.productCode) === codeKey ||
+              (item.productId && catalogProducts.some(
+                catalog => catalog.id === item.productId && productOptionLookupKeys(catalog).includes(codeKey)
+              ))
+          );
+          const exact = catalogProducts.find(item => normalizeProductLookupKey(item.code) === codeKey);
+          add(
+            code,
+            orderLine?.productName || exact?.name || findCatalogProductByAnyCode(catalogProducts, code)?.name || code,
+            orderLine?.productId || exact?.id || '',
+            orderLine?.productionName || exact?.tenSanXuat || ''
+          );
         }
       }
       return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
@@ -2089,9 +2111,17 @@ export default function MixingNormMaterialsTab() {
                     if (key === product.key) return;
                     keys.forEach(item => takenByOthers.add(item));
                   });
-                  const pickerOptions = productOptions.filter(option =>
-                    !productOptionLookupKeys(option).some(item => takenByOthers.has(item))
+                  const takenHere = selectedLookupKeysByProduct.get(product.key) ?? new Set<string>();
+                  const selectedCodes = new Set(
+                    product.maSpCodes.map(code => normalizeProductLookupKey(code)).filter(Boolean)
                   );
+                  const pickerOptions = productOptions.filter(option => {
+                    const keys = productOptionLookupKeys(option);
+                    if (keys.some(item => takenByOthers.has(item))) return false;
+                    const selectedOnThisRow = selectedCodes.has(normalizeProductLookupKey(option.code));
+                    if (!selectedOnThisRow && keys.some(item => takenHere.has(item))) return false;
+                    return true;
+                  });
                   return (
                     <div
                       key={product.key}
