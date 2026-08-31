@@ -133,15 +133,19 @@ export function SearchableSelect({
         return;
       }
 
-      const exactValue = options.find(item => getValue(item).toLowerCase() === normalized);
-      if (exactValue) {
-        commitValue(getValue(exactValue), exactValue);
+      const exactValueMatches = options.filter(item => getValue(item).toLowerCase() === normalized);
+      if (exactValueMatches.length > 0) {
+        const keepCurrent = exactValueMatches.find(item => getValue(item) === value);
+        const chosen = keepCurrent ?? exactValueMatches[0];
+        commitValue(getValue(chosen), chosen);
         return;
       }
 
-      const exactLabel = options.find(item => getLabel(item).toLowerCase() === normalized);
-      if (exactLabel) {
-        commitValue(getValue(exactLabel), exactLabel);
+      const exactLabelMatches = options.filter(item => getLabel(item).toLowerCase() === normalized);
+      if (exactLabelMatches.length > 0) {
+        const keepCurrent = exactLabelMatches.find(item => getValue(item) === value);
+        const chosen = keepCurrent ?? exactLabelMatches[0];
+        commitValue(getValue(chosen), chosen);
         return;
       }
 
@@ -309,6 +313,12 @@ export function SearchableSelect({
           if (!nextQuery.trim() && allowEmpty) {
             onChange('');
             onSelectOption?.(null);
+            return;
+          }
+          // Custom values (tên NVL sản xuất) must reach form state before Save;
+          // clicking Lưu blurs after handleSave already read the previous value.
+          if (allowCustomValue) {
+            onChange(nextQuery);
           }
         }}
         onFocus={() => {

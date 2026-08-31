@@ -226,7 +226,7 @@ function productToForm(
             materialId: '',
             maNvl: line.ma_nvl,
             tenNvl: line.ten_nvl,
-            tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
+            tenNvlSanXuat: line.ten_nvl_san_xuat || '',
             khoNgamDinh: line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.khoNgamDinh || '',
             giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
             donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
@@ -356,6 +356,39 @@ function normalizeProductLookupKey(value: string) {
   return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
 }
 
+function materialOptionLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'>) {
+  const base = `${item.code} - ${item.name}`;
+  return item.productionName.trim() ? `${base} · ${item.productionName.trim()}` : base;
+}
+
+/**
+ * Trùng NVL: cùng mã (hoặc cùng tên) chỉ bị chặn khi tên NVL sản xuất cũng giống nhau.
+ * Cùng mã + một dòng có tên SX, dòng kia để trống → không trùng.
+ */
+function isDuplicateMixingMaterialLine(
+  a: Pick<LineForm, 'maNvl' | 'tenNvl' | 'tenNvlSanXuat'>,
+  b: Pick<LineForm, 'maNvl' | 'tenNvl' | 'tenNvlSanXuat'>
+) {
+  const aCode = normalizeProductLookupKey(a.maNvl);
+  const bCode = normalizeProductLookupKey(b.maNvl);
+  const aName = normalizeProductLookupKey(a.tenNvl);
+  const bName = normalizeProductLookupKey(b.tenNvl);
+  const sameCode = Boolean(aCode && aCode === bCode);
+  const sameName = Boolean(aName && aName === bName);
+  if (!sameCode && !sameName) return false;
+  return normalizeProductLookupKey(a.tenNvlSanXuat) === normalizeProductLookupKey(b.tenNvlSanXuat);
+}
+
+function findDuplicateMixingMaterialLine(lines: LineForm[]) {
+  const filled = lines.filter(line => line.maNvl.trim() || line.tenNvl.trim());
+  for (let index = 1; index < filled.length; index += 1) {
+    const line = filled[index];
+    const duplicated = filled.slice(0, index).some(previous => isDuplicateMixingMaterialLine(previous, line));
+    if (duplicated) return line;
+  }
+  return null;
+}
+
 function productOptionLookupKeys(option: Pick<ProductOption, 'code' | 'amisCode' | 'newCode'>) {
   return [option.code, option.amisCode ?? '', option.newCode ?? '']
     .map(normalizeProductLookupKey)
@@ -471,7 +504,7 @@ function nvlPhuToLineForms(
         materialId: '',
         maNvl: line.ma_nvl,
         tenNvl: line.ten_nvl,
-        tenNvlSanXuat: line.ten_nvl_san_xuat || materialsByCode.get(line.ma_nvl)?.productionName || '',
+        tenNvlSanXuat: line.ten_nvl_san_xuat || '',
         khoNgamDinh: line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.khoNgamDinh || '',
         giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
         donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
@@ -855,11 +888,14 @@ export default function MixingNormMaterialsTab() {
     const code = normalizeProductLookupKey(line.maNvl);
     const name = line.tenNvl.trim();
     const productionName = line.tenNvlSanXuat.trim();
-    return materials.find(item =>
+    const sameCodeAndName = (item: MaterialOption) =>
       normalizeProductLookupKey(item.code) === code &&
-      (!name || item.name.trim() === name) &&
-      (!productionName || item.productionName.trim() === productionName)
-    ) ?? materialsByCode.get(line.maNvl);
+      (!name || item.name.trim() === name);
+    return (
+      materials.find(item => sameCodeAndName(item) && item.productionName.trim() === productionName) ??
+      materials.find(item => sameCodeAndName(item) && !item.productionName.trim() && !productionName) ??
+      undefined
+    );
   };
 
   const materialSelectValue = (line: LineForm) => findMaterialForLine(line)?.id || line.maNvl;
@@ -1427,19 +1463,64 @@ export default function MixingNormMaterialsTab() {
     }));
   };
 
+  const patchLineFromMaterial = (line: LineForm, materialId: string): LineForm => {
+    const selectedId = materialId.trim();
+    const material =
+      materials.find(item => item.id === selectedId) ??
+      materials.find(item =>
+        normalizeProductLookupKey(item.code) === normalizeProductLookupKey(selectedId) &&
+        item.productionName.trim() === line.tenNvlSanXuat.trim()
+      ) ??
+      materials.find(item =>
+        normalizeProductLookupKey(item.code) === normalizeProductLookupKey(selectedId)
+      );
+    if (!material) {
+      return {
+        ...line,
+        materialId: '',
+        maNvl: '',
+        tenNvl: '',
+        tenNvlSanXuat: '',
+        khoNgamDinh: ''
+      };
+    }
+    if (material.id && material.id === line.materialId) {
+      return {
+        ...line,
+        maNvl: material.code,
+        tenNvl: material.name,
+        khoNgamDinh: material.khoNgamDinh || line.khoNgamDinh
+      };
+    }
+    const sameCode = normalizeProductLookupKey(material.code) === normalizeProductLookupKey(line.maNvl);
+    const nextProduction = material.productionName.trim() || (sameCode ? line.tenNvlSanXuat : '');
+    return {
+      ...line,
+      materialId: material.id,
+      maNvl: material.code,
+      tenNvl: material.name,
+      tenNvlSanXuat: nextProduction,
+      khoNgamDinh: material.khoNgamDinh
+    };
+  };
+
   const selectMaterialCode = (productKey: string, lineKey: string, materialId: string) => {
-    const material = materials.find(item => item.id === materialId) ?? materialsByCode.get(materialId);
-    updateLine(productKey, lineKey, {
-      materialId: material?.id ?? '',
-      maNvl: material?.code ?? '',
-      tenNvl: material?.name ?? '',
-      tenNvlSanXuat: material?.productionName ?? '',
-      khoNgamDinh: material?.khoNgamDinh ?? ''
-    });
+    setForm(prev => ({
+      ...prev,
+      products: prev.products.map(product =>
+        product.key !== productKey
+          ? product
+          : {
+              ...product,
+              lines: product.lines.map(line =>
+                line.key === lineKey ? patchLineFromMaterial(line, materialId) : line
+              )
+            }
+      )
+    }));
   };
 
   const selectSecondaryMaterialCode = (productKey: string, lineKey: string, materialId: string) => {
-    const material = materials.find(item => item.id === materialId) ?? materialsByCode.get(materialId);
     setForm(prev => ({
       ...prev,
       secondaryProducts: prev.secondaryProducts.map(product =>
@@ -1448,16 +1529,7 @@ export default function MixingNormMaterialsTab() {
           : {
               ...product,
               lines: product.lines.map(line =>
-                line.key === lineKey
-                  ? {
-                      ...line,
-                      materialId: material?.id ?? '',
-                      maNvl: material?.code ?? '',
-                      tenNvl: material?.name ?? '',
-                      tenNvlSanXuat: material?.productionName ?? '',
-                      khoNgamDinh: material?.khoNgamDinh ?? ''
-                    }
-                  : line
+                line.key === lineKey ? patchLineFromMaterial(line, materialId) : line
               )
             }
       )
@@ -1581,16 +1653,18 @@ export default function MixingNormMaterialsTab() {
         setError(`Định lượng 1 cối của SP ${product.maSp} phải lớn hơn 0.`);
         return;
       }
-      const materialKeys = new Set<string>();
+      const duplicateMain = findDuplicateMixingMaterialLine(product.lines);
+      if (duplicateMain) {
+        setErrorProductKey(product.key);
+        setError(
+          duplicateMain.tenNvlSanXuat.trim()
+            ? `Sản phẩm ${product.maSp}: NVL chính không được trùng mã và tên sản xuất.`
+            : `Sản phẩm ${product.maSp}: NVL chính không được trùng mã hoặc tên.`
+        );
+        return;
+      }
       for (const [lineIndex, line] of product.lines.entries()) {
         if (!line.maNvl.trim() && !line.tenNvl.trim()) continue;
-        const key = normalizeProductLookupKey(line.maNvl || line.tenNvl);
-        if (materialKeys.has(key)) {
-          setErrorProductKey(product.key);
-          setError(`Sản phẩm ${product.maSp}: NVL chính không được trùng mã hoặc tên.`);
-          return;
-        }
-        materialKeys.add(key);
         const value = parseNumberOrNull(line.giaTri);
         if (value === null || value < 0) {
           setErrorProductKey(product.key);
@@ -1610,15 +1684,17 @@ export default function MixingNormMaterialsTab() {
     }
 
     for (const product of form.secondaryProducts) {
-      const materialKeys = new Set<string>();
+      const duplicateSecondary = findDuplicateMixingMaterialLine(product.lines);
+      if (duplicateSecondary) {
+        setError(
+          duplicateSecondary.tenNvlSanXuat.trim()
+            ? `NVL phụ của SP ${product.maSp}: không được trùng mã và tên sản xuất.`
+            : `NVL phụ của SP ${product.maSp}: không được trùng mã hoặc tên.`
+        );
+        return;
+      }
       for (const [lineIndex, line] of product.lines.entries()) {
         if (!line.maNvl.trim() && !line.tenNvl.trim()) continue;
-        const key = normalizeProductLookupKey(line.maNvl || line.tenNvl);
-        if (materialKeys.has(key)) {
-          setError(`NVL phụ của SP ${product.maSp}: không được trùng mã hoặc tên.`);
-          return;
-        }
-        materialKeys.add(key);
         const value = parseNumberOrNull(line.giaTri);
         if (value === null || value < 0) {
           setError(`Giá trị NVL phụ #${lineIndex + 1} của SP ${product.maSp} phải là số không âm.`);
@@ -2289,7 +2365,7 @@ export default function MixingNormMaterialsTab() {
                                       options={mainMaterialOptions}
                                       placeholder={`Tìm mã hoặc tên NVL #${index + 1}`}
                                       getValue={item => (item as MaterialOption).id}
-                                      getLabel={item => `${(item as MaterialOption).code} - ${(item as MaterialOption).name}`}
+                                      getLabel={item => materialOptionLabel(item as MaterialOption)}
                                       getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name} ${(item as MaterialOption).productionName}`}
                                       inputClassName={inputClass}
                                     />
@@ -2419,7 +2495,7 @@ export default function MixingNormMaterialsTab() {
                                   options={secondaryMaterialOptions}
                                   placeholder={'Tìm NVL phụ #' + (index + 1)}
                                   getValue={item => (item as MaterialOption).id}
-                                  getLabel={item => (item as MaterialOption).code + ' - ' + (item as MaterialOption).name}
+                                  getLabel={item => materialOptionLabel(item as MaterialOption)}
                                   getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName}
                                   inputClassName={inputClass}
                                 />
