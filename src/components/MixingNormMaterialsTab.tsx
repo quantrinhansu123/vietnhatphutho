@@ -121,6 +121,8 @@ type ProductForm = {
 
 type SecondaryProductForm = {
   key: string;
+  /** Nhiều SP dùng chung một danh sách NVL phụ — giống block NVL chính. */
+  maSpCodes: string[];
   maSp: string;
   tenSp: string;
   lines: LineForm[];
@@ -161,6 +163,14 @@ const emptyProduct = (): ProductForm => ({
   dinhLuongCoi: '',
   lines: [emptyLine()],
   nvlFilled: false
+});
+
+const emptySecondaryProduct = (): SecondaryProductForm => ({
+  key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  maSpCodes: [],
+  maSp: '',
+  tenSp: '',
+  lines: [emptyLine()]
 });
 
 function computeMixingRoundCount(tongTrongLuong: number, dinhLuongCoi: number) {
@@ -468,20 +478,6 @@ function findMixingOrderByCode(orders: MixingProductionOrder[], code: string) {
   );
 }
 
-function uniqueOrderProductLines(order: MixingProductionOrder | null | undefined) {
-  if (!order) return [] as Array<{ code: string; name: string }>;
-  const seen = new Set<string>();
-  const lines: Array<{ code: string; name: string }> = [];
-  for (const line of order.productLines) {
-    const code = line.productCode.trim();
-    const key = normalizeProductLookupKey(code);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    lines.push({ code, name: line.productName.trim() || code });
-  }
-  return lines;
-}
-
 function isFormulaNormProduct(product: MixingNormProduct) {
   return product.loai !== 'nvl_phu';
 }
@@ -490,6 +486,21 @@ function visibleNormProducts(products: MixingNormProduct[]) {
   return products.filter(product =>
     isFormulaNormProduct(product) || (product.nvl_phu?.length ?? 0) > 0
   );
+}
+
+function nvlPhuSignature(lines: MixingNormLine[]) {
+  return [...lines]
+    .map(line =>
+      [
+        normalizeProductLookupKey(line.ma_nvl),
+        normalizeProductLookupKey(line.ten_nvl),
+        normalizeProductLookupKey(line.ten_nvl_san_xuat || ''),
+        String(line.gia_tri ?? ''),
+        String(line.don_vi ?? '')
+      ].join('\0')
+    )
+    .sort((a, b) => a.localeCompare(b, 'vi'))
+    .join('\n');
 }
 
 function nvlPhuToLineForms(
@@ -518,62 +529,35 @@ function collectSavedSecondaryProducts(
   products: MixingNormProduct[],
   materialsByCode: Map<string, MaterialOption>
 ): SecondaryProductForm[] {
-  const result: SecondaryProductForm[] = [];
-  const seen = new Set<string>();
+  const groups = new Map<string, { codes: string[]; tenSp: string; lines: MixingNormLine[] }>();
   for (const product of products) {
-    const codes = product.ma_sp.split(',').map(code => code.trim()).filter(Boolean);
     const nvlPhu = product.nvl_phu ?? [];
-    const isStub = product.loai === 'nvl_phu';
-    if (nvlPhu.length === 0 && !isStub) continue;
-    const targetCodes = isStub || codes.length <= 1 ? codes : [codes[0]];
-    for (const code of targetCodes) {
-      const key = normalizeProductLookupKey(code);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      result.push({
-        key: `secondary-${key}`,
-        maSp: code,
-        tenSp: product.ten_sp.trim() || code,
-        lines: nvlPhuToLineForms(nvlPhu, key, materialsByCode)
-      });
+    if (nvlPhu.length === 0) continue;
+    const codes = product.ma_sp.split(',').map(code => code.trim()).filter(Boolean);
+    if (codes.length === 0) continue;
+    const signature = nvlPhuSignature(nvlPhu);
+    const existing = groups.get(signature);
+    if (existing) {
+      for (const code of codes) {
+        const key = normalizeProductLookupKey(code);
+        if (!key || existing.codes.some(item => normalizeProductLookupKey(item) === key)) continue;
+        existing.codes.push(code);
+      }
+      continue;
     }
+    groups.set(signature, {
+      codes: [...codes],
+      tenSp: product.ten_sp.trim(),
+      lines: nvlPhu
+    });
   }
-  return result;
-}
-
-function mergeSecondaryProducts(
-  orderProducts: Array<{ code: string; name: string }>,
-  existing: SecondaryProductForm[]
-): SecondaryProductForm[] {
-  const existingByCode = new Map(
-    existing.map(item => [normalizeProductLookupKey(item.maSp), item])
-  );
-  const seen = new Set<string>();
-  const next: SecondaryProductForm[] = [];
-  for (const line of orderProducts) {
-    const key = normalizeProductLookupKey(line.code);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    const prev = existingByCode.get(key);
-    next.push(
-      prev
-        ? { ...prev, maSp: line.code, tenSp: line.name || prev.tenSp }
-        : {
-            key: `secondary-${key}`,
-            maSp: line.code,
-            tenSp: line.name,
-            lines: []
-          }
-    );
-  }
-  for (const item of existing) {
-    const key = normalizeProductLookupKey(item.maSp);
-    if (!key || seen.has(key)) continue;
-    if (!item.lines.some(line => line.maNvl.trim() || line.tenNvl.trim())) continue;
-    seen.add(key);
-    next.push(item);
-  }
-  return next;
+  return [...groups.values()].map((group, index) => ({
+    key: `secondary-${index}-${group.codes[0] || 'block'}`,
+    maSpCodes: group.codes,
+    maSp: group.codes.join(', '),
+    tenSp: group.tenSp,
+    lines: nvlPhuToLineForms(group.lines, `${index}-${group.codes[0] || 'block'}`, materialsByCode)
+  }));
 }
 
 function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): MixingNormLine[] {
@@ -922,27 +906,6 @@ export default function MixingNormMaterialsTab() {
     [form.maLenhSx, productionOrders]
   );
 
-  useEffect(() => {
-    if (!showForm || !form.maLenhSx.trim() || !selectedOrder) return;
-    const orderLines = uniqueOrderProductLines(selectedOrder);
-    setForm(prev => {
-      const merged = mergeSecondaryProducts(orderLines, prev.secondaryProducts);
-      const unchanged =
-        merged.length === prev.secondaryProducts.length &&
-        merged.every((item, index) => {
-          const current = prev.secondaryProducts[index];
-          return (
-            current &&
-            item.key === current.key &&
-            item.maSp === current.maSp &&
-            item.tenSp === current.tenSp &&
-            item.lines === current.lines
-          );
-        });
-      return unchanged ? prev : { ...prev, secondaryProducts: merged };
-    });
-  }, [showForm, form.maLenhSx, selectedOrder]);
-
   const productOptions = useMemo((): ProductOption[] => {
     const byCode = new Map<string, ProductOption>();
     const add = (code: string, name: string, productId = '', productionName = '') => {
@@ -979,7 +942,7 @@ export default function MixingNormMaterialsTab() {
       }
       // Giữ lại mã SP đã chọn sẵn trong phiếu (khi sửa) kể cả khi mã đó không còn nằm trong lệnh SX.
       // Khớp theo đúng dòng lệnh SX / ma_sp — không lấy thêm SP khác cùng mã AMIS.
-      for (const product of form.products) {
+      for (const product of [...form.products, ...form.secondaryProducts]) {
         for (const code of product.maSpCodes) {
           const codeKey = normalizeProductLookupKey(code);
           const alreadyKept = [...byCode.values()].some(option =>
@@ -1016,7 +979,7 @@ export default function MixingNormMaterialsTab() {
     }
 
     return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
-  }, [catalogProducts, productionOrders, selectedOrder, form.products]);
+  }, [catalogProducts, productionOrders, selectedOrder, form.products, form.secondaryProducts]);
 
   const productLabel = (option: ProductOption) =>
     `${option.amisCode || option.code} — ${option.tenSanXuat || option.name}`;
@@ -1044,6 +1007,14 @@ export default function MixingNormMaterialsTab() {
     }
     return map;
   }, [form.products, productOptionsByCode]);
+
+  const selectedLookupKeysBySecondaryProduct = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const product of form.secondaryProducts) {
+      map.set(product.key, expandProductCodeLookupKeys(product.maSpCodes, productOptionsByCode));
+    }
+    return map;
+  }, [form.secondaryProducts, productOptionsByCode]);
 
   /** Trả về ProductOption cho từng mã đã chọn — dùng luôn để hiển thị chip trong multi-select. */
   const resolveProductOptionsForCodes = (codes: string[]): ProductOption[] =>
@@ -1188,7 +1159,6 @@ export default function MixingNormMaterialsTab() {
     setCopySourceTitle('');
     const formulaProducts = row.products.filter(isFormulaNormProduct);
     const savedSecondary = collectSavedSecondaryProducts(row.products, materialsByCode);
-    const orderLines = uniqueOrderProductLines(findMixingOrderByCode(productionOrders, row.ma_lenh_sx));
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
       ca: row.ca,
@@ -1198,7 +1168,7 @@ export default function MixingNormMaterialsTab() {
         formulaProducts.length > 0
           ? formulaProducts.map(product => productToForm(product, row.id, materialsByCode))
           : [emptyProduct()],
-      secondaryProducts: mergeSecondaryProducts(orderLines, savedSecondary)
+      secondaryProducts: savedSecondary
     });
     setShowForm(true);
     setError('');
@@ -1301,9 +1271,7 @@ export default function MixingNormMaterialsTab() {
       });
 
   const selectOrder = (orderCode: string) => {
-    // Chỉ gán lệnh SX — KHÔNG tự fill danh sách công thức trộn.
-    // Danh sách NVL phụ thì luôn 1 dòng / SP theo lệnh SX, độc lập với việc thêm/xóa SP công thức.
-    const orderLines = uniqueOrderProductLines(findMixingOrderByCode(productionOrders, orderCode));
+    // Chỉ gán lệnh SX — KHÔNG tự fill công thức trộn hay NVL phụ.
     setForm(prev =>
       prev.maLenhSx.trim() === orderCode.trim()
         ? { ...prev, maLenhSx: orderCode }
@@ -1311,7 +1279,7 @@ export default function MixingNormMaterialsTab() {
             ...prev,
             maLenhSx: orderCode,
             products: [emptyProduct()],
-            secondaryProducts: mergeSecondaryProducts(orderLines, prev.secondaryProducts)
+            secondaryProducts: []
           }
     );
   };
@@ -1445,11 +1413,53 @@ export default function MixingNormMaterialsTab() {
     setForm(prev => ({ ...prev, products: [...prev.products, emptyProduct()] }));
   };
 
+  const addSecondaryProduct = () => {
+    setForm(prev => ({
+      ...prev,
+      secondaryProducts: [...prev.secondaryProducts, emptySecondaryProduct()]
+    }));
+  };
+
   const removeProduct = (productKey: string) => {
     setForm(prev => {
       const next = prev.products.filter(item => item.key !== productKey);
       return { ...prev, products: next.length > 0 ? next : [emptyProduct()] };
     });
+  };
+
+  const removeSecondaryProduct = (productKey: string) => {
+    setForm(prev => ({
+      ...prev,
+      secondaryProducts: prev.secondaryProducts.filter(item => item.key !== productKey)
+    }));
+  };
+
+  const updateSecondaryProduct = (productKey: string, patch: Partial<SecondaryProductForm>) => {
+    setForm(prev => ({
+      ...prev,
+      secondaryProducts: prev.secondaryProducts.map(product =>
+        product.key === productKey ? { ...product, ...patch } : product
+      )
+    }));
+  };
+
+  const updateSecondaryProductCodes = (productKey: string, selected: ProductOption[]) => {
+    const codes = selected.map(option => option.code.trim()).filter(Boolean);
+    setForm(prev => ({
+      ...prev,
+      secondaryProducts: prev.secondaryProducts.map(product => {
+        if (product.key !== productKey) return product;
+        const unchanged =
+          codes.length === product.maSpCodes.length &&
+          codes.every((code, index) => code === product.maSpCodes[index]);
+        if (unchanged) return product;
+        return {
+          ...product,
+          maSpCodes: codes,
+          maSp: codes.join(', ')
+        };
+      })
+    }));
   };
 
   const updateLine = (productKey: string, lineKey: string, patch: Partial<LineForm>) => {
@@ -1586,11 +1596,11 @@ export default function MixingNormMaterialsTab() {
   const removeSecondaryLine = (productKey: string, lineKey: string) => {
     setForm(prev => ({
       ...prev,
-      secondaryProducts: prev.secondaryProducts.map(product =>
-        product.key !== productKey
-          ? product
-          : { ...product, lines: product.lines.filter(line => line.key !== lineKey) }
-      )
+      secondaryProducts: prev.secondaryProducts.map(product => {
+        if (product.key !== productKey) return product;
+        if (product.lines.length <= 1) return product;
+        return { ...product, lines: product.lines.filter(line => line.key !== lineKey) };
+      })
     }));
   };
 
@@ -1683,16 +1693,42 @@ export default function MixingNormMaterialsTab() {
       }
     }
 
+    const seenSecondaryCodes = new Set<string>();
     for (const product of form.secondaryProducts) {
+      const duplicateCode = product.maSpCodes.find(code => {
+        const key = normalizeProductLookupKey(code);
+        if (!key) return false;
+        if (seenSecondaryCodes.has(key)) return true;
+        seenSecondaryCodes.add(key);
+        return false;
+      });
+      if (duplicateCode) {
+        setError('Các nhóm NVL phụ không được trùng mã SP.');
+        return;
+      }
+    }
+
+    for (const product of form.secondaryProducts) {
+      const hasCodes = product.maSpCodes.length > 0;
+      const hasNvl = product.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
+      if (!hasCodes && !hasNvl) continue;
+      if (!hasCodes) {
+        setError('NVL phụ: vui lòng chọn mã SP.');
+        return;
+      }
+      if (!hasNvl) {
+        setError(`NVL phụ của SP ${product.maSp}: cần ít nhất 1 dòng NVL.`);
+        return;
+      }
       const duplicateSecondary = findDuplicateMixingMaterialLine(product.lines);
-      // if (duplicateSecondary) {
-      //   setError(
-      //     duplicateSecondary.tenNvlSanXuat.trim()
-      //       ? `NVL phụ của SP ${product.maSp}: không được trùng mã và tên sản xuất.`
-      //       : `NVL phụ của SP ${product.maSp}: không được trùng mã hoặc tên.`
-      //   );
-      //   return;
-      // }
+      if (duplicateSecondary) {
+        setError(
+          duplicateSecondary.tenNvlSanXuat.trim()
+            ? `NVL phụ của SP ${product.maSp}: không được trùng mã và tên sản xuất.`
+            : `NVL phụ của SP ${product.maSp}: không được trùng mã hoặc tên.`
+        );
+        return;
+      }
       for (const [lineIndex, line] of product.lines.entries()) {
         if (!line.maNvl.trim() && !line.tenNvl.trim()) continue;
         const value = parseNumberOrNull(line.giaTri);
@@ -1736,7 +1772,6 @@ export default function MixingNormMaterialsTab() {
           };
         });
 
-      const usedSecondaryKeys = new Set<string>();
       const payloadProducts = products.map((product, pIndex) => {
         const tong =
           product.tongTrongLuong.trim() === ''
@@ -1755,15 +1790,6 @@ export default function MixingNormMaterialsTab() {
           return { lan: roundIndex + 1, tong_trong_luong: roundWeight, nvl: serializeLines(product.lines, roundWeight, batch, tong, product.maSp) };
         });
         const nvl = lan_tron[0]?.nvl ?? [];
-        const formulaKeys = new Set(
-          product.maSpCodes.map(code => normalizeProductLookupKey(code)).filter(Boolean)
-        );
-        const nvl_phu = form.secondaryProducts
-          .filter(item => formulaKeys.has(normalizeProductLookupKey(item.maSp)))
-          .flatMap(item => {
-            usedSecondaryKeys.add(normalizeProductLookupKey(item.maSp));
-            return serializeLines(item.lines, batch, batch, tong, item.maSp);
-          });
         return {
           loai: undefined as string | undefined,
           ma_sp: product.maSp.trim(),
@@ -1776,18 +1802,18 @@ export default function MixingNormMaterialsTab() {
           ghi_chu: product.dinhLuongCoi.trim(),
           lan_tron,
           nvl,
-          nvl_phu
+          nvl_phu: [] as ReturnType<typeof serializeLines>
         };
       });
 
       for (const item of form.secondaryProducts) {
-        const key = normalizeProductLookupKey(item.maSp);
-        if (!key || usedSecondaryKeys.has(key)) continue;
-        const nvl_phu = serializeLines(item.lines, 0, 0, null, item.maSp);
+        const codes = item.maSpCodes.map(code => code.trim()).filter(Boolean);
+        if (codes.length === 0) continue;
+        const nvl_phu = serializeLines(item.lines, 0, 0, null, codes.join(', '));
         if (nvl_phu.length === 0) continue;
         payloadProducts.push({
           loai: 'nvl_phu',
-          ma_sp: item.maSp.trim(),
+          ma_sp: codes.join(', '),
           ten_sp: item.tenSp.trim(),
           tong_trong_luong: null,
           ty_le_hao_hut: null,
@@ -2437,110 +2463,187 @@ export default function MixingNormMaterialsTab() {
               </div>
 
               <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-                <div className="mb-3">
-                  <p className="text-xs font-black uppercase tracking-wider text-amber-800">
-                    Danh sách NVL phụ theo từng sản phẩm
-                  </p>
-                  <p className="mt-1 text-[11px] font-semibold text-amber-700">
-                    Tự fill 1 dòng / sản phẩm theo lệnh SX. Thêm hoặc xóa sản phẩm ở danh sách công thức phía trên không làm thay đổi danh sách này.
-                  </p>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wider text-amber-800">
+                      Danh sách NVL phụ ({form.secondaryProducts.length})
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold text-amber-700">
+                      Chọn nhiều SP dùng chung một danh sách NVL phụ. Không tự điền theo lệnh SX.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addSecondaryProduct}
+                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Thêm sản phẩm
+                  </button>
                 </div>
                 {form.secondaryProducts.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-amber-200 bg-white px-3 py-3 text-center text-[11px] font-bold text-amber-700">
-                    Chọn lệnh SX để hiện danh sách sản phẩm NVL phụ
+                    Bấm “Thêm sản phẩm” để chọn mã SP rồi thêm NVL phụ.
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {form.secondaryProducts.map(product => (
-                      <div key={product.key} className="rounded-lg border border-amber-200 bg-white p-2">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-[11px] font-black uppercase tracking-wider text-zinc-700">
-                              {product.tenSp || product.maSp}
+                    {form.secondaryProducts.map((product, productIndex) => {
+                      const productSelected = product.maSpCodes.length > 0;
+                      const hasNvl = product.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
+                      const showNvlEditor = productSelected || hasNvl;
+                      const takenByOthers = new Set<string>();
+                      selectedLookupKeysBySecondaryProduct.forEach((keys, key) => {
+                        if (key === product.key) return;
+                        keys.forEach(item => takenByOthers.add(item));
+                      });
+                      const takenHere = selectedLookupKeysBySecondaryProduct.get(product.key) ?? new Set<string>();
+                      const selectedCodes = new Set(
+                        product.maSpCodes.map(code => normalizeProductLookupKey(code)).filter(Boolean)
+                      );
+                      const pickerOptions = productOptions.filter(option => {
+                        const keys = productOptionLookupKeys(option);
+                        if (keys.some(item => takenByOthers.has(item))) return false;
+                        const selectedOnThisRow = selectedCodes.has(normalizeProductLookupKey(option.code));
+                        if (!selectedOnThisRow && keys.some(item => takenHere.has(item))) return false;
+                        return true;
+                      });
+                      return (
+                        <div key={product.key} className="rounded-xl border border-amber-200 bg-white p-3 shadow-sm">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-xs font-black uppercase tracking-wider text-zinc-600">
+                              SP phụ #{productIndex + 1}
+                              {product.maSp ? ` · ${product.maSp}` : ''}
                             </p>
-                            {product.tenSp && product.maSp ? (
-                              <p className="text-[10px] font-semibold text-zinc-500">{product.maSp}</p>
-                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => removeSecondaryProduct(product.key)}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Xóa SP
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => addSecondaryLine(product.key)}
-                            className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-[10px] font-extrabold text-amber-800 hover:bg-amber-100"
-                          >
-                            <Plus className="h-3 w-3" />
-                            Thêm NVL phụ
-                          </button>
-                        </div>
-                        <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
-                          <span>Mã NVL</span>
-                          <span>Tên NVL</span>
-                          <span>Tên NVL sản xuất</span>
-                          <span>Giá trị</span>
-                          <span />
-                        </div>
-                        {product.lines.length === 0 ? (
-                          <p className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 px-3 py-3 text-center text-[11px] font-bold text-amber-700">
-                            Chưa có NVL phụ. Bấm “Thêm NVL phụ” để thêm.
-                          </p>
-                        ) : (
-                          <div className="space-y-2">
-                            {product.lines.map((line, index) => (
-                              <div
-                                key={line.key}
-                                className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px]"
-                              >
-                                <SearchableSelect
-                                  value={materialSelectValue(line)}
-                                  onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
-                                  options={secondaryMaterialOptions}
-                                  placeholder={'Tìm NVL phụ #' + (index + 1)}
-                                  getValue={item => (item as MaterialOption).id}
-                                  getLabel={item => materialOptionLabel(item as MaterialOption)}
-                                  getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName}
-                                  inputClassName={inputClass}
-                                />
-                                <input
-                                  value={line.tenNvl}
-                                  readOnly
-                                  className={inputClass + ' bg-zinc-50'}
-                                  placeholder="Tên NVL"
-                                />
-                                <SearchableSelect
-                                  value={line.tenNvlSanXuat}
-                                  onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
-                                  options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
-                                  placeholder="Chọn hoặc nhập tên NVL sản xuất"
-                                  allowCustomValue
-                                  getValue={item => String(item)}
-                                  getLabel={item => String(item)}
-                                  getSearchText={item => String(item)}
-                                  allowEmpty
-                                  inputClassName={inputClass + ' bg-zinc-50'}
-                                />
-                                <input
-                                  value={line.giaTri}
-                                  onChange={event => updateSecondaryLine(product.key, line.key, {
-                                    giaTri: event.target.value
-                                  })}
-                                  className={inputClass + ' h-8 px-1 text-[10px]'}
-                                  placeholder="sp"
-                                  inputMode="decimal"
-                                  title="Giá trị NVL phụ"
-                                />
+                          <label className="space-y-1">
+                            <span className="text-[11px] font-bold text-zinc-500">
+                              Mã sản phẩm (có thể chọn nhiều SP dùng chung NVL phụ)
+                            </span>
+                            <SearchableMultiSelect<ProductOption>
+                              values={resolveProductOptionsForCodes(product.maSpCodes)}
+                              onChange={selected => updateSecondaryProductCodes(product.key, selected)}
+                              options={pickerOptions}
+                              getValue={option => option.code}
+                              getLabel={productLabel}
+                              getSearchText={productSearchText}
+                              allowCustomValues={false}
+                              hideSelectedFromList
+                              placeholder={
+                                pickerOptions.length || product.maSpCodes.length
+                                  ? 'Tìm mã SP...'
+                                  : productOptions.length
+                                    ? 'Đã chọn hết SP của lệnh SX'
+                                    : 'Chưa có sản phẩm — kiểm tra lệnh SX'
+                              }
+                              inputClassName={inputClass}
+                            />
+                          </label>
+                          <label className="mt-2 block space-y-1">
+                            <span className="text-[11px] font-bold text-zinc-500">
+                              Tên sản phẩm / tên hiển thị cho công nhân trộn
+                            </span>
+                            <input
+                              value={product.tenSp}
+                              onChange={event => updateSecondaryProduct(product.key, { tenSp: event.target.value })}
+                              className={inputClass}
+                              placeholder="Nhập tên hiển thị (không tự động điền)"
+                            />
+                          </label>
+                          {showNvlEditor ? (
+                            <div className="mt-3">
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                                  NVL phụ
+                                </p>
                                 <button
                                   type="button"
-                                  onClick={() => removeSecondaryLine(product.key, line.key)}
-                                  className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                                  title="Xóa dòng NVL phụ"
+                                  onClick={() => addSecondaryLine(product.key)}
+                                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-[10px] font-extrabold text-amber-800 hover:bg-amber-100"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Plus className="h-3 w-3" />
+                                  Thêm NVL phụ
                                 </button>
                               </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                              <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
+                                <span>Mã NVL</span>
+                                <span>Tên NVL</span>
+                                <span>Tên NVL sản xuất</span>
+                                <span>Giá trị</span>
+                                <span />
+                              </div>
+                              <div className="space-y-2">
+                                {product.lines.map((line, index) => (
+                                  <div
+                                    key={line.key}
+                                    className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px]"
+                                  >
+                                    <SearchableSelect
+                                      value={materialSelectValue(line)}
+                                      onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
+                                      options={secondaryMaterialOptions}
+                                      placeholder={'Tìm NVL phụ #' + (index + 1)}
+                                      getValue={item => (item as MaterialOption).id}
+                                      getLabel={item => materialOptionLabel(item as MaterialOption)}
+                                      getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName}
+                                      inputClassName={inputClass}
+                                    />
+                                    <input
+                                      value={line.tenNvl}
+                                      readOnly
+                                      className={inputClass + ' bg-zinc-50'}
+                                      placeholder="Tên NVL"
+                                    />
+                                    <SearchableSelect
+                                      value={line.tenNvlSanXuat}
+                                      onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
+                                      options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
+                                      placeholder="Chọn hoặc nhập tên NVL sản xuất"
+                                      allowCustomValue
+                                      getValue={item => String(item)}
+                                      getLabel={item => String(item)}
+                                      getSearchText={item => String(item)}
+                                      allowEmpty
+                                      inputClassName={inputClass + ' bg-zinc-50'}
+                                    />
+                                    <input
+                                      value={line.giaTri}
+                                      onChange={event => updateSecondaryLine(product.key, line.key, {
+                                        giaTri: event.target.value
+                                      })}
+                                      className={inputClass + ' h-8 px-1 text-[10px]'}
+                                      placeholder="sp"
+                                      inputMode="decimal"
+                                      title="Giá trị NVL phụ"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => removeSecondaryLine(product.key, line.key)}
+                                      disabled={product.lines.length <= 1}
+                                      className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                      title="Xóa dòng NVL phụ"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="mt-3 rounded-lg border border-dashed border-amber-200 bg-amber-50/40 px-3 py-3 text-center text-[11px] font-bold text-amber-700">
+                              Chọn mã SP ở trên để nhập NVL phụ.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </section>

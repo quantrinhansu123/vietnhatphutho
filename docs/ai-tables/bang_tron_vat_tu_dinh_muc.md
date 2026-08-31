@@ -49,4 +49,4 @@ Trong danh sách NVL của form thêm/sửa, ô chọn mã + tên NVL tìm đư�
 
 Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). In A4 ngang: phiếu định mức in 1 bảng cối tiêu chuẩn/SP (kèm dòng "Tổng trọng lượng NVL cần"); phiếu thực tế (`isActual`) vẫn in theo từng lần trộn, tối đa 6 lần trộn mỗi bảng.
 
-**NVL phụ theo từng sản phẩm** độc lập với danh sách công thức trộn: chọn lệnh SX thì tự fill **1 dòng / SP** theo sản phẩm trên lệnh. Thêm, xóa hoặc chọn nhiều mã SP ở phần công thức **không** thêm/bớt dòng NVL phụ. Lưu vào `nvl_phu` trên từng block SP (SP không nằm trong công thức được lưu thêm block `loai: "nvl_phu"` để phiếu xuất kho vẫn cộng NVL phụ).
+**NVL phụ** nhập giống NVL chính: bấm **Thêm sản phẩm**, chọn **nhiều mã SP** dùng chung một danh sách NVL, rồi **Thêm NVL phụ**. Không tự fill theo lệnh SX. Lưu thành block `loai: "nvl_phu"` (`ma_sp` nối bằng dấu phẩy). Trùng mã SP chỉ chặn **trong** NVL chính hoặc **trong** NVL phụ — cùng mã ở cả hai phần là hợp lệ. Phiếu cũ gắn `nvl_phu` trên từng SP công thức vẫn mở được; nhóm các SP cùng danh sách NVL phụ thành 1 block.
