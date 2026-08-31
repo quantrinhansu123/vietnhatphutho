@@ -69,6 +69,8 @@ const orderProductGridClass =
 const orderCutProductGridClass =
   'grid-cols-[2.25rem_minmax(9.5rem,1fr)_minmax(12rem,1.3fr)_4rem_5rem_5rem_5.5rem_4.75rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
+/** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
+const ORDER_AMIS_SEARCH_MAX_RESULTS = 400;
 export {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -1223,6 +1225,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             options={productOptions}
                             placeholder="Tìm Mã AMIS"
                             isLoading={isLoadingLookups}
+                            maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
                             inputClassName={orderFieldClass}
                             getValue={item => (item as OrderProductOption).id}
                             getSearchText={item => {
@@ -1343,6 +1346,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           options={productOptions}
                           placeholder="Tìm Mã AMIS"
                           isLoading={isLoadingLookups}
+                          maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
                           inputClassName={orderFieldClass}
                           getValue={item => (item as OrderProductOption).id}
                           getSearchText={item => {

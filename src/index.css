@@ -4369,6 +4369,16 @@ input[type="number"] {
   page-break-inside: avoid;
 }
 
+.mixing-norm-ratio-print-group-title {
+  margin: 14px 0 8px;
+  font-size: 11.5pt;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid #111;
+  padding-bottom: 3px;
+}
+
 .mixing-norm-ratio-print-product {
   margin: 0 0 4px;
   font-size: 12pt;
