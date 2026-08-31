@@ -356,6 +356,27 @@ function normalizeProductLookupKey(value: string) {
   return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
 }
 
+function productOptionLookupKeys(option: Pick<ProductOption, 'code' | 'amisCode' | 'newCode'>) {
+  return [option.code, option.amisCode ?? '', option.newCode ?? '']
+    .map(normalizeProductLookupKey)
+    .filter(Boolean);
+}
+
+function expandProductCodeLookupKeys(
+  codes: string[],
+  optionsByCode: Map<string, ProductOption>
+) {
+  const keys = new Set<string>();
+  for (const code of codes) {
+    const key = normalizeProductLookupKey(code);
+    if (!key) continue;
+    keys.add(key);
+    const option = optionsByCode.get(key);
+    if (option) productOptionLookupKeys(option).forEach(item => keys.add(item));
+  }
+  return keys;
+}
+
 function findCatalogProductByAnyCode(products: ProductOption[], value: string) {
   const key = normalizeProductLookupKey(value);
   if (!key) return undefined;
@@ -782,6 +803,8 @@ function summarizeProductsNvl(products: MixingNormProduct[]) {
     .join(' | ');
 }
 
+const MIXING_CONVERSION_PAGE_SIZE = 1000;
+
 export default function MixingNormMaterialsTab() {
   const { canCreate, canEdit, canDelete } = useTabAccess('mixing-report-list');
   const [rows, setRows] = useState<MixingNormRow[]>([]);
@@ -955,6 +978,14 @@ export default function MixingNormMaterialsTab() {
     return map;
   }, [productOptions]);
 
+  const selectedLookupKeysByProduct = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const product of form.products) {
+      map.set(product.key, expandProductCodeLookupKeys(product.maSpCodes, productOptionsByCode));
+    }
+    return map;
+  }, [form.products, productOptionsByCode]);
+
   /** Trả về ProductOption cho từng mã đã chọn — dùng luôn để hiển thị chip trong multi-select. */
   const resolveProductOptionsForCodes = (codes: string[]): ProductOption[] =>
     codes.map(code => {
@@ -1000,7 +1031,7 @@ export default function MixingNormMaterialsTab() {
         fetch('/api/lenh-sx'),
         fetch('/api/san-pham?format=table'),
         fetch('/api/cai-dat'),
-        fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
+        fetch(`/api/bang-quy-doi-san-pham?page=1&pageSize=${MIXING_CONVERSION_PAGE_SIZE}`)
       ]);
       const materialData = await materialRes.json().catch(() => ({}));
       const orderData = await orderRes.json().catch(() => ({}));
@@ -1015,7 +1046,7 @@ export default function MixingNormMaterialsTab() {
         const conversions = Array.isArray(conversionData.items) ? conversionData.items as MixingProductConversion[] : [];
         const total = Number(conversionData.total) || conversions.length;
         for (let page = 2; conversions.length < total; page += 1) {
-          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+          const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=${MIXING_CONVERSION_PAGE_SIZE}`);
           const data = await res.json().catch(() => ({}));
           if (!res.ok) break;
           const items = Array.isArray(data.items) ? data.items as MixingProductConversion[] : [];
@@ -2053,6 +2084,14 @@ export default function MixingNormMaterialsTab() {
                   const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
                   const standardBatch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
                   const mixingRoundCount = computeMixingRoundCount(productTotal, standardBatch);
+                  const takenByOthers = new Set<string>();
+                  selectedLookupKeysByProduct.forEach((keys, key) => {
+                    if (key === product.key) return;
+                    keys.forEach(item => takenByOthers.add(item));
+                  });
+                  const pickerOptions = productOptions.filter(option =>
+                    !productOptionLookupKeys(option).some(item => takenByOthers.has(item))
+                  );
                   return (
                     <div
                       key={product.key}
@@ -2087,12 +2126,19 @@ export default function MixingNormMaterialsTab() {
                           <SearchableMultiSelect<ProductOption>
                             values={resolveProductOptionsForCodes(product.maSpCodes)}
                             onChange={selected => updateProductCodes(product.key, selected)}
-                            options={productOptions}
+                            options={pickerOptions}
                             getValue={option => option.code}
                             getLabel={productLabel}
                             getSearchText={productSearchText}
                             allowCustomValues={false}
-                            placeholder={productOptions.length ? 'Tìm mã SP...' : 'Chưa có sản phẩm — kiểm tra lệnh SX'}
+                            hideSelectedFromList
+                            placeholder={
+                              pickerOptions.length || product.maSpCodes.length
+                                ? 'Tìm mã SP...'
+                                : productOptions.length
+                                  ? 'Đã chọn hết SP của lệnh SX'
+                                  : 'Chưa có sản phẩm — kiểm tra lệnh SX'
+                            }
                             inputClassName={inputClass}
                           />
                         </label>
