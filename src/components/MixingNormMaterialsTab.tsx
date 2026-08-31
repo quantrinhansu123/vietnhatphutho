@@ -1685,14 +1685,14 @@ export default function MixingNormMaterialsTab() {
 
     for (const product of form.secondaryProducts) {
       const duplicateSecondary = findDuplicateMixingMaterialLine(product.lines);
-      if (duplicateSecondary) {
-        setError(
-          duplicateSecondary.tenNvlSanXuat.trim()
-            ? `NVL phụ của SP ${product.maSp}: không được trùng mã và tên sản xuất.`
-            : `NVL phụ của SP ${product.maSp}: không được trùng mã hoặc tên.`
-        );
-        return;
-      }
+      // if (duplicateSecondary) {
+      //   setError(
+      //     duplicateSecondary.tenNvlSanXuat.trim()
+      //       ? `NVL phụ của SP ${product.maSp}: không được trùng mã và tên sản xuất.`
+      //       : `NVL phụ của SP ${product.maSp}: không được trùng mã hoặc tên.`
+      //   );
+      //   return;
+      // }
       for (const [lineIndex, line] of product.lines.entries()) {
         if (!line.maNvl.trim() && !line.tenNvl.trim()) continue;
         const value = parseNumberOrNull(line.giaTri);
