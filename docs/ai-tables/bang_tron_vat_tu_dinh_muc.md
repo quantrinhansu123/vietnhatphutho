@@ -39,7 +39,7 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
 ```
 
 `khoi_luong` (kg, cho 1 cối): nếu `don_vi = %` → `dinh_luong_coi × gia_tri / 100`; nếu `kg` → bằng `gia_tri`.
-`ty_le_coi` (%) = `gia_tri (kg) / dinh_luong_coi × 100`. `ty_le_tong` giữ nguyên bằng `ty_le_coi` vì tỷ lệ phối trộn không đổi theo mẻ. `tong_khoi_luong` (kg, cho cả SP) = `ty_le_tong / 100 × tong_trong_luong`.
+`ty_le_coi` (%) = `gia_tri (kg) / dinh_luong_coi × 100`. `ty_le_tong` giữ nguyên bằng `ty_le_coi` vì tỷ lệ phối trộn không đổi theo mẻ. `tong_khoi_luong` (kg, cho cả SP) = `ty_le_tong / 100 × tong_trong_luong`, được làm tròn tối đa 2 chữ số thập phân ngay trên form thêm/sửa và khi lưu.
 
 `ten_sp` là ô nhập tự do, **không tự động điền** từ catalog dù chọn 1 hay nhiều mã SP — người dùng luôn phải tự gõ tên hiển thị cho công nhân trộn.
 
@@ -47,6 +47,8 @@ Trong danh sách NVL của form thêm/sửa, ô chọn mã + tên NVL tìm đư�
 
 **Ô "Mã sản phẩm" trong mỗi dòng SP là multi-select, hiển thị `ma_amis — ten_san_xuat`** — 1 dòng SP (1 công thức "cối trộn tiêu chuẩn") có thể gán cho nhiều mã SP cùng lúc (`ma_sp` lưu dạng chuỗi nối bằng dấu phẩy, ví dụ `"A, B"`). **NVL chính không tự điền** khi chọn mã SP (không lấy từ `san_pham.npl_phan_tram`); người dùng tự bấm “Thêm NVL chính”. Đổi/thêm/bớt mã SP trên cùng 1 dòng **không xóa** NVL chính đã nhập.
 
-Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). In A4 ngang: phiếu định mức in 1 bảng cối tiêu chuẩn/SP (kèm dòng "Tổng trọng lượng NVL cần"); phiếu thực tế (`isActual`) vẫn in theo từng lần trộn, tối đa 6 lần trộn mỗi bảng.
+Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). In A4 ngang: phiếu định mức in 1 bảng cối tiêu chuẩn/SP (kèm dòng "Tổng trọng lượng NVL cần"); cột tổng trọng lượng của NVL chính và tổng cuối bảng được làm tròn tối đa 2 chữ số thập phân. Phiếu thực tế (`isActual`) vẫn in theo từng lần trộn, tối đa 6 lần trộn mỗi bảng.
 
-**NVL phụ theo từng sản phẩm** độc lập với danh sách công thức trộn: chọn lệnh SX thì tự fill **1 dòng / SP** theo sản phẩm trên lệnh. Thêm, xóa hoặc chọn nhiều mã SP ở phần công thức **không** thêm/bớt dòng NVL phụ. Lưu vào `nvl_phu` trên từng block SP (SP không nằm trong công thức được lưu thêm block `loai: "nvl_phu"` để phiếu xuất kho vẫn cộng NVL phụ).
+**NVL phụ** nhập giống NVL chính: bấm **Thêm sản phẩm**, chọn **nhiều mã SP** dùng chung một danh sách NVL, rồi **Thêm NVL phụ**. Không tự fill theo lệnh SX. Lưu thành block `loai: "nvl_phu"` (`ma_sp` nối bằng dấu phẩy). Trùng mã SP chỉ chặn **trong** NVL chính hoặc **trong** NVL phụ — cùng mã ở cả hai phần là hợp lệ. Phiếu cũ gắn `nvl_phu` trên từng SP công thức vẫn mở được; nhóm các SP cùng danh sách NVL phụ thành 1 block.
+
+Khối lượng NVL phụ là **tổng trọng lượng (kg)** dùng cho toàn bộ SP, không có `% Cối trộn` và không có `Giá trị (kg/cối)`. Khi lưu, `gia_tri`, `khoi_luong` và `tong_khoi_luong` cùng mang giá trị tổng này; các trường tỷ lệ để `null`. Trên phiếu in, NVL phụ nằm trong bảng riêng và bỏ hẳn hai cột `% Cối trộn`, `Giá trị (kg/cối)`.

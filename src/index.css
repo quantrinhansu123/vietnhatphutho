@@ -4378,6 +4378,13 @@ input[type="number"] {
   padding-bottom: 2px;
 }
 
+.mixing-norm-ratio-print-product-name {
+  display: block;
+  margin-top: 1px;
+  font-size: 10.5pt;
+  font-weight: 700;
+}
+
 .mixing-norm-ratio-print-tonnage {
   margin: 0 0 4px;
   font-size: 10pt;
@@ -4412,6 +4419,24 @@ input[type="number"] {
 .mixing-norm-ratio-print-table .col-code {
   width: 18%;
   font-family: Consolas, "Courier New", monospace;
+}
+
+.mixing-norm-ratio-print-table .col-type {
+  width: 14%;
+  text-align: center;
+  font-weight: 700;
+}
+
+.mixing-norm-ratio-print-table tr.is-secondary-material .col-type {
+  background: #fff3cd;
+}
+
+.mixing-norm-ratio-print-table.is-secondary-only .col-name {
+  width: 40%;
+}
+
+.mixing-norm-ratio-print-table.is-secondary-only .col-kg {
+  width: 22%;
 }
 
 .mixing-norm-ratio-print-table .col-name {

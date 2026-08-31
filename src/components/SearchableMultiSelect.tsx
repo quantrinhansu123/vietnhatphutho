@@ -16,6 +16,8 @@ export type SearchableMultiSelectProps<T> = {
   getSearchText?: (item: T) => string;
   /** Cho phép gõ tự do rồi thêm giá trị mới chưa có trong options (mặc định: true, dùng cho tag tự do). */
   allowCustomValues?: boolean;
+  /** Ẩn giá trị đã chọn khỏi danh sách dropdown — chip phía trên vẫn giữ để bỏ chọn. */
+  hideSelectedFromList?: boolean;
 };
 
 function defaultGetValue<T>(item: T): string {
@@ -32,7 +34,8 @@ export default function SearchableMultiSelect<T = string>({
   getValue = defaultGetValue,
   getLabel,
   getSearchText,
-  allowCustomValues = true
+  allowCustomValues = true,
+  hideSelectedFromList = false
 }: SearchableMultiSelectProps<T>) {
   const resolvedGetLabel = getLabel ?? ((item: T) => String(item));
   const resolvedGetSearchText = getSearchText ?? resolvedGetLabel;
@@ -75,11 +78,14 @@ export default function SearchableMultiSelect<T = string>({
 
   const filteredKeys = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const list = normalized
+    let list = normalized
       ? allKeys.filter(key => resolvedGetSearchText(itemsByKey.get(key) as T).toLowerCase().includes(normalized))
       : allKeys;
+    if (hideSelectedFromList) {
+      list = list.filter(key => !selectedKeySet.has(key));
+    }
     return list.slice(0, 50);
-  }, [allKeys, query, itemsByKey, resolvedGetSearchText]);
+  }, [allKeys, query, itemsByKey, resolvedGetSearchText, hideSelectedFromList, selectedKeySet]);
 
   const trimmedQuery = query.trim();
   const canCreate =

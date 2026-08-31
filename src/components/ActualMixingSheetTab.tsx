@@ -627,6 +627,7 @@ export default function ActualMixingSheetTab() {
           chi_tiet: product.standardNvl.map(std => ({
             ma_nvl: std.ma_nvl,
             ten_nvl: std.ten_nvl,
+            ten_nvl_san_xuat: std.ten_nvl_san_xuat,
             gia_tri: std.ty_le_coi,
             don_vi: '%',
             khoi_luong: std.tong_khoi_luong
@@ -639,6 +640,7 @@ export default function ActualMixingSheetTab() {
               return {
                 ma_nvl: line.ma_nvl,
                 ten_nvl: line.ten_nvl,
+                ten_nvl_san_xuat: std?.ten_nvl_san_xuat || '',
                 gia_tri: std?.ty_le_coi ?? null,
                 don_vi: 'kg',
                 khoi_luong: computeTlDm(std, round.tong_trong_luong)

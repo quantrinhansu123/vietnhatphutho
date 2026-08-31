@@ -3132,16 +3132,28 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
   if (productsRaw) {
     const products: Array<Record<string, unknown>> = [];
-    const seenProductCodes = new Set<string>();
+    const seenFormulaCodes = new Set<string>();
+    const seenSecondaryCodes = new Set<string>();
     for (const [index, item] of productsRaw.entries()) {
       if (!item || typeof item !== 'object') continue;
       const product = item as Record<string, unknown>;
       const ma_sp = String(product.ma_sp ?? product.maSp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? product.tenSp ?? '').trim();
+      const isSecondary = String(product.loai ?? '').trim() === 'nvl_phu';
       if (!ma_sp) return { error: `Sản phẩm #${index + 1} thiếu mã SP.` };
-      const productKey = ma_sp.toLocaleLowerCase('vi');
-      if (seenProductCodes.has(productKey)) return { error: `Sản phẩm ${ma_sp} bị trùng trong cùng phiếu.` };
-      seenProductCodes.add(productKey);
+      const codes = ma_sp.split(',').map(code => code.trim()).filter(Boolean);
+      const seenCodes = isSecondary ? seenSecondaryCodes : seenFormulaCodes;
+      for (const code of codes) {
+        const productKey = code.toLocaleLowerCase('vi').replace(/\s+/g, '');
+        if (seenCodes.has(productKey)) {
+          return {
+            error: isSecondary
+              ? `NVL phụ: sản phẩm ${code} bị trùng trong cùng phiếu.`
+              : `Sản phẩm ${code} bị trùng trong cùng phiếu.`
+          };
+        }
+        seenCodes.add(productKey);
+      }
 
       const tongRaw = product.tong_trong_luong ?? product.tongTrongLuong;
       let tong_trong_luong: number | null = null;
@@ -3166,7 +3178,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       if (!Number.isFinite(ty_le_hao_hut) || ty_le_hao_hut < 0 || ty_le_hao_hut > 100) {
         return { error: `% tỷ lệ hao hụt của SP ${ma_sp} phải từ 0 đến 100.` };
       }
-      if (Number.isNaN(dinh_luong_coi) || dinh_luong_coi !== null && dinh_luong_coi <= 0) {
+      if (!isSecondary && (Number.isNaN(dinh_luong_coi) || dinh_luong_coi !== null && dinh_luong_coi <= 0)) {
         return { error: `Định lượng 1 cối của SP ${ma_sp} phải lớn hơn 0.` };
       }
       if (so_luong_goc !== null) {
@@ -3178,13 +3190,14 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
       const nvlParsed = parseNvlLines(
         product.nvl ?? product.lines ?? product.chi_tiet,
-        'SP ' + ma_sp
+        'SP ' + ma_sp,
+        !isSecondary
       );
       if ('error' in nvlParsed) return { error: nvlParsed.error };
       const nvlPhuParsed = parseNvlLines(
         product.nvl_phu ?? product.nvlPhu ?? product.secondaryLines,
         'SP ' + ma_sp + ', NVL phụ',
-        false
+        isSecondary
       );
       if ('error' in nvlPhuParsed) return { error: nvlPhuParsed.error };
 
@@ -3214,11 +3227,12 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
           : tong_trong_luong;
         lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: roundNvl.lines });
       }
-      if (so_lan_tron > 0 && lan_tron.length !== so_lan_tron) {
+      if (!isSecondary && so_lan_tron > 0 && lan_tron.length !== so_lan_tron) {
         return { error: `SP ${ma_sp} phải có đúng ${so_lan_tron} danh sách lần trộn.` };
       }
 
       products.push({
+        ...(isSecondary ? { loai: 'nvl_phu' } : {}),
         ma_sp,
         ten_sp: ten_sp || null,
         tong_trong_luong,
