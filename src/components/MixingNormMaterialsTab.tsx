@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../app/useTabAccess';
 import { RowActionsMenu } from './shared/table';
@@ -810,6 +810,7 @@ const MIXING_CONVERSION_PAGE_SIZE = 1000;
 
 export default function MixingNormMaterialsTab() {
   const { canCreate, canEdit, canDelete } = useTabAccess('mixing-report-list');
+  const initialLoadStartedRef = useRef(false);
   const [rows, setRows] = useState<MixingNormRow[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
@@ -1083,6 +1084,9 @@ export default function MixingNormMaterialsTab() {
   }, []);
 
   useEffect(() => {
+    // React StrictMode replays mount effects in development. Keep one initial request batch per real mount.
+    if (initialLoadStartedRef.current) return;
+    initialLoadStartedRef.current = true;
     void loadRows();
     void loadReferenceData();
   }, [loadRows, loadReferenceData]);
