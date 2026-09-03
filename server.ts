@@ -3182,12 +3182,12 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       const isSecondary = String(product.loai ?? '').trim() === 'nvl_phu';
       if (!ma_sp) return { error: `Sản phẩm #${index + 1} thiếu mã SP.` };
       const codes = ma_sp.split(',').map(code => code.trim()).filter(Boolean);
+      if (sanPhamIds.length !== codes.length || sanPhamIds.some(id => !id)) {
+        return { error: `Sản phẩm #${index + 1} thiếu san_pham_id hợp lệ.` };
+      }
       const seenCodes = isSecondary ? seenSecondaryCodes : seenFormulaCodes;
       for (const [codeIndex, code] of codes.entries()) {
-        // ma_sp/ma_amis are not stable identity. Keep legacy code-only
-        // validation, but distinguish catalog rows when san_pham_id exists.
-        const productKey = sanPhamIds[codeIndex] ||
-          code.toLocaleLowerCase('vi').replace(/\s+/g, '');
+        const productKey = sanPhamIds[codeIndex];
         if (seenCodes.has(productKey)) {
           return {
             error: isSecondary

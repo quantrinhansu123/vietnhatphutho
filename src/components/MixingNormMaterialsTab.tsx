@@ -78,7 +78,7 @@ type MaterialOption = {
 };
 
 type ProductOption = {
-  id?: string;
+  id: string;
   code: string;
   amisCode?: string;
   newCode?: string;
@@ -336,10 +336,11 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
     const name = String(
       row.ten_sp ?? row.productName ?? row.name ?? row.ten_hang ?? ''
     ).trim();
-    if (!code && !name) continue;
-    const key = String(row.id ?? '').trim() || code || name;
+    const id = String(row.id ?? '').trim();
+    if (!id || (!code && !name)) continue;
+    const key = id;
     if (!byIdentity.has(key)) byIdentity.set(key, {
-      id: String(row.id ?? '').trim(),
+      id,
       code: code || name,
       amisCode: String(row.ma_amis ?? row.amisCode ?? '').trim(),
       newCode: String(row.ma_sp_moi ?? row.newCode ?? '').trim(),
@@ -960,7 +961,8 @@ export default function MixingNormMaterialsTab() {
         productionName
       });
       // ID là identity. Không gộp các dòng chỉ vì trùng ma_sp/ma_amis.
-      const identityKey = productId || catalog?.id || (catalog ? catalog.code : trimmedCode);
+      const identityKey = productId || catalog?.id || '';
+      if (!identityKey) return;
       if (byIdentity.has(identityKey)) return;
       byIdentity.set(identityKey, catalog
         ? {
@@ -969,7 +971,7 @@ export default function MixingNormMaterialsTab() {
             tenSanXuat: productionName.trim() || catalog.tenSanXuat
           }
         : {
-            id: productId || undefined,
+            id: productId || '',
             code: trimmedCode,
             name: name.trim(),
             tenSanXuat: productionName.trim()
@@ -986,9 +988,7 @@ export default function MixingNormMaterialsTab() {
       for (const product of [...form.products, ...form.secondaryProducts]) {
         for (const code of product.maSpCodes) {
           const codeKey = normalizeProductLookupKey(code);
-          const alreadyKept = [...byIdentity.values()].some(option =>
-            productOptionLookupKeys(option).includes(codeKey)
-          );
+          const alreadyKept = product.maSpIds.some(id => id && [...byIdentity.values()].some(option => option.id === id));
           if (alreadyKept) continue;
           const orderLine = selectedOrder.productLines.find(
             item =>
@@ -1042,7 +1042,7 @@ export default function MixingNormMaterialsTab() {
   }, [productOptions]);
 
   const productIdentityKeys = (product: Pick<ProductForm, 'maSpCodes' | 'maSpIds'>) =>
-    product.maSpCodes.map((code, index) => product.maSpIds[index] || normalizeProductLookupKey(code));
+    product.maSpIds.filter(Boolean);
 
   const selectedLookupKeysByProduct = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -1055,9 +1055,7 @@ export default function MixingNormMaterialsTab() {
   const selectedLookupKeysBySecondaryProduct = useMemo(() => {
     const map = new Map<string, Set<string>>();
     for (const product of form.secondaryProducts) {
-      map.set(product.key, new Set(product.maSpCodes.map((code, index) =>
-        product.maSpIds[index] || normalizeProductLookupKey(code)
-      )));
+      map.set(product.key, new Set(product.maSpIds.filter(Boolean)));
     }
     return map;
   }, [form.secondaryProducts, productOptionsByCode]);
@@ -1692,7 +1690,8 @@ export default function MixingNormMaterialsTab() {
     const seenCodes = new Set<string>();
     const duplicateProduct = products.find(product =>
       product.maSpCodes.some((code, index) => {
-        const key = product.maSpIds[index] || normalizeProductLookupKey(code);
+        const key = product.maSpIds[index];
+        if (!key) return false;
         if (seenCodes.has(key)) return true;
         seenCodes.add(key);
         return false;
@@ -1755,7 +1754,7 @@ export default function MixingNormMaterialsTab() {
     const seenSecondaryCodes = new Set<string>();
     for (const product of form.secondaryProducts) {
       const duplicateCode = product.maSpCodes.find((code, index) => {
-        const key = product.maSpIds[index] || normalizeProductLookupKey(code);
+        const key = product.maSpIds[index];
         if (!key) return false;
         if (seenSecondaryCodes.has(key)) return true;
         seenSecondaryCodes.add(key);
@@ -2306,7 +2305,7 @@ export default function MixingNormMaterialsTab() {
                   const takenHere = selectedLookupKeysByProduct.get(product.key) ?? new Set<string>();
                   const selectedCodes = new Set(productIdentityKeys(product));
                   const pickerOptions = productOptions.filter(option => {
-                    const identity = option.id || normalizeProductLookupKey(option.code);
+                    const identity = option.id;
                     if (takenByOthers.has(identity)) return false;
                     const selectedOnThisRow = selectedCodes.has(identity);
                     if (!selectedOnThisRow && takenHere.has(identity)) return false;
@@ -2581,11 +2580,9 @@ export default function MixingNormMaterialsTab() {
                         keys.forEach(item => takenByOthers.add(item));
                       });
                       const takenHere = selectedLookupKeysBySecondaryProduct.get(product.key) ?? new Set<string>();
-                      const selectedCodes = new Set(product.maSpCodes.map((code, index) =>
-                        product.maSpIds[index] || normalizeProductLookupKey(code)
-                      ));
+                      const selectedCodes = new Set(product.maSpIds.filter(Boolean));
                       const pickerOptions = productOptions.filter(option => {
-                        const identity = option.id || normalizeProductLookupKey(option.code);
+                        const identity = option.id;
                         if (takenByOthers.has(identity)) return false;
                         const selectedOnThisRow = selectedCodes.has(identity);
                         if (!selectedOnThisRow && takenHere.has(identity)) return false;
