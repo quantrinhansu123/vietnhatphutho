@@ -96,6 +96,7 @@ const SUPABASE_MIXING_NORM_TABLE =
   process.env.SUPABASE_MIXING_NORM_TABLE || 'bang_tron_vat_tu_dinh_muc';
 const SUPABASE_DISPATCH_TABLE = process.env.SUPABASE_DISPATCH_TABLE || 'dieu_dong_nhan_su';
 const SCHEDULE_NOTE_MARKER = '__SCHEDULE_NOTE__';
+const GENERAL_SCHEDULE_NOTE_MARKER = 'GENERAL_NOTE';
 const SUPABASE_ACTUAL_MIXING_SHEET_TABLE =
   process.env.SUPABASE_ACTUAL_MIXING_SHEET_TABLE || 'phieu_tron_thuc_te';
 const ACTUAL_MIXING_WEIGHT_FORMAT_ERROR = 'Trọng lượng thực tế không đúng định dạng. Ví dụ: 123.56';
@@ -7544,6 +7545,12 @@ export function createApp() {
     return String(record.ma_nhan_su ?? '').trim() === SCHEDULE_NOTE_MARKER;
   }
 
+  function isGeneralScheduleNoteRow(row: unknown): row is Record<string, unknown> {
+    if (!row || typeof row !== 'object') return false;
+    const record = row as Record<string, unknown>;
+    return String(record.ma_lenh_sx ?? '').trim() === GENERAL_SCHEDULE_NOTE_MARKER;
+  }
+
   function normalizeScheduleNoteRecord(row: unknown): ScheduleNoteRecord | null {
     if (!isScheduleNoteRow(row)) return null;
     const record = row as Record<string, unknown>;
@@ -7640,6 +7647,106 @@ export function createApp() {
     }
   });
 
+  app.get('/api/phan-cong-nhan-su/ghi-chu-chung', async (req, res) => {
+    if (!supabase) return res.json({ note: null });
+    const ngayLamViec = String(req.query.ngay || '').trim();
+    if (!ngayLamViec) return res.status(400).json({ error: 'Thiếu ngày làm việc.' });
+    try {
+      const { data, error } = await supabase
+        .from('phan_cong_nhan_su_chi_tiet')
+        .select('id, ngay_lam_viec, ghi_chu, created_at, updated_at')
+        .eq('ma_lenh_sx', GENERAL_SCHEDULE_NOTE_MARKER)
+        .eq('ngay_lam_viec', ngayLamViec)
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (error) return res.status(500).json({ error: phanCongWriteError(error) });
+      const row = data?.[0];
+      return res.json({
+        note: row
+          ? {
+              id: String(row.id),
+              ngay_lam_viec: String(row.ngay_lam_viec || '').slice(0, 10),
+              ghi_chu: String(row.ghi_chu || ''),
+              created_at: row.created_at,
+              updated_at: row.updated_at
+            }
+          : null
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi tải ghi chú chung.' });
+    }
+  });
+
+  app.post('/api/phan-cong-nhan-su/ghi-chu-chung', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const ngayLamViec = pickRowField(body, ['ngay_lam_viec', 'ngayLamViec'], '');
+      const ghiChu = pickRowField(body, ['ghi_chu', 'ghiChu', 'note'], '');
+      if (!ngayLamViec) return res.status(400).json({ error: 'Thiếu ngày làm việc.' });
+      if (!ghiChu) return res.status(400).json({ error: 'Thiếu nội dung ghi chú.' });
+
+      const existing = await supabase
+        .from('phan_cong_nhan_su_chi_tiet')
+        .select('id')
+        .eq('ma_lenh_sx', GENERAL_SCHEDULE_NOTE_MARKER)
+        .eq('ngay_lam_viec', ngayLamViec)
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (existing.error) return res.status(500).json({ error: phanCongWriteError(existing.error) });
+
+      const values = {
+        ma_lenh_sx: GENERAL_SCHEDULE_NOTE_MARKER,
+        vai_tro: SCHEDULE_NOTE_MARKER,
+        ma_nhan_su: SCHEDULE_NOTE_MARKER,
+        ngay_lam_viec: ngayLamViec,
+        ghi_chu: ghiChu,
+        id_lenh_sx: null,
+        ca_lam_viec: null,
+        ma_may: null,
+        may: null,
+        thoi_gian_bat_dau: null,
+        thoi_gian_ket_thuc: null,
+        removable: true
+      };
+      const existingId = existing.data?.[0]?.id;
+      const query = existingId
+        ? supabase.from('phan_cong_nhan_su_chi_tiet').update(values).eq('id', existingId)
+        : supabase.from('phan_cong_nhan_su_chi_tiet').insert(values);
+      const { data, error } = await query.select('*').single();
+      if (error) return res.status(500).json({ error: phanCongWriteError(error) });
+      return res.status(existingId ? 200 : 201).json({
+        success: true,
+        note: {
+          id: String(data.id),
+          ngay_lam_viec: String(data.ngay_lam_viec || '').slice(0, 10),
+          ghi_chu: String(data.ghi_chu || ''),
+          created_at: data.created_at,
+          updated_at: data.updated_at
+        }
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi lưu ghi chú chung.' });
+    }
+  });
+
+  app.delete('/api/phan-cong-nhan-su/ghi-chu-chung/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID ghi chú chung.' });
+    try {
+      const { error } = await supabase
+        .from('phan_cong_nhan_su_chi_tiet')
+        .delete()
+        .eq('id', id)
+        .eq('ma_lenh_sx', GENERAL_SCHEDULE_NOTE_MARKER);
+      if (error) return res.status(500).json({ error: phanCongWriteError(error) });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi xóa ghi chú chung.' });
+    }
+  });
+
   app.put('/api/phan-cong-nhan-su/ghi-chu/:id', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     const id = String(req.params.id || '').trim();
@@ -7733,6 +7840,33 @@ export function createApp() {
           ghi_chu: ghiChu || null,
           removable: Boolean((item as { removable?: unknown }).removable)
         });
+      }
+
+      const staffSeen = new Set<string>();
+      for (const row of rows) {
+        const staffCode = String(row.ma_nhan_su || '').trim();
+        if (staffSeen.has(staffCode)) {
+          return res.status(409).json({
+            error: `Nhân sự ${staffCode} bị chọn trùng trong cùng lịch.`
+          });
+        }
+        staffSeen.add(staffCode);
+      }
+      if (staffSeen.size > 0) {
+        const { data: conflictingRows, error: conflictError } = await supabase
+          .from('phan_cong_nhan_su_chi_tiet')
+          .select('ma_may, ma_nhan_su')
+          .eq('ngay_lam_viec', ngayLamViec)
+          .eq('ca_lam_viec', caLamViec)
+          .neq('ma_may', maMay)
+          .neq('ma_nhan_su', SCHEDULE_NOTE_MARKER);
+        if (conflictError) return res.status(500).json({ error: phanCongWriteError(conflictError) });
+        const conflict = (conflictingRows || []).find(row => staffSeen.has(String(row.ma_nhan_su || '').trim()));
+        if (conflict) {
+          return res.status(409).json({
+            error: `Nhân sự ${String(conflict.ma_nhan_su || '').trim()} đã được xếp ở máy ${String(conflict.ma_may || '').trim()} trong cùng ca.`
+          });
+        }
       }
 
       // Upsert nhóm: xóa dòng cũ của (ma_may + ngay_lam_viec + ca_lam_viec) rồi insert lại.
@@ -10400,10 +10534,22 @@ export function createApp() {
       let caList = (caRes.data || []) as any[];
       const mayList = mayRes.data || [];
       const phanCongAllRows = phanCongRes.data || [];
-      const phanCongList = phanCongAllRows.filter(row => !isScheduleNoteRow(row));
+      const phanCongList = phanCongAllRows.filter(
+        row => !isScheduleNoteRow(row) && !isGeneralScheduleNoteRow(row)
+      );
       const dieuDongList = dieuDongRes.data || [];
       const nhanSuMap = new Map((nhanSuRes.data || []).map(ns => [String(ns.ma_nhan_su), ns.nhan_su]));
       const ghiChuChiTiet = normalizeScheduleNotes(phanCongAllRows);
+      const generalNoteRow = phanCongAllRows.find(isGeneralScheduleNoteRow) as Record<string, unknown> | undefined;
+      const ghiChuChung = generalNoteRow
+        ? {
+            id: String(generalNoteRow.id),
+            ngay_lam_viec: String(generalNoteRow.ngay_lam_viec || '').slice(0, 10),
+            ghi_chu: String(generalNoteRow.ghi_chu || ''),
+            created_at: generalNoteRow.created_at,
+            updated_at: generalNoteRow.updated_at
+          }
+        : null;
       const activeMachineCodes = new Set<string>();
       for (const row of phanCongList) {
         const maMay = getMachineCode((row as Record<string, unknown>).ma_may);
@@ -10562,7 +10708,8 @@ export function createApp() {
         may_list: mayList,
         may_list_hien_thi: mayListHienThi,
         lich: lichRows,
-        ghi_chu_chi_tiet: ghiChuChiTiet
+        ghi_chu_chi_tiet: ghiChuChiTiet,
+        ghi_chu_chung: ghiChuChung
       });
     } catch (err: any) {
       console.error('Error in /api/lich-lam-viec:', err);

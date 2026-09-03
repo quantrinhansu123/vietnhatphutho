@@ -476,6 +476,20 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         return setError(`${staffName(p.maNhanSu)}: giờ bắt đầu phải nhỏ hơn giờ kết thúc.`);
       }
     }
+    const conflictingGroup = groups.find(group =>
+      group.key !== editingKey &&
+      group.ngay_lam_viec === form.ngayLamViec.trim() &&
+      group.ca_lam_viec === form.caLamViec.trim() &&
+      group.rows.some(row => filled.some(person => person.maNhanSu === row.ma_nhan_su))
+    );
+    if (conflictingGroup) {
+      const duplicateStaff = filled.find(person =>
+        conflictingGroup.rows.some(row => row.ma_nhan_su === person.maNhanSu)
+      );
+      return setError(
+        `Nhân sự ${duplicateStaff ? staffName(duplicateStaff.maNhanSu) : ''} đã được xếp ở máy ${conflictingGroup.ten_may || conflictingGroup.ma_may} trong cùng ca.`
+      );
+    }
 
     setSaving(true);
     setError('');

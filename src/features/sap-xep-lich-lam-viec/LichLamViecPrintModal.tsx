@@ -32,6 +32,13 @@ interface ScheduleData {
   may_list_hien_thi?: Array<{ id?: string | number; ma_may?: string; ten_may?: string }>;
   lich: LichRow[];
   ghi_chu_chi_tiet?: ScheduleNote[];
+  ghi_chu_chung?: {
+    id: string;
+    ngay_lam_viec: string;
+    ghi_chu: string;
+    created_at?: string;
+    updated_at?: string;
+  } | null;
 }
 
 interface Props {
@@ -109,6 +116,9 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [generalNote, setGeneralNote] = useState('');
+  const [generalNoteId, setGeneralNoteId] = useState('');
+  const [generalNoteSaving, setGeneralNoteSaving] = useState(false);
+  const [generalNoteMessage, setGeneralNoteMessage] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteDrafts, setNoteDrafts] = useState<NoteDraft[]>([emptyNoteDraft()]);
   const [editingNoteId, setEditingNoteId] = useState('');
@@ -135,6 +145,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
       setError('');
       setNoteError('');
       setGeneralNote('');
+      setGeneralNoteId('');
+      setGeneralNoteMessage('');
       setShowNoteForm(false);
       setNoteDrafts([emptyNoteDraft()]);
       setEditingNoteId('');
@@ -147,7 +159,11 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
       setError('');
       try {
         const result = await fetchSchedule();
-        if (!cancelled) setData(result);
+        if (!cancelled) {
+          setData(result);
+          setGeneralNote(result.ghi_chu_chung?.ghi_chu || '');
+          setGeneralNoteId(result.ghi_chu_chung?.id || '');
+        }
       } catch (err: any) {
         if (!cancelled) setError(err?.message || 'Lỗi khi tải dữ liệu lịch làm việc.');
       } finally {
@@ -331,6 +347,56 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
     setShowNoteForm(true);
   };
 
+  const handleSaveGeneralNote = async () => {
+    const value = generalNote.trim();
+    if (!value) {
+      setGeneralNoteMessage('Vui lòng nhập nội dung ghi chú chung.');
+      return;
+    }
+    setGeneralNoteSaving(true);
+    setGeneralNoteMessage('');
+    try {
+      const res = await fetch('/api/phan-cong-nhan-su/ghi-chu-chung', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ngay_lam_viec: data?.ngay || ngay, ghi_chu: value })
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || 'Không lưu được ghi chú chung.');
+      setGeneralNoteId(String(result.note?.id || ''));
+      setGeneralNote(value);
+      setGeneralNoteMessage('Đã lưu ghi chú chung.');
+    } catch (err: any) {
+      setGeneralNoteMessage(err?.message || 'Không lưu được ghi chú chung.');
+    } finally {
+      setGeneralNoteSaving(false);
+    }
+  };
+
+  const handleDeleteGeneralNote = async () => {
+    if (!generalNoteId) {
+      setGeneralNote('');
+      return;
+    }
+    if (!window.confirm('Xóa ghi chú chung của ngày này?')) return;
+    setGeneralNoteSaving(true);
+    setGeneralNoteMessage('');
+    try {
+      const res = await fetch(`/api/phan-cong-nhan-su/ghi-chu-chung/${encodeURIComponent(generalNoteId)}`, {
+        method: 'DELETE'
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || 'Không xóa được ghi chú chung.');
+      setGeneralNote('');
+      setGeneralNoteId('');
+      setGeneralNoteMessage('Đã xóa ghi chú chung.');
+    } catch (err: any) {
+      setGeneralNoteMessage(err?.message || 'Không xóa được ghi chú chung.');
+    } finally {
+      setGeneralNoteSaving(false);
+    }
+  };
+
   const handleDeleteNote = async (note: ScheduleNote) => {
     if (!window.confirm('Xóa ghi chú này?')) return;
     try {
@@ -367,12 +433,14 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
         body { font-family: Arial, sans-serif; margin: 0; padding: 8mm; color: #111; }
         h1 { font-size: 16px; text-align: center; margin: 4px 0; }
         h2 { font-size: 13px; font-weight: normal; text-align: center; margin: 2px 0 10px; }
-        table { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
         th, td { border: 1px solid #333; padding: 3px 4px; text-align: left; vertical-align: top; word-wrap: break-word; }
         th { background: #f0f0f0; font-weight: bold; }
+        .schedule-time-col { width: 11%; font-size: 11px; white-space: nowrap; }
+        .schedule-shift-col { width: 10%; font-size: 11px; white-space: nowrap; }
         .note-cell { white-space: pre-line; font-style: normal; color: inherit; }
-        .footer-note { font-size: 11px; padding: 6px 4px; font-weight: bold; }
-        .schedule-note-item { white-space: pre-line; font-size: 9px; line-height: 1.25; margin-top: 2px; }
+        .footer-note { background: #ffeb3b; font-size: 35px; padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle; }
+        .schedule-note-item { white-space: pre-line; font-size: 14px; line-height: 1.25; margin-top: 2px; }
         .schedule-note-item:first-child { margin-top: 0; }
       </style></head><body>${element.innerHTML}</body></html>`);
     win.document.close();
@@ -385,7 +453,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div className="flex max-h-[94vh] w-full max-w-[96vw] flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
             Xem trước &amp; in lịch làm việc - {formatDate(ngay)}
@@ -411,6 +479,31 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
               className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
               placeholder="VD: Đổi ca đầu giờ, ưu tiên xử lý lô A"
             />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveGeneralNote()}
+                  disabled={generalNoteSaving}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white hover:bg-[#b30d1c] disabled:opacity-50"
+                >
+                  {generalNoteSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Lưu ghi chú chung
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteGeneralNote()}
+                  disabled={generalNoteSaving || (!generalNoteId && !generalNote)}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Xóa
+                </button>
+              </div>
+              {generalNoteMessage ? (
+                <span className="text-xs font-bold text-zinc-600">{generalNoteMessage}</span>
+              ) : null}
+            </div>
           </label>
 
           <div className="mb-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
@@ -623,11 +716,11 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
               <h1>LỊCH LÀM VIỆC THEO NGÀY CÁC TỔ</h1>
               <h2>NGÀY {formatDate(data?.ngay || ngay)}</h2>
               <div className="overflow-x-auto border border-zinc-300">
-                <table className="w-full border-collapse" style={{ fontSize: 11 }}>
+                <table className="w-full border-collapse" style={{ fontSize: 16 }}>
                   <thead>
                     <tr className="bg-zinc-100">
-                      <th className="border border-zinc-300 px-2 py-2 text-left font-bold">Khung Giờ</th>
-                      <th className="border border-zinc-300 px-2 py-2 text-left font-bold">Ca SX</th>
+                      <th className="schedule-time-col border border-zinc-300 px-2 py-2 text-left font-bold">Khung Giờ</th>
+                      <th className="schedule-shift-col border border-zinc-300 px-2 py-2 text-left font-bold">Ca SX</th>
                       {displayMachineList.map((may, i) => (
                         <th key={may.ma_may || may.id || i} className="border border-zinc-300 px-2 py-2 text-left font-bold">
                           {machineLabel(may)}
@@ -638,8 +731,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                   <tbody>
                     {(data?.lich ?? []).map((row, idx) => (
                       <tr key={idx}>
-                        <td className="border border-zinc-300 px-2 py-2 font-medium">{row.khungGio}</td>
-                        <td className="border border-zinc-300 px-2 py-2">{row.tenCa}</td>
+                        <td className="schedule-time-col border border-zinc-300 px-2 py-2 font-medium">{row.khungGio}</td>
+                        <td className="schedule-shift-col border border-zinc-300 px-2 py-2">{row.tenCa}</td>
                         {row.machines.map((cell, midx) => {
                           const employeeNames = cell.nhanSu.map(p => p.name);
                           const dispatched = cell.nhanSu.filter(p => p.dispatch);
@@ -673,8 +766,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                     ))}
                     {generalNote.trim() ? (
                       <tr>
-                        <td className="footer-note border border-zinc-300 px-2 py-2 font-bold" colSpan={displayMachineList.length + 2}>
-                          Ghi chú: {generalNote.trim()}
+                        <td className="footer-note border border-zinc-300 px-2 py-2 text-center font-bold" style={{ backgroundColor: '#ffeb3b', fontSize: 35, textAlign: 'center' }} colSpan={displayMachineList.length + 2}>
+                          {generalNote.trim()}
                         </td>
                       </tr>
                     ) : null}
