@@ -18,7 +18,7 @@ comment on column public.don_hang.trang_thai is
 comment on column public.don_hang.san_pham is
   'Danh sách sản phẩm trong đơn: ma_sp, ten_sp, don_vi, so_luong.';
 comment on column public.don_hang.created_at is
-  'Ngày tạo đơn (server ghi đè theo ngày người dùng chọn khi tạo/sửa đơn).';
+  'Thời điểm tạo đơn, được cơ sở dữ liệu tự động gán bằng now().';
 
 -- Gộp dữ liệu cũ (1 SP / dòng) sang jsonb nếu cột đang rỗng
 do $$
