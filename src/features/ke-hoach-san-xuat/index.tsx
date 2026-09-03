@@ -4920,9 +4920,9 @@ export function listProductOptionsForOrder(
       return {
         id: resolvedProductId,
         code,
-        name: meta.name,
-        productionName: meta.productionName || catalogProduct?.productionName || '',
-        unit: meta.unit,
+        name: catalogProduct?.name || meta.name,
+        productionName: catalogProduct?.productionName || meta.productionName || '',
+        unit: catalogProduct?.unit && catalogProduct.unit !== '-' ? catalogProduct.unit : meta.unit,
         productId: resolvedProductId,
         group: catalogProduct?.group || meta.group,
         newCode: catalogProduct?.newCode || '',
@@ -5342,7 +5342,7 @@ export function AddProductionOrderModal({
         product.productName,
         product.unit,
         product.productionName,
-        product.id
+        product.productId
       )
     }));
 
