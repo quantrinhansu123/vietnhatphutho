@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `kho_nvl` |
 | **Tab** | `materials` → `/kho-nvl` |
-| **SQL** | `supabase-kho-nvl.sql`, `supabase-kho-nvl-ten-nvl-sx.sql` |
+| **SQL** | `supabase-kho-nvl.sql`, `supabase-kho-nvl-ten-nvl-sx.sql`, `supabase-kho-nvl-rename-phan-loai.sql` |
 | **Fix precision** | `supabase-kho-nvl-precision.sql` (giữ số lẻ, không bị làm tròn) |
 
 ## API (`server.ts`)
@@ -36,8 +36,8 @@ Phiếu xuất nhập (`phieu_xuat_nhap_kho`) cập nhật tồn kho NVL.
 ### Excel danh mục NVL
 
 - **Tải mẫu Excel** / **Tải Excel lên** — `src/utils/materialCatalogExcel.ts`
-- Cột khớp bảng + form: Mã NPL, Tên, Tên NVL sản xuất, ĐV, **Kho ngầm định**, Tổng kg, Tồn đầu, Nhập, Xuất, Kg nhựa/túi/lõi, Khổ cuộn, Chiều dài ĐV
+- Cột khớp bảng + form: Mã NPL, Tên, Tên NVL sản xuất, ĐV, **Phân loại**, Tổng kg, Tồn đầu, Nhập, Xuất, Kg nhựa/túi/lõi, Khổ cuộn, Chiều dài ĐV
 - Ô trống vẫn đẩy lên (null); tạo mới hoặc cập nhật cần Mã + Tên; chỉ có Mã thì từ chối.
 - Import phân loại theo `ma_npl` + `ten_npl` + `ten_nvl_sx`: đủ 3 trường thì match cả 3; mã + tên và tên SX trống thì match thêm `ten_nvl_sx` rỗng; chỉ có mã thì từ chối.
 - Mẫu 2 cột cũ tách riêng: **Mẫu cập nhật Tổng kg** / **Nhập Tổng kg**
-- **Kho ngầm định**: Nguyên vật liệu phụ hoặc Nguyên vật liệu chính
+- **Phân loại**: Nguyên vật liệu phụ hoặc Nguyên vật liệu chính; vẫn nhận alias Excel cũ “Kho ngầm định”

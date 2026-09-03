@@ -615,7 +615,14 @@ function mergeNormMaterialLines(records: unknown[], materials: MaterialOption[])
       name: name || catalog?.name || '',
       unit: 'kg',
       documentQuantity: (current?.documentQuantity || 0) + quantity,
-      warehouseClass: String(raw.kho_ngam_dinh ?? raw.khoNgamDinh ?? catalog?.khoNgamDinh ?? '').trim()
+      warehouseClass: String(
+        raw.phan_loai ??
+        raw.phanLoai ??
+        raw.kho_ngam_dinh ??
+        raw.khoNgamDinh ??
+        catalog?.phanLoai ??
+        ''
+      ).trim()
     });
   };
   records.forEach(record => {
@@ -903,7 +910,7 @@ export function WarehouseSlipPanel({
               code: material.code,
               name: material.name,
               unit: material.unit && material.unit !== '-' ? material.unit : '',
-              khoNgamDinh: material.khoNgamDinh
+              phanLoai: material.phanLoai
             }))
           );
           setWeightCatalog(materials.map(mapMaterialToWeightCatalogItem));
