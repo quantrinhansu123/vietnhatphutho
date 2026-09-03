@@ -4630,7 +4630,25 @@ export function parseRowQuantity(raw: string): number {
   return Number.isFinite(num) ? num : 0;
 }
 
-export function getOrderProductQuantity(orders: OrderRow[], orderRef: string, productCode: string): number {
+function productLineMatches(
+  line: Pick<OrderProductLine, 'productCode' | 'productId'>,
+  productCode: string,
+  productId = ''
+) {
+  const targetId = productId.trim();
+  const lineId = line.productId?.trim() || '';
+  if (targetId && lineId) return lineId === targetId;
+  if (targetId && !lineId) return line.productCode === productCode;
+  if (lineId) return false;
+  return line.productCode === productCode;
+}
+
+export function getOrderProductQuantity(
+  orders: OrderRow[],
+  orderRef: string,
+  productCode: string,
+  productId = ''
+): number {
   return orders
     .filter(order => order.orderCode === orderRef)
     .reduce((sum, order) => {
@@ -4638,7 +4656,7 @@ export function getOrderProductQuantity(orders: OrderRow[], orderRef: string, pr
       return (
         sum +
         lines
-          .filter(line => line.productCode === productCode)
+          .filter(line => productLineMatches(line, productCode, productId))
           .reduce((lineSum, line) => lineSum + parseRowQuantity(line.quantity), 0)
       );
     }, 0);
@@ -4647,14 +4665,19 @@ export function getOrderProductQuantity(orders: OrderRow[], orderRef: string, pr
 export function getAllocatedProductionQuantity(
   productionOrders: ProductionOrderRow[],
   orderRef: string,
-  productCode: string
+  productCode: string,
+  productId = ''
 ): number {
   return productionOrders
     .reduce((sum, po) => {
       return (
         sum +
         getProductionOrderProductLines(po)
-          .filter(line => (line.orderRef || po.orderRef) === orderRef && line.productCode === productCode)
+          .filter(
+            line =>
+              (line.orderRef || po.orderRef) === orderRef &&
+              productLineMatches(line, productCode, productId)
+          )
           .reduce((lineSum, line) => lineSum + parseRowQuantity(line.quantity), 0)
       );
     }, 0);
@@ -4664,10 +4687,11 @@ export function getRemainingProductionQuantity(
   orders: OrderRow[],
   productionOrders: ProductionOrderRow[],
   orderRef: string,
-  productCode: string
+  productCode: string,
+  productId = ''
 ): number {
-  const ordered = getOrderProductQuantity(orders, orderRef, productCode);
-  const allocated = getAllocatedProductionQuantity(productionOrders, orderRef, productCode);
+  const ordered = getOrderProductQuantity(orders, orderRef, productCode, productId);
+  const allocated = getAllocatedProductionQuantity(productionOrders, orderRef, productCode, productId);
   return Math.max(0, ordered - allocated);
 }
 
@@ -4685,17 +4709,22 @@ export function orderHasRemainingProductionQuantity(
     if (!productCode || productCode === '-') return false;
 
     return (
-      getOrderProductQuantity(orders, order.orderCode, productCode) > 0 &&
-      getRemainingProductionQuantity(orders, productionOrders, order.orderCode, productCode) > 0
+      getOrderProductQuantity(orders, order.orderCode, productCode, line.productId) > 0 &&
+      getRemainingProductionQuantity(orders, productionOrders, order.orderCode, productCode, line.productId) > 0
     );
   });
 }
 
-export function getOrderProductUnit(orders: OrderRow[], orderRef: string, productCode: string): string {
+export function getOrderProductUnit(
+  orders: OrderRow[],
+  orderRef: string,
+  productCode: string,
+  productId = ''
+): string {
   const line = orders
     .filter(order => order.orderCode === orderRef)
     .flatMap(order => getOrderProductLines(order))
-    .find(item => item.productCode === productCode);
+    .find(item => productLineMatches(item, productCode, productId));
   return line?.unit && line.unit !== '-' ? line.unit : '';
 }
 
@@ -4707,7 +4736,7 @@ function productionProductMatchesCode(product: ProductRow, productCode: string) 
   );
 }
 
-/** Ưu tiên mã chuẩn/tên đã lưu; chỉ dùng ID khi ID cũng khớp mã sản phẩm. */
+/** Ưu tiên sản phẩm theo ID; dữ liệu cũ không có ID thì dò theo mã/tên. */
 export function resolveProductionCatalogProduct(
   catalogProducts: ProductRow[],
   productCode: string,
@@ -4719,6 +4748,7 @@ export function resolveProductionCatalogProduct(
   const idProduct = productId.trim()
     ? catalogProducts.find(product => product.id === productId.trim())
     : undefined;
+  if (idProduct) return idProduct;
   const codeMatches = catalogProducts.filter(product => productionProductMatchesCode(product, productCode));
   const nameKey = productName.trim().toLocaleLowerCase('vi');
   const productionNameKey = productionName.trim().toLocaleLowerCase('vi');
@@ -4731,7 +4761,6 @@ export function resolveProductionCatalogProduct(
   const namedMatch = byProductionName || byProductName;
 
   if (namedMatch) return namedMatch;
-  if (idProduct && productionProductMatchesCode(idProduct, productCode)) return idProduct;
   return (
     catalogProducts.find(product => normalizeProductCodeKey(product.code) === codeKey) ||
     catalogProducts.find(product => normalizeProductCodeKey(product.newCode) === codeKey) ||
@@ -4749,23 +4778,23 @@ export function buildProductionEntryLine(
   productionName = '',
   productId = ''
 ): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'productionName' | 'quantity' | 'unit' | 'productId'> {
-  const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode);
+  const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode, productId);
   const line = orders
     .filter(order => order.orderCode === orderRef)
     .flatMap(order => getOrderProductLines(order))
-    .find(item => item.productCode === productCode);
+    .find(item => productLineMatches(item, productCode, productId));
   return {
     productCode,
     productName,
     productionName: productionName || line?.productionName || '',
     quantity: remaining > 0 ? String(remaining) : '',
-    unit: unit || getOrderProductUnit(orders, orderRef, productCode),
+    unit: unit || getOrderProductUnit(orders, orderRef, productCode, productId),
     productId: productId.trim() || line?.productId
   };
 }
 
-export function autofillProductKey(orderRef: string, productCode: string) {
-  return `${orderRef}::${productCode}`;
+export function autofillProductKey(orderRef: string, productCode: string, productId = '') {
+  return `${orderRef}::${productId.trim() || `code:${productCode}`}`;
 }
 
 export function splitProductionOrderRefs(orderRef: string): string[] {
@@ -4798,7 +4827,7 @@ export function filterOrdersForProductionDate(
     const hasRemaining = getOrderProductLines(order).some(line => {
       const code = line.productCode?.trim();
       if (!code || code === '-') return false;
-      return getRemainingProductionQuantity(orders, productionOrders, order.orderCode, code) > 0;
+      return getRemainingProductionQuantity(orders, productionOrders, order.orderCode, code, line.productId) > 0;
     });
 
     return matchesOrderDate || linkedOnDate || (!orderDate && hasRemaining);
@@ -4831,13 +4860,31 @@ export function listProductOptionsForOrder(
     )
     .filter(item => item.code && item.code !== '-');
 
-  const unique = new Map<string, { name: string; productionName: string; unit: string; productId?: string; group: string }>();
-  fromOrders.forEach(item => unique.set(item.code, { name: item.name || item.code, productionName: item.productionName, unit: item.unit, productId: item.productId, group: item.group }));
+  const unique = new Map<string, { code: string; name: string; productionName: string; unit: string; productId?: string; group: string }>();
+  fromOrders.forEach(item => {
+    const key = item.productId?.trim() || `code:${normalizeProductCodeKey(item.code)}`;
+    const existing = unique.get(key);
+    if (existing) {
+      existing.name = existing.name || item.name || item.code;
+      existing.productionName = existing.productionName || item.productionName;
+      existing.unit = existing.unit || item.unit;
+      return;
+    }
+    unique.set(key, {
+      code: item.code,
+      name: item.name || item.code,
+      productionName: item.productionName,
+      unit: item.unit,
+      productId: item.productId,
+      group: item.group
+    });
+  });
 
   if (unique.size === 0) {
     catalogProducts.forEach(product => {
       if (product.code) {
-        unique.set(product.code, {
+        unique.set(product.id || `code:${normalizeProductCodeKey(product.code)}`, {
+          code: product.code,
           name: product.name || product.code,
           productionName: product.productionName || '',
           unit: product.unit && product.unit !== '-' ? product.unit : '',
@@ -4848,8 +4895,9 @@ export function listProductOptionsForOrder(
     });
   }
 
-  return [...unique.entries()]
-    .map(([code, meta]) => {
+  return [...unique.values()]
+    .map(meta => {
+      const code = meta.code;
       const catalogProduct = resolveProductionCatalogProduct(
         catalogProducts,
         code,
@@ -4867,8 +4915,8 @@ export function listProductOptionsForOrder(
         productId: resolvedProductId,
         group: catalogProduct?.group || meta.group,
         newCode: catalogProduct?.newCode || '',
-        orderQty: getOrderProductQuantity(orders, orderRef, code),
-        remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code)
+        orderQty: getOrderProductQuantity(orders, orderRef, code, resolvedProductId),
+        remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code, resolvedProductId)
       };
     })
     .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
@@ -5042,7 +5090,7 @@ export function AddProductionOrderModal({
           fetch('/api/danh-sach-may'),
           fetch('/api/cai-dat'),
           fetch('/api/san-pham?format=table'),
-          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
+          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=1000')
         ]);
 
         const orderData = await orderRes.json().catch(() => ({}));
@@ -5062,7 +5110,7 @@ export function AddProductionOrderModal({
           const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
           const conversionTotal = Number(conversionData.total) || conversions.length;
           for (let page = 2; conversions.length < conversionTotal; page += 1) {
-            const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+            const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
             conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
@@ -5100,7 +5148,7 @@ export function AddProductionOrderModal({
           return (
             Boolean(productCode) &&
             productCode !== '-' &&
-            getOrderProductQuantity(orders, order.orderCode, productCode) > 0
+            getOrderProductQuantity(orders, order.orderCode, productCode, line.productId) > 0
           );
         })
       ),
@@ -5176,10 +5224,12 @@ export function AddProductionOrderModal({
       listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
         .filter(product => product.orderQty > 0)
         .map(product => ({
-          key: autofillProductKey(orderRef, product.code),
+          key: autofillProductKey(orderRef, product.code, product.productId),
           orderRef,
+          productId: product.productId,
           productCode: product.code,
           productName: product.name,
+          productionName: product.productionName,
           unit: product.unit,
           remainingQty: product.remainingQty
         }))
@@ -5426,7 +5476,7 @@ export function AddProductionOrderModal({
         setFormError(`Số lượng phải lớn hơn 0 cho ${productName}.`);
         return;
       }
-      const ordered = getOrderProductQuantity(orders, line.orderRef.trim(), line.productCode);
+      const ordered = getOrderProductQuantity(orders, line.orderRef.trim(), line.productCode, line.productId);
       if (ordered <= 0) {
         setFormError(`${productName} không có trong đơn ${line.orderRef} hoặc chưa có số lượng đặt hàng.`);
         return;
@@ -6602,7 +6652,7 @@ export function EditProductionOrderModal({
       try {
         const [settingRes, conversionRes] = await Promise.all([
           fetch('/api/cai-dat'),
-          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=200')
+          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=1000')
         ]);
         const [settingData, conversionData] = await Promise.all([
           settingRes.json().catch(() => ({})),
@@ -6615,7 +6665,7 @@ export function EditProductionOrderModal({
             const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
             const conversionTotal = Number(conversionData.total) || conversions.length;
             for (let page = 2; conversions.length < conversionTotal; page += 1) {
-              const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+              const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
               const data = await res.json().catch(() => ({}));
               if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
               conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
