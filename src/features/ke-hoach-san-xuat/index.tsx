@@ -5694,7 +5694,8 @@ export function AddProductionOrderModal({
 
               return (
                 <RepeatableLineRow key={line.key}>
-                  <div className="col-span-2 md:w-32 md:shrink-0">
+                  <div className="w-full md:w-32 md:shrink-0">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
                     <SearchableSelect
                       value={line.orderRef}
                       onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -5706,7 +5707,8 @@ export function AddProductionOrderModal({
                       getValue={item => String(item)}
                     />
                   </div>
-                  <div className="col-span-2 md:w-44 md:shrink-0">
+                  <div className="w-full md:w-44 md:shrink-0">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
                     <SearchableSelect
                       value={line.productCode}
                       onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
@@ -5728,7 +5730,8 @@ export function AddProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="col-span-2 min-w-0" style={{flex: '0.8'}}>
+                  <div className="w-full min-w-0 md:flex-1">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
                     <input
                       value={selectedProduct?.productionName || line.productName}
                       readOnly
@@ -5736,11 +5739,11 @@ export function AddProductionOrderModal({
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
+                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">ĐVT</label>
                     {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-24 space-y-1.5">
+                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-24 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">SL</label>
                     <input
                       type="number"
@@ -5752,7 +5755,7 @@ export function AddProductionOrderModal({
                       placeholder="SL"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">KG</label>
                     <input
                       type="text"
@@ -5761,7 +5764,7 @@ export function AddProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">M2</label>
                     <input
                       type="text"
@@ -5770,7 +5773,7 @@ export function AddProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 space-y-1.5">
+                  <div className="w-full md:w-16 md:shrink-0 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">M dài</label>
                     <input
                       type="text"
@@ -6959,7 +6962,8 @@ export function EditProductionOrderModal({
 
               return (
                 <RepeatableLineRow key={line.key}>
-                  <div className="col-span-2 md:w-32 md:shrink-0">
+                  <div className="w-full md:w-32 md:shrink-0">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
                     <SearchableSelect
                       value={line.orderRef}
                       onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -6970,7 +6974,8 @@ export function EditProductionOrderModal({
                       getValue={item => String(item)}
                     />
                   </div>
-                  <div className="col-span-2 md:w-44 md:shrink-0">
+                  <div className="w-full md:w-44 md:shrink-0">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
                     <SearchableSelect
                       value={line.productCode}
                       onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
@@ -6985,7 +6990,8 @@ export function EditProductionOrderModal({
                       getValue={item => (item as (typeof productOptions)[number]).code}
                     />
                   </div>
-                  <div className="col-span-2 min-w-0" style={{flex: '0.8'}}>
+                  <div className="w-full min-w-0 md:flex-1">
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
                     <input
                       value={selectedProduct?.productionName || line.productName}
                       readOnly
@@ -6993,11 +6999,11 @@ export function EditProductionOrderModal({
                       placeholder="Tự điền theo mã hàng"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
+                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">ĐVT</label>
                     {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
+                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">SL</label>
                     <input
                       type="number"
@@ -7009,7 +7015,7 @@ export function EditProductionOrderModal({
                       placeholder="SL"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">KG</label>
                     <input
                       type="text"
@@ -7018,7 +7024,7 @@ export function EditProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-14 md:shrink-0 space-y-1.5">
+                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">M2</label>
                     <input
                       type="text"
@@ -7027,7 +7033,7 @@ export function EditProductionOrderModal({
                       className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                     />
                   </div>
-                  <div className="col-span-1 md:w-16 md:shrink-0 space-y-1.5">
+                  <div className="w-full md:w-16 md:shrink-0 space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-zinc-500 block">M dài</label>
                     <input
                       type="text"
