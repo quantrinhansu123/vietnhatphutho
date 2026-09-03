@@ -4922,7 +4922,9 @@ export function listProductOptionsForOrder(
         code,
         name: catalogProduct?.name || meta.name,
         productionName: catalogProduct?.productionName || meta.productionName || '',
-        unit: catalogProduct?.unit && catalogProduct.unit !== '-' ? catalogProduct.unit : meta.unit,
+        // ĐVT trong đơn hàng là nguồn chính; danh mục sản phẩm chỉ fallback
+        // cho dữ liệu đơn hàng cũ bị thiếu ĐVT.
+        unit: meta.unit || (catalogProduct?.unit && catalogProduct.unit !== '-' ? catalogProduct.unit : ''),
         productId: resolvedProductId,
         group: catalogProduct?.group || meta.group,
         newCode: catalogProduct?.newCode || '',

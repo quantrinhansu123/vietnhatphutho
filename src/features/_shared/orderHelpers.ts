@@ -291,10 +291,15 @@ export function calculateCutOrderWeight(
   return null;
 }
 
-export function allowedOrderUnits(product: Pick<OrderProductOption, 'group'> | null) {
+export function allowedOrderUnits(product: Pick<OrderProductOption, 'group' | 'unit'> | null, preferredUnit = '') {
   if (!product) return [];
   const group = product.group.replace(/\s+/g, '').toLocaleLowerCase('vi');
-  if (group === 'tp;pxđặc') return ['Tấm', 'Cuộn'];
-  if (group === 'tp;pxsóng' || group === 'tp;pxrỗng') return ['Tấm'];
-  return ['kg'];
+  const units =
+    group === 'tp;pxđặc'
+      ? ['Tấm', 'Cuộn']
+      : group === 'tp;pxsóng' || group === 'tp;pxrỗng'
+        ? ['Tấm']
+        : ['kg'];
+  const orderUnit = (preferredUnit || product.unit || '').trim();
+  return orderUnit && !units.includes(orderUnit) ? [orderUnit, ...units] : units;
 }
