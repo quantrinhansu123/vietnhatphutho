@@ -4794,7 +4794,8 @@ export function buildProductionEntryLine(
 }
 
 export function autofillProductKey(orderRef: string, productCode: string, productId = '') {
-  return `${orderRef}::${productId.trim() || `code:${productCode}`}`;
+  const normalizedProductId = productId.trim();
+  return normalizedProductId ? `${orderRef}::${normalizedProductId}` : '';
 }
 
 function getOrderCreatedAtTimestamp(value: string) {
@@ -4883,7 +4884,7 @@ export function listProductOptionsForOrder(
         group: ''
       }))
     )
-    .filter(item => item.code && item.code !== '-');
+    .filter(item => item.code && item.code !== '-' && Boolean(item.productId?.trim()));
 
   const unique = new Map<string, { code: string; name: string; productionName: string; unit: string; productId?: string; group: string }>();
   fromOrders.forEach(item => {
@@ -4904,21 +4905,6 @@ export function listProductOptionsForOrder(
       group: item.group
     });
   });
-
-  if (unique.size === 0) {
-    catalogProducts.forEach(product => {
-      if (product.code) {
-        unique.set(product.id || `code:${normalizeProductCodeKey(product.code)}`, {
-          code: product.code,
-          name: product.name || product.code,
-          productionName: product.productionName || '',
-          unit: product.unit && product.unit !== '-' ? product.unit : '',
-          productId: product.id,
-          group: product.group || ''
-        });
-      }
-    });
-  }
 
   return [...unique.values()]
     .map(meta => {
@@ -5472,18 +5458,19 @@ export function AddProductionOrderModal({
     updateEntryLine(key, patch);
   };
 
-  const handleEntryProductChange = (key: string, orderRef: string, productCode: string) => {
+  const handleEntryProductChange = (key: string, orderRef: string, productId: string) => {
     const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
-    const product = options.find(item => item.code === productCode);
+    const product = options.find(item => item.productId === productId);
+    if (!product?.productId) return;
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
       orderRef,
-      productCode,
+      product.code,
       product?.name || '',
       product?.unit || '',
       product?.productionName || '',
-      product?.id || ''
+      product.productId
     );
     updateEntryLine(key, built);
   };
@@ -5679,7 +5666,9 @@ export function AddProductionOrderModal({
                 catalogProducts,
                 line.orderRef
               );
-              const selectedProduct = productOptions.find(item => item.code === line.productCode);
+              const selectedProduct = line.productId
+                ? productOptions.find(item => item.productId === line.productId)
+                : undefined;
               const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
               const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
               const allowedUnits = allowedOrderUnits(selectedProduct);
@@ -5710,8 +5699,8 @@ export function AddProductionOrderModal({
                   <div className="w-full md:w-44 md:shrink-0">
                     <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
                     <SearchableSelect
-                      value={line.productCode}
-                      onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
+                      value={line.productId || ''}
+                      onChange={productId => handleEntryProductChange(line.key, line.orderRef, productId)}
                       options={productOptions}
                       placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
                       disabled={!line.orderRef}
@@ -5727,7 +5716,7 @@ export function AddProductionOrderModal({
                               : '';
                         return product.code ? `${product.code} - ${product.productionName || product.name}${remaining}` : product.name;
                       }}
-                      getValue={item => (item as (typeof productOptions)[number]).code}
+                      getValue={item => (item as (typeof productOptions)[number]).productId}
                     />
                   </div>
                   <div className="w-full min-w-0 md:flex-1">

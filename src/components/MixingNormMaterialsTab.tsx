@@ -23,6 +23,8 @@ export type MixingNormLine = {
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat?: string;
+  phan_loai?: string;
+  /** Legacy snapshot key retained for historical mixing norms. */
   kho_ngam_dinh?: string;
   gia_tri: number | null;
   don_vi: string;
@@ -69,7 +71,7 @@ type MaterialOption = {
   name: string;
   productionName: string;
   unit: string;
-  khoNgamDinh: string;
+  phanLoai: string;
 };
 
 type ProductOption = {
@@ -98,7 +100,7 @@ type LineForm = {
   tenNvlSanXuat: string;
   giaTri: string;
   donVi: 'kg' | '%';
-  khoNgamDinh: string;
+  phanLoai: string;
 };
 
 type ProductForm = {
@@ -147,7 +149,7 @@ const emptyLine = (): LineForm => ({
   tenNvlSanXuat: '',
   giaTri: '',
   donVi: 'kg',
-  khoNgamDinh: ''
+  phanLoai: ''
 });
 
 const emptyProduct = (): ProductForm => ({
@@ -239,7 +241,7 @@ function productToForm(
             maNvl: line.ma_nvl,
             tenNvl: line.ten_nvl,
             tenNvlSanXuat: line.ten_nvl_san_xuat || '',
-            khoNgamDinh: line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.khoNgamDinh || '',
+            phanLoai: line.phan_loai || line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.phanLoai || '',
             giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
             donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
           },
@@ -290,7 +292,7 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
         name,
         productionName,
         unit: unitRaw === '%' ? '%' : 'kg',
-        khoNgamDinh: String(row.kho_ngam_dinh ?? '').trim()
+        phanLoai: String(row.phan_loai ?? row.kho_ngam_dinh ?? '').trim()
       };
     })
     .filter((item): item is MaterialOption => Boolean(item));
@@ -518,7 +520,7 @@ function nvlPhuToLineForms(
         maNvl: line.ma_nvl,
         tenNvl: line.ten_nvl,
         tenNvlSanXuat: line.ten_nvl_san_xuat || '',
-        khoNgamDinh: line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.khoNgamDinh || '',
+        phanLoai: line.phan_loai || line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.phanLoai || '',
         giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
         donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
       },
@@ -878,11 +880,11 @@ export default function MixingNormMaterialsTab() {
   }, [materials]);
 
   const mainMaterialOptions = useMemo(
-    () => materials.filter(item => item.khoNgamDinh !== 'Nguyên vật liệu phụ'),
+    () => materials.filter(item => item.phanLoai !== 'Nguyên vật liệu phụ'),
     [materials]
   );
   const secondaryMaterialOptions = useMemo(
-    () => materials.filter(item => item.khoNgamDinh === 'Nguyên vật liệu phụ'),
+    () => materials.filter(item => item.phanLoai === 'Nguyên vật liệu phụ'),
     [materials]
   );
 
@@ -1503,7 +1505,7 @@ export default function MixingNormMaterialsTab() {
         maNvl: '',
         tenNvl: '',
         tenNvlSanXuat: '',
-        khoNgamDinh: ''
+        phanLoai: ''
       };
     }
     if (material.id && material.id === line.materialId) {
@@ -1511,7 +1513,7 @@ export default function MixingNormMaterialsTab() {
         ...line,
         maNvl: material.code,
         tenNvl: material.name,
-        khoNgamDinh: material.khoNgamDinh || line.khoNgamDinh
+        phanLoai: material.phanLoai || line.phanLoai
       };
     }
     const sameCode = normalizeProductLookupKey(material.code) === normalizeProductLookupKey(line.maNvl);
@@ -1522,7 +1524,7 @@ export default function MixingNormMaterialsTab() {
       maNvl: material.code,
       tenNvl: material.name,
       tenNvlSanXuat: nextProduction,
-      khoNgamDinh: material.khoNgamDinh
+      phanLoai: material.phanLoai
     };
   };
 
@@ -1774,7 +1776,7 @@ export default function MixingNormMaterialsTab() {
             ma_nvl: line.maNvl.trim(),
             ten_nvl: line.tenNvl.trim(),
             ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
-            kho_ngam_dinh: line.khoNgamDinh.trim() || null,
+            phan_loai: line.phanLoai.trim() || null,
             gia_tri,
             don_vi: line.donVi,
             khoi_luong: calcNvlKhoiLuong(roundWeight, gia_tri, line.donVi),

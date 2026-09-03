@@ -141,9 +141,9 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   kho_nvl: {
     table: 'kho_nvl',
     label: 'Kho nguyên vật liệu',
-    sql: ['supabase-kho-nvl.sql'],
+    sql: ['supabase-kho-nvl.sql', 'supabase-kho-nvl-rename-phan-loai.sql'],
     apiPrefix: '/api/kho-nvl',
-    serverLines: '4605–4784',
+    serverLines: '9104–9370; parser 4180–4225; mixing validation 3330–3390',
     appTab: 'materials',
     appLines: 'src/features/kho-nvl/index.tsx',
     components: ['src/components/MaterialsForm.tsx'],

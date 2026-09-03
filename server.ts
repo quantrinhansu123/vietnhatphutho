@@ -3086,7 +3086,9 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         const ten_nvl_san_xuat = String(
           line.ten_nvl_san_xuat ?? line.tenNvlSanXuat ?? ''
         ).trim();
-        const kho_ngam_dinh = String(line.kho_ngam_dinh ?? line.khoNgamDinh ?? '').trim();
+        const phan_loai = String(
+          line.phan_loai ?? line.phanLoai ?? line.kho_ngam_dinh ?? line.khoNgamDinh ?? ''
+        ).trim();
         if (!ma_nvl && !ten_nvl) return null;
         const giaTriRaw = line.gia_tri ?? line.giaTri ?? line.dinh_muc ?? line.value;
         let gia_tri: number | null = null;
@@ -3120,7 +3122,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
           ma_nvl: ma_nvl || null,
           ten_nvl: ten_nvl || null,
           ten_nvl_san_xuat: ten_nvl_san_xuat || null,
-          kho_ngam_dinh: kho_ngam_dinh || null,
+          phan_loai: phan_loai || null,
           gia_tri,
           don_vi,
           khoi_luong,
@@ -3143,7 +3145,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         ma_nvl: string | null;
         ten_nvl: string | null;
         ten_nvl_san_xuat: string | null;
-        kho_ngam_dinh: string | null;
+        phan_loai: string | null;
         gia_tri: number | null;
         don_vi: string;
         khoi_luong: number | null;
@@ -3359,7 +3361,7 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
   if (codes.length === 0) return null;
   const { data, error } = await supabase
     .from(SUPABASE_MATERIALS_TABLE)
-    .select('ma_npl, kho_ngam_dinh')
+    .select('ma_npl, phan_loai')
     .in('ma_npl', codes);
   if (error) {
     if (isMissingTableError(error) || isMissingColumnError(error)) return null;
@@ -3370,7 +3372,7 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
   const classByCode = new Map(
     (Array.isArray(data) ? data : []).map(row => [
       String((row as Record<string, unknown>).ma_npl ?? '').trim().toLocaleLowerCase('vi'),
-      String((row as Record<string, unknown>).kho_ngam_dinh ?? '').trim()
+      String((row as Record<string, unknown>).phan_loai ?? '').trim()
     ])
   );
   for (const reference of references) {
@@ -4202,10 +4204,22 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
     ton_dau_ky: parseOptionalMaterialNumber(source.openingStock),
     nhap_trong_ky: parseOptionalMaterialNumber(source.inbound),
     xuat_trong_ky: parseOptionalMaterialNumber(source.outbound),
-    kho_ngam_dinh: parseMaterialText(source.khoNgamDinh ?? source.kho_ngam_dinh) || null
+    phan_loai: parseMaterialText(
+      source.phanLoai ?? source.phan_loai ?? source.khoNgamDinh ?? source.kho_ngam_dinh
+    ) || null
   };
 
   return { record };
+}
+
+function materialWithClassificationAliases(record: Record<string, unknown>) {
+  const phanLoai = String(record.phan_loai ?? record.kho_ngam_dinh ?? '').trim() || null;
+  return {
+    ...record,
+    phan_loai: phanLoai,
+    // Compatibility alias for older clients and saved local payloads.
+    kho_ngam_dinh: phanLoai
+  };
 }
 
 function materialWriteErrorMessage(error: { code?: string; message?: string; details?: string }) {
@@ -9126,7 +9140,8 @@ export function createApp() {
       }
 
       const movementTotals = await buildMaterialMovementTotals();
-      const materials = applyMaterialMovementTotals(allData || [], movementTotals);
+      const materials = applyMaterialMovementTotals(allData || [], movementTotals)
+        .map(materialWithClassificationAliases);
 
       return res.json({
         materials,
@@ -9160,7 +9175,7 @@ export function createApp() {
         return res.status(500).json({ error: materialWriteErrorMessage(error) });
       }
 
-      return res.status(201).json({ success: true, material: data });
+      return res.status(201).json({ success: true, material: materialWithClassificationAliases(data) });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi thêm nguyên phụ liệu.' });
     }
@@ -9218,7 +9233,7 @@ export function createApp() {
           console.error('Supabase kho_nvl batch insert error:', error);
           return res.status(500).json({ error: materialWriteErrorMessage(error) });
         }
-        createdMaterials = (data || []) as Record<string, unknown>[];
+        createdMaterials = (data || []).map(materialWithClassificationAliases);
       }
 
       if (parsedUpdates.records.length > 0) {
@@ -9230,7 +9245,7 @@ export function createApp() {
           console.error('Supabase kho_nvl batch update error:', error);
           return res.status(500).json({ error: materialWriteErrorMessage(error) });
         }
-        updatedMaterials = (data || []) as Record<string, unknown>[];
+        updatedMaterials = (data || []).map(materialWithClassificationAliases);
       }
 
       return res.status(200).json({
@@ -9330,7 +9345,7 @@ export function createApp() {
         return res.status(404).json({ error: 'Không tìm thấy nguyên phụ liệu cần cập nhật.' });
       }
 
-      return res.json({ success: true, material: data });
+      return res.json({ success: true, material: materialWithClassificationAliases(data) });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật nguyên phụ liệu.' });
     }
