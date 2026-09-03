@@ -40,6 +40,9 @@ export type MixingNormLine = {
 
 export type MixingNormProduct = {
   ma_sp: string;
+  /** Stable catalog identity; ma_sp/ma_amis are display/search values only. */
+  san_pham_id?: string;
+  san_pham_ids?: string[];
   ten_sp: string;
   tong_trong_luong: number | null;
   ghi_chu: string;
@@ -107,6 +110,7 @@ type ProductForm = {
   key: string;
   /** Các mã SP được chọn trong ô "Mã sản phẩm" — có thể chọn nhiều SP dùng chung 1 công thức trộn. */
   maSpCodes: string[];
+  maSpIds: string[];
   /** Chuỗi mã SP nối bằng dấu phẩy — dùng để lưu/so trùng, tương thích ma_sp dạng string. */
   maSp: string;
   tenSp: string;
@@ -125,6 +129,7 @@ type SecondaryProductForm = {
   key: string;
   /** Nhiều SP dùng chung một danh sách NVL phụ — giống block NVL chính. */
   maSpCodes: string[];
+  maSpIds: string[];
   maSp: string;
   lines: LineForm[];
 };
@@ -155,6 +160,7 @@ const emptyLine = (): LineForm => ({
 const emptyProduct = (): ProductForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   maSpCodes: [],
+  maSpIds: [],
   maSp: '',
   tenSp: '',
   tongTrongLuong: '',
@@ -169,6 +175,7 @@ const emptyProduct = (): ProductForm => ({
 const emptySecondaryProduct = (): SecondaryProductForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   maSpCodes: [],
+  maSpIds: [],
   maSp: '',
   lines: [emptyLine()]
 });
@@ -255,6 +262,11 @@ function productToForm(
       .split(',')
       .map(code => code.trim())
       .filter(Boolean),
+    maSpIds: Array.isArray(product.san_pham_ids)
+      ? product.san_pham_ids.map(id => String(id).trim()).filter(Boolean)
+      : product.san_pham_id
+        ? [String(product.san_pham_id).trim()]
+        : [],
     maSp: product.ma_sp,
     tenSp: product.ten_sp,
     tongTrongLuong:
@@ -314,7 +326,7 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       ? (data as { products: unknown[] }).products
       : [];
 
-  const byCode = new Map<string, ProductOption>();
+  const byIdentity = new Map<string, ProductOption>();
   for (const item of rows) {
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
@@ -325,8 +337,8 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       row.ten_sp ?? row.productName ?? row.name ?? row.ten_hang ?? ''
     ).trim();
     if (!code && !name) continue;
-    const key = code || name;
-    if (!byCode.has(key)) byCode.set(key, {
+    const key = String(row.id ?? '').trim() || code || name;
+    if (!byIdentity.has(key)) byIdentity.set(key, {
       id: String(row.id ?? '').trim(),
       code: code || name,
       amisCode: String(row.ma_amis ?? row.amisCode ?? '').trim(),
@@ -338,7 +350,9 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       nplItems: parseMixingProductBom(row.npl_phan_tram ?? row.nplPhanTram)
     });
   }
-  return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+  return [...byIdentity.values()].sort((a, b) =>
+    `${a.code} ${a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenSanXuat || b.name}`, 'vi')
+  );
 }
 
 function parseNumberOrNull(value: unknown): number | null {
@@ -557,6 +571,7 @@ function collectSavedSecondaryProducts(
   return [...groups.values()].map((group, index) => ({
     key: `secondary-${index}-${group.codes[0] || 'block'}`,
     maSpCodes: group.codes,
+    maSpIds: [],
     maSp: group.codes.join(', '),
     lines: nvlPhuToLineForms(group.lines, `${index}-${group.codes[0] || 'block'}`, materialsByCode)
   }));
@@ -618,6 +633,10 @@ function normalizeProductBlock(item: Record<string, unknown>): MixingNormProduct
   if (!ma_sp && !ten_sp && chi_tiet.length === 0) return null;
   return {
     ma_sp,
+    san_pham_id: String(item.san_pham_id ?? '').trim() || undefined,
+    san_pham_ids: Array.isArray(item.san_pham_ids)
+      ? item.san_pham_ids.map(id => String(id).trim()).filter(Boolean)
+      : undefined,
     ten_sp,
     tong_trong_luong,
     ghi_chu: String(item.ghi_chu ?? '').trim(),
@@ -930,7 +949,7 @@ export default function MixingNormMaterialsTab() {
   );
 
   const productOptions = useMemo((): ProductOption[] => {
-    const byCode = new Map<string, ProductOption>();
+    const byIdentity = new Map<string, ProductOption>();
     const add = (code: string, name: string, productId = '', productionName = '') => {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
@@ -940,11 +959,10 @@ export default function MixingNormMaterialsTab() {
         productName: name,
         productionName
       });
-      // Gộp theo mã CHUẨN của catalog (ma_sp) khi tìm thấy — tránh trường hợp lệnh SX tham
-      // chiếu SP bằng ma_amis/ma_sp_moi khác chuỗi ma_sp tạo ra một dòng trùng lặp.
-      const canonicalKey = catalog ? catalog.code : trimmedCode;
-      if (byCode.has(canonicalKey)) return;
-      byCode.set(canonicalKey, catalog
+      // ID là identity. Không gộp các dòng chỉ vì trùng ma_sp/ma_amis.
+      const identityKey = productId || catalog?.id || (catalog ? catalog.code : trimmedCode);
+      if (byIdentity.has(identityKey)) return;
+      byIdentity.set(identityKey, catalog
         ? {
             ...catalog,
             name: name.trim() || catalog.name,
@@ -968,7 +986,7 @@ export default function MixingNormMaterialsTab() {
       for (const product of [...form.products, ...form.secondaryProducts]) {
         for (const code of product.maSpCodes) {
           const codeKey = normalizeProductLookupKey(code);
-          const alreadyKept = [...byCode.values()].some(option =>
+          const alreadyKept = [...byIdentity.values()].some(option =>
             productOptionLookupKeys(option).includes(codeKey)
           );
           if (alreadyKept) continue;
@@ -988,7 +1006,7 @@ export default function MixingNormMaterialsTab() {
           );
         }
       }
-      return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+      return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenSanXuat || b.name}`, 'vi'));
     }
 
     // Chưa chọn lệnh SX → nạp toàn bộ catalog + SP của mọi lệnh SX.
@@ -1001,7 +1019,7 @@ export default function MixingNormMaterialsTab() {
       }
     }
 
-    return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+    return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenSanXuat || b.name}`, 'vi'));
   }, [catalogProducts, productionOrders, selectedOrder, form.products, form.secondaryProducts]);
 
   const productLabel = (option: ProductOption) =>
@@ -1023,10 +1041,13 @@ export default function MixingNormMaterialsTab() {
     return map;
   }, [productOptions]);
 
+  const productIdentityKeys = (product: Pick<ProductForm, 'maSpCodes' | 'maSpIds'>) =>
+    product.maSpCodes.map((code, index) => product.maSpIds[index] || normalizeProductLookupKey(code));
+
   const selectedLookupKeysByProduct = useMemo(() => {
     const map = new Map<string, Set<string>>();
     for (const product of form.products) {
-      map.set(product.key, expandProductCodeLookupKeys(product.maSpCodes, productOptionsByCode));
+      map.set(product.key, new Set(productIdentityKeys(product)));
     }
     return map;
   }, [form.products, productOptionsByCode]);
@@ -1034,14 +1055,18 @@ export default function MixingNormMaterialsTab() {
   const selectedLookupKeysBySecondaryProduct = useMemo(() => {
     const map = new Map<string, Set<string>>();
     for (const product of form.secondaryProducts) {
-      map.set(product.key, expandProductCodeLookupKeys(product.maSpCodes, productOptionsByCode));
+      map.set(product.key, new Set(product.maSpCodes.map((code, index) =>
+        product.maSpIds[index] || normalizeProductLookupKey(code)
+      )));
     }
     return map;
   }, [form.secondaryProducts, productOptionsByCode]);
 
   /** Trả về ProductOption cho từng mã đã chọn — dùng luôn để hiển thị chip trong multi-select. */
-  const resolveProductOptionsForCodes = (codes: string[]): ProductOption[] =>
-    codes.map(code => {
+  const resolveProductOptionsForCodes = (codes: string[], ids: string[] = []): ProductOption[] =>
+    codes.map((code, index) => {
+      const byId = ids[index] ? productOptions.find(option => option.id === ids[index]) : undefined;
+      if (byId) return byId;
       const orderLine = selectedOrder?.productLines.find(
         item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
       );
@@ -1341,9 +1366,14 @@ export default function MixingNormMaterialsTab() {
     }));
   };
 
-  const buildSingleProductFromCode = (code: string): ProductForm => {
-    const catalog = findCatalogProductByAnyCode(catalogProducts, code);
-    const orderLine = selectedOrder?.productLines.find(item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code));
+  const buildSingleProductFromCode = (code: string, productId = ''): ProductForm => {
+    const catalog = productId
+      ? catalogProducts.find(item => item.id === productId) || findCatalogProductByAnyCode(catalogProducts, code)
+      : findCatalogProductByAnyCode(catalogProducts, code);
+    const orderLine = selectedOrder?.productLines.find(item =>
+      (productId && item.productId === productId) ||
+      normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
+    );
     const rawKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
     // Không quy đổi được ra kg → mặc định 0 (null làm sai công thức); vẫn cho nhập tay để chỉnh.
     const sourceKg = rawKg ?? 0;
@@ -1351,6 +1381,7 @@ export default function MixingNormMaterialsTab() {
     return {
       ...emptyProduct(),
       maSpCodes: [code],
+      maSpIds: productId ? [productId] : [],
       maSp: code,
       tenSp: '',
       soLuongGoc: String(roundMixing(sourceKg)),
@@ -1365,20 +1396,27 @@ export default function MixingNormMaterialsTab() {
    * Ô "Mã sản phẩm" cho phép chọn nhiều SP dùng chung 1 công thức trộn.
    * NVL chính không tự fill từ danh mục SP — người dùng tự thêm từng dòng.
    */
-  const buildMergedProductFromCodes = (codes: string[]): ProductForm => {
+  const buildMergedProductFromCodes = (codes: string[], productIds: string[] = []): ProductForm => {
     if (codes.length === 0) return emptyProduct();
-    if (codes.length === 1) return buildSingleProductFromCode(codes[0]);
+    if (codes.length === 1) return buildSingleProductFromCode(codes[0], productIds[0] || '');
 
-    const entries = codes.map(code => ({ code, catalog: findCatalogProductByAnyCode(catalogProducts, code) }));
+    const entries = codes.map((code, index) => ({
+      code,
+      productId: productIds[index] || '',
+      catalog: productIds[index]
+        ? catalogProducts.find(item => item.id === productIds[index]) || findCatalogProductByAnyCode(catalogProducts, code)
+        : findCatalogProductByAnyCode(catalogProducts, code)
+    }));
 
     // Cộng SL quy đổi trước hao hụt của TỪNG SP trong lệnh SX;
     // Tổng SL sau hao hụt = Σ (kg_i × (1 + tỷ lệ hao hụt_i / 100)) — mỗi SP một tỷ lệ riêng.
     let sumKg = 0;
     let sumAfterWaste = 0;
     let allConverted = true;
-    for (const { code, catalog } of entries) {
+    for (const { code, productId, catalog } of entries) {
       const orderLine = selectedOrder?.productLines.find(
-        item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
+        item => (productId && item.productId === productId) ||
+          normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
       );
       const rawKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
       if (rawKg === null) allConverted = false;
@@ -1395,6 +1433,7 @@ export default function MixingNormMaterialsTab() {
     return {
       ...emptyProduct(),
       maSpCodes: codes,
+      maSpIds: productIds,
       maSp: codes.join(', '),
       tenSp: '',
       soLuongGoc: String(roundMixing(sumKg)),
@@ -1408,22 +1447,25 @@ export default function MixingNormMaterialsTab() {
   /** Chọn nhiều mã SP trong ô "Mã sản phẩm" của 1 dòng SP — dùng chung 1 công thức trộn. */
   const updateProductCodes = (productKey: string, selected: ProductOption[]) => {
     const codes = selected.map(option => option.code.trim()).filter(Boolean);
+    const ids = selected.map(option => option.id?.trim() || '');
     setForm(prev => ({
       ...prev,
       products: prev.products.map(product => {
         if (product.key !== productKey) return product;
         const unchanged =
           codes.length === product.maSpCodes.length &&
-          codes.every((code, index) => code === product.maSpCodes[index]);
+          codes.every((code, index) => code === product.maSpCodes[index]) &&
+          ids.every((id, index) => id === (product.maSpIds[index] || ''));
         if (unchanged) return product;
 
-        const rebuilt = buildMergedProductFromCodes(codes);
+        const rebuilt = buildMergedProductFromCodes(codes, ids);
         const currentHasNvl = product.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
         const keepLines = product.nvlFilled || currentHasNvl;
         const nextLines = keepLines ? product.lines : [emptyLine()];
         return {
           ...rebuilt,
           key: product.key,
+          maSpIds: ids,
           tenSp: product.tenSp,
           lines: nextLines,
           nvlFilled: nextLines.some(line => line.maNvl.trim() || line.tenNvl.trim())
@@ -1459,17 +1501,20 @@ export default function MixingNormMaterialsTab() {
 
   const updateSecondaryProductCodes = (productKey: string, selected: ProductOption[]) => {
     const codes = selected.map(option => option.code.trim()).filter(Boolean);
+    const ids = selected.map(option => option.id?.trim() || '');
     setForm(prev => ({
       ...prev,
       secondaryProducts: prev.secondaryProducts.map(product => {
         if (product.key !== productKey) return product;
         const unchanged =
           codes.length === product.maSpCodes.length &&
-          codes.every((code, index) => code === product.maSpCodes[index]);
+          codes.every((code, index) => code === product.maSpCodes[index]) &&
+          ids.every((id, index) => id === (product.maSpIds[index] || ''));
         if (unchanged) return product;
         return {
           ...product,
           maSpCodes: codes,
+          maSpIds: ids,
           maSp: codes.join(', ')
         };
       })
@@ -1646,8 +1691,8 @@ export default function MixingNormMaterialsTab() {
 
     const seenCodes = new Set<string>();
     const duplicateProduct = products.find(product =>
-      product.maSpCodes.some(code => {
-        const key = normalizeProductLookupKey(code);
+      product.maSpCodes.some((code, index) => {
+        const key = product.maSpIds[index] || normalizeProductLookupKey(code);
         if (seenCodes.has(key)) return true;
         seenCodes.add(key);
         return false;
@@ -1709,8 +1754,8 @@ export default function MixingNormMaterialsTab() {
 
     const seenSecondaryCodes = new Set<string>();
     for (const product of form.secondaryProducts) {
-      const duplicateCode = product.maSpCodes.find(code => {
-        const key = normalizeProductLookupKey(code);
+      const duplicateCode = product.maSpCodes.find((code, index) => {
+        const key = product.maSpIds[index] || normalizeProductLookupKey(code);
         if (!key) return false;
         if (seenSecondaryCodes.has(key)) return true;
         seenSecondaryCodes.add(key);
@@ -1807,6 +1852,11 @@ export default function MixingNormMaterialsTab() {
         return {
           loai: undefined as string | undefined,
           ma_sp: product.maSp.trim(),
+          ...(product.maSpIds.length === 1
+            ? { san_pham_id: product.maSpIds[0] }
+            : product.maSpIds.length > 1
+              ? { san_pham_ids: product.maSpIds }
+              : {}),
           ten_sp: product.tenSp.trim(),
           tong_trong_luong: tong,
           ty_le_hao_hut: parseNumberOrNull(product.haoHut),
@@ -1840,6 +1890,11 @@ export default function MixingNormMaterialsTab() {
         payloadProducts.push({
           loai: 'nvl_phu',
           ma_sp: codes.join(', '),
+          ...(item.maSpIds.length === 1
+            ? { san_pham_id: item.maSpIds[0] }
+            : item.maSpIds.length > 1
+              ? { san_pham_ids: item.maSpIds }
+              : {}),
           ten_sp: '',
           tong_trong_luong: null,
           ty_le_hao_hut: null,
@@ -2249,14 +2304,12 @@ export default function MixingNormMaterialsTab() {
                     keys.forEach(item => takenByOthers.add(item));
                   });
                   const takenHere = selectedLookupKeysByProduct.get(product.key) ?? new Set<string>();
-                  const selectedCodes = new Set(
-                    product.maSpCodes.map(code => normalizeProductLookupKey(code)).filter(Boolean)
-                  );
+                  const selectedCodes = new Set(productIdentityKeys(product));
                   const pickerOptions = productOptions.filter(option => {
-                    const keys = productOptionLookupKeys(option);
-                    if (keys.some(item => takenByOthers.has(item))) return false;
-                    const selectedOnThisRow = selectedCodes.has(normalizeProductLookupKey(option.code));
-                    if (!selectedOnThisRow && keys.some(item => takenHere.has(item))) return false;
+                    const identity = option.id || normalizeProductLookupKey(option.code);
+                    if (takenByOthers.has(identity)) return false;
+                    const selectedOnThisRow = selectedCodes.has(identity);
+                    if (!selectedOnThisRow && takenHere.has(identity)) return false;
                     return true;
                   });
                   return (
@@ -2291,10 +2344,10 @@ export default function MixingNormMaterialsTab() {
                             Mã sản phẩm (có thể chọn nhiều SP dùng chung 1 công thức trộn)
                           </span>
                           <SearchableMultiSelect<ProductOption>
-                            values={resolveProductOptionsForCodes(product.maSpCodes)}
+                            values={resolveProductOptionsForCodes(product.maSpCodes, product.maSpIds)}
                             onChange={selected => updateProductCodes(product.key, selected)}
                             options={pickerOptions}
-                            getValue={option => option.code}
+                            getValue={option => option.id || option.code}
                             getLabel={productLabel}
                             getSearchText={productSearchText}
                             allowCustomValues={false}
@@ -2325,8 +2378,8 @@ export default function MixingNormMaterialsTab() {
                                 Hao hụt theo sản phẩm
                               </span>
                               {wasteRows.length > 0 ? (
-                                wasteRows.map(row => (
-                                  <p key={row.code} className="flex flex-wrap items-center gap-1">
+                                wasteRows.map((row, rowIndex) => (
+                                  <p key={`${row.code}-${rowIndex}`} className="flex flex-wrap items-center gap-1">
                                     <span>{row.tenSanXuat}:</span>
                                     <strong className="text-rose-600">{row.waste}%</strong>
                                     {row.kg !== null ? (
@@ -2528,14 +2581,14 @@ export default function MixingNormMaterialsTab() {
                         keys.forEach(item => takenByOthers.add(item));
                       });
                       const takenHere = selectedLookupKeysBySecondaryProduct.get(product.key) ?? new Set<string>();
-                      const selectedCodes = new Set(
-                        product.maSpCodes.map(code => normalizeProductLookupKey(code)).filter(Boolean)
-                      );
+                      const selectedCodes = new Set(product.maSpCodes.map((code, index) =>
+                        product.maSpIds[index] || normalizeProductLookupKey(code)
+                      ));
                       const pickerOptions = productOptions.filter(option => {
-                        const keys = productOptionLookupKeys(option);
-                        if (keys.some(item => takenByOthers.has(item))) return false;
-                        const selectedOnThisRow = selectedCodes.has(normalizeProductLookupKey(option.code));
-                        if (!selectedOnThisRow && keys.some(item => takenHere.has(item))) return false;
+                        const identity = option.id || normalizeProductLookupKey(option.code);
+                        if (takenByOthers.has(identity)) return false;
+                        const selectedOnThisRow = selectedCodes.has(identity);
+                        if (!selectedOnThisRow && takenHere.has(identity)) return false;
                         return true;
                       });
                       return (
@@ -2559,10 +2612,10 @@ export default function MixingNormMaterialsTab() {
                               Mã sản phẩm (có thể chọn nhiều SP dùng chung NVL phụ)
                             </span>
                             <SearchableMultiSelect<ProductOption>
-                              values={resolveProductOptionsForCodes(product.maSpCodes)}
+                              values={resolveProductOptionsForCodes(product.maSpCodes, product.maSpIds)}
                               onChange={selected => updateSecondaryProductCodes(product.key, selected)}
                               options={pickerOptions}
-                              getValue={option => option.code}
+                              getValue={option => option.id || option.code}
                               getLabel={productLabel}
                               getSearchText={productSearchText}
                               allowCustomValues={false}

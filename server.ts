@@ -3173,13 +3173,21 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       if (!item || typeof item !== 'object') continue;
       const product = item as Record<string, unknown>;
       const ma_sp = String(product.ma_sp ?? product.maSp ?? '').trim();
+      const sanPhamIds = Array.isArray(product.san_pham_ids)
+        ? product.san_pham_ids.map(value => String(value).trim()).filter(Boolean)
+        : String(product.san_pham_id ?? '').trim()
+          ? [String(product.san_pham_id).trim()]
+          : [];
       const ten_sp = String(product.ten_sp ?? product.tenSp ?? '').trim();
       const isSecondary = String(product.loai ?? '').trim() === 'nvl_phu';
       if (!ma_sp) return { error: `Sản phẩm #${index + 1} thiếu mã SP.` };
       const codes = ma_sp.split(',').map(code => code.trim()).filter(Boolean);
       const seenCodes = isSecondary ? seenSecondaryCodes : seenFormulaCodes;
-      for (const code of codes) {
-        const productKey = code.toLocaleLowerCase('vi').replace(/\s+/g, '');
+      for (const [codeIndex, code] of codes.entries()) {
+        // ma_sp/ma_amis are not stable identity. Keep legacy code-only
+        // validation, but distinguish catalog rows when san_pham_id exists.
+        const productKey = sanPhamIds[codeIndex] ||
+          code.toLocaleLowerCase('vi').replace(/\s+/g, '');
         if (seenCodes.has(productKey)) {
           return {
             error: isSecondary
@@ -3269,6 +3277,11 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       products.push({
         ...(isSecondary ? { loai: 'nvl_phu' } : {}),
         ma_sp,
+        ...(sanPhamIds.length === 1
+          ? { san_pham_id: sanPhamIds[0] }
+          : sanPhamIds.length > 1
+            ? { san_pham_ids: sanPhamIds }
+            : {}),
         ten_sp: ten_sp || null,
         tong_trong_luong,
         ty_le_hao_hut,
