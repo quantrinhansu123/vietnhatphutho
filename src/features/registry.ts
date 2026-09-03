@@ -180,9 +180,9 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     label: 'Tồn kho tối thiểu - Tồn kho tối đa',
     sql: ['supabase-ton-kho-toi-thieu-toi-da.sql'],
     apiPrefix: '/api/ton-kho-toi-thieu-toi-da',
-    serverLines: '5720–5830',
-    appTab: 'inventory-limits',
-    appLines: 'src/features/ton-kho-toi-thieu-toi-da/index.tsx',
+    serverLines: '5720–5830; GET /api/canh-bao-ton-kho: 6769–6833',
+    appTab: 'inventory-limits | canh-bao-ton-kho',
+    appLines: 'src/features/ton-kho-toi-thieu-toi-da/index.tsx, src/features/canh-bao-ton-kho/index.tsx',
     components: [],
     utils: []
   },
