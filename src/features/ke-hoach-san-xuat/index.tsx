@@ -4797,6 +4797,17 @@ export function autofillProductKey(orderRef: string, productCode: string, produc
   return `${orderRef}::${productId.trim() || `code:${productCode}`}`;
 }
 
+function getOrderCreatedAtTimestamp(value: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) return numeric;
+
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function splitProductionOrderRefs(orderRef: string): string[] {
   return String(orderRef || '')
     .split(/[,;+]/)
@@ -5148,11 +5159,18 @@ export function AddProductionOrderModal({
           return (
             Boolean(productCode) &&
             productCode !== '-' &&
-            getOrderProductQuantity(orders, order.orderCode, productCode, line.productId) > 0
+            getOrderProductQuantity(orders, order.orderCode, productCode, line.productId) > 0 &&
+            getRemainingProductionQuantity(
+              orders,
+              productionOrders,
+              order.orderCode,
+              productCode,
+              line.productId
+            ) > 0
           );
         })
       ),
-    [ordersForSelectedDate, orders]
+    [ordersForSelectedDate, orders, productionOrders]
   );
 
   const orderCodeOptions = useMemo(() => {
@@ -5216,13 +5234,17 @@ export function AddProductionOrderModal({
           .toLowerCase()
           .includes(normalized);
       })
-      .sort((a, b) => a.orderCode.localeCompare(b.orderCode, 'vi'));
+      .sort((a, b) => {
+        const createdAtDiff =
+          getOrderCreatedAtTimestamp(b.createdAt) - getOrderCreatedAtTimestamp(a.createdAt);
+        return createdAtDiff || a.orderCode.localeCompare(b.orderCode, 'vi');
+      });
   }, [autofillSearch, ordersWithProductionProducts]);
 
   const autofillProductCandidates = useMemo(() => {
     return selectedAutofillOrderCodes.flatMap(orderRef =>
       listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
-        .filter(product => product.orderQty > 0)
+        .filter(product => product.orderQty > 0 && product.remainingQty > 0)
         .map(product => ({
           key: autofillProductKey(orderRef, product.code, product.productId),
           orderRef,
@@ -6055,7 +6077,7 @@ export function AddProductionOrderModal({
                                     Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''} · SL Tồn 0
                                   </span>
                                 </div>
-                                <p className="mt-0.5 text-xs font-semibold text-zinc-600">{product.productName || '-'}</p>
+                                <p className="mt-0.5 text-xs font-semibold text-zinc-600">{product.productionName || product.productName || '-'}</p>
                               </div>
                             </label>
                           );
