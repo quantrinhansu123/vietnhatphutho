@@ -86,7 +86,7 @@ export function ProductConversionsPanel({ onBack }: { onBack: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const excelFileRef = useRef<HTMLInputElement>(null);
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedKey(key.trim()), 300); return () => window.clearTimeout(timer); }, [key]);
-  const loadAll = async (searchKey = debouncedKey) => { const all: ProductConversion[] = []; for (let current = 1; ; current += 1) { const res = await fetch(`/api/bang-quy-doi-san-pham?key=${encodeURIComponent(searchKey)}&page=${current}&pageSize=200`); const data = await res.json(); if (!res.ok) throw new Error(data.error); all.push(...(data.items || [])); if (all.length >= Number(data.total || 0)) return all; } };
+  const loadAll = async (searchKey = debouncedKey) => { const all: ProductConversion[] = []; for (let current = 1; ; current += 1) { const res = await fetch(`/api/bang-quy-doi-san-pham?key=${encodeURIComponent(searchKey)}&page=${current}&pageSize=1000`); const data = await res.json(); if (!res.ok) throw new Error(data.error); all.push(...(data.items || [])); if (all.length >= Number(data.total || 0)) return all; } };
   const load = async () => { setLoading(true); setError(''); try { const items = await loadAll(''); setRows(items); setTotal(items.length); } catch { const errorMessage = 'Không thể tải bảng quy đổi. Vui lòng kiểm tra kết nối và thử lại.'; setError(errorMessage); showAppToast(errorMessage, 'error'); setRows([]); setTotal(0); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []);
   useEffect(() => { fetch('/api/san-pham?format=table').then(res => res.json()).then(data => setProducts(normalizeProducts(data))).catch(() => setProducts([])); }, []);

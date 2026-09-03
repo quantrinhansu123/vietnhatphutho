@@ -40,7 +40,7 @@ Danh sách chỉ hiển thị `Thành phẩm`; mỗi sản phẩm là nhóm dòn
 - Nút **Tải mẫu Excel** / **Tải Excel lên** (và **Tải mẫu Excel SP**) — `src/utils/productCatalogExcel.ts`
 - Cột khớp bảng UI trước: Mã SP, Tên, Tính chất, Nhóm, Đơn vị, Tổng TL, Tồn đầu, Nhập, Xuất, Tồn, Tồn TT + thêm định mức (AMIS, khổ cuộn, TL lõi/túi/nhựa…)
 - **Ô trống vẫn đẩy lên** (chỉ bắt buộc có Mã SP hoặc Tên)
-- Upsert theo `ma_sp` — **trùng mã AMIS vẫn thêm/cập nhật, không chặn**
+- Upsert theo `ma_sp` — API chặn trùng bộ `ma_amis + ten_sp + ten_san_xuat` bằng truy vấn tồn tại trực tiếp trong DB
 - Nếu DB còn unique `ma_amis`: chạy `supabase-san-pham-ma-amis-khong-unique.sql`
 - File mẫu cũ kiểu Tên NVL/Loại/Giá trị → báo lỗi hướng dẫn dùng mẫu danh mục
 - Định mức NVL riêng: **Mẫu định mức NVL** / **Nhập định mức NVL**

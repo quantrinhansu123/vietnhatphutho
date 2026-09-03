@@ -2126,7 +2126,9 @@ function parseProductPatchBody(
   options: { requireIdentity?: boolean } = {}
 ): { error: string } | { record: Record<string, string | number | null> } {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
-  const code = parseMaterialText(source.code ?? source.ma_sp);
+  const hasAmisCode = Object.prototype.hasOwnProperty.call(source, 'amisCode') || Object.prototype.hasOwnProperty.call(source, 'ma_amis');
+  const amisCode = parseMaterialText(source.amisCode ?? source.ma_amis);
+  const code = hasAmisCode ? amisCode : parseMaterialText(source.code ?? source.ma_sp);
   const name = parseMaterialText(source.name ?? source.ten_sp);
   const productionName = parseMaterialText(source.productionName ?? source.tenSanXuat ?? source.ten_san_xuat);
   const hasProductField = [
@@ -2148,7 +2150,7 @@ function parseProductPatchBody(
   }
 
   const record: Record<string, string | number | null> = {};
-  if (code) record.ma_sp = code;
+  if (code || hasAmisCode) record.ma_sp = code || null;
   if (name) record.ten_sp = name;
   if (Object.prototype.hasOwnProperty.call(source, 'productionName') || Object.prototype.hasOwnProperty.call(source, 'tenSanXuat') || Object.prototype.hasOwnProperty.call(source, 'ten_san_xuat')) {
     record.ten_san_xuat = productionName || null;
@@ -2212,8 +2214,8 @@ function parseProductPatchBody(
   if (Object.prototype.hasOwnProperty.call(source, 'description') || Object.prototype.hasOwnProperty.call(source, 'mo_ta')) {
     record.mo_ta = parseMaterialText(source.description ?? source.mo_ta) || null;
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'amisCode') || Object.prototype.hasOwnProperty.call(source, 'ma_amis')) {
-    record.ma_amis = parseMaterialText(source.amisCode ?? source.ma_amis) || null;
+  if (hasAmisCode) {
+    record.ma_amis = amisCode || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'totalWeight') || Object.prototype.hasOwnProperty.call(source, 'tong_trong_luong')) {
     record.tong_trong_luong = parseOptionalMaterialDecimalText(source.totalWeight ?? source.tong_trong_luong);
@@ -2258,6 +2260,36 @@ function productUniqueViolationColumn(error: { code?: string; message?: string; 
   if (text.includes('ma_amis')) return 'ma_amis';
   if (text.includes('ma_sp')) return 'ma_sp';
   return 'unknown';
+}
+
+async function findDuplicateProductIdentity(record: Record<string, unknown>, excludeId?: string) {
+  const amisCode = String(record.ma_amis ?? '').trim();
+  const name = String(record.ten_sp ?? '').trim();
+  const productionName = String(record.ten_san_xuat ?? '').trim();
+  if (!amisCode || !name || !productionName) return {};
+
+  // Truy vấn tồn tại với cả 3 điều kiện đồng thời:
+  // WHERE EXISTS (
+  //   SELECT 1 FROM san_pham
+  //   WHERE ma_amis = <amisCode>
+  //     AND ten_sp = <name>
+  //     AND ten_san_xuat = <productionName>
+  // )
+  let query = supabase!
+    .from(SUPABASE_PRODUCTS_TABLE)
+    .select('id')
+    .eq('ma_amis', amisCode)
+    .eq('ten_sp', name)
+    .eq('ten_san_xuat', productionName)
+    .limit(1);
+  if (excludeId) query = query.neq('id', excludeId);
+
+  const { data, error } = await query;
+  if (error) return { error: productWriteErrorMessage(error) };
+  if (data && data.length > 0) {
+    return { duplicate: 'Trùng bộ Mã AMIS, Tên sản phẩm và Tên sản xuất. Vui lòng nhập giá trị khác.' };
+  }
+  return {};
 }
 
 function productWriteErrorMessage(error: { code?: string; message?: string; details?: string }) {
@@ -6592,6 +6624,10 @@ export function createApp() {
         insertRecord.npl_phan_tram = enrichedNpl.items;
       }
 
+      const duplicateIdentity = await findDuplicateProductIdentity(insertRecord);
+      if (duplicateIdentity.error) return res.status(500).json({ error: duplicateIdentity.error });
+      if (duplicateIdentity.duplicate) return res.status(409).json({ error: duplicateIdentity.duplicate });
+
       const { data, error } = await supabase
         .from(SUPABASE_PRODUCTS_TABLE)
         .insert(insertRecord)
@@ -6738,6 +6774,13 @@ export function createApp() {
       const currentResult = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('*').eq('id', id).maybeSingle();
       if (currentResult.error) return res.status(500).json({ error: currentResult.error.message });
       if (!currentResult.data) return res.status(404).json({ error: 'Không tìm thấy sản phẩm cần cập nhật.' });
+      const duplicateIdentity = await findDuplicateProductIdentity(
+        { ...currentResult.data, ...updateRecord },
+        id
+      );
+      if (duplicateIdentity.error) return res.status(500).json({ error: duplicateIdentity.error });
+      if (duplicateIdentity.duplicate) return res.status(409).json({ error: duplicateIdentity.duplicate });
+
       const mutation = Object.keys(updateRecord).length
         ? supabase.from(SUPABASE_PRODUCTS_TABLE).update(updateRecord).eq('id', id).select('*').single()
         : Promise.resolve({ data: currentResult.data, error: null });
