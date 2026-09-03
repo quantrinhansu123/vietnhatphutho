@@ -4808,6 +4808,20 @@ function getOrderCreatedAtTimestamp(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function compareOrderCodesNewestFirst(left: string, right: string) {
+  const numberFromCode = (value: string) => {
+    const match = String(value || '').match(/(\d+)\s*$/);
+    return match ? Number(match[1]) : null;
+  };
+  const leftNumber = numberFromCode(left);
+  const rightNumber = numberFromCode(right);
+
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+    return rightNumber - leftNumber;
+  }
+  return right.localeCompare(left, 'vi');
+}
+
 export function splitProductionOrderRefs(orderRef: string): string[] {
   return String(orderRef || '')
     .split(/[,;+]/)
@@ -5237,7 +5251,7 @@ export function AddProductionOrderModal({
       .sort((a, b) => {
         const createdAtDiff =
           getOrderCreatedAtTimestamp(b.createdAt) - getOrderCreatedAtTimestamp(a.createdAt);
-        return createdAtDiff || a.orderCode.localeCompare(b.orderCode, 'vi');
+        return createdAtDiff || compareOrderCodesNewestFirst(a.orderCode, b.orderCode);
       });
   }, [autofillSearch, ordersWithProductionProducts]);
 
