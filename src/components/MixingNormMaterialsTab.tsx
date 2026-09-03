@@ -348,7 +348,9 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       tenSanXuat: String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(),
       totalWeight: parseNumberOrNull(row.tong_trong_luong ?? row.totalWeight),
       wastePercent: parseNumberOrNull(row.ty_le_hao_hut ?? row.wastePercent) ?? 0,
-      nplItems: parseMixingProductBom(row.npl_phan_tram ?? row.nplPhanTram)
+      // This screen does not autofill BOMs. Avoid parsing a potentially large
+      // JSON payload for every catalog row just to render the picker.
+      nplItems: []
     });
   }
   return [...byIdentity.values()].sort((a, b) =>
@@ -455,6 +457,11 @@ function findCatalogProductForProductionLine(
   products: ProductOption[],
   line: Pick<MixingProductionOrder['productLines'][number], 'productId' | 'productCode' | 'productName' | 'productionName'>
 ) {
+  const productId = line.productId?.trim();
+  if (productId) {
+    const byId = products.find(product => product.id === productId);
+    if (byId) return byId;
+  }
   const codeKey = normalizeProductLookupKey(line.productCode);
   const matches = products.filter(product =>
     [product.code, product.amisCode ?? '', product.newCode ?? '']
@@ -470,13 +477,9 @@ function findCatalogProductForProductionLine(
     ? matches.find(product => product.name.trim().toLocaleLowerCase('vi') === productName)
     : undefined;
   const byStoredNames = byProductionName || byProductName;
-  const byId = line.productId?.trim()
-    ? products.find(product => product.id === line.productId?.trim())
-    : undefined;
   // The id is the stable identity when several catalog rows share an
   // AMIS/new code. Resolve it first so the picker and waste breakdown use
   // the same product row.
-  if (byId && matches.includes(byId)) return byId;
   if (byStoredNames) return byStoredNames;
   return products.find(product => normalizeProductLookupKey(product.code) === codeKey)
     || products.find(product => normalizeProductLookupKey(product.newCode || '') === codeKey)
@@ -907,6 +910,10 @@ export default function MixingNormMaterialsTab() {
     () => materials.filter(item => item.phanLoai === 'Nguyên vật liệu phụ'),
     [materials]
   );
+  const catalogProductsById = useMemo(
+    () => new Map(catalogProducts.map(product => [product.id, product])),
+    [catalogProducts]
+  );
 
   const findMaterialForLine = (line: LineForm) => {
     const byId = line.materialId ? materials.find(item => item.id === line.materialId) : undefined;
@@ -954,12 +961,14 @@ export default function MixingNormMaterialsTab() {
     const add = (code: string, name: string, productId = '', productionName = '') => {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
-      const catalog = findCatalogProductForProductionLine(catalogProducts, {
-        productId,
-        productCode: trimmedCode,
-        productName: name,
-        productionName
-      });
+      const catalog = productId
+        ? catalogProductsById.get(productId) || findCatalogProductForProductionLine(catalogProducts, {
+            productId,
+            productCode: trimmedCode,
+            productName: name,
+            productionName
+          })
+        : findCatalogProductByAnyCode(catalogProducts, trimmedCode);
       // ID là identity. Không gộp các dòng chỉ vì trùng ma_sp/ma_amis.
       const identityKey = productId || catalog?.id || '';
       if (!identityKey) return;
@@ -983,28 +992,19 @@ export default function MixingNormMaterialsTab() {
       for (const line of selectedOrder.productLines) {
         add(line.productCode, line.productName, line.productId, line.productionName);
       }
-      // Giữ lại mã SP đã chọn sẵn trong phiếu (khi sửa) kể cả khi mã đó không còn nằm trong lệnh SX.
-      // Khớp theo đúng dòng lệnh SX / ma_sp — không lấy thêm SP khác cùng mã AMIS.
+      // Giữ lại sản phẩm đã chọn sẵn trong phiếu khi sửa, chỉ theo ID.
       for (const product of [...form.products, ...form.secondaryProducts]) {
-        for (const code of product.maSpCodes) {
-          const codeKey = normalizeProductLookupKey(code);
-          const alreadyKept = product.maSpIds.some(id => id && [...byIdentity.values()].some(option => option.id === id));
-          if (alreadyKept) continue;
-          const orderLine = selectedOrder.productLines.find(
-            item =>
-              normalizeProductLookupKey(item.productCode) === codeKey ||
-              (item.productId && catalogProducts.some(
-                catalog => catalog.id === item.productId && productOptionLookupKeys(catalog).includes(codeKey)
-              ))
-          );
-          const exact = catalogProducts.find(item => normalizeProductLookupKey(item.code) === codeKey);
+        product.maSpIds.forEach((productId, index) => {
+          if (!productId || byIdentity.has(productId)) return;
+          const code = product.maSpCodes[index] || '';
+          const catalog = catalogProductsById.get(productId);
           add(
-            code,
-            orderLine?.productName || exact?.name || findCatalogProductByAnyCode(catalogProducts, code)?.name || code,
-            orderLine?.productId || exact?.id || '',
-            orderLine?.productionName || exact?.tenSanXuat || ''
+            catalog?.code || code,
+            catalog?.name || code,
+            productId,
+            catalog?.tenSanXuat || ''
           );
-        }
+        });
       }
       return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenSanXuat || b.name}`, 'vi'));
     }
@@ -1020,7 +1020,7 @@ export default function MixingNormMaterialsTab() {
     }
 
     return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenSanXuat || b.name}`, 'vi'));
-  }, [catalogProducts, productionOrders, selectedOrder, form.products, form.secondaryProducts]);
+  }, [catalogProducts, catalogProductsById, productionOrders, selectedOrder, form.products, form.secondaryProducts]);
 
   const productLabel = (option: ProductOption) =>
     `${option.amisCode || option.code} — ${option.tenSanXuat || option.name}`;
@@ -1040,6 +1040,10 @@ export default function MixingNormMaterialsTab() {
     });
     return map;
   }, [productOptions]);
+  const productOptionsById = useMemo(
+    () => new Map(productOptions.map(option => [option.id, option])),
+    [productOptions]
+  );
 
   const productIdentityKeys = (product: Pick<ProductForm, 'maSpCodes' | 'maSpIds'>) =>
     product.maSpIds.filter(Boolean);
@@ -1063,7 +1067,7 @@ export default function MixingNormMaterialsTab() {
   /** Trả về ProductOption cho từng mã đã chọn — dùng luôn để hiển thị chip trong multi-select. */
   const resolveProductOptionsForCodes = (codes: string[], ids: string[] = []): ProductOption[] =>
     codes.map((code, index) => {
-      const byId = ids[index] ? productOptions.find(option => option.id === ids[index]) : undefined;
+      const byId = ids[index] ? productOptionsById.get(ids[index]) : undefined;
       if (byId) return byId;
       const orderLine = selectedOrder?.productLines.find(
         item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
@@ -1071,10 +1075,10 @@ export default function MixingNormMaterialsTab() {
       const orderCatalog = orderLine
         ? findCatalogProductForProductionLine(catalogProducts, orderLine)
         : findCatalogProductByAnyCode(catalogProducts, code);
-      const fromOrder = productOptions.find(option =>
-        (orderCatalog?.id && option.id === orderCatalog.id) ||
+      const fromOrder = (orderCatalog?.id ? productOptionsById.get(orderCatalog.id) : undefined) ||
+        productOptions.find(option =>
         normalizeProductLookupKey(option.code) === normalizeProductLookupKey(orderCatalog?.code || '')
-      );
+        );
       if (fromOrder) return fromOrder;
       const fromOptions = productOptionsByCode.get(normalizeProductLookupKey(code));
       if (fromOptions) return fromOptions;
@@ -1285,18 +1289,20 @@ export default function MixingNormMaterialsTab() {
    * Hao hụt + SL quy đổi trước hao hụt của TỪNG mã SP đã chọn (lấy theo lệnh SX + danh mục SP).
    * Dùng để hiển thị mỗi SP 1 dòng và để tính lại "Tổng SL sau hao hụt".
    */
-  const resolveWasteBreakdown = (codes: string[]) =>
+  const resolveWasteBreakdown = (codes: string[], ids: string[] = []) =>
     codes
       .map(code => code.trim())
       .filter(Boolean)
-      .map(code => {
-        const catalog = findCatalogProductByAnyCode(catalogProducts, code);
-        const selectedOption = productOptions.find(option =>
-          [option.code, option.amisCode ?? '', option.newCode ?? '']
-            .some(optionCode => normalizeProductLookupKey(optionCode) === normalizeProductLookupKey(code))
-        );
+      .map((code, index) => {
+        const catalog = ids[index]
+          ? catalogProductsById.get(ids[index])
+          : findCatalogProductByAnyCode(catalogProducts, code);
+        const selectedOption = ids[index]
+          ? productOptionsById.get(ids[index])
+          : productOptionsByCode.get(normalizeProductLookupKey(code));
         const orderLine = selectedOrder?.productLines.find(
-          item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
+          item => (ids[index] && item.productId === ids[index]) ||
+            normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
         );
         // Không quy đổi được ra kg → coi như 0 (null làm sai công thức tổng).
         const kg = (orderLine ? resolveOrderLineKg(orderLine, catalog) : null) ?? 0;
@@ -1366,7 +1372,7 @@ export default function MixingNormMaterialsTab() {
 
   const buildSingleProductFromCode = (code: string, productId = ''): ProductForm => {
     const catalog = productId
-      ? catalogProducts.find(item => item.id === productId) || findCatalogProductByAnyCode(catalogProducts, code)
+      ? catalogProductsById.get(productId) || findCatalogProductByAnyCode(catalogProducts, code)
       : findCatalogProductByAnyCode(catalogProducts, code);
     const orderLine = selectedOrder?.productLines.find(item =>
       (productId && item.productId === productId) ||
@@ -1402,7 +1408,7 @@ export default function MixingNormMaterialsTab() {
       code,
       productId: productIds[index] || '',
       catalog: productIds[index]
-        ? catalogProducts.find(item => item.id === productIds[index]) || findCatalogProductByAnyCode(catalogProducts, code)
+        ? catalogProductsById.get(productIds[index]) || findCatalogProductByAnyCode(catalogProducts, code)
         : findCatalogProductByAnyCode(catalogProducts, code)
     }));
 
@@ -2293,7 +2299,7 @@ export default function MixingNormMaterialsTab() {
                   const productSelected = product.maSpCodes.length > 0;
                   // NVL đã lưu vẫn hiện bảng NVL kể cả khi mã SP bị bỏ chọn.
                   const showNvlEditor = productSelected || product.nvlFilled;
-                  const wasteRows = resolveWasteBreakdown(product.maSpCodes);
+                  const wasteRows = resolveWasteBreakdown(product.maSpCodes, product.maSpIds);
                   const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
                   const standardBatch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
                   const mixingRoundCount = computeMixingRoundCount(productTotal, standardBatch);

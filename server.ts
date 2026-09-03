@@ -11812,6 +11812,8 @@ export function createApp() {
       const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
       const exact = String(req.query.exact ?? '') === '1';
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
+      const limitRaw = Number(req.query.limit ?? 300);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
 
       const buildQuery = () => {
         let query = supabase!
@@ -11831,8 +11833,8 @@ export function createApp() {
         return query;
       };
 
-      // PostgREST giới hạn mặc định 1000 dòng/query -> phân trang để lấy hết dữ liệu.
-      const PAGE_SIZE = 1000;
+      // Danh sách có thể chứa JSON chi tiết lớn; giới hạn số dòng để không khóa trình duyệt.
+      const PAGE_SIZE = Math.min(limit, 1000);
       const data: Record<string, unknown>[] = [];
       for (let from = 0; ; from += PAGE_SIZE) {
         const { data: page, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
@@ -11841,10 +11843,10 @@ export function createApp() {
           return res.status(500).json({ error: mixingReportWriteError(error) });
         }
         data.push(...(page || []));
-        if (!page || page.length < PAGE_SIZE) break;
+        if (!page || page.length < PAGE_SIZE || data.length >= limit) break;
       }
 
-      const reports = data.map(row =>
+      const reports = data.slice(0, limit).map(row =>
         row && typeof row === 'object'
           ? {
               ...row,
@@ -12054,6 +12056,8 @@ export function createApp() {
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
       const exact = String(req.query.exact ?? '') === '1';
       const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
+      const limitRaw = Number(req.query.limit ?? 300);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
 
       let query = supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
@@ -12063,7 +12067,7 @@ export function createApp() {
 
       if (ngay) query = query.eq('ngay', ngay);
 
-      const { data, error } = await query.limit(2000);
+      const { data, error } = await query.limit(limit);
       if (error) {
         console.error('Supabase mixing norm query error:', error);
         return res.status(500).json({ error: mixingNormWriteError(error) });
@@ -12200,6 +12204,8 @@ export function createApp() {
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+      const limitRaw = Number(req.query.limit ?? 300);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
       let query = supabase
         .from(SUPABASE_ACTUAL_MIXING_SHEET_TABLE)
         .select('*')
@@ -12207,7 +12213,7 @@ export function createApp() {
         .order('created_at', { ascending: false });
       if (ngay) query = query.eq('ngay', ngay);
       if (ca) query = query.eq('ca', ca);
-      const { data, error } = await query.limit(2000);
+      const { data, error } = await query.limit(limit);
       if (error) {
         const message = isMissingTableError(error)
           ? `Bảng ${SUPABASE_ACTUAL_MIXING_SHEET_TABLE} chưa tồn tại trên Supabase. Hãy chạy file supabase-phieu-tron-thuc-te.sql trong Supabase SQL Editor.`
