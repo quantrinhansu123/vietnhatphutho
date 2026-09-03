@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Plus, Printer, Trash2, X } from 'lucide-react';
+import { Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 
 interface MachineCell {
   maMay: string;
@@ -41,10 +41,18 @@ interface Props {
 }
 
 interface NoteDraft {
+  key: string;
   maMay: string;
   caLamViec: string;
   ghiChu: string;
 }
+
+const emptyNoteDraft = (): NoteDraft => ({
+  key: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  maMay: '',
+  caLamViec: '',
+  ghiChu: ''
+});
 
 function formatDate(dateStr: string) {
   if (!dateStr) return '';
@@ -102,7 +110,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
   const [error, setError] = useState('');
   const [generalNote, setGeneralNote] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
-  const [noteDraft, setNoteDraft] = useState<NoteDraft>({ maMay: '', caLamViec: '', ghiChu: '' });
+  const [noteDrafts, setNoteDrafts] = useState<NoteDraft[]>([emptyNoteDraft()]);
+  const [editingNoteId, setEditingNoteId] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
 
@@ -127,7 +136,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
       setNoteError('');
       setGeneralNote('');
       setShowNoteForm(false);
-      setNoteDraft({ maMay: '', caLamViec: '', ghiChu: '' });
+      setNoteDrafts([emptyNoteDraft()]);
+      setEditingNoteId('');
       return;
     }
 
@@ -221,36 +231,38 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
 
   useEffect(() => {
     if (!isOpen || !showNoteForm || !data) return;
-    setNoteDraft(prev => {
-      const nextMaMay =
-        prev.maMay && machineOptions.some(option => option.value === prev.maMay)
-          ? prev.maMay
-          : machineOptions[0]?.value || '';
-      const nextCaLamViec =
-        prev.caLamViec && shiftOptions.some(shift => shift.value === prev.caLamViec)
-          ? prev.caLamViec
-          : shiftOptions[0]?.value || '';
-      if (prev.maMay === nextMaMay && prev.caLamViec === nextCaLamViec) return prev;
-      return { ...prev, maMay: nextMaMay, caLamViec: nextCaLamViec };
-    });
+    setNoteDrafts(prev => prev.map(draft => ({
+      ...draft,
+      maMay: draft.maMay && machineOptions.some(option => option.value === draft.maMay)
+        ? draft.maMay
+        : machineOptions[0]?.value || '',
+      caLamViec: draft.caLamViec && shiftOptions.some(shift => shift.value === draft.caLamViec)
+        ? draft.caLamViec
+        : shiftOptions[0]?.value || ''
+    })));
   }, [data, isOpen, machineOptions, shiftOptions, showNoteForm]);
 
-  const handleAddNote = async () => {
+  const updateNoteDraft = (key: string, patch: Partial<NoteDraft>) => {
+    setNoteDrafts(prev => prev.map(draft => (draft.key === key ? { ...draft, ...patch } : draft)));
+  };
+
+  const handleAddNote = async (draft: NoteDraft) => {
+    const selectedShift = canonicalShift(draft.caLamViec).trim();
     if (!data?.ngay && !ngay) return;
-    if (!noteDraft.maMay) {
+    if (!draft.maMay) {
       setNoteError('Vui lòng chọn máy.');
       return;
     }
-    if (!noteDraft.caLamViec) {
+    if (!selectedShift) {
       setNoteError('Vui lòng chọn ca.');
       return;
     }
-    if (!noteDraft.ghiChu.trim()) {
+    if (!draft.ghiChu.trim()) {
       setNoteError('Vui lòng nhập nội dung ghi chú.');
       return;
     }
 
-    const selectedMachine = machineList.find(machine => String(machine.ma_may ?? '').trim() === noteDraft.maMay);
+    const selectedMachine = machineList.find(machine => String(machine.ma_may ?? '').trim() === draft.maMay);
     if (!selectedMachine) {
       setNoteError('Máy được chọn không còn tồn tại trong dữ liệu hiện tại.');
       return;
@@ -259,42 +271,64 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
     setNoteSaving(true);
     setNoteError('');
     try {
-      const res = await fetch('/api/phan-cong-nhan-su/ghi-chu', {
-        method: 'POST',
+      const res = await fetch(
+        editingNoteId
+          ? `/api/phan-cong-nhan-su/ghi-chu/${encodeURIComponent(editingNoteId)}`
+          : '/api/phan-cong-nhan-su/ghi-chu',
+        {
+        method: editingNoteId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ngay_lam_viec: data?.ngay || ngay,
-          ma_may: noteDraft.maMay,
+          ma_may: draft.maMay,
           may: machineLabel(selectedMachine),
-          ca_lam_viec: noteDraft.caLamViec,
-          ghi_chu: noteDraft.ghiChu.trim()
+          ca_lam_viec: selectedShift,
+          ghi_chu: draft.ghiChu.trim()
         })
-      });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(result.error || 'Không lưu được ghi chú.');
-      const saved = normalizeScheduleNote(result.note) || {
-        id: `local-${Date.now()}`,
-        ngay_lam_viec: data?.ngay || ngay,
-        ma_may: noteDraft.maMay,
-        may: machineLabel(selectedMachine),
-        ca_lam_viec: noteDraft.caLamViec,
-        ghi_chu: noteDraft.ghiChu.trim()
-      };
-      setData(prev =>
-        prev
-          ? {
-              ...prev,
-              ghi_chu_chi_tiet: [...(prev.ghi_chu_chi_tiet ?? []), saved]
-            }
-          : prev
+        }
       );
-      setNoteDraft(prev => ({ ...prev, ghiChu: '' }));
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || (editingNoteId ? 'Không cập nhật được ghi chú.' : 'Không lưu được ghi chú.'));
+      const saved = normalizeScheduleNote(result.note) || {
+        id: editingNoteId || `local-${Date.now()}`,
+        ngay_lam_viec: data?.ngay || ngay,
+        ma_may: draft.maMay,
+        may: machineLabel(selectedMachine),
+        ca_lam_viec: selectedShift,
+        ghi_chu: draft.ghiChu.trim()
+      };
+      setData(prev => {
+        if (!prev) return prev;
+        const current = prev.ghi_chu_chi_tiet ?? [];
+        return {
+          ...prev,
+          ghi_chu_chi_tiet: editingNoteId
+            ? current.map(note => (note.id === editingNoteId ? saved : note))
+            : [...current, saved]
+        };
+      });
+      setNoteDrafts(prev => editingNoteId
+        ? [emptyNoteDraft()]
+        : prev.map(item => (item.key === draft.key ? { ...item, ghiChu: '' } : item)));
+      setEditingNoteId('');
       setShowNoteForm(true);
     } catch (err: any) {
       setNoteError(err?.message || 'Không lưu được ghi chú.');
     } finally {
       setNoteSaving(false);
     }
+  };
+
+  const handleEditNote = (note: ScheduleNote) => {
+    setNoteError('');
+    setEditingNoteId(note.id);
+    setNoteDrafts([{
+      key: `edit-${note.id}`,
+      maMay: note.ma_may,
+      caLamViec: canonicalShift(note.ca_lam_viec),
+      ghiChu: note.ghi_chu
+    }]);
+    setShowNoteForm(true);
   };
 
   const handleDeleteNote = async (note: ScheduleNote) => {
@@ -313,6 +347,10 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
             }
           : prev
       );
+      if (editingNoteId === note.id) {
+        setEditingNoteId('');
+        setNoteDrafts([emptyNoteDraft()]);
+      }
     } catch (err: any) {
       setNoteError(err?.message || 'Không xóa được ghi chú.');
     }
@@ -392,17 +430,53 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 hover:bg-zinc-50"
               >
                 <Plus className="h-4 w-4" />
-                {showNoteForm ? 'Ẩn form' : 'Thêm mới'}
+                {showNoteForm ? 'Ẩn form' : 'Thêm mới ghi chú'}
               </button>
             </div>
 
             {showNoteForm ? (
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {!editingNoteId ? (
+                  <div className="flex justify-end sm:col-span-2">
+                    <button
+                      type="button"
+                      onClick={() => setNoteDrafts(prev => {
+                        const last = prev[prev.length - 1];
+                        const next = emptyNoteDraft();
+                        return [...prev, {
+                          ...next,
+                          maMay: last?.maMay || machineOptions[0]?.value || '',
+                          caLamViec: last?.caLamViec || shiftOptions[0]?.value || ''
+                        }];
+                      })}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-xs font-extrabold text-violet-700 hover:bg-violet-100"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Thêm mới
+                    </button>
+                  </div>
+                ) : null}
+                {noteDrafts.map(draft => (
+                  <div key={draft.key} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-3 sm:col-span-2 sm:grid-cols-2">
+                    <div className="flex items-center justify-between sm:col-span-2">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-400">Ghi chú mới</span>
+                      <button
+                        type="button"
+                        onClick={() => setNoteDrafts(prev => {
+                          const next = prev.filter(item => item.key !== draft.key);
+                          return next.length > 0 ? next : [emptyNoteDraft()];
+                        })}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                        title="Xóa khung ghi chú này"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                 <label className="space-y-1.5">
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Máy</span>
                   <select
-                    value={noteDraft.maMay}
-                    onChange={e => setNoteDraft(prev => ({ ...prev, maMay: e.target.value }))}
+                    value={draft.maMay}
+                    onChange={e => updateNoteDraft(draft.key, { maMay: e.target.value })}
                     className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
                   >
                     {machineOptions.length === 0 ? (
@@ -420,8 +494,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                 <label className="space-y-1.5">
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
                   <select
-                    value={noteDraft.caLamViec}
-                    onChange={e => setNoteDraft(prev => ({ ...prev, caLamViec: e.target.value }))}
+                    value={draft.caLamViec}
+                    onChange={e => updateNoteDraft(draft.key, { caLamViec: e.target.value })}
                     className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
                   >
                     {shiftOptions.length === 0 ? (
@@ -439,8 +513,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                 <label className="space-y-1.5 sm:col-span-2">
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Nội dung ghi chú</span>
                   <textarea
-                    value={noteDraft.ghiChu}
-                    onChange={e => setNoteDraft(prev => ({ ...prev, ghiChu: e.target.value }))}
+                    value={draft.ghiChu}
+                    onChange={e => updateNoteDraft(draft.key, { ghiChu: e.target.value })}
                     rows={3}
                     className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
                     placeholder="Ví dụ: kiểm tra dầu, đổi người hỗ trợ, ưu tiên lô X"
@@ -451,16 +525,29 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => void handleAddNote()}
+                      onClick={() => void handleAddNote(draft)}
                       disabled={noteSaving || machineOptions.length === 0 || shiftOptions.length === 0}
                       className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white hover:bg-[#b30d1c] disabled:opacity-50"
                     >
                       {noteSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      Lưu ghi chú
+                      {editingNoteId ? 'Cập nhật ghi chú' : 'Lưu ghi chú'}
                     </button>
+                    {editingNoteId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingNoteId('');
+                          setNoteDrafts([emptyNoteDraft()]);
+                          setNoteError('');
+                        }}
+                        className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                      >
+                        Hủy sửa
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      onClick={() => setNoteDraft(prev => ({ ...prev, ghiChu: '' }))}
+                      onClick={() => updateNoteDraft(draft.key, { ghiChu: '' })}
                       className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
                     >
                       Xóa nội dung
@@ -468,6 +555,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                   </div>
                   {noteError ? <p className="text-xs font-bold text-rose-600">{noteError}</p> : null}
                 </div>
+                  </div>
+                ))}
               </div>
             ) : null}
 
@@ -493,14 +582,24 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                           </p>
                           <p className="whitespace-pre-line text-sm font-semibold text-zinc-800">{note.ghi_chu}</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteNote(note)}
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
-                          title="Xóa ghi chú"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleEditNote(note)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-white text-amber-700 hover:bg-amber-100"
+                            title="Sửa ghi chú"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteNote(note)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                            title="Xóa ghi chú"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
