@@ -3173,13 +3173,21 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       if (!item || typeof item !== 'object') continue;
       const product = item as Record<string, unknown>;
       const ma_sp = String(product.ma_sp ?? product.maSp ?? '').trim();
+      const sanPhamIds = Array.isArray(product.san_pham_ids)
+        ? product.san_pham_ids.map(value => String(value).trim()).filter(Boolean)
+        : String(product.san_pham_id ?? '').trim()
+          ? [String(product.san_pham_id).trim()]
+          : [];
       const ten_sp = String(product.ten_sp ?? product.tenSp ?? '').trim();
       const isSecondary = String(product.loai ?? '').trim() === 'nvl_phu';
       if (!ma_sp) return { error: `Sản phẩm #${index + 1} thiếu mã SP.` };
       const codes = ma_sp.split(',').map(code => code.trim()).filter(Boolean);
+      if (sanPhamIds.length !== codes.length || sanPhamIds.some(id => !id)) {
+        return { error: `Sản phẩm #${index + 1} thiếu san_pham_id hợp lệ.` };
+      }
       const seenCodes = isSecondary ? seenSecondaryCodes : seenFormulaCodes;
-      for (const code of codes) {
-        const productKey = code.toLocaleLowerCase('vi').replace(/\s+/g, '');
+      for (const [codeIndex, code] of codes.entries()) {
+        const productKey = sanPhamIds[codeIndex];
         if (seenCodes.has(productKey)) {
           return {
             error: isSecondary
@@ -3269,6 +3277,11 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       products.push({
         ...(isSecondary ? { loai: 'nvl_phu' } : {}),
         ma_sp,
+        ...(sanPhamIds.length === 1
+          ? { san_pham_id: sanPhamIds[0] }
+          : sanPhamIds.length > 1
+            ? { san_pham_ids: sanPhamIds }
+            : {}),
         ten_sp: ten_sp || null,
         tong_trong_luong,
         ty_le_hao_hut,
@@ -11799,6 +11812,8 @@ export function createApp() {
       const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
       const exact = String(req.query.exact ?? '') === '1';
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
+      const limitRaw = Number(req.query.limit ?? 300);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
 
       const buildQuery = () => {
         let query = supabase!
@@ -11818,8 +11833,8 @@ export function createApp() {
         return query;
       };
 
-      // PostgREST giới hạn mặc định 1000 dòng/query -> phân trang để lấy hết dữ liệu.
-      const PAGE_SIZE = 1000;
+      // Danh sách có thể chứa JSON chi tiết lớn; giới hạn số dòng để không khóa trình duyệt.
+      const PAGE_SIZE = Math.min(limit, 1000);
       const data: Record<string, unknown>[] = [];
       for (let from = 0; ; from += PAGE_SIZE) {
         const { data: page, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
@@ -11828,10 +11843,10 @@ export function createApp() {
           return res.status(500).json({ error: mixingReportWriteError(error) });
         }
         data.push(...(page || []));
-        if (!page || page.length < PAGE_SIZE) break;
+        if (!page || page.length < PAGE_SIZE || data.length >= limit) break;
       }
 
-      const reports = data.map(row =>
+      const reports = data.slice(0, limit).map(row =>
         row && typeof row === 'object'
           ? {
               ...row,
@@ -12041,6 +12056,8 @@ export function createApp() {
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
       const exact = String(req.query.exact ?? '') === '1';
       const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
+      const limitRaw = Number(req.query.limit ?? 300);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
 
       let query = supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
@@ -12050,7 +12067,7 @@ export function createApp() {
 
       if (ngay) query = query.eq('ngay', ngay);
 
-      const { data, error } = await query.limit(2000);
+      const { data, error } = await query.limit(limit);
       if (error) {
         console.error('Supabase mixing norm query error:', error);
         return res.status(500).json({ error: mixingNormWriteError(error) });
@@ -12187,6 +12204,8 @@ export function createApp() {
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+      const limitRaw = Number(req.query.limit ?? 300);
+      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
       let query = supabase
         .from(SUPABASE_ACTUAL_MIXING_SHEET_TABLE)
         .select('*')
@@ -12194,7 +12213,7 @@ export function createApp() {
         .order('created_at', { ascending: false });
       if (ngay) query = query.eq('ngay', ngay);
       if (ca) query = query.eq('ca', ca);
-      const { data, error } = await query.limit(2000);
+      const { data, error } = await query.limit(limit);
       if (error) {
         const message = isMissingTableError(error)
           ? `Bảng ${SUPABASE_ACTUAL_MIXING_SHEET_TABLE} chưa tồn tại trên Supabase. Hãy chạy file supabase-phieu-tron-thuc-te.sql trong Supabase SQL Editor.`

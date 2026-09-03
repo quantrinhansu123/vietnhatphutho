@@ -365,10 +365,13 @@ export default function MixingReportListView({
 
   const loadReports = async (nextFilters = filters, machineList = machines) => {
     const query = buildFilterQuery(nextFilters, machineList);
+    const listLimit = 300;
+    const reportQuery = new URLSearchParams(query);
+    reportQuery.set('limit', String(listLimit));
     const [reportRes, normRes, actualRes] = await Promise.all([
-      fetch(`/api/bao-cao-phoi-tron${query ? `?${query}` : ''}`),
-      fetch('/api/bang-tron-vat-tu-dinh-muc'),
-      fetch('/api/phieu-tron-thuc-te')
+      fetch(`/api/bao-cao-phoi-tron?${reportQuery.toString()}`),
+      fetch(`/api/bang-tron-vat-tu-dinh-muc?limit=${listLimit}`),
+      fetch(`/api/phieu-tron-thuc-te?limit=${listLimit}`)
     ]);
     const reportData = await reportRes.json().catch(() => ({}));
     const normData = await normRes.json().catch(() => ({}));
