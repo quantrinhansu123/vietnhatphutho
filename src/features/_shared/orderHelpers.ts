@@ -291,7 +291,7 @@ export function calculateCutOrderWeight(
   return null;
 }
 
-export function allowedOrderUnits(product: OrderProductOption | null) {
+export function allowedOrderUnits(product: Pick<OrderProductOption, 'group'> | null) {
   if (!product) return [];
   const group = product.group.replace(/\s+/g, '').toLocaleLowerCase('vi');
   if (group === 'tp;pxđặc') return ['Tấm', 'Cuộn'];

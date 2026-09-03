@@ -427,6 +427,37 @@ export function productAmisDisplayCode(product: Pick<ProductRow, 'amisCode' | 'c
   return product.amisCode && product.amisCode !== '-' ? product.amisCode : product.code || '-';
 }
 
+function normalizeProductIdentity(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, ' ');
+}
+
+function findDuplicateProductIdentity(
+  products: ProductRow[],
+  form: ProductFormState,
+  currentProductId?: string
+) {
+  const amisCode = normalizeProductIdentity(form.amisCode);
+  const name = normalizeProductIdentity(form.name);
+  const productionName = normalizeProductIdentity(form.productionName);
+  if (!amisCode || !name || !productionName) return '';
+
+  const duplicate = products.find(product =>
+    product.id !== currentProductId &&
+    normalizeProductIdentity(product.amisCode) === amisCode &&
+    normalizeProductIdentity(product.name) === name &&
+    normalizeProductIdentity(product.productionName) === productionName
+  );
+  return duplicate
+    ? 'Trùng bộ Mã AMIS, Tên sản phẩm và Tên sản xuất. Vui lòng nhập giá trị khác.'
+    : '';
+}
+
 export function ProductViewModal({
   product,
   conversions,
@@ -611,7 +642,6 @@ export function ProductViewModal({
   };
 
   const compactInfoRows = ([
-    ['Mã SP', product.code || '-'],
     ['Mã AMIS', productAmisDisplayCode(product)],
     ...(product.newCode && product.newCode !== '-' && product.newCode !== product.code
       ? [['Mã mới', product.newCode] as [string, string]]
@@ -1194,7 +1224,7 @@ export function emptyProductForm(): ProductFormState {
 
 export function productFormToPayload(form: ProductFormState) {
   return {
-    code: form.code.trim(),
+    code: form.amisCode.trim(),
     newCode: form.newCode.trim(),
     amisCode: form.amisCode.trim(),
     name: form.name.trim(),
@@ -1292,7 +1322,7 @@ export function ProductEditModal({
               {mode === 'add' ? 'Thêm sản phẩm mới' : 'Sửa sản phẩm'}
             </h3>
             {mode !== 'add' && (
-              <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product?.code || '-'}</p>
+              <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product ? productAmisDisplayCode(product) : '-'}</p>
             )}
           </div>
           <BackButton onClick={onClose} />
@@ -1466,7 +1496,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     try {
       const all: ProductConversionFactors[] = [];
       for (let page = 1; ; page += 1) {
-        const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=200`);
+        const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error('Không thể tải bảng quy đổi.');
         const items = Array.isArray(data.items) ? data.items as ProductConversionFactors[] : [];
@@ -1570,6 +1600,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
       return;
     }
+    const duplicateError = findDuplicateProductIdentity(products, form);
+    if (duplicateError) {
+      setProductFormError(duplicateError);
+      return;
+    }
 
     setIsSavingProduct(true);
     setProductFormError('');
@@ -1609,6 +1644,11 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     }
     if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
       setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+      return;
+    }
+    const duplicateError = findDuplicateProductIdentity(products, form, editingProduct.id);
+    if (duplicateError) {
+      setProductFormError(duplicateError);
       return;
     }
 
@@ -2575,7 +2615,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
               aria-label="Chọn tất cả sản phẩm đang lọc"
             />
           </TableHeadCell>
-          <TableHeadCell>Mã SP</TableHeadCell>
+          <TableHeadCell>Mã AMIS</TableHeadCell>
           <TableHeadCell align="center">Mã QR</TableHeadCell>
           <TableHeadCell>Tên sản phẩm</TableHeadCell>
           <TableHeadCell>Tên sản xuất</TableHeadCell>
@@ -2612,10 +2652,10 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                     checked={selectedProductIds.has(product.id)}
                     onChange={() => toggleProduct(product.id)}
                     className="h-4 w-4 accent-[#ef1b2d]"
-                    aria-label={`Chọn in QR ${product.code}`}
+                    aria-label={`Chọn in QR ${productAmisDisplayCode(product)}`}
                   />
                 </td>
-                <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-black text-zinc-950">{product.code || '-'}</td>
+                <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-black text-zinc-950">{productAmisDisplayCode(product)}</td>
                 <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle">
                   {qrImages[product.id] ? (
                     <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
@@ -2806,12 +2846,12 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                     </TableHead>
                     <TableBody>
                       {selectedProducts
-                        .filter(product => String(product.code || '').trim())
+                        .filter(product => String(product.amisCode || '').trim())
                         .map(product => (
                           <React.Fragment key={product.id}>
                             <TableRow>
                               <td className="px-3 py-2.5">
-                                <p className="font-black text-zinc-900">{product.code}</p>
+                                <p className="font-black text-zinc-900">{productAmisDisplayCode(product)}</p>
                                 <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-zinc-500">
                                   {product.name || '—'}
                                 </p>
