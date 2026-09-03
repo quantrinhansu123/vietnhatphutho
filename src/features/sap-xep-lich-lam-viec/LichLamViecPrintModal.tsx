@@ -641,7 +641,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                         <td className="border border-zinc-300 px-2 py-2 font-medium">{row.khungGio}</td>
                         <td className="border border-zinc-300 px-2 py-2">{row.tenCa}</td>
                         {row.machines.map((cell, midx) => {
-                          const plain = cell.nhanSu.filter(p => !p.dispatch).map(p => p.name);
+                          const employeeNames = cell.nhanSu.map(p => p.name);
                           const dispatched = cell.nhanSu.filter(p => p.dispatch);
                           const cellNotes =
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.tenCa))) ??
@@ -653,20 +653,15 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                                 <span className="text-zinc-400">-</span>
                               ) : (
                                 <div className="space-y-1">
-                                  {cellNotes.length > 0
-                                    ? cellNotes.map(note => (
-                                        <div key={note.id} className="schedule-note-item">
-                                          ({note.ghi_chu})
-                                        </div>
-                                      ))
-                                    : null}
-                                  {plain.length > 0 ? <div>{plain.join(', ')}</div> : null}
+                                  {employeeNames.length > 0 ? <div>{employeeNames.join(', ')}</div> : null}
                                   {dispatched.map((p, pidx) => (
-                                    <div key={pidx}>
-                                      <span>{p.name}</span>{' '}
-                                      <span className="note-cell italic text-zinc-600" style={{ whiteSpace: 'pre-line' }}>
-                                        {p.dispatch}
-                                      </span>
+                                    <div key={`dispatch-${pidx}`} className="note-cell italic text-zinc-600" style={{ whiteSpace: 'pre-line' }}>
+                                      {p.dispatch}
+                                    </div>
+                                  ))}
+                                  {cellNotes.map(note => (
+                                    <div key={note.id} className="schedule-note-item">
+                                      ({note.ghi_chu})
                                     </div>
                                   ))}
                                 </div>
