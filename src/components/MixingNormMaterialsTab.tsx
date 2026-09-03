@@ -880,7 +880,7 @@ export default function MixingNormMaterialsTab() {
   }, [materials]);
 
   const mainMaterialOptions = useMemo(
-    () => materials.filter(item => item.phanLoai !== 'Nguyên vật liệu phụ'),
+    () => materials.filter(item => item.phanLoai === 'Nguyên vật liệu chính'),
     [materials]
   );
   const secondaryMaterialOptions = useMemo(
