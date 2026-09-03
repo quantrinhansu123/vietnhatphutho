@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, Eye, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import { ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
@@ -698,6 +698,18 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                       ) : null}
                     </div>
                     <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrintDate(group.ngay_lam_viec);
+                          setPrintOpen(true);
+                        }}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 text-[11px] font-bold text-violet-700 hover:bg-violet-100"
+                        title="Thêm mới hoặc sửa nhiều ghi chú theo máy / ca"
+                      >
+                        <MessageSquarePlus className="h-3.5 w-3.5" />
+                        Thêm ghi chú
+                      </button>
                       <button
                         type="button"
                         onClick={() => setDetailGroup(group)}

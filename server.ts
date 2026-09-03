@@ -7640,6 +7640,50 @@ export function createApp() {
     }
   });
 
+  app.put('/api/phan-cong-nhan-su/ghi-chu/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID ghi chú.' });
+    try {
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const ngayLamViec = pickRowField(body, ['ngay_lam_viec', 'ngayLamViec'], '');
+      const maMay = pickRowField(body, ['ma_may', 'maMay'], '');
+      const tenMay = pickRowField(body, ['may', 'ten_may', 'tenMay'], '');
+      const caLamViec = pickRowField(body, ['ca_lam_viec', 'caLamViec', 'ca'], '');
+      const ghiChu = pickRowField(body, ['ghi_chu', 'ghiChu', 'note'], '');
+      if (!ngayLamViec) return res.status(400).json({ error: 'Thiếu ngày làm việc.' });
+      if (!maMay) return res.status(400).json({ error: 'Thiếu máy.' });
+      if (!caLamViec) return res.status(400).json({ error: 'Thiếu ca làm việc.' });
+      if (!ghiChu) return res.status(400).json({ error: 'Thiếu nội dung ghi chú.' });
+
+      const notePayload = {
+        ma_may: maMay,
+        ten_may: tenMay || null,
+        ca: caLamViec,
+        ghi_chu: ghiChu
+      };
+      const { data, error } = await supabase
+        .from('phan_cong_nhan_su_chi_tiet')
+        .update({
+          ngay_lam_viec: ngayLamViec,
+          ca_lam_viec: caLamViec,
+          ma_may: maMay,
+          may: tenMay || null,
+          ghi_chu: JSON.stringify(notePayload)
+        })
+        .eq('id', id)
+        .eq('ma_nhan_su', SCHEDULE_NOTE_MARKER)
+        .select('*')
+        .single();
+      if (error) return res.status(500).json({ error: phanCongWriteError(error) });
+      const note = normalizeScheduleNoteRecord(data);
+      if (!note) return res.status(404).json({ error: 'Không tìm thấy ghi chú.' });
+      return res.json({ success: true, note });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Lỗi khi cập nhật ghi chú lịch làm việc.' });
+    }
+  });
+
   app.post('/api/phan-cong-nhan-su/nhom', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     try {
