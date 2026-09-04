@@ -12241,6 +12241,7 @@ export function createApp() {
           if (!item || typeof item !== 'object') return null;
           const product = item as Record<string, unknown>;
           const totalWeight = parseActualMixingNumber(product.tong_trong_luong);
+          const isSecondary = String(product.loai ?? '').trim() === 'nvl_phu';
           const parseActualLines = (raw: unknown) => (Array.isArray(raw) ? raw : [])
             .map(line => {
               if (!line || typeof line !== 'object') return null;
@@ -12262,16 +12263,26 @@ export function createApp() {
               return {
                 ma_nvl,
                 ten_nvl,
+                ten_nvl_san_xuat: String(row.ten_nvl_san_xuat ?? '').trim(),
                 gia_tri: parseActualMixingNumber(row.gia_tri ?? row.dinh_muc),
                 khoi_luong: parseActualMixingNumber(row.khoi_luong),
+                tong_khoi_luong: parseActualMixingNumber(row.tong_khoi_luong),
                 phan_tram_thuc_te: parseActualMixingNumber(row.phan_tram_thuc_te),
                 trong_luong_thuc_te: actualWeight
               };
             })
             .filter(Boolean);
-          const nvl = parseActualLines(
-            Array.isArray(product.nvl) ? product.nvl : product.chi_tiet
-          );
+          const secondaryRaw = Array.isArray(product.nvl_phu)
+            ? product.nvl_phu
+            : isSecondary
+              ? (Array.isArray(product.nvl) ? product.nvl : product.chi_tiet)
+              : [];
+          const parsedSecondary = parseActualLines(secondaryRaw);
+          const nvl = isSecondary
+            ? parsedSecondary
+            : parseActualLines(
+                Array.isArray(product.nvl) ? product.nvl : product.chi_tiet
+              );
           const roundsRaw = Array.isArray(product.lan_tron) ? product.lan_tron : [];
           const lan_tron = roundsRaw.map((entry, index) => {
             const round = entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
@@ -12282,10 +12293,12 @@ export function createApp() {
             };
           });
           return {
+            loai: isSecondary ? 'nvl_phu' : undefined,
             ma_sp: String(product.ma_sp ?? '').trim(),
             ten_sp: String(product.ten_sp ?? '').trim(),
             tong_trong_luong: totalWeight,
-            nvl: lan_tron[0]?.nvl ?? nvl,
+            nvl: isSecondary ? parsedSecondary : (lan_tron[0]?.nvl ?? nvl),
+            nvl_phu: isSecondary || parsedSecondary.length > 0 ? parsedSecondary : undefined,
             lan_tron
           };
         })
