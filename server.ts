@@ -6877,10 +6877,10 @@ export function createApp() {
           const product = productMap.get(String(limit.san_pham_id));
           if (!product) return null;
 
-          const threshold = (limit.ton_kho_toi_thieu * 0.05);
+          const threshold = Number(limit.ton_kho_toi_thieu || 0);
           const ton_kho = Number(product.ton_kho || 0);
 
-          if (ton_kho <= threshold) {
+          if (ton_kho < threshold) {
             return {
               id: limit.id,
               san_pham_id: limit.san_pham_id,
