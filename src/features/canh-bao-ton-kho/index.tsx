@@ -10,6 +10,7 @@ import {
   type OrderProductConversion
 } from '../_shared/orderHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import { formatNumber } from '../../utils';
 
 const INVENTORY_ORDER_TYPE = 'Đơn tồn kho tối thiểu';
 const fieldClass =
@@ -102,29 +103,127 @@ function getOrderLinesForForm(order: OrderRow): InventoryOrderProduct[] {
   }));
 }
 
-function getConversionResults(
-  product: InventoryOrderProduct,
+function resolveCatalogProduct(
   products: ProductRow[],
-  conversions: OrderProductConversion[]
-) {
-  const catalogProduct = products.find(item => item.id === product.productId);
-  const unit = resolveInventoryUnit(catalogProduct, product.unit);
-  const conversion = conversions
-    .filter(item => item.sanPhamId === product.productId)
-    .find(item => conversionSupportsUnit(item, unit));
-  return conversion
-    ? calculateOrderConversion(
-        product.quantity,
-        unit,
-        conversion,
-        (catalogProduct as (ProductRow & { group?: string }) | undefined)?.group || ''
-      )
-    : [];
+  product: { productId?: string; productCode?: string }
+): ProductRow | undefined {
+  const pid = (product.productId || '').trim();
+  if (pid) {
+    const byId = products.find(p => String(p.id).trim() === pid);
+    if (byId) return byId;
+  }
+  const code = (product.productCode || '').trim().toLowerCase();
+  if (code) {
+    const byCode = products.find(p =>
+      (p.amisCode && p.amisCode.trim().toLowerCase() === code) ||
+      (p.code && p.code.trim().toLowerCase() === code) ||
+      (p.newCode && p.newCode.trim().toLowerCase() === code)
+    );
+    if (byCode) return byCode;
+  }
+  return undefined;
 }
 
 function resolveInventoryUnit(product: ProductRow | undefined, unit: string) {
   const allowedUnits = allowedOrderUnits(product);
   return allowedUnits.includes(unit) ? unit : allowedUnits[0] || unit || product?.unit || 'Tấm';
+}
+
+function buildAlertProductLines(
+  alerts: InventoryAlert[],
+  products: ProductRow[]
+): InventoryOrderProduct[] {
+  if (!alerts || alerts.length === 0) {
+    return [emptyInventoryOrderProduct()];
+  }
+
+  const seenKeys = new Set<string>();
+  const alertProducts: InventoryOrderProduct[] = [];
+
+  for (const alert of alerts) {
+    const alertPid = String(alert.san_pham_id || '').trim();
+    if (!alertPid || seenKeys.has(alertPid)) continue;
+    seenKeys.add(alertPid);
+
+    const catalogProduct = products.find(p => String(p.id).trim() === alertPid);
+    const allowedUnits = allowedOrderUnits(catalogProduct);
+    const unit = allowedUnits[0] || catalogProduct?.unit || 'Tấm';
+
+    alertProducts.push({
+      productId: alertPid,
+      productCode: alert.ma_amis || catalogProduct?.amisCode || '',
+      productName: alert.ten_sp || catalogProduct?.name || '',
+      productionName: alert.ten_san_xuat || catalogProduct?.productionName || alert.ten_sp || '',
+      unit,
+      quantity: ''
+    });
+  }
+
+  return alertProducts.length > 0 ? alertProducts : [emptyInventoryOrderProduct()];
+}
+
+function getOrderProductConversion(
+  product: InventoryOrderProduct,
+  products: ProductRow[],
+  conversions: OrderProductConversion[]
+): {
+  conversion: OrderProductConversion | null;
+  effectiveUnit: string;
+  calculated: Array<[string, number, string]>;
+  kg: number | null;
+  m2: number | null;
+  mdai: number | null;
+} {
+  const catalogProduct = resolveCatalogProduct(products, product);
+  const allowedUnits = allowedOrderUnits(catalogProduct);
+  const currentUnit = (product.unit || '').trim();
+  const effectiveUnit = catalogProduct
+    ? (allowedUnits.includes(currentUnit) ? currentUnit : allowedUnits[0] || currentUnit || 'Tấm')
+    : currentUnit || 'Tấm';
+
+  const catId = catalogProduct?.id ? String(catalogProduct.id).trim() : '';
+  const prodId = product.productId ? String(product.productId).trim() : '';
+  const amisCode = (catalogProduct?.amisCode || product.productCode || '').trim().toLowerCase();
+  const spCode = (catalogProduct?.code || '').trim().toLowerCase();
+
+  const productConversionOptions = conversions.filter(item => {
+    const itemPid = String(item.sanPhamId || '').trim();
+    const itemAmis = (item.maAmis || '').trim().toLowerCase();
+    const itemSp = (item.maSp || '').trim().toLowerCase();
+
+    if (catId && itemPid === catId) return true;
+    if (prodId && itemPid === prodId) return true;
+    if (amisCode && itemAmis === amisCode) return true;
+    if (spCode && (itemSp === spCode || itemAmis === spCode)) return true;
+    if (amisCode && (itemSp === amisCode || itemAmis === amisCode)) return true;
+    return false;
+  });
+
+  const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, effectiveUnit))
+    || productConversionOptions[0]
+    || null;
+
+  const calculated = matchedConversion
+    ? calculateOrderConversion(
+        String(product.quantity ?? ''),
+        effectiveUnit,
+        matchedConversion,
+        catalogProduct?.group || ''
+      )
+    : [];
+
+  const kg = calculated.find(([, , u]) => u === 'kg')?.[1] ?? null;
+  const m2 = calculated.find(([, , u]) => u === 'm2')?.[1] ?? null;
+  const mdai = calculated.find(([, , u]) => u === 'm dài')?.[1] ?? null;
+
+  return {
+    conversion: matchedConversion,
+    effectiveUnit,
+    calculated,
+    kg,
+    m2,
+    mdai
+  };
 }
 
 export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
@@ -159,15 +258,19 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
       const productsData = await productsRes.json().catch(() => ({}));
       const conversionsData = await conversionsRes.json().catch(() => ({}));
       if (!alertsRes.ok) throw new Error(alertsData.error || 'Không thể tải dữ liệu cảnh báo tồn kho.');
+      const conversions = Array.isArray(conversionsData.items) ? (conversionsData.items as OrderProductConversion[]) : [];
+      const conversionTotal = Number(conversionsData.total) || conversions.length;
+      for (let page = 2; conversions.length < conversionTotal; page += 1) {
+        const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) break;
+        conversions.push(...(Array.isArray(data.items) ? (data.items as OrderProductConversion[]) : []));
+      }
       setAlerts(alertsData.items || []);
       setThang(alertsData.thang);
       setOrders(ordersRes.ok ? normalizeOrders(ordersData) : []);
       setProducts(productsRes.ok ? normalizeProducts(productsData) : []);
-      setProductConversions(
-        conversionsRes.ok && Array.isArray(conversionsData.items)
-          ? conversionsData.items as OrderProductConversion[]
-          : []
-      );
+      setProductConversions(conversions);
     } catch (e: any) {
       setError(e.message || 'Không thể tải dữ liệu.');
     } finally {
@@ -200,26 +303,54 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
     ),
     [minimumStockOrders, normalizedSearch]
   );
-  const productOptions = useMemo(
-    () => {
-      const alertProductIds = new Set(
-        alerts.map(alert => String(alert.san_pham_id || '').trim()).filter(Boolean)
-      );
-      return products.filter(product =>
-        product.id &&
-        product.amisCode &&
-        product.amisCode !== '-' &&
-        alertProductIds.has(String(product.id).trim())
-      );
-    },
-    [alerts, products]
-  );
+  const productOptions: ProductRow[] = useMemo(() => {
+    const seen = new Set<string>();
+    const options: ProductRow[] = [];
+
+    for (const alert of alerts) {
+      const pid = String(alert.san_pham_id || '').trim();
+      if (!pid || seen.has(pid)) continue;
+      seen.add(pid);
+
+      const catalogProduct = products.find(p => String(p.id).trim() === pid);
+
+      options.push({
+        id: pid,
+        code: catalogProduct?.code || alert.ma_amis || '',
+        newCode: catalogProduct?.newCode || alert.ma_amis || '',
+        amisCode: alert.ma_amis || catalogProduct?.amisCode || '',
+        name: alert.ten_sp || catalogProduct?.name || '',
+        productionName: alert.ten_san_xuat || catalogProduct?.productionName || alert.ten_sp || '',
+        nature: catalogProduct?.nature || 'Chưa phân loại',
+        group: catalogProduct?.group || 'Chưa nhóm',
+        unit: catalogProduct?.unit || 'Tấm',
+        totalWeight: catalogProduct?.totalWeight || '',
+        wastePercent: catalogProduct?.wastePercent || '',
+        rollWidth: catalogProduct?.rollWidth || '',
+        rollLength: catalogProduct?.rollLength || '',
+        coreWeight: catalogProduct?.coreWeight || '',
+        bagWeight: catalogProduct?.bagWeight || '',
+        plasticWeight: catalogProduct?.plasticWeight || '',
+        openingStock: catalogProduct?.openingStock || '-',
+        inbound: catalogProduct?.inbound || '',
+        outbound: catalogProduct?.outbound || '',
+        stock: String(alert.ton_kho ?? catalogProduct?.stock ?? 0),
+        minStock: String(alert.ton_kho_toi_thieu ?? catalogProduct?.minStock ?? 0),
+        origin: catalogProduct?.origin || '-',
+        description: catalogProduct?.description || '',
+        nplItems: catalogProduct?.nplItems || []
+      });
+    }
+
+    return options;
+  }, [alerts, products]);
 
   const openCreate = () => {
     setEditingId(null);
     setForm({
       ...emptyInventoryOrderForm(),
-      orderCode: generateNextOrderCode(orders.map(order => order.orderCode))
+      orderCode: generateNextOrderCode(orders.map(order => order.orderCode)),
+      products: buildAlertProductLines(alerts, products)
     });
     setError('');
     setModalError('');
@@ -252,13 +383,15 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
   };
 
   const selectProduct = (index: number, productId: string) => {
-    const product = productOptions.find(item => item.id === productId);
+    const product = productOptions.find(item => item.id === productId)
+      || products.find(item => item.id === productId);
+    const allowedUnits = allowedOrderUnits(product);
     updateProduct(index, {
       productId,
       productCode: product?.amisCode || '',
       productName: product?.name || '',
       productionName: product?.productionName || '',
-      unit: resolveInventoryUnit(product, '')
+      unit: allowedUnits[0] || product?.unit || 'Tấm'
     });
   };
 
@@ -281,16 +414,21 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
         note: form.note.trim(),
         status: form.status,
         createdAt: form.createdAt,
-        products: validProducts.map(product => ({
-          san_pham_id: product.productId,
-          ma_sp: product.productCode,
-          ten_sp: product.productName,
-          ten_san_xuat: product.productionName,
-          don_vi: resolveInventoryUnit(products.find(item => item.id === product.productId), product.unit),
-          so_luong: Number(product.quantity),
-          ket_qua_quy_doi: getConversionResults(product, products, productConversions)
-            .map(([, value, unit]) => ({ don_vi: unit, gia_tri: Math.round(value * 1_000_000) / 1_000_000 }))
-        }))
+        products: validProducts.map(product => {
+          const conversionInfo = getOrderProductConversion(product, products, productConversions);
+          return {
+            san_pham_id: product.productId,
+            ma_sp: product.productCode,
+            ten_sp: product.productName,
+            ten_san_xuat: product.productionName,
+            don_vi: conversionInfo.effectiveUnit,
+            so_luong: Number(product.quantity),
+            ket_qua_quy_doi: conversionInfo.calculated.map(([, value, unit]) => ({
+              don_vi: unit,
+              gia_tri: Math.round(value * 1_000_000) / 1_000_000
+            }))
+          };
+        })
       };
       const response = await fetch(
         editingId ? `/api/don-hang/${editingId}` : '/api/don-hang',
@@ -403,51 +541,108 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2"><span className="text-xs font-black uppercase tracking-wider text-slate-600">Danh sách sản phẩm</span><button type="button" onClick={() => setForm(prev => ({ ...prev, products: [...prev.products, emptyInventoryOrderProduct()] }))} className="flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white"><Plus className="h-3.5 w-3.5" /> Thêm dòng</button></div>
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-600">Danh sách sản phẩm</span>
+                <button
+                  type="button"
+                  onClick={() => setForm(prev => ({ ...prev, products: [...prev.products, emptyInventoryOrderProduct()] }))}
+                  className="flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Thêm dòng
+                </button>
+              </div>
               <div className="min-w-[1200px]">
                 <div className="grid grid-cols-[2rem_1.1fr_1.1fr_1.3fr_5rem_6rem_5rem_5rem_5rem_2.5rem] gap-2 border-b border-slate-100 px-3 py-2 text-[10px] font-black uppercase text-slate-500"><span>#</span><span>Mã sản phẩm</span><span>Tên sản phẩm</span><span>Tên sản xuất</span><span>ĐVT</span><span>Số lượng</span><span>KG</span><span>M2</span><span>M dài</span><span /></div>
-                {form.products.map((product, index) => <div key={`${index}-${product.productId}`} className="grid grid-cols-[2rem_1.1fr_1.1fr_1.3fr_5rem_6rem_5rem_5rem_5rem_2.5rem] items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-b-0">
-                  <span className="text-center text-xs font-bold text-slate-500">{index + 1}</span>
-                  <SearchableSelect
-                    value={product.productId}
-                    onChange={productId => selectProduct(index, productId)}
-                    options={productOptions}
-                    placeholder="Tìm mã AMIS, tên sản phẩm..."
-                    getValue={item => (item as ProductRow).id}
-                    getLabel={item => (item as ProductRow).amisCode}
-                    getOptionLabel={item => {
-                      const selected = item as ProductRow;
-                      return `${selected.amisCode} - ${selected.productionName || selected.name}`;
-                    }}
-                    getSearchText={item => {
-                      const selected = item as ProductRow;
-                      return `${selected.amisCode} ${selected.name} ${selected.productionName}`;
-                    }}
-                    displaySelectedAsValue={false}
-                    inputClassName={fieldClass}
-                    maxResults={400}
-                  />
-                  <input value={product.productName} readOnly className={`${fieldClass} bg-slate-100`} />
-                  <input value={product.productionName} readOnly className={`${fieldClass} bg-slate-100`} />
-                  {(() => {
-                    const selectedProduct = productOptions.find(item => item.id === product.productId);
-                    const allowedUnits = allowedOrderUnits(selectedProduct);
-                    return allowedUnits.length > 0 ? (
-                      <select value={resolveInventoryUnit(selectedProduct, product.unit)} onChange={event => updateProduct(index, { unit: event.target.value })} className={fieldClass}>
-                        {allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}
-                      </select>
-                    ) : (
-                      <input value={product.unit} onChange={event => updateProduct(index, { unit: event.target.value })} className={fieldClass} />
-                    );
-                  })()}
-                  <input type="number" min="0" step="any" value={product.quantity} onChange={event => updateProduct(index, { quantity: event.target.value })} className={fieldClass} />
-                  {(['kg', 'm2', 'm dài'] as const).map(unit => {
-                    const value = getConversionResults(product, products, productConversions)
-                      .find(([, , resultUnit]) => resultUnit === unit)?.[1];
-                    return <input key={unit} value={value !== undefined ? value.toFixed(3) : ''} readOnly className={`${fieldClass} bg-slate-100 text-right`} />;
-                  })}
-                  <button type="button" onClick={() => setForm(prev => ({ ...prev, products: prev.products.length > 1 ? prev.products.filter((_, productIndex) => productIndex !== index) : [emptyInventoryOrderProduct()] }))} className="rounded-md border p-2 text-rose-700" title="Xóa dòng"><Trash2 className="h-4 w-4" /></button>
-                </div>)}
+                {form.products.map((product, index) => {
+                  const catalogProduct = resolveCatalogProduct(products, product);
+                  const allowedUnits = allowedOrderUnits(catalogProduct);
+                  const conversionInfo = getOrderProductConversion(product, products, productConversions);
+
+                  return (
+                    <div key={`${index}-${product.productId}`} className="grid grid-cols-[2rem_1.1fr_1.1fr_1.3fr_5rem_6rem_5rem_5rem_5rem_2.5rem] items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-b-0">
+                      <span className="text-center text-xs font-bold text-slate-500">{index + 1}</span>
+                      <SearchableSelect
+                        value={product.productId}
+                        onChange={productId => selectProduct(index, productId)}
+                        options={productOptions}
+                        resolveSelectedItem={(_opts, val) =>
+                          productOptions.find(item => item.id === val) || products.find(item => item.id === val) || null
+                        }
+                        placeholder="Tìm mã AMIS, tên sản phẩm..."
+                        getValue={item => (item as ProductRow).id}
+                        getLabel={item => (item as ProductRow).amisCode}
+                        getOptionLabel={item => {
+                          const selected = item as ProductRow;
+                          return `${selected.amisCode} - ${selected.productionName || selected.name}`;
+                        }}
+                        getSearchText={item => {
+                          const selected = item as ProductRow;
+                          return `${selected.amisCode} ${selected.name} ${selected.productionName}`;
+                        }}
+                        displaySelectedAsValue={false}
+                        inputClassName={fieldClass}
+                        maxResults={400}
+                      />
+                      <input value={product.productName} readOnly className={`${fieldClass} bg-slate-100`} />
+                      <input value={product.productionName} readOnly className={`${fieldClass} bg-slate-100`} />
+                      {allowedUnits.length > 0 ? (
+                        <select
+                          value={conversionInfo.effectiveUnit}
+                          onChange={event => updateProduct(index, { unit: event.target.value })}
+                          className={fieldClass}
+                        >
+                          {allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                        </select>
+                      ) : (
+                        <input
+                          value={product.unit}
+                          onChange={event => updateProduct(index, { unit: event.target.value })}
+                          className={fieldClass}
+                        />
+                      )}
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Nhập SL"
+                        value={product.quantity}
+                        onChange={event => updateProduct(index, { quantity: event.target.value })}
+                        className={fieldClass}
+                      />
+                      <input
+                        value={conversionInfo.kg !== null ? formatNumber(conversionInfo.kg, 3) : ''}
+                        readOnly
+                        className={`${fieldClass} bg-slate-100 text-right font-medium text-slate-700`}
+                        placeholder="-"
+                      />
+                      <input
+                        value={conversionInfo.m2 !== null ? formatNumber(conversionInfo.m2, 3) : ''}
+                        readOnly
+                        className={`${fieldClass} bg-slate-100 text-right font-medium text-slate-700`}
+                        placeholder="-"
+                      />
+                      <input
+                        value={conversionInfo.mdai !== null ? formatNumber(conversionInfo.mdai, 3) : ''}
+                        readOnly
+                        className={`${fieldClass} bg-slate-100 text-right font-medium text-slate-700`}
+                        placeholder="-"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({
+                          ...prev,
+                          products: prev.products.length > 1
+                            ? prev.products.filter((_, productIndex) => productIndex !== index)
+                            : [emptyInventoryOrderProduct()]
+                        }))}
+                        className="rounded-md border p-2 text-rose-700"
+                        title="Xóa dòng"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
