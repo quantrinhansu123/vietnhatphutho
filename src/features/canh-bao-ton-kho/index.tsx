@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
-import { generateNextOrderCode, normalizeOrders, type OrderRow } from '../don-hang';
+import { generateNextOrderCode, getOrderProductLines, normalizeOrders, type OrderRow } from '../don-hang';
 import { normalizeProducts, type ProductRow } from '../san-pham';
 import {
   calculateOrderConversion,
@@ -194,7 +194,9 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
   const filteredOrders = useMemo(
     () => minimumStockOrders.filter(order =>
       !normalizedSearch ||
-      `${order.orderCode} ${order.note} ${order.productName}`.toLocaleLowerCase('vi').includes(normalizedSearch)
+      `${order.orderCode} ${order.note} ${order.productName} ${getOrderProductLines(order).map(product => product.productionName).join(' ')}`
+        .toLocaleLowerCase('vi')
+        .includes(normalizedSearch)
     ),
     [minimumStockOrders, normalizedSearch]
   );
@@ -379,8 +381,8 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
             <div className="border-b border-slate-200 px-4 py-3 text-sm font-black text-slate-800">Đơn tồn kho tối thiểu</div>
             <div className="overflow-auto"><table className="w-full min-w-[760px] border-collapse text-sm">
-              <thead className="bg-slate-50 text-left text-xs font-black uppercase text-slate-600"><tr><th className="border-b px-4 py-3">Mã đơn</th><th className="border-b px-4 py-3">Ngày tạo</th><th className="border-b px-4 py-3">Sản phẩm</th><th className="border-b px-4 py-3">Trạng thái</th><th className="border-b px-4 py-3 text-center">Thao tác</th></tr></thead>
-              <tbody>{filteredOrders.map(order => <tr key={order.id} className="border-b border-slate-100 hover:bg-slate-50"><td className="px-4 py-3 font-black text-blue-700">{order.orderCode}</td><td className="px-4 py-3">{order.createdAt?.slice(0, 10) || '-'}</td><td className="px-4 py-3">{order.productName || '-'}</td><td className="px-4 py-3">{order.status || '-'}</td><td className="px-4 py-3 text-center"><button type="button" onClick={() => openEdit(order)} className="rounded-md border p-2 text-blue-700" title="Sửa"><Pencil className="h-4 w-4" /></button></td></tr>)}</tbody>
+              <thead className="bg-slate-50 text-left text-xs font-black uppercase text-slate-600"><tr><th className="border-b px-4 py-3">Mã đơn</th><th className="border-b px-4 py-3">Ngày tạo</th><th className="border-b px-4 py-3">Tên sản xuất</th><th className="border-b px-4 py-3">Trạng thái</th><th className="border-b px-4 py-3 text-center">Thao tác</th></tr></thead>
+              <tbody>{filteredOrders.map(order => <tr key={order.id} className="border-b border-slate-100 hover:bg-slate-50"><td className="px-4 py-3 font-black text-blue-700">{order.orderCode}</td><td className="px-4 py-3">{order.createdAt?.slice(0, 10) || '-'}</td><td className="px-4 py-3"><div className="space-y-1">{getOrderProductLines(order).map((product, index) => <div key={`${product.productCode}-${index}`}>{product.productionName || '-'}</div>)}</div></td><td className="px-4 py-3">{order.status || '-'}</td><td className="px-4 py-3 text-center"><button type="button" onClick={() => openEdit(order)} className="rounded-md border p-2 text-blue-700" title="Sửa"><Pencil className="h-4 w-4" /></button></td></tr>)}</tbody>
             </table></div>
             {filteredOrders.length === 0 && <div className="p-8 text-center text-sm font-semibold text-slate-500">Chưa có đơn tồn kho tối thiểu.</div>}
           </section>
