@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Eye, Loader2, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import { generateNextOrderCode, getOrderProductLines, normalizeOrders, type OrderRow } from '../don-hang';
 import { normalizeProducts, type ProductRow } from '../san-pham';
 import {
@@ -22,6 +22,7 @@ type InventoryAlert = {
   ma_amis: string;
   ten_sp: string;
   ten_san_xuat: string;
+  don_vi?: string;
   ton_kho: number;
   ton_kho_toi_thieu: number;
   ton_kho_toi_da: number;
@@ -147,7 +148,7 @@ function buildAlertProductLines(
 
     const catalogProduct = products.find(p => String(p.id).trim() === alertPid);
     const allowedUnits = allowedOrderUnits(catalogProduct);
-    const unit = allowedUnits[0] || catalogProduct?.unit || 'Tấm';
+    const unit = alert.don_vi || allowedUnits[0] || catalogProduct?.unit || 'Tấm';
 
     alertProducts.push({
       productId: alertPid,
@@ -242,6 +243,8 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'alerts' | 'orders'>('alerts');
   const [form, setForm] = useState<InventoryOrderForm>(emptyInventoryOrderForm());
+  const [viewingAlert, setViewingAlert] = useState<InventoryAlert | null>(null);
+  const [viewingOrder, setViewingOrder] = useState<OrderRow | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -510,8 +513,43 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
             <div className="border-b border-slate-200 px-4 py-3 text-sm font-black text-slate-800">Sản phẩm sắp hết tồn kho</div>
             {filteredAlerts.length === 0 ? <div className="p-8 text-center"><AlertTriangle className="mx-auto h-12 w-12 text-amber-500" /><p className="mt-3 text-sm font-semibold text-zinc-600">Không có sản phẩm nào phù hợp.</p></div> : (
               <div className="overflow-auto"><table className="w-full min-w-[760px] border-collapse text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-black uppercase text-slate-600"><tr><th className="border-b px-4 py-3">Mã AMIS</th><th className="border-b px-4 py-3">Tên sản phẩm</th><th className="border-b px-4 py-3">Tên sản xuất</th><th className="border-b px-4 py-3 text-right">Tồn kho</th><th className="border-b px-4 py-3 text-right">Tồn kho tối thiểu</th></tr></thead>
-                <tbody>{filteredAlerts.map(alert => <tr key={alert.id} className="border-b border-slate-100 hover:bg-slate-50"><td className="px-4 py-3 font-black text-rose-600">{alert.ma_amis || '-'}</td><td className="px-4 py-3">{alert.ten_sp || '-'}</td><td className="px-4 py-3">{alert.ten_san_xuat || '-'}</td><td className="px-4 py-3 text-right font-semibold text-rose-600">{alert.ton_kho}</td><td className="px-4 py-3 text-right text-slate-600">{alert.ton_kho_toi_thieu}</td></tr>)}</tbody>
+                <thead className="bg-slate-50 text-left text-xs font-black uppercase text-slate-600">
+                  <tr>
+                    <th className="border-b px-4 py-3">Mã AMIS</th>
+                    <th className="border-b px-4 py-3">Tên sản phẩm</th>
+                    <th className="border-b px-4 py-3">Tên sản xuất</th>
+                    <th className="border-b px-4 py-3 text-center">ĐVT</th>
+                    <th className="border-b px-4 py-3 text-right">Tồn kho</th>
+                    <th className="border-b px-4 py-3 text-right">Tồn kho tối thiểu</th>
+                    <th className="border-b px-4 py-3 text-center">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAlerts.map(alert => {
+                    const catalogProduct = products.find(p => String(p.id).trim() === String(alert.san_pham_id).trim());
+                    const unit = alert.don_vi || catalogProduct?.unit || '-';
+                    return (
+                      <tr key={alert.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-4 py-3 font-black text-rose-600">{alert.ma_amis || '-'}</td>
+                        <td className="px-4 py-3">{alert.ten_sp || '-'}</td>
+                        <td className="px-4 py-3">{alert.ten_san_xuat || '-'}</td>
+                        <td className="px-4 py-3 text-center font-semibold text-slate-700">{unit}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-rose-600">{formatNumber(alert.ton_kho)}</td>
+                        <td className="px-4 py-3 text-right text-slate-600">{formatNumber(alert.ton_kho_toi_thieu)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setViewingAlert(alert)}
+                            className="rounded-md border border-slate-200 p-2 text-zinc-600 hover:bg-zinc-50"
+                            title="Xem thông tin quy đổi"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
               </table></div>
             )}
           </section>
@@ -519,8 +557,72 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
             <div className="border-b border-slate-200 px-4 py-3 text-sm font-black text-slate-800">Đơn tồn kho tối thiểu</div>
             <div className="overflow-auto"><table className="w-full min-w-[760px] border-collapse text-sm">
-              <thead className="bg-slate-50 text-left text-xs font-black uppercase text-slate-600"><tr><th className="border-b px-4 py-3">Mã đơn</th><th className="border-b px-4 py-3">Ngày tạo</th><th className="border-b px-4 py-3">Tên sản xuất</th><th className="border-b px-4 py-3">Trạng thái</th><th className="border-b px-4 py-3 text-center">Thao tác</th></tr></thead>
-              <tbody>{filteredOrders.map(order => <tr key={order.id} className="border-b border-slate-100 hover:bg-slate-50"><td className="px-4 py-3 font-black text-blue-700">{order.orderCode}</td><td className="px-4 py-3">{order.createdAt?.slice(0, 10) || '-'}</td><td className="px-4 py-3"><div className="space-y-1">{getOrderProductLines(order).map((product, index) => <div key={`${product.productCode}-${index}`}>{product.productionName || '-'}</div>)}</div></td><td className="px-4 py-3">{order.status || '-'}</td><td className="px-4 py-3 text-center"><button type="button" onClick={() => openEdit(order)} className="rounded-md border p-2 text-blue-700" title="Sửa"><Pencil className="h-4 w-4" /></button></td></tr>)}</tbody>
+              <thead className="bg-slate-50 text-left text-xs font-black uppercase text-slate-600">
+                <tr>
+                  <th className="border-b px-4 py-3">Mã đơn</th>
+                  <th className="border-b px-4 py-3">Ngày tạo</th>
+                  <th className="border-b px-4 py-3">Tên sản xuất</th>
+                  <th className="border-b px-4 py-3 text-center">ĐVT</th>
+                  <th className="border-b px-4 py-3 text-right">Số lượng</th>
+                  <th className="border-b px-4 py-3">Trạng thái</th>
+                  <th className="border-b px-4 py-3 text-center">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOrders.map(order => {
+                  const lines = getOrderProductLines(order);
+                  return (
+                    <tr key={order.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-3 font-black text-blue-700">{order.orderCode}</td>
+                      <td className="px-4 py-3">{order.createdAt?.slice(0, 10) || '-'}</td>
+                      <td className="px-4 py-3">
+                        <div className="space-y-1">
+                          {lines.map((product, index) => (
+                            <div key={`${product.productCode}-${index}`}>{product.productionName || product.productName || '-'}</div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="space-y-1">
+                          {lines.map((product, index) => (
+                            <div key={`${product.productCode}-unit-${index}`}>{product.unit || '-'}</div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold">
+                        <div className="space-y-1">
+                          {lines.map((product, index) => (
+                            <div key={`${product.productCode}-qty-${index}`}>
+                              {product.quantity && product.quantity !== '-' ? formatNumber(Number(product.quantity)) : '-'}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{order.status || '-'}</td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingOrder(order)}
+                            className="rounded-md border border-slate-200 p-2 text-zinc-600 hover:bg-zinc-50"
+                            title="Xem thông tin quy đổi"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(order)}
+                            className="rounded-md border border-slate-200 p-2 text-blue-700 hover:bg-blue-50"
+                            title="Sửa"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
             </table></div>
             {filteredOrders.length === 0 && <div className="p-8 text-center text-sm font-semibold text-slate-500">Chưa có đơn tồn kho tối thiểu.</div>}
           </section>
@@ -649,6 +751,288 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
           <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3"><button type="button" onClick={() => setIsModalOpen(false)} disabled={saving} className="rounded-lg border px-4 py-2 text-xs font-bold">Hủy</button><button type="button" onClick={() => void save()} disabled={saving} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Lưu</button></div>
         </div>
       </div>}
+
+      {viewingAlert && (() => {
+        const catalogProduct = products.find(p => String(p.id).trim() === String(viewingAlert.san_pham_id).trim());
+        const unit = viewingAlert.don_vi || catalogProduct?.unit || 'Tấm';
+        const conversionInfo = getOrderProductConversion(
+          {
+            productId: viewingAlert.san_pham_id,
+            productCode: viewingAlert.ma_amis,
+            productName: viewingAlert.ten_sp,
+            productionName: viewingAlert.ten_san_xuat,
+            unit,
+            quantity: String(viewingAlert.ton_kho)
+          },
+          products,
+          productConversions
+        );
+        const conv = conversionInfo.conversion;
+
+        return (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/50 p-3 backdrop-blur-sm">
+            <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thông tin quy đổi sản phẩm</h3>
+                  <p className="mt-0.5 text-xs font-semibold text-zinc-500">{viewingAlert.ma_amis} · {viewingAlert.ten_san_xuat || viewingAlert.ten_sp}</p>
+                </div>
+                <button type="button" onClick={() => setViewingAlert(null)} className="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="min-h-0 overflow-y-auto p-5 space-y-4 text-sm">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Mã AMIS</p>
+                    <p className="mt-1 font-bold text-rose-600">{viewingAlert.ma_amis || '-'}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Đơn vị tính</p>
+                    <p className="mt-1 font-bold text-zinc-900">{unit}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Tồn kho hiện tại</p>
+                    <p className="mt-1 font-bold text-rose-600">{formatNumber(viewingAlert.ton_kho)} {unit}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 col-span-2 sm:col-span-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Tên sản xuất</p>
+                    <p className="mt-1 font-bold text-zinc-900">{viewingAlert.ten_san_xuat || '-'}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 col-span-2 sm:col-span-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Tên sản phẩm</p>
+                    <p className="mt-1 font-bold text-zinc-900">{viewingAlert.ten_sp || '-'}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Tồn kho tối thiểu</p>
+                    <p className="mt-1 font-bold text-slate-700">{formatNumber(viewingAlert.ton_kho_toi_thieu)} {unit}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Tồn kho tối đa</p>
+                    <p className="mt-1 font-bold text-slate-700">{formatNumber(viewingAlert.ton_kho_toi_da)} {unit}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Thời gian</p>
+                    <p className="mt-1 font-bold text-slate-700">Tháng {viewingAlert.thang}/{viewingAlert.nam}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+                  <p className="text-xs font-black uppercase tracking-wider text-emerald-800">
+                    Quy đổi tồn kho hiện tại ({formatNumber(viewingAlert.ton_kho)} {unit})
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                    <div className="rounded-lg border border-emerald-200 bg-white p-2.5 shadow-sm">
+                      <p className="text-[10px] font-black uppercase text-emerald-600">Trọng lượng</p>
+                      <p className="mt-1 text-base font-black text-emerald-900">
+                        {conversionInfo.kg !== null ? formatNumber(conversionInfo.kg, 3) : '-'}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-400">kg</p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-200 bg-white p-2.5 shadow-sm">
+                      <p className="text-[10px] font-black uppercase text-emerald-600">Diện tích</p>
+                      <p className="mt-1 text-base font-black text-emerald-900">
+                        {conversionInfo.m2 !== null ? formatNumber(conversionInfo.m2, 3) : '-'}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-400">m²</p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-200 bg-white p-2.5 shadow-sm">
+                      <p className="text-[10px] font-black uppercase text-emerald-600">Chiều dài</p>
+                      <p className="mt-1 text-base font-black text-emerald-900">
+                        {conversionInfo.mdai !== null ? formatNumber(conversionInfo.mdai, 3) : '-'}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-400">m dài</p>
+                    </div>
+                  </div>
+                </div>
+
+                {conv ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                    <p className="text-xs font-black uppercase tracking-wider text-slate-700">Thông số cấu hình quy đổi của sản phẩm</p>
+                    <div className="mt-2.5 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                      {conv.trongLuongKgTam ? <div className="rounded-lg bg-white p-2 border border-slate-200"><span className="text-slate-500 block text-[10px]">Trọng lượng / Tấm:</span><span className="font-bold text-slate-800">{formatNumber(conv.trongLuongKgTam, 3)} kg</span></div> : null}
+                      {conv.trongLuongKgCuon ? <div className="rounded-lg bg-white p-2 border border-slate-200"><span className="text-slate-500 block text-[10px]">Trọng lượng / Cuộn:</span><span className="font-bold text-slate-800">{formatNumber(conv.trongLuongKgCuon, 3)} kg</span></div> : null}
+                      {conv.trongLuongKgM2 ? <div className="rounded-lg bg-white p-2 border border-slate-200"><span className="text-slate-500 block text-[10px]">Trọng lượng / M²:</span><span className="font-bold text-slate-800">{formatNumber(conv.trongLuongKgM2, 3)} kg</span></div> : null}
+                      {conv.trongLuongKgMDai ? <div className="rounded-lg bg-white p-2 border border-slate-200"><span className="text-slate-500 block text-[10px]">Trọng lượng / M dài:</span><span className="font-bold text-slate-800">{formatNumber(conv.trongLuongKgMDai, 3)} kg</span></div> : null}
+                      {conv.dienTichM2Tam ? <div className="rounded-lg bg-white p-2 border border-slate-200"><span className="text-slate-500 block text-[10px]">Diện tích / Tấm:</span><span className="font-bold text-slate-800">{formatNumber(conv.dienTichM2Tam, 3)} m²</span></div> : null}
+                      {conv.dienTichM2Cuon ? <div className="rounded-lg bg-white p-2 border border-slate-200"><span className="text-slate-500 block text-[10px]">Diện tích / Cuộn:</span><span className="font-bold text-slate-800">{formatNumber(conv.dienTichM2Cuon, 3)} m²</span></div> : null}
+                      {conv.chieuDaiMCuon ? <div className="rounded-lg bg-white p-2 border border-slate-200"><span className="text-slate-500 block text-[10px]">Chiều dài / Cuộn:</span><span className="font-bold text-slate-800">{formatNumber(conv.chieuDaiMCuon, 3)} m</span></div> : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 font-medium">
+                    Sản phẩm này chưa được cấu hình bảng quy đổi sản phẩm.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end border-t border-slate-200 px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => setViewingAlert(null)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {viewingOrder && (() => {
+        const lines = getOrderProductLines(viewingOrder);
+        const linesWithConversion = lines.map(line => {
+          const conversionInfo = getOrderProductConversion(
+            {
+              productId: line.productId || '',
+              productCode: line.productCode || '',
+              productName: line.productName || '',
+              productionName: line.productionName || '',
+              unit: line.unit || '',
+              quantity: line.quantity || ''
+            },
+            products,
+            productConversions
+          );
+          const kgFromResults = line.conversionResults?.find(r => r.unit === 'kg')?.value;
+          const m2FromResults = line.conversionResults?.find(r => r.unit === 'm2')?.value;
+          const mdaiFromResults = line.conversionResults?.find(r => r.unit === 'm dài')?.value;
+
+          return {
+            line,
+            conversionInfo,
+            kg: kgFromResults ?? conversionInfo.kg,
+            m2: m2FromResults ?? conversionInfo.m2,
+            mdai: mdaiFromResults ?? conversionInfo.mdai
+          };
+        });
+
+        const totalQty = linesWithConversion.reduce((sum, item) => sum + (Number(item.line.quantity) || 0), 0);
+        const totalKg = linesWithConversion.reduce((sum, item) => sum + (item.kg || 0), 0);
+        const totalM2 = linesWithConversion.reduce((sum, item) => sum + (item.m2 || 0), 0);
+        const totalMdai = linesWithConversion.reduce((sum, item) => sum + (item.mdai || 0), 0);
+
+        return (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/50 p-3 backdrop-blur-sm">
+            <div className="flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết đơn hàng & Thông tin quy đổi</h3>
+                  <p className="mt-0.5 text-xs font-semibold text-blue-700">{viewingOrder.orderCode}</p>
+                </div>
+                <button type="button" onClick={() => setViewingOrder(null)} className="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="min-h-0 overflow-y-auto p-5 space-y-4 text-sm">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Mã đơn</p>
+                    <p className="mt-1 font-bold text-blue-700">{viewingOrder.orderCode}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Ngày tạo</p>
+                    <p className="mt-1 font-bold text-zinc-900">{viewingOrder.createdAt?.slice(0, 10) || '-'}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Loại đơn</p>
+                    <p className="mt-1 font-bold text-zinc-900">{viewingOrder.orderType}</p>
+                  </div>
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Trạng thái</p>
+                    <p className="mt-1 font-bold text-zinc-900">{viewingOrder.status}</p>
+                  </div>
+                  {viewingOrder.note && viewingOrder.note !== '-' ? (
+                    <div className="col-span-2 sm:col-span-4 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Ghi chú</p>
+                      <p className="mt-1 font-medium text-zinc-800">{viewingOrder.note}</p>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <div className="border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-700">Danh sách sản phẩm & Thông số quy đổi</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[700px] border-collapse text-xs">
+                      <thead className="bg-slate-50 text-left font-black uppercase text-slate-600">
+                        <tr>
+                          <th className="border-b px-3 py-2.5 text-center">#</th>
+                          <th className="border-b px-3 py-2.5">Mã AMIS</th>
+                          <th className="border-b px-3 py-2.5">Tên sản xuất</th>
+                          <th className="border-b px-3 py-2.5 text-center">ĐVT</th>
+                          <th className="border-b px-3 py-2.5 text-right">Số lượng</th>
+                          <th className="border-b px-3 py-2.5 text-right text-emerald-700">KG</th>
+                          <th className="border-b px-3 py-2.5 text-right text-emerald-700">M²</th>
+                          <th className="border-b px-3 py-2.5 text-right text-emerald-700">M dài</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linesWithConversion.map(({ line, kg, m2, mdai }, idx) => (
+                          <tr key={`${line.productCode}-${idx}`} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="px-3 py-2.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                            <td className="px-3 py-2.5 font-bold text-slate-700">{line.productCode || '-'}</td>
+                            <td className="px-3 py-2.5 font-semibold text-slate-900">{line.productionName || line.productName || '-'}</td>
+                            <td className="px-3 py-2.5 text-center font-medium text-slate-600">{line.unit || '-'}</td>
+                            <td className="px-3 py-2.5 text-right font-bold text-slate-900">
+                              {line.quantity && line.quantity !== '-' ? formatNumber(Number(line.quantity)) : '-'}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-emerald-700">
+                              {kg !== null && kg !== undefined ? formatNumber(kg, 3) : '-'}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-emerald-700">
+                              {m2 !== null && m2 !== undefined ? formatNumber(m2, 3) : '-'}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-emerald-700">
+                              {mdai !== null && mdai !== undefined ? formatNumber(mdai, 3) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {linesWithConversion.length > 1 && (
+                        <tfoot className="bg-slate-50 font-black">
+                          <tr>
+                            <td colSpan={4} className="px-3 py-2.5 text-right uppercase text-slate-600">Tổng cộng:</td>
+                            <td className="px-3 py-2.5 text-right text-slate-900">{formatNumber(totalQty)}</td>
+                            <td className="px-3 py-2.5 text-right text-emerald-800">{totalKg > 0 ? formatNumber(totalKg, 3) : '-'}</td>
+                            <td className="px-3 py-2.5 text-right text-emerald-800">{totalM2 > 0 ? formatNumber(totalM2, 3) : '-'}</td>
+                            <td className="px-3 py-2.5 text-right text-emerald-800">{totalMdai > 0 ? formatNumber(totalMdai, 3) : '-'}</td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const o = viewingOrder;
+                    setViewingOrder(null);
+                    openEdit(o);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  <Pencil className="h-4 w-4" /> Sửa đơn
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingOrder(null)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
