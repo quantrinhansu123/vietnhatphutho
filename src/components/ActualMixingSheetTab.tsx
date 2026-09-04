@@ -1,8 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, Plus, Printer, Save, Trash2, XCircle } from 'lucide-react';
-import { MixingNormRatioPrintBatch, type MixingNormRatioPrintDoc } from './MixingNormRatioPrintSheet';
+import {
+  MixingNormRatioPrintBatch,
+  formatWorkerName,
+  type MixingNormRatioPrintDoc
+} from './MixingNormRatioPrintSheet';
 import { Select2 } from './shared/Select2';
 import { waitForPrintImagesReady } from '../utils/printReady';
+import { normalizeProducts, type ProductRow } from '../features/san-pham';
+import type { MixingNormProduct } from './MixingNormMaterialsTab';
 
 /** Cối trộn tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
 type StandardLine = {
@@ -42,6 +48,21 @@ type ActualProduct = {
   dinh_luong_coi: number | null;
   standardNvl: StandardLine[];
   rounds: ActualRound[];
+};
+
+type SecondaryLine = {
+  ma_nvl: string;
+  ten_nvl: string;
+  ten_nvl_san_xuat: string;
+  khoi_luong_dinh_muc: number | null;
+  trong_luong_thuc_te: number | null;
+  trong_luong_thuc_te_input: string;
+};
+
+type ActualSecondaryProduct = {
+  ma_sp: string;
+  ten_sp: string;
+  lines: SecondaryLine[];
 };
 
 type NormRecord = { id: string; ngay: string; ca: string; ma_lenh_sx: string; chi_tiet: unknown };
@@ -165,6 +186,7 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
     .map((item): ActualProduct | null => {
       if (!item || typeof item !== 'object') return null;
       const product = item as Record<string, unknown>;
+      if (String(product.loai ?? '').trim() === 'nvl_phu') return null;
       const ma_sp = String(product.ma_sp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? '').trim();
       const ten_san_xuat = String(product.ten_san_xuat ?? product.tenSanXuat ?? '').trim();
@@ -179,7 +201,7 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
         .map(entry => parseStandardLine(entry))
         .filter((line): line is StandardLineRaw => Boolean(line))
         .map(line => fillStandardPercents(line, dinh_luong_coi, tong_trong_luong));
-      if (!ma_sp && !ten_sp && !ten_san_xuat && standardNvl.length === 0) return null;
+      if (standardNvl.length === 0) return null;
       return { ma_sp, ten_sp, ten_san_xuat, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
     })
     .filter((product): product is ActualProduct => Boolean(product));
@@ -257,6 +279,117 @@ function attachSavedRounds(standardProducts: ActualProduct[], savedChiTiet: unkn
   });
 }
 
+function resolveCatalogProductName(catalog: ProductRow[], codeStr: string): string {
+  if (!codeStr || !catalog.length) return '';
+  const codes = codeStr.split(',').map(c => c.trim()).filter(Boolean);
+  const names = codes
+    .map(c => {
+      const match = catalog.find(p => p.ma_sp === c || p.ma_amis === c);
+      return match?.ten_san_xuat || match?.ten_sp || '';
+    })
+    .filter(Boolean);
+  const uniqueNames = [...new Set(names)];
+  return uniqueNames.join(' / ');
+}
+
+function normalizeSecondaryProducts(raw: unknown): ActualSecondaryProduct[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item): ActualSecondaryProduct | null => {
+      if (!item || typeof item !== 'object') return null;
+      const product = item as Record<string, unknown>;
+      const isSecondary =
+        String(product.loai ?? '').trim() === 'nvl_phu' ||
+        (Array.isArray(product.nvl_phu) && product.nvl_phu.length > 0);
+      if (!isSecondary) return null;
+
+      const rawLines = Array.isArray(product.nvl_phu) && product.nvl_phu.length > 0
+        ? product.nvl_phu
+        : Array.isArray(product.chi_tiet) && product.chi_tiet.length > 0
+          ? product.chi_tiet
+          : Array.isArray(product.nvl)
+            ? product.nvl
+            : [];
+
+      const lines: SecondaryLine[] = rawLines
+        .map(entry => {
+          if (!entry || typeof entry !== 'object') return null;
+          const row = entry as Record<string, unknown>;
+          const ma_nvl = String(row.ma_nvl ?? '').trim();
+          const ten_nvl = String(row.ten_nvl ?? '').trim();
+          if (!ma_nvl && !ten_nvl) return null;
+          const kl = numberValue(row.khoi_luong ?? row.gia_tri ?? row.tong_khoi_luong);
+          return {
+            ma_nvl,
+            ten_nvl,
+            ten_nvl_san_xuat: String(row.ten_nvl_san_xuat ?? '').trim(),
+            khoi_luong_dinh_muc: kl,
+            trong_luong_thuc_te: kl,
+            trong_luong_thuc_te_input: kl !== null ? String(kl) : ''
+          };
+        })
+        .filter((l): l is SecondaryLine => Boolean(l));
+
+      if (lines.length === 0) return null;
+      return {
+        ma_sp: String(product.ma_sp ?? '').trim(),
+        ten_sp: String(product.ten_sp ?? '').trim(),
+        lines
+      };
+    })
+    .filter((p): p is ActualSecondaryProduct => Boolean(p));
+}
+
+function attachSavedSecondary(
+  standardSecondary: ActualSecondaryProduct[],
+  savedChiTiet: unknown
+): ActualSecondaryProduct[] {
+  if (!Array.isArray(savedChiTiet)) return standardSecondary;
+  const savedList = savedChiTiet.filter(
+    (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object'
+  );
+
+  return standardSecondary.map(sec => {
+    const matched = savedList.find(item => {
+      const isSec = String(item.loai ?? '').trim() === 'nvl_phu' || Array.isArray(item.nvl_phu);
+      return isSec && String(item.ma_sp ?? '').trim() === sec.ma_sp;
+    });
+    if (!matched) return sec;
+
+    const savedLinesRaw = Array.isArray(matched.nvl_phu) && matched.nvl_phu.length > 0
+      ? matched.nvl_phu
+      : Array.isArray(matched.nvl) && matched.nvl.length > 0
+        ? matched.nvl
+        : Array.isArray(matched.chi_tiet)
+          ? matched.chi_tiet
+          : [];
+
+    const savedLineMap = new Map<string, number | null>();
+    for (const s of savedLinesRaw) {
+      if (!s || typeof s !== 'object') continue;
+      const row = s as Record<string, unknown>;
+      const k = lineKey(String(row.ma_nvl ?? ''), String(row.ten_nvl ?? ''));
+      const val = numberValue(row.trong_luong_thuc_te);
+      if (val !== null) savedLineMap.set(k, val);
+    }
+
+    const updatedLines = sec.lines.map(line => {
+      const k = lineKey(line.ma_nvl, line.ten_nvl);
+      if (savedLineMap.has(k)) {
+        const savedVal = savedLineMap.get(k)!;
+        return {
+          ...line,
+          trong_luong_thuc_te: savedVal,
+          trong_luong_thuc_te_input: String(savedVal)
+        };
+      }
+      return line;
+    });
+
+    return { ...sec, lines: updatedLines };
+  });
+}
+
 function normalizeActualRecords(raw: unknown): ActualRecord[] {
   const rows = Array.isArray(raw)
     ? raw
@@ -311,7 +444,9 @@ export default function ActualMixingSheetTab() {
   const [norms, setNorms] = useState<NormRecord[]>([]);
   const [actuals, setActuals] = useState<ActualRecord[]>([]);
   const [selectedNormId, setSelectedNormId] = useState(stored?.normId || '');
+  const [catalogProducts, setCatalogProducts] = useState<ProductRow[]>([]);
   const [products, setProducts] = useState<ActualProduct[]>([]);
+  const [secondaryProducts, setSecondaryProducts] = useState<ActualSecondaryProduct[]>([]);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -322,9 +457,10 @@ export default function ActualMixingSheetTab() {
   useEffect(() => {
     Promise.all([
       fetch('/api/bang-tron-vat-tu-dinh-muc').then(res => res.json()),
-      fetch('/api/phieu-tron-thuc-te').then(res => res.json())
+      fetch('/api/phieu-tron-thuc-te').then(res => res.json()),
+      fetch('/api/san-pham?format=table').then(res => res.json()).catch(() => [])
     ])
-      .then(([normData, actualData]) => {
+      .then(([normData, actualData, productData]) => {
         const rows = Array.isArray(normData.records) ? normData.records : [];
         setNorms(
           rows.map((row: Record<string, unknown>) => ({
@@ -336,6 +472,7 @@ export default function ActualMixingSheetTab() {
           }))
         );
         setActuals(normalizeActualRecords(actualData));
+        setCatalogProducts(normalizeProducts(productData));
       })
       .catch(() => setError('Không thể tải dữ liệu phiếu trộn.'))
       .finally(() => setLoading(false));
@@ -377,6 +514,7 @@ export default function ActualMixingSheetTab() {
     if (!selectedNorm) {
       if (!selectedNormId) {
         setProducts([]);
+        setSecondaryProducts([]);
         setNote('');
       }
       return;
@@ -384,6 +522,8 @@ export default function ActualMixingSheetTab() {
     const saved = actuals.find(row => String(row.dinh_muc_id) === String(selectedNorm.id));
     const standard = normalizeStandardProducts(selectedNorm.chi_tiet);
     setProducts(attachSavedRounds(standard, saved?.chi_tiet));
+    const standardSec = normalizeSecondaryProducts(selectedNorm.chi_tiet);
+    setSecondaryProducts(attachSavedSecondary(standardSec, saved?.chi_tiet));
     setNote(saved?.ghi_chu ?? '');
   }, [selectedNorm, selectedNormId, actuals]);
 
@@ -506,6 +646,31 @@ export default function ActualMixingSheetTab() {
     );
   };
 
+  const changeSecondaryActualWeight = (productIndex: number, lineIndex: number, text: string) => {
+    if (!ACTUAL_WEIGHT_INPUT_PATTERN.test(text)) return;
+    if (text !== '' && !Number.isFinite(Number(text))) return;
+    setError(current => (current === ACTUAL_WEIGHT_FORMAT_ERROR ? '' : current));
+    const actualWeight = text === '' ? null : Number(text);
+    setSecondaryProducts(current =>
+      current.map((prod, pi) =>
+        pi !== productIndex
+          ? prod
+          : {
+              ...prod,
+              lines: prod.lines.map((line, li) =>
+                li !== lineIndex
+                  ? line
+                  : {
+                      ...line,
+                      trong_luong_thuc_te: actualWeight,
+                      trong_luong_thuc_te_input: text
+                    }
+              )
+            }
+      )
+    );
+  };
+
   const totalMixed = (product: ActualProduct) =>
     roundTo2(product.rounds.reduce((sum, round) => sum + (round.tong_trong_luong ?? 0), 0));
 
@@ -514,7 +679,9 @@ export default function ActualMixingSheetTab() {
     if (!norm) return setError('Vui lòng chọn đúng dòng phiếu định mức.');
     if (!date) return setError('Vui lòng chọn ngày thực hiện trộn thực tế.');
     if (!norm.ca) return setError('Phiếu định mức thiếu ca — sửa phiếu định mức rồi lưu lại.');
-    if (products.length === 0 || products.every(product => product.rounds.every(round => round.nvl.length === 0))) {
+    const hasFormulaLines = products.some(product => product.rounds.some(round => round.nvl.length > 0));
+    const hasSecondaryLines = secondaryProducts.some(sec => sec.lines.length > 0);
+    if (!hasFormulaLines && !hasSecondaryLines) {
       return setError('Phiếu không có dòng NVL để lưu.');
     }
     const overLimit = products.find(
@@ -539,7 +706,7 @@ export default function ActualMixingSheetTab() {
           phan_tram_thuc_te: line.phan_tram_thuc_te,
           trong_luong_thuc_te: line.trong_luong_thuc_te_input || null
         }));
-      const payloadChiTiet = products.map(product => {
+      const payloadChiTiet: any[] = products.map(product => {
         const lan_tron = product.rounds.map(round => ({
           lan: round.lan,
           tong_trong_luong: round.tong_trong_luong,
@@ -553,6 +720,28 @@ export default function ActualMixingSheetTab() {
           lan_tron
         };
       });
+
+      for (const sec of secondaryProducts) {
+        const nvl_phu = sec.lines.map(line => ({
+          ma_nvl: line.ma_nvl,
+          ten_nvl: line.ten_nvl,
+          ten_nvl_san_xuat: line.ten_nvl_san_xuat,
+          khoi_luong: line.khoi_luong_dinh_muc,
+          gia_tri: line.khoi_luong_dinh_muc,
+          tong_khoi_luong: line.khoi_luong_dinh_muc,
+          don_vi: 'kg',
+          trong_luong_thuc_te: line.trong_luong_thuc_te_input ? Number(line.trong_luong_thuc_te_input) : line.trong_luong_thuc_te
+        }));
+        payloadChiTiet.push({
+          loai: 'nvl_phu',
+          ma_sp: sec.ma_sp,
+          ten_sp: sec.ten_sp,
+          tong_trong_luong: null,
+          nvl: nvl_phu,
+          nvl_phu,
+          lan_tron: []
+        });
+      }
 
       const res = await fetch('/api/phieu-tron-thuc-te', {
         method: 'POST',
@@ -578,6 +767,8 @@ export default function ActualMixingSheetTab() {
       ]);
       const standard = normalizeStandardProducts(norm.chi_tiet);
       setProducts(attachSavedRounds(standard, record.chi_tiet));
+      const standardSec = normalizeSecondaryProducts(norm.chi_tiet);
+      setSecondaryProducts(attachSavedSecondary(standardSec, record.chi_tiet));
       setMessage(
         existing
           ? `Đã cập nhật đúng dòng ${norm.ma_lenh_sx || norm.id} · ca ${norm.ca}.`
@@ -611,17 +802,14 @@ export default function ActualMixingSheetTab() {
 
   const print = () => {
     if (!selectedNorm) return;
-    setPrintDoc({
-      maLenhSx: selectedNorm.ma_lenh_sx,
-      ngay: selectedNorm.ngay,
-      ca: selectedNorm.ca,
-      isActual: true,
-      intro: 'Tỷ lệ trộn định mức và kết quả trộn thực tế như sau',
-      products: products.map(product => {
+    const printProducts: Array<MixingNormProduct & { print_name?: string }> = [
+      ...products.map(product => {
         const standardByKey = new Map<string, StandardLine>(product.standardNvl.map(s => [lineKey(s.ma_nvl, s.ten_nvl), s]));
+        const catalogName = resolveCatalogProductName(catalogProducts, product.ma_sp);
         return {
           ma_sp: product.ma_sp,
           ten_sp: product.ten_sp,
+          print_name: catalogName || undefined,
           tong_trong_luong: product.tong_trong_luong,
           ghi_chu: '',
           chi_tiet: product.standardNvl.map(std => ({
@@ -649,6 +837,38 @@ export default function ActualMixingSheetTab() {
           }))
         };
       }),
+      ...secondaryProducts.map(sec => {
+        const catalogName = resolveCatalogProductName(catalogProducts, sec.ma_sp);
+        const lines = sec.lines.map(line => ({
+          ma_nvl: line.ma_nvl,
+          ten_nvl: line.ten_nvl,
+          ten_nvl_san_xuat: line.ten_nvl_san_xuat,
+          gia_tri: line.khoi_luong_dinh_muc,
+          don_vi: 'kg',
+          khoi_luong: line.khoi_luong_dinh_muc,
+          tong_khoi_luong: line.khoi_luong_dinh_muc,
+          trong_luong_thuc_te: line.trong_luong_thuc_te
+        }));
+        return {
+          loai: 'nvl_phu',
+          ma_sp: sec.ma_sp,
+          ten_sp: sec.ten_sp,
+          print_name: catalogName || undefined,
+          tong_trong_luong: null,
+          ghi_chu: '',
+          chi_tiet: lines,
+          nvl_phu: lines
+        };
+      })
+    ];
+
+    setPrintDoc({
+      maLenhSx: selectedNorm.ma_lenh_sx,
+      ngay: selectedNorm.ngay,
+      ca: selectedNorm.ca,
+      isActual: true,
+      intro: 'Tỷ lệ trộn định mức và kết quả trộn thực tế như sau',
+      products: printProducts,
       actualValues: products.map(product =>
         product.rounds.flatMap(round => round.nvl).map(line => ({
           percent: line.phan_tram_thuc_te,
@@ -762,14 +982,21 @@ export default function ActualMixingSheetTab() {
         products.map((product, pi) => {
           const mixed = totalMixed(product);
           const overLimit = product.tong_trong_luong !== null && mixed > product.tong_trong_luong + 0.0005;
-          const productName = product.ten_san_xuat || product.ten_sp;
+          const catalogName = resolveCatalogProductName(catalogProducts, product.ma_sp);
           return (
             <div key={`${product.ma_sp}-${pi}`} className="overflow-hidden rounded-xl border border-zinc-200">
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-100 px-3 py-2 text-sm font-black">
-                <span>
-                  Sản phẩm: {product.ma_sp}
-                  {productName ? ` · ${productName}` : ''}
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-100 px-3 py-2">
+                <div>
+                  <div className="text-sm font-black text-zinc-900">
+                    Sản phẩm: {product.ma_sp}
+                    {catalogName ? ` · ${catalogName}` : ''}
+                  </div>
+                  {product.ten_sp ? (
+                    <div className="mt-0.5 text-xs font-bold text-blue-700">
+                      {formatWorkerName(product.ten_sp)}
+                    </div>
+                  ) : null}
+                </div>
                 <span className={`text-xs font-bold ${overLimit ? 'text-rose-600' : 'text-zinc-500'}`}>
                   Đã trộn: {formatNumber(mixed)} / Tổng SL sau hao hụt: {formatNumber(product.tong_trong_luong)} kg
                 </span>
@@ -942,6 +1169,91 @@ export default function ActualMixingSheetTab() {
             </div>
           );
         })}
+      {selectedNormId && secondaryProducts.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 border-b border-zinc-200 pb-1">
+            <h3 className="text-sm font-black uppercase tracking-wider text-[#ef1b2d]">
+              Nguyên liệu phụ
+            </h3>
+          </div>
+          {secondaryProducts.map((secProd, pi) => {
+            const catalogName = resolveCatalogProductName(catalogProducts, secProd.ma_sp);
+            return (
+              <div key={`sec-${secProd.ma_sp}-${pi}`} className="overflow-hidden rounded-xl border border-zinc-200">
+                <div className="bg-zinc-100 px-3 py-2">
+                  <div className="text-sm font-black text-zinc-900">
+                    Sản phẩm: {secProd.ma_sp}
+                    {catalogName ? ` · ${catalogName}` : ''}
+                  </div>
+                  {secProd.ten_sp ? (
+                    <div className="mt-0.5 text-xs font-bold text-blue-700">
+                      {formatWorkerName(secProd.ten_sp)}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="overflow-x-auto p-2">
+                  <table className="w-full min-w-[640px] table-fixed text-left text-[11px]">
+                    <thead className="bg-zinc-950 text-white">
+                      <tr>
+                        <th className="w-10 px-2 py-1.5 text-center">STT</th>
+                        <th className="w-28 px-2 py-1.5">Mã NVL</th>
+                        <th className="px-2 py-1.5">Tên NVL</th>
+                        <th className="px-2 py-1.5">Tên NVL SX</th>
+                        <th className="w-32 px-2 py-1.5 text-center">Định mức (kg)</th>
+                        <th className="w-36 px-2 py-1.5 text-center">Trọng lượng thực tế (kg)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 bg-white">
+                      {secProd.lines.map((line, li) => (
+                        <tr key={`${line.ma_nvl}-${li}`}>
+                          <td className="px-2 py-1.5 text-center font-bold text-zinc-500">{li + 1}</td>
+                          <td className="px-2 py-1.5 font-mono font-bold">{line.ma_nvl}</td>
+                          <td className="break-words px-2 py-1.5">{line.ten_nvl}</td>
+                          <td className="break-words px-2 py-1.5">{line.ten_nvl_san_xuat || '—'}</td>
+                          <td className="px-2 py-1.5 text-center font-mono font-bold">
+                            {formatNumber(line.khoi_luong_dinh_muc)}
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={line.trong_luong_thuc_te_input}
+                              onChange={e => changeSecondaryActualWeight(pi, li, e.target.value)}
+                              onFocus={e => e.currentTarget.select()}
+                              className={`${fieldClass} h-8 w-full px-2 text-center text-[11px]`}
+                              placeholder="0.00"
+                              aria-label={`Trọng lượng thực tế ${line.ma_nvl || line.ten_nvl}`}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t border-zinc-200 bg-zinc-50 font-bold">
+                      <tr>
+                        <td colSpan={4} className="px-2 py-1.5 text-right text-zinc-600">
+                          Tổng cộng NVL phụ:
+                        </td>
+                        <td className="px-2 py-1.5 text-center font-mono font-black text-zinc-900">
+                          {formatNumber(
+                            secProd.lines.reduce((sum, l) => sum + (l.khoi_luong_dinh_muc ?? 0), 0)
+                          )}{' '}
+                          kg
+                        </td>
+                        <td className="px-2 py-1.5 text-center font-mono font-black text-[#ef1b2d]">
+                          {formatNumber(
+                            secProd.lines.reduce((sum, l) => sum + (l.trong_luong_thuc_te ?? 0), 0)
+                          )}{' '}
+                          kg
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {selectedNormId && (
         <div className="flex flex-wrap items-end justify-between gap-3">
           <label className="grid flex-1 gap-1 text-xs font-black text-zinc-600">

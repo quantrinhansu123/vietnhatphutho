@@ -4395,6 +4395,15 @@ input[type="number"] {
   font-weight: 700;
 }
 
+.mixing-norm-ratio-print-worker-name {
+  display: block;
+  margin-top: 2px;
+  font-size: 9.5pt;
+  font-weight: 700;
+  color: #1e3a8a;
+  text-transform: none;
+}
+
 .mixing-norm-ratio-print-tonnage {
   margin: 0 0 4px;
   font-size: 10pt;
