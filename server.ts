@@ -6862,7 +6862,7 @@ export function createApp() {
       const productIds = inventoryLimits.map(item => String(item.san_pham_id));
       const { data: products, error: productsError } = await supabase
         .from(SUPABASE_PRODUCTS_TABLE)
-        .select('id, ma_amis, ten_sp, ten_san_xuat, ton_kho')
+        .select('id, ma_amis, ten_sp, ten_san_xuat, don_vi, ton_kho')
         .in('id', productIds);
 
       if (productsError) {
@@ -6887,6 +6887,7 @@ export function createApp() {
               ma_amis: product.ma_amis || '',
               ten_sp: product.ten_sp || '',
               ten_san_xuat: product.ten_san_xuat || '',
+              don_vi: limit.don_vi || product.don_vi || '',
               ton_kho,
               ton_kho_toi_thieu: limit.ton_kho_toi_thieu,
               ton_kho_toi_da: limit.ton_kho_toi_da,
