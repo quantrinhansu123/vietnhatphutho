@@ -549,33 +549,41 @@ function nvlPhuToLineForms(
 
 function collectSavedSecondaryProducts(
   products: MixingNormProduct[],
-  materialsByCode: Map<string, MaterialOption>
+  materialsByCode: Map<string, MaterialOption>,
+  catalogProducts: ProductOption[] = []
 ): SecondaryProductForm[] {
-  const groups = new Map<string, { codes: string[]; lines: MixingNormLine[] }>();
+  const groups = new Map<string, { codes: string[]; ids: string[]; lines: MixingNormLine[] }>();
   for (const product of products) {
     const nvlPhu = product.nvl_phu ?? [];
     if (nvlPhu.length === 0) continue;
     const codes = product.ma_sp.split(',').map(code => code.trim()).filter(Boolean);
     if (codes.length === 0) continue;
+    const savedIds = Array.isArray(product.san_pham_ids)
+      ? product.san_pham_ids.map(id => String(id).trim())
+      : [String(product.san_pham_id ?? '').trim()];
     const signature = nvlPhuSignature(nvlPhu);
     const existing = groups.get(signature);
     if (existing) {
-      for (const code of codes) {
+      for (const [codeIndex, code] of codes.entries()) {
         const key = normalizeProductLookupKey(code);
         if (!key || existing.codes.some(item => normalizeProductLookupKey(item) === key)) continue;
         existing.codes.push(code);
+        existing.ids.push(savedIds[codeIndex] || '');
       }
       continue;
     }
     groups.set(signature, {
       codes: [...codes],
+      ids: codes.map((_, index) => savedIds[index] || ''),
       lines: nvlPhu
     });
   }
   return [...groups.values()].map((group, index) => ({
     key: `secondary-${index}-${group.codes[0] || 'block'}`,
     maSpCodes: group.codes,
-    maSpIds: [],
+    maSpIds: group.codes.map((code, index) =>
+      group.ids[index] || findCatalogProductByAnyCode(catalogProducts, code)?.id || ''
+    ),
     maSp: group.codes.join(', '),
     lines: nvlPhuToLineForms(group.lines, `${index}-${group.codes[0] || 'block'}`, materialsByCode)
   }));
@@ -1208,7 +1216,7 @@ export default function MixingNormMaterialsTab() {
     setEditingId(row.id);
     setCopySourceTitle('');
     const formulaProducts = row.products.filter(isFormulaNormProduct);
-    const savedSecondary = collectSavedSecondaryProducts(row.products, materialsByCode);
+    const savedSecondary = collectSavedSecondaryProducts(row.products, materialsByCode, catalogProducts);
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
       ca: row.ca,
@@ -1242,7 +1250,7 @@ export default function MixingNormMaterialsTab() {
       products: formulaProducts.length > 0
         ? formulaProducts.map(product => productToForm(product, `${row.id}-copy`, materialsByCode))
         : [emptyProduct()],
-      secondaryProducts: collectSavedSecondaryProducts(row.products, materialsByCode)
+      secondaryProducts: collectSavedSecondaryProducts(row.products, materialsByCode, catalogProducts)
     });
     setShowForm(true);
     setError('');
