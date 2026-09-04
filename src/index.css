@@ -4381,27 +4381,32 @@ input[type="number"] {
 
 .mixing-norm-ratio-print-product {
   margin: 0 0 4px;
-  font-size: 12pt;
+  font-size: 11pt;
   font-weight: 800;
   text-transform: uppercase;
   border-bottom: 1.5px solid #111;
-  padding-bottom: 2px;
+  padding-bottom: 3px;
 }
 
 .mixing-norm-ratio-print-product-name {
   display: block;
   margin-top: 1px;
-  font-size: 10.5pt;
+  font-size: 10pt;
   font-weight: 700;
+  text-transform: none;
+  color: #374151;
 }
 
 .mixing-norm-ratio-print-worker-name {
   display: block;
-  margin-top: 2px;
-  font-size: 9.5pt;
-  font-weight: 700;
+  margin-top: 3px;
+  margin-bottom: 2px;
+  font-size: 14pt;
+  font-weight: 900;
   color: #1e3a8a;
   text-transform: none;
+  line-height: 1.25;
+  letter-spacing: 0.2px;
 }
 
 .mixing-norm-ratio-print-tonnage {

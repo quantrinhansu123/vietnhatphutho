@@ -121,9 +121,18 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
   const [generalNoteMessage, setGeneralNoteMessage] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteDrafts, setNoteDrafts] = useState<NoteDraft[]>([emptyNoteDraft()]);
-  const [editingNoteId, setEditingNoteId] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
+
+  // State cho modal sửa ghi chú máy và ca
+  const [editingModalNote, setEditingModalNote] = useState<ScheduleNote | null>(null);
+  const [editModalDraft, setEditModalDraft] = useState<{ maMay: string; caLamViec: string; ghiChu: string }>({
+    maMay: '',
+    caLamViec: '',
+    ghiChu: ''
+  });
+  const [editModalSaving, setEditModalSaving] = useState(false);
+  const [editModalError, setEditModalError] = useState('');
 
   const fetchSchedule = useCallback(async (): Promise<ScheduleData> => {
     const res = await fetch(`/api/lich-lam-viec?ngay=${encodeURIComponent(ngay)}`);
@@ -149,7 +158,9 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
       setGeneralNoteMessage('');
       setShowNoteForm(false);
       setNoteDrafts([emptyNoteDraft()]);
-      setEditingNoteId('');
+      setEditingModalNote(null);
+      setEditModalDraft({ maMay: '', caLamViec: '', ghiChu: '' });
+      setEditModalError('');
       return;
     }
 
@@ -287,12 +298,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
     setNoteSaving(true);
     setNoteError('');
     try {
-      const res = await fetch(
-        editingNoteId
-          ? `/api/phan-cong-nhan-su/ghi-chu/${encodeURIComponent(editingNoteId)}`
-          : '/api/phan-cong-nhan-su/ghi-chu',
-        {
-        method: editingNoteId ? 'PUT' : 'POST',
+      const res = await fetch('/api/phan-cong-nhan-su/ghi-chu', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ngay_lam_viec: data?.ngay || ngay,
@@ -301,12 +308,11 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
           ca_lam_viec: selectedShift,
           ghi_chu: draft.ghiChu.trim()
         })
-        }
-      );
+      });
       const result = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(result.error || (editingNoteId ? 'Không cập nhật được ghi chú.' : 'Không lưu được ghi chú.'));
+      if (!res.ok) throw new Error(result.error || 'Không lưu được ghi chú.');
       const saved = normalizeScheduleNote(result.note) || {
-        id: editingNoteId || `local-${Date.now()}`,
+        id: `local-${Date.now()}`,
         ngay_lam_viec: data?.ngay || ngay,
         ma_may: draft.maMay,
         may: machineLabel(selectedMachine),
@@ -318,15 +324,10 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
         const current = prev.ghi_chu_chi_tiet ?? [];
         return {
           ...prev,
-          ghi_chu_chi_tiet: editingNoteId
-            ? current.map(note => (note.id === editingNoteId ? saved : note))
-            : [...current, saved]
+          ghi_chu_chi_tiet: [...current, saved]
         };
       });
-      setNoteDrafts(prev => editingNoteId
-        ? [emptyNoteDraft()]
-        : prev.map(item => (item.key === draft.key ? { ...item, ghiChu: '' } : item)));
-      setEditingNoteId('');
+      setNoteDrafts(prev => prev.map(item => (item.key === draft.key ? { ...item, ghiChu: '' } : item)));
       setShowNoteForm(true);
     } catch (err: any) {
       setNoteError(err?.message || 'Không lưu được ghi chú.');
@@ -336,15 +337,84 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
   };
 
   const handleEditNote = (note: ScheduleNote) => {
-    setNoteError('');
-    setEditingNoteId(note.id);
-    setNoteDrafts([{
-      key: `edit-${note.id}`,
-      maMay: note.ma_may,
-      caLamViec: canonicalShift(note.ca_lam_viec),
-      ghiChu: note.ghi_chu
-    }]);
-    setShowNoteForm(true);
+    const shift = canonicalShift(note.ca_lam_viec);
+    const validShift = shiftOptions.some(s => s.value === shift)
+      ? shift
+      : shiftOptions[0]?.value || shift;
+    const validMachine = machineOptions.some(m => m.value === note.ma_may)
+      ? note.ma_may
+      : machineOptions[0]?.value || note.ma_may;
+
+    setEditingModalNote(note);
+    setEditModalDraft({
+      maMay: validMachine,
+      caLamViec: validShift,
+      ghiChu: note.ghi_chu || ''
+    });
+    setEditModalError('');
+  };
+
+  const handleSaveEditModal = async () => {
+    if (!editingModalNote) return;
+    const selectedShift = canonicalShift(editModalDraft.caLamViec).trim();
+    if (!data?.ngay && !ngay) return;
+    if (!editModalDraft.maMay) {
+      setEditModalError('Vui lòng chọn máy.');
+      return;
+    }
+    if (!selectedShift) {
+      setEditModalError('Vui lòng chọn ca.');
+      return;
+    }
+    if (!editModalDraft.ghiChu.trim()) {
+      setEditModalError('Vui lòng nhập nội dung ghi chú.');
+      return;
+    }
+
+    const selectedMachine = machineList.find(machine => String(machine.ma_may ?? '').trim() === editModalDraft.maMay);
+    if (!selectedMachine) {
+      setEditModalError('Máy được chọn không còn tồn tại trong dữ liệu hiện tại.');
+      return;
+    }
+
+    setEditModalSaving(true);
+    setEditModalError('');
+    try {
+      const res = await fetch(`/api/phan-cong-nhan-su/ghi-chu/${encodeURIComponent(editingModalNote.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ngay_lam_viec: data?.ngay || ngay,
+          ma_may: editModalDraft.maMay,
+          may: machineLabel(selectedMachine),
+          ca_lam_viec: selectedShift,
+          ghi_chu: editModalDraft.ghiChu.trim()
+        })
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || 'Không cập nhật được ghi chú.');
+      const saved = normalizeScheduleNote(result.note) || {
+        id: editingModalNote.id,
+        ngay_lam_viec: data?.ngay || ngay,
+        ma_may: editModalDraft.maMay,
+        may: machineLabel(selectedMachine),
+        ca_lam_viec: selectedShift,
+        ghi_chu: editModalDraft.ghiChu.trim()
+      };
+      setData(prev => {
+        if (!prev) return prev;
+        const current = prev.ghi_chu_chi_tiet ?? [];
+        return {
+          ...prev,
+          ghi_chu_chi_tiet: current.map(item => (item.id === editingModalNote.id ? saved : item))
+        };
+      });
+      setEditingModalNote(null);
+    } catch (err: any) {
+      setEditModalError(err?.message || 'Không cập nhật được ghi chú.');
+    } finally {
+      setEditModalSaving(false);
+    }
   };
 
   const handleSaveGeneralNote = async () => {
@@ -529,26 +599,24 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
 
             {showNoteForm ? (
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {!editingNoteId ? (
-                  <div className="flex justify-end sm:col-span-2">
-                    <button
-                      type="button"
-                      onClick={() => setNoteDrafts(prev => {
-                        const last = prev[prev.length - 1];
-                        const next = emptyNoteDraft();
-                        return [...prev, {
-                          ...next,
-                          maMay: last?.maMay || machineOptions[0]?.value || '',
-                          caLamViec: last?.caLamViec || shiftOptions[0]?.value || ''
-                        }];
-                      })}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-xs font-extrabold text-violet-700 hover:bg-violet-100"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Thêm mới
-                    </button>
-                  </div>
-                ) : null}
+                <div className="flex justify-end sm:col-span-2">
+                  <button
+                    type="button"
+                    onClick={() => setNoteDrafts(prev => {
+                      const last = prev[prev.length - 1];
+                      const next = emptyNoteDraft();
+                      return [...prev, {
+                        ...next,
+                        maMay: last?.maMay || machineOptions[0]?.value || '',
+                        caLamViec: last?.caLamViec || shiftOptions[0]?.value || ''
+                      }];
+                    })}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-xs font-extrabold text-violet-700 hover:bg-violet-100"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Thêm mới
+                  </button>
+                </div>
                 {noteDrafts.map(draft => (
                   <div key={draft.key} className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-200 bg-white p-3 sm:col-span-2 sm:grid-cols-2">
                     <div className="flex items-center justify-between sm:col-span-2">
@@ -623,21 +691,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                       className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white hover:bg-[#b30d1c] disabled:opacity-50"
                     >
                       {noteSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      {editingNoteId ? 'Cập nhật ghi chú' : 'Lưu ghi chú'}
+                      Lưu ghi chú
                     </button>
-                    {editingNoteId ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingNoteId('');
-                          setNoteDrafts([emptyNoteDraft()]);
-                          setNoteError('');
-                        }}
-                        className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
-                      >
-                        Hủy sửa
-                      </button>
-                    ) : null}
                     <button
                       type="button"
                       onClick={() => updateNoteDraft(draft.key, { ghiChu: '' })}
@@ -797,6 +852,131 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Modal Sửa ghi chú theo máy và ca */}
+      {editingModalNote ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/50 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setEditingModalNote(null)}
+        >
+          <div
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50/75 px-5 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                  <Pencil className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black uppercase tracking-wider text-zinc-900">
+                    Sửa ghi chú máy &amp; ca
+                  </h4>
+                  <p className="text-[11px] font-semibold text-zinc-500">
+                    Ngày làm việc: {formatDate(data?.ngay || ngay)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingModalNote(null)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 transition"
+                title="Đóng modal"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="space-y-4 p-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                    Máy <span className="text-rose-500">*</span>
+                  </span>
+                  <select
+                    value={editModalDraft.maMay}
+                    onChange={e => setEditModalDraft(prev => ({ ...prev, maMay: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                  >
+                    {machineOptions.length === 0 ? (
+                      <option value="">Không có máy</option>
+                    ) : (
+                      machineOptions.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+
+                <label className="space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                    Ca <span className="text-rose-500">*</span>
+                  </span>
+                  <select
+                    value={editModalDraft.caLamViec}
+                    onChange={e => setEditModalDraft(prev => ({ ...prev, caLamViec: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                  >
+                    {shiftOptions.length === 0 ? (
+                      <option value="">Không có ca</option>
+                    ) : (
+                      shiftOptions.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              </div>
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                  Nội dung ghi chú <span className="text-rose-500">*</span>
+                </span>
+                <textarea
+                  value={editModalDraft.ghiChu}
+                  onChange={e => setEditModalDraft(prev => ({ ...prev, ghiChu: e.target.value }))}
+                  rows={4}
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                  placeholder="Ví dụ: kiểm tra dầu, đổi người hỗ trợ, ưu tiên lô X"
+                />
+              </label>
+
+              {editModalError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                  {editModalError}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setEditingModalNote(null)}
+                disabled={editModalSaving}
+                className="h-9 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 transition"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveEditModal()}
+                disabled={editModalSaving || machineOptions.length === 0 || shiftOptions.length === 0}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white hover:bg-[#b30d1c] disabled:opacity-50 transition shadow-sm"
+              >
+                {editModalSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Cập nhật ghi chú
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

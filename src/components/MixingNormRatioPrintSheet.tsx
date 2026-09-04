@@ -210,7 +210,7 @@ function NormPrintProductSection({
   const showNote = Boolean(product.ghi_chu) && (mode === 'primary' || product.loai === 'nvl_phu');
 
   return (
-    <section className="mixing-norm-ratio-print-block">
+    <section className={`mixing-norm-ratio-print-block ${isActual ? 'is-actual' : ''}`}>
       <h2 className="mixing-norm-ratio-print-product">
         <span>{index + 1}. {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}</span>
         {product.print_name ? (
@@ -371,7 +371,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
 
   return (
     <div className="mixing-norm-ratio-print-sheet">
-      <div className="mixing-norm-ratio-print-doc">
+      <div className={`mixing-norm-ratio-print-doc ${doc.isActual ? 'is-actual' : ''}`}>
         <header className="mixing-norm-ratio-print-header">
           <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="mixing-norm-ratio-print-logo" />
           <div className="mixing-norm-ratio-print-company">
@@ -403,7 +403,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               return (
                 <section
                   key={`actual-${product.ma_sp}-${index}`}
-                  className="mixing-norm-ratio-print-block"
+                  className="mixing-norm-ratio-print-block is-actual"
                 >
                   <h2 className="mixing-norm-ratio-print-product">
                     <span>{index + 1}. {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}</span>
@@ -421,6 +421,11 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   {tong !== null && tong !== undefined ? (
                     <p className="mixing-norm-ratio-print-tonnage">
                       Tổng trọng lượng: <strong>{formatNumberVi(tong)} kg</strong>
+                    </p>
+                  ) : null}
+                  {product.dinh_luong_coi ? (
+                    <p className="mixing-norm-ratio-print-tonnage">
+                      Cối trộn tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
                     </p>
                   ) : null}
 

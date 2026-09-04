@@ -811,6 +811,7 @@ export default function ActualMixingSheetTab() {
           ten_sp: product.ten_sp,
           print_name: catalogName || undefined,
           tong_trong_luong: product.tong_trong_luong,
+          dinh_luong_coi: product.dinh_luong_coi,
           ghi_chu: '',
           chi_tiet: product.standardNvl.map(std => ({
             ma_nvl: std.ma_nvl,
@@ -1003,9 +1004,21 @@ export default function ActualMixingSheetTab() {
               </div>
 
               <div className="border-b border-zinc-200 bg-red-50/40 p-2">
-                <p className="mb-1.5 px-1 text-[11px] font-black uppercase tracking-wider text-[#ef1b2d]">
-                  Cối trộn tiêu chuẩn (định mức — không sửa)
-                </p>
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-[#ef1b2d]">
+                      Cối trộn tiêu chuẩn (định mức — không sửa)
+                    </span>
+                    {product.dinh_luong_coi !== null && product.dinh_luong_coi !== undefined ? (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-700 shadow-sm">
+                        Định lượng 1 cối:
+                        <strong className="font-black text-[#ef1b2d]">
+                          {formatNumber(product.dinh_luong_coi)} kg
+                        </strong>
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] table-fixed text-left text-[11px]">
                     <thead className="bg-zinc-950 text-white">
@@ -1048,9 +1061,6 @@ export default function ActualMixingSheetTab() {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-1.5 px-1 text-[11px] font-semibold text-zinc-600">
-                  Định lượng 1 cối trộn tiêu chuẩn: <strong>{formatNumber(product.dinh_luong_coi)} kg</strong>
-                </p>
                 <button
                   type="button"
                   onClick={() => addRound(pi)}
