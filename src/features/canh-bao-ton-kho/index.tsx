@@ -130,6 +130,15 @@ function resolveInventoryUnit(product: ProductRow | undefined, unit: string) {
   return allowedUnits.includes(unit) ? unit : allowedUnits[0] || unit || product?.unit || 'Tấm';
 }
 
+function calculateAlertNeedQuantity(alert: InventoryAlert): string {
+  const minStock = Number(alert.ton_kho_toi_thieu ?? 0);
+  const currentStock = Number(alert.ton_kho ?? 0);
+  const diff = minStock - currentStock;
+  if (!Number.isFinite(diff) || diff <= 0) return '';
+  const rounded = Math.round(diff * 10_000) / 10_000;
+  return String(rounded);
+}
+
 function buildAlertProductLines(
   alerts: InventoryAlert[],
   products: ProductRow[]
@@ -149,6 +158,7 @@ function buildAlertProductLines(
     const catalogProduct = products.find(p => String(p.id).trim() === alertPid);
     const allowedUnits = allowedOrderUnits(catalogProduct);
     const unit = alert.don_vi || allowedUnits[0] || catalogProduct?.unit || 'Tấm';
+    const quantity = calculateAlertNeedQuantity(alert);
 
     alertProducts.push({
       productId: alertPid,
@@ -156,7 +166,7 @@ function buildAlertProductLines(
       productName: alert.ten_sp || catalogProduct?.name || '',
       productionName: alert.ten_san_xuat || catalogProduct?.productionName || alert.ten_sp || '',
       unit,
-      quantity: ''
+      quantity
     });
   }
 
@@ -389,12 +399,16 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
     const product = productOptions.find(item => item.id === productId)
       || products.find(item => item.id === productId);
     const allowedUnits = allowedOrderUnits(product);
+    const alert = alerts.find(a => String(a.san_pham_id || '').trim() === String(productId).trim());
+    const defaultQty = alert ? calculateAlertNeedQuantity(alert) : '';
+    const currentQty = form.products[index]?.quantity;
     updateProduct(index, {
       productId,
       productCode: product?.amisCode || '',
       productName: product?.name || '',
       productionName: product?.productionName || '',
-      unit: allowedUnits[0] || product?.unit || 'Tấm'
+      unit: allowedUnits[0] || product?.unit || 'Tấm',
+      ...(!currentQty && defaultQty ? { quantity: defaultQty } : {})
     });
   };
 

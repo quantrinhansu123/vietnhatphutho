@@ -6877,10 +6877,10 @@ export function createApp() {
           const product = productMap.get(String(limit.san_pham_id));
           if (!product) return null;
 
-          const threshold = (limit.ton_kho_toi_thieu * 0.05);
+          const threshold = Number(limit.ton_kho_toi_thieu || 0);
           const ton_kho = Number(product.ton_kho || 0);
 
-          if (ton_kho <= threshold) {
+          if (ton_kho < threshold) {
             return {
               id: limit.id,
               san_pham_id: limit.san_pham_id,
@@ -7461,22 +7461,42 @@ export function createApp() {
         query = query.eq('ma_nhan_su', maNhanSu);
       }
 
-      // Filter theo ngay_lam_viec
+      // Filter theo ngay_lam_viec (ngày đơn)
       const ngayLamViec = String(req.query.ngay_lam_viec || '').trim();
       if (ngayLamViec) {
         query = query.eq('ngay_lam_viec', ngayLamViec);
       }
 
-      // Filter theo ca_lam_viec
-      const caLamViec = String(req.query.ca_lam_viec || '').trim();
-      if (caLamViec) {
-        query = query.eq('ca_lam_viec', caLamViec);
+      // Filter theo khoảng ngày (from_date / to_date hoặc ngay_from / ngay_to)
+      const fromDate = String(req.query.from_date || req.query.ngay_from || '').trim();
+      if (fromDate) {
+        query = query.gte('ngay_lam_viec', fromDate);
       }
 
-      // Filter theo ma_may
+      const toDate = String(req.query.to_date || req.query.ngay_to || '').trim();
+      if (toDate) {
+        query = query.lte('ngay_lam_viec', toDate);
+      }
+
+      // Filter theo danh sách ngày (dates=2026-09-01,2026-09-02)
+      const datesParam = String(req.query.dates || '').trim();
+      if (datesParam) {
+        const dateArr = datesParam.split(',').map(d => d.trim()).filter(Boolean);
+        if (dateArr.length > 0) {
+          query = query.in('ngay_lam_viec', dateArr);
+        }
+      }
+
+      // Filter theo ma_may cụ thể
       const maMay = String(req.query.ma_may || '').trim();
       if (maMay) {
         query = query.eq('ma_may', maMay);
+      }
+
+      // Filter theo may (tên máy)
+      const may = String(req.query.may || '').trim();
+      if (may) {
+        query = query.eq('may', may);
       }
 
       // Filter theo vai_tro
@@ -7492,7 +7512,54 @@ export function createApp() {
         return res.json({ items: [] });
       }
 
-      return res.json({ items: data || [] });
+      let items = (data || []) as Array<Record<string, unknown>>;
+
+      const normStr = (v: unknown) =>
+        String(v || '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd')
+          .replace(/\s+/g, '');
+
+      const normShift = (v: unknown) => {
+        const text = String(v || '').trim().toLowerCase();
+        if (!text || text === '-' || text === 'tất cả' || text === 'all' || text === 'tat ca') {
+          return '';
+        }
+        const numMatch = text.match(/\d+/);
+        if (numMatch) return numMatch[0];
+        return normStr(text);
+      };
+
+      // Lọc linh hoạt theo máy (nếu truyền param machine: khớp cả ma_may hoặc may)
+      const machineParam = String(req.query.machine || '').trim();
+      if (machineParam && machineParam !== '-') {
+        const normTarget = normStr(machineParam);
+        items = items.filter(r => {
+          const normCode = normStr(r.ma_may);
+          const normName = normStr(r.may);
+          return normCode === normTarget || normName === normTarget;
+        });
+      }
+
+      // Lọc linh hoạt theo ca làm việc (ca_lam_viec hoặc ca)
+      const caParam = String(req.query.ca_lam_viec || req.query.ca || '').trim();
+      if (caParam && caParam !== '-' && !/^tất cả$/i.test(caParam) && !/^all$/i.test(caParam)) {
+        const targetTokens = caParam
+          .split(/[,;/+]+/)
+          .map(c => normShift(c))
+          .filter(Boolean);
+        if (targetTokens.length > 0) {
+          items = items.filter(r => {
+            const rowShift = normShift(r.ca_lam_viec);
+            return !rowShift || targetTokens.includes(rowShift);
+          });
+        }
+      }
+
+      return res.json({ items });
     } catch (err: any) {
       console.error('Error in /api/phan-cong-nhan-su:', err);
       return res.json({ items: [] });

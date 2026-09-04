@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -6340,6 +6340,61 @@ function buildProductionOrderDateRange(startDate: string, endDate: string) {
   return dates;
 }
 
+function normalizeKey(str: unknown): string {
+  return String(str || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '');
+}
+
+function matchesMachine(targetMachine: string, schedMaMay: string, schedMay: string): boolean {
+  const normTarget = normalizeKey(targetMachine);
+  if (!normTarget || normTarget === '-') return true;
+  const normCode = normalizeKey(schedMaMay);
+  const normName = normalizeKey(schedMay);
+  return normCode === normTarget || normName === normTarget;
+}
+
+function normalizeShift(str: unknown): string {
+  const text = String(str || '').trim().toLowerCase();
+  if (!text || text === '-' || text === 'tất cả' || text === 'all' || text === 'tat ca') {
+    return '';
+  }
+  const numMatch = text.match(/\d+/);
+  if (numMatch) return numMatch[0];
+  return normalizeKey(text);
+}
+
+function matchesShift(targetShift: string, schedCa: string): boolean {
+  const normTarget = normalizeShift(targetShift);
+  if (!normTarget) return true; // Lệnh không chỉ định ca hoặc tất cả ca -> khớp mọi ca
+
+  const targetTokens = String(targetShift || '')
+    .split(/[,;/+]+/)
+    .map(s => normalizeShift(s))
+    .filter(Boolean);
+  if (targetTokens.length === 0) return true;
+
+  const normSched = normalizeShift(schedCa);
+  if (!normSched) return true;
+
+  return targetTokens.includes(normSched);
+}
+
+function resolveProductionOrderDateBounds(row: ProductionOrderRow) {
+  const startRaw = row.startDate || row.ngay_bat_dau || row.ngay_gio_bat_dau || '';
+  const endRaw = row.endDate || row.ngay_gio_ket_thuc || row.ngay_bat_dau || startRaw;
+
+  const dates = buildProductionOrderDateRange(startRaw, endRaw);
+  const fromDate = dates[0] || parseProductionOrderDisplayDate(startRaw);
+  const toDate = dates[dates.length - 1] || fromDate;
+
+  return { dates, fromDate, toDate };
+}
+
 function resolveProductionOrderScheduleStaffName(
   personnelId: string,
   staffMap?: Map<string, string>
@@ -6422,18 +6477,51 @@ export function ProductionOrderViewModal({
       setScheduleRows([]);
 
       try {
+        const { dates, fromDate, toDate } = resolveProductionOrderDateBounds(row);
+        const machine = String(row.machine || '').trim();
+        const shift = String(row.shift || '').trim();
         const code = String(row.code || '').trim();
-        if (!code) return;
 
-        const res = await fetch(`/api/phan-cong-nhan-su?ma_lenh_sx=${encodeURIComponent(code)}`);
+        const params = new URLSearchParams();
+        if (fromDate) params.set('from_date', fromDate);
+        if (toDate) params.set('to_date', toDate);
+        if (machine && machine !== '-') params.set('machine', machine);
+        if (shift && shift !== '-') params.set('ca_lam_viec', shift);
+
+        const res = await fetch(`/api/phan-cong-nhan-su?${params.toString()}`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data.error || 'Không thể tải lịch làm việc của lệnh SX.');
         }
 
-        const items = Array.isArray(data.items) ? (data.items as ProductionOrderScheduleRow[]) : [];
+        let items = Array.isArray(data.items) ? (data.items as ProductionOrderScheduleRow[]) : [];
+
+        // Fallback: nếu query theo ngày/máy/ca không có kết quả mà lệnh có mã lệnh SX, thử truy vấn theo ma_lenh_sx
+        if (items.length === 0 && code) {
+          const fallbackRes = await fetch(`/api/phan-cong-nhan-su?ma_lenh_sx=${encodeURIComponent(code)}`);
+          const fallbackData = await fallbackRes.json().catch(() => ({}));
+          if (fallbackRes.ok && Array.isArray(fallbackData.items) && fallbackData.items.length > 0) {
+            items = fallbackData.items as ProductionOrderScheduleRow[];
+          }
+        }
+
+        // Lọc chính xác ở client theo ngày, máy và ca của lệnh
+        const filtered = items.filter(item => {
+          const itemDate = String(item.ngay_lam_viec || '').slice(0, 10);
+          if (dates.length > 0 && itemDate && !dates.includes(itemDate)) {
+            return false;
+          }
+          if (machine && machine !== '-' && !matchesMachine(machine, item.ma_may, item.may)) {
+            return false;
+          }
+          if (shift && shift !== '-' && !matchesShift(shift, item.ca_lam_viec)) {
+            return false;
+          }
+          return true;
+        });
+
         if (!cancelled) {
-          setScheduleRows(items);
+          setScheduleRows(filtered);
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -6450,13 +6538,23 @@ export function ProductionOrderViewModal({
     return () => {
       cancelled = true;
     };
-  }, [row?.id, row?.code]);
+  }, [
+    row?.id,
+    row?.code,
+    row?.startDate,
+    row?.endDate,
+    row?.ngay_bat_dau,
+    row?.ngay_gio_bat_dau,
+    row?.ngay_gio_ket_thuc,
+    row?.machine,
+    row?.shift
+  ]);
 
   if (!row) return null;
 
   const productLines = getProductionOrderProductLines(row);
+  const { dates: scheduleDateRange } = resolveProductionOrderDateBounds(row);
   const scheduleGroupsByDay = new Map(groupProductionOrderScheduleRows(scheduleRows).map(group => [group.day, group.groups] as const));
-  const scheduleDateRange = buildProductionOrderDateRange(row.startDate, row.endDate);
   const scheduleDays = scheduleDateRange.length > 0 ? scheduleDateRange : [...scheduleGroupsByDay.keys()].sort((a, b) => a.localeCompare(b));
 
   return (
@@ -6529,7 +6627,7 @@ export function ProductionOrderViewModal({
                           <div key={group.key} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                                {group.rows.length} ghi chú
+                                {group.rows.length} nhân sự
                               </p>
                             </div>
                             <div className="mt-2 text-sm font-bold text-zinc-900">
