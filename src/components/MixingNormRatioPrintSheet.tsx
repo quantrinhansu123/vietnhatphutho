@@ -7,6 +7,7 @@ export type MixingNormRatioPrintDoc = {
   maLenhSx: string;
   ngay: string;
   ca?: string;
+  ghiChu?: string;
   isActual?: boolean;
   actualValues?: Array<Array<{ percent: number | null; weight: number | null }>>;
   actualRounds?: Array<Array<Array<{ percent: number | null; weight: number | null }>>>;
@@ -194,6 +195,8 @@ export function toPrintDoc(
   return {
     maLenhSx: row.ma_lenh_sx.trim(),
     ngay: row.ngay || new Date().toISOString().slice(0, 10),
+    ca: row.ca,
+    ghiChu: row.ghi_chu?.trim(),
     products: [...row.products]
       .filter(product => product.loai !== 'nvl_phu' || (product.nvl_phu?.length ?? 0) > 0)
       .sort(comparePrintProducts)
@@ -260,24 +263,20 @@ function NormPrintProductSection({
           <thead>
             <tr>
               <th className="col-stt">STT</th>
-              <th className="col-type">Loại NVL</th>
               <th className="col-code">Mã NVL</th>
               <th className="col-name">Tên NVL</th>
-              <th className="col-pct">% Cối trộn</th>
               <th className="col-kg">Giá trị (kg/cối)</th>
               <th className="col-kg">Tổng trọng lượng</th>
             </tr>
           </thead>
           <tbody>
             {primaryLines.map((line, lineIndex) => {
-              const { percentCoi, kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
+              const { kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
               return (
                 <tr key={`${product.ma_sp}-primary-${line.ma_nvl}-${lineIndex}`} className="is-primary-material">
                   <td className="col-stt">{lineIndex + 1}</td>
-                  <td className="col-type">Nguyên liệu chính</td>
                   <td className="col-code">{line.ma_nvl || ''}</td>
                   <td className="col-name">{materialPrintName(line)}</td>
-                  <td className="col-pct">{percentCoi !== null ? `${formatNumberVi(percentCoi)}%` : ''}</td>
                   <td className="col-kg">{kgPerBatch !== null ? `${formatNumberVi(kgPerBatch)} kg` : ''}</td>
                   <td className="col-kg">{tongKg !== null ? `${formatNumberVi2(tongKg)} kg` : ''}</td>
                 </tr>
@@ -286,7 +285,7 @@ function NormPrintProductSection({
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={6} className="mixing-norm-ratio-print-total-label">
+              <td colSpan={4} className="mixing-norm-ratio-print-total-label">
                 Tổng trọng lượng NVL chính cần
               </td>
               <td className="col-kg">
@@ -305,7 +304,6 @@ function NormPrintProductSection({
           <thead>
             <tr>
               <th className="col-stt">STT</th>
-              <th className="col-type">Loại NVL</th>
               <th className="col-code">Mã NVL</th>
               <th className="col-name">Tên NVL</th>
               <th className="col-kg">{isActual ? 'Định mức' : 'Tổng trọng lượng'}</th>
@@ -319,7 +317,6 @@ function NormPrintProductSection({
               return (
                 <tr key={`${product.ma_sp}-secondary-${line.ma_nvl}-${lineIndex}`} className="is-secondary-material">
                   <td className="col-stt">{lineIndex + 1}</td>
-                  <td className="col-type">Nguyên liệu phụ</td>
                   <td className="col-code">{line.ma_nvl || ''}</td>
                   <td className="col-name">{materialPrintName(line)}</td>
                   <td className="col-kg">{totalWeight !== null ? `${formatNumberVi(totalWeight)} kg` : ''}</td>
@@ -334,7 +331,7 @@ function NormPrintProductSection({
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4} className="mixing-norm-ratio-print-total-label">
+              <td colSpan={3} className="mixing-norm-ratio-print-total-label">
                 Tổng trọng lượng NVL phụ {isActual ? 'cần' : ''}
               </td>
               <td className="col-kg">
@@ -402,6 +399,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
           Ngày: <strong>{`${dateParts.day}/${dateParts.month}/${dateParts.year}`}</strong>
           {doc.ca ? <><span className="mixing-norm-ratio-print-meta-sep">·</span>Ca: <strong>{doc.ca}</strong></> : null}
         </p>
+
+        {doc.ghiChu ? (
+          <p className="mixing-norm-ratio-print-doc-note">
+            <strong>Ghi chú chung:</strong> {doc.ghiChu}
+          </p>
+        ) : null}
 
         {formulaProducts.length === 0 && secondaryProducts.length === 0 ? (
           <p className="mixing-norm-ratio-print-empty">Chưa có sản phẩm định mức cho lệnh này.</p>

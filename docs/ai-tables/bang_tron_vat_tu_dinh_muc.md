@@ -52,3 +52,8 @@ Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). 
 **NVL phụ** nhập giống NVL chính: bấm **Thêm sản phẩm**, chọn **nhiều mã SP** dùng chung một danh sách NVL, rồi **Thêm NVL phụ**. Không tự fill theo lệnh SX. Lưu thành block `loai: "nvl_phu"` (`ma_sp` nối bằng dấu phẩy). Trùng mã SP chỉ chặn **trong** NVL chính hoặc **trong** NVL phụ — cùng mã ở cả hai phần là hợp lệ. Phiếu cũ gắn `nvl_phu` trên từng SP công thức vẫn mở được; nhóm các SP cùng danh sách NVL phụ thành 1 block.
 
 Khối lượng NVL phụ là **tổng trọng lượng (kg)** dùng cho toàn bộ SP, không có `% Cối trộn` và không có `Giá trị (kg/cối)`. Khi lưu, `gia_tri`, `khoi_luong` và `tong_khoi_luong` cùng mang giá trị tổng này; các trường tỷ lệ để `null`. Trên phiếu in, **toàn bộ NVL chính in trước**, rồi mới tới khối **Nguyên liệu phụ** (kể cả phiếu cũ gắn `nvl_phu` trên từng SP công thức). Bảng NVL phụ bỏ hẳn hai cột `% Cối trộn`, `Giá trị (kg/cối)`.
+
+**Lưu ý san_pham_id (Quy tắc quan trọng):**
+- Mỗi block sản phẩm (NVL chính & NVL phụ) **BẮT BUỘC** phải gắn `san_pham_id` hợp lệ.
+- Hệ thống tự động dùng `resolveValidProductIds` để truy vết ID sản phẩm chuẩn từ `catalogProducts` / `selectedOrder` nếu `maSpIds` bị khuyết.
+- Khi lưu, payload gửi backend luôn đảm bảo: `san_pham_id = validIds[0]` (không gửi chuỗi rỗng `""`) và `san_pham_ids = validIds` nếu chọn nhiều SP gộp. Nguồn validate client sẽ chặn và báo lỗi nếu sản phẩm hoàn toàn không có `san_pham_id` hợp lệ.
