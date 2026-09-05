@@ -5566,14 +5566,26 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       return null;
     }
 
-    const product: OrderProductRecord = { ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong };
+    const rawStt = row.stt ?? row.STT;
+    const parsedStt = parseOrderQuantity(rawStt);
+    const stt = parsedStt !== null && parsedStt > 0 ? Math.floor(parsedStt) : undefined;
+
+    const product: OrderProductRecord = {
+      ma_don_hang,
+      ma_sp,
+      ten_sp,
+      ten_san_xuat,
+      don_vi,
+      so_luong,
+      ...(stt ? { stt } : {})
+    };
     if (san_pham_id) {
       product.san_pham_id = san_pham_id;
     }
     products.push(product);
   }
 
-  return products.length > 0 ? products : null;
+  return products.length > 0 ? normalizeOrderProductStt(products) : null;
 }
 
 function summarizeProductionOrderProducts(products: OrderProductRecord[]) {
@@ -13226,6 +13238,17 @@ export function createApp() {
     return Array.isArray(value) ? (value as any[]) : [];
   };
 
+  const sortLenhSxSanPhamList = (items: any[]): any[] => {
+    return [...items]
+      .map((item, index) => ({
+        item,
+        index,
+        stt: Number(item?.stt ?? item?.STT) || (index + 1)
+      }))
+      .sort((a, b) => a.stt - b.stt || a.index - b.index)
+      .map(x => x.item);
+  };
+
   app.get('/api/lenh-sx/:id/print-preview', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -13259,7 +13282,7 @@ export function createApp() {
       }
 
       const orderRecord = order as Record<string, unknown>;
-      let sanPhamArray = parseLenhSxSanPham(orderRecord.san_pham);
+      let sanPhamArray = sortLenhSxSanPhamList(parseLenhSxSanPham(orderRecord.san_pham));
 
       if (sanPhamArray.length === 0 && (orderRecord.ma_hang || orderRecord.ten_hang)) {
         sanPhamArray = [
@@ -13376,7 +13399,7 @@ export function createApp() {
 
         return {
           key: `${id}__${idx + 1}`,
-          stt: idx + 1,
+          stt: Number(item?.stt ?? item?.STT) || (idx + 1),
           item_index: idx,
           ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
           ten_sp: String(item?.ten_sp ?? item?.ten_hang ?? item?.productName ?? '').trim(),
@@ -13438,13 +13461,13 @@ export function createApp() {
         }
 
         const currentSanPhamRaw = (current as Record<string, unknown>)?.san_pham;
-        const sanPhamArray = parseLenhSxSanPham(currentSanPhamRaw);
+        const sanPhamArray = sortLenhSxSanPhamList(parseLenhSxSanPham(currentSanPhamRaw));
         const storeSanPhamAsString = typeof currentSanPhamRaw === 'string';
 
         // Lệnh SX cũ chưa có mảng san_pham → bỏ qua phần chia Bắc/Trung/Nam, chỉ lưu phần header.
         if (sanPhamArray.length > 0) {
           for (let idx = 0; idx < sanPhamArray.length; idx++) {
-            const rowInput = rowsInput[idx];
+            const rowInput = rowsInput.find((r: any) => r && r.item_index === idx) || rowsInput[idx];
             if (!rowInput) continue;
             const item = sanPhamArray[idx];
             const bac = Math.max(0, Number(rowInput.slsx_bac) || 0);
@@ -13459,10 +13482,11 @@ export function createApp() {
           }
 
           const updatedSanPham = sanPhamArray.map((item, idx) => {
-            const rowInput = rowsInput[idx];
+            const rowInput = rowsInput.find((r: any) => r && r.item_index === idx) || rowsInput[idx];
             if (!rowInput) return item;
             return {
               ...item,
+              stt: Number(item?.stt ?? item?.STT) || (idx + 1),
               ghi_chu: String(rowInput.ghi_chu ?? '').trim() || null,
               sl_sx: {
                 bac: Math.max(0, Number(rowInput.slsx_bac) || 0),

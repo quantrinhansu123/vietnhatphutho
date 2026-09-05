@@ -4988,6 +4988,14 @@ export type ProductionOrderFormState = {
   note: string;
 };
 
+function reorderList<T>(items: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return items;
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
 export function newProductionOrderEntryLine(): ProductionOrderEntryLine {
   return {
     key: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -5019,14 +5027,15 @@ export function productionOrderFormToCreatePayload(
   form: ProductionOrderFormState,
   lines: ProductionOrderEntryLine[]
 ) {
-  const products = lines.map(line => ({
+  const products = lines.map((line, index) => ({
     san_pham_id: line.productId || null,
     ma_don_hang: line.orderRef.trim(),
     ma_sp: line.productCode.trim(),
     ten_sp: line.productName.trim(),
     ten_san_xuat: (line.productionName || '').trim(),
     don_vi: line.unit.trim(),
-    so_luong: Number(line.quantity)
+    so_luong: Number(line.quantity),
+    stt: index + 1
   }));
   const summary = summarizeOrderProducts(
     products.map(product => ({
@@ -5104,6 +5113,8 @@ export function AddProductionOrderModal({
   const [lineDraftProductCode, setLineDraftProductCode] = useState('');
   const [lineDraftQuantity, setLineDraftQuantity] = useState('');
   const [lineDraftError, setLineDraftError] = useState('');
+  const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
+  const [dragOverProductIndex, setDragOverProductIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -5113,6 +5124,8 @@ export function AddProductionOrderModal({
     setFormError('');
     setShowAutofillOrders(false);
     setAutofillSearch('');
+    setDragProductIndex(null);
+    setDragOverProductIndex(null);
     setSelectedAutofillOrderCodes([]);
     setSelectedAutofillProductKeys([]);
     setAutofillProductOrderFilter('all');
@@ -5122,6 +5135,7 @@ export function AddProductionOrderModal({
     setLineDraftProductCode('');
     setLineDraftQuantity('');
     setLineDraftError('');
+    setDragProductIndex(null);
     setIsLoadingLookups(true);
 
   const loadLookups = async () => {
@@ -5168,6 +5182,15 @@ export function AddProductionOrderModal({
 
     loadLookups();
   }, [open]);
+
+  useEffect(() => {
+    const handleGlobalDragEnd = () => {
+      setDragProductIndex(null);
+      setDragOverProductIndex(null);
+    };
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    return () => window.removeEventListener('dragend', handleGlobalDragEnd);
+  }, []);
 
   useEffect(() => {
     setSelectedAutofillOrderCodes([]);
@@ -5513,6 +5536,63 @@ export function AddProductionOrderModal({
     setForm(prev => ({ ...prev, machine: '' }));
   };
 
+  const moveProductLine = (from: number, to: number) => {
+    setForm(prev => ({
+      ...prev,
+      entryLines: reorderList(prev.entryLines, from, to)
+    }));
+  };
+
+  const handleProductDragStart = (event: React.DragEvent<HTMLElement>, index: number) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea, select, button:not([data-drag-handle="true"])')) {
+      return;
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(index));
+    requestAnimationFrame(() => {
+      setDragProductIndex(index);
+      setDragOverProductIndex(index);
+    });
+  };
+
+  const handleProductDragOver = (event: React.DragEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (dragOverProductIndex !== index) {
+      setDragOverProductIndex(index);
+    }
+  };
+
+  const handleProductDragEnter = (event: React.DragEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    if (dragProductIndex !== null && dragOverProductIndex !== index) {
+      setDragOverProductIndex(index);
+    }
+  };
+
+  const handleProductDrop = (event: React.DragEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    let sourceIndex = dragProductIndex;
+    if (sourceIndex === null) {
+      const data = event.dataTransfer.getData('text/plain');
+      if (data !== '' && !isNaN(Number(data))) {
+        sourceIndex = Number(data);
+      }
+    }
+    if (sourceIndex !== null && sourceIndex !== index) {
+      moveProductLine(sourceIndex, index);
+    }
+    setDragProductIndex(null);
+    setDragOverProductIndex(null);
+  };
+
+  const handleProductDragEnd = () => {
+    setDragProductIndex(null);
+    setDragOverProductIndex(null);
+  };
+
   if (!open) return null;
 
   const handleSubmit = async () => {
@@ -5600,9 +5680,9 @@ export function AddProductionOrderModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="h-[96vh] max-h-[98vh] w-full max-w-[1500px] overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-2 sm:p-4 backdrop-blur-sm">
+      <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Thêm lệnh sản xuất mới</h3>
           </div>
@@ -5616,332 +5696,419 @@ export function AddProductionOrderModal({
           </button>
         </div>
 
-        {formError && (
-          <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
-            {formError}
-          </div>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {formError && (
+            <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
+              {formError}
+            </div>
+          )}
 
-        {isLoadingLookups && (
-          <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Đang tải đơn hàng, máy và ca...
-          </div>
-        )}
+          {isLoadingLookups && (
+            <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Đang tải đơn hàng, máy và ca...
+            </div>
+          )}
 
-        <div className="grid grid-cols-2 gap-3 p-4">
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã lệnh</span>
-            <input
-              value={form.code}
-              onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))}
-              className={orderFieldClass}
-              placeholder="Để trống = tự sinh"
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
-            <input
-              type="date"
-              value={form.startDate}
-              onChange={e => {
-                const startDate = e.target.value;
-                setForm(prev => ({
-                  ...prev,
-                  startDate,
-                  startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
-                }));
-              }}
-              className={orderFieldClass}
-            />
-          </label>
-          <p className="pb-2 text-[11px] font-bold text-zinc-500">
+          <div className="grid grid-cols-2 gap-3 p-4">
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã lệnh</span>
+              <input
+                value={form.code}
+                onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))}
+                className={orderFieldClass}
+                placeholder="Để trống = tự sinh"
+              />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={e => {
+                  const startDate = e.target.value;
+                  setForm(prev => ({
+                    ...prev,
+                    startDate,
+                    startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
+                  }));
+                }}
+                className={orderFieldClass}
+              />
+            </label>
+            <p className="col-span-2 pb-2 text-[11px] font-bold text-zinc-500">
               {form.startDate
                 ? `Gợi ý đơn hàng cùng ngày ${form.startDate} hoặc còn SL chưa lập lệnh.`
                 : 'Chọn ngày lệnh SX để lọc đơn hàng cùng ngày.'}
             </p>
 
-          <RepeatableLinesBlock
-            className="col-span-2"
-            title="Đơn hàng & mã hàng"
-            required
-            onAdd={openAddLine}
-            extraHeaderButtons={
-              <button
-                type="button"
-                onClick={() => setShowAutofillOrders(true)}
-                disabled={isLoadingLookups || ordersForSelectedDate.length === 0}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ClipboardCheck className="h-3.5 w-3.5" />
-                Tự điền từ đơn hàng
-              </button>
-            }
-            columns={[
-              { key: 'order', label: 'Mã đơn', className: 'md:w-32 md:shrink-0', required: true },
-              { key: 'code', label: 'Mã hàng', className: 'md:w-44 md:shrink-0', required: true },
-              { key: 'name', label: 'Tên sản xuất', className: 'min-w-0' },
-              { key: 'unit', label: '', className: 'w-16 shrink-0 sm:w-20' },
-              { key: 'qty', label: '', className: 'w-16 shrink-0 sm:w-20', required: true },
-              { key: 'kg', label: '', className: 'md:w-14 md:shrink-0' },
-              { key: 'm2', label: '', className: 'md:w-14 md:shrink-0' },
-              { key: 'mdai', label: '', className: 'md:w-16 md:shrink-0' },
-              { key: 'actions', label: '', className: 'w-9 shrink-0' }
-            ]}
-          >
+            <div className="col-span-2 overflow-x-auto">
+              <div className="min-w-[960px]">
+                <RepeatableLinesBlock
+                  className="w-full"
+                  linesClassName="space-y-3 pt-1"
+                  title="Đơn hàng & mã hàng"
+                  required
+                  onAdd={() =>
+                    setForm(prev => ({
+                      ...prev,
+                      entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
+                    }))
+                  }
+                  extraHeaderButtons={
+                    <div className="flex items-center gap-2">
+                      {dragProductIndex !== null && (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">
+                          <span>Kéo #{dragProductIndex + 1}</span>
+                          <ChevronRight className="h-3.5 w-3.5 text-red-500" />
+                          {dragOverProductIndex !== null && dragOverProductIndex !== dragProductIndex ? (
+                            <span className="font-black text-[#ef1b2d]">Thả tại vị trí #{dragOverProductIndex + 1}</span>
+                          ) : (
+                            <span className="text-zinc-500 font-medium italic">Chọn ô đích</span>
+                          )}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowAutofillOrders(true)}
+                        disabled={isLoadingLookups || ordersForSelectedDate.length === 0}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        Tự điền từ đơn hàng
+                      </button>
+                    </div>
+                  }
+                  columns={[
+                    { key: 'stt', label: 'STT', className: 'w-11 shrink-0 text-center' },
+                    { key: 'order', label: 'Mã đơn', className: 'w-32 shrink-0', required: true },
+                    { key: 'code', label: 'Mã hàng', className: 'w-44 shrink-0', required: true },
+                    { key: 'name', label: 'Tên sản xuất', className: 'min-w-0 flex-1' },
+                    { key: 'unit', label: 'ĐVT', className: 'w-16 shrink-0 text-center' },
+                    { key: 'qty', label: 'SL', className: 'w-16 shrink-0 text-center', required: true },
+                    { key: 'kg', label: 'KG', className: 'w-16 shrink-0 text-center' },
+                    { key: 'm2', label: 'M2', className: 'w-16 shrink-0 text-center' },
+                    { key: 'mdai', label: 'M dài', className: 'w-16 shrink-0 text-center' },
+                    { key: 'actions', label: '', className: 'w-10 shrink-0 text-center' }
+                  ]}
+                >
+                  {form.entryLines.map((line, index) => {
+                    const isDragged = dragProductIndex === index;
+                    const isTarget = dragProductIndex !== null && dragOverProductIndex === index && dragProductIndex !== index;
+                    const productOptions = listProductOptionsForOrder(
+                      ordersForSelectedDate,
+                      productionOrders,
+                      catalogProducts,
+                      line.orderRef
+                    );
+                    const selectedProduct = line.productId
+                      ? productOptions.find(item => item.productId === line.productId)
+                      : undefined;
+                    const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
+                    const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
+                    const allowedUnits = allowedOrderUnits(selectedProduct);
+                    const effectiveUnit = selectedProduct
+                      ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
+                      : line.unit;
+                    const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
 
-            {form.entryLines.map(line => {
-              const productOptions = listProductOptionsForOrder(
-                ordersForSelectedDate,
-                productionOrders,
-                catalogProducts,
-                line.orderRef
-              );
-              const selectedProduct = line.productId
-                ? productOptions.find(item => item.productId === line.productId)
-                : undefined;
-              const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
-              const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
-              const allowedUnits = allowedOrderUnits(selectedProduct);
-              const effectiveUnit = selectedProduct
-                ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
-                : line.unit;
-              const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
+                    const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
+                    const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
+                    const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
 
-              const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
-              const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
-              const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
+                    return (
+                      <div
+                        key={line.key}
+                        draggable={form.entryLines.length > 1}
+                        onDragStart={event => handleProductDragStart(event, index)}
+                        onDragEnd={handleProductDragEnd}
+                        onDragOver={event => handleProductDragOver(event, index)}
+                        onDragEnter={event => handleProductDragEnter(event, index)}
+                        onDrop={event => handleProductDrop(event, index)}
+                        className={`group relative rounded-xl border-2 p-2.5 mb-3 transition-colors ${
+                          form.entryLines.length > 1 ? 'cursor-grab active:cursor-grabbing' : ''
+                        } ${
+                          isDragged
+                            ? 'border-dashed border-zinc-300 bg-zinc-100/60 opacity-40'
+                            : isTarget
+                              ? 'border-[#ef1b2d] bg-red-100/90 shadow-xl ring-4 ring-red-500/30'
+                              : 'border-zinc-200/90 bg-white shadow-xs hover:border-zinc-300'
+                        }`}
+                      >
+                        {isTarget && (
+                          <div className="absolute -top-2.5 right-4 z-20 flex items-center gap-1.5 rounded-full border border-[#ef1b2d] bg-[#ef1b2d] px-3 py-0.5 text-[11px] font-black text-white shadow-md pointer-events-none animate-in fade-in zoom-in-95 duration-100">
+                            <span>Thả vào đây ➔ Vị trí #{index + 1}</span>
+                            <span className="text-red-200 font-semibold">(từ #{dragProductIndex + 1})</span>
+                          </div>
+                        )}
+                        <RepeatableLineRow className="items-center sm:flex-nowrap !py-0">
+                          <div
+                            data-drag-handle="true"
+                            title="Kéo để đổi thứ tự"
+                            className={`flex h-11 w-11 shrink-0 cursor-grab items-center justify-center gap-1 rounded-lg border font-black transition-colors active:cursor-grabbing ${
+                              isTarget
+                                ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-md ring-2 ring-red-300'
+                                : isDragged
+                                  ? 'border-dashed border-zinc-400 bg-zinc-200 text-zinc-400'
+                                  : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-900'
+                            }`}
+                          >
+                            <GripVertical className={`h-4 w-4 shrink-0 ${isTarget ? 'text-white' : 'text-zinc-400'}`} />
+                            <span className="text-xs font-black tabular-nums">{index + 1}</span>
+                          </div>
 
-              return (
-                <RepeatableLineRow key={line.key}>
-                  <div className="w-full md:w-32 md:shrink-0">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
-                    <SearchableSelect
-                      value={line.orderRef}
-                      onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
-                      options={orderCodeOptions}
-                      placeholder="Gõ để tìm mã đơn"
-                      isLoading={isLoadingLookups}
-                      inputClassName={orderFieldClass}
-                      getLabel={item => String(item)}
-                      getValue={item => String(item)}
-                    />
-                  </div>
-                  <div className="w-full md:w-44 md:shrink-0">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
-                    <SearchableSelect
-                      value={line.productId || ''}
-                      onChange={productId => handleEntryProductChange(line.key, line.orderRef, productId)}
-                      options={productOptions}
-                      placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
-                      disabled={!line.orderRef}
-                      isLoading={isLoadingLookups}
-                      inputClassName={orderFieldClass}
-                      getLabel={item => {
-                        const product = item as (typeof productOptions)[number];
-                        const remaining =
-                          product.remainingQty <= 0 && product.orderQty > 0
-                            ? ' · hết'
-                            : product.orderQty > 0
-                              ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0`
-                              : '';
-                        return product.code ? `${product.code} - ${product.productionName || product.name}${remaining}` : product.name;
-                      }}
-                      getValue={item => (item as (typeof productOptions)[number]).productId}
-                    />
-                  </div>
-                  <div className="w-full min-w-0 md:flex-1">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
-                    <input
-                      value={selectedProduct?.productionName || line.productName}
-                      readOnly
-                      className={`${orderFieldClass} bg-white text-zinc-800`}
-                      placeholder="Tự điền theo mã hàng"
-                    />
-                  </div>
-                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">ĐVT</label>
-                    {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
-                  </div>
-                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-24 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">SL</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={line.quantity}
-                      onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
-                      className={orderFieldClass}
-                      placeholder="SL"
-                    />
-                  </div>
-                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">KG</label>
-                    <input
-                      type="text"
-                      value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
-                      readOnly
-                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
-                    />
-                  </div>
-                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M2</label>
-                    <input
-                      type="text"
-                      value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
-                      readOnly
-                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
-                    />
-                  </div>
-                  <div className="w-full md:w-16 md:shrink-0 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M dài</label>
-                    <input
-                      type="text"
-                      value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
-                      readOnly
-                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
-                    />
-                  </div>
-                  {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
-                    <span className="col-span-2 mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
-                      Còn {formatNumber(selectedProduct.remainingQty, 0)} · SL Tồn 0
-                    </span>
-                  )}
-                  {form.entryLines.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm(prev => ({
-                          ...prev,
-                          entryLines: prev.entryLines.filter(item => item.key !== line.key)
-                        }))
-                      }
-                      className="col-span-2 md:col-span-1 md:mb-0.5 flex h-10 w-full md:h-9 md:w-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 font-bold text-xs"
-                      title="Xóa dòng"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="md:hidden">Xóa dòng này</span>
-                    </button>
-                  )}
-                </RepeatableLineRow>
-              );
-            })}
-          </RepeatableLinesBlock>
-
-          <label className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-              Ca * <span className="text-zinc-400">(chọn nhiều ca cho cùng ngày)</span>
-            </span>
-            {shiftOptions.length === 0 ? (
-              <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-400">
-                {isLoadingLookups ? 'Đang tải ca...' : 'Chưa có ca nào được khai báo.'}
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
-                {shiftOptions.map(shift => {
-                  const shiftValue = String(shift);
-                  const checked = selectedShifts.includes(shiftValue);
-                  return (
-                    <label
-                      key={shiftValue}
-                      className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
-                        checked
-                          ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
-                          : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleShift(shiftValue)}
-                        className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                      />
-                      {formatProductionOrderShiftLabel(shiftValue, settings)}
-                    </label>
-                  );
-                })}
+                          <div className="w-32 shrink-0">
+                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
+                            <SearchableSelect
+                              value={line.orderRef}
+                              onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
+                              options={orderCodeOptions}
+                              placeholder="Gõ để tìm mã đơn"
+                              isLoading={isLoadingLookups}
+                              inputClassName={orderFieldClass}
+                              getLabel={item => String(item)}
+                              getValue={item => String(item)}
+                            />
+                          </div>
+                          <div className="w-44 shrink-0">
+                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
+                            <SearchableSelect
+                              value={line.productId || ''}
+                              onChange={productId => handleEntryProductChange(line.key, line.orderRef, productId)}
+                              options={productOptions}
+                              placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
+                              disabled={!line.orderRef}
+                              isLoading={isLoadingLookups}
+                              inputClassName={orderFieldClass}
+                              getLabel={item => {
+                                const product = item as (typeof productOptions)[number];
+                                const remaining =
+                                  product.remainingQty <= 0 && product.orderQty > 0
+                                    ? ' · hết'
+                                    : product.orderQty > 0
+                                      ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0`
+                                      : '';
+                                return product.code ? `${product.code} - ${product.productionName || product.name}${remaining}` : product.name;
+                              }}
+                              getValue={item => (item as (typeof productOptions)[number]).productId}
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
+                            <input
+                              value={selectedProduct?.productionName || line.productName}
+                              readOnly
+                              className={`${orderFieldClass} bg-white text-zinc-800`}
+                              placeholder="Tự điền theo mã hàng"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">ĐVT</span>
+                            {selectedProduct ? (
+                              <select
+                                value={effectiveUnit}
+                                onChange={e => updateEntryLine(line.key, { unit: e.target.value })}
+                                className={`${orderFieldClass} px-1 text-center`}
+                              >
+                                {allowedUnits.map(unit => (
+                                  <option key={unit} value={unit}>
+                                    {unit}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                value={line.unit}
+                                onChange={e => updateEntryLine(line.key, { unit: e.target.value })}
+                                className={`${orderFieldClass} px-1 text-center`}
+                                placeholder="ĐVT"
+                              />
+                            )}
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">SL *</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.quantity}
+                              onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">KG</span>
+                            <input
+                              type="text"
+                              value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
+                              readOnly
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M2</span>
+                            <input
+                              type="text"
+                              value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
+                              readOnly
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M dài</span>
+                            <input
+                              type="text"
+                              value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
+                              readOnly
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                            />
+                          </div>
+                          {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
+                            <span className="col-span-2 mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
+                              Còn {formatNumber(selectedProduct.remainingQty, 0)} · SL Tồn 0
+                            </span>
+                          )}
+                          <div className="flex h-11 w-10 shrink-0 items-center justify-center">
+                            <button
+                              type="button"
+                              title="Xóa dòng"
+                              disabled={form.entryLines.length <= 1}
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 disabled:pointer-events-none disabled:opacity-35"
+                              onClick={() =>
+                                setForm(prev => ({
+                                  ...prev,
+                                  entryLines: prev.entryLines.filter(item => item.key !== line.key)
+                                }))
+                              }
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span className="sr-only">Xóa</span>
+                            </button>
+                          </div>
+                        </RepeatableLineRow>
+                      </div>
+                    );
+                  })}
+                </RepeatableLinesBlock>
               </div>
-            )}
-            {selectedShifts.length > 1 && (
-              <p className="text-[11px] font-semibold text-emerald-700">
-                Sẽ tạo {selectedShifts.length} lệnh SX — mỗi ca một lệnh (cùng sản phẩm, máy, ngày).
-              </p>
-            )}
-          </label>
+            </div>
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
-            <SearchableSelect
-              value={form.status}
-              onChange={status => setForm(prev => ({ ...prev, status }))}
-              options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
-              placeholder="Gõ để tìm trạng thái"
-              getLabel={item => String(item)}
-              getValue={item => String(item)}
-              allowEmpty={false}
-            />
-          </label>
+            <label className="col-span-2 space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                Ca * <span className="text-zinc-400">(chọn nhiều ca cho cùng ngày)</span>
+              </span>
+              {shiftOptions.length === 0 ? (
+                <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-400">
+                  {isLoadingLookups ? 'Đang tải ca...' : 'Chưa có ca nào được khai báo.'}
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+                  {shiftOptions.map(shift => {
+                    const shiftValue = String(shift);
+                    const checked = selectedShifts.includes(shiftValue);
+                    return (
+                      <label
+                        key={shiftValue}
+                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                          checked
+                            ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
+                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleShift(shiftValue)}
+                          className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                        />
+                        {formatProductionOrderShiftLabel(shiftValue, settings)}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedShifts.length > 1 && (
+                <p className="text-[11px] font-semibold text-emerald-700">
+                  Sẽ tạo {selectedShifts.length} lệnh SX — mỗi ca một lệnh (cùng sản phẩm, máy, ngày).
+                </p>
+              )}
+            </label>
 
-          <label className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy *</span>
-            {renderMachineSelect(
-              form.machine,
-              machine => setForm(prev => ({ ...prev, machine })),
-              availableMachines,
-              {
-                disabled: selectedShifts.length === 0,
-                placeholder: selectedShifts.length > 0 ? 'Gõ để tìm máy' : 'Chọn ca trước'
-              }
-            )}
-            {selectedShifts.length > 0 && availableMachines.length === 0 && (
-              <p className="text-[11px] font-semibold text-amber-700">
-                Không còn máy trống cho ca đã chọn (các máy đã khai báo trong Ca máy).
-              </p>
-            )}
-          </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+              <SearchableSelect
+                value={form.status}
+                onChange={status => setForm(prev => ({ ...prev, status }))}
+                options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
+                placeholder="Gõ để tìm trạng thái"
+                getLabel={item => String(item)}
+                getValue={item => String(item)}
+                allowEmpty={false}
+              />
+            </label>
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
-            <input
-              type="time"
-              value={form.startDateTime.includes('T') ? form.startDateTime.split('T')[1]?.slice(0, 5) || '' : ''}
-              onChange={e => {
-                const time = e.target.value;
-                setForm(prev => ({
-                  ...prev,
-                  startDateTime: mergeProductionOrderDateTime(prev.startDate, `${prev.startDate}T${time}`)
-                }));
-              }}
-              className={orderFieldClass}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>
-            <input
-              type="datetime-local"
-              value={form.endDateTime}
-              onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
-              className={orderFieldClass}
-            />
-          </label>
+            <label className="col-span-2 space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy *</span>
+              {renderMachineSelect(
+                form.machine,
+                machine => setForm(prev => ({ ...prev, machine })),
+                availableMachines,
+                {
+                  disabled: selectedShifts.length === 0,
+                  placeholder: selectedShifts.length > 0 ? 'Gõ để tìm máy' : 'Chọn ca trước'
+                }
+              )}
+              {selectedShifts.length > 0 && availableMachines.length === 0 && (
+                <p className="text-[11px] font-semibold text-amber-700">
+                  Không còn máy trống cho ca đã chọn (các máy đã khai báo trong Ca máy).
+                </p>
+              )}
+            </label>
 
-          <label className="col-span-2 space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-            <textarea
-              value={form.note}
-              onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
-              rows={2}
-              className={`${orderFieldClass} min-h-[72px] resize-y`}
-            />
-          </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
+              <input
+                type="time"
+                value={form.startDateTime.includes('T') ? form.startDateTime.split('T')[1]?.slice(0, 5) || '' : ''}
+                onChange={e => {
+                  const time = e.target.value;
+                  setForm(prev => ({
+                    ...prev,
+                    startDateTime: mergeProductionOrderDateTime(prev.startDate, `${prev.startDate}T${time}`)
+                  }));
+                }}
+                className={orderFieldClass}
+              />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>
+              <input
+                type="datetime-local"
+                value={form.endDateTime}
+                onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
+                className={orderFieldClass}
+              />
+            </label>
+
+            <label className="col-span-2 space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+              <textarea
+                value={form.note}
+                onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
+                rows={2}
+                className={`${orderFieldClass} min-h-[72px] resize-y`}
+              />
+            </label>
+          </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-zinc-100 px-4 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+            className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
           >
             Hủy
           </button>
@@ -5958,8 +6125,8 @@ export function AddProductionOrderModal({
       </div>
 
       {showAutofillOrders && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="flex h-[94vh] max-h-[96vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/50 p-2 sm:p-4 backdrop-blur-sm">
+          <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
             <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
@@ -6587,9 +6754,9 @@ export function ProductionOrderViewModal({
   const scheduleDays = scheduleDateRange.length > 0 ? scheduleDateRange : [...scheduleGroupsByDay.keys()].sort((a, b) => a.localeCompare(b));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-2 sm:p-4 backdrop-blur-sm">
+      <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết lệnh SX</h3>
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">{row.code || row.name}</p>
@@ -6598,6 +6765,7 @@ export function ProductionOrderViewModal({
             Đóng
           </button>
         </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2">
           {[
             ['Mã lệnh', row.code],
@@ -6696,6 +6864,7 @@ export function ProductionOrderViewModal({
             <table className="w-full text-left text-xs">
               <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
                 <tr>
+                  <th className="w-12 px-3 py-2 text-center font-black">STT</th>
                   <th className="px-3 py-2 font-black">Mã hàng</th>
                   <th className="px-3 py-2 font-black">Tên sản xuất</th>
                   <th className="px-3 py-2 text-right font-black">Số lượng</th>
@@ -6705,6 +6874,7 @@ export function ProductionOrderViewModal({
               <tbody className="divide-y divide-zinc-100 bg-white">
                 {productLines.map((product, index) => (
                   <tr key={`${product.productCode}-${index}`}>
+                    <td className="px-3 py-2 text-center font-bold text-zinc-500">{product.stt || (index + 1)}</td>
                     <td className="px-3 py-2 font-black text-zinc-950">{product.productCode || '-'}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-700">{product.productionName || product.productName || '-'}</td>
                     <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{product.quantity || '-'}</td>
@@ -6713,7 +6883,7 @@ export function ProductionOrderViewModal({
                 ))}
                 {productLines.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-3 py-4 text-center font-bold text-zinc-400">
+                    <td colSpan={5} className="px-3 py-4 text-center font-bold text-zinc-400">
                       Chưa có sản phẩm.
                     </td>
                   </tr>
@@ -6724,7 +6894,8 @@ export function ProductionOrderViewModal({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 export function EditProductionOrderModal({
@@ -6753,9 +6924,22 @@ export function EditProductionOrderModal({
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
+  const [dragOverProductIndex, setDragOverProductIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    const handleGlobalDragEnd = () => {
+      setDragProductIndex(null);
+      setDragOverProductIndex(null);
+    };
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    return () => window.removeEventListener('dragend', handleGlobalDragEnd);
+  }, []);
 
   useEffect(() => {
     if (!open || !row) return;
+    setDragProductIndex(null);
+    setDragOverProductIndex(null);
     const productLines = getProductionOrderProductLines(row);
     const startDateTime = toDatetimeLocalInputValue(row.ngay_gio_bat_dau || row.startDate);
     setForm({
@@ -6777,7 +6961,7 @@ export function EditProductionOrderModal({
                 '';
               return {
                 key: `edit-${row.id}-${index}`,
-                orderRef: row.orderRef === '-' ? '' : row.orderRef,
+                orderRef: product.orderRef || (row.orderRef === '-' ? '' : row.orderRef),
                 productCode: product.productCode === '-' ? '' : product.productCode,
                 productName: product.productName === '-' ? '' : product.productName,
                 productionName,
@@ -6799,6 +6983,7 @@ export function EditProductionOrderModal({
     });
     setSelectedShift(row.shift === '-' ? '' : row.shift);
     setFormError('');
+    setDragProductIndex(null);
   }, [open, row]);
 
   useEffect(() => {
@@ -6927,6 +7112,63 @@ export function EditProductionOrderModal({
     updateEntryLine(key, built);
   };
 
+  const moveProductLine = (from: number, to: number) => {
+    setForm(prev => ({
+      ...prev,
+      entryLines: reorderList(prev.entryLines, from, to)
+    }));
+  };
+
+  const handleProductDragStart = (event: React.DragEvent<HTMLElement>, index: number) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea, select, button:not([data-drag-handle="true"])')) {
+      return;
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(index));
+    requestAnimationFrame(() => {
+      setDragProductIndex(index);
+      setDragOverProductIndex(index);
+    });
+  };
+
+  const handleProductDragOver = (event: React.DragEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (dragOverProductIndex !== index) {
+      setDragOverProductIndex(index);
+    }
+  };
+
+  const handleProductDragEnter = (event: React.DragEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    if (dragProductIndex !== null && dragOverProductIndex !== index) {
+      setDragOverProductIndex(index);
+    }
+  };
+
+  const handleProductDrop = (event: React.DragEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    let sourceIndex = dragProductIndex;
+    if (sourceIndex === null) {
+      const data = event.dataTransfer.getData('text/plain');
+      if (data !== '' && !isNaN(Number(data))) {
+        sourceIndex = Number(data);
+      }
+    }
+    if (sourceIndex !== null && sourceIndex !== index) {
+      moveProductLine(sourceIndex, index);
+    }
+    setDragProductIndex(null);
+    setDragOverProductIndex(null);
+  };
+
+  const handleProductDragEnd = () => {
+    setDragProductIndex(null);
+    setDragOverProductIndex(null);
+  };
+
   if (!open || !row) return null;
 
   const handleSubmit = async () => {
@@ -6991,9 +7233,9 @@ export function EditProductionOrderModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-2 sm:p-4 backdrop-blur-sm">
+      <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Sửa lệnh sản xuất</h3>
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">{row.code || row.name}</p>
@@ -7008,254 +7250,337 @@ export function EditProductionOrderModal({
           </button>
         </div>
 
-        {formError && (
-          <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
-            {formError}
-          </div>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {formError && (
+            <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
+              {formError}
+            </div>
+          )}
 
-        <div className="grid grid-cols-2 gap-3 p-4">
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã lệnh</span>
-            <input value={form.code} onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))} className={orderFieldClass} />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
-            <input
-              type="date"
-              value={form.startDate}
-              onChange={e => {
-                const startDate = e.target.value;
-                setForm(prev => ({
-                  ...prev,
-                  startDate,
-                  startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
-                }));
-              }}
-              className={orderFieldClass}
-            />
-          </label>
-
-          <RepeatableLinesBlock
-            className="col-span-2"
-            title="Đơn hàng & mã hàng"
-            required
-            onAdd={() =>
-              setForm(prev => ({
-                ...prev,
-                entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
-              }))
-            }
-            columns={[
-              { key: 'order', label: 'Mã đơn', className: 'md:w-32 md:shrink-0', required: true },
-              { key: 'code', label: 'Mã hàng', className: 'md:w-44 md:shrink-0', required: true },
-              { key: 'name', label: 'Tên sản xuất', className: 'min-w-0' },
-              { key: 'unit', label: '', className: 'w-16 shrink-0 sm:w-20' },
-              { key: 'qty', label: '', className: 'w-16 shrink-0 sm:w-20', required: true },
-              { key: 'kg', label: '', className: 'md:w-14 md:shrink-0' },
-              { key: 'm2', label: '', className: 'md:w-14 md:shrink-0' },
-              { key: 'mdai', label: '', className: 'md:w-16 md:shrink-0' },
-              { key: 'actions', label: '', className: 'w-9 shrink-0' }
-            ]}
-          >
-            {form.entryLines.map(line => {
-              const productOptions = listProductOptionsForOrder(
-                orders,
-                productionOrders,
-                catalogProducts,
-                line.orderRef
-              );
-              const selectedProduct = productOptions.find(item => item.code === line.productCode);
-              const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
-              const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
-              const allowedUnits = allowedOrderUnits(selectedProduct);
-              const effectiveUnit = selectedProduct
-                ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
-                : line.unit;
-              const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
-
-              const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
-              const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
-              const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
-
-              return (
-                <RepeatableLineRow key={line.key}>
-                  <div className="w-full md:w-32 md:shrink-0">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
-                    <SearchableSelect
-                      value={line.orderRef}
-                      onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
-                      options={orderCodeOptions}
-                      placeholder="Gõ để tìm mã đơn"
-                      inputClassName={orderFieldClass}
-                      getLabel={item => String(item)}
-                      getValue={item => String(item)}
-                    />
-                  </div>
-                  <div className="w-full md:w-44 md:shrink-0">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
-                    <SearchableSelect
-                      value={line.productCode}
-                      onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
-                      options={productOptions}
-                      placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
-                      disabled={!line.orderRef}
-                      inputClassName={orderFieldClass}
-                      getLabel={item => {
-                        const product = item as (typeof productOptions)[number];
-                        return product.code ? `${product.code} - ${product.productionName || product.name}` : product.name;
-                      }}
-                      getValue={item => (item as (typeof productOptions)[number]).code}
-                    />
-                  </div>
-                  <div className="w-full min-w-0 md:flex-1">
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
-                    <input
-                      value={selectedProduct?.productionName || line.productName}
-                      readOnly
-                      className={`${orderFieldClass} bg-white text-zinc-800`}
-                      placeholder="Tự điền theo mã hàng"
-                    />
-                  </div>
-                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">ĐVT</label>
-                    {selectedProduct ? <select value={effectiveUnit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateEntryLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
-                  </div>
-                  <div className="w-full md:w-16 md:shrink-0 sm:md:w-20 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">SL</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={line.quantity}
-                      onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
-                      className={orderFieldClass}
-                      placeholder="SL"
-                    />
-                  </div>
-                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">KG</label>
-                    <input
-                      type="text"
-                      value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
-                      readOnly
-                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
-                    />
-                  </div>
-                  <div className="w-full md:w-14 md:shrink-0 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M2</label>
-                    <input
-                      type="text"
-                      value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
-                      readOnly
-                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
-                    />
-                  </div>
-                  <div className="w-full md:w-16 md:shrink-0 space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-500 block">M dài</label>
-                    <input
-                      type="text"
-                      value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
-                      readOnly
-                      className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
-                    />
-                  </div>
-                  {form.entryLines.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm(prev => ({
-                          ...prev,
-                          entryLines: prev.entryLines.filter(item => item.key !== line.key)
-                        }))
-                      }
-                      className="col-span-2 md:col-span-1 md:mb-0.5 flex h-10 w-full md:h-9 md:w-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 font-bold text-xs"
-                      title="Xóa dòng"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="md:hidden">Xóa dòng này</span>
-                    </button>
-                  )}
-                </RepeatableLineRow>
-              );
-            })}
-          </RepeatableLinesBlock>
-
-          <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 p-4">
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
-              <SearchableSelect
-                value={form.status}
-                onChange={status => setForm(prev => ({ ...prev, status }))}
-                options={statusOptions}
-                placeholder="Gõ để tìm trạng thái"
-                inputClassName={orderFieldClass}
-                getLabel={item => String(item)}
-                getValue={item => String(item)}
-                allowEmpty={false}
-              />
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã lệnh</span>
+              <input value={form.code} onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))} className={orderFieldClass} />
             </label>
-
-          <label className="space-y-1.5">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
-            <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
-          </label>
-
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>
-              {renderMachineSelect(
-                form.machine,
-                machine => setForm(prev => ({ ...prev, machine })),
-                machines,
-                { placeholder: 'Gõ để tìm máy' }
-              )}
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Giờ bắt đầu</span>
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
               <input
-                type="time"
-                value={form.startDateTime.includes('T') ? form.startDateTime.split('T')[1]?.slice(0, 5) || '' : ''}
+                type="date"
+                value={form.startDate}
                 onChange={e => {
-                  const time = e.target.value;
+                  const startDate = e.target.value;
                   setForm(prev => ({
                     ...prev,
-                    startDateTime: mergeProductionOrderDateTime(prev.startDate, `${prev.startDate}T${time}`)
+                    startDate,
+                    startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
                   }));
                 }}
                 className={orderFieldClass}
               />
             </label>
 
-            <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>
-              <input
-                type="datetime-local"
-                value={form.endDateTime}
-                onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
-                className={orderFieldClass}
-              />
-            </label>
+            <div className="col-span-2 overflow-x-auto">
+              <div className="min-w-[960px]">
+                <RepeatableLinesBlock
+                  className="w-full"
+                  linesClassName="space-y-3 pt-1"
+                  title="Đơn hàng & mã hàng"
+                  required
+                  onAdd={() =>
+                    setForm(prev => ({
+                      ...prev,
+                      entryLines: [...prev.entryLines, newProductionOrderEntryLine()]
+                    }))
+                  }
+                  extraHeaderButtons={
+                    dragProductIndex !== null ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">
+                        <span>Kéo #{dragProductIndex + 1}</span>
+                        <ChevronRight className="h-3.5 w-3.5 text-red-500" />
+                        {dragOverProductIndex !== null && dragOverProductIndex !== dragProductIndex ? (
+                          <span className="font-black text-[#ef1b2d]">Thả tại vị trí #{dragOverProductIndex + 1}</span>
+                        ) : (
+                          <span className="text-zinc-500 font-medium italic">Chọn ô đích</span>
+                        )}
+                      </span>
+                    ) : undefined
+                  }
+                  columns={[
+                    { key: 'stt', label: 'STT', className: 'w-11 shrink-0 text-center' },
+                    { key: 'order', label: 'Mã đơn', className: 'w-32 shrink-0', required: true },
+                    { key: 'code', label: 'Mã hàng', className: 'w-44 shrink-0', required: true },
+                    { key: 'name', label: 'Tên sản xuất', className: 'min-w-0 flex-1' },
+                    { key: 'unit', label: 'ĐVT', className: 'w-16 shrink-0 text-center' },
+                    { key: 'qty', label: 'SL', className: 'w-16 shrink-0 text-center', required: true },
+                    { key: 'kg', label: 'KG', className: 'w-16 shrink-0 text-center' },
+                    { key: 'm2', label: 'M2', className: 'w-16 shrink-0 text-center' },
+                    { key: 'mdai', label: 'M dài', className: 'w-16 shrink-0 text-center' },
+                    { key: 'actions', label: '', className: 'w-10 shrink-0 text-center' }
+                  ]}
+                >
+                  {form.entryLines.map((line, index) => {
+                    const isDragged = dragProductIndex === index;
+                    const isTarget = dragProductIndex !== null && dragOverProductIndex === index && dragProductIndex !== index;
+                    const productOptions = listProductOptionsForOrder(
+                      orders,
+                      productionOrders,
+                      catalogProducts,
+                      line.orderRef
+                    );
+                    const selectedProduct = productOptions.find(item => item.code === line.productCode);
+                    const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
+                    const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
+                    const allowedUnits = allowedOrderUnits(selectedProduct);
+                    const effectiveUnit = selectedProduct
+                      ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
+                      : line.unit;
+                    const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
 
-            <label className="space-y-1.5 sm:col-span-2">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-              <textarea
-                value={form.note}
-                onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
-                rows={3}
-                placeholder="Nhập ghi chú cho lệnh sản xuất..."
-                className={`${orderFieldClass} min-h-[80px] resize-y`}
-              />
-            </label>
+                    const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
+                    const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
+                    const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
+
+                    return (
+                      <div
+                        key={line.key}
+                        draggable={form.entryLines.length > 1}
+                        onDragStart={event => handleProductDragStart(event, index)}
+                        onDragEnd={handleProductDragEnd}
+                        onDragOver={event => handleProductDragOver(event, index)}
+                        onDragEnter={event => handleProductDragEnter(event, index)}
+                        onDrop={event => handleProductDrop(event, index)}
+                        className={`group relative rounded-xl border-2 p-2.5 mb-3 transition-colors ${
+                          form.entryLines.length > 1 ? 'cursor-grab active:cursor-grabbing' : ''
+                        } ${
+                          isDragged
+                            ? 'border-dashed border-zinc-300 bg-zinc-100/60 opacity-40'
+                            : isTarget
+                              ? 'border-[#ef1b2d] bg-red-100/90 shadow-xl ring-4 ring-red-500/30'
+                              : 'border-zinc-200/90 bg-white shadow-xs hover:border-zinc-300'
+                        }`}
+                      >
+                        {isTarget && (
+                          <div className="absolute -top-2.5 right-4 z-20 flex items-center gap-1.5 rounded-full border border-[#ef1b2d] bg-[#ef1b2d] px-3 py-0.5 text-[11px] font-black text-white shadow-md pointer-events-none animate-in fade-in zoom-in-95 duration-100">
+                            <span>Thả vào đây ➔ Vị trí #{index + 1}</span>
+                            <span className="text-red-200 font-semibold">(từ #{dragProductIndex + 1})</span>
+                          </div>
+                        )}
+                        <RepeatableLineRow className="items-center sm:flex-nowrap !py-0">
+                          <div
+                            data-drag-handle="true"
+                            title="Kéo để đổi thứ tự"
+                            className={`flex h-11 w-11 shrink-0 cursor-grab items-center justify-center gap-1 rounded-lg border font-black transition-colors active:cursor-grabbing ${
+                              isTarget
+                                ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-md ring-2 ring-red-300'
+                                : isDragged
+                                  ? 'border-dashed border-zinc-400 bg-zinc-200 text-zinc-400'
+                                  : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-900'
+                            }`}
+                          >
+                            <GripVertical className={`h-4 w-4 shrink-0 ${isTarget ? 'text-white' : 'text-zinc-400'}`} />
+                            <span className="text-xs font-black tabular-nums">{index + 1}</span>
+                          </div>
+
+                          <div className="w-32 shrink-0">
+                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
+                            <SearchableSelect
+                              value={line.orderRef}
+                              onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
+                              options={orderCodeOptions}
+                              placeholder="Gõ để tìm mã đơn"
+                              inputClassName={orderFieldClass}
+                              getLabel={item => String(item)}
+                              getValue={item => String(item)}
+                            />
+                          </div>
+                          <div className="w-44 shrink-0">
+                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
+                            <SearchableSelect
+                              value={line.productCode}
+                              onChange={productCode => handleEntryProductChange(line.key, line.orderRef, productCode)}
+                              options={productOptions}
+                              placeholder={line.orderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
+                              disabled={!line.orderRef}
+                              inputClassName={orderFieldClass}
+                              getLabel={item => {
+                                const product = item as (typeof productOptions)[number];
+                                return product.code ? `${product.code} - ${product.productionName || product.name}` : product.name;
+                              }}
+                              getValue={item => (item as (typeof productOptions)[number]).code}
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
+                            <input
+                              value={selectedProduct?.productionName || line.productName}
+                              readOnly
+                              className={`${orderFieldClass} bg-white text-zinc-800`}
+                              placeholder="Tự điền theo mã hàng"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">ĐVT</span>
+                            {selectedProduct ? (
+                              <select
+                                value={effectiveUnit}
+                                onChange={e => updateEntryLine(line.key, { unit: e.target.value })}
+                                className={`${orderFieldClass} px-1 text-center`}
+                              >
+                                {allowedUnits.map(unit => (
+                                  <option key={unit} value={unit}>
+                                    {unit}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                value={line.unit}
+                                onChange={e => updateEntryLine(line.key, { unit: e.target.value })}
+                                className={`${orderFieldClass} px-1 text-center`}
+                                placeholder="ĐVT"
+                              />
+                            )}
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">SL *</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.quantity}
+                              onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">KG</span>
+                            <input
+                              type="text"
+                              value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
+                              readOnly
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M2</span>
+                            <input
+                              type="text"
+                              value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
+                              readOnly
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                            />
+                          </div>
+                          <div className="w-16 shrink-0 space-y-1.5">
+                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M dài</span>
+                            <input
+                              type="text"
+                              value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
+                              readOnly
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                            />
+                          </div>
+                          <div className="flex h-11 w-10 shrink-0 items-center justify-center">
+                            <button
+                              type="button"
+                              title="Xóa dòng"
+                              disabled={form.entryLines.length <= 1}
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 disabled:pointer-events-none disabled:opacity-35"
+                              onClick={() =>
+                                setForm(prev => ({
+                                  ...prev,
+                                  entryLines: prev.entryLines.filter(item => item.key !== line.key)
+                                }))
+                              }
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span className="sr-only">Xóa</span>
+                            </button>
+                          </div>
+                        </RepeatableLineRow>
+                      </div>
+                    );
+                  })}
+                </RepeatableLinesBlock>
+              </div>
+            </div>
+
+            <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+                <SearchableSelect
+                  value={form.status}
+                  onChange={status => setForm(prev => ({ ...prev, status }))}
+                  options={statusOptions}
+                  placeholder="Gõ để tìm trạng thái"
+                  inputClassName={orderFieldClass}
+                  getLabel={item => String(item)}
+                  getValue={item => String(item)}
+                  allowEmpty={false}
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
+                <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>
+                {renderMachineSelect(
+                  form.machine,
+                  machine => setForm(prev => ({ ...prev, machine })),
+                  machines,
+                  { placeholder: 'Gõ để tìm máy' }
+                )}
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ bắt đầu</span>
+                <input
+                  type="datetime-local"
+                  value={form.startDateTime}
+                  onChange={e => {
+                    const startDateTime = e.target.value;
+                    setForm(prev => ({
+                      ...prev,
+                      startDateTime,
+                      startDate: extractProductionOrderDate(startDateTime) || prev.startDate
+                    }));
+                  }}
+                  className={orderFieldClass}
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giờ kết thúc</span>
+                <input
+                  type="datetime-local"
+                  value={form.endDateTime}
+                  onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
+                  className={orderFieldClass}
+                />
+              </label>
+
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+                <textarea
+                  value={form.note}
+                  onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))}
+                  rows={3}
+                  placeholder="Nhập ghi chú cho lệnh sản xuất..."
+                  className={`${orderFieldClass} min-h-[80px] resize-y`}
+                />
+              </label>
+            </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-zinc-100 px-4 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
+            className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-60"
           >
             Hủy
           </button>
