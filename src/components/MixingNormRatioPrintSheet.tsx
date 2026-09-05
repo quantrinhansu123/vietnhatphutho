@@ -7,6 +7,7 @@ export type MixingNormRatioPrintDoc = {
   maLenhSx: string;
   ngay: string;
   ca?: string;
+  ghiChu?: string;
   isActual?: boolean;
   actualValues?: Array<Array<{ percent: number | null; weight: number | null }>>;
   actualRounds?: Array<Array<Array<{ percent: number | null; weight: number | null }>>>;
@@ -194,6 +195,8 @@ export function toPrintDoc(
   return {
     maLenhSx: row.ma_lenh_sx.trim(),
     ngay: row.ngay || new Date().toISOString().slice(0, 10),
+    ca: row.ca,
+    ghiChu: row.ghi_chu?.trim(),
     products: [...row.products]
       .filter(product => product.loai !== 'nvl_phu' || (product.nvl_phu?.length ?? 0) > 0)
       .sort(comparePrintProducts)
@@ -396,6 +399,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
           Ngày: <strong>{`${dateParts.day}/${dateParts.month}/${dateParts.year}`}</strong>
           {doc.ca ? <><span className="mixing-norm-ratio-print-meta-sep">·</span>Ca: <strong>{doc.ca}</strong></> : null}
         </p>
+
+        {doc.ghiChu ? (
+          <p className="mixing-norm-ratio-print-doc-note">
+            <strong>Ghi chú chung:</strong> {doc.ghiChu}
+          </p>
+        ) : null}
 
         {formulaProducts.length === 0 && secondaryProducts.length === 0 ? (
           <p className="mixing-norm-ratio-print-empty">Chưa có sản phẩm định mức cho lệnh này.</p>

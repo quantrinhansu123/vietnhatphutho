@@ -4366,6 +4366,13 @@ input[type="number"] {
   color: #666;
 }
 
+.mixing-norm-ratio-print-doc-note {
+  margin: -2px 0 6px;
+  text-align: center;
+  font-size: 9pt;
+  font-style: italic;
+}
+
 .mixing-norm-ratio-print-block {
   margin: 0 0 6px;
 }
