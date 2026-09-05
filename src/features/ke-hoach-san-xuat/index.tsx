@@ -4148,17 +4148,46 @@ export async function resolveProductionOrderMachineLabel(machineValue: string): 
   return match?.name || value;
 }
 
-export function formatProductionOrderPrintDate(value?: string) {
+export function formatProductionOrderPrintDate(value?: string): string {
   if (!value || value === '-') {
-    return new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = String(now.getFullYear());
+    return `${day}/${month}/${year}`;
   }
 
-  const parsed = new Date(value);
+  const trimmed = String(value).trim();
+
+  // Đã có định dạng dd/mm/yyyy hoặc dd-mm-yyyy (tránh new Date() bị parse nhầm thành mm/dd/yyyy)
+  const dmyMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0');
+    const month = dmyMatch[2].padStart(2, '0');
+    const year = dmyMatch[3];
+    return `${day}/${month}/${year}`;
+  }
+
+  // Định dạng ISO yyyy-mm-dd hoặc yyyy/mm/dd
+  const ymdMatch = trimmed.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, '0');
+    const day = ymdMatch[3].padStart(2, '0');
+    return `${day}/${month}/${year}`;
+  }
+
+  const parsed = new Date(trimmed);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      timeZone: 'Asia/Ho_Chi_Minh'
+    }).format(parsed);
   }
 
-  return value;
+  return trimmed;
 }
 
 export function ProductionOrderPrintSheet({

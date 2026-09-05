@@ -273,7 +273,7 @@ export function ProductionOrderPrintPreviewModal({
 
   if (!open || !order) return null;
 
-  const printDate = formatProductionOrderPrintDate(order.startDate);
+  const printDate = formatProductionOrderPrintDate(order.startDate || order.ngay_bat_dau || order.ngay_gio_bat_dau);
   const overLimitCount = computedRows.filter(r => r.overLimit).length;
 
   const numHeadCell = 'whitespace-nowrap px-2.5 py-2.5 text-center font-bold';
