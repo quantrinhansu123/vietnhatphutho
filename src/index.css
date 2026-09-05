@@ -4303,95 +4303,100 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-doc {
-  width: 277mm;
+  width: 100%;
+  max-width: 277mm;
   margin: 0 auto;
-  padding: 8mm 6mm;
+  padding: 4mm 6mm;
   font-family: "Times New Roman", Times, serif;
-  font-size: 11pt;
-  line-height: 1.35;
+  font-size: 9.5pt;
+  line-height: 1.25;
+  box-sizing: border-box;
 }
 
 .mixing-norm-ratio-print-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 4px;
 }
 
 .mixing-norm-ratio-print-logo {
-  width: 120px;
-  max-height: 56px;
+  width: 90px;
+  max-height: 38px;
   object-fit: contain;
 }
 
 .mixing-norm-ratio-print-company-name {
   margin: 0;
-  font-size: 11pt;
+  font-size: 10pt;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .mixing-norm-ratio-print-company-sub {
-  margin: 2px 0 0;
-  font-size: 9pt;
+  margin: 1px 0 0;
+  font-size: 8.5pt;
   color: #333;
 }
 
 .mixing-norm-ratio-print-title {
-  margin: 6px 0 4px;
+  margin: 2px 0 2px;
   text-align: center;
-  font-size: 16pt;
+  font-size: 13pt;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .mixing-norm-ratio-print-intro {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   text-align: center;
   font-style: italic;
-  font-size: 11pt;
+  font-size: 9pt;
 }
 
 .mixing-norm-ratio-print-meta {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
   text-align: center;
-  font-size: 10.5pt;
+  font-size: 9pt;
 }
 
 .mixing-norm-ratio-print-meta-sep {
-  margin: 0 8px;
+  margin: 0 6px;
   color: #666;
 }
 
 .mixing-norm-ratio-print-block {
-  margin: 0 0 12px;
-  page-break-inside: avoid;
+  margin: 0 0 6px;
 }
 
 .mixing-norm-ratio-print-group-title {
-  margin: 14px 0 8px;
-  font-size: 11.5pt;
+  margin: 6px 0 3px;
+  font-size: 10pt;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-bottom: 2px solid #111;
-  padding-bottom: 3px;
+  letter-spacing: 0.03em;
+  border-bottom: 1.5px solid #111;
+  padding-bottom: 2px;
+  break-after: avoid;
+  page-break-after: avoid;
 }
 
 .mixing-norm-ratio-print-product {
-  margin: 0 0 4px;
-  font-size: 11pt;
+  margin: 0 0 2px;
+  font-size: 9.5pt;
   font-weight: 800;
   text-transform: uppercase;
-  border-bottom: 1.5px solid #111;
-  padding-bottom: 3px;
+  border-bottom: 1px solid #111;
+  padding-bottom: 2px;
+  break-after: avoid;
+  page-break-after: avoid;
 }
 
 .mixing-norm-ratio-print-product-name {
   display: block;
   margin-top: 1px;
-  font-size: 10pt;
+  font-size: 8.5pt;
   font-weight: 700;
   text-transform: none;
   color: #374151;
@@ -4399,33 +4404,35 @@ input[type="number"] {
 
 .mixing-norm-ratio-print-worker-name {
   display: block;
-  margin-top: 3px;
-  margin-bottom: 2px;
-  font-size: 14pt;
+  margin-top: 1px;
+  margin-bottom: 1px;
+  font-size: 10.5pt;
   font-weight: 900;
   color: #1e3a8a;
   text-transform: none;
-  line-height: 1.25;
+  line-height: 1.2;
   letter-spacing: 0.2px;
 }
 
 .mixing-norm-ratio-print-tonnage {
-  margin: 0 0 4px;
-  font-size: 10pt;
+  margin: 0 0 2px;
+  font-size: 8.5pt;
 }
 
 .mixing-norm-ratio-print-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .mixing-norm-ratio-print-table th,
 .mixing-norm-ratio-print-table td {
   border: 1px solid #222;
-  padding: 3px 5px;
-  font-size: 10pt;
+  padding: 2px 3px;
+  font-size: 8.5pt;
   vertical-align: middle;
 }
 
@@ -4489,23 +4496,23 @@ input[type="number"] {
   font-weight: 700;
 }
 
-.mixing-norm-ratio-round-table.is-actual .col-stt { width: 4%; }
-.mixing-norm-ratio-round-table.is-actual .col-code { width: 12%; }
-.mixing-norm-ratio-round-table.is-actual .col-name { width: 20%; }
+.mixing-norm-ratio-round-table.is-actual .col-stt { width: 3.5%; }
+.mixing-norm-ratio-round-table.is-actual .col-code { width: 11%; }
+.mixing-norm-ratio-round-table.is-actual .col-name { width: 21.5%; }
 .mixing-norm-ratio-round-table.is-actual .col-round { width: 6.4%; }
 .mixing-norm-ratio-round-table.is-actual th,
 .mixing-norm-ratio-round-table.is-actual td {
-  padding-left: 2px;
-  padding-right: 2px;
-  font-size: 8.5pt;
+  padding: 1.5px 2px;
+  font-size: 8pt;
+  line-height: 1.15;
 }
 .mixing-norm-ratio-round-table .col-round-actual {
   background: #fff4f4;
 }
 
 .mixing-norm-ratio-print-legend {
-  margin: 4px 0 0;
-  font-size: 9.5pt;
+  margin: 3px 0 0;
+  font-size: 8pt;
 }
 
 .mixing-norm-ratio-print-table .col-pct,
@@ -4516,16 +4523,16 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-note {
-  margin: 4px 0 0;
-  font-size: 10pt;
+  margin: 3px 0 0;
+  font-size: 8.5pt;
   text-transform: uppercase;
 }
 
 .mixing-norm-ratio-print-place {
-  margin-top: 14px;
+  margin-top: 6px;
   text-align: right;
   font-style: italic;
-  font-size: 10.5pt;
+  font-size: 9pt;
 }
 
 .mixing-norm-ratio-print-footer {
@@ -4536,19 +4543,19 @@ input[type="number"] {
 .mixing-norm-ratio-print-signatures {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 6px;
   text-align: center;
 }
 
 .mixing-norm-ratio-print-signatures .role {
-  margin: 0 0 28mm;
+  margin: 0 0 11mm;
   font-weight: 700;
-  font-size: 11pt;
+  font-size: 9pt;
 }
 
 .mixing-norm-ratio-print-signatures span {
-  font-size: 9pt;
+  font-size: 7.5pt;
   font-style: italic;
 }
 
@@ -4559,14 +4566,19 @@ input[type="number"] {
   color: #555;
 }
 
+.mixing-norm-ratio-print-page {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
 .mixing-norm-ratio-print-page + .mixing-norm-ratio-print-page {
   page-break-before: always;
 }
 
 @media print {
   @page {
-    size: A4 landscape;
-    margin: 0;
+    size: A4 portrait;
+    margin: 4mm 6mm;
   }
   .mixing-norm-ratio-print-batch,
   .mixing-norm-ratio-print-batch * {
@@ -4599,13 +4611,26 @@ input[type="number"] {
   }
 
   .mixing-norm-ratio-print-doc {
-    width: 297mm;
-    margin: 0;
-    padding: 8mm;
-    box-sizing: border-box;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
   }
 
+  .mixing-norm-ratio-print-table,
   .mixing-norm-ratio-round-table {
-    page-break-inside: avoid;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .mixing-norm-ratio-print-footer {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .mixing-norm-ratio-print-page {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }

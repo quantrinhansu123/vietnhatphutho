@@ -154,12 +154,26 @@ function resolveProductPrintName(
 
 const MIXING_ROUNDS_PER_TABLE = 5;
 
-function buildMixingRoundWeights(product: MixingNormProduct) {
+function buildMixingRoundWeights(product: MixingNormProduct, isActual?: boolean) {
+  const batch = product.dinh_luong_coi ?? 100;
+  if (isActual) {
+    const actualCount = product.lan_tron?.length ?? 0;
+    // Khi in phiếu trộn thực tế:
+    // Nếu chưa nhập cối nào: in chuẩn 10 cối (2 bảng L1-L5 và L6-L10) làm mẫu ghi tay trong ca, đảm bảo vừa vặn 1 trang
+    // Nếu đã nhập: hiển thị theo bội số 5 (tối thiểu 5 cối)
+    const targetCount = actualCount === 0 ? 10 : Math.max(5, Math.ceil(actualCount / 5) * 5);
+    return Array.from({ length: targetCount }, (_, index) => {
+      const savedRound = product.lan_tron?.[index];
+      if (savedRound?.tong_trong_luong && savedRound.tong_trong_luong > 0) {
+        return savedRound.tong_trong_luong;
+      }
+      return batch;
+    });
+  }
   if (product.lan_tron?.length) {
     return product.lan_tron.map(round => round.tong_trong_luong ?? 0);
   }
   const total = product.tong_trong_luong ?? 0;
-  const batch = product.dinh_luong_coi ?? 0;
   if (total <= 0 || batch <= 0) return [];
   return Array.from({ length: Math.ceil(total / batch) }, (_, index) =>
     Math.min(batch, Math.max(0, total - batch * index))
@@ -311,7 +325,7 @@ function NormPrintProductSection({
                   <td className="col-kg">{totalWeight !== null ? `${formatNumberVi(totalWeight)} kg` : ''}</td>
                   {isActual ? (
                     <td className="col-kg col-round-actual font-bold">
-                      {actualWeight !== null ? `${formatNumberVi(actualWeight)} kg` : '—'}
+                      {actualWeight !== null ? `${formatNumberVi(actualWeight)} kg` : ''}
                     </td>
                   ) : null}
                 </tr>
@@ -399,7 +413,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
             {formulaProducts.map((product, index) => {
               const tong = product.tong_trong_luong;
               const displayLines = product.chi_tiet;
-              const roundWeights = buildMixingRoundWeights(product);
+              const roundWeights = buildMixingRoundWeights(product, doc.isActual);
               return (
                 <section
                   key={`actual-${product.ma_sp}-${index}`}
@@ -468,9 +482,14 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                                 const globalRoundIndex = roundOffset + slotIndex;
                                 const normLines = normRounds[slotIndex] ?? [];
                                 const normLineIndex = normLines.findIndex(line => `${line.ma_nvl}|${line.ten_nvl}`.toLowerCase() === `${displayLine.ma_nvl}|${displayLine.ten_nvl}`.toLowerCase());
-                                const normLine = normLines[normLineIndex];
+                                const normLine = normLines[normLineIndex] ?? displayLine;
+                                const pct = normLine?.ty_le_coi ?? (normLine?.don_vi === '%' ? normLine?.gia_tri : null);
                                 const kg = normLine
-                                  ? normLine.khoi_luong ?? (normLine.don_vi === '%' && normLine.gia_tri != null ? roundWeight * normLine.gia_tri / 100 : normLine.gia_tri)
+                                  ? (pct !== null && roundWeight > 0
+                                      ? (roundWeight * pct) / 100
+                                      : (normLine.khoi_luong !== null && Number.isFinite(normLine.khoi_luong)
+                                          ? normLine.khoi_luong
+                                          : normLine.gia_tri))
                                   : null;
                                 const actualWeight = normLineIndex >= 0 ? doc.actualRounds?.[index]?.[globalRoundIndex]?.[normLineIndex]?.weight : null;
                                 return <React.Fragment key={slotIndex}><td className="col-round">{formatNumberVi(kg)}</td><td className="col-round col-round-actual">{formatNumberVi(actualWeight)}</td></React.Fragment>;
