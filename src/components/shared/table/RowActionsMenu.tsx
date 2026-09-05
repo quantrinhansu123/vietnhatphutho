@@ -10,6 +10,7 @@ type RowActionsMenuProps = {
 type MenuPosition = {
   left: number;
   top: number;
+  maxHeight?: number;
 };
 
 const MENU_WIDTH = 192;
@@ -69,26 +70,65 @@ export function RowActionsMenu({ children, label = 'Thao tác' }: RowActionsMenu
   const menuId = useId();
   const actions = collectActions(children);
 
-  const positionMenu = () => {
+  const calculatePosition = (): MenuPosition => {
     const trigger = triggerRef.current;
-    if (!trigger) return;
+    if (!trigger) return { left: VIEWPORT_GAP, top: VIEWPORT_GAP };
 
     const rect = trigger.getBoundingClientRect();
-    const menuHeight = menuRef.current?.offsetHeight ?? 0;
+    const measuredHeight = menuRef.current?.offsetHeight || 0;
+    const estimatedHeight = actions.length * 44 + 16;
+    const menuHeight = measuredHeight > 0 ? measuredHeight : estimatedHeight;
+
     const left = Math.min(
       Math.max(VIEWPORT_GAP, rect.right - MENU_WIDTH),
       window.innerWidth - MENU_WIDTH - VIEWPORT_GAP
     );
-    const fitsBelow = rect.bottom + 6 + menuHeight <= window.innerHeight - VIEWPORT_GAP;
-    const top = fitsBelow
-      ? rect.bottom + 6
-      : Math.max(VIEWPORT_GAP, rect.top - menuHeight - 6);
 
-    setPosition({ left, top });
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - VIEWPORT_GAP);
+    const spaceAbove = Math.max(0, rect.top - VIEWPORT_GAP);
+
+    // Nếu nút nằm ở nửa dưới màn hình HOẶC khoảng trống phía dưới không đủ (+20px dự phòng)
+    // -> BẮT BUỘC MỞ HƯỚNG LÊN TRÊN (OPEN UPWARDS)
+    const isLowerHalf = rect.top > window.innerHeight * 0.5;
+    const preferUpwards = isLowerHalf || spaceBelow < menuHeight + 20;
+
+    let top: number;
+    let maxHeight: number | undefined;
+
+    if (preferUpwards && spaceAbove >= 60) {
+      top = Math.max(VIEWPORT_GAP, rect.top - menuHeight - 6);
+      maxHeight = spaceAbove - 6;
+    } else if (spaceBelow >= menuHeight) {
+      top = rect.bottom + 6;
+      maxHeight = spaceBelow - 6;
+    } else {
+      top = Math.max(VIEWPORT_GAP, rect.top - menuHeight - 6);
+      maxHeight = Math.max(spaceAbove, spaceBelow) - 6;
+    }
+
+    return { left, top, maxHeight };
+  };
+
+  const updatePosition = () => {
+    setPosition(calculatePosition());
+  };
+
+  const handleToggle = () => {
+    if (!open) {
+      setPosition(calculatePosition());
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
   };
 
   useLayoutEffect(() => {
-    if (open) positionMenu();
+    if (!open) return;
+    updatePosition();
+    const animId = requestAnimationFrame(() => {
+      updatePosition();
+    });
+    return () => cancelAnimationFrame(animId);
   }, [open, actions.length]);
 
   useEffect(() => {
@@ -104,17 +144,17 @@ export function RowActionsMenu({ children, label = 'Thao tác' }: RowActionsMenu
         triggerRef.current?.focus();
       }
     };
-    const closeOnViewportChange = () => setOpen(false);
+    const handleScrollOrResize = () => updatePosition();
 
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', closeOnEscape);
-    window.addEventListener('resize', closeOnViewportChange);
-    window.addEventListener('scroll', closeOnViewportChange, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
     return () => {
       document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', closeOnEscape);
-      window.removeEventListener('resize', closeOnViewportChange);
-      window.removeEventListener('scroll', closeOnViewportChange, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
     };
   }, [open]);
 
@@ -131,8 +171,8 @@ export function RowActionsMenu({ children, label = 'Thao tác' }: RowActionsMenu
           aria-haspopup="menu"
           aria-controls={open ? menuId : undefined}
           aria-expanded={open}
-          onClick={() => setOpen(current => !current)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 active:scale-95"
+          onClick={handleToggle}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition hover:border-[#ef1b2d] hover:bg-zinc-50 active:scale-95"
         >
           <MoreHorizontal className="h-4 w-4" />
         </button>
@@ -143,8 +183,12 @@ export function RowActionsMenu({ children, label = 'Thao tác' }: RowActionsMenu
           ref={menuRef}
           id={menuId}
           role="menu"
-          className="fixed z-[120] w-48 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-2xl"
-          style={position}
+          className="fixed z-[120] w-48 max-h-[85vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-2xl"
+          style={{
+            left: position.left,
+            top: position.top,
+            maxHeight: position.maxHeight ? `${position.maxHeight}px` : undefined
+          }}
         >
           {actions.map((action, index) => {
             const actionLabel = getActionLabel(action);
