@@ -817,9 +817,12 @@ export default function ActualMixingSheetTab() {
             ma_nvl: std.ma_nvl,
             ten_nvl: std.ten_nvl,
             ten_nvl_san_xuat: std.ten_nvl_san_xuat,
-            gia_tri: std.ty_le_coi,
+            gia_tri: std.ty_le_coi ?? std.gia_tri,
             don_vi: '%',
-            khoi_luong: std.tong_khoi_luong
+            khoi_luong: computeTlDm(std, product.dinh_luong_coi) ?? std.gia_tri,
+            ty_le_coi: std.ty_le_coi,
+            ty_le_tong: std.ty_le_tong,
+            tong_khoi_luong: std.tong_khoi_luong
           })),
           lan_tron: product.rounds.map(round => ({
             lan: round.lan,
@@ -865,7 +868,7 @@ export default function ActualMixingSheetTab() {
 
     setPrintDoc({
       maLenhSx: selectedNorm.ma_lenh_sx,
-      ngay: selectedNorm.ngay,
+      ngay: date || selectedNorm.ngay,
       ca: selectedNorm.ca,
       isActual: true,
       intro: 'Tỷ lệ trộn định mức và kết quả trộn thực tế như sau',

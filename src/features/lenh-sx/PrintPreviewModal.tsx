@@ -132,24 +132,30 @@ export function ProductionOrderPrintPreviewModal({
           dac_ta: previewData.plan?.dac_ta || '',
           lan_ban_hanh: previewData.plan?.lan_ban_hanh || '01'
         });
-        const previewRows: PreviewRow[] = (previewData.rows || []).map((r: any, idx: number) => ({
-          key: String(r.key || `${order.id}__${idx + 1}`),
-          stt: Number(r.stt) || idx + 1,
-          item_index: Number(r.item_index) || idx,
-          ma_sp: r.ma_sp || '',
-          ten_sp: r.ten_sp || '',
-          ten_san_xuat: r.ten_san_xuat || r.ten_sp || '',
-          don_vi: r.don_vi || '',
-          so_luong: Number(r.so_luong) || 0,
-          khu_vuc: r.khu_vuc || '',
-          slsx_bac: Number(r.slsx_bac) || 0,
-          slsx_trung: Number(r.slsx_trung) || 0,
-          slsx_nam: Number(r.slsx_nam) || 0,
-          kg_cuon: r.kg_cuon !== null && r.kg_cuon !== undefined ? Number(r.kg_cuon) : null,
-          tl_tam: r.tl_tam !== null && r.tl_tam !== undefined ? Number(r.tl_tam) : null,
-          ghi_chu: r.ghi_chu || '',
-          has_saved_detail: Boolean(r.has_saved_detail)
-        }));
+        const previewRows: PreviewRow[] = (previewData.rows || [])
+          .map((r: any, idx: number) => ({
+            key: String(r.key || `${order.id}__${idx + 1}`),
+            stt: Number(r.stt) || idx + 1,
+            item_index: Number(r.item_index) || idx,
+            ma_sp: r.ma_sp || '',
+            ten_sp: r.ten_sp || '',
+            ten_san_xuat: r.ten_san_xuat || r.ten_sp || '',
+            don_vi: r.don_vi || '',
+            so_luong: Number(r.so_luong) || 0,
+            khu_vuc: r.khu_vuc || '',
+            slsx_bac: Number(r.slsx_bac) || 0,
+            slsx_trung: Number(r.slsx_trung) || 0,
+            slsx_nam: Number(r.slsx_nam) || 0,
+            kg_cuon: r.kg_cuon !== null && r.kg_cuon !== undefined ? Number(r.kg_cuon) : null,
+            tl_tam: r.tl_tam !== null && r.tl_tam !== undefined ? Number(r.tl_tam) : null,
+            ghi_chu: r.ghi_chu || '',
+            has_saved_detail: Boolean(r.has_saved_detail)
+          }))
+          .sort((a: PreviewRow, b: PreviewRow) => a.stt - b.stt || a.item_index - b.item_index)
+          .map((r: PreviewRow, idx: number) => ({
+            ...r,
+            stt: r.stt || (idx + 1)
+          }));
         setRows(previewRows);
         const seededEdits: Record<string, RowEdit> = {};
         previewRows.forEach((row, idx) => {
@@ -273,7 +279,7 @@ export function ProductionOrderPrintPreviewModal({
 
   if (!open || !order) return null;
 
-  const printDate = formatProductionOrderPrintDate(order.startDate);
+  const printDate = formatProductionOrderPrintDate(order.startDate || order.ngay_bat_dau || order.ngay_gio_bat_dau);
   const overLimitCount = computedRows.filter(r => r.overLimit).length;
 
   const numHeadCell = 'whitespace-nowrap px-2.5 py-2.5 text-center font-bold';
