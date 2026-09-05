@@ -4304,7 +4304,7 @@ input[type="number"] {
 
 .mixing-norm-ratio-print-doc {
   width: 100%;
-  max-width: 277mm;
+  max-width: 198mm;
   margin: 0 auto;
   padding: 4mm 6mm;
   font-family: "Times New Roman", Times, serif;
@@ -4443,35 +4443,25 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-table .col-stt {
-  width: 28px;
+  width: 32px;
   text-align: center;
 }
 
 .mixing-norm-ratio-print-table .col-code {
-  width: 18%;
+  width: 22%;
   font-family: Consolas, "Courier New", monospace;
 }
 
-.mixing-norm-ratio-print-table .col-type {
-  width: 14%;
-  text-align: center;
-  font-weight: 700;
-}
-
-.mixing-norm-ratio-print-table tr.is-secondary-material .col-type {
-  background: #fff3cd;
-}
-
 .mixing-norm-ratio-print-table.is-secondary-only .col-name {
-  width: 40%;
+  width: 48%;
 }
 
 .mixing-norm-ratio-print-table.is-secondary-only .col-kg {
-  width: 22%;
+  width: 25%;
 }
 
 .mixing-norm-ratio-print-table .col-name {
-  width: 20%;
+  width: 42%;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -4517,7 +4507,7 @@ input[type="number"] {
 
 .mixing-norm-ratio-print-table .col-pct,
 .mixing-norm-ratio-print-table .col-kg {
-  width: 14%;
+  width: 18%;
   text-align: right;
   font-weight: 700;
 }

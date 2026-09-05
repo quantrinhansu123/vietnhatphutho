@@ -119,6 +119,7 @@ type ProductForm = {
   soLuongGoc: string;
   soLuongTuDong: boolean;
   dinhLuongCoi: string;
+  ghiChu: string;
   /** Danh sách NVL của 1 cối trộn tiêu chuẩn — dùng chung cho mọi cối, không nhập riêng theo lần. */
   lines: LineForm[];
   /** Đánh dấu block đã có dữ liệu NVL được lưu để không ghi đè khi đổi mã sản phẩm. */
@@ -168,6 +169,7 @@ const emptyProduct = (): ProductForm => ({
   soLuongGoc: '',
   soLuongTuDong: false,
   dinhLuongCoi: '',
+  ghiChu: '',
   lines: [emptyLine()],
   nvlFilled: false
 });
@@ -277,6 +279,7 @@ function productToForm(
     soLuongGoc: product.so_luong_goc == null ? '0' : String(product.so_luong_goc),
     soLuongTuDong: product.so_luong_goc != null,
     dinhLuongCoi: product.dinh_luong_coi == null ? '' : String(product.dinh_luong_coi),
+    ghiChu: product.ghi_chu || '',
     lines: baseLines,
     nvlFilled: true
   };
@@ -1479,6 +1482,7 @@ export default function MixingNormMaterialsTab() {
           key: product.key,
           maSpIds: ids,
           tenSp: product.tenSp,
+          ghiChu: product.ghiChu,
           lines: nextLines,
           nvlFilled: nextLines.some(line => line.maNvl.trim() || line.tenNvl.trim())
         };
@@ -1876,7 +1880,7 @@ export default function MixingNormMaterialsTab() {
           so_luong_goc: parseNumberOrNull(product.soLuongGoc),
           dinh_luong_coi: parseNumberOrNull(product.dinhLuongCoi),
           so_lan_tron,
-          ghi_chu: product.dinhLuongCoi.trim(),
+          ghi_chu: product.ghiChu.trim(),
           lan_tron,
           nvl,
           nvl_phu: [] as ReturnType<typeof serializeLines>
@@ -2407,6 +2411,17 @@ export default function MixingNormMaterialsTab() {
                               )}
                             </div>
                           ) : null}
+                        </label>
+                        <label className="space-y-1 sm:col-span-2">
+                          <span className="text-[11px] font-bold text-zinc-500">
+                            Ghi chú sản phẩm
+                          </span>
+                          <input
+                            value={product.ghiChu}
+                            onChange={event => updateProduct(product.key, { ghiChu: event.target.value })}
+                            className={inputClass}
+                            placeholder="Nhập ghi chú sản phẩm cho công nhân trộn (tuỳ chọn)"
+                          />
                         </label>
                         <label className="space-y-1">
                           <span className="text-[11px] font-bold text-zinc-500">SL quy đổi trước hao hụt (kg)</span>

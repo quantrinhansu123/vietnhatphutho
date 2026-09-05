@@ -260,24 +260,20 @@ function NormPrintProductSection({
           <thead>
             <tr>
               <th className="col-stt">STT</th>
-              <th className="col-type">Loại NVL</th>
               <th className="col-code">Mã NVL</th>
               <th className="col-name">Tên NVL</th>
-              <th className="col-pct">% Cối trộn</th>
               <th className="col-kg">Giá trị (kg/cối)</th>
               <th className="col-kg">Tổng trọng lượng</th>
             </tr>
           </thead>
           <tbody>
             {primaryLines.map((line, lineIndex) => {
-              const { percentCoi, kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
+              const { kgPerBatch, tongKg } = resolveStandardBatchRow(line, product);
               return (
                 <tr key={`${product.ma_sp}-primary-${line.ma_nvl}-${lineIndex}`} className="is-primary-material">
                   <td className="col-stt">{lineIndex + 1}</td>
-                  <td className="col-type">Nguyên liệu chính</td>
                   <td className="col-code">{line.ma_nvl || ''}</td>
                   <td className="col-name">{materialPrintName(line)}</td>
-                  <td className="col-pct">{percentCoi !== null ? `${formatNumberVi(percentCoi)}%` : ''}</td>
                   <td className="col-kg">{kgPerBatch !== null ? `${formatNumberVi(kgPerBatch)} kg` : ''}</td>
                   <td className="col-kg">{tongKg !== null ? `${formatNumberVi2(tongKg)} kg` : ''}</td>
                 </tr>
@@ -286,7 +282,7 @@ function NormPrintProductSection({
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={6} className="mixing-norm-ratio-print-total-label">
+              <td colSpan={4} className="mixing-norm-ratio-print-total-label">
                 Tổng trọng lượng NVL chính cần
               </td>
               <td className="col-kg">
@@ -305,7 +301,6 @@ function NormPrintProductSection({
           <thead>
             <tr>
               <th className="col-stt">STT</th>
-              <th className="col-type">Loại NVL</th>
               <th className="col-code">Mã NVL</th>
               <th className="col-name">Tên NVL</th>
               <th className="col-kg">{isActual ? 'Định mức' : 'Tổng trọng lượng'}</th>
@@ -319,7 +314,6 @@ function NormPrintProductSection({
               return (
                 <tr key={`${product.ma_sp}-secondary-${line.ma_nvl}-${lineIndex}`} className="is-secondary-material">
                   <td className="col-stt">{lineIndex + 1}</td>
-                  <td className="col-type">Nguyên liệu phụ</td>
                   <td className="col-code">{line.ma_nvl || ''}</td>
                   <td className="col-name">{materialPrintName(line)}</td>
                   <td className="col-kg">{totalWeight !== null ? `${formatNumberVi(totalWeight)} kg` : ''}</td>
@@ -334,7 +328,7 @@ function NormPrintProductSection({
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4} className="mixing-norm-ratio-print-total-label">
+              <td colSpan={3} className="mixing-norm-ratio-print-total-label">
                 Tổng trọng lượng NVL phụ {isActual ? 'cần' : ''}
               </td>
               <td className="col-kg">
