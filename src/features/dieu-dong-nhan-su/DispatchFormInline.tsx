@@ -10,6 +10,7 @@ export type SelectedDispatchItem = {
   gocBatDau: string;
   maLenhSx: string;
   person: { ma_nhan_su: string; vai_tro: string };
+  tenNhanSu?: string;
   caDieuDong: string;
   mayDieuDong: string;
   thoiGianBatDau: string;
@@ -47,7 +48,7 @@ export function DispatchFormInline({
   if (selectedList.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 md:p-6">
+    <div id="dispatch-inline-form" className="rounded-lg border border-amber-200 bg-amber-50 p-4 md:p-6">
       <div className="mb-4 flex items-center gap-2">
         <span className="text-lg">⚡</span>
         <h3 className="text-sm font-semibold text-zinc-900">THIẾT LẬP THÔNG TIN ĐIỀU ĐỘNG</h3>
@@ -76,7 +77,7 @@ export function DispatchFormInline({
           </thead>
           <tbody>
             {selectedList.map(item => {
-              const personName = staffMap.get(item.person.ma_nhan_su) || item.person.ma_nhan_su || '-';
+              const personName = staffMap.get(item.person.ma_nhan_su) || item.tenNhanSu || item.person.ma_nhan_su || '-';
               return (
                 <tr key={item.key} className="border-b border-amber-100 transition-colors hover:bg-white">
                   <td className="px-3 py-2 font-medium text-zinc-900">{personName}</td>
@@ -90,6 +91,9 @@ export function DispatchFormInline({
                       className={cellInput}
                     >
                       <option value="">-- Chọn ca --</option>
+                      {item.caDieuDong && !shiftOptions.some(s => s.value === item.caDieuDong) && (
+                        <option value={item.caDieuDong}>{item.caDieuDong}</option>
+                      )}
                       {shiftOptions.map(s => (
                         <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
@@ -102,6 +106,9 @@ export function DispatchFormInline({
                       className={cellInput}
                     >
                       <option value="">-- Chọn máy --</option>
+                      {item.mayDieuDong && !machineNames.includes(item.mayDieuDong) && (
+                        <option value={item.mayDieuDong}>{item.mayDieuDong}</option>
+                      )}
                       {machineNames.map(m => (
                         <option key={m} value={m}>{m}</option>
                       ))}

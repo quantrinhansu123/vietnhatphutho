@@ -614,9 +614,9 @@ export function MachinesPanel({ onBack }: { onBack: () => void }) {
               ['Đang dùng', activeCount],
               ['Chi nhánh', branchCount]
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <span className="block font-bold text-zinc-400">{label}</span>
-                <span className="mt-1 block text-xl font-black text-white">{value}</span>
+              <div key={label} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                <span className="block font-bold text-zinc-500">{label}</span>
+                <span className="mt-1 block text-xl font-black text-zinc-950">{value}</span>
               </div>
             ))}
           </div>

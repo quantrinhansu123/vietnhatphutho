@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Loader2, Pencil, Trash2 } from 'lucide-react';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
 import { MachineCardRow, type MachineGroup, type SchedPerson } from './MachineCardRow';
 import { DispatchFormInline, type SelectedDispatchItem } from './DispatchFormInline';
 import { EditDispatchModal, type DispatchRecord } from './EditDispatchModal';
+import { DateInputVi } from '../../components/shared/DateInputVi';
 
 type SchedRow = {
   id: string;
@@ -51,8 +52,9 @@ function formatDispatchTimeRange(start: unknown, end: unknown): string {
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const formatDate = (d: string) => {
+  if (!d) return '';
   const [y, m, day] = d.slice(0, 10).split('-');
-  return day && m && y ? `${day}/${m}/${y}` : d;
+  return day && m && y ? `${day.padStart(2, '0')}/${m.padStart(2, '0')}/${y}` : d;
 };
 
 function normalizeHrBranches(data: any): HrBranch[] {
@@ -115,6 +117,84 @@ function normalizeSchedRows(data: unknown): SchedRow[] {
 
 const personKey = (maMay: string, maNhanSu: string, ca: string) => `${maMay}__${maNhanSu}__${ca}`;
 
+type DispatchPrefill = {
+  date: string;
+  ma_nhan_su: string;
+  ten_nhan_su?: string;
+  vai_tro?: string;
+  ma_may?: string;
+  ten_may?: string;
+  ca?: string;
+  thoi_gian_bat_dau?: string;
+  thoi_gian_ket_thuc?: string;
+  ma_lenh_sx?: string;
+};
+
+function readDispatchPrefill(): DispatchPrefill | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const date = params.get('date') || params.get('ngay_lam_viec');
+    const ma_nhan_su = params.get('ma_nhan_su');
+    if (ma_nhan_su) {
+      return {
+        date: date || todayISO(),
+        ma_nhan_su,
+        ten_nhan_su: params.get('ten_nhan_su') || '',
+        vai_tro: params.get('vai_tro') || '',
+        ma_may: params.get('ma_may') || '',
+        ten_may: params.get('ten_may') || '',
+        ca: params.get('ca') || '',
+        thoi_gian_bat_dau: params.get('thoi_gian_bat_dau') || '',
+        thoi_gian_ket_thuc: params.get('thoi_gian_ket_thuc') || '',
+        ma_lenh_sx: params.get('ma_lenh_sx') || ''
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const raw = sessionStorage.getItem('dieu_dong_prefill') || localStorage.getItem('dieu_dong_prefill');
+    if (raw) {
+      sessionStorage.removeItem('dieu_dong_prefill');
+      localStorage.removeItem('dieu_dong_prefill');
+      return JSON.parse(raw);
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function buildInitialSelectedItems(prefill: DispatchPrefill | null): SelectedDispatchItem[] {
+  if (!prefill || !prefill.ma_nhan_su) return [];
+  const maMay = prefill.ma_may || '';
+  const maNhanSu = prefill.ma_nhan_su;
+  const caGoc = prefill.ca || '';
+  const tenMayGoc = prefill.ten_may || maMay || '-';
+  const gocBatDau = prefill.thoi_gian_bat_dau || '';
+  const maLenhSx = prefill.ma_lenh_sx || '';
+  const key = personKey(maMay, maNhanSu, caGoc);
+
+  return [
+    {
+      key,
+      maMay,
+      tenMayGoc,
+      caGoc,
+      gocBatDau,
+      maLenhSx,
+      person: { ma_nhan_su: maNhanSu, vai_tro: prefill.vai_tro || '' },
+      tenNhanSu: prefill.ten_nhan_su || '',
+      caDieuDong: caGoc,
+      mayDieuDong: '',
+      thoiGianBatDau: prefill.thoi_gian_bat_dau || '',
+      thoiGianKetThuc: prefill.thoi_gian_ket_thuc || ''
+    }
+  ];
+}
+
 interface DieuDongNhanSuPanelProps {
   onBack: () => void;
   currentUser?: any;
@@ -123,7 +203,9 @@ interface DieuDongNhanSuPanelProps {
 }
 
 export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDongNhanSuPanelProps) {
-  const [selectedDate, setSelectedDate] = useState(todayISO());
+  const prefill = useMemo(() => readDispatchPrefill(), []);
+  const prefillEnrichedRef = useRef(false);
+  const [selectedDate, setSelectedDate] = useState(() => prefill?.date || todayISO());
 
   const [schedRows, setSchedRows] = useState<SchedRow[]>([]);
   const [machines, setMachines] = useState<MachineOpt[]>([]);
@@ -137,7 +219,7 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
   const [formError, setFormError] = useState('');
   const [pageError, setPageError] = useState('');
 
-  const [selectedItems, setSelectedItems] = useState<SelectedDispatchItem[]>([]);
+  const [selectedItems, setSelectedItems] = useState<SelectedDispatchItem[]>(() => buildInitialSelectedItems(prefill));
   const [editingRecord, setEditingRecord] = useState<DispatchRecord | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
@@ -219,7 +301,6 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
     setLoading(true);
     setLoadingHistory(true);
     setPageError('');
-    setSelectedItems([]);
     try {
       const [schedRes, ddRes] = await Promise.all([
         fetch(`/api/phan-cong-nhan-su?ngay_lam_viec=${encodeURIComponent(date)}`),
@@ -229,15 +310,55 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
         schedRes.json().catch(() => ({})),
         ddRes.json().catch(() => ({}))
       ]);
-      setSchedRows(normalizeSchedRows(schedData));
+      const parsedSched = normalizeSchedRows(schedData);
+      setSchedRows(parsedSched);
       setHistory(Array.isArray(ddData.items) ? (ddData.items as DispatchRecord[]) : []);
+
+      if (!prefillEnrichedRef.current && prefill && prefill.ma_nhan_su) {
+        prefillEnrichedRef.current = true;
+        const p = prefill;
+        const match =
+          parsedSched.find(
+            r =>
+              r.ma_nhan_su === p.ma_nhan_su &&
+              (!p.ma_may || r.ma_may === p.ma_may) &&
+              (!p.ca || r.ca_lam_viec === p.ca)
+          ) || parsedSched.find(r => r.ma_nhan_su === p.ma_nhan_su);
+
+        if (match) {
+          const maMay = match.ma_may || p.ma_may || '';
+          const caGoc = match.ca_lam_viec || p.ca || '';
+          const key = personKey(maMay, p.ma_nhan_su, caGoc);
+
+          setSelectedItems(prev => {
+            const idx = prev.findIndex(i => i.person.ma_nhan_su === p.ma_nhan_su);
+            if (idx === -1) return prev;
+            const cur = prev[idx];
+            const updated: SelectedDispatchItem = {
+              ...cur,
+              key,
+              maMay,
+              tenMayGoc: match.may || cur.tenMayGoc || maMay,
+              caGoc,
+              gocBatDau: match.thoi_gian_bat_dau || cur.gocBatDau,
+              maLenhSx: match.ma_lenh_sx || cur.maLenhSx,
+              person: { ma_nhan_su: p.ma_nhan_su, vai_tro: match.vai_tro || cur.person.vai_tro },
+              thoiGianBatDau: cur.thoiGianBatDau || match.thoi_gian_bat_dau || '',
+              thoiGianKetThuc: cur.thoiGianKetThuc || match.thoi_gian_ket_thuc || ''
+            };
+            const copy = [...prev];
+            copy[idx] = updated;
+            return copy;
+          });
+        }
+      }
     } catch (err: any) {
       setPageError(err?.message || 'Không tải được dữ liệu.');
     } finally {
       setLoading(false);
       setLoadingHistory(false);
     }
-  }, []);
+  }, [prefill]);
 
   useEffect(() => {
     void loadReference();
@@ -246,6 +367,15 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
   useEffect(() => {
     void loadForDate(selectedDate);
   }, [selectedDate, loadForDate]);
+
+  useEffect(() => {
+    if (prefill?.ma_nhan_su) {
+      const timer = setTimeout(() => {
+        document.getElementById('dispatch-inline-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [prefill]);
 
   const reloadHistory = useCallback(async () => {
     setLoadingHistory(true);
@@ -398,11 +528,13 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-700">Ngày làm việc *</label>
-              <input
-                type="date"
+              <DateInputVi
                 value={selectedDate}
-                onChange={e => setSelectedDate(e.target.value)}
-                className="rounded border border-zinc-300 px-3 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none"
+                onChange={next => {
+                  setSelectedDate(next);
+                  setSelectedItems([]);
+                }}
+                className="w-48"
               />
             </div>
             <p className="pb-2 text-xs text-zinc-500">
