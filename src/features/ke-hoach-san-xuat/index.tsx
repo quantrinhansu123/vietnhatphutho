@@ -5028,6 +5028,33 @@ function compareOrderCodesNewestFirst(left: string, right: string) {
   return right.localeCompare(left, 'vi');
 }
 
+function getOrderEffectiveTimestamp(order: OrderRow | undefined): number {
+  if (!order) return 0;
+  const created = getOrderCreatedAtTimestamp(order.createdAt);
+  if (created > 0) return created;
+  const orderDateParsed = Date.parse(order.orderDate || '');
+  if (Number.isFinite(orderDateParsed)) return orderDateParsed;
+  return 0;
+}
+
+export function sortOrderCodesNewestFirst(orderCodes: string[], orders: OrderRow[]): string[] {
+  const orderMap = new Map<string, OrderRow>();
+  for (const order of orders) {
+    if (order.orderCode && !orderMap.has(order.orderCode)) {
+      orderMap.set(order.orderCode, order);
+    }
+  }
+
+  return [...orderCodes].sort((codeA, codeB) => {
+    const orderA = orderMap.get(codeA);
+    const orderB = orderMap.get(codeB);
+    const timeA = getOrderEffectiveTimestamp(orderA);
+    const timeB = getOrderEffectiveTimestamp(orderB);
+    if (timeB !== timeA) return timeB - timeA;
+    return compareOrderCodesNewestFirst(codeA, codeB);
+  });
+}
+
 export function splitProductionOrderRefs(orderRef: string): string[] {
   return String(orderRef || '')
     .split(/[,;+]/)
@@ -5299,6 +5326,7 @@ export function AddProductionOrderModal({
   const [selectedAutofillProductKeys, setSelectedAutofillProductKeys] = useState<string[]>([]);
   const [autofillProductOrderFilter, setAutofillProductOrderFilter] = useState('all');
   const [autofillProductSearch, setAutofillProductSearch] = useState('');
+  const [autofillAppendMode, setAutofillAppendMode] = useState(false);
   const [showAddLine, setShowAddLine] = useState(false);
   const [lineDraftOrderRef, setLineDraftOrderRef] = useState('');
   const [lineDraftProductCode, setLineDraftProductCode] = useState('');
@@ -5322,6 +5350,7 @@ export function AddProductionOrderModal({
     setSelectedAutofillProductKeys([]);
     setAutofillProductOrderFilter('all');
     setAutofillProductSearch('');
+    setAutofillAppendMode(false);
     setShowAddLine(false);
     setLineDraftOrderRef('');
     setLineDraftProductCode('');
@@ -5487,29 +5516,43 @@ export function AddProductionOrderModal({
       });
   }, [autofillSearch, ordersWithProductionProducts]);
 
+  const sortedSelectedOrderCodes = useMemo(
+    () => sortOrderCodesNewestFirst(selectedAutofillOrderCodes, orders),
+    [selectedAutofillOrderCodes, orders]
+  );
+
   const autofillProductCandidates = useMemo(() => {
-    return selectedAutofillOrderCodes.flatMap(orderRef =>
-      listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
+    return sortedSelectedOrderCodes.flatMap(orderRef => {
+      const order = orders.find(o => o.orderCode === orderRef);
+      const productLinesInOrder = order ? getOrderProductLines(order) : [];
+      return listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
         .filter(product => product.orderQty > 0 && product.remainingQty > 0)
-        .map(product => ({
-          key: autofillProductKey(orderRef, product.code, product.productId, product.productionName),
-          orderRef,
-          productId: product.productId,
-          productCode: product.code,
-          productName: product.name,
-          productionName: product.productionName,
-          unit: product.unit,
-          remainingQty: product.remainingQty
-        }))
-    );
-  }, [selectedAutofillOrderCodes, ordersForSelectedDate, productionOrders, catalogProducts]);
+        .map(product => {
+          const lineIndex = productLinesInOrder.findIndex(line =>
+            (product.productId && line.productId ? line.productId === product.productId : line.productCode === product.code)
+          );
+          return {
+            key: autofillProductKey(orderRef, product.code, product.productId, product.productionName),
+            orderRef,
+            productId: product.productId,
+            productCode: product.code,
+            productName: product.name,
+            productionName: product.productionName,
+            unit: product.unit,
+            remainingQty: product.remainingQty,
+            lineIndex: lineIndex >= 0 ? lineIndex : 9999
+          };
+        })
+        .sort((a, b) => a.lineIndex - b.lineIndex);
+    });
+  }, [sortedSelectedOrderCodes, orders, ordersForSelectedDate, productionOrders, catalogProducts]);
 
   const autofillOrderFilterOptions = useMemo(
     () => [
-      { value: 'all', label: `Tất cả đơn đã chọn (${selectedAutofillOrderCodes.length})` },
-      ...selectedAutofillOrderCodes.map(orderCode => ({ value: orderCode, label: orderCode }))
+      { value: 'all', label: `Tất cả đơn đã chọn (${sortedSelectedOrderCodes.length})` },
+      ...sortedSelectedOrderCodes.map(orderCode => ({ value: orderCode, label: orderCode }))
     ],
-    [selectedAutofillOrderCodes]
+    [sortedSelectedOrderCodes]
   );
 
   const filteredAutofillProducts = useMemo(() => {
@@ -5562,7 +5605,7 @@ export function AddProductionOrderModal({
   };
 
   const applyAutofillOrders = () => {
-    const selectedCodes = [...new Set(selectedAutofillOrderCodes.map(code => code.trim()).filter(Boolean))];
+    const selectedCodes = [...new Set(sortedSelectedOrderCodes.map(code => code.trim()).filter(Boolean))];
     if (selectedCodes.length === 0) {
       setFormError('Vui lòng tick ít nhất một đơn hàng để tự điền.');
       return;
@@ -5592,10 +5635,27 @@ export function AddProductionOrderModal({
       )
     }));
 
-    setForm(prev => ({
-      ...prev,
-      entryLines: nextLines
-    }));
+    setForm(prev => {
+      const hasExistingData = prev.entryLines.some(
+        line => line.orderRef.trim() || line.productCode.trim() || Number(line.quantity) > 0
+      );
+
+      if (!hasExistingData || !autofillAppendMode) {
+        return {
+          ...prev,
+          entryLines: nextLines
+        };
+      }
+
+      const validExisting = prev.entryLines.filter(
+        line => line.orderRef.trim() && line.productCode.trim()
+      );
+      return {
+        ...prev,
+        entryLines: [...validExisting, ...nextLines]
+      };
+    });
+
     setFormError('');
     setShowAutofillOrders(false);
   };
@@ -6595,9 +6655,22 @@ export function AddProductionOrderModal({
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-              <span className="text-xs font-bold text-zinc-500">
-                Đã chọn {selectedAutofillOrderCodes.length} đơn · {selectedAutofillProductKeys.length} sản phẩm
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs font-bold text-zinc-500">
+                  Đã chọn {selectedAutofillOrderCodes.length} đơn · {selectedAutofillProductKeys.length} sản phẩm
+                </span>
+                {form.entryLines.some(l => l.orderRef.trim() || l.productCode.trim()) && (
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-bold text-zinc-700 hover:bg-zinc-50">
+                    <input
+                      type="checkbox"
+                      checked={autofillAppendMode}
+                      onChange={e => setAutofillAppendMode(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                    />
+                    <span>Nối thêm vào dòng hiện có (không xóa dòng cũ)</span>
+                  </label>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
