@@ -90,9 +90,18 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
         const daiM = pickText(row, ['dai_m', 'daiM'], '');
         const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp', 'tl_tam', 'tlTam'], '');
         const tongKg = pickText(row, ['tong_kg', 'tongKg', 'trong_luong', 'trong_luong_kg'], '');
-        const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource'], '');
-        const quyCachMDai = pickText(row, ['quy_cach_m_dai', 'quyCachMDai'], '');
+        const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource', 'conversion_source'], '');
+        const rawQuyCachMDai = pickText(row, ['quy_cach_m_dai', 'quyCachMDai'], '');
         const rawQuyCach = pickText(row, ['quy_cach', 'quyCach'], '');
+        let resolvedQuyCachMDai = rawQuyCachMDai;
+        if (!resolvedQuyCachMDai && rawQuyCach) {
+          const match = rawQuyCach.match(/(\d+(?:[.,]\d+)?)/);
+          if (match) resolvedQuyCachMDai = match[1].replace(',', '.');
+        }
+        if (!resolvedQuyCachMDai && daiM && Number(daiM) > 0) {
+          resolvedQuyCachMDai = daiM;
+        }
+        const quyCachMDai = resolvedQuyCachMDai;
         const quyCach = quyCachMDai ? `Dài ${quyCachMDai}m` : rawQuyCach;
         const tlCuon = pickText(row, ['tl_cuon', 'tlCuon', 'kg_cuon', 'trong_luong_kg_cuon'], '');
         const tlTam = pickText(row, ['tl_tam', 'tlTam', 'trong_luong_kg_tam'], '');

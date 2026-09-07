@@ -5660,14 +5660,18 @@ function buildProductionOrderRecordFromOrder(
         ten_san_xuat: productProductionName,
         don_vi: unit,
         so_luong: selectedProduct?.so_luong ?? null,
+        ...(selectedProduct?.do_li ? { do_li: selectedProduct.do_li } : {}),
+        ...(selectedProduct?.kho ? { kho: selectedProduct.kho } : {}),
         ...(selectedProduct?.quy_cach_m_dai ? { quy_cach_m_dai: selectedProduct.quy_cach_m_dai } : selectedProduct?.dai_m ? { quy_cach_m_dai: selectedProduct.dai_m } : {}),
         ...(selectedProduct?.dai_m ? { dai_m: selectedProduct.dai_m } : {}),
+        ...(selectedProduct?.ghi_chu ? { ghi_chu: selectedProduct.ghi_chu } : {}),
         ...(selectedProduct?.m2 ? { m2: selectedProduct.m2 } : {}),
         ...(selectedProduct?.m_dai ? { m_dai: selectedProduct.m_dai } : {}),
         ...(selectedProduct?.tong_kg ? { tong_kg: selectedProduct.tong_kg } : {}),
         ...(selectedProduct?.tl_cuon ? { tl_cuon: selectedProduct.tl_cuon } : {}),
         ...(selectedProduct?.tl_tam ? { tl_tam: selectedProduct.tl_tam } : {}),
         ...(selectedProduct?.kg_1_sp && selectedProduct.kg_1_sp !== selectedProduct.tl_tam && selectedProduct.kg_1_sp !== selectedProduct.tl_cuon ? { kg_1_sp: selectedProduct.kg_1_sp } : {}),
+        ...(selectedProduct?.nguon_quy_doi ? { nguon_quy_doi: selectedProduct.nguon_quy_doi } : {}),
         ...(selectedProduct?.ket_qua_quy_doi?.length ? { ket_qua_quy_doi: selectedProduct.ket_qua_quy_doi } : {})
       }
     ],
@@ -5702,7 +5706,10 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
+    const do_li = pickRowField(row, ['do_li', 'doLi']);
+    const kho = parseOrderQuantity(row.kho);
     const dai_m = parseOrderQuantity(row.dai_m ?? row.daiM);
+    const ghi_chu = pickRowField(row, ['ghi_chu', 'note']);
     const quy_cach_m_dai = parseOrderQuantity(row.quy_cach_m_dai ?? row.quyCachMDai ?? (dai_m && dai_m > 0 ? dai_m : null));
     const quy_cach = pickRowField(row, ['quy_cach', 'quyCach']);
     let parsedQuyCachMDai = quy_cach_m_dai;
@@ -5716,6 +5723,16 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tl_cuon = parseOrderQuantity(row.tl_cuon ?? row.tlCuon ?? row.kg_cuon ?? row.trong_luong_kg_cuon);
     const tl_tam = parseOrderQuantity(row.tl_tam ?? row.tlTam ?? row.trong_luong_kg_tam);
+    const nguon_quy_doi = pickRowField(row, ['nguon_quy_doi', 'conversionSource']);
+    const conversionResults = Array.isArray(row.ket_qua_quy_doi)
+      ? row.ket_qua_quy_doi.flatMap(item => {
+          if (!item || typeof item !== 'object') return [];
+          const result = item as Record<string, unknown>;
+          const don_vi = pickRowField(result, ['don_vi', 'unit']);
+          const gia_tri = parseOrderQuantity(result.gia_tri ?? result.value);
+          return don_vi && gia_tri !== null && gia_tri >= 0 ? [{ don_vi, gia_tri }] : [];
+        })
+      : [];
 
     if (!ma_sp && !ten_sp) {
       return null;
@@ -5736,14 +5753,19 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       don_vi,
       so_luong,
       ...(stt ? { stt } : {}),
+      ...(do_li ? { do_li } : {}),
+      ...(kho !== null && kho > 0 ? { kho } : {}),
       ...(parsedQuyCachMDai !== null && parsedQuyCachMDai > 0 ? { quy_cach_m_dai: parsedQuyCachMDai } : {}),
       ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
+      ...(ghi_chu ? { ghi_chu } : {}),
       ...(m2 !== null && m2 > 0 ? { m2 } : {}),
       ...(m_dai !== null && m_dai > 0 ? { m_dai } : {}),
       ...(tong_kg !== null && tong_kg > 0 ? { tong_kg } : {}),
       ...(tl_cuon !== null && tl_cuon > 0 ? { tl_cuon } : {}),
       ...(tl_tam !== null && tl_tam > 0 ? { tl_tam } : {}),
-      ...(kg_1_sp !== null && kg_1_sp > 0 && kg_1_sp !== tl_tam && kg_1_sp !== tl_cuon ? { kg_1_sp } : {})
+      ...(kg_1_sp !== null && kg_1_sp > 0 && kg_1_sp !== tl_tam && kg_1_sp !== tl_cuon ? { kg_1_sp } : {}),
+      ...(nguon_quy_doi ? { nguon_quy_doi } : {}),
+      ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {})
     };
     if (san_pham_id) {
       product.san_pham_id = san_pham_id;
@@ -13438,6 +13460,23 @@ export function createApp() {
       .sort((a, b) => a.stt - b.stt || a.index - b.index)
       .map(x => x.item);
   };
+  const formatProductionNameWithLengthServer = (name: string, length?: number | string): string => {
+    const cleanName = (name || '').trim();
+    const numericLength = Number(String(length ?? '').replace(',', '.'));
+    if (!Number.isFinite(numericLength) || numericLength <= 0) return cleanName || '-';
+
+    const nStr = Number.isInteger(numericLength) ? String(numericLength) : String(Math.round(numericLength * 100) / 100);
+    const quyCachSuffix = `(Quy cách: ${nStr} m)`;
+
+    if (!cleanName || cleanName === '-') return quyCachSuffix;
+    if (cleanName.includes(`(Quy cách: ${nStr} m)`)) {
+      return cleanName;
+    }
+    if (cleanName.includes(`(${nStr}m)`) || cleanName.includes(`(${nStr} m)`)) {
+      return cleanName.replace(new RegExp(`\\(${nStr}\\s*m\\)`, 'g'), quyCachSuffix);
+    }
+    return `${cleanName} ${quyCachSuffix}`;
+  };
 
   app.get('/api/lenh-sx/:id/print-preview', async (req, res) => {
     if (!supabase) {
@@ -13587,13 +13626,27 @@ export function createApp() {
           nam = soLuong;
         }
 
+        let rawQuyCachMDai = item?.quy_cach_m_dai ?? item?.quyCachMDai;
+        const rawQuyCach = String(item?.quy_cach ?? item?.quyCach ?? '');
+        if (!rawQuyCachMDai && rawQuyCach) {
+          const match = rawQuyCach.match(/(\d+(?:[.,]\d+)?)/);
+          if (match) rawQuyCachMDai = match[1].replace(',', '.');
+        }
+        if (!rawQuyCachMDai && (item?.dai_m || item?.daiM)) {
+          const daiM = Number(item?.dai_m ?? item?.daiM);
+          if (daiM > 0) rawQuyCachMDai = daiM;
+        }
+        const quyCachMDaiNum = rawQuyCachMDai !== undefined && rawQuyCachMDai !== null && !isNaN(Number(rawQuyCachMDai)) && Number(rawQuyCachMDai) > 0 ? Number(rawQuyCachMDai) : null;
+        const rawTenSanXuat = String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim();
+        const formattedTenSanXuat = formatProductionNameWithLengthServer(rawTenSanXuat, quyCachMDaiNum ?? undefined);
+
         return {
           key: `${id}__${idx + 1}`,
           stt: Number(item?.stt ?? item?.STT) || (idx + 1),
           item_index: idx,
           ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
           ten_sp: String(item?.ten_sp ?? item?.ten_hang ?? item?.productName ?? '').trim(),
-          ten_san_xuat: String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim(),
+          ten_san_xuat: formattedTenSanXuat,
           don_vi: String(item?.don_vi ?? item?.unit ?? '').trim(),
           so_luong: soLuong,
           khu_vuc: khuVuc,
@@ -13606,7 +13659,8 @@ export function createApp() {
           kg_cuon: conv?.trong_luong_kg_cuon ?? null,
           tl_tam: conv?.trong_luong_kg_tam ?? null,
           ghi_chu: String(item?.ghi_chu ?? '').trim(),
-          has_saved_detail: hasSavedDetail
+          has_saved_detail: hasSavedDetail,
+          quy_cach_m_dai: quyCachMDaiNum
         };
       });
 

@@ -47,3 +47,9 @@ Cột `nhan_su` vẫn giữ trên lệnh SX (mặc định “Chưa phân công�
 ### Danh sách lệnh SX
 
 Mỗi dòng lệnh: cột **Mã hàng / Tên hàng / Số lượng** trình bày bảng con (mỗi SP một dòng), không ghép bằng `|`.
+
+### Tự điền từ đơn hàng
+
+- Giữ riêng từng dòng trong JSON `don_hang.san_pham`, kể cả các dòng trùng mã hoặc `san_pham_id`; không gộp số lượng.
+- Sản phẩm có `quy_cach_m_dai` hiển thị quy cách mét bên cạnh tên sản phẩm.
+- Các cột KG / M2 / M dài và JSON `lenh_sx.san_pham` lấy trực tiếp dữ liệu quy đổi từ dòng đơn hàng (`ket_qua_quy_doi` và các trường liên quan), không tải lại `san_pham_quy_doi` trong form lệnh SX.
