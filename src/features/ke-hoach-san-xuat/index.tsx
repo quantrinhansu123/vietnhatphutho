@@ -6600,13 +6600,22 @@ function matchesMachine(targetMachine: string, schedMaMay: string, schedMay: str
 }
 
 function normalizeShift(str: unknown): string {
-  const text = String(str || '').trim().toLowerCase();
-  if (!text || text === '-' || text === 'tất cả' || text === 'all' || text === 'tat ca') {
+  let text = String(str || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  text = text.replace(/\(.*\)/g, '').replace(/\d{1,2}:\d{2}.*/g, '').replace(/\s+/g, '');
+  if (!text || text === '-' || text === 'tatca' || text === 'all') {
     return '';
   }
-  const numMatch = text.match(/\d+/);
-  if (numMatch) return numMatch[0];
-  return normalizeKey(text);
+  const cleaned = text.replace(/^ca[-_:]*/, '');
+  const cPattern = cleaned.match(/^(\d+)[-_:]*c[-_:]*0*(\d+)$/);
+  if (cPattern) return `${cPattern[1]}c${cPattern[2]}`;
+  const singlePattern = cleaned.match(/^c?[-_:]*0*(\d+)$/);
+  if (singlePattern) return `c${singlePattern[1]}`;
+  return cleaned;
 }
 
 function matchesShift(targetShift: string, schedCa: string): boolean {
@@ -6620,7 +6629,7 @@ function matchesShift(targetShift: string, schedCa: string): boolean {
   if (targetTokens.length === 0) return true;
 
   const normSched = normalizeShift(schedCa);
-  if (!normSched) return true;
+  if (!normSched) return false;
 
   return targetTokens.includes(normSched);
 }

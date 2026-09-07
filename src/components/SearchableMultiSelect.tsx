@@ -201,21 +201,43 @@ export default function SearchableMultiSelect<T = string>({
   };
 
   return (
-    <div ref={containerRef} className="relative space-y-2" onBlur={handleBlur}>
+    <div
+      ref={containerRef}
+      className="relative space-y-2"
+      onBlur={handleBlur}
+      onClick={event => {
+        event.stopPropagation();
+      }}
+    >
       {values.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
+        <div
+          className="flex flex-wrap gap-1.5"
+          onClick={event => {
+            event.preventDefault();
+            event.stopPropagation();
+            inputRef.current?.focus();
+          }}
+        >
           {values.map(item => {
             const key = getValue(item);
             return (
               <span
                 key={key}
+                onClick={event => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
                 className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-[#ef1b2d]"
               >
                 <span className="truncate">{resolvedGetLabel(item)}</span>
                 {!disabled ? (
                   <button
                     type="button"
-                    onClick={() => removeValue(key)}
+                    onClick={event => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      removeValue(key);
+                    }}
                     className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[#ef1b2d] transition hover:bg-red-100"
                     title="Bỏ chọn"
                   >
