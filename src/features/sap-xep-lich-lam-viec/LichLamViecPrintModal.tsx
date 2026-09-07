@@ -64,7 +64,7 @@ const emptyNoteDraft = (): NoteDraft => ({
 function formatDate(dateStr: string) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.slice(0, 10).split('-');
-  return d && m && y ? `${d}/${m}/${y}` : dateStr;
+  return d && m && y ? `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}` : dateStr;
 }
 
 function normalizeScheduleNote(value: unknown): ScheduleNote | null {

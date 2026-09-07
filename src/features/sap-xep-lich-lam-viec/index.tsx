@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import { ArrowRightLeft, ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
+import { DateInputVi } from '../../components/shared/DateInputVi';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
 import { LichLamViecPrintModal } from './LichLamViecPrintModal';
@@ -90,7 +91,7 @@ function timeHHMM(v: unknown): string {
 function formatDate(dateStr: string): string {
   if (!dateStr) return '—';
   const [y, m, d] = dateStr.slice(0, 10).split('-');
-  return d && m && y ? `${d}/${m}/${y}` : dateStr;
+  return d && m && y ? `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}` : dateStr;
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -561,6 +562,43 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     }
   };
 
+  const handleNavigateToDispatch = (group: SchedGroup, row: SchedRow) => {
+    const prefill = {
+      date: group.ngay_lam_viec,
+      ma_nhan_su: row.ma_nhan_su,
+      ten_nhan_su: staffName(row.ma_nhan_su),
+      vai_tro: row.vai_tro || '',
+      ma_may: group.ma_may || '',
+      ten_may: group.ten_may || machineName(group.ma_may) || group.ma_may || '',
+      ca: group.ca_lam_viec || '',
+      thoi_gian_bat_dau: row.thoi_gian_bat_dau || '',
+      thoi_gian_ket_thuc: row.thoi_gian_ket_thuc || '',
+      ma_lenh_sx: group.ma_lenh_sx || row.ma_lenh_sx || ''
+    };
+
+    try {
+      localStorage.setItem('dieu_dong_prefill', JSON.stringify(prefill));
+      sessionStorage.setItem('dieu_dong_prefill', JSON.stringify(prefill));
+    } catch {
+      // ignore
+    }
+
+    const params = new URLSearchParams({
+      date: prefill.date,
+      ma_nhan_su: prefill.ma_nhan_su,
+      ten_nhan_su: prefill.ten_nhan_su,
+      vai_tro: prefill.vai_tro,
+      ma_may: prefill.ma_may,
+      ten_may: prefill.ten_may,
+      ca: prefill.ca,
+      thoi_gian_bat_dau: prefill.thoi_gian_bat_dau,
+      thoi_gian_ket_thuc: prefill.thoi_gian_ket_thuc,
+      ma_lenh_sx: prefill.ma_lenh_sx
+    });
+
+    window.open(`/dieu-dong-nhan-su?${params.toString()}`, '_blank');
+  };
+
   // Đồng bộ detailGroup với dữ liệu mới sau reload.
   useEffect(() => {
     if (!detailGroup) return;
@@ -588,11 +626,10 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         <section className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
           <label className="space-y-1.5">
             <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ngày in lịch</span>
-            <input
-              type="date"
+            <DateInputVi
               value={printDate}
-              onChange={e => setPrintDate(e.target.value)}
-              className={`${inputClass} w-44`}
+              onChange={setPrintDate}
+              className="w-44"
             />
           </label>
           <button
@@ -621,15 +658,13 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
             <label className="space-y-1.5">
               <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ngày</span>
               <div className="flex gap-2">
-                <input
-                  type="date"
+                <DateInputVi
                   value={filterDate}
-                  onChange={e => {
-                    const next = e.target.value;
+                  onChange={next => {
                     setFilterDate(next);
                     if (next) setPrintDate(next);
                   }}
-                  className={`${inputClass} flex-1`}
+                  className="flex-1"
                 />
                 {filterDate ? (
                   <button
@@ -759,15 +794,26 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     {filledRows.map(row => (
                       <div
                         key={row.id}
-                        className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-zinc-100 bg-zinc-50 px-2.5 py-1.5 text-xs"
+                        className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg border border-zinc-100 bg-zinc-50 px-2.5 py-1.5 text-xs"
                       >
-                        <span className="min-w-[92px] font-bold text-zinc-500">{row.vai_tro || '—'}</span>
-                        <span className="font-black text-zinc-800">{staffName(row.ma_nhan_su)}</span>
-                        {row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc ? (
-                          <span className="text-zinc-400">
-                            · {row.thoi_gian_bat_dau || '--:--'} - {row.thoi_gian_ket_thuc || '--:--'}
-                          </span>
-                        ) : null}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                          <span className="min-w-[80px] font-bold text-zinc-500">{row.vai_tro || '—'}</span>
+                          <span className="font-black text-zinc-800">{staffName(row.ma_nhan_su)}</span>
+                          {row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc ? (
+                            <span className="text-zinc-400">
+                              · {row.thoi_gian_bat_dau || '--:--'} - {row.thoi_gian_ket_thuc || '--:--'}
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleNavigateToDispatch(group, row)}
+                          className="inline-flex items-center gap-1 rounded bg-[#ef1b2d] px-2 py-0.5 text-[11px] font-extrabold text-white shadow-xs transition hover:bg-[#b30d1c] shrink-0"
+                          title={`Điều động nhân sự ${staffName(row.ma_nhan_su)}`}
+                        >
+                          <ArrowRightLeft className="h-3 w-3" />
+                          Điều động
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -841,12 +887,10 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
                     Ngày làm việc <span className="text-[#ef1b2d]">*</span>
                   </span>
-                  <input
-                    type="date"
+                  <DateInputVi
                     value={form.ngayLamViec}
-                    onChange={e => setForm(prev => ({ ...prev, ngayLamViec: e.target.value }))}
+                    onChange={val => setForm(prev => ({ ...prev, ngayLamViec: val }))}
                     disabled={!form.maMay}
-                    className={inputClass}
                   />
                 </label>
               </div>
@@ -1029,6 +1073,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                       <th className="px-3 py-2 font-black">Vai trò</th>
                       <th className="px-3 py-2 font-black">Nhân sự</th>
                       <th className="px-3 py-2 font-black">Khung giờ</th>
+                      <th className="px-3 py-2 text-center font-black">Điều động</th>
                       {canDelete ? <th className="px-3 py-2 text-center font-black">Xóa</th> : null}
                     </tr>
                   </thead>
@@ -1041,6 +1086,17 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                           {row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc
                             ? `${row.thoi_gian_bat_dau || '--:--'} - ${row.thoi_gian_ket_thuc || '--:--'}`
                             : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleNavigateToDispatch(detailGroup, row)}
+                            className="inline-flex items-center gap-1 rounded bg-[#ef1b2d] px-2 py-1 text-[11px] font-extrabold text-white shadow-xs transition hover:bg-[#b30d1c]"
+                            title={`Điều động nhân sự ${staffName(row.ma_nhan_su)}`}
+                          >
+                            <ArrowRightLeft className="h-3 w-3" />
+                            Điều động
+                          </button>
                         </td>
                         {canDelete ? (
                           <td className="px-3 py-2 text-center">
@@ -1057,7 +1113,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     ))}
                     {detailGroup.rows.filter(r => r.ma_nhan_su).length === 0 ? (
                       <tr>
-                        <td colSpan={canDelete ? 4 : 3} className="px-3 py-6 text-center font-bold text-zinc-400">
+                        <td colSpan={canDelete ? 5 : 4} className="px-3 py-6 text-center font-bold text-zinc-400">
                           Chưa có nhân sự.
                         </td>
                       </tr>
