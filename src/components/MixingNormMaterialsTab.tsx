@@ -1500,6 +1500,7 @@ export default function MixingNormMaterialsTab() {
           key: product.key,
           maSpIds: ids,
           tenSp: product.tenSp,
+          dinhLuongCoi: product.dinhLuongCoi,
           ghiChu: product.ghiChu,
           lines: nextLines,
           nvlFilled: nextLines.some(line => line.maNvl.trim() || line.tenNvl.trim())
@@ -2372,7 +2373,7 @@ export default function MixingNormMaterialsTab() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <label className="space-y-1 sm:col-span-2">
+                        <div className="space-y-1 sm:col-span-2">
                           {error && errorProductKey === product.key ? (
                             <span className="block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold normal-case tracking-normal text-rose-700">
                               {error}
@@ -2399,7 +2400,7 @@ export default function MixingNormMaterialsTab() {
                             }
                             inputClassName={inputClass}
                           />
-                        </label>
+                        </div>
                         <label className="space-y-1 sm:col-span-2">
                           <span className="text-[11px] font-bold text-zinc-500">
                             Tên sản phẩm / tên hiển thị cho công nhân trộn
@@ -2654,7 +2655,7 @@ export default function MixingNormMaterialsTab() {
                               Xóa SP
                             </button>
                           </div>
-                          <label className="space-y-1">
+                          <div className="space-y-1">
                             <span className="text-[11px] font-bold text-zinc-500">
                               Mã sản phẩm (có thể chọn nhiều SP dùng chung NVL phụ)
                             </span>
@@ -2676,7 +2677,7 @@ export default function MixingNormMaterialsTab() {
                               }
                               inputClassName={inputClass}
                             />
-                          </label>
+                          </div>
                           {showNvlEditor ? (
                             <div className="mt-3">
                               <div className="mb-2 flex items-center justify-between gap-2">

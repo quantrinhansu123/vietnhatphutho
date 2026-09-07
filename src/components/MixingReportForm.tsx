@@ -2565,7 +2565,7 @@ export default function MixingReportForm({
                     <>
                       <div className="relative z-20 border-t border-zinc-100 bg-white px-2 py-2 sm:px-3 sm:py-3">
                         <div className="mixing-round-meta-grid grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-2">
-                          <label className="space-y-0.5">
+                          <div className="space-y-0.5">
                             <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
                               Lý do
                             </span>
@@ -2576,7 +2576,7 @@ export default function MixingReportForm({
                               placeholder="Gõ để tìm hoặc chọn lý do..."
                               inputClassName="mixing-round-reason-input min-h-8 w-full rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[10px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 sm:min-h-9 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-xs"
                             />
-                          </label>
+                          </div>
                           <label className="space-y-0.5">
                             <span className="text-[9px] font-black uppercase tracking-wider text-zinc-600 sm:text-[10px]">
                               Giải trình

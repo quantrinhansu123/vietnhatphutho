@@ -7536,13 +7536,22 @@ export function createApp() {
           .replace(/\s+/g, '');
 
       const normShift = (v: unknown) => {
-        const text = String(v || '').trim().toLowerCase();
-        if (!text || text === '-' || text === 'tất cả' || text === 'all' || text === 'tat ca') {
+        let text = String(v || '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd');
+        text = text.replace(/\(.*\)/g, '').replace(/\d{1,2}:\d{2}.*/g, '').replace(/\s+/g, '');
+        if (!text || text === '-' || text === 'tatca' || text === 'all') {
           return '';
         }
-        const numMatch = text.match(/\d+/);
-        if (numMatch) return numMatch[0];
-        return normStr(text);
+        const cleaned = text.replace(/^ca[-_:]*/, '');
+        const cPattern = cleaned.match(/^(\d+)[-_:]*c[-_:]*0*(\d+)$/);
+        if (cPattern) return `${cPattern[1]}c${cPattern[2]}`;
+        const singlePattern = cleaned.match(/^c?[-_:]*0*(\d+)$/);
+        if (singlePattern) return `c${singlePattern[1]}`;
+        return cleaned;
       };
 
       // Lọc linh hoạt theo máy (nếu truyền param machine: khớp cả ma_may hoặc may)
@@ -7566,7 +7575,7 @@ export function createApp() {
         if (targetTokens.length > 0) {
           items = items.filter(r => {
             const rowShift = normShift(r.ca_lam_viec);
-            return !rowShift || targetTokens.includes(rowShift);
+            return Boolean(rowShift) && targetTokens.includes(rowShift);
           });
         }
       }
