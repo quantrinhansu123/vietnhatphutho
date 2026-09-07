@@ -29,6 +29,8 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
   const isCutOrder = order.orderType === CUT_ORDER_TYPE;
 
   const formatLineSpec = (line: ReturnType<typeof getOrderProductLines>[number]) => {
+    if (line.quyCach) return line.quyCach;
+    if (line.daiM && !line.doLi && !line.kho) return `Dài ${line.daiM}m`;
     const parts = [
       displayCell(line.doLi),
       displayCell(line.kho) ? `Khổ ${displayCell(line.kho)}` : '',

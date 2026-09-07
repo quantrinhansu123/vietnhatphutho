@@ -17,6 +17,11 @@ export interface OrderProductLine {
   kho?: string;
   daiM?: string;
   note?: string;
+  quyCach?: string;
+  tlCuon?: string;
+  tlTam?: string;
+  m2?: string;
+  mDai?: string;
 }
 
 export function splitProductionProductCodes(raw: string): string[] {

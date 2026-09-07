@@ -89,9 +89,14 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
         const kho = pickText(row, ['kho'], '');
         const daiM = pickText(row, ['dai_m', 'daiM'], '');
         const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp'], '');
-        const tongKg = pickText(row, ['tong_kg', 'tongKg'], '');
+        const tongKg = pickText(row, ['tong_kg', 'tongKg', 'trong_luong', 'trong_luong_kg'], '');
         const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource'], '');
         const note = pickText(row, ['ghi_chu', 'note'], '');
+        const quyCach = pickText(row, ['quy_cach', 'quyCach'], '');
+        const tlCuon = pickText(row, ['tl_cuon', 'tlCuon', 'kg_cuon', 'trong_luong_kg_cuon'], '');
+        const tlTam = pickText(row, ['tl_tam', 'tlTam', 'trong_luong_kg_tam'], '');
+        const m2 = pickText(row, ['m2', 'dien_tich_m2'], '');
+        const mDai = pickText(row, ['m_dai', 'mDai', 'met_dai', 'chieu_dai_m'], '');
         if (!productCode && !productName) return null;
         return {
           productId,
@@ -108,6 +113,11 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
           tongKg: tongKg || undefined,
           conversionSource: conversionSource || undefined,
           note: note || undefined,
+          quyCach: quyCach || undefined,
+          tlCuon: tlCuon || undefined,
+          tlTam: tlTam || undefined,
+          m2: m2 || undefined,
+          mDai: mDai || undefined,
           conversionResults: Array.isArray(row.ket_qua_quy_doi)
             ? row.ket_qua_quy_doi.map(item => {
                 const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};
