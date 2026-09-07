@@ -5515,6 +5515,10 @@ export function AddProductionOrderModal({
   };
 
   const handleEntryOrderChange = (key: string, orderRef: string) => {
+    const currentLine = form.entryLines.find(l => l.key === key);
+    if (currentLine && currentLine.orderRef.trim() === orderRef.trim()) {
+      return;
+    }
     const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
     let patch: Partial<ProductionOrderEntryLine> = {
       orderRef,
@@ -5548,6 +5552,20 @@ export function AddProductionOrderModal({
     orderRef: string,
     productIdentifier: string | ReturnType<typeof listProductOptionsForOrder>[number]
   ) => {
+    const currentLine = form.entryLines.find(l => l.key === key);
+
+    if (!productIdentifier) {
+      updateEntryLine(key, {
+        productCode: '',
+        productName: '',
+        productionName: '',
+        quantity: '',
+        unit: '',
+        productId: ''
+      });
+      return;
+    }
+
     const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
     const product = typeof productIdentifier === 'object'
       ? productIdentifier
@@ -5555,6 +5573,22 @@ export function AddProductionOrderModal({
         options.find(item => (productIdentifier && item.productId === productIdentifier) || item.code === productIdentifier);
 
     if (!product) return;
+
+    const isSameProduct = Boolean(
+      currentLine &&
+      (
+        (product.productId && currentLine.productId && product.productId === currentLine.productId) ||
+        (product.code && currentLine.productCode && product.code.trim() === currentLine.productCode.trim())
+      ) &&
+      (
+        !product.productionName || !currentLine.productionName || product.productionName.trim() === currentLine.productionName.trim()
+      )
+    );
+
+    if (isSameProduct) {
+      return;
+    }
+
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
@@ -7122,6 +7156,10 @@ export function EditProductionOrderModal({
   };
 
   const handleEntryOrderChange = (key: string, orderRef: string) => {
+    const currentLine = form.entryLines.find(l => l.key === key);
+    if (currentLine && currentLine.orderRef.trim() === orderRef.trim()) {
+      return;
+    }
     const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
     let patch: Partial<ProductionOrderEntryLine> = {
       orderRef,
@@ -7144,7 +7182,8 @@ export function EditProductionOrderModal({
           product.unit,
           product.productionName,
           product.id
-        )
+        ),
+        quantity: ''
       };
     }
     updateEntryLine(key, patch);
@@ -7155,6 +7194,20 @@ export function EditProductionOrderModal({
     orderRef: string,
     productIdentifier: string | ReturnType<typeof listProductOptionsForOrder>[number]
   ) => {
+    const currentLine = form.entryLines.find(l => l.key === key);
+
+    if (!productIdentifier) {
+      updateEntryLine(key, {
+        productCode: '',
+        productName: '',
+        productionName: '',
+        quantity: '',
+        unit: '',
+        productId: ''
+      });
+      return;
+    }
+
     const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
     const product = typeof productIdentifier === 'object'
       ? productIdentifier
@@ -7162,6 +7215,25 @@ export function EditProductionOrderModal({
         options.find(item => (productIdentifier && item.productId === productIdentifier) || item.code === productIdentifier);
 
     if (!product) return;
+
+    // So sánh xem sản phẩm được chọn có thực sự thay đổi so với dòng hiện tại không
+    const isSameProduct = Boolean(
+      currentLine &&
+      (
+        (product.productId && currentLine.productId && product.productId === currentLine.productId) ||
+        (product.code && currentLine.productCode && product.code.trim() === currentLine.productCode.trim())
+      ) &&
+      (
+        !product.productionName || !currentLine.productionName || product.productionName.trim() === currentLine.productionName.trim()
+      )
+    );
+
+    if (isSameProduct) {
+      // Người dùng chỉ click vào Mã Hàng hoặc chọn lại đúng sản phẩm hiện tại: giữ nguyên SL
+      return;
+    }
+
+    // Khi có thay đổi sang sản phẩm khác: clear SL theo yêu cầu
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
@@ -7172,7 +7244,10 @@ export function EditProductionOrderModal({
       product.productionName,
       product.productId
     );
-    updateEntryLine(key, built);
+    updateEntryLine(key, {
+      ...built,
+      quantity: ''
+    });
   };
 
   const moveProductLine = (from: number, to: number) => {
