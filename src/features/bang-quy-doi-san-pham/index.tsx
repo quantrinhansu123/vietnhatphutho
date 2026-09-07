@@ -30,9 +30,85 @@ function normalizeProducts(data: unknown): ProductOption[] {
   }).filter((item): item is ProductOption => Boolean(item));
 }
 
+function autoCalculateConversionInput(
+  rawForm: ProductConversionInput,
+  changedKey?: keyof ProductConversionInput
+): ProductConversionInput {
+  const parseNum = (val: unknown) => {
+    if (val === null || val === undefined || val === '') return null;
+    const n = Number(String(val).trim().replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+  const updated = { ...rawForm };
+
+  const tamRong = parseNum(updated.sheetWidthM);
+  const tamDai = parseNum(updated.sheetLengthM);
+  const cuonRong = parseNum(updated.rollWidthM);
+  const cuonDai = parseNum(updated.rollLengthM);
+  const kgM2 = parseNum(updated.kgPerM2);
+  const kgMDai = parseNum(updated.kgPerLinearM);
+  let dienTich = parseNum(updated.areaM2);
+
+  const effectiveCuonRong = cuonRong || tamRong;
+  const effectiveTamRong = tamRong || cuonRong;
+
+  // 1. Diện tích cuộn (m2)
+  if (effectiveCuonRong && cuonDai) {
+    if (changedKey === 'rollWidthM' || changedKey === 'rollLengthM' || changedKey === 'sheetWidthM' || !updated.areaM2.trim()) {
+      const calcArea = round2(effectiveCuonRong * cuonDai);
+      updated.areaM2 = String(calcArea);
+      dienTich = calcArea;
+    }
+  } else if (!cuonDai && changedKey === 'rollLengthM') {
+    updated.areaM2 = '';
+    dienTich = null;
+  }
+
+  // 2. Trọng lượng (kg/tấm)
+  if (changedKey !== 'kgPerSheet') {
+    if (tamDai && (kgM2 || kgMDai)) {
+      if (kgM2 && effectiveTamRong) {
+        updated.kgPerSheet = String(round2(effectiveTamRong * tamDai * kgM2));
+      } else if (kgMDai) {
+        if (tamRong && cuonRong && cuonRong > 0 && Math.abs(tamRong - cuonRong) > 0.001) {
+          updated.kgPerSheet = String(round2(tamDai * tamRong * (kgMDai / cuonRong)));
+        } else {
+          updated.kgPerSheet = String(round2(tamDai * kgMDai));
+        }
+      }
+    } else if (changedKey && ['sheetLengthM', 'kgPerM2', 'kgPerLinearM', 'sheetWidthM', 'rollWidthM'].includes(changedKey)) {
+      if (!tamDai || (!kgM2 && !kgMDai)) {
+        updated.kgPerSheet = '';
+      }
+    }
+  }
+
+  // 3. Trọng lượng (kg/Cuộn)
+  if (changedKey !== 'kgPerRoll') {
+    if (cuonDai && (kgM2 || kgMDai)) {
+      if (kgM2 && effectiveCuonRong) {
+        updated.kgPerRoll = String(round2(effectiveCuonRong * cuonDai * kgM2));
+      } else if (kgM2 && dienTich) {
+        updated.kgPerRoll = String(round2(dienTich * kgM2));
+      } else if (kgMDai) {
+        updated.kgPerRoll = String(round2(cuonDai * kgMDai));
+      }
+    } else if (changedKey && ['rollLengthM', 'kgPerM2', 'kgPerLinearM', 'rollWidthM', 'sheetWidthM'].includes(changedKey)) {
+      if (!cuonDai || (!kgM2 && !kgMDai)) {
+        updated.kgPerRoll = '';
+      }
+    }
+  }
+
+  return updated;
+}
+
 function toInput(row: ProductConversion): ProductConversionInput {
   const text = (value: number | null) => value === null ? '' : String(value);
-  return { productId: row.sanPhamId, sheetWidthM: text(row.khoTamRongM), sheetLengthM: text(row.khoTamDaiM), rollWidthM: text(row.khoCuonRongM), rollLengthM: text(row.khoCuonDaiM), areaM2: text(row.dienTichM2), kgPerLinearM: text(row.trongLuongKgMDai), kgPerM2: text(row.trongLuongKgM2), kgPerSheet: text(row.trongLuongKgTam), kgPerRoll: text(row.trongLuongKgCuon) };
+  const base: ProductConversionInput = { productId: row.sanPhamId, sheetWidthM: text(row.khoTamRongM), sheetLengthM: text(row.khoTamDaiM), rollWidthM: text(row.khoCuonRongM), rollLengthM: text(row.khoCuonDaiM), areaM2: text(row.dienTichM2), kgPerLinearM: text(row.trongLuongKgMDai), kgPerM2: text(row.trongLuongKgM2), kgPerSheet: text(row.trongLuongKgTam), kgPerRoll: text(row.trongLuongKgCuon) };
+  return autoCalculateConversionInput(base);
 }
 
 function payload(input: ProductConversionInput) {
@@ -49,6 +125,9 @@ function ConversionModal({ row, products, saving, onClose, onSave }: { row: Prod
     ['kgPerM2', 'Trọng lượng (kg/m²)'], ['kgPerSheet', 'Trọng lượng (kg/tấm)'],
     ['kgPerRoll', 'Trọng lượng (kg/Cuộn)']
   ];
+  const updateField = (key: keyof ProductConversionInput, value: string) => {
+    setForm(prev => autoCalculateConversionInput({ ...prev, [key]: value }, key));
+  };
   const submit = () => {
     if (!form.productId) return setError('Vui lòng chọn sản phẩm.');
     for (const [key, label] of numberFields) {
@@ -64,7 +143,7 @@ function ConversionModal({ row, products, saving, onClose, onSave }: { row: Prod
           <SearchableSelect value={form.productId} onChange={productId => setForm(prev => ({ ...prev, productId }))} options={products} placeholder="Gõ mã hoặc tên sản phẩm" inputClassName={`${fieldClass} disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500`} disabled={Boolean(row)} getValue={item => (item as ProductOption).id} getLabel={item => { const p = item as ProductOption; return `${p.code || p.amisCode} · ${p.name}`; }} getSearchText={item => { const p = item as ProductOption; return `${p.code} ${p.amisCode} ${p.name}`; }} />
           {row && <span className="mt-1 block text-xs font-semibold text-zinc-500">Không thể thay đổi sản phẩm khi sửa dòng quy đổi.</span>}
         </label>
-        {numberFields.map(([key, label]) => <label key={key}><span className="mb-1 block text-xs font-black uppercase text-zinc-500">{label}</span><input type="number" min="0" step="any" value={form[key]} onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))} className={fieldClass} /></label>)}
+        {numberFields.map(([key, label]) => <label key={key}><span className="mb-1 block text-xs font-black uppercase text-zinc-500">{label}</span><input type="number" min="0" step="any" value={form[key]} onChange={e => updateField(key, e.target.value)} className={fieldClass} /></label>)}
         {error && <p className="md:col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p>}
       </div>
       <div className="flex justify-end gap-2 border-t bg-zinc-50 px-5 py-4"><button onClick={onClose} className="h-10 rounded-lg border px-4 text-sm font-bold">Hủy</button><button onClick={submit} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-black text-white disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Lưu</button></div>

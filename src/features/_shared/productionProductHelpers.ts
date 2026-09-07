@@ -18,6 +18,7 @@ export interface OrderProductLine {
   daiM?: string;
   note?: string;
   quyCach?: string;
+  quyCachMDai?: number | string;
   tlCuon?: string;
   tlTam?: string;
   m2?: string;

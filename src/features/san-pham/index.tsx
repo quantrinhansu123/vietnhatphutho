@@ -1136,13 +1136,92 @@ const PRODUCT_GROUP_RULES = {
 
 type ProductGroup = keyof typeof PRODUCT_GROUP_RULES;
 const PRODUCT_GROUPS = Object.keys(PRODUCT_GROUP_RULES) as ProductGroup[];
+export function autoCalculateProductConversion(
+  rawForm: ProductConversionForm,
+  changedKey?: keyof ProductConversionForm
+): ProductConversionForm {
+  const parseNum = (val: unknown) => {
+    if (val === null || val === undefined || val === '') return null;
+    const n = Number(String(val).trim().replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+  const updated = { ...rawForm };
+
+  const tamRong = parseNum(updated.khoTamRongM);
+  const tamDai = parseNum(updated.khoTamDaiM);
+  const cuonRong = parseNum(updated.khoCuonRongM);
+  const cuonDai = parseNum(updated.khoCuonDaiM);
+  const kgM2 = parseNum(updated.trongLuongKgM2);
+  const kgMDai = parseNum(updated.trongLuongKgMDai);
+  let dienTich = parseNum(updated.dienTichM2);
+
+  // Khổ rộng hiệu dụng: ưu tiên khổ của chính đối tượng, nếu trống thì lấy khổ còn lại
+  const effectiveCuonRong = cuonRong || tamRong;
+  const effectiveTamRong = tamRong || cuonRong;
+
+  // 1. Tự động tính Diện tích cuộn (m2) nếu có rộng và dài cuộn
+  if (effectiveCuonRong && cuonDai) {
+    if (changedKey === 'khoCuonRongM' || changedKey === 'khoCuonDaiM' || changedKey === 'khoTamRongM' || !updated.dienTichM2.trim()) {
+      const calcArea = round2(effectiveCuonRong * cuonDai);
+      updated.dienTichM2 = String(calcArea);
+      dienTich = calcArea;
+    }
+  } else if (!cuonDai && changedKey === 'khoCuonDaiM') {
+    updated.dienTichM2 = '';
+    dienTich = null;
+  }
+
+  // 2. Tự động tính Trọng lượng (kg/Tấm)
+  if (changedKey !== 'trongLuongKgTam') {
+    if (tamDai && (kgM2 || kgMDai)) {
+      if (kgM2 && effectiveTamRong) {
+        updated.trongLuongKgTam = String(round2(effectiveTamRong * tamDai * kgM2));
+      } else if (kgMDai) {
+        if (tamRong && cuonRong && cuonRong > 0 && Math.abs(tamRong - cuonRong) > 0.001) {
+          updated.trongLuongKgTam = String(round2(tamDai * tamRong * (kgMDai / cuonRong)));
+        } else {
+          updated.trongLuongKgTam = String(round2(tamDai * kgMDai));
+        }
+      }
+    } else if (changedKey && ['khoTamDaiM', 'trongLuongKgM2', 'trongLuongKgMDai', 'khoTamRongM', 'khoCuonRongM'].includes(changedKey)) {
+      if (!tamDai || (!kgM2 && !kgMDai)) {
+        updated.trongLuongKgTam = '';
+      }
+    }
+  }
+
+  // 3. Tự động tính Trọng lượng (kg/Cuộn)
+  if (changedKey !== 'trongLuongKgCuon') {
+    if (cuonDai && (kgM2 || kgMDai)) {
+      if (kgM2 && effectiveCuonRong) {
+        updated.trongLuongKgCuon = String(round2(effectiveCuonRong * cuonDai * kgM2));
+      } else if (kgM2 && dienTich) {
+        updated.trongLuongKgCuon = String(round2(dienTich * kgM2));
+      } else if (kgMDai) {
+        updated.trongLuongKgCuon = String(round2(cuonDai * kgMDai));
+      }
+    } else if (changedKey && ['khoCuonDaiM', 'trongLuongKgM2', 'trongLuongKgMDai', 'khoCuonRongM', 'khoTamRongM'].includes(changedKey)) {
+      if (!cuonDai || (!kgM2 && !kgMDai)) {
+        updated.trongLuongKgCuon = '';
+      }
+    }
+  }
+
+  return updated;
+}
+
 const emptyConversion = (): ProductConversionForm => ({ khoTamRongM: '', khoTamDaiM: '', khoCuonRongM: '', khoCuonDaiM: '', dienTichM2: '', trongLuongKgMDai: '', trongLuongKgM2: '', trongLuongKgTam: '', trongLuongKgCuon: '' });
-const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => ({
-  khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
-  khoCuonRongM: String(item.khoCuonRongM ?? ''), khoCuonDaiM: String(item.khoCuonDaiM ?? ''), dienTichM2: String(item.dienTichM2 ?? ''),
-  trongLuongKgMDai: String(item.trongLuongKgMDai ?? ''), trongLuongKgM2: String(item.trongLuongKgM2 ?? ''), trongLuongKgTam: String(item.trongLuongKgTam ?? ''),
-  trongLuongKgCuon: String(item.trongLuongKgCuon ?? '')
-});
+const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => {
+  const base: ProductConversionForm = {
+    khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
+    khoCuonRongM: String(item.khoCuonRongM ?? ''), khoCuonDaiM: String(item.khoCuonDaiM ?? ''), dienTichM2: String(item.dienTichM2 ?? ''),
+    trongLuongKgMDai: String(item.trongLuongKgMDai ?? ''), trongLuongKgM2: String(item.trongLuongKgM2 ?? ''), trongLuongKgTam: String(item.trongLuongKgTam ?? ''),
+    trongLuongKgCuon: String(item.trongLuongKgCuon ?? '')
+  };
+  return autoCalculateProductConversion(base);
+};
 
 export function productCellToInput(value: string) {
   return value === '-' ? '' : value;
@@ -1307,7 +1386,16 @@ export function ProductEditModal({
   };
 
   const updateCustomUnit = (unit: string) => setForm(prev => ({ ...prev, unit }));
-  const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => setForm(prev => ({ ...prev, conversions: prev.conversions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) }));
+  const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      conversions: prev.conversions.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        const updated = { ...item, [key]: value };
+        return autoCalculateProductConversion(updated, key);
+      })
+    }));
+  };
   const amisOptions = products.filter(item => item.amisCode.trim());
   const filteredAmisOptions = amisOptions.filter(item => `${item.amisCode} ${item.name} ${item.productionName}`.toLocaleLowerCase('vi').includes(form.amisCode.trim().toLocaleLowerCase('vi'))).slice(0, 20);
   const selectedGroupRule = PRODUCT_GROUP_RULES[form.group as ProductGroup];

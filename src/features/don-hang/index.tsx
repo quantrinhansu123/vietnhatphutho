@@ -180,6 +180,7 @@ export type OrderProductFormLine = {
   conversionSource?: string;
   note: string;
   quyCach?: string;
+  quyCachMDai?: number | string;
   tlCuon?: string;
   tlTam?: string;
   m2?: string;
@@ -428,7 +429,8 @@ export function orderProductLinesToPayload(
       const quantity = parsePercentInput(line.quantity);
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
-      const conversion = productConversions.find(item => item.sanPhamId === selectedProduct?.id);
+      const sanPhamId = selectedProduct?.id || (line.productId?.trim() ? line.productId.trim() : undefined);
+      const conversion = sanPhamId ? productConversions.find(item => item.sanPhamId === sanPhamId) : undefined;
       const cutWeight = isCutOrder ? calculateCutOrderWeight(line.daiM, line.quantity, conversion, unit, productCode, productName) : null;
       const roundConversionValue = (value: number) => Math.round(value * 100) / 100;
 
@@ -439,8 +441,6 @@ export function orderProductLinesToPayload(
       let cutTlTam: number | undefined;
 
       if (isCutOrder) {
-        cutQuyCach = line.quyCach?.trim() || (Number.isFinite(daiM) && daiM > 0 ? `Dài ${daiM}m` : 'Theo quy cách khách đặt');
-
         if (Number.isFinite(daiM) && daiM > 0 && Number.isFinite(quantity) && quantity > 0) {
           cutMDai = roundConversionValue(daiM * quantity);
           const width = extractProductWidth(productCode, productName, conversion);
@@ -458,6 +458,12 @@ export function orderProductLinesToPayload(
           cutTlTam = roundConversionValue(conversion.trongLuongKgTam);
         }
       }
+
+      const quyCachMDai = Number.isFinite(daiM) && daiM > 0
+        ? Number(daiM)
+        : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
+          ? Number(line.quyCachMDai)
+          : undefined;
 
       const cutResults: Array<{ don_vi: string; gia_tri: number }> = [];
       if (cutWeight && cutWeight.tongKg > 0) {
@@ -481,20 +487,20 @@ export function orderProductLinesToPayload(
         stt: index + 1,
         ...(isCutOrder
           ? {
-              quy_cach: cutQuyCach,
+              ...(quyCachMDai !== undefined ? { quy_cach_m_dai: quyCachMDai } : {}),
               dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined,
-              ...(cutM2 !== undefined ? { m2: cutM2, dien_tich_m2: cutM2 } : {}),
-              ...(cutMDai !== undefined ? { m_dai: cutMDai, chieu_dai_m: cutMDai } : {}),
-              ...(cutTlCuon !== undefined ? { tl_cuon: cutTlCuon, trong_luong_kg_cuon: cutTlCuon } : {}),
-              ...(cutTlTam !== undefined ? { tl_tam: cutTlTam, trong_luong_kg_tam: cutTlTam } : {})
+              ...(cutM2 !== undefined && cutM2 > 0 ? { m2: cutM2 } : {}),
+              ...(cutMDai !== undefined && cutMDai > 0 ? { m_dai: cutMDai } : {}),
+              ...(cutTlCuon !== undefined && cutTlCuon > 0 ? { tl_cuon: cutTlCuon } : {}),
+              ...(cutTlTam !== undefined && cutTlTam > 0 ? { tl_tam: cutTlTam } : {})
             }
           : {}),
         ...(cutWeight
           ? {
-              kg_1_sp: roundConversionValue(cutWeight.kg1Sp),
+              ...(cutWeight.kg1Sp > 0 && cutWeight.kg1Sp !== cutTlTam && cutWeight.kg1Sp !== cutTlCuon
+                ? { kg_1_sp: roundConversionValue(cutWeight.kg1Sp) }
+                : {}),
               tong_kg: roundConversionValue(cutWeight.tongKg),
-              trong_luong: roundConversionValue(cutWeight.tongKg),
-              trong_luong_kg: roundConversionValue(cutWeight.tongKg),
               nguon_quy_doi: cutWeight.source,
               ket_qua_quy_doi: cutResults
             }
@@ -532,7 +538,8 @@ export function orderToForm(order: OrderRow): OrderFormState {
     tongKg: line.tongKg || '',
     conversionSource: line.conversionSource || '',
     note: line.note || '',
-    quyCach: line.quyCach || '',
+    quyCach: line.quyCach || (line.quyCachMDai ? `Dài ${line.quyCachMDai}m` : ''),
+    quyCachMDai: line.quyCachMDai || (line.daiM ? line.daiM : ''),
     tlCuon: line.tlCuon || '',
     tlTam: line.tlTam || '',
     m2: line.m2 || '',
@@ -906,7 +913,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     } else {
       for (const product of products) {
         const option = findOrderProductById(productOptions, product.san_pham_id || '');
-        const conversion = productConversions.find(item => item.sanPhamId === option?.id);
+        const targetSpId = String(product.san_pham_id || option?.id || '').trim();
+        const conversion = targetSpId ? productConversions.find(item => item.sanPhamId === targetSpId) : undefined;
         const qty = product.so_luong ?? 0;
 
         let kgVal: number | null = null;
@@ -936,13 +944,53 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         if (rM2 !== null && rM2 > 0) results.push({ don_vi: 'm2', gia_tri: rM2 });
         if (rMDai !== null && rMDai > 0) results.push({ don_vi: 'm dài', gia_tri: rMDai });
 
+        const {
+          dien_tich_m2,
+          chieu_dai_m,
+          trong_luong,
+          trong_luong_kg,
+          trong_luong_kg_tam,
+          trong_luong_kg_cuon,
+          kg_cuon,
+          quy_cach,
+          ...cleanProduct
+        } = product as any;
+
+        let quyCachMDai = cleanProduct.quy_cach_m_dai;
+        if (quyCachMDai === undefined) {
+          const d = Number(cleanProduct.dai_m);
+          if (Number.isFinite(d) && d > 0) {
+            quyCachMDai = d;
+          } else if (typeof quy_cach === 'string') {
+            const m = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
+            if (m) quyCachMDai = Number(m[1].replace(',', '.'));
+          }
+        }
+        if (quyCachMDai !== undefined && Number.isFinite(quyCachMDai) && quyCachMDai > 0) {
+          cleanProduct.quy_cach_m_dai = quyCachMDai;
+        }
+
+        let finalTlCuon = rTlCuon ?? cleanProduct.tl_cuon;
+        const spId = String(cleanProduct.san_pham_id || '').trim();
+        if (!finalTlCuon && spId) {
+          const matchedConv = productConversions.find(item => item.sanPhamId === spId);
+          if (matchedConv?.trongLuongKgCuon) {
+            finalTlCuon = roundVal(matchedConv.trongLuongKgCuon);
+          }
+        }
+
+        const finalTlTam = rTlTam ?? cleanProduct.tl_tam;
+        if (cleanProduct.kg_1_sp && (cleanProduct.kg_1_sp === finalTlTam || cleanProduct.kg_1_sp === finalTlCuon)) {
+          delete cleanProduct.kg_1_sp;
+        }
+
         productsWithConversion.push({
-          ...product,
-          ...(rM2 !== null ? { m2: rM2, dien_tich_m2: rM2 } : {}),
-          ...(rMDai !== null ? { m_dai: rMDai, chieu_dai_m: rMDai } : {}),
-          ...(rKg !== null ? { tong_kg: rKg, trong_luong: rKg, trong_luong_kg: rKg } : {}),
-          ...(rTlCuon !== null ? { tl_cuon: rTlCuon, kg_cuon: rTlCuon, trong_luong_kg_cuon: rTlCuon } : {}),
-          ...(rTlTam !== null ? { tl_tam: rTlTam, trong_luong_kg_tam: rTlTam } : {}),
+          ...cleanProduct,
+          ...(rM2 !== null && rM2 > 0 ? { m2: rM2 } : {}),
+          ...(rMDai !== null && rMDai > 0 ? { m_dai: rMDai } : {}),
+          ...(rKg !== null && rKg > 0 ? { tong_kg: rKg } : {}),
+          ...(finalTlCuon !== null && finalTlCuon > 0 ? { tl_cuon: finalTlCuon } : {}),
+          ...(finalTlTam !== null && finalTlTam > 0 ? { tl_tam: finalTlTam } : {}),
           ...(results.length > 0 ? { ket_qua_quy_doi: results } : {})
         });
       }
@@ -1286,7 +1334,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 {isFormCutOrder
                   ? orderForm.productLines.map((line, index) => {
                       const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
-                      const matchedConversion = productConversions.find(item => item.sanPhamId === matchedLineProduct?.id);
+                      const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
+                      const matchedConversion = lineSanPhamId ? productConversions.find(item => item.sanPhamId === lineSanPhamId) : undefined;
                       const cutWeight = calculateCutOrderWeight(line.daiM, line.quantity, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName);
                       return renderProductLineShell(
                         line,
@@ -1379,7 +1428,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     })
                   : orderForm.productLines.map((line, index) => {
                   const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
-                  const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
+                  const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
+                  const productConversionOptions = lineSanPhamId ? productConversions.filter(item => item.sanPhamId === lineSanPhamId) : [];
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
                   const allowedUnits = allowedOrderUnits(matchedLineProduct);
                   const effectiveUnit = matchedLineProduct
