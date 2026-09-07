@@ -74,7 +74,9 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpFromLine,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   ClipboardCheck,
   ClipboardList,
   Eye,
@@ -3463,8 +3465,16 @@ export function ProductionPlanModal({
                       <tr
                         key={line.id}
                         draggable
-                        onDragStart={() => setDragIndex(index)}
-                        onDragOver={event => event.preventDefault()}
+                        onDragStart={event => {
+                          event.dataTransfer.effectAllowed = 'move';
+                          event.dataTransfer.setData('text/plain', String(index));
+                          setDragIndex(index);
+                        }}
+                        onDragEnd={() => setDragIndex(null)}
+                        onDragOver={event => {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = 'move';
+                        }}
                         onDrop={() => {
                           if (dragIndex === null) return;
                           reorderLine(dragIndex, index);
@@ -5039,6 +5049,9 @@ export function newProductionOrderEntryLine(): ProductionOrderEntryLine {
   };
 }
 
+export const productionOrderLineGridClass =
+  'grid-cols-[2.75rem_8.5rem_11rem_minmax(12rem,1fr)_6rem_4.5rem_4.5rem_4.5rem_4.5rem_2.5rem]';
+
 export function emptyProductionOrderForm(): ProductionOrderFormState {
   return {
     code: '',
@@ -5146,6 +5159,7 @@ export function AddProductionOrderModal({
   const [lineDraftError, setLineDraftError] = useState('');
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
   const [dragOverProductIndex, setDragOverProductIndex] = useState<number | null>(null);
+  const dragProductIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -5617,37 +5631,37 @@ export function AddProductionOrderModal({
   };
 
   const handleProductDragStart = (event: React.DragEvent<HTMLElement>, index: number) => {
-    const target = event.target as HTMLElement;
-    if (target.closest('input, textarea, select, button:not([data-drag-handle="true"])')) {
-      return;
-    }
+    dragProductIndexRef.current = index;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', String(index));
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       setDragProductIndex(index);
-      setDragOverProductIndex(index);
-    });
+    }, 0);
   };
 
-  const handleProductDragOver = (event: React.DragEvent<HTMLElement>, index: number) => {
+  const handleProductDragOver = (event: React.DragEvent<HTMLElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    if (dragOverProductIndex !== index) {
-      setDragOverProductIndex(index);
-    }
   };
 
   const handleProductDragEnter = (event: React.DragEvent<HTMLElement>, index: number) => {
     event.preventDefault();
-    if (dragProductIndex !== null && dragOverProductIndex !== index) {
+    if (dragProductIndexRef.current !== null && dragProductIndexRef.current !== index) {
       setDragOverProductIndex(index);
+    }
+  };
+
+  const handleProductDragLeave = (event: React.DragEvent<HTMLElement>, index: number) => {
+    const related = event.relatedTarget as Node | null;
+    if (!event.currentTarget.contains(related)) {
+      setDragOverProductIndex(current => (current === index ? null : current));
     }
   };
 
   const handleProductDrop = (event: React.DragEvent<HTMLElement>, index: number) => {
     event.preventDefault();
     event.stopPropagation();
-    let sourceIndex = dragProductIndex;
+    let sourceIndex = dragProductIndexRef.current;
     if (sourceIndex === null) {
       const data = event.dataTransfer.getData('text/plain');
       if (data !== '' && !isNaN(Number(data))) {
@@ -5657,11 +5671,13 @@ export function AddProductionOrderModal({
     if (sourceIndex !== null && sourceIndex !== index) {
       moveProductLine(sourceIndex, index);
     }
+    dragProductIndexRef.current = null;
     setDragProductIndex(null);
     setDragOverProductIndex(null);
   };
 
   const handleProductDragEnd = () => {
+    dragProductIndexRef.current = null;
     setDragProductIndex(null);
     setDragOverProductIndex(null);
   };
@@ -5816,12 +5832,16 @@ export function AddProductionOrderModal({
             </p>
 
             <div className="col-span-2 overflow-x-auto">
-              <div className="min-w-[960px]">
+              <div className="min-w-[1080px]">
                 <RepeatableLinesBlock
                   className="w-full"
                   linesClassName="space-y-3 pt-1"
                   title="Đơn hàng & mã hàng"
                   required
+                  showColumnHeaders
+                  alwaysShowColumnHeaders
+                  gridTemplateClass={productionOrderLineGridClass}
+                  headerClassName="px-[12px]"
                   onAdd={() =>
                     setForm(prev => ({
                       ...prev,
@@ -5853,16 +5873,16 @@ export function AddProductionOrderModal({
                     </div>
                   }
                   columns={[
-                    { key: 'stt', label: 'STT', className: 'w-11 shrink-0 text-center' },
-                    { key: 'order', label: 'Mã đơn', className: 'w-32 shrink-0', required: true },
-                    { key: 'code', label: 'Mã hàng', className: 'w-44 shrink-0', required: true },
-                    { key: 'name', label: 'Tên sản xuất', className: 'min-w-0 flex-1' },
-                    { key: 'unit', label: 'ĐVT', className: 'w-24 shrink-0 text-center' },
-                    { key: 'qty', label: 'SL', className: 'w-16 shrink-0 text-center', required: true },
-                    { key: 'kg', label: 'KG', className: 'w-16 shrink-0 text-center' },
-                    { key: 'm2', label: 'M2', className: 'w-16 shrink-0 text-center' },
-                    { key: 'mdai', label: 'M dài', className: 'w-16 shrink-0 text-center' },
-                    { key: 'actions', label: '', className: 'w-10 shrink-0 text-center' }
+                    { key: 'stt', label: 'STT', className: 'text-center' },
+                    { key: 'order', label: 'Mã đơn', required: true },
+                    { key: 'code', label: 'Mã hàng', required: true },
+                    { key: 'name', label: 'Tên sản xuất' },
+                    { key: 'unit', label: 'ĐVT', className: 'text-center' },
+                    { key: 'qty', label: 'SL', className: 'text-center', required: true },
+                    { key: 'kg', label: 'KG', className: 'text-center' },
+                    { key: 'm2', label: 'M2', className: 'text-center' },
+                    { key: 'mdai', label: 'M dài', className: 'text-center' },
+                    { key: 'actions', label: '', className: 'text-center' }
                   ]}
                 >
                   {form.entryLines.map((line, index) => {
@@ -5897,33 +5917,27 @@ export function AddProductionOrderModal({
                     return (
                       <div
                         key={line.key}
-                        draggable={form.entryLines.length > 1}
-                        onDragStart={event => handleProductDragStart(event, index)}
-                        onDragEnd={handleProductDragEnd}
-                        onDragOver={event => handleProductDragOver(event, index)}
+                        onDragOver={handleProductDragOver}
                         onDragEnter={event => handleProductDragEnter(event, index)}
+                        onDragLeave={event => handleProductDragLeave(event, index)}
                         onDrop={event => handleProductDrop(event, index)}
                         className={`group relative rounded-xl border-2 p-2.5 mb-3 transition-colors ${
-                          form.entryLines.length > 1 ? 'cursor-grab active:cursor-grabbing' : ''
-                        } ${
                           isDragged
-                            ? 'border-dashed border-zinc-300 bg-zinc-100/60 opacity-40'
+                            ? 'opacity-40 border-dashed border-zinc-300 bg-zinc-50'
                             : isTarget
-                              ? 'border-[#ef1b2d] bg-red-100/90 shadow-xl ring-4 ring-red-500/30'
+                              ? 'border-[#ef1b2d] bg-red-50/80 shadow-lg ring-2 ring-red-300'
                               : 'border-zinc-200/90 bg-white shadow-xs hover:border-zinc-300'
                         }`}
                       >
                         {isTarget && (
                           <div className="absolute -top-2.5 right-4 z-20 flex items-center gap-1.5 rounded-full border border-[#ef1b2d] bg-[#ef1b2d] px-3 py-0.5 text-[11px] font-black text-white shadow-md pointer-events-none animate-in fade-in zoom-in-95 duration-100">
                             <span>Thả vào đây ➔ Vị trí #{index + 1}</span>
-                            <span className="text-red-200 font-semibold">(từ #{dragProductIndex + 1})</span>
+                            <span className="text-red-200 font-semibold">(từ #{dragProductIndex !== null ? dragProductIndex + 1 : '?'})</span>
                           </div>
                         )}
-                        <RepeatableLineRow className="items-center sm:flex-nowrap !py-0">
+                        <RepeatableLineRow gridTemplateClass={productionOrderLineGridClass} className="items-center !py-0">
                           <div
-                            data-drag-handle="true"
-                            title="Kéo để đổi thứ tự"
-                            className={`flex h-11 w-11 shrink-0 cursor-grab items-center justify-center gap-1 rounded-lg border font-black transition-colors active:cursor-grabbing ${
+                            className={`group/handle relative flex h-11 w-full shrink-0 items-center justify-between rounded-lg border font-black transition-colors select-none p-0.5 ${
                               isTarget
                                 ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-md ring-2 ring-red-300'
                                 : isDragged
@@ -5931,12 +5945,54 @@ export function AddProductionOrderModal({
                                   : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-900'
                             }`}
                           >
-                            <GripVertical className={`h-4 w-4 shrink-0 ${isTarget ? 'text-white' : 'text-zinc-400'}`} />
-                            <span className="text-xs font-black tabular-nums">{index + 1}</span>
+                            <div
+                              data-drag-handle="true"
+                              draggable={form.entryLines.length > 1}
+                              onDragStart={event => handleProductDragStart(event, index)}
+                              onDragEnd={handleProductDragEnd}
+                              title="Kéo để đổi thứ tự"
+                              className={`flex h-full flex-1 items-center justify-center gap-0.5 ${
+                                form.entryLines.length > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+                              }`}
+                            >
+                              <GripVertical className={`h-3.5 w-3.5 shrink-0 ${isTarget ? 'text-white' : 'text-zinc-400'}`} />
+                              <span className="text-xs font-black tabular-nums">{index + 1}</span>
+                            </div>
+                            {form.entryLines.length > 1 && (
+                              <div className="flex flex-col justify-center gap-0.5 pl-0.5 pr-0.5">
+                                <button
+                                  type="button"
+                                  title="Chuyển lên"
+                                  disabled={index === 0}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    moveProductLine(index, index - 1);
+                                  }}
+                                  className={`flex h-4 w-3.5 items-center justify-center rounded transition disabled:pointer-events-none disabled:opacity-20 ${
+                                    isTarget ? 'text-white hover:bg-white/20' : 'text-zinc-400 hover:bg-zinc-200 hover:text-zinc-800'
+                                  }`}
+                                >
+                                  <ChevronUp className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Chuyển xuống"
+                                  disabled={index === form.entryLines.length - 1}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    moveProductLine(index, index + 1);
+                                  }}
+                                  className={`flex h-4 w-3.5 items-center justify-center rounded transition disabled:pointer-events-none disabled:opacity-20 ${
+                                    isTarget ? 'text-white hover:bg-white/20' : 'text-zinc-400 hover:bg-zinc-200 hover:text-zinc-800'
+                                  }`}
+                                >
+                                  <ChevronDown className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="w-32 shrink-0">
-                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
+                          <div className="w-full min-w-0">
                             <SearchableSelect
                               value={line.orderRef}
                               onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -5948,8 +6004,7 @@ export function AddProductionOrderModal({
                               getValue={item => String(item)}
                             />
                           </div>
-                          <div className="w-44 shrink-0">
-                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
+                          <div className="w-full min-w-0">
                             <SearchableSelect
                               value={selectedProduct?.optionKey || line.productId || line.productCode}
                               onSelectOption={item => item && handleEntryProductChange(line.key, line.orderRef, item as (typeof productOptions)[number])}
@@ -5972,8 +6027,7 @@ export function AddProductionOrderModal({
                               getValue={item => (item as (typeof productOptions)[number]).optionKey}
                             />
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
+                          <div className="w-full min-w-0">
                             <input
                               value={line.productionName || selectedProduct?.productionName || line.productName}
                               readOnly
@@ -5981,8 +6035,7 @@ export function AddProductionOrderModal({
                               placeholder="Tự điền theo mã hàng"
                             />
                           </div>
-                          <div className="w-24 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">ĐVT</span>
+                          <div className="w-full min-w-0">
                             {selectedProduct ? (
                               <select
                                 value={effectiveUnit}
@@ -6004,8 +6057,7 @@ export function AddProductionOrderModal({
                               />
                             )}
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">SL *</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="number"
                               min="0"
@@ -6016,8 +6068,7 @@ export function AddProductionOrderModal({
                               placeholder="0"
                             />
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">KG</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="text"
                               value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
@@ -6025,8 +6076,7 @@ export function AddProductionOrderModal({
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M2</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="text"
                               value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
@@ -6034,8 +6084,7 @@ export function AddProductionOrderModal({
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M dài</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="text"
                               value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
@@ -6043,12 +6092,7 @@ export function AddProductionOrderModal({
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
-                          {line.orderRef && line.productCode && selectedProduct && selectedProduct.orderQty > 0 && (
-                            <span className="col-span-2 mb-2 shrink-0 text-[11px] font-bold text-zinc-500">
-                              Còn {formatNumber(selectedProduct.remainingQty, 0)} · SL Tồn 0
-                            </span>
-                          )}
-                          <div className="flex h-11 w-10 shrink-0 items-center justify-center">
+                          <div className="flex h-11 w-full items-center justify-center">
                             <button
                               type="button"
                               title="Xóa dòng"
@@ -7014,6 +7058,7 @@ export function EditProductionOrderModal({
   const [isSaving, setIsSaving] = useState(false);
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
   const [dragOverProductIndex, setDragOverProductIndex] = useState<number | null>(null);
+  const dragProductIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleGlobalDragEnd = () => {
@@ -7258,37 +7303,37 @@ export function EditProductionOrderModal({
   };
 
   const handleProductDragStart = (event: React.DragEvent<HTMLElement>, index: number) => {
-    const target = event.target as HTMLElement;
-    if (target.closest('input, textarea, select, button:not([data-drag-handle="true"])')) {
-      return;
-    }
+    dragProductIndexRef.current = index;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', String(index));
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       setDragProductIndex(index);
-      setDragOverProductIndex(index);
-    });
+    }, 0);
   };
 
-  const handleProductDragOver = (event: React.DragEvent<HTMLElement>, index: number) => {
+  const handleProductDragOver = (event: React.DragEvent<HTMLElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    if (dragOverProductIndex !== index) {
-      setDragOverProductIndex(index);
-    }
   };
 
   const handleProductDragEnter = (event: React.DragEvent<HTMLElement>, index: number) => {
     event.preventDefault();
-    if (dragProductIndex !== null && dragOverProductIndex !== index) {
+    if (dragProductIndexRef.current !== null && dragProductIndexRef.current !== index) {
       setDragOverProductIndex(index);
+    }
+  };
+
+  const handleProductDragLeave = (event: React.DragEvent<HTMLElement>, index: number) => {
+    const related = event.relatedTarget as Node | null;
+    if (!event.currentTarget.contains(related)) {
+      setDragOverProductIndex(current => (current === index ? null : current));
     }
   };
 
   const handleProductDrop = (event: React.DragEvent<HTMLElement>, index: number) => {
     event.preventDefault();
     event.stopPropagation();
-    let sourceIndex = dragProductIndex;
+    let sourceIndex = dragProductIndexRef.current;
     if (sourceIndex === null) {
       const data = event.dataTransfer.getData('text/plain');
       if (data !== '' && !isNaN(Number(data))) {
@@ -7298,11 +7343,13 @@ export function EditProductionOrderModal({
     if (sourceIndex !== null && sourceIndex !== index) {
       moveProductLine(sourceIndex, index);
     }
+    dragProductIndexRef.current = null;
     setDragProductIndex(null);
     setDragOverProductIndex(null);
   };
 
   const handleProductDragEnd = () => {
+    dragProductIndexRef.current = null;
     setDragProductIndex(null);
     setDragOverProductIndex(null);
   };
@@ -7418,12 +7465,16 @@ export function EditProductionOrderModal({
             </label>
 
             <div className="col-span-2 overflow-x-auto">
-              <div className="min-w-[960px]">
+              <div className="min-w-[1080px]">
                 <RepeatableLinesBlock
                   className="w-full"
                   linesClassName="space-y-3 pt-1"
                   title="Đơn hàng & mã hàng"
                   required
+                  showColumnHeaders
+                  alwaysShowColumnHeaders
+                  gridTemplateClass={productionOrderLineGridClass}
+                  headerClassName="px-[12px]"
                   onAdd={() =>
                     setForm(prev => ({
                       ...prev,
@@ -7444,16 +7495,16 @@ export function EditProductionOrderModal({
                     ) : undefined
                   }
                   columns={[
-                    { key: 'stt', label: 'STT', className: 'w-11 shrink-0 text-center' },
-                    { key: 'order', label: 'Mã đơn', className: 'w-32 shrink-0', required: true },
-                    { key: 'code', label: 'Mã hàng', className: 'w-44 shrink-0', required: true },
-                    { key: 'name', label: 'Tên sản xuất', className: 'min-w-0 flex-1' },
-                    { key: 'unit', label: 'ĐVT', className: 'w-24 shrink-0 text-center' },
-                    { key: 'qty', label: 'SL', className: 'w-16 shrink-0 text-center', required: true },
-                    { key: 'kg', label: 'KG', className: 'w-16 shrink-0 text-center' },
-                    { key: 'm2', label: 'M2', className: 'w-16 shrink-0 text-center' },
-                    { key: 'mdai', label: 'M dài', className: 'w-16 shrink-0 text-center' },
-                    { key: 'actions', label: '', className: 'w-10 shrink-0 text-center' }
+                    { key: 'stt', label: 'STT', className: 'text-center' },
+                    { key: 'order', label: 'Mã đơn', required: true },
+                    { key: 'code', label: 'Mã hàng', required: true },
+                    { key: 'name', label: 'Tên sản xuất' },
+                    { key: 'unit', label: 'ĐVT', className: 'text-center' },
+                    { key: 'qty', label: 'SL', className: 'text-center', required: true },
+                    { key: 'kg', label: 'KG', className: 'text-center' },
+                    { key: 'm2', label: 'M2', className: 'text-center' },
+                    { key: 'mdai', label: 'M dài', className: 'text-center' },
+                    { key: 'actions', label: '', className: 'text-center' }
                   ]}
                 >
                   {form.entryLines.map((line, index) => {
@@ -7488,33 +7539,27 @@ export function EditProductionOrderModal({
                     return (
                       <div
                         key={line.key}
-                        draggable={form.entryLines.length > 1}
-                        onDragStart={event => handleProductDragStart(event, index)}
-                        onDragEnd={handleProductDragEnd}
-                        onDragOver={event => handleProductDragOver(event, index)}
+                        onDragOver={handleProductDragOver}
                         onDragEnter={event => handleProductDragEnter(event, index)}
+                        onDragLeave={event => handleProductDragLeave(event, index)}
                         onDrop={event => handleProductDrop(event, index)}
                         className={`group relative rounded-xl border-2 p-2.5 mb-3 transition-colors ${
-                          form.entryLines.length > 1 ? 'cursor-grab active:cursor-grabbing' : ''
-                        } ${
                           isDragged
-                            ? 'border-dashed border-zinc-300 bg-zinc-100/60 opacity-40'
+                            ? 'opacity-40 border-dashed border-zinc-300 bg-zinc-50'
                             : isTarget
-                              ? 'border-[#ef1b2d] bg-red-100/90 shadow-xl ring-4 ring-red-500/30'
+                              ? 'border-[#ef1b2d] bg-red-50/80 shadow-lg ring-2 ring-red-300'
                               : 'border-zinc-200/90 bg-white shadow-xs hover:border-zinc-300'
                         }`}
                       >
                         {isTarget && (
                           <div className="absolute -top-2.5 right-4 z-20 flex items-center gap-1.5 rounded-full border border-[#ef1b2d] bg-[#ef1b2d] px-3 py-0.5 text-[11px] font-black text-white shadow-md pointer-events-none animate-in fade-in zoom-in-95 duration-100">
                             <span>Thả vào đây ➔ Vị trí #{index + 1}</span>
-                            <span className="text-red-200 font-semibold">(từ #{dragProductIndex + 1})</span>
+                            <span className="text-red-200 font-semibold">(từ #{dragProductIndex !== null ? dragProductIndex + 1 : '?'})</span>
                           </div>
                         )}
-                        <RepeatableLineRow className="items-center sm:flex-nowrap !py-0">
+                        <RepeatableLineRow gridTemplateClass={productionOrderLineGridClass} className="items-center !py-0">
                           <div
-                            data-drag-handle="true"
-                            title="Kéo để đổi thứ tự"
-                            className={`flex h-11 w-11 shrink-0 cursor-grab items-center justify-center gap-1 rounded-lg border font-black transition-colors active:cursor-grabbing ${
+                            className={`group/handle relative flex h-11 w-full shrink-0 items-center justify-between rounded-lg border font-black transition-colors select-none p-0.5 ${
                               isTarget
                                 ? 'border-[#ef1b2d] bg-[#ef1b2d] text-white shadow-md ring-2 ring-red-300'
                                 : isDragged
@@ -7522,12 +7567,54 @@ export function EditProductionOrderModal({
                                   : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-900'
                             }`}
                           >
-                            <GripVertical className={`h-4 w-4 shrink-0 ${isTarget ? 'text-white' : 'text-zinc-400'}`} />
-                            <span className="text-xs font-black tabular-nums">{index + 1}</span>
+                            <div
+                              data-drag-handle="true"
+                              draggable={form.entryLines.length > 1}
+                              onDragStart={event => handleProductDragStart(event, index)}
+                              onDragEnd={handleProductDragEnd}
+                              title="Kéo để đổi thứ tự"
+                              className={`flex h-full flex-1 items-center justify-center gap-0.5 ${
+                                form.entryLines.length > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+                              }`}
+                            >
+                              <GripVertical className={`h-3.5 w-3.5 shrink-0 ${isTarget ? 'text-white' : 'text-zinc-400'}`} />
+                              <span className="text-xs font-black tabular-nums">{index + 1}</span>
+                            </div>
+                            {form.entryLines.length > 1 && (
+                              <div className="flex flex-col justify-center gap-0.5 pl-0.5 pr-0.5">
+                                <button
+                                  type="button"
+                                  title="Chuyển lên"
+                                  disabled={index === 0}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    moveProductLine(index, index - 1);
+                                  }}
+                                  className={`flex h-4 w-3.5 items-center justify-center rounded transition disabled:pointer-events-none disabled:opacity-20 ${
+                                    isTarget ? 'text-white hover:bg-white/20' : 'text-zinc-400 hover:bg-zinc-200 hover:text-zinc-800'
+                                  }`}
+                                >
+                                  <ChevronUp className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Chuyển xuống"
+                                  disabled={index === form.entryLines.length - 1}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    moveProductLine(index, index + 1);
+                                  }}
+                                  className={`flex h-4 w-3.5 items-center justify-center rounded transition disabled:pointer-events-none disabled:opacity-20 ${
+                                    isTarget ? 'text-white hover:bg-white/20' : 'text-zinc-400 hover:bg-zinc-200 hover:text-zinc-800'
+                                  }`}
+                                >
+                                  <ChevronDown className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="w-32 shrink-0">
-                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã đơn *</span>
+                          <div className="w-full min-w-0">
                             <SearchableSelect
                               value={line.orderRef}
                               onChange={orderRef => handleEntryOrderChange(line.key, orderRef)}
@@ -7538,8 +7625,7 @@ export function EditProductionOrderModal({
                               getValue={item => String(item)}
                             />
                           </div>
-                          <div className="w-44 shrink-0">
-                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Mã hàng *</span>
+                          <div className="w-full min-w-0">
                             <SearchableSelect
                               value={selectedProduct?.optionKey || line.productId || line.productCode}
                               onSelectOption={item => item && handleEntryProductChange(line.key, line.orderRef, item as (typeof productOptions)[number])}
@@ -7555,8 +7641,7 @@ export function EditProductionOrderModal({
                               getValue={item => (item as (typeof productOptions)[number]).optionKey}
                             />
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 sm:hidden">Tên sản xuất</span>
+                          <div className="w-full min-w-0">
                             <input
                               value={line.productionName || selectedProduct?.productionName || line.productName}
                               readOnly
@@ -7564,8 +7649,7 @@ export function EditProductionOrderModal({
                               placeholder="Tự điền theo mã hàng"
                             />
                           </div>
-                          <div className="w-24 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">ĐVT</span>
+                          <div className="w-full min-w-0">
                             {selectedProduct ? (
                               <select
                                 value={effectiveUnit}
@@ -7587,8 +7671,7 @@ export function EditProductionOrderModal({
                               />
                             )}
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">SL *</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="number"
                               min="0"
@@ -7599,8 +7682,7 @@ export function EditProductionOrderModal({
                               placeholder="0"
                             />
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">KG</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="text"
                               value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
@@ -7608,8 +7690,7 @@ export function EditProductionOrderModal({
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M2</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="text"
                               value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
@@ -7617,8 +7698,7 @@ export function EditProductionOrderModal({
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
-                          <div className="w-16 shrink-0 space-y-1.5">
-                            <span className="mb-1 block text-[10px] font-bold uppercase text-zinc-500 sm:hidden">M dài</span>
+                          <div className="w-full min-w-0">
                             <input
                               type="text"
                               value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
@@ -7626,7 +7706,7 @@ export function EditProductionOrderModal({
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
-                          <div className="flex h-11 w-10 shrink-0 items-center justify-center">
+                          <div className="flex h-11 w-full items-center justify-center">
                             <button
                               type="button"
                               title="Xóa dòng"
