@@ -24,6 +24,7 @@ type RepeatableLinesBlockProps = {
   addButtonClassName?: string;
   className?: string;
   linesClassName?: string;
+  headerClassName?: string;
 };
 
 export function RepeatableLinesBlock({
@@ -41,7 +42,8 @@ export function RepeatableLinesBlock({
   children,
   addButtonClassName,
   className = '',
-  linesClassName
+  linesClassName,
+  headerClassName
 }: RepeatableLinesBlockProps) {
   const defaultAddClass =
     'flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-100';
@@ -92,12 +94,12 @@ export function RepeatableLinesBlock({
 
         {columns.length > 0 && (
           <div
-            className={`items-end gap-2 border-b border-zinc-200/80 pb-1.5 ${headerLayout} ${headerVisibility}`}
+            className={`items-end gap-2 border-b border-zinc-200/80 pb-1.5 ${headerLayout} ${headerVisibility} ${headerClassName || ''}`}
           >
             {columns.map(column => (
               <span
                 key={column.key}
-                className={`shrink-0 text-[10px] font-black uppercase tracking-wider text-zinc-500 ${column.className || ''}`}
+                className={`min-w-0 text-[10px] font-black uppercase tracking-wider text-zinc-500 ${gridTemplateClass ? 'block' : 'shrink-0'} ${column.className || ''}`}
               >
                 {column.label}
                 {column.required ? ' *' : ''}
@@ -129,7 +131,7 @@ export function RepeatableLineRow({
   key?: React.Key;
 }) {
   const layout = gridTemplateClass
-    ? `grid ${gridTemplateClass} items-end gap-x-2 gap-y-1.5 sm:gap-2`
-    : 'flex flex-wrap items-end gap-2';
+    ? `grid ${gridTemplateClass} ${className.includes('items-') ? '' : 'items-end'} gap-x-2 gap-y-1.5 sm:gap-2`
+    : `flex flex-wrap ${className.includes('items-') ? '' : 'items-end'} gap-2`;
   return <div className={`${layout} py-2.5 first:pt-0 last:pb-0 ${className}`}>{children}</div>;
 }
