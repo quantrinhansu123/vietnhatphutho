@@ -20,7 +20,7 @@ import {
   type ProductionPlanRelatedReports
 } from './relatedReportsPrint';
 import OrderPrintSheet from '../../components/OrderPrintSheet';
-import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, type ShiftOption } from '../../utils/shiftSettings';
+import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, shiftIsoDateByDays, type ShiftOption } from '../../utils/shiftSettings';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storageKeys';
 import type { WarehouseSlipPrefillDraft } from '../phieu-xuat-nhap-kho';
 import { STANDARD_SHIFTS } from '../../types';
@@ -4561,8 +4561,19 @@ export type ProductionOrderLookupSetting = {
   loaiCaiDat: string;
   group: string;
   timeFrame: string;
+  startTime?: string;
+  endTime?: string;
   note: string;
 };
+
+function formatShiftTimeCell(value: unknown) {
+  if (value === null || value === undefined || value === '') return '-';
+  const raw = String(value).trim();
+  if (!raw || raw === '-') return '-';
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return raw;
+  return `${String(match[1]).padStart(2, '0')}:${match[2]}`;
+}
 
 export function mapProductionOrderSettings(data: unknown): ProductionOrderLookupSetting[] {
   if (!data || typeof data !== 'object') return [];
@@ -4571,13 +4582,29 @@ export function mapProductionOrderSettings(data: unknown): ProductionOrderLookup
 
   return settings.map(item => {
     const record = item as Record<string, unknown>;
+    const startTime = formatShiftTimeCell(
+      record.gio_bat_dau ?? record.thoi_gian_bat_dau ?? record.start_time ?? record.gio_bd
+    );
+    const endTime = formatShiftTimeCell(
+      record.gio_ket_thuc ?? record.thoi_gian_ket_thuc ?? record.end_time ?? record.gio_kt
+    );
+    const rawKhungGio = formatCell(record.khung_gio);
+    const timeFrame =
+      rawKhungGio && rawKhungGio !== '-'
+        ? rawKhungGio
+        : startTime !== '-' && endTime !== '-'
+          ? `${startTime} - ${endTime}`
+          : '-';
+
     return {
       id: String(record.id ?? ''),
       code: pickText(record, ['ma_cai_dat', 'ma', 'code'], ''),
       name: pickText(record, ['ten_cai_dat', 'hang_muc', 'name'], ''),
       loaiCaiDat: pickText(record, ['loai_cai_dat', 'loai'], '-'),
       group: pickText(record, ['nhom', 'group'], '-'),
-      timeFrame: formatCell(record.khung_gio),
+      timeFrame,
+      startTime: startTime === '-' ? '' : startTime,
+      endTime: endTime === '-' ? '' : endTime,
       note: pickText(record, ['ghi_chu', 'note'], '')
     };
   });
@@ -4662,6 +4689,126 @@ export function formatProductionOrderShiftLabel(shift: string, settings: Product
   if (standardMatch) return standardMatch;
 
   return trimmed;
+}
+
+export function parseShiftTimeRange(
+  shift: string,
+  settings: ProductionOrderLookupSetting[] = []
+): { startTime: string; endTime: string; isOvernight: boolean } {
+  const trimmed = String(shift || '').trim();
+  if (!trimmed || trimmed === '-') {
+    return { startTime: '06:00', endTime: '18:00', isOvernight: false };
+  }
+
+  const normalized = trimmed.toLowerCase();
+
+  const matchedSetting = settings.find(setting => {
+    const candidates = [setting.name, setting.code].filter(value => value && value !== '-');
+    return candidates.some(value => value.trim().toLowerCase() === normalized);
+  });
+
+  const rawTimeFrame =
+    matchedSetting?.timeFrame && matchedSetting.timeFrame !== '-'
+      ? matchedSetting.timeFrame
+      : matchedSetting?.startTime && matchedSetting?.endTime
+        ? `${matchedSetting.startTime} - ${matchedSetting.endTime}`
+        : '';
+
+  const formattedLabel = formatProductionOrderShiftLabel(trimmed, settings);
+  const textToSearch = `${rawTimeFrame} ${formattedLabel} ${trimmed}`;
+
+  const match = textToSearch.match(/(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/);
+  if (match) {
+    const padTime = (t: string) => {
+      const parts = t.split(':');
+      return `${parts[0].padStart(2, '0')}:${parts[1]}`;
+    };
+    const startTime = padTime(match[1]);
+    const endTime = padTime(match[2]);
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+    const startMin = (startH || 0) * 60 + (startM || 0);
+    const endMin = (endH || 0) * 60 + (endM || 0);
+    // Nếu giờ kết thúc <= giờ bắt đầu (ví dụ 18:00 - 06:00), tức là ca xuyên đêm sang ngày hôm sau
+    const isOvernight = endMin <= startMin;
+    return { startTime, endTime, isOvernight };
+  }
+
+  if (/đêm|dem|tối|toi|ca\s*3\b/i.test(normalized)) {
+    return { startTime: '18:00', endTime: '06:00', isOvernight: true };
+  }
+  if (/12c2/i.test(normalized)) {
+    return { startTime: '20:00', endTime: '08:00', isOvernight: true };
+  }
+  if (/12c1/i.test(normalized)) {
+    return { startTime: '08:00', endTime: '20:00', isOvernight: false };
+  }
+  if (/8b|ca\s*2\b|chiều|chieu/i.test(normalized)) {
+    return { startTime: '14:00', endTime: '22:00', isOvernight: false };
+  }
+  if (/8a|ca\s*1\b|sáng|sang/i.test(normalized)) {
+    return { startTime: '06:00', endTime: '14:00', isOvernight: false };
+  }
+
+  return { startTime: '06:00', endTime: '18:00', isOvernight: false };
+}
+
+export function computeLatestShiftEndDateTime(
+  startDate: string,
+  shifts: string[],
+  settings: ProductionOrderLookupSetting[] = []
+): string {
+  const baseDate = startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : todayIsoDate();
+  if (!shifts || shifts.length === 0) {
+    return `${baseDate}T18:00`;
+  }
+
+  let maxEndOffsetMinutes = -1;
+  let latestEndTime = '18:00';
+  let latestIsOvernight = false;
+
+  for (const shift of shifts) {
+    const range = parseShiftTimeRange(shift, settings);
+    const [endH, endM] = range.endTime.split(':').map(Number);
+    const endMin = (endH || 0) * 60 + (endM || 0);
+    const offset = range.isOvernight ? 1440 + endMin : endMin;
+
+    if (offset > maxEndOffsetMinutes) {
+      maxEndOffsetMinutes = offset;
+      latestEndTime = range.endTime;
+      latestIsOvernight = range.isOvernight;
+    }
+  }
+
+  const targetDate = latestIsOvernight ? (shiftIsoDateByDays(baseDate, 1) || baseDate) : baseDate;
+  return `${targetDate}T${latestEndTime}`;
+}
+
+export function computeEarliestShiftStartDateTime(
+  startDate: string,
+  shifts: string[],
+  settings: ProductionOrderLookupSetting[] = []
+): string {
+  const baseDate = startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : todayIsoDate();
+  if (!shifts || shifts.length === 0) {
+    return `${baseDate}T06:00`;
+  }
+
+  let minStartOffsetMinutes = Infinity;
+  let earliestStartTime = '06:00';
+
+  for (const shift of shifts) {
+    const range = parseShiftTimeRange(shift, settings);
+    const [startH, startM] = range.startTime.split(':').map(Number);
+    const startMin = (startH || 0) * 60 + (startM || 0);
+
+    if (startMin < minStartOffsetMinutes) {
+      minStartOffsetMinutes = startMin;
+      earliestStartTime = range.startTime;
+    }
+  }
+
+  return `${baseDate}T${earliestStartTime}`;
 }
 
 export function parseRowQuantity(raw: string): number {
@@ -5617,10 +5764,28 @@ export function AddProductionOrderModal({
   };
 
   const toggleShift = (shift: string) => {
-    setSelectedShifts(prev =>
-      prev.includes(shift) ? prev.filter(item => item !== shift) : [...prev, shift]
-    );
-    setForm(prev => ({ ...prev, machine: '' }));
+    const nextShifts = selectedShifts.includes(shift)
+      ? selectedShifts.filter(item => item !== shift)
+      : [...selectedShifts, shift];
+
+    setSelectedShifts(nextShifts);
+    setForm(prev => {
+      const baseDate = prev.startDate || todayIsoDate();
+      let endDateTime = prev.endDateTime;
+      let startDateTime = prev.startDateTime;
+
+      if (nextShifts.length > 0) {
+        endDateTime = computeLatestShiftEndDateTime(baseDate, nextShifts, settings);
+        startDateTime = computeEarliestShiftStartDateTime(baseDate, nextShifts, settings);
+      }
+
+      return {
+        ...prev,
+        machine: '',
+        endDateTime,
+        startDateTime
+      };
+    });
   };
 
   const moveProductLine = (from: number, to: number) => {
@@ -5816,11 +5981,24 @@ export function AddProductionOrderModal({
                 value={form.startDate}
                 onChange={e => {
                   const startDate = e.target.value;
-                  setForm(prev => ({
-                    ...prev,
-                    startDate,
-                    startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
-                  }));
+                  setForm(prev => {
+                    const startDateTime = startDate
+                      ? (selectedShifts.length > 0
+                          ? computeEarliestShiftStartDateTime(startDate, selectedShifts, settings)
+                          : mergeProductionOrderDateTime(startDate, prev.startDateTime))
+                      : '';
+                    const endDateTime = startDate
+                      ? (selectedShifts.length > 0
+                          ? computeLatestShiftEndDateTime(startDate, selectedShifts, settings)
+                          : mergeProductionOrderDateTime(startDate, prev.endDateTime || `${startDate}T18:00`))
+                      : '';
+                    return {
+                      ...prev,
+                      startDate,
+                      startDateTime,
+                      endDateTime
+                    };
+                  });
                 }}
                 className={orderFieldClass}
               />
@@ -7454,11 +7632,24 @@ export function EditProductionOrderModal({
                 value={form.startDate}
                 onChange={e => {
                   const startDate = e.target.value;
-                  setForm(prev => ({
-                    ...prev,
-                    startDate,
-                    startDateTime: mergeProductionOrderDateTime(startDate, prev.startDateTime)
-                  }));
+                  setForm(prev => {
+                    const startDateTime = startDate
+                      ? (prev.shift
+                          ? computeEarliestShiftStartDateTime(startDate, [prev.shift], settings)
+                          : mergeProductionOrderDateTime(startDate, prev.startDateTime))
+                      : '';
+                    const endDateTime = startDate
+                      ? (prev.shift
+                          ? computeLatestShiftEndDateTime(startDate, [prev.shift], settings)
+                          : mergeProductionOrderDateTime(startDate, prev.endDateTime || `${startDate}T18:00`))
+                      : '';
+                    return {
+                      ...prev,
+                      startDate,
+                      startDateTime,
+                      endDateTime
+                    };
+                  });
                 }}
                 className={orderFieldClass}
               />
@@ -7748,7 +7939,19 @@ export function EditProductionOrderModal({
 
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
-                <input value={form.shift} onChange={e => setForm(prev => ({ ...prev, shift: e.target.value }))} className={orderFieldClass} />
+                <input
+                  value={form.shift}
+                  onChange={e => {
+                    const shift = e.target.value;
+                    setForm(prev => {
+                      const baseDate = prev.startDate || todayIsoDate();
+                      const endDateTime = shift ? computeLatestShiftEndDateTime(baseDate, [shift], settings) : prev.endDateTime;
+                      const startDateTime = shift ? computeEarliestShiftStartDateTime(baseDate, [shift], settings) : prev.startDateTime;
+                      return { ...prev, shift, endDateTime, startDateTime };
+                    });
+                  }}
+                  className={orderFieldClass}
+                />
               </label>
 
               <label className="space-y-1.5">
