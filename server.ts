@@ -5905,50 +5905,12 @@ function normalizeProductionProductKey(value: unknown) {
   return String(value ?? '').trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
 }
 
-/** Resolve lại ID từ danh mục trước khi ghi lệnh SX, tránh giữ ID cũ bị lệch mã sản phẩm. */
-async function resolveProductionOrderProductIds(products: OrderProductRecord[]) {
-  if (!supabase || products.length === 0) return products;
-
-  const { data: catalogRows, error } = await supabase
-    .from(SUPABASE_PRODUCTS_TABLE)
-    .select('id, ma_sp, ma_amis, ma_sp_moi, ten_sp, ten_san_xuat');
-  if (error || !Array.isArray(catalogRows)) {
-    if (error) console.error('Supabase san_pham resolve production order ID error:', error);
-    return products;
-  }
-
+/** Giữ nguyên san_pham_id từ dòng đơn hàng/payload; tuyệt đối không dò lại theo mã hoặc tên. */
+function preserveProductionOrderProductIds(products: OrderProductRecord[]) {
   return products.map(product => {
-    const codeKey = normalizeProductionProductKey(product.ma_sp);
-    if (!codeKey) return product;
-
-    const matches = catalogRows.filter(row =>
-      [row.ma_sp, row.ma_amis, row.ma_sp_moi].some(value =>
-        normalizeProductionProductKey(value) === codeKey
-      )
-    );
-    if (matches.length === 0) return product;
-
-    const productNameKey = normalizeProductionProductKey(product.ten_sp);
-    const productionNameKey = normalizeProductionProductKey(product.ten_san_xuat);
-    const byProductionName = productionNameKey
-      ? matches.find(row => normalizeProductionProductKey(row.ten_san_xuat) === productionNameKey)
-      : undefined;
-    const byProductName = productNameKey
-      ? matches.find(row => normalizeProductionProductKey(row.ten_sp) === productNameKey)
-      : undefined;
-    const exactCode = matches.find(row =>
-      normalizeProductionProductKey(row.ma_sp) === codeKey ||
-      normalizeProductionProductKey(row.ma_sp_moi) === codeKey
-    );
-    const currentId = String(product.san_pham_id ?? '').trim();
-    const currentProduct = currentId
-      ? matches.find(row => String(row.id ?? '').trim() === currentId)
-      : undefined;
-    const resolved = byProductionName || byProductName || exactCode || currentProduct ||
-      (matches.length === 1 ? matches[0] : undefined);
-
-    return resolved?.id
-      ? { ...product, san_pham_id: String(resolved.id).trim() }
+    const sourceProductId = String(product.san_pham_id ?? '').trim();
+    return sourceProductId
+      ? { ...product, san_pham_id: sourceProductId }
       : product;
   });
 }
@@ -8346,7 +8308,7 @@ export function createApp() {
       let code = makeProductionOrderCode(orderCode);
       code = await ensureUniqueProductionOrderCode(code);
 
-      const [resolvedFirstProduct] = await resolveProductionOrderProductIds([firstProduct]);
+      const [resolvedFirstProduct] = preserveProductionOrderProductIds([firstProduct]);
       const record = buildProductionOrderRecordFromOrder(orderRow, code, resolvedFirstProduct);
       const { data: created, error: insertError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
@@ -8397,7 +8359,7 @@ export function createApp() {
 
       const record = { ...parsed.record };
       record.ma_lenh_sx = await ensureUniqueProductionOrderCode(String(record.ma_lenh_sx));
-      record.san_pham = await resolveProductionOrderProductIds(record.san_pham as OrderProductRecord[]);
+      record.san_pham = preserveProductionOrderProductIds(record.san_pham as OrderProductRecord[]);
 
       const orderRef = String(record.ma_don_hang ?? '').trim();
       const orderProducts = parseOrderProductsFromRow(record);
@@ -8731,7 +8693,7 @@ export function createApp() {
       }
 
       const record = { ...parsed.record };
-      record.san_pham = await resolveProductionOrderProductIds(record.san_pham as OrderProductRecord[]);
+      record.san_pham = preserveProductionOrderProductIds(record.san_pham as OrderProductRecord[]);
 
       const { data: updated, error: updateError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)

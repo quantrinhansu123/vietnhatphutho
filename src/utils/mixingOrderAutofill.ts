@@ -284,6 +284,12 @@ function parseOrderProductLines(record: Record<string, unknown>) {
           const productName = pickText(row, ['ten_sp', 'ten_hang', 'product_name', 'name'], '');
           const productionName = pickText(row, ['ten_san_xuat', 'productionName'], '');
           if (!productCode && !productName) return null;
+          const convertedWeightFromList = Array.isArray(row.ket_qua_quy_doi)
+            ? row.ket_qua_quy_doi
+                .filter(item => item && typeof item === 'object')
+                .map(item => item as Record<string, unknown>)
+                .find(item => /^(kg|kilogram)$/i.test(pickText(item, ['don_vi', 'unit'], '')))
+            : undefined;
           return {
             productId: productId || undefined,
             productCode,
@@ -291,9 +297,16 @@ function parseOrderProductLines(record: Record<string, unknown>) {
             productionName,
             unit: pickText(row, ['don_vi', 'unit'], '-'),
             quantity: parsePercentInput(String(row.so_luong ?? row.quantity ?? '')),
-            convertedWeightKg: row.kq_quy_doi && typeof row.kq_quy_doi === 'object'
-              ? parsePercentInput(String((row.kq_quy_doi as Record<string, unknown>).trong_luong_kg ?? ''))
-              : null
+            convertedWeightKg: parsePercentInput(String(
+              (row.kq_quy_doi && typeof row.kq_quy_doi === 'object'
+                ? (row.kq_quy_doi as Record<string, unknown>).trong_luong_kg
+                : null) ??
+              row.tong_kg ??
+              row.tongKg ??
+              convertedWeightFromList?.gia_tri ??
+              convertedWeightFromList?.value ??
+              ''
+            ))
           };
         })
         .filter((line): line is { productId?: string; productCode: string; productName: string; productionName: string; unit: string; quantity: number | null; convertedWeightKg: number | null } => Boolean(line))

@@ -1275,25 +1275,68 @@ export default function MixingNormMaterialsTab() {
     const quantity = line.quantity;
     if (quantity === null || !Number.isFinite(quantity) || quantity < 0) return null;
     if (/^kg$/i.test(line.unit.trim())) return quantity;
+    // Ưu tiên tổng kg đã chốt trên từng dòng lệnh SX nếu có.
+    if (line.convertedWeightKg !== null && line.convertedWeightKg > 0) {
+      return roundMixing(line.convertedWeightKg);
+    }
     const codeKey = normalizeProductLookupKey(line.productCode);
     // The production-order JSON carries the authoritative san_pham_id. Use
     // it directly when matching san_pham_quy_doi; catalog resolution can be
     // ambiguous when codes/AMIS codes are shared by multiple rows.
     const productId = line.productId?.trim() || catalog?.id?.trim() || '';
-    const sameProduct = (item: MixingProductConversion) =>
-      Boolean(productId && item.sanPhamId === productId) ||
+    const sameProductId = (item: MixingProductConversion) =>
+      Boolean(productId && item.sanPhamId === productId);
+    const sameProductCode = (item: MixingProductConversion) =>
       normalizeProductLookupKey(item.maSp) === codeKey ||
       normalizeProductLookupKey(item.maAmis) === codeKey;
     const unitKey = line.unit.trim().toLocaleLowerCase('vi').replace('m²', 'm2');
-    const conversion = productConversions.find(item =>
-      sameProduct(item) && item.donViTinh.trim().toLocaleLowerCase('vi').replace('m²', 'm2') === unitKey
-    ) ?? productConversions.find(sameProduct);
+    const sameUnit = (item: MixingProductConversion) =>
+      item.donViTinh.trim().toLocaleLowerCase('vi').replace('m²', 'm2') === unitKey;
+    const conversion =
+      productConversions.find(item => sameProductId(item) && sameUnit(item)) ??
+      productConversions.find(sameProductId) ??
+      productConversions.find(item => sameProductCode(item) && sameUnit(item)) ??
+      productConversions.find(sameProductCode);
     if (conversion) {
       const converted = convertProductQuantity(quantity, line.unit, 'kg', conversion);
       if (converted !== null && Number.isFinite(converted)) return roundMixing(converted);
     }
-    if (line.convertedWeightKg !== null && line.convertedWeightKg > 0) return line.convertedWeightKg;
     return catalog?.totalWeight ? roundMixing(quantity * catalog.totalWeight) : null;
+  };
+
+  const resolveOrderLineProductId = (
+    line: MixingProductionOrder['productLines'][number]
+  ) => line.productId?.trim() || findCatalogProductForProductionLine(catalogProducts, line)?.id?.trim() || '';
+
+  const findOrderProductLines = (
+    order: MixingProductionOrder | null,
+    code: string,
+    productId = ''
+  ) => {
+    if (!order) return [];
+    const id = productId.trim();
+    const codeKey = normalizeProductLookupKey(code);
+    return order.productLines.filter(line => {
+      if (id) return resolveOrderLineProductId(line) === id;
+      return normalizeProductLookupKey(line.productCode) === codeKey;
+    });
+  };
+
+  const sumOrderProductWeight = (
+    lines: MixingProductionOrder['productLines'],
+    catalog?: ProductOption
+  ) => {
+    let sourceKg = 0;
+    let allConverted = lines.length > 0;
+    for (const line of lines) {
+      const kg = resolveOrderLineKg(line, catalog);
+      if (kg === null) {
+        allConverted = false;
+        continue;
+      }
+      sourceKg += kg;
+    }
+    return { sourceKg: roundMixing(sourceKg), allConverted };
   };
 
   /**
@@ -1311,12 +1354,10 @@ export default function MixingNormMaterialsTab() {
         const selectedOption = ids[index]
           ? productOptionsById.get(ids[index])
           : productOptionsByCode.get(normalizeProductLookupKey(code));
-        const orderLine = selectedOrder?.productLines.find(
-          item => (ids[index] && item.productId === ids[index]) ||
-            normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
-        );
+        const orderLines = findOrderProductLines(selectedOrder, code, ids[index]);
+        const orderLine = orderLines[0];
         // Không quy đổi được ra kg → coi như 0 (null làm sai công thức tổng).
-        const kg = (orderLine ? resolveOrderLineKg(orderLine, catalog) : null) ?? 0;
+        const kg = sumOrderProductWeight(orderLines, catalog).sourceKg;
         return {
           code,
           name: selectedOption?.name?.trim() || orderLine?.productName?.trim() || catalog?.name || code,
@@ -1332,20 +1373,6 @@ export default function MixingNormMaterialsTab() {
           kg
         };
       });
-
-  const selectOrder = (orderCode: string) => {
-    // Chỉ gán lệnh SX — KHÔNG tự fill công thức trộn hay NVL phụ.
-    setForm(prev =>
-      prev.maLenhSx.trim() === orderCode.trim()
-        ? { ...prev, maLenhSx: orderCode }
-        : {
-            ...prev,
-            maLenhSx: orderCode,
-            products: [emptyProduct()],
-            secondaryProducts: []
-          }
-    );
-  };
 
   const updateProduct = (productKey: string, patch: Partial<ProductForm>) => {
     setForm(prev => ({
@@ -1396,18 +1423,20 @@ export default function MixingNormMaterialsTab() {
       })
       .filter(Boolean);
 
-  const buildSingleProductFromCode = (code: string, productId = ''): ProductForm => {
+  const buildSingleProductFromCode = (
+    code: string,
+    productId = '',
+    order: MixingProductionOrder | null = selectedOrder,
+    sourceLines?: MixingProductionOrder['productLines']
+  ): ProductForm => {
     const catalog = productId
       ? catalogProductsById.get(productId) || findCatalogProductByAnyCode(catalogProducts, code)
       : findCatalogProductByAnyCode(catalogProducts, code);
-    const orderLine = selectedOrder?.productLines.find(item =>
-      (productId && item.productId === productId) ||
-      normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
-    );
-    const resolvedId = productId.trim() || catalog?.id?.trim() || orderLine?.productId?.trim() || '';
-    const rawKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
+    const orderLines = sourceLines ?? findOrderProductLines(order, code, productId);
+    const orderLine = orderLines[0];
+    const resolvedId = productId.trim() || catalog?.id?.trim() || (orderLine ? resolveOrderLineProductId(orderLine) : '');
+    const { sourceKg, allConverted } = sumOrderProductWeight(orderLines, catalog);
     // Không quy đổi được ra kg → mặc định 0 (null làm sai công thức); vẫn cho nhập tay để chỉnh.
-    const sourceKg = rawKg ?? 0;
     const waste = catalog?.wastePercent ?? 0;
     return {
       ...emptyProduct(),
@@ -1416,7 +1445,7 @@ export default function MixingNormMaterialsTab() {
       maSp: code,
       tenSp: '',
       soLuongGoc: String(roundMixing(sourceKg)),
-      soLuongTuDong: rawKg !== null,
+      soLuongTuDong: allConverted,
       haoHut: String(waste),
       tongTrongLuong: String(roundMixing(sourceKg * (1 + waste / 100))),
       lines: [emptyLine()]
@@ -1427,9 +1456,13 @@ export default function MixingNormMaterialsTab() {
    * Ô "Mã sản phẩm" cho phép chọn nhiều SP dùng chung 1 công thức trộn.
    * NVL chính không tự fill từ danh mục SP — người dùng tự thêm từng dòng.
    */
-  const buildMergedProductFromCodes = (codes: string[], productIds: string[] = []): ProductForm => {
+  const buildMergedProductFromCodes = (
+    codes: string[],
+    productIds: string[] = [],
+    order: MixingProductionOrder | null = selectedOrder
+  ): ProductForm => {
     if (codes.length === 0) return emptyProduct();
-    if (codes.length === 1) return buildSingleProductFromCode(codes[0], productIds[0] || '');
+    if (codes.length === 1) return buildSingleProductFromCode(codes[0], productIds[0] || '', order);
 
     const resolvedIds = resolveValidProductIds(codes, productIds);
     const entries = codes.map((code, index) => ({
@@ -1446,13 +1479,10 @@ export default function MixingNormMaterialsTab() {
     let sumAfterWaste = 0;
     let allConverted = true;
     for (const { code, productId, catalog } of entries) {
-      const orderLine = selectedOrder?.productLines.find(
-        item => (productId && item.productId === productId) ||
-          normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
-      );
-      const rawKg = orderLine ? resolveOrderLineKg(orderLine, catalog) : null;
-      if (rawKg === null) allConverted = false;
-      const kg = rawKg ?? 0;
+      const orderLines = findOrderProductLines(order, code, productId);
+      const productWeight = sumOrderProductWeight(orderLines, catalog);
+      if (!productWeight.allConverted) allConverted = false;
+      const kg = productWeight.sourceKg;
       const wastePercent = catalog?.wastePercent ?? 0;
       sumKg += kg;
       sumAfterWaste += kg * (1 + wastePercent / 100);
@@ -1474,6 +1504,20 @@ export default function MixingNormMaterialsTab() {
       tongTrongLuong: String(roundMixing(sumAfterWaste)),
       lines: [emptyLine()]
     };
+  };
+
+  const selectOrder = (orderCode: string) => {
+    setForm(prev =>
+      prev.maLenhSx.trim() === orderCode.trim()
+        ? { ...prev, maLenhSx: orderCode }
+        : {
+            ...prev,
+            maLenhSx: orderCode,
+            // Chỉ nạp options theo lệnh SX; không tự chọn chip sản phẩm.
+            products: [emptyProduct()],
+            secondaryProducts: []
+          }
+    );
   };
 
   /** Chọn nhiều mã SP trong ô "Mã sản phẩm" của 1 dòng SP — dùng chung 1 công thức trộn. */

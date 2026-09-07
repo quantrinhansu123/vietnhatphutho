@@ -5003,13 +5003,15 @@ export function buildProductionEntryLine(
     productId,
     productionName
   );
+  const sourceProductId = line?.productId?.trim() || '';
   return {
     productCode,
     productName,
     productionName: productionName || line?.productionName || '',
     quantity: remaining > 0 ? String(remaining) : '',
     unit: unit || getOrderProductUnit(orders, orderRef, productCode, productId, productionName),
-    productId: productId.trim() || line?.productId,
+    // Chỉ lấy ID thật trên dòng don_hang.san_pham; không fallback từ catalog/ô chọn.
+    productId: sourceProductId || undefined,
     ...productionEntryMetadataFromOrderLine(line)
   };
 }
@@ -5147,16 +5149,14 @@ export function listProductOptionsForOrder(
   const orderedBeforeByProduct = new Map<string, number>();
   return fromOrders.map(meta => {
       const code = meta.code;
-      const catalogProduct = resolveProductionCatalogProduct(
-        catalogProducts,
-        code,
-        meta.productId,
-        meta.name,
-        meta.productionName
-      );
-      const resolvedProductId = catalogProduct?.id || meta.productId || '';
-      const productIdentity = resolvedProductId
-        ? `id:${resolvedProductId.trim()}`
+      const sourceProductId = meta.productId?.trim() || '';
+      // san_pham_id của dòng đơn hàng là nguồn duy nhất. Nếu ID không còn trong
+      // catalog thì không được dò theo mã/tên rồi âm thầm thay bằng sản phẩm khác.
+      const catalogProduct = sourceProductId
+        ? catalogProducts.find(product => product.id === sourceProductId)
+        : undefined;
+      const productIdentity = sourceProductId
+        ? `id:${sourceProductId}`
         : `code:${normalizeProductCodeKey(meta.code)}::${meta.productionName.trim().toLowerCase()}`;
       const orderQty = parseRowQuantity(meta.line.quantity);
       const orderedBefore = orderedBeforeByProduct.get(productIdentity) ?? 0;
@@ -5164,14 +5164,14 @@ export function listProductOptionsForOrder(
         productionOrders,
         orderRef,
         code,
-        resolvedProductId,
+        sourceProductId,
         meta.productionName
       );
       const allocatedToThisLine = Math.max(0, Math.min(orderQty, allocatedQty - orderedBefore));
       orderedBeforeByProduct.set(productIdentity, orderedBefore + orderQty);
 
       return {
-        id: resolvedProductId,
+        id: sourceProductId,
         // Mỗi dòng JSON đơn hàng là một lựa chọn riêng, kể cả khi trùng sản phẩm.
         optionKey: `${productIdentity}::line:${meta.lineIndex}:${meta.line.stt ?? meta.lineIndex + 1}`,
         code,
@@ -5180,7 +5180,7 @@ export function listProductOptionsForOrder(
         // ĐVT trong đơn hàng là nguồn chính; danh mục sản phẩm chỉ fallback
         // cho dữ liệu đơn hàng cũ bị thiếu ĐVT.
         unit: meta.unit || (catalogProduct?.unit && catalogProduct.unit !== '-' ? catalogProduct.unit : ''),
-        productId: resolvedProductId,
+        productId: sourceProductId,
         group: catalogProduct?.group || meta.group,
         newCode: catalogProduct?.newCode || '',
         orderQty,
@@ -5790,7 +5790,7 @@ export function AddProductionOrderModal({
       orders,
       productionOrders,
       orderRef,
-      productCode,
+      selectedProduct?.code || productCode,
       selectedProduct?.name || '',
       selectedProduct?.unit || '',
       selectedProduct?.productionName || '',
@@ -5854,7 +5854,7 @@ export function AddProductionOrderModal({
           product.productionName,
           product.id,
           product.sourceLine,
-          product.remainingQty
+          product.orderQty
         )
       };
     }
@@ -5902,6 +5902,9 @@ export function AddProductionOrderModal({
     );
 
     if (isSameProduct) {
+      if (!currentLine?.quantity.trim() && product.orderQty > 0) {
+        updateEntryLine(key, { quantity: String(product.orderQty) });
+      }
       return;
     }
 
@@ -5915,7 +5918,7 @@ export function AddProductionOrderModal({
       product.productionName,
       product.productId,
       product.sourceLine,
-      product.remainingQty
+      product.orderQty
     );
     updateEntryLine(key, built);
   };
@@ -6836,6 +6839,7 @@ export function AddProductionOrderModal({
                   onChange={orderRef => {
                     setLineDraftOrderRef(orderRef);
                     setLineDraftProductCode('');
+                    setLineDraftQuantity('');
                   }}
                   options={orderCodeOptions}
                   placeholder="Gõ để tìm mã đơn2"
@@ -6850,7 +6854,16 @@ export function AddProductionOrderModal({
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã hàng *</span>
                 <SearchableSelect
                   value={lineDraftProductCode}
-                  onChange={setLineDraftProductCode}
+                  onChange={optionKey => {
+                    setLineDraftProductCode(optionKey);
+                    const product = listProductOptionsForOrder(
+                      ordersForSelectedDate,
+                      productionOrders,
+                      catalogProducts,
+                      lineDraftOrderRef
+                    ).find(item => item.optionKey === optionKey);
+                    setLineDraftQuantity(product?.orderQty > 0 ? String(product.orderQty) : '');
+                  }}
                   options={listProductOptionsForOrder(
                     ordersForSelectedDate,
                     productionOrders,
@@ -7445,13 +7458,10 @@ export function EditProductionOrderModal({
       entryLines:
         productLines.length > 0
           ? productLines.map((product, index) => {
-              const catalogProduct = resolveProductionCatalogProduct(
-                catalogProducts,
-                product.productCode,
-                product.productId || '',
-                product.productName,
-                product.productionName
-              );
+              const sourceProductId = product.productId?.trim() || '';
+              const catalogProduct = sourceProductId
+                ? catalogProducts.find(item => item.id === sourceProductId)
+                : undefined;
               const productionName =
                 (product.productionName && product.productionName !== '-' ? product.productionName : '') ||
                 catalogProduct?.productionName ||
@@ -7464,7 +7474,7 @@ export function EditProductionOrderModal({
                 productionName,
                 quantity: product.quantity === '-' ? '' : product.quantity,
                 unit: product.unit === '-' ? '' : product.unit,
-                productId: catalogProduct?.id || product.productId,
+                productId: sourceProductId || undefined,
                 ...productionEntryMetadataFromOrderLine(product)
               };
             })
@@ -7576,9 +7586,8 @@ export function EditProductionOrderModal({
           product.productionName,
           product.id,
           product.sourceLine,
-          product.remainingQty
-        ),
-        quantity: ''
+          product.orderQty
+        )
       };
     }
     updateEntryLine(key, patch);
@@ -7626,11 +7635,14 @@ export function EditProductionOrderModal({
     );
 
     if (isSameProduct) {
-      // Người dùng chỉ click vào Mã Hàng hoặc chọn lại đúng sản phẩm hiện tại: giữ nguyên SL
+      // Chọn lại đúng SP: giữ SL đã nhập tay; nếu đang trống thì khôi phục SL đơn hàng.
+      if (!currentLine?.quantity.trim() && product.orderQty > 0) {
+        updateEntryLine(key, { quantity: String(product.orderQty) });
+      }
       return;
     }
 
-    // Khi có thay đổi sang sản phẩm khác: clear SL theo yêu cầu
+    // Khi đổi sản phẩm, tự điền đúng SL của dòng sản phẩm trong đơn hàng.
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
@@ -7641,12 +7653,9 @@ export function EditProductionOrderModal({
       product.productionName,
       product.productId,
       product.sourceLine,
-      product.remainingQty
+      product.orderQty
     );
-    updateEntryLine(key, {
-      ...built,
-      quantity: ''
-    });
+    updateEntryLine(key, built);
   };
 
   const moveProductLine = (from: number, to: number) => {

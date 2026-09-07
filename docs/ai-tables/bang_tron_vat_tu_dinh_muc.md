@@ -22,6 +22,7 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
 **1 form nhập = 1 dòng DB = 1 phiếu**
 
 - `ma_lenh_sx`, `ngay`, `ca`, `ghi_chu`
+- **Memory nghiệp vụ:** Khi chọn lệnh SX, form chỉ tạo **1 block công thức** và nạp toàn bộ sản phẩm của lệnh vào danh sách options của ô multi-select **Sản phẩm**; **không tự động chọn chip nào**. Người dùng tự chọn các sản phẩm trong cùng ô, không tạo mỗi sản phẩm thành một block/dòng riêng. Các dòng cùng `san_pham_id` chỉ hiện 1 chip và được cộng tổng trọng lượng quy đổi trước khi tính hao hụt; khác `san_pham_id` vẫn là các chip riêng trong cùng ô.
 - Mỗi SP lưu thêm `so_luong_goc`, `ty_le_hao_hut`, `tong_trong_luong`, `dinh_luong_coi`, `so_lan_tron`.
 - `tong_trong_luong = so_luong_goc × (1 + ty_le_hao_hut / 100)` — % hàng hỏng cộng thêm vào SL quy đổi trước hao hụt (mặc định lấy từ `san_pham.ty_le_hao_hut`), không phải trừ đi.
 - Form chỉ nhập **1 công thức "cối trộn tiêu chuẩn"** cho mỗi SP (không còn nhập riêng từng "Lần trộn N"); `so_lan_tron = ceil(tong_trong_luong / dinh_luong_coi)` chỉ mang tính thông tin. Khi lưu, hệ thống tự nhân bản công thức này thành `so_lan_tron` phần tử trong `lan_tron` (cối cuối lấy phần khối lượng còn lại) để tương thích với Phiếu trộn thực tế (`phieu_tron_thuc_te`), vốn cần theo dõi thực tế theo từng cối.
