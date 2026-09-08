@@ -4460,11 +4460,21 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-table.is-secondary-only .col-name {
-  width: 48%;
+  width: 32%;
+}
+
+.mixing-norm-ratio-print-table.is-secondary-only .col-val {
+  width: 14%;
+  text-align: right;
+}
+
+.mixing-norm-ratio-print-table.is-secondary-only .col-unit {
+  width: 10%;
+  text-align: center;
 }
 
 .mixing-norm-ratio-print-table.is-secondary-only .col-kg {
-  width: 25%;
+  width: 22%;
 }
 
 .mixing-norm-ratio-print-table .col-name {

@@ -18,6 +18,23 @@ import {
 } from './MixingNormRatioPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, resolveShiftName } from '../utils/shiftSettings';
 import { convertProductQuantity, type ProductConversionFactors } from '../utils/productUnitConversion';
+import {
+  type WorkshopType,
+  normalizeNhomVatTuPhuKey,
+  resolveWorkshopType,
+  roundWeight4,
+  calcAuxiliaryWeight,
+  getAllowedSecondaryGroups,
+  filterSecondaryMaterialOptions
+} from '../utils/mixingNormAuxiliary';
+
+export {
+  type WorkshopType,
+  normalizeNhomVatTuPhuKey,
+  resolveWorkshopType,
+  calcAuxiliaryWeight,
+  getAllowedSecondaryGroups
+};
 
 export type MixingNormLine = {
   ma_nvl: string;
@@ -74,7 +91,9 @@ type MaterialOption = {
   name: string;
   productionName: string;
   unit: string;
+  donViGoc?: string;
   phanLoai: string;
+  nhomVatTuPhu?: string;
 };
 
 type ProductOption = {
@@ -86,6 +105,7 @@ type ProductOption = {
   tenSanXuat?: string;
   totalWeight?: number | null;
   wastePercent?: number;
+  nhomVthh?: string;
   nplItems?: MixingBomItem[];
 };
 
@@ -102,7 +122,7 @@ type LineForm = {
   tenNvl: string;
   tenNvlSanXuat: string;
   giaTri: string;
-  donVi: 'kg' | '%';
+  donVi: string;
   phanLoai: string;
 };
 
@@ -307,7 +327,9 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
         name,
         productionName,
         unit: unitRaw === '%' ? '%' : 'kg',
-        phanLoai: String(row.phan_loai ?? row.kho_ngam_dinh ?? '').trim()
+        donViGoc: unitRaw || 'kg',
+        phanLoai: String(row.phan_loai ?? row.kho_ngam_dinh ?? '').trim(),
+        nhomVatTuPhu: String(row.nhom_vat_tu_phu ?? '').trim()
       };
     })
     .filter((item): item is MaterialOption => Boolean(item));
@@ -351,6 +373,7 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       tenSanXuat: String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(),
       totalWeight: parseNumberOrNull(row.tong_trong_luong ?? row.totalWeight),
       wastePercent: parseNumberOrNull(row.ty_le_hao_hut ?? row.wastePercent) ?? 0,
+      nhomVthh: String(row.nhom_vthh ?? row.group ?? '').trim(),
       // This screen does not autofill BOMs. Avoid parsing a potentially large
       // JSON payload for every catalog row just to render the picker.
       nplItems: []
@@ -390,10 +413,12 @@ function normalizeProductLookupKey(value: string) {
   return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
 }
 
-function materialOptionLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'>) {
+function materialOptionLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'> & { nhomVatTuPhu?: string }) {
   const base = `${item.code} - ${item.name}`;
-  return item.productionName.trim() ? `${base} · ${item.productionName.trim()}` : base;
+  const withProd = item.productionName.trim() ? `${base} · ${item.productionName.trim()}` : base;
+  return item.nhomVatTuPhu ? `${withProd} (${item.nhomVatTuPhu})` : withProd;
 }
+
 
 /**
  * Trùng NVL: cùng mã (hoặc cùng tên) chỉ bị chặn khi tên NVL sản xuất cũng giống nhau.
@@ -493,6 +518,49 @@ function roundMixing(value: number) {
   return Math.round(value * 1000) / 1000;
 }
 
+function resolveSecondaryWorkshopType(
+  secondaryProduct: SecondaryProductForm,
+  formProducts: ProductForm[],
+  catalogProductsById: Map<string, ProductOption>,
+  catalogProducts: ProductOption[]
+): WorkshopType {
+  // 1. Kiểm tra các mã SP được chọn trong khối NVL phụ
+  for (const id of secondaryProduct.maSpIds) {
+    const catalog = catalogProductsById.get(id);
+    if (catalog?.nhomVthh) {
+      const type = resolveWorkshopType(catalog.nhomVthh);
+      if (type !== 'unknown') return type;
+    }
+  }
+  for (const code of secondaryProduct.maSpCodes) {
+    const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+    if (catalog?.nhomVthh) {
+      const type = resolveWorkshopType(catalog.nhomVthh);
+      if (type !== 'unknown') return type;
+    }
+  }
+
+  // 2. Dự phòng: Lấy theo sản phẩm chính của phiếu trộn
+  for (const p of formProducts) {
+    for (const id of p.maSpIds) {
+      const catalog = catalogProductsById.get(id);
+      if (catalog?.nhomVthh) {
+        const type = resolveWorkshopType(catalog.nhomVthh);
+        if (type !== 'unknown') return type;
+      }
+    }
+    for (const code of p.maSpCodes) {
+      const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+      if (catalog?.nhomVthh) {
+        const type = resolveWorkshopType(catalog.nhomVthh);
+        if (type !== 'unknown') return type;
+      }
+    }
+  }
+
+  return 'unknown';
+}
+
 function findMixingOrderByCode(orders: MixingProductionOrder[], code: string) {
   const needle = code.trim().toLowerCase();
   if (!needle) return null;
@@ -533,21 +601,19 @@ function nvlPhuToLineForms(
   idHint: string,
   materialsByCode: Map<string, MaterialOption>
 ): LineForm[] {
-  return lines.map(line =>
-    toKgLineForm(
-      {
-        key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-        materialId: '',
-        maNvl: line.ma_nvl,
-        tenNvl: line.ten_nvl,
-        tenNvlSanXuat: line.ten_nvl_san_xuat || '',
-        phanLoai: line.phan_loai || line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.phanLoai || '',
-        giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
-        donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
-      },
-      0
-    )
-  );
+  return lines.map(line => {
+    const mat = materialsByCode.get(line.ma_nvl);
+    return {
+      key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
+      materialId: mat?.id || '',
+      maNvl: line.ma_nvl,
+      tenNvl: line.ten_nvl,
+      tenNvlSanXuat: line.ten_nvl_san_xuat || '',
+      phanLoai: line.phan_loai || line.kho_ngam_dinh || mat?.phanLoai || '',
+      giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
+      donVi: line.don_vi || mat?.donViGoc || mat?.unit || 'kg'
+    };
+  });
 }
 
 function collectSavedSecondaryProducts(
@@ -814,13 +880,14 @@ type SummarizedMaterial = {
 };
 
 function secondaryMaterialTotalWeight(line: MixingNormLine) {
-  if (line.gia_tri !== null && line.gia_tri !== undefined && Number.isFinite(line.gia_tri)) return line.gia_tri;
   if (line.tong_khoi_luong !== null && line.tong_khoi_luong !== undefined && Number.isFinite(line.tong_khoi_luong)) {
     return line.tong_khoi_luong;
   }
-  return line.khoi_luong !== null && line.khoi_luong !== undefined && Number.isFinite(line.khoi_luong)
-    ? line.khoi_luong
-    : null;
+  if (line.khoi_luong !== null && line.khoi_luong !== undefined && Number.isFinite(line.khoi_luong)) {
+    return line.khoi_luong;
+  }
+  if (line.gia_tri !== null && line.gia_tri !== undefined && Number.isFinite(line.gia_tri)) return line.gia_tri;
+  return null;
 }
 
 /** Cộng khối lượng cùng NVL qua toàn bộ cối trộn; phiếu cũ dùng chi_tiet. */
@@ -1638,7 +1705,8 @@ export default function MixingNormMaterialsTab() {
         ...line,
         maNvl: material.code,
         tenNvl: material.name,
-        phanLoai: material.phanLoai || line.phanLoai
+        phanLoai: material.phanLoai || line.phanLoai,
+        donVi: material.phanLoai === 'Nguyên vật liệu phụ' ? (material.donViGoc || material.unit || 'kg') : line.donVi
       };
     }
     const sameCode = normalizeProductLookupKey(material.code) === normalizeProductLookupKey(line.maNvl);
@@ -1649,7 +1717,8 @@ export default function MixingNormMaterialsTab() {
       maNvl: material.code,
       tenNvl: material.name,
       tenNvlSanXuat: nextProduction,
-      phanLoai: material.phanLoai
+      phanLoai: material.phanLoai,
+      donVi: material.phanLoai === 'Nguyên vật liệu phụ' ? (material.donViGoc || material.unit || 'kg') : (material.unit || line.donVi || 'kg')
     };
   };
 
@@ -1959,19 +2028,33 @@ export default function MixingNormMaterialsTab() {
         const codes = item.maSpCodes.map(code => code.trim()).filter(Boolean);
         if (codes.length === 0) continue;
         const validIds = resolveValidProductIds(codes, item.maSpIds);
-        const nvl_phu = serializeLines(
-          item.lines.map(line => ({ ...line, donVi: 'kg' })),
-          0,
-          0,
-          null,
-          codes.join(', ')
-        ).map(line => ({
-          ...line,
-          khoi_luong: line.gia_tri,
-          ty_le_coi: null,
-          ty_le_tong: null,
-          tong_khoi_luong: line.gia_tri
-        }));
+        const workshopType = resolveSecondaryWorkshopType(item, form.products, catalogProductsById, catalogProducts);
+
+        const nvl_phu: MixingNormLine[] = item.lines
+          .filter(line => line.maNvl.trim() || line.tenNvl.trim())
+          .map((line, index) => {
+            const gia_tri =
+              line.giaTri.trim() === '' ? null : Number(line.giaTri.replace(',', '.'));
+            if (gia_tri !== null && !Number.isFinite(gia_tri)) {
+              throw new Error(`Giá trị NVL phụ #${index + 1} của SP ${codes.join(', ')} không hợp lệ.`);
+            }
+            const mat = findMaterialForLine(line) || materialsByCode.get(line.maNvl);
+            const nhomVatTuPhu = mat?.nhomVatTuPhu || '';
+            const donVi = line.donVi || mat?.donViGoc || 'kg';
+            const weight = calcAuxiliaryWeight(workshopType, nhomVatTuPhu, donVi, gia_tri);
+            return {
+              ma_nvl: line.maNvl.trim(),
+              ten_nvl: line.tenNvl.trim(),
+              ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
+              phan_loai: line.phanLoai.trim() || 'Nguyên vật liệu phụ',
+              gia_tri,
+              don_vi: donVi,
+              khoi_luong: weight,
+              ty_le_coi: null,
+              ty_le_tong: null,
+              tong_khoi_luong: weight
+            };
+          });
         if (nvl_phu.length === 0) continue;
         payloadProducts.push({
           loai: 'nvl_phu',
@@ -2683,12 +2766,23 @@ export default function MixingNormMaterialsTab() {
                         if (!selectedOnThisRow && takenHere.has(identity)) return false;
                         return true;
                       });
+                      const workshopType = resolveSecondaryWorkshopType(product, form.products, catalogProductsById, catalogProducts);
+                      const allowedGroups = getAllowedSecondaryGroups(workshopType);
+                      const workshopLabel =
+                        workshopType === 'rong'
+                          ? 'PX Rỗng'
+                          : workshopType === 'dac'
+                            ? 'PX Đặc'
+                            : workshopType === 'song'
+                              ? 'PX Sóng'
+                              : '';
                       return (
                         <div key={product.key} className="rounded-xl border border-amber-200 bg-white p-3 shadow-sm">
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <p className="text-xs font-black uppercase tracking-wider text-zinc-600">
                               SP phụ #{productIndex + 1}
                               {product.maSp ? ` · ${product.maSp}` : ''}
+                              {workshopLabel ? ` (${workshopLabel})` : ''}
                             </p>
                             <button
                               type="button"
@@ -2726,7 +2820,7 @@ export default function MixingNormMaterialsTab() {
                             <div className="mt-3">
                               <div className="mb-2 flex items-center justify-between gap-2">
                                 <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                                  NVL phụ
+                                  NVL phụ {workshopLabel ? `(${workshopLabel})` : ''}
                                 </p>
                                 <button
                                   type="button"
@@ -2737,68 +2831,90 @@ export default function MixingNormMaterialsTab() {
                                   Thêm NVL phụ
                                 </button>
                               </div>
-                              <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
+                              <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
                                 <span>Mã NVL</span>
                                 <span>Tên NVL</span>
                                 <span>Tên NVL sản xuất</span>
-                                <span>Tổng trọng lượng (kg)</span>
+                                <span className="text-center">ĐVT</span>
+                                <span className="text-right">Giá trị</span>
+                                <span className="text-right">Trọng lượng (kg)</span>
                                 <span />
                               </div>
                               <div className="space-y-2">
-                                {product.lines.map((line, index) => (
-                                  <div
-                                    key={line.key}
-                                    className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px]"
-                                  >
-                                    <SearchableSelect
-                                      value={materialSelectValue(line)}
-                                      onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
-                                      options={secondaryMaterialOptions}
-                                      placeholder={'Tìm NVL phụ #' + (index + 1)}
-                                      getValue={item => (item as MaterialOption).id}
-                                      getLabel={item => materialOptionLabel(item as MaterialOption)}
-                                      getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName}
-                                      inputClassName={inputClass}
-                                    />
-                                    <input
-                                      value={line.tenNvl}
-                                      readOnly
-                                      className={inputClass + ' bg-zinc-50'}
-                                      placeholder="Tên NVL"
-                                    />
-                                    <SearchableSelect
-                                      value={line.tenNvlSanXuat}
-                                      onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
-                                      options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
-                                      placeholder="Chọn hoặc nhập tên NVL sản xuất"
-                                      allowCustomValue
-                                      getValue={item => String(item)}
-                                      getLabel={item => String(item)}
-                                      getSearchText={item => String(item)}
-                                      allowEmpty
-                                      inputClassName={inputClass + ' bg-zinc-50'}
-                                    />
-                                    <input
-                                      value={line.giaTri}
-                                      onChange={event => updateSecondaryLine(product.key, line.key, {
-                                        giaTri: event.target.value
-                                      })}
-                                      className={inputClass + ' h-8 px-1 text-[10px]'}
-                                      placeholder="kg"
-                                      inputMode="decimal"
-                                      title="Tổng trọng lượng NVL phụ"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => removeSecondaryLine(product.key, line.key)}
-                                      disabled={product.lines.length <= 1}
-                                      className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-                                      title="Xóa dòng NVL phụ"
+                                {product.lines.map((line, index) => {
+                                  const lineMat = findMaterialForLine(line);
+                                  const nhomVatTuPhu = lineMat?.nhomVatTuPhu || '';
+                                  const lineVal = parseNumberOrNull(line.giaTri);
+                                  const donVi = line.donVi || lineMat?.donViGoc || 'kg';
+                                  const calcWeight = calcAuxiliaryWeight(workshopType, nhomVatTuPhu, donVi, lineVal);
+                                  const filteredOptions = filterSecondaryMaterialOptions(secondaryMaterialOptions, allowedGroups, line);
+                                  const calcWeightDisplay = calcWeight !== null ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 }).format(calcWeight)} kg` : '—';
+                                  return (
+                                    <div
+                                      key={line.key}
+                                      className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px]"
                                     >
-                                      <Trash2 className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                ))}
+                                      <SearchableSelect
+                                        value={materialSelectValue(line)}
+                                        onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
+                                        options={filteredOptions}
+                                        placeholder={'Tìm NVL phụ #' + (index + 1)}
+                                        getValue={item => (item as MaterialOption).id}
+                                        getLabel={item => materialOptionLabel(item as MaterialOption)}
+                                        getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName + ' ' + ((item as MaterialOption).nhomVatTuPhu || '')}
+                                        inputClassName={inputClass}
+                                      />
+                                      <input
+                                        value={line.tenNvl}
+                                        readOnly
+                                        className={inputClass + ' bg-zinc-50'}
+                                        placeholder="Tên NVL"
+                                      />
+                                      <SearchableSelect
+                                        value={line.tenNvlSanXuat}
+                                        onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
+                                        options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
+                                        placeholder="Chọn hoặc nhập tên NVL sản xuất"
+                                        allowCustomValue
+                                        getValue={item => String(item)}
+                                        getLabel={item => String(item)}
+                                        getSearchText={item => String(item)}
+                                        allowEmpty
+                                        inputClassName={inputClass + ' bg-zinc-50'}
+                                      />
+                                      <input
+                                        value={donVi}
+                                        readOnly
+                                        className={inputClass + ' bg-zinc-50 text-center text-xs font-bold text-zinc-600'}
+                                        title="Đơn vị tính"
+                                      />
+                                      <input
+                                        value={line.giaTri}
+                                        onChange={event => updateSecondaryLine(product.key, line.key, {
+                                          giaTri: event.target.value
+                                        })}
+                                        className={inputClass + ' text-right'}
+                                        inputMode="decimal"
+                                        title="Giá trị NVL phụ"
+                                      />
+                                      <input
+                                        value={calcWeightDisplay}
+                                        readOnly
+                                        className={inputClass + ' bg-zinc-50 text-right font-bold text-amber-900'}
+                                        title="Trọng lượng (kg) tự động tính"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => removeSecondaryLine(product.key, line.key)}
+                                        disabled={product.lines.length <= 1}
+                                        className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                        title="Xóa dòng NVL phụ"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           ) : (
