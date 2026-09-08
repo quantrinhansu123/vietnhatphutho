@@ -88,9 +88,25 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
         const doLi = pickText(row, ['do_li', 'doLi'], '');
         const kho = pickText(row, ['kho'], '');
         const daiM = pickText(row, ['dai_m', 'daiM'], '');
-        const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp'], '');
-        const tongKg = pickText(row, ['tong_kg', 'tongKg'], '');
-        const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource'], '');
+        const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp', 'tl_tam', 'tlTam'], '');
+        const tongKg = pickText(row, ['tong_kg', 'tongKg', 'trong_luong', 'trong_luong_kg'], '');
+        const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource', 'conversion_source'], '');
+        const rawQuyCachMDai = pickText(row, ['quy_cach_m_dai', 'quyCachMDai'], '');
+        const rawQuyCach = pickText(row, ['quy_cach', 'quyCach'], '');
+        let resolvedQuyCachMDai = rawQuyCachMDai;
+        if (!resolvedQuyCachMDai && rawQuyCach) {
+          const match = rawQuyCach.match(/(\d+(?:[.,]\d+)?)/);
+          if (match) resolvedQuyCachMDai = match[1].replace(',', '.');
+        }
+        if (!resolvedQuyCachMDai && daiM && Number(daiM) > 0) {
+          resolvedQuyCachMDai = daiM;
+        }
+        const quyCachMDai = resolvedQuyCachMDai;
+        const quyCach = quyCachMDai ? `Dài ${quyCachMDai}m` : rawQuyCach;
+        const tlCuon = pickText(row, ['tl_cuon', 'tlCuon', 'kg_cuon', 'trong_luong_kg_cuon'], '');
+        const tlTam = pickText(row, ['tl_tam', 'tlTam', 'trong_luong_kg_tam'], '');
+        const m2 = pickText(row, ['m2', 'dien_tich_m2'], '');
+        const mDai = pickText(row, ['m_dai', 'mDai', 'met_dai', 'chieu_dai_m'], '');
         const note = pickText(row, ['ghi_chu', 'note'], '');
         if (!productCode && !productName) return null;
         return {
@@ -108,6 +124,12 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
           tongKg: tongKg || undefined,
           conversionSource: conversionSource || undefined,
           note: note || undefined,
+          quyCach: quyCach || undefined,
+          quyCachMDai: quyCachMDai || undefined,
+          tlCuon: tlCuon || undefined,
+          tlTam: tlTam || undefined,
+          m2: m2 || undefined,
+          mDai: mDai || undefined,
           conversionResults: Array.isArray(row.ket_qua_quy_doi)
             ? row.ket_qua_quy_doi.map(item => {
                 const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};

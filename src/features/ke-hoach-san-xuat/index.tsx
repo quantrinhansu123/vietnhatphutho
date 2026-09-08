@@ -48,6 +48,7 @@ import {
 import {
   expandMergedProductionProducts,
   expandProductionOrderProductLines,
+  formatProductionNameWithLength,
   splitProductionProductCodes,
   splitProductionProductNames,
   splitProductionFieldValues,
@@ -122,6 +123,7 @@ export interface ProductionOrderRow {
   productCode: string;
   productName: string;
   productionName: string;
+  quyCachMDai?: number | string;
   quantity: string;
   unit: string;
   products: OrderProductLine[];
@@ -260,10 +262,14 @@ export function formatProductionOrderProductsSummary(row: Pick<ProductionOrderRo
   if (products.length === 0) return '-';
   if (products.length === 1) {
     const product = products[0];
-    return `${product.productCode || '-'} · ${product.productName || '-'} · ${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}`;
+    const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai);
+    return `${product.productCode || '-'} · ${name} · ${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}`;
   }
   return products
-    .map(product => `${product.productCode || '-'} (${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''})`)
+    .map(product => {
+      const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai);
+      return `${product.productCode || '-'} (${name}) (${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''})`;
+    })
     .join(' | ');
 }
 
@@ -3772,6 +3778,7 @@ export function normalizeProductionOrders(data: unknown): ProductionOrderRow[] {
         productCode: summary.productCode,
         productName: summary.productName,
         productionName: products[0]?.productionName || '',
+        quyCachMDai: products[0]?.quyCachMDai || pickText(record, ['quy_cach_m_dai', 'quyCachMDai'], '') || undefined,
         quantity: summary.quantity,
         unit: summary.unit,
         products,
@@ -4323,7 +4330,7 @@ export function ProductionOrderPrintSheet({
                 return (
                 <tr key={`${line.productCode}-${index}`}>
                   <td>{line.productCode || '-'}</td>
-                  <td className="production-order-print-product-name-cell">{line.productionName || line.productName || '-'}</td>
+                  <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(line.productionName || line.productName, line.quyCachMDai)}</td>
                   <td className="production-order-print-center">{line.unit && line.unit !== '-' ? line.unit : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.quantity)}</td>
                   <td className="production-order-print-right">{weight}</td>
@@ -4344,7 +4351,7 @@ export function ProductionOrderPrintSheet({
                 return (
               <tr>
                 <td>{order.productCode || '-'}</td>
-                <td className="production-order-print-product-name-cell">{order.productName || '-'}</td>
+                <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(order.productionName || order.productName, (order as any).quyCachMDai || (order as any).products?.[0]?.quyCachMDai)}</td>
                 <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
                 <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
                 <td className="production-order-print-right">{weight}</td>
@@ -4980,27 +4987,46 @@ export function buildProductionEntryLine(
   productName = '',
   unit = '',
   productionName = '',
-  productId = ''
-): Pick<ProductionOrderEntryLine, 'productCode' | 'productName' | 'productionName' | 'quantity' | 'unit' | 'productId'> {
-  const remaining = getRemainingProductionQuantity(orders, productionOrders, orderRef, productCode, productId, productionName);
-  const line = orders
+  productId = '',
+  sourceLine?: OrderProductLine,
+  sourceRemaining?: number
+): Omit<ProductionOrderEntryLine, 'key' | 'orderRef'> {
+  const line = sourceLine ?? orders
     .filter(order => order.orderCode === orderRef)
     .flatMap(order => getOrderProductLines(order))
     .find(item => productLineMatches(item, productCode, productId, productionName));
+  const remaining = sourceRemaining ?? getRemainingProductionQuantity(
+    orders,
+    productionOrders,
+    orderRef,
+    productCode,
+    productId,
+    productionName
+  );
+  const sourceProductId = line?.productId?.trim() || '';
   return {
     productCode,
     productName,
     productionName: productionName || line?.productionName || '',
     quantity: remaining > 0 ? String(remaining) : '',
     unit: unit || getOrderProductUnit(orders, orderRef, productCode, productId, productionName),
-    productId: productId.trim() || line?.productId
+    // Chỉ lấy ID thật trên dòng don_hang.san_pham; không fallback từ catalog/ô chọn.
+    productId: sourceProductId || undefined,
+    ...productionEntryMetadataFromOrderLine(line)
   };
 }
 
-export function autofillProductKey(orderRef: string, productCode: string, productId = '', productionName = '') {
+export function autofillProductKey(
+  orderRef: string,
+  productCode: string,
+  productId = '',
+  productionName = '',
+  sourceLineKey = ''
+) {
   const normalizedProductId = productId.trim();
   const base = normalizedProductId ? `${orderRef}::${normalizedProductId}` : `${orderRef}::code:${productCode}`;
-  return productionName.trim() ? `${base}::${productionName.trim()}` : base;
+  const withName = productionName.trim() ? `${base}::${productionName.trim()}` : base;
+  return sourceLineKey ? `${withName}::line:${sourceLineKey}` : withName;
 }
 
 function getOrderCreatedAtTimestamp(value: string) {
@@ -5026,6 +5052,33 @@ function compareOrderCodesNewestFirst(left: string, right: string) {
     return rightNumber - leftNumber;
   }
   return right.localeCompare(left, 'vi');
+}
+
+function getOrderEffectiveTimestamp(order: OrderRow | undefined): number {
+  if (!order) return 0;
+  const created = getOrderCreatedAtTimestamp(order.createdAt);
+  if (created > 0) return created;
+  const orderDateParsed = Date.parse(order.orderDate || '');
+  if (Number.isFinite(orderDateParsed)) return orderDateParsed;
+  return 0;
+}
+
+export function sortOrderCodesNewestFirst(orderCodes: string[], orders: OrderRow[]): string[] {
+  const orderMap = new Map<string, OrderRow>();
+  for (const order of orders) {
+    if (order.orderCode && !orderMap.has(order.orderCode)) {
+      orderMap.set(order.orderCode, order);
+    }
+  }
+
+  return [...orderCodes].sort((codeA, codeB) => {
+    const orderA = orderMap.get(codeA);
+    const orderB = orderMap.get(codeB);
+    const timeA = getOrderEffectiveTimestamp(orderA);
+    const timeB = getOrderEffectiveTimestamp(orderB);
+    if (timeB !== timeA) return timeB - timeA;
+    return compareOrderCodesNewestFirst(codeA, codeB);
+  });
 }
 
 export function splitProductionOrderRefs(orderRef: string): string[] {
@@ -5080,75 +5133,62 @@ export function listProductOptionsForOrder(
   const fromOrders = orders
     .filter(order => order.orderCode === orderRef)
     .flatMap(order =>
-      getOrderProductLines(order).map(line => ({
+      getOrderProductLines(order).map((line, lineIndex) => ({
         code: line.productCode,
         name: line.productName,
         productionName: line.productionName || '',
         unit: line.unit && line.unit !== '-' ? line.unit : '',
         productId: line.productId || undefined,
-        group: ''
+        group: '',
+        line,
+        lineIndex
       }))
     )
     .filter(item => (item.code && item.code !== '-') || Boolean(item.productId?.trim()));
 
-  const unique = new Map<string, { code: string; name: string; productionName: string; unit: string; productId?: string; group: string }>();
-  fromOrders.forEach(item => {
-    const key = item.productId?.trim()
-      ? `id:${item.productId.trim()}`
-      : `code:${normalizeProductCodeKey(item.code)}::${item.productionName.trim().toLowerCase()}`;
-
-    const existing = unique.get(key);
-    if (existing) {
-      existing.name = existing.name || item.name || item.code;
-      existing.productionName = existing.productionName || item.productionName;
-      existing.unit = existing.unit || item.unit;
-      return;
-    }
-    unique.set(key, {
-      code: item.code,
-      name: item.name || item.code,
-      productionName: item.productionName,
-      unit: item.unit,
-      productId: item.productId,
-      group: item.group
-    });
-  });
-
-  return [...unique.values()]
-    .map(meta => {
+  const orderedBeforeByProduct = new Map<string, number>();
+  return fromOrders.map(meta => {
       const code = meta.code;
-      const catalogProduct = resolveProductionCatalogProduct(
-        catalogProducts,
+      const sourceProductId = meta.productId?.trim() || '';
+      // san_pham_id của dòng đơn hàng là nguồn duy nhất. Nếu ID không còn trong
+      // catalog thì không được dò theo mã/tên rồi âm thầm thay bằng sản phẩm khác.
+      const catalogProduct = sourceProductId
+        ? catalogProducts.find(product => product.id === sourceProductId)
+        : undefined;
+      const productIdentity = sourceProductId
+        ? `id:${sourceProductId}`
+        : `code:${normalizeProductCodeKey(meta.code)}::${meta.productionName.trim().toLowerCase()}`;
+      const orderQty = parseRowQuantity(meta.line.quantity);
+      const orderedBefore = orderedBeforeByProduct.get(productIdentity) ?? 0;
+      const allocatedQty = getAllocatedProductionQuantity(
+        productionOrders,
+        orderRef,
         code,
-        meta.productId,
-        meta.name,
+        sourceProductId,
         meta.productionName
       );
-      const resolvedProductId = catalogProduct?.id || meta.productId || '';
-      const optionKey = resolvedProductId
-        ? `id:${resolvedProductId.trim()}`
-        : `code:${meta.code}::${meta.productionName || ''}`;
+      const allocatedToThisLine = Math.max(0, Math.min(orderQty, allocatedQty - orderedBefore));
+      orderedBeforeByProduct.set(productIdentity, orderedBefore + orderQty);
 
       return {
-        id: resolvedProductId,
-        optionKey,
+        id: sourceProductId,
+        // Mỗi dòng JSON đơn hàng là một lựa chọn riêng, kể cả khi trùng sản phẩm.
+        optionKey: `${productIdentity}::line:${meta.lineIndex}:${meta.line.stt ?? meta.lineIndex + 1}`,
         code,
-        name: catalogProduct?.name || meta.name,
+        name: meta.name || catalogProduct?.name || code,
         productionName: meta.productionName || catalogProduct?.productionName || '',
         // ĐVT trong đơn hàng là nguồn chính; danh mục sản phẩm chỉ fallback
         // cho dữ liệu đơn hàng cũ bị thiếu ĐVT.
         unit: meta.unit || (catalogProduct?.unit && catalogProduct.unit !== '-' ? catalogProduct.unit : ''),
-        productId: resolvedProductId,
+        productId: sourceProductId,
         group: catalogProduct?.group || meta.group,
         newCode: catalogProduct?.newCode || '',
-        orderQty: getOrderProductQuantity(orders, orderRef, code, resolvedProductId, meta.productionName),
-        remainingQty: getRemainingProductionQuantity(orders, productionOrders, orderRef, code, resolvedProductId, meta.productionName)
+        orderQty,
+        remainingQty: Math.max(0, orderQty - allocatedToThisLine),
+        orderProductStt: meta.line.stt ?? meta.lineIndex + 1,
+        lineIndex: meta.lineIndex,
+        sourceLine: meta.line
       };
-    })
-    .sort((a, b) => {
-      const codeCompare = a.code.localeCompare(b.code, 'vi');
-      if (codeCompare !== 0) return codeCompare;
-      return a.productionName.localeCompare(b.productionName, 'vi');
     });
 }
 
@@ -5161,7 +5201,71 @@ export type ProductionOrderEntryLine = {
   productionName: string;
   quantity: string;
   unit: string;
+  orderProductStt?: number;
+  conversionResults?: Array<{ unit: string; value: number }>;
+  doLi?: string;
+  kho?: string;
+  daiM?: string;
+  kg1Sp?: string;
+  tongKg?: string;
+  conversionSource?: string;
+  note?: string;
+  quyCachMDai?: number | string;
+  tlCuon?: string;
+  tlTam?: string;
+  m2?: string;
+  mDai?: string;
 };
+
+function productionEntryMetadataFromOrderLine(line?: OrderProductLine): Partial<ProductionOrderEntryLine> {
+  if (!line) return {};
+  return {
+    orderProductStt: line.stt,
+    conversionResults: line.conversionResults?.map(item => ({ ...item })),
+    doLi: line.doLi,
+    kho: line.kho,
+    daiM: line.daiM,
+    kg1Sp: line.kg1Sp,
+    tongKg: line.tongKg,
+    conversionSource: line.conversionSource,
+    note: line.note,
+    quyCachMDai: line.quyCachMDai,
+    tlCuon: line.tlCuon,
+    tlTam: line.tlTam,
+    m2: line.m2,
+    mDai: line.mDai
+  };
+}
+
+function emptyProductionEntryMetadata(): Partial<ProductionOrderEntryLine> {
+  return {
+    orderProductStt: undefined,
+    conversionResults: undefined,
+    doLi: undefined,
+    kho: undefined,
+    daiM: undefined,
+    kg1Sp: undefined,
+    tongKg: undefined,
+    conversionSource: undefined,
+    note: undefined,
+    quyCachMDai: undefined,
+    tlCuon: undefined,
+    tlTam: undefined,
+    m2: undefined,
+    mDai: undefined
+  };
+}
+
+function productionEntryConversionValue(line: ProductionOrderEntryLine, unit: 'kg' | 'm2' | 'm dài'): number | null {
+  const normalizeUnit = (value: string) => value.trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
+  const result = line.conversionResults?.find(item => normalizeUnit(item.unit) === normalizeUnit(unit));
+  if (result && Number.isFinite(result.value)) return result.value;
+  const fallback = unit === 'kg' ? line.tongKg : unit === 'm2' ? line.m2 : line.mDai;
+  const parsed = fallback ? parseProductionOrderQuantity(fallback) : 0;
+  return parsed > 0 ? parsed : null;
+}
+
+export { formatProductionNameWithLength };
 
 export type ProductionOrderFormState = {
   code: string;
@@ -5218,16 +5322,39 @@ export function productionOrderFormToCreatePayload(
   form: ProductionOrderFormState,
   lines: ProductionOrderEntryLine[]
 ) {
-  const products = lines.map((line, index) => ({
-    san_pham_id: line.productId || null,
-    ma_don_hang: line.orderRef.trim(),
-    ma_sp: line.productCode.trim(),
-    ten_sp: line.productName.trim(),
-    ten_san_xuat: (line.productionName || '').trim(),
-    don_vi: line.unit.trim(),
-    so_luong: Number(line.quantity),
-    stt: index + 1
-  }));
+  const optionalNumber = (value: string | number | undefined) => {
+    const numeric = Number(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+  };
+  const products = lines.map((line, index) => {
+    const quyCachMDai = optionalNumber(line.quyCachMDai ?? line.daiM);
+    const conversionResults = line.conversionResults
+      ?.filter(item => item.unit.trim() && Number.isFinite(item.value))
+      .map(item => ({ don_vi: item.unit.trim(), gia_tri: item.value }));
+    return {
+      san_pham_id: line.productId || null,
+      ma_don_hang: line.orderRef.trim(),
+      ma_sp: line.productCode.trim(),
+      ten_sp: line.productName.trim(),
+      ten_san_xuat: (line.productionName || '').trim(),
+      don_vi: line.unit.trim(),
+      so_luong: Number(line.quantity),
+      stt: index + 1,
+      ...(line.doLi?.trim() ? { do_li: line.doLi.trim() } : {}),
+      ...(optionalNumber(line.kho) ? { kho: optionalNumber(line.kho) } : {}),
+      ...(optionalNumber(line.daiM) ? { dai_m: optionalNumber(line.daiM) } : {}),
+      ...(line.note?.trim() ? { ghi_chu: line.note.trim() } : {}),
+      ...(quyCachMDai ? { quy_cach_m_dai: quyCachMDai } : {}),
+      ...(optionalNumber(line.kg1Sp) ? { kg_1_sp: optionalNumber(line.kg1Sp) } : {}),
+      ...(optionalNumber(line.tongKg) ? { tong_kg: optionalNumber(line.tongKg) } : {}),
+      ...(line.conversionSource?.trim() ? { nguon_quy_doi: line.conversionSource.trim() } : {}),
+      ...(optionalNumber(line.tlCuon) ? { tl_cuon: optionalNumber(line.tlCuon) } : {}),
+      ...(optionalNumber(line.tlTam) ? { tl_tam: optionalNumber(line.tlTam) } : {}),
+      ...(optionalNumber(line.m2) ? { m2: optionalNumber(line.m2) } : {}),
+      ...(optionalNumber(line.mDai) ? { m_dai: optionalNumber(line.mDai) } : {}),
+      ...(conversionResults?.length ? { ket_qua_quy_doi: conversionResults } : {})
+    };
+  });
   const summary = summarizeOrderProducts(
     products.map(product => ({
       productCode: product.ma_sp,
@@ -5292,13 +5419,13 @@ export function AddProductionOrderModal({
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductRow[]>([]);
-  const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [showAutofillOrders, setShowAutofillOrders] = useState(false);
   const [autofillSearch, setAutofillSearch] = useState('');
   const [selectedAutofillOrderCodes, setSelectedAutofillOrderCodes] = useState<string[]>([]);
   const [selectedAutofillProductKeys, setSelectedAutofillProductKeys] = useState<string[]>([]);
   const [autofillProductOrderFilter, setAutofillProductOrderFilter] = useState('all');
   const [autofillProductSearch, setAutofillProductSearch] = useState('');
+  const [autofillAppendMode, setAutofillAppendMode] = useState(false);
   const [showAddLine, setShowAddLine] = useState(false);
   const [lineDraftOrderRef, setLineDraftOrderRef] = useState('');
   const [lineDraftProductCode, setLineDraftProductCode] = useState('');
@@ -5322,6 +5449,7 @@ export function AddProductionOrderModal({
     setSelectedAutofillProductKeys([]);
     setAutofillProductOrderFilter('all');
     setAutofillProductSearch('');
+    setAutofillAppendMode(false);
     setShowAddLine(false);
     setLineDraftOrderRef('');
     setLineDraftProductCode('');
@@ -5332,13 +5460,12 @@ export function AddProductionOrderModal({
 
   const loadLookups = async () => {
       try {
-        const [orderRes, productionRes, machineRes, settingRes, productRes, conversionRes] = await Promise.all([
+        const [orderRes, productionRes, machineRes, settingRes, productRes] = await Promise.all([
           fetch('/api/don-hang'),
           fetch('/api/lenh-sx'),
           fetch('/api/danh-sach-may'),
           fetch('/api/cai-dat'),
-          fetch('/api/san-pham?format=table'),
-          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=1000')
+          fetch('/api/san-pham?format=table')
         ]);
 
         const orderData = await orderRes.json().catch(() => ({}));
@@ -5346,7 +5473,6 @@ export function AddProductionOrderModal({
         const machineData = await machineRes.json().catch(() => ({}));
         const settingData = await settingRes.json().catch(() => ({}));
         const productData = await productRes.json().catch(() => ({}));
-        const conversionData = await conversionRes.json().catch(() => ({}));
 
         if (orderRes.ok) setOrders(normalizeOrders(orderData));
         if (productionRes.ok) setProductionOrders(normalizeProductionOrders(productionData));
@@ -5354,19 +5480,8 @@ export function AddProductionOrderModal({
         if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
         if (productRes.ok) setCatalogProducts(normalizeProducts(productData));
 
-        if (conversionRes.ok) {
-          const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
-          const conversionTotal = Number(conversionData.total) || conversions.length;
-          for (let page = 2; conversions.length < conversionTotal; page += 1) {
-            const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
-            conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
-          }
-          setProductConversions(conversions);
-        }
       } catch (error: any) {
-        setFormError(error?.message || 'Không thể tải dữ liệu đơn hàng, máy, ca và quy đổi sản phẩm.');
+        setFormError(error?.message || 'Không thể tải dữ liệu đơn hàng, máy và ca.');
       } finally {
         setIsLoadingLookups(false);
       }
@@ -5487,29 +5602,43 @@ export function AddProductionOrderModal({
       });
   }, [autofillSearch, ordersWithProductionProducts]);
 
+  const sortedSelectedOrderCodes = useMemo(
+    () => sortOrderCodesNewestFirst(selectedAutofillOrderCodes, orders),
+    [selectedAutofillOrderCodes, orders]
+  );
+
   const autofillProductCandidates = useMemo(() => {
-    return selectedAutofillOrderCodes.flatMap(orderRef =>
-      listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
+    return sortedSelectedOrderCodes.flatMap(orderRef => {
+      return listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
         .filter(product => product.orderQty > 0 && product.remainingQty > 0)
         .map(product => ({
-          key: autofillProductKey(orderRef, product.code, product.productId, product.productionName),
-          orderRef,
-          productId: product.productId,
-          productCode: product.code,
-          productName: product.name,
-          productionName: product.productionName,
-          unit: product.unit,
-          remainingQty: product.remainingQty
-        }))
-    );
-  }, [selectedAutofillOrderCodes, ordersForSelectedDate, productionOrders, catalogProducts]);
+            key: autofillProductKey(
+              orderRef,
+              product.code,
+              product.productId,
+              product.productionName,
+              `${product.lineIndex}:${product.orderProductStt}`
+            ),
+            orderRef,
+            productId: product.productId,
+            productCode: product.code,
+            productName: product.name,
+            productionName: product.productionName,
+            unit: product.unit,
+            remainingQty: product.remainingQty,
+            lineIndex: product.lineIndex,
+            sourceLine: product.sourceLine
+          }))
+        .sort((a, b) => a.lineIndex - b.lineIndex);
+    });
+  }, [sortedSelectedOrderCodes, orders, ordersForSelectedDate, productionOrders, catalogProducts]);
 
   const autofillOrderFilterOptions = useMemo(
     () => [
-      { value: 'all', label: `Tất cả đơn đã chọn (${selectedAutofillOrderCodes.length})` },
-      ...selectedAutofillOrderCodes.map(orderCode => ({ value: orderCode, label: orderCode }))
+      { value: 'all', label: `Tất cả đơn đã chọn (${sortedSelectedOrderCodes.length})` },
+      ...sortedSelectedOrderCodes.map(orderCode => ({ value: orderCode, label: orderCode }))
     ],
-    [selectedAutofillOrderCodes]
+    [sortedSelectedOrderCodes]
   );
 
   const filteredAutofillProducts = useMemo(() => {
@@ -5522,7 +5651,7 @@ export function AddProductionOrderModal({
     if (!normalized) return byOrder;
 
     return byOrder.filter(item =>
-      `${item.productCode} ${item.productName} ${item.orderRef} ${item.unit}`
+      `${item.productCode} ${item.productName} ${item.productionName} ${item.sourceLine.quyCachMDai ?? ''} ${item.orderRef} ${item.unit}`
         .toLowerCase()
         .includes(normalized)
     );
@@ -5562,7 +5691,7 @@ export function AddProductionOrderModal({
   };
 
   const applyAutofillOrders = () => {
-    const selectedCodes = [...new Set(selectedAutofillOrderCodes.map(code => code.trim()).filter(Boolean))];
+    const selectedCodes = [...new Set(sortedSelectedOrderCodes.map(code => code.trim()).filter(Boolean))];
     if (selectedCodes.length === 0) {
       setFormError('Vui lòng tick ít nhất một đơn hàng để tự điền.');
       return;
@@ -5588,14 +5717,33 @@ export function AddProductionOrderModal({
         product.productName,
         product.unit,
         product.productionName,
-        product.productId
+        product.productId,
+        product.sourceLine,
+        product.remainingQty
       )
     }));
 
-    setForm(prev => ({
-      ...prev,
-      entryLines: nextLines
-    }));
+    setForm(prev => {
+      const hasExistingData = prev.entryLines.some(
+        line => line.orderRef.trim() || line.productCode.trim() || Number(line.quantity) > 0
+      );
+
+      if (!hasExistingData || !autofillAppendMode) {
+        return {
+          ...prev,
+          entryLines: nextLines
+        };
+      }
+
+      const validExisting = prev.entryLines.filter(
+        line => line.orderRef.trim() && line.productCode.trim()
+      );
+      return {
+        ...prev,
+        entryLines: [...validExisting, ...nextLines]
+      };
+    });
+
     setFormError('');
     setShowAutofillOrders(false);
   };
@@ -5637,27 +5785,29 @@ export function AddProductionOrderModal({
       productionOrders,
       catalogProducts,
       orderRef
-    ).find(item => item.code === productCode);
+    ).find(item => item.optionKey === productCode || item.code === productCode);
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
       orderRef,
-      productCode,
+      selectedProduct?.code || productCode,
       selectedProduct?.name || '',
       selectedProduct?.unit || '',
       selectedProduct?.productionName || '',
-      selectedProduct?.id || ''
+      selectedProduct?.id || '',
+      selectedProduct?.sourceLine,
+      selectedProduct?.remainingQty
     );
 
     const newLine: ProductionOrderEntryLine = {
       key: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       orderRef,
-      productId: built.productId,
-      productCode,
+      ...built,
+      productCode: selectedProduct?.code || productCode,
       productName: built.productName || built.productCode,
       productionName: built.productionName || '',
       quantity: String(quantity),
-      unit: built.unit || built.productCode
+      unit: built.unit
     };
 
     setForm(prev => ({
@@ -5687,7 +5837,8 @@ export function AddProductionOrderModal({
       productName: '',
       productionName: '',
       quantity: '',
-      unit: ''
+      unit: '',
+      ...emptyProductionEntryMetadata()
     };
     if (options.length === 1) {
       const product = options[0];
@@ -5701,7 +5852,9 @@ export function AddProductionOrderModal({
           product.name,
           product.unit,
           product.productionName,
-          product.id
+          product.id,
+          product.sourceLine,
+          product.orderQty
         )
       };
     }
@@ -5722,7 +5875,8 @@ export function AddProductionOrderModal({
         productionName: '',
         quantity: '',
         unit: '',
-        productId: ''
+        productId: '',
+        ...emptyProductionEntryMetadata()
       });
       return;
     }
@@ -5737,6 +5891,7 @@ export function AddProductionOrderModal({
 
     const isSameProduct = Boolean(
       currentLine &&
+      currentLine.orderProductStt === product.orderProductStt &&
       (
         (product.productId && currentLine.productId && product.productId === currentLine.productId) ||
         (product.code && currentLine.productCode && product.code.trim() === currentLine.productCode.trim())
@@ -5747,6 +5902,9 @@ export function AddProductionOrderModal({
     );
 
     if (isSameProduct) {
+      if (!currentLine?.quantity.trim() && product.orderQty > 0) {
+        updateEntryLine(key, { quantity: String(product.orderQty) });
+      }
       return;
     }
 
@@ -5758,7 +5916,9 @@ export function AddProductionOrderModal({
       product.name,
       product.unit,
       product.productionName,
-      product.productId
+      product.productId,
+      product.sourceLine,
+      product.orderQty
     );
     updateEntryLine(key, built);
   };
@@ -6074,23 +6234,24 @@ export function AddProductionOrderModal({
                     );
                     const selectedProduct =
                       productOptions.find(item =>
+                        line.orderProductStt !== undefined &&
+                        item.orderProductStt === line.orderProductStt &&
+                        (line.productId ? item.productId === line.productId : item.code === line.productCode)
+                      ) ||
+                      productOptions.find(item =>
                         (line.productId ? item.productId === line.productId : item.code === line.productCode) &&
                         (line.productionName ? item.productionName === line.productionName : true)
                       ) ||
                       productOptions.find(item =>
                         line.productId ? item.productId === line.productId : item.code === line.productCode
                       );
-                    const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
-                    const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
                     const allowedUnits = allowedOrderUnits(selectedProduct);
                     const effectiveUnit = selectedProduct
                       ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
                       : line.unit;
-                    const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
-
-                    const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
-                    const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
-                    const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
+                    const kgValue = productionEntryConversionValue(line, 'kg');
+                    const m2Value = productionEntryConversionValue(line, 'm2');
+                    const mdaiValue = productionEntryConversionValue(line, 'm dài');
 
                     return (
                       <div
@@ -6200,14 +6361,21 @@ export function AddProductionOrderModal({
                                     : product.orderQty > 0
                                       ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0`
                                       : '';
-                                return product.code ? `${product.code} - ${product.productionName || product.name}${remaining}` : product.name;
+                                const productName = formatProductionNameWithLength(
+                                  product.productionName || product.name,
+                                  product.sourceLine.quyCachMDai
+                                );
+                                return product.code ? `${product.code} - ${productName}${remaining}` : productName;
                               }}
                               getValue={item => (item as (typeof productOptions)[number]).optionKey}
                             />
                           </div>
                           <div className="w-full min-w-0">
                             <input
-                              value={line.productionName || selectedProduct?.productionName || line.productName}
+                              value={formatProductionNameWithLength(
+                                line.productionName || selectedProduct?.productionName || line.productName,
+                                line.quyCachMDai
+                              )}
                               readOnly
                               className={`${orderFieldClass} bg-white text-[#18181b]`}
                               placeholder="Tự điền theo mã hàng"
@@ -6582,7 +6750,12 @@ export function AddProductionOrderModal({
                                     Còn {formatNumber(product.remainingQty, 0)} {product.unit || ''} · SL Tồn 0
                                   </span>
                                 </div>
-                                <p className="mt-0.5 text-xs font-semibold text-zinc-600">{product.productionName || product.productName || '-'}</p>
+                                <p className="mt-0.5 text-xs font-semibold text-zinc-600">
+                                  {formatProductionNameWithLength(
+                                    product.productionName || product.productName,
+                                    product.sourceLine.quyCachMDai
+                                  )}
+                                </p>
                               </div>
                             </label>
                           );
@@ -6595,9 +6768,22 @@ export function AddProductionOrderModal({
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-              <span className="text-xs font-bold text-zinc-500">
-                Đã chọn {selectedAutofillOrderCodes.length} đơn · {selectedAutofillProductKeys.length} sản phẩm
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs font-bold text-zinc-500">
+                  Đã chọn {selectedAutofillOrderCodes.length} đơn · {selectedAutofillProductKeys.length} sản phẩm
+                </span>
+                {form.entryLines.some(l => l.orderRef.trim() || l.productCode.trim()) && (
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-bold text-zinc-700 hover:bg-zinc-50">
+                    <input
+                      type="checkbox"
+                      checked={autofillAppendMode}
+                      onChange={e => setAutofillAppendMode(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                    />
+                    <span>Nối thêm vào dòng hiện có (không xóa dòng cũ)</span>
+                  </label>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -6653,6 +6839,7 @@ export function AddProductionOrderModal({
                   onChange={orderRef => {
                     setLineDraftOrderRef(orderRef);
                     setLineDraftProductCode('');
+                    setLineDraftQuantity('');
                   }}
                   options={orderCodeOptions}
                   placeholder="Gõ để tìm mã đơn2"
@@ -6667,7 +6854,16 @@ export function AddProductionOrderModal({
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã hàng *</span>
                 <SearchableSelect
                   value={lineDraftProductCode}
-                  onChange={setLineDraftProductCode}
+                  onChange={optionKey => {
+                    setLineDraftProductCode(optionKey);
+                    const product = listProductOptionsForOrder(
+                      ordersForSelectedDate,
+                      productionOrders,
+                      catalogProducts,
+                      lineDraftOrderRef
+                    ).find(item => item.optionKey === optionKey);
+                    setLineDraftQuantity(product?.orderQty > 0 ? String(product.orderQty) : '');
+                  }}
                   options={listProductOptionsForOrder(
                     ordersForSelectedDate,
                     productionOrders,
@@ -6679,12 +6875,16 @@ export function AddProductionOrderModal({
                   isLoading={isLoadingLookups}
                   inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
                   getLabel={item => {
-                    const product = item as { code: string; name: string; productionName?: string; orderQty: number; remainingQty: number };
+                    const product = item as ReturnType<typeof listProductOptionsForOrder>[number];
+                    const productName = formatProductionNameWithLength(
+                      product.productionName || product.name,
+                      product.sourceLine.quyCachMDai
+                    );
                     return product.code
-                      ? `${product.code} - ${product.productionName || product.name}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0` : ''}`
-                      : product.name;
+                      ? `${product.code} - ${productName}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0` : ''}`
+                      : productName;
                   }}
-                  getValue={item => (item as { code: string }).code}
+                  getValue={item => (item as ReturnType<typeof listProductOptionsForOrder>[number]).optionKey}
                 />
               </label>
 
@@ -7186,7 +7386,7 @@ export function ProductionOrderViewModal({
                   <tr key={`${product.productCode}-${index}`}>
                     <td className="px-3 py-2 text-center font-bold text-zinc-500">{product.stt || (index + 1)}</td>
                     <td className="px-3 py-2 font-black text-zinc-950">{product.productCode || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{product.productionName || product.productName || '-'}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-700">{formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai)}</td>
                     <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{product.quantity || '-'}</td>
                     <td className="px-3 py-2 text-zinc-600">{product.unit && product.unit !== '-' ? product.unit : '-'}</td>
                   </tr>
@@ -7230,7 +7430,6 @@ export function EditProductionOrderModal({
   const [form, setForm] = useState<ProductionOrderFormState>(emptyProductionOrderForm);
   const [selectedShift, setSelectedShift] = useState('');
   const [settings, setSettings] = useState<ProductionOrderLookupSetting[]>([]);
-  const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -7259,13 +7458,10 @@ export function EditProductionOrderModal({
       entryLines:
         productLines.length > 0
           ? productLines.map((product, index) => {
-              const catalogProduct = resolveProductionCatalogProduct(
-                catalogProducts,
-                product.productCode,
-                product.productId || '',
-                product.productName,
-                product.productionName
-              );
+              const sourceProductId = product.productId?.trim() || '';
+              const catalogProduct = sourceProductId
+                ? catalogProducts.find(item => item.id === sourceProductId)
+                : undefined;
               const productionName =
                 (product.productionName && product.productionName !== '-' ? product.productionName : '') ||
                 catalogProduct?.productionName ||
@@ -7278,7 +7474,8 @@ export function EditProductionOrderModal({
                 productionName,
                 quantity: product.quantity === '-' ? '' : product.quantity,
                 unit: product.unit === '-' ? '' : product.unit,
-                productId: catalogProduct?.id || product.productId
+                productId: sourceProductId || undefined,
+                ...productionEntryMetadataFromOrderLine(product)
               };
             })
           : [newProductionOrderEntryLine()],
@@ -7303,28 +7500,10 @@ export function EditProductionOrderModal({
     const loadData = async () => {
       setIsLoadingSettings(true);
       try {
-        const [settingRes, conversionRes] = await Promise.all([
-          fetch('/api/cai-dat'),
-          fetch('/api/bang-quy-doi-san-pham?page=1&pageSize=1000')
-        ]);
-        const [settingData, conversionData] = await Promise.all([
-          settingRes.json().catch(() => ({})),
-          conversionRes.json().catch(() => ({}))
-        ]);
+        const settingRes = await fetch('/api/cai-dat');
+        const settingData = await settingRes.json().catch(() => ({}));
         if (!cancelled) {
           if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));
-
-          if (conversionRes.ok) {
-            const conversions = Array.isArray(conversionData.items) ? conversionData.items as OrderProductConversion[] : [];
-            const conversionTotal = Number(conversionData.total) || conversions.length;
-            for (let page = 2; conversions.length < conversionTotal; page += 1) {
-              const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok) throw new Error(data.error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
-              conversions.push(...(Array.isArray(data.items) ? data.items as OrderProductConversion[] : []));
-            }
-            setProductConversions(conversions);
-          }
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -7390,7 +7569,8 @@ export function EditProductionOrderModal({
       productName: '',
       productionName: '',
       quantity: '',
-      unit: ''
+      unit: '',
+      ...emptyProductionEntryMetadata()
     };
     if (options.length === 1) {
       const product = options[0];
@@ -7404,9 +7584,10 @@ export function EditProductionOrderModal({
           product.name,
           product.unit,
           product.productionName,
-          product.id
-        ),
-        quantity: ''
+          product.id,
+          product.sourceLine,
+          product.orderQty
+        )
       };
     }
     updateEntryLine(key, patch);
@@ -7426,7 +7607,8 @@ export function EditProductionOrderModal({
         productionName: '',
         quantity: '',
         unit: '',
-        productId: ''
+        productId: '',
+        ...emptyProductionEntryMetadata()
       });
       return;
     }
@@ -7442,6 +7624,7 @@ export function EditProductionOrderModal({
     // So sánh xem sản phẩm được chọn có thực sự thay đổi so với dòng hiện tại không
     const isSameProduct = Boolean(
       currentLine &&
+      currentLine.orderProductStt === product.orderProductStt &&
       (
         (product.productId && currentLine.productId && product.productId === currentLine.productId) ||
         (product.code && currentLine.productCode && product.code.trim() === currentLine.productCode.trim())
@@ -7452,11 +7635,14 @@ export function EditProductionOrderModal({
     );
 
     if (isSameProduct) {
-      // Người dùng chỉ click vào Mã Hàng hoặc chọn lại đúng sản phẩm hiện tại: giữ nguyên SL
+      // Chọn lại đúng SP: giữ SL đã nhập tay; nếu đang trống thì khôi phục SL đơn hàng.
+      if (!currentLine?.quantity.trim() && product.orderQty > 0) {
+        updateEntryLine(key, { quantity: String(product.orderQty) });
+      }
       return;
     }
 
-    // Khi có thay đổi sang sản phẩm khác: clear SL theo yêu cầu
+    // Khi đổi sản phẩm, tự điền đúng SL của dòng sản phẩm trong đơn hàng.
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
@@ -7465,12 +7651,11 @@ export function EditProductionOrderModal({
       product.name,
       product.unit,
       product.productionName,
-      product.productId
+      product.productId,
+      product.sourceLine,
+      product.orderQty
     );
-    updateEntryLine(key, {
-      ...built,
-      quantity: ''
-    });
+    updateEntryLine(key, built);
   };
 
   const moveProductLine = (from: number, to: number) => {
@@ -7709,23 +7894,24 @@ export function EditProductionOrderModal({
                     );
                     const selectedProduct =
                       productOptions.find(item =>
+                        line.orderProductStt !== undefined &&
+                        item.orderProductStt === line.orderProductStt &&
+                        (line.productId ? item.productId === line.productId : item.code === line.productCode)
+                      ) ||
+                      productOptions.find(item =>
                         (line.productId ? item.productId === line.productId : item.code === line.productCode) &&
                         (line.productionName ? item.productionName === line.productionName : true)
                       ) ||
                       productOptions.find(item =>
                         line.productId ? item.productId === line.productId : item.code === line.productCode
                       );
-                    const productConversionOptions = productConversions.filter(item => item.sanPhamId === selectedProduct?.id);
-                    const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
                     const allowedUnits = allowedOrderUnits(selectedProduct);
                     const effectiveUnit = selectedProduct
                       ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
                       : line.unit;
-                    const calculatedConversion = matchedConversion ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, selectedProduct?.group) : [];
-
-                    const kgValue = calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null;
-                    const m2Value = calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null;
-                    const mdaiValue = calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null;
+                    const kgValue = productionEntryConversionValue(line, 'kg');
+                    const m2Value = productionEntryConversionValue(line, 'm2');
+                    const mdaiValue = productionEntryConversionValue(line, 'm dài');
 
                     return (
                       <div
@@ -7827,14 +8013,21 @@ export function EditProductionOrderModal({
                               inputClassName={orderFieldClass}
                               getLabel={item => {
                                 const product = item as (typeof productOptions)[number];
-                                return product.code ? `${product.code} - ${product.productionName || product.name}` : product.name;
+                                const productName = formatProductionNameWithLength(
+                                  product.productionName || product.name,
+                                  product.sourceLine.quyCachMDai
+                                );
+                                return product.code ? `${product.code} - ${productName}` : productName;
                               }}
                               getValue={item => (item as (typeof productOptions)[number]).optionKey}
                             />
                           </div>
                           <div className="w-full min-w-0">
                             <input
-                              value={line.productionName || selectedProduct?.productionName || line.productName}
+                              value={formatProductionNameWithLength(
+                                line.productionName || selectedProduct?.productionName || line.productName,
+                                line.quyCachMDai
+                              )}
                               readOnly
                               className={`${orderFieldClass} bg-white text-[#18181b]`}
                               placeholder="Tự điền theo mã hàng"

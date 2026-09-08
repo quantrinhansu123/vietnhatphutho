@@ -244,11 +244,29 @@ export function conversionSupportsUnit(conversion: OrderProductConversion, unitT
   return false;
 }
 
+export function extractProductWidth(
+  code = '',
+  name = '',
+  conversion?: { khoTamRongM?: number | null; khoCuonRongM?: number | null; kho_tam_rong_m?: number | null; kho_cuon_rong_m?: number | null } | null
+): number | null {
+  const cWidth = conversion?.khoTamRongM ?? conversion?.kho_tam_rong_m ?? conversion?.khoCuonRongM ?? conversion?.kho_cuon_rong_m;
+  if (cWidth && Number(cWidth) > 0) return Number(cWidth);
+  const text = `${code} ${name}`;
+  const match = text.match(/(?:[*xX]|khổ\s*)\s*(\d+(?:[.,]\d+)?)\s*m?/i) || text.match(/(\d+(?:[.,]\d+)?)\s*m\b/i);
+  if (match) {
+    const val = Number(match[1].replace(',', '.'));
+    if (Number.isFinite(val) && val > 0 && val < 10) return val;
+  }
+  return null;
+}
+
 export function calculateCutOrderWeight(
   lengthText: string,
   quantityText: string,
   conversion: OrderProductConversion | null | undefined,
-  unitText = 'Tấm'
+  unitText = 'Tấm',
+  productCode = '',
+  productName = ''
 ): CutOrderWeightResult | null {
   const length = parsePercentInput(lengthText);
   const quantity = parsePercentInput(quantityText);
@@ -261,7 +279,7 @@ export function calculateCutOrderWeight(
     return { kg1Sp: round(rawKg1Sp), tongKg: round(rawKg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
   }
 
-  const width = conversion.khoTamRongM || conversion.khoCuonRongM;
+  const width = conversion.khoTamRongM || conversion.khoCuonRongM || extractProductWidth(productCode, productName);
   const kgPerM2 = conversion.trongLuongKgM2;
   if (Number.isFinite(width) && (width as number) > 0 && Number.isFinite(kgPerM2) && (kgPerM2 as number) > 0) {
     const dienTich1SpM2 = length * (width as number);

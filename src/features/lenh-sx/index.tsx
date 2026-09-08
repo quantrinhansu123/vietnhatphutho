@@ -27,6 +27,7 @@ import {
   EditProductionOrderModal,
   formatProductionOrderDate,
   formatProductionOrderProductsSummary,
+  formatProductionNameWithLength,
   getProductionOrderProductLines,
   normalizeProductionOrders,
   PRODUCTION_ORDER_STATUS_OPTIONS,
@@ -578,7 +579,7 @@ export function ProductionOrdersPanel({
                                         {product.productCode || '-'}
                                       </td>
                                       <td className="px-2.5 py-1.5 font-semibold text-zinc-700">
-                                        {product.productionName || product.productName || '-'}
+                                        {formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai)}
                                       </td>
                                       <td className="w-[22%] whitespace-nowrap px-2.5 py-1.5 text-right font-mono font-bold text-zinc-900">
                                         {product.quantity || '-'}

@@ -17,6 +17,12 @@ export interface OrderProductLine {
   kho?: string;
   daiM?: string;
   note?: string;
+  quyCach?: string;
+  quyCachMDai?: number | string;
+  tlCuon?: string;
+  tlTam?: string;
+  m2?: string;
+  mDai?: string;
 }
 
 export function splitProductionProductCodes(raw: string): string[] {
@@ -109,3 +115,22 @@ export function expandProductionOrderProductLines(lines: OrderProductLine[]): Or
     );
   });
 }
+
+export function formatProductionNameWithLength(name: string, length?: number | string): string {
+  const cleanName = (name || '').trim();
+  const numericLength = Number(String(length ?? '').replace(',', '.'));
+  if (!Number.isFinite(numericLength) || numericLength <= 0) return cleanName || '-';
+
+  const nStr = Number.isInteger(numericLength) ? String(numericLength) : String(Math.round(numericLength * 100) / 100);
+  const quyCachSuffix = `(Quy cách: ${nStr} m)`;
+
+  if (!cleanName || cleanName === '-') return quyCachSuffix;
+  if (cleanName.includes(`(Quy cách: ${nStr} m)`)) {
+    return cleanName;
+  }
+  if (cleanName.includes(`(${nStr}m)`) || cleanName.includes(`(${nStr} m)`)) {
+    return cleanName.replace(new RegExp(`\\(${nStr}\\s*m\\)`, 'g'), quyCachSuffix);
+  }
+  return `${cleanName} ${quyCachSuffix}`;
+}
+

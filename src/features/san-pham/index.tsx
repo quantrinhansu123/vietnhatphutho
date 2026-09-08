@@ -55,6 +55,7 @@ import {
 import { showAppToast } from '../../lib/appToast';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { availableConvertedUnits, convertProductQuantity, type ProductConversionFactors, type ProductConvertedUnit } from '../../utils/productUnitConversion';
+import { calculateProductConversionFormulas } from '../../utils/productConversionCalculation';
 
 const PRODUCT_QR_LABEL_FOOTER_ROWS = ['Cơ sở sản xuất', 'Công nhân sx', 'Ngày sản xuất'] as const;
 
@@ -1136,13 +1137,78 @@ const PRODUCT_GROUP_RULES = {
 
 type ProductGroup = keyof typeof PRODUCT_GROUP_RULES;
 const PRODUCT_GROUPS = Object.keys(PRODUCT_GROUP_RULES) as ProductGroup[];
+export function autoCalculateProductConversion(
+  rawForm: ProductConversionForm,
+  changedKey?: keyof ProductConversionForm
+): ProductConversionForm {
+  const parseNum = (val: unknown) => {
+    if (val === null || val === undefined || val === '') return null;
+    const n = Number(String(val).trim().replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const updated = { ...rawForm };
+
+  const formulaInput = () => ({
+    sheetWidthM: parseNum(updated.khoTamRongM),
+    sheetLengthM: parseNum(updated.khoTamDaiM),
+    rollWidthM: parseNum(updated.khoCuonRongM),
+    rollLengthM: parseNum(updated.khoCuonDaiM),
+    areaM2: parseNum(updated.dienTichM2),
+    kgPerLinearM: parseNum(updated.trongLuongKgMDai),
+    kgPerM2: parseNum(updated.trongLuongKgM2)
+  });
+
+  // Diện tích vẫn là ô nhập. Chỉ tự điền khi trống hoặc khi kích thước cuộn thay đổi.
+  const initialFormulas = calculateProductConversionFormulas(formulaInput());
+  const areaDependencyChanged = changedKey === 'khoCuonRongM'
+    || changedKey === 'khoCuonDaiM'
+    || changedKey === 'khoTamRongM';
+  if (initialFormulas.areaM2 !== null && (areaDependencyChanged || !updated.dienTichM2.trim())) {
+    updated.dienTichM2 = String(initialFormulas.areaM2);
+  } else if (changedKey === 'khoCuonDaiM' && initialFormulas.areaM2 === null) {
+    updated.dienTichM2 = '';
+  }
+
+  const formulas = calculateProductConversionFormulas(formulaInput());
+  const kgPerLinearDependencyChanged = changedKey === 'khoTamRongM' || changedKey === 'trongLuongKgM2';
+  if (
+    changedKey !== 'trongLuongKgMDai'
+    && formulas.kgPerLinearM !== null
+    && (kgPerLinearDependencyChanged || !updated.trongLuongKgMDai.trim())
+  ) {
+    updated.trongLuongKgMDai = String(formulas.kgPerLinearM);
+  }
+
+  const applyCalculatedWeight = (
+    key: 'trongLuongKgTam' | 'trongLuongKgCuon',
+    value: number | null
+  ) => {
+    if (value !== null) updated[key] = String(value);
+    else if (changedKey) updated[key] = '';
+  };
+
+  // kg/tấm và kg/cuộn là kết quả chỉ đọc. Khi sửa dữ liệu nguồn, kết quả
+  // không còn đủ điều kiện tính sẽ được xóa để tránh giữ số cũ sai lệch.
+  applyCalculatedWeight('trongLuongKgTam', formulas.kgPerSheet);
+  applyCalculatedWeight('trongLuongKgCuon', formulas.kgPerRoll);
+
+  return updated;
+}
+
 const emptyConversion = (): ProductConversionForm => ({ khoTamRongM: '', khoTamDaiM: '', khoCuonRongM: '', khoCuonDaiM: '', dienTichM2: '', trongLuongKgMDai: '', trongLuongKgM2: '', trongLuongKgTam: '', trongLuongKgCuon: '' });
-const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => ({
-  khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
-  khoCuonRongM: String(item.khoCuonRongM ?? ''), khoCuonDaiM: String(item.khoCuonDaiM ?? ''), dienTichM2: String(item.dienTichM2 ?? ''),
-  trongLuongKgMDai: String(item.trongLuongKgMDai ?? ''), trongLuongKgM2: String(item.trongLuongKgM2 ?? ''), trongLuongKgTam: String(item.trongLuongKgTam ?? ''),
-  trongLuongKgCuon: String(item.trongLuongKgCuon ?? '')
-});
+const CALCULATED_WEIGHT_FIELDS = new Set<keyof ProductConversionForm>([
+  'trongLuongKgTam',
+  'trongLuongKgCuon'
+]);
+const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => {
+  const base: ProductConversionForm = {
+    khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
+    khoCuonRongM: String(item.khoCuonRongM ?? ''), khoCuonDaiM: String(item.khoCuonDaiM ?? ''), dienTichM2: String(item.dienTichM2 ?? ''),
+    trongLuongKgMDai: String(item.trongLuongKgMDai ?? ''), trongLuongKgM2: String(item.trongLuongKgM2 ?? ''), trongLuongKgTam: String(item.trongLuongKgTam ?? ''),
+    trongLuongKgCuon: String(item.trongLuongKgCuon ?? '')
+  };
+  return autoCalculateProductConversion(base);
+};
 
 export function productCellToInput(value: string) {
   return value === '-' ? '' : value;
@@ -1307,7 +1373,16 @@ export function ProductEditModal({
   };
 
   const updateCustomUnit = (unit: string) => setForm(prev => ({ ...prev, unit }));
-  const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => setForm(prev => ({ ...prev, conversions: prev.conversions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) }));
+  const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      conversions: prev.conversions.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        const updated = { ...item, [key]: value };
+        return autoCalculateProductConversion(updated, key);
+      })
+    }));
+  };
   const amisOptions = products.filter(item => item.amisCode.trim());
   const filteredAmisOptions = amisOptions.filter(item => `${item.amisCode} ${item.name} ${item.productionName}`.toLocaleLowerCase('vi').includes(form.amisCode.trim().toLocaleLowerCase('vi'))).slice(0, 20);
   const selectedGroupRule = PRODUCT_GROUP_RULES[form.group as ProductGroup];
@@ -1392,7 +1467,20 @@ export function ProductEditModal({
                 ['dienTichM2', 'Khổ diện tích mét vuông (m2)'], ['trongLuongKgMDai', 'Trọng lượng (kg/1 m dài)'],
                 ['trongLuongKgM2', 'Trọng lượng (kg/m2)'], ['trongLuongKgTam', 'Trọng lượng (kg/Tấm)'],
                 ['trongLuongKgCuon', 'Trọng lượng (kg/Cuộn)']
-              ] as Array<[keyof ProductConversionForm, string]>).map(([key, label]) => <label key={key} className="space-y-1.5"><span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">{label}</span><input inputMode="decimal" value={(form.conversions[0] || emptyConversion())[key]} onChange={event => updateConversion(0, key, event.target.value)} className={productFieldClass} /></label>)}
+              ] as Array<[keyof ProductConversionForm, string]>).map(([key, label]) => {
+                const isCalculated = CALCULATED_WEIGHT_FIELDS.has(key);
+                return <label key={key} className="space-y-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">{label}</span>
+                  <input
+                    inputMode="decimal"
+                    value={(form.conversions[0] || emptyConversion())[key]}
+                    onChange={event => updateConversion(0, key, event.target.value)}
+                    readOnly={isCalculated}
+                    aria-readonly={isCalculated}
+                    className={`${productFieldClass} ${isCalculated ? 'cursor-not-allowed bg-zinc-100 text-zinc-600' : 'bg-white'}`}
+                  />
+                </label>;
+              })}
             </div>
           </section>
         </div>

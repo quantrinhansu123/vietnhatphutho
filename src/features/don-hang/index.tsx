@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowDown, ArrowUp, Eye, GripVertical, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { convertProductQuantity } from '../../utils/productUnitConversion';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
@@ -24,6 +25,7 @@ import {
   saveUnitSuggestion,
   calculateOrderConversion,
   calculateCutOrderWeight,
+  extractProductWidth,
   conversionSupportsUnit,
   allowedOrderUnits,
   type OrderProductOption,
@@ -67,7 +69,7 @@ const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1180px]';
 const orderProductGridClass =
   'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-[2.25rem_minmax(9.5rem,1fr)_minmax(12rem,1.3fr)_4rem_5rem_5rem_5.5rem_4.75rem_6rem_minmax(8rem,1fr)_6.5rem]';
+  'grid-cols-[2.25rem_minmax(10rem,1.2fr)_minmax(13rem,1.5fr)_4.5rem_5.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
 const ORDER_AMIS_SEARCH_MAX_RESULTS = 400;
@@ -170,13 +172,19 @@ export type OrderProductFormLine = {
   unit: string;
   quantity: string;
   /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
-  doLi: string;
-  kho: string;
+  doLi?: string;
+  kho?: string;
   daiM: string;
   kg1Sp?: string;
   tongKg?: string;
   conversionSource?: string;
   note: string;
+  quyCach?: string;
+  quyCachMDai?: number | string;
+  tlCuon?: string;
+  tlTam?: string;
+  m2?: string;
+  mDai?: string;
 };
 
 
@@ -214,8 +222,6 @@ export function newOrderProductFormLine(): OrderProductFormLine {
     productionName: '',
     unit: '',
     quantity: '',
-    doLi: '',
-    kho: '',
     daiM: '',
     note: ''
   };
@@ -421,13 +427,54 @@ export function orderProductLinesToPayload(
           ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
           : line.unit.trim() || resolved.unit;
       const quantity = parsePercentInput(line.quantity);
-      const doLi = line.doLi.trim();
-      const kho = parsePercentInput(line.kho);
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
-      const conversion = productConversions.find(item => item.sanPhamId === selectedProduct?.id);
-      const cutWeight = isCutOrder ? calculateCutOrderWeight(line.daiM, line.quantity, conversion, unit) : null;
+      const sanPhamId = selectedProduct?.id || (line.productId?.trim() ? line.productId.trim() : undefined);
+      const conversion = sanPhamId ? productConversions.find(item => item.sanPhamId === sanPhamId) : undefined;
+      const cutWeight = isCutOrder ? calculateCutOrderWeight(line.daiM, line.quantity, conversion, unit, productCode, productName) : null;
       const roundConversionValue = (value: number) => Math.round(value * 100) / 100;
+
+      let cutQuyCach: string | undefined;
+      let cutM2: number | undefined;
+      let cutMDai: number | undefined;
+      let cutTlCuon: number | undefined;
+      let cutTlTam: number | undefined;
+
+      if (isCutOrder) {
+        if (Number.isFinite(daiM) && daiM > 0 && Number.isFinite(quantity) && quantity > 0) {
+          cutMDai = roundConversionValue(daiM * quantity);
+          const width = extractProductWidth(productCode, productName, conversion);
+          if (width && width > 0) {
+            cutM2 = roundConversionValue(daiM * width * quantity);
+          }
+        }
+
+        if (conversion?.trongLuongKgCuon) {
+          cutTlCuon = roundConversionValue(conversion.trongLuongKgCuon);
+        }
+        if (cutWeight?.kg1Sp) {
+          cutTlTam = roundConversionValue(cutWeight.kg1Sp);
+        } else if (conversion?.trongLuongKgTam) {
+          cutTlTam = roundConversionValue(conversion.trongLuongKgTam);
+        }
+      }
+
+      const quyCachMDai = Number.isFinite(daiM) && daiM > 0
+        ? Number(daiM)
+        : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
+          ? Number(line.quyCachMDai)
+          : undefined;
+
+      const cutResults: Array<{ don_vi: string; gia_tri: number }> = [];
+      if (cutWeight && cutWeight.tongKg > 0) {
+        cutResults.push({ don_vi: 'kg', gia_tri: roundConversionValue(cutWeight.tongKg) });
+      }
+      if (cutM2 !== undefined && cutM2 > 0) {
+        cutResults.push({ don_vi: 'm2', gia_tri: cutM2 });
+      }
+      if (cutMDai !== undefined && cutMDai > 0) {
+        cutResults.push({ don_vi: 'm dài', gia_tri: cutMDai });
+      }
 
       return {
         san_pham_id: selectedProduct?.id || line.productId.trim() || undefined,
@@ -440,22 +487,26 @@ export function orderProductLinesToPayload(
         stt: index + 1,
         ...(isCutOrder
           ? {
-              do_li: doLi || undefined,
-              kho: Number.isFinite(kho) && kho > 0 ? kho : undefined,
-              dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined
+              ...(quyCachMDai !== undefined ? { quy_cach_m_dai: quyCachMDai } : {}),
+              dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined,
+              ...(cutM2 !== undefined && cutM2 > 0 ? { m2: cutM2 } : {}),
+              ...(cutMDai !== undefined && cutMDai > 0 ? { m_dai: cutMDai } : {}),
+              ...(cutTlCuon !== undefined && cutTlCuon > 0 ? { tl_cuon: cutTlCuon } : {}),
+              ...(cutTlTam !== undefined && cutTlTam > 0 ? { tl_tam: cutTlTam } : {})
             }
           : {}),
         ...(cutWeight
           ? {
-              kg_1_sp: roundConversionValue(cutWeight.kg1Sp),
+              ...(cutWeight.kg1Sp > 0 && cutWeight.kg1Sp !== cutTlTam && cutWeight.kg1Sp !== cutTlCuon
+                ? { kg_1_sp: roundConversionValue(cutWeight.kg1Sp) }
+                : {}),
               tong_kg: roundConversionValue(cutWeight.tongKg),
               nguon_quy_doi: cutWeight.source,
-              ket_qua_quy_doi: [
-                { don_vi: 'kg/1 SP', gia_tri: roundConversionValue(cutWeight.kg1Sp) },
-                { don_vi: 'kg', gia_tri: roundConversionValue(cutWeight.tongKg) }
-              ]
+              ket_qua_quy_doi: cutResults
             }
-          : {})
+          : cutResults.length > 0
+            ? { ket_qua_quy_doi: cutResults }
+            : {})
       };
     })
     .filter(item => item.ma_sp || item.ten_sp);
@@ -482,13 +533,17 @@ export function orderToForm(order: OrderRow): OrderFormState {
     productionName: orderCellToInput(line.productionName || ''),
     unit: orderCellToInput(line.unit),
     quantity: orderCellToInput(line.quantity),
-    doLi: line.doLi || '',
-    kho: line.kho || '',
     daiM: line.daiM || '',
     kg1Sp: line.kg1Sp || '',
     tongKg: line.tongKg || '',
     conversionSource: line.conversionSource || '',
-    note: line.note || ''
+    note: line.note || '',
+    quyCach: line.quyCach || (line.quyCachMDai ? `Dài ${line.quyCachMDai}m` : ''),
+    quyCachMDai: line.quyCachMDai || (line.daiM ? line.daiM : ''),
+    tlCuon: line.tlCuon || '',
+    tlTam: line.tlTam || '',
+    m2: line.m2 || '',
+    mDai: line.mDai || ''
   }));
 
   return {
@@ -852,21 +907,91 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }
     }
 
-    const productsWithConversion: Array<(typeof products)[number] & { ket_qua_quy_doi?: Array<{ don_vi: string; gia_tri: number }> }> = [];
+    const productsWithConversion: any[] = [];
     if (isCutOrder) {
       productsWithConversion.push(...products);
     } else {
       for (const product of products) {
         const option = findOrderProductById(productOptions, product.san_pham_id || '');
-        const conversion = productConversions.find(item => item.sanPhamId === option?.id && conversionSupportsUnit(item, product.don_vi));
-        const result = conversion ? calculateOrderConversion(String(product.so_luong ?? ''), product.don_vi, conversion, option?.group) : [];
-        if (result.length === 0) {
-          productsWithConversion.push(product);
-          continue;
+        const targetSpId = String(product.san_pham_id || option?.id || '').trim();
+        const conversion = targetSpId ? productConversions.find(item => item.sanPhamId === targetSpId) : undefined;
+        const qty = product.so_luong ?? 0;
+
+        let kgVal: number | null = null;
+        let m2Val: number | null = null;
+        let mDaiVal: number | null = null;
+
+        if (conversion && qty > 0) {
+          kgVal = convertProductQuantity(qty, product.don_vi, 'kg', conversion);
+          m2Val = convertProductQuantity(qty, product.don_vi, 'm2', conversion);
+          mDaiVal = convertProductQuantity(qty, product.don_vi, 'm', conversion);
         }
+
+        const normUnit = product.don_vi.trim().toLowerCase();
+        if (kgVal === null && (normUnit === 'kg' || normUnit === 'kilogram')) kgVal = qty;
+        if (m2Val === null && (normUnit === 'm2' || normUnit === 'm 2' || normUnit === 'mét vuông')) m2Val = qty;
+        if (mDaiVal === null && (normUnit === 'm' || normUnit === 'm dài' || normUnit === 'mét')) mDaiVal = qty;
+
+        const roundVal = (v: number | null) => (v !== null && Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : null);
+        const rKg = roundVal(kgVal);
+        const rM2 = roundVal(m2Val);
+        const rMDai = roundVal(mDaiVal);
+        const rTlCuon = conversion?.trongLuongKgCuon ? roundVal(conversion.trongLuongKgCuon) : null;
+        const rTlTam = conversion?.trongLuongKgTam ? roundVal(conversion.trongLuongKgTam) : null;
+
+        const results: Array<{ don_vi: string; gia_tri: number }> = [];
+        if (rKg !== null && rKg > 0) results.push({ don_vi: 'kg', gia_tri: rKg });
+        if (rM2 !== null && rM2 > 0) results.push({ don_vi: 'm2', gia_tri: rM2 });
+        if (rMDai !== null && rMDai > 0) results.push({ don_vi: 'm dài', gia_tri: rMDai });
+
+        const {
+          dien_tich_m2,
+          chieu_dai_m,
+          trong_luong,
+          trong_luong_kg,
+          trong_luong_kg_tam,
+          trong_luong_kg_cuon,
+          kg_cuon,
+          quy_cach,
+          ...cleanProduct
+        } = product as any;
+
+        let quyCachMDai = cleanProduct.quy_cach_m_dai;
+        if (quyCachMDai === undefined) {
+          const d = Number(cleanProduct.dai_m);
+          if (Number.isFinite(d) && d > 0) {
+            quyCachMDai = d;
+          } else if (typeof quy_cach === 'string') {
+            const m = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
+            if (m) quyCachMDai = Number(m[1].replace(',', '.'));
+          }
+        }
+        if (quyCachMDai !== undefined && Number.isFinite(quyCachMDai) && quyCachMDai > 0) {
+          cleanProduct.quy_cach_m_dai = quyCachMDai;
+        }
+
+        let finalTlCuon = rTlCuon ?? cleanProduct.tl_cuon;
+        const spId = String(cleanProduct.san_pham_id || '').trim();
+        if (!finalTlCuon && spId) {
+          const matchedConv = productConversions.find(item => item.sanPhamId === spId);
+          if (matchedConv?.trongLuongKgCuon) {
+            finalTlCuon = roundVal(matchedConv.trongLuongKgCuon);
+          }
+        }
+
+        const finalTlTam = rTlTam ?? cleanProduct.tl_tam;
+        if (cleanProduct.kg_1_sp && (cleanProduct.kg_1_sp === finalTlTam || cleanProduct.kg_1_sp === finalTlCuon)) {
+          delete cleanProduct.kg_1_sp;
+        }
+
         productsWithConversion.push({
-          ...product,
-          ket_qua_quy_doi: result.map(([, value, unit]) => ({ don_vi: unit, gia_tri: Math.round(value * 1_000_000) / 1_000_000 }))
+          ...cleanProduct,
+          ...(rM2 !== null && rM2 > 0 ? { m2: rM2 } : {}),
+          ...(rMDai !== null && rMDai > 0 ? { m_dai: rMDai } : {}),
+          ...(rKg !== null && rKg > 0 ? { tong_kg: rKg } : {}),
+          ...(finalTlCuon !== null && finalTlCuon > 0 ? { tl_cuon: finalTlCuon } : {}),
+          ...(finalTlTam !== null && finalTlTam > 0 ? { tl_tam: finalTlTam } : {}),
+          ...(results.length > 0 ? { ket_qua_quy_doi: results } : {})
         });
       }
     }
@@ -1185,9 +1310,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'code', label: 'Mã AMIS', required: true },
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
-                        { key: 'doLi', label: 'Độ li' },
-                        { key: 'kho', label: 'Khổ' },
-                        { key: 'daiM', label: 'Dài (m)' },
+                        { key: 'daiM', label: 'Dài (m)', required: true },
                         { key: 'qty', label: 'SL', required: true },
                         { key: 'tongKg', label: 'Tổng KG' },
                         { key: 'note', label: 'Ghi chú' },
@@ -1211,8 +1334,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 {isFormCutOrder
                   ? orderForm.productLines.map((line, index) => {
                       const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
-                      const matchedConversion = productConversions.find(item => item.sanPhamId === matchedLineProduct?.id);
-                      const cutWeight = calculateCutOrderWeight(line.daiM, line.quantity, matchedConversion, 'Tấm');
+                      const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
+                      const matchedConversion = lineSanPhamId ? productConversions.find(item => item.sanPhamId === lineSanPhamId) : undefined;
+                      const cutWeight = calculateCutOrderWeight(line.daiM, line.quantity, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName);
                       return renderProductLineShell(
                         line,
                         index,
@@ -1265,24 +1389,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         </div>
                         <div className="col-span-1 min-w-0">
                           <input
-                            value={line.doLi}
-                            onChange={e => updateProductLine(line.key, { doLi: e.target.value })}
-                            className={orderFieldClass}
-                            placeholder="8"
-                          />
-                        </div>
-                        <div className="col-span-1 min-w-0">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={line.kho}
-                            onChange={e => updateProductLine(line.key, { kho: e.target.value })}
-                            className={orderFieldClass}
-                            placeholder="1.22"
-                          />
-                        </div>
-                        <div className="col-span-1 min-w-0">
-                          <input
                             type="number"
                             step="0.01"
                             value={line.daiM}
@@ -1322,7 +1428,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     })
                   : orderForm.productLines.map((line, index) => {
                   const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
-                  const productConversionOptions = productConversions.filter(item => item.sanPhamId === matchedLineProduct?.id);
+                  const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
+                  const productConversionOptions = lineSanPhamId ? productConversions.filter(item => item.sanPhamId === lineSanPhamId) : [];
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
                   const allowedUnits = allowedOrderUnits(matchedLineProduct);
                   const effectiveUnit = matchedLineProduct
@@ -1511,18 +1618,28 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
                       </p>
-                      {line.doLi || line.kho || line.daiM ? (
+                      {line.quyCach || line.daiM || line.doLi || line.kho ? (
                         <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                          Quy cách: {[line.doLi, line.kho ? `Khổ ${line.kho}` : '', line.daiM ? `Dài ${line.daiM}m` : ''].filter(Boolean).join(' · ')}
+                          Quy cách: {line.quyCach || (line.daiM ? `Dài ${line.daiM}m` : [line.doLi, line.kho ? `Khổ ${line.kho}` : ''].filter(Boolean).join(' · '))}
                         </p>
                       ) : null}
-                      {line.conversionResults?.some(result => result.unit !== 'kg/1 SP') ? (
+                      {(line.conversionResults?.some(result => result.unit !== 'kg/1 SP') || line.tlCuon || line.tlTam) ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {line.conversionResults.filter(result => result.unit !== 'kg/1 SP').map(result => (
+                          {line.conversionResults?.filter(result => result.unit !== 'kg/1 SP').map(result => (
                             <span key={result.unit} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800">
                               {formatNumber(result.value, 3)} {result.unit}
                             </span>
                           ))}
+                          {line.tlCuon ? (
+                            <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-800">
+                              TL/cuộn: {line.tlCuon} kg
+                            </span>
+                          ) : null}
+                          {line.tlTam ? (
+                            <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-800">
+                              TL/tấm: {line.tlTam} kg
+                            </span>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -1656,7 +1773,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           : line.kho || line.daiM
                             ? `${line.kho || line.daiM}m`
                             : '';
-                        const specText = [line.doLi, sizeText].filter(Boolean).join(' · ');
+                        const specText = line.quyCach
+                          ? line.quyCach
+                          : line.daiM
+                            ? `Dài ${line.daiM}m`
+                            : [line.doLi, sizeText].filter(Boolean).join(' · ');
                         return (
                           <div key={`${order.id}-${line.productCode}-${line.productName}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
                             <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
@@ -1667,6 +1788,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                             </div>
                             {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
+                            {line.conversionResults && line.conversionResults.length > 0 ? (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {line.conversionResults.filter(r => r.unit !== 'kg/1 SP').map(r => (
+                                  <span key={r.unit} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                    {formatNumber(r.value, 2)} {r.unit}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         );
                       })}
