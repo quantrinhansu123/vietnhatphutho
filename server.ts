@@ -5751,8 +5751,8 @@ function buildProductionOrderRecordFromOrder(
     ma_don_hang: orderCode,
     ngay_bat_dau: todayDateString(),
     ngay_ket_thuc: todayDateString(),
-    ngay_gio_bat_dau: new Date().toISOString(),
-    ngay_gio_ket_thuc: new Date().toISOString(),
+    ngay_gio_bat_dau: `${todayDateString()}T08:00`,
+    ngay_gio_ket_thuc: `${todayDateString()}T18:00`,
     ghi_chu: pickRowField(order, ['ghi_chu', 'note'])
   };
 }

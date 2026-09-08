@@ -4627,6 +4627,13 @@ export function toDatetimeLocalInputValue(value: string) {
   if (!raw || raw === '-') return '';
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return raw;
 
+  // Trích xuất trực tiếp YYYY-MM-DD và HH:mm từ chuỗi ISO/timestamptz từ database (ví dụ 2026-09-08 18:00:00+00 hoặc 2026-09-08T18:00:00+00:00)
+  // để hiển thị đúng giờ đã lưu trong DB, không bị trình duyệt tự cộng múi giờ địa phương khi qua new Date().
+  const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}T${isoMatch[2]}`;
+  }
+
   // Hỗ trợ dữ liệu cũ chỉ còn ngày hiển thị theo định dạng dd/mm/yyyy.
   const displayDate = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (displayDate) {
@@ -4650,19 +4657,23 @@ export function extractProductionOrderDate(datetimeLocal: string) {
 }
 
 export function mergeProductionOrderDateTime(date: string, datetimeLocal: string) {
+  const cleanInput = datetimeLocal ? datetimeLocal.replace(' ', 'T') : '';
   const timePart =
-    datetimeLocal && datetimeLocal.includes('T')
-      ? datetimeLocal.split('T')[1]?.slice(0, 5) || '08:00'
+    cleanInput && cleanInput.includes('T')
+      ? cleanInput.split('T')[1]?.slice(0, 5) || '08:00'
       : '08:00';
-  return date ? `${date}T${timePart}` : datetimeLocal;
+  return date ? `${date}T${timePart}` : cleanInput;
 }
 
-/** Chuẩn hoá giá trị datetime-local trước khi gửi timestamptz lên API/Supabase. */
+/** Chuẩn hoá giá trị datetime-local trước khi gửi timestamptz lên API/Supabase (giữ nguyên giờ địa phương, không trừ UTC). */
 export function productionOrderApiDateTimeValue(value: string) {
   const raw = value.trim();
   if (!raw) return '';
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
+  const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}T${isoMatch[2]}`;
+  }
+  return raw;
 }
 
 export function settingMatchesShift(setting: ProductionOrderLookupSetting, shift: string) {
