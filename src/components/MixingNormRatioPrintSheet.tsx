@@ -2,8 +2,10 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { MixingNormLine, MixingNormProduct, MixingNormRow } from './MixingNormMaterialsTab';
+import { formatMixingNormSlipName } from '../utils/mixingNormAuxiliary';
 
 export type MixingNormRatioPrintDoc = {
+  tenPhieu?: string;
   maLenhSx: string;
   ngay: string;
   ca?: string;
@@ -194,6 +196,7 @@ export function toPrintDoc(
   resolveProductName?: (code: string) => string
 ): MixingNormRatioPrintDoc {
   return {
+    tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.ngay, row.ca, row.ma_lenh_sx),
     maLenhSx: row.ma_lenh_sx.trim(),
     ngay: row.ngay || new Date().toISOString().slice(0, 10),
     ca: row.ca,
@@ -399,6 +402,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
         <h1 className="mixing-norm-ratio-print-title">TỶ LỆ TRỘN {doc.isActual ? 'THỰC TẾ' : 'ĐỊNH MỨC'}</h1>
         <p className="mixing-norm-ratio-print-intro">{intro}</p>
         <p className="mixing-norm-ratio-print-meta">
+          {doc.tenPhieu ? (
+            <>
+              Tên phiếu: <strong>{doc.tenPhieu}</strong>
+              <span className="mixing-norm-ratio-print-meta-sep">·</span>
+            </>
+          ) : null}
           Lệnh SX: <strong>{doc.maLenhSx || '—'}</strong>
           <span className="mixing-norm-ratio-print-meta-sep">·</span>
           Ngày: <strong>{`${dateParts.day}/${dateParts.month}/${dateParts.year}`}</strong>

@@ -10,9 +10,10 @@
 
 | Method | Path | Dòng |
 |--------|------|------|
-| GET/POST/PATCH/DELETE | `/api/don-hang` | 6946–7093 |
+| GET/POST/PATCH/DELETE | `/api/don-hang` | 7475–7645 |
 
-Helper parse/lưu JSON `san_pham` (kèm `stt`): ~4781–5083.
+Helper parse/lưu JSON `san_pham` (kèm `stt`): ~4986–5550.
+Helper bổ sung quy đổi theo cờ thay đổi từ form sửa: ~5376–5455.
 Helper tự sinh mã: `generateNextOrderCodeFromDb()` ~2924.
 
 ## Frontend
@@ -34,6 +35,6 @@ Tạo lệnh SX: `POST /api/lenh-sx/from-don-hang/:id`
 
 - **Khách hàng**: Select2 (gõ để tìm) lấy từ `/api/khach-hang` (bảng danh mục Khách hàng), bắt buộc chọn.
 - **Sản phẩm JSON `san_pham`**: mỗi object có `stt` (1, 2, 3…) theo thứ tự dòng. Form thêm/sửa: kéo thả hoặc cụm action cố định `[Xóa] [↑] [↓]` bên phải; Lên/Xuống disabled ở đầu/cuối. Lưu luôn chuẩn hóa `stt` liên tục. Dữ liệu cũ chưa có `stt` hiển thị theo vị trí mảng.
-- **Quy đổi khi thêm/sửa**: tải `san_pham_quy_doi`, áp dụng quy tắc nhóm VTHH và công thức tại `.ai/spec/tinh_toan_quy_doi.md`.
+- **Quy đổi khi thêm/sửa**: tải `san_pham_quy_doi`, áp dụng quy tắc nhóm VTHH và công thức tại `.ai/spec/tinh_toan_quy_doi.md`. Khi sửa, dòng chưa bị tác động hiển thị/giữ nguyên quy đổi trong JSON `san_pham`; chỉ tính theo bảng mới sau khi người dùng đổi dữ liệu ảnh hưởng quy đổi hoặc chọn lại sản phẩm cũ.
 - Dòng JSON `san_pham` lưu mã AMIS, `ten_san_xuat` và mảng `ket_qua_quy_doi`; thiếu cấu hình quy đổi vẫn cho phép lưu đơn.
 - **Ngày giao hàng**: cột `ngay_giao_hang`, migration `supabase-don-hang-ngay-giao-hang.sql`.

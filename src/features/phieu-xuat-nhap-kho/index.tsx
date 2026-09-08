@@ -1049,8 +1049,8 @@ export function WarehouseSlipPanel({
 
   // Xuất kho NVL: 1 dòng picker / (mã lệnh SX, ngày trong khoảng ngay_bat_dau..ngay_ket_thuc, ca) —
   // ca/máy lấy từ chính lệnh SX (1 lệnh = 1 ca = 1 máy cố định). Trừ tổ hợp đã có phiếu xuất khác (ẩn),
-  // giữ lại tổ hợp thuộc chính phiếu đang sửa (ownInstanceKeys). Phiếu trộn định mức đi 1-1 theo lệnh SX
-  // (không còn theo ngày) nên không dùng làm nguồn sinh ngày nữa — sinh thẳng từ khoảng ngày của lệnh SX.
+  // giữ lại tổ hợp thuộc chính phiếu đang sửa (ownInstanceKeys). Danh sách ngày sinh từ
+  // khoảng chạy của lệnh SX; khi chọn mới tra phiếu định mức theo đúng lệnh + ngày + ca.
   const nvlExportInstances = useMemo((): PickerOption[] => {
     return productionOrders
       .flatMap((order): PickerOption[] => {
@@ -1141,12 +1141,21 @@ export function WarehouseSlipPanel({
       setIsLoadingNormMaterials(true);
       setNormLoadMessage('');
       try {
-        // Phiếu trộn định mức đi 1-1 theo lệnh SX (không còn theo ngày) — tra theo ma_lenh_sx là đủ,
-        // dedupe theo mã lệnh SX để tránh gọi lặp khi 1 phiếu chọn nhiều ngày của cùng 1 lệnh SX.
-        const orderCodes: string[] = [...new Set(selectedInstances.map(item => item.orderCode))];
+        // Một lệnh SX có thể có nhiều phiếu định mức. Tra đúng theo lệnh + ngày + ca
+        // của từng lần chạy, tránh trộn nhầm định mức của ngày khác.
+        const normInstances = [...new Map<string, PickerOption>(
+          selectedInstances.map(item => [`${item.orderCode}::${item.ngay}::${item.ca}`, item] as const)
+        ).values()];
         const responses = await Promise.all(
-          orderCodes.map(async (orderCode: string) => {
-            const params = new URLSearchParams({ ma_lenh_sx: orderCode });
+          normInstances.map(async instance => {
+            const params = new URLSearchParams({
+              ma_lenh_sx: instance.orderCode,
+              ngay: instance.ngay
+            });
+            if (instance.ca) {
+              params.set('ca', instance.ca);
+              params.set('exact', '1');
+            }
             const res = await fetch(`/api/bang-tron-vat-tu-dinh-muc?${params.toString()}`);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'Không thể tải định mức NVL.');
@@ -1165,7 +1174,7 @@ export function WarehouseSlipPanel({
           lineNote: line.warehouseClass,
           warehouseClass: line.warehouseClass
         })));
-        if (merged.length === 0) setNormLoadMessage('Không tìm thấy định mức NVL theo mã lệnh SX đã chọn.');
+        if (merged.length === 0) setNormLoadMessage('Không tìm thấy định mức NVL theo lệnh SX, ngày và ca đã chọn.');
       } catch (error: any) {
         setLines([createWarehouseLineDraft()]);
         setNormLoadMessage(error?.message || 'Không thể tải định mức NVL.');

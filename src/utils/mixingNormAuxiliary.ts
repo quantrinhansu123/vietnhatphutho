@@ -63,10 +63,10 @@ export function calcAuxiliaryWeight(
     if (group === 'Tem') return roundWeight4(giaTri * 0.0013);
   }
 
-  // 2.3 Nhom VTHH là TP; PX Sóng: BÃng dính 0.0013kg, Tem 0.4kg
+  // 2.3 Nhóm VTHH là TP; PX Sóng: Tem: 0.0013kg, Băng dính: 0.4kg
   if (workshop === 'song') {
-    if (group === 'Băng Dính') return roundWeight4(giaTri * 0.0013);
-    if (group === 'Tem') return roundWeight4(giaTri * 0.4);
+    if (group === 'Băng Dính') return roundWeight4(giaTri * 0.4);
+    if (group === 'Tem') return roundWeight4(giaTri * 0.0013);
   }
 
   return roundWeight4(giaTri);
@@ -100,3 +100,23 @@ export function filterSecondaryMaterialOptions<T extends { id?: string; code: st
     return set.has(groupKey);
   });
 }
+
+/**
+ * Ghép tên phiếu trộn định mức: PTĐM + ngày + ca + lệnh sản xuất
+ * Ví dụ: formatMixingNormSlipName('2026-09-08', 'Ca 1', 'LSX-001') => 'PTĐM - 2026-09-08 - Ca 1 - LSX-001'
+ */
+export function formatMixingNormSlipName(
+  ngay?: string | null,
+  ca?: string | null,
+  maLenhSx?: string | null
+): string {
+  const parts: string[] = ['PTĐM'];
+  const n = String(ngay ?? '').trim();
+  const c = String(ca ?? '').trim();
+  const lsx = String(maLenhSx ?? '').trim();
+  if (n) parts.push(n);
+  if (c) parts.push(c);
+  if (lsx) parts.push(lsx);
+  return parts.join(' - ');
+}
+

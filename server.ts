@@ -9,6 +9,7 @@ import type { ProductionReport } from './src/types';
 import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { calculateProductConversionFormulas } from './src/utils/productConversionCalculation';
+import { formatMixingNormSlipName } from './src/utils/mixingNormAuxiliary';
 
 dotenv.config();
 
@@ -3099,6 +3100,8 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   const ma_lenh_sx = String(source.ma_lenh_sx ?? source.maLenhSx ?? '').trim() || null;
   const caRaw = String(source.ca ?? source.shift ?? '').trim();
   const ca = !caRaw || caRaw === '-' || caRaw === '—' ? null : caRaw;
+  const ten_phieu = String(source.ten_phieu ?? source.tenPhieu ?? '').trim() ||
+    formatMixingNormSlipName(ngay, ca, ma_lenh_sx);
 
   const parseNvlLines = (raw: unknown, label: string, required = true) => {
     const linesRaw = Array.isArray(raw) ? raw : [];
@@ -3326,6 +3329,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
     const first = products[0];
     return {
       record: {
+        ten_phieu,
         ngay,
         ca,
         ma_lenh_sx,
@@ -3354,6 +3358,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
   return {
     record: {
+      ten_phieu,
       ngay,
       ca,
       ma_lenh_sx,
@@ -3377,7 +3382,14 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 async function validateMixingNormMaterialClasses(record: Record<string, unknown>): Promise<string | null> {
   if (!supabase) return null;
   const products = Array.isArray(record.chi_tiet) ? record.chi_tiet : [];
-  const references: Array<{ code: string; secondary: boolean; product: string }> = [];
+  const references: Array<{
+    code: string;
+    name: string;
+    productionName: string;
+    secondary: boolean;
+    product: string;
+    line: Record<string, unknown>;
+  }> = [];
   for (const item of products) {
     if (!item || typeof item !== 'object') continue;
     const product = item as Record<string, unknown>;
@@ -3388,33 +3400,57 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
         if (!line || typeof line !== 'object') return;
         const row = line as Record<string, unknown>;
         const code = String(row.ma_nvl ?? '').trim();
-        if (code) references.push({ code, secondary, product: productCode });
+        if (code) references.push({
+          code,
+          name: String(row.ten_nvl ?? '').trim(),
+          productionName: String(row.ten_nvl_san_xuat ?? '').trim(),
+          secondary,
+          product: productCode,
+          line: row
+        });
       });
     };
     collect(product.nvl, false);
     collect(product.nvl_phu, true);
   }
 
-  const codes = [...new Set(references.map(item => item.code))];
+  const codes = [...new Set(references.map(item => item.code.trim()).filter(Boolean))];
   if (codes.length === 0) return null;
+  const queryCodes = [...new Set([
+    ...codes,
+    ...codes.map(c => c.toUpperCase()),
+    ...codes.map(c => c.toLowerCase())
+  ])];
   const { data, error } = await supabase
     .from(SUPABASE_MATERIALS_TABLE)
-    .select('ma_npl, phan_loai')
-    .in('ma_npl', codes);
+    .select('ma_npl, ten_npl, ten_nvl_sx, don_vi, phan_loai')
+    .in('ma_npl', queryCodes);
   if (error) {
     if (isMissingTableError(error) || isMissingColumnError(error)) return null;
     console.error('Supabase mixing norm material class validation error:', error);
     return null;
   }
 
-  const classByCode = new Map(
-    (Array.isArray(data) ? data : []).map(row => [
-      String((row as Record<string, unknown>).ma_npl ?? '').trim().toLocaleLowerCase('vi'),
-      String((row as Record<string, unknown>).phan_loai ?? '').trim()
-    ])
-  );
+  const materialRows = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>;
   for (const reference of references) {
-    const materialClass = classByCode.get(reference.code.toLocaleLowerCase('vi'));
+    const normalizedCode = reference.code.trim().toLocaleLowerCase('vi');
+    const candidates = materialRows.filter(row =>
+      String(row.ma_npl ?? '').trim().toLocaleLowerCase('vi') === normalizedCode
+    );
+    const material = candidates.find(row =>
+      String(row.ten_npl ?? '').trim() === reference.name &&
+      String(row.ten_nvl_sx ?? '').trim() === reference.productionName
+    ) ?? candidates.find(row =>
+      String(row.ten_npl ?? '').trim() === reference.name
+    ) ?? candidates[0];
+
+    const materialClass = String(material?.phan_loai ?? '').trim();
+    if (reference.secondary) {
+      const primaryUnit = String(material?.don_vi ?? '').trim();
+      if (primaryUnit) {
+        reference.line.don_vi = primaryUnit;
+      }
+    }
     if (!materialClass) continue;
     if (reference.secondary && materialClass !== 'Nguyên vật liệu phụ') {
       return 'NVL ' + reference.code + ' của SP ' + (reference.product || '(chưa có mã)') +
@@ -12375,11 +12411,18 @@ export function createApp() {
           return tokens.some(token => values.includes(token));
         });
       }
+      records = records.map(row => {
+        const r = row as Record<string, unknown>;
+        const ten_phieu = String(r.ten_phieu ?? '').trim() ||
+          formatMixingNormSlipName(String(r.ngay ?? ''), String(r.ca ?? ''), String(r.ma_lenh_sx ?? ''));
+        return { ...r, ten_phieu };
+      });
+
       if (q) {
         const needle = q.toLowerCase();
         records = records.filter(row => {
           const r = row as Record<string, unknown>;
-          return `${r.ngay ?? ''} ${r.ca ?? ''} ${r.ma_lenh_sx ?? ''} ${r.ma_sp ?? ''} ${r.ten_sp ?? ''} ${r.ma_nvl ?? ''} ${r.ten_nvl ?? ''} ${r.ghi_chu ?? ''}`
+          return `${r.ten_phieu ?? ''} ${r.ngay ?? ''} ${r.ca ?? ''} ${r.ma_lenh_sx ?? ''} ${r.ma_sp ?? ''} ${r.ten_sp ?? ''} ${r.ma_nvl ?? ''} ${r.ten_nvl ?? ''} ${r.ghi_chu ?? ''}`
             .toLowerCase()
             .includes(needle);
         });
@@ -12408,18 +12451,35 @@ export function createApp() {
         if (duplicateError) return res.status(400).json({ error: duplicateError });
       }
 
-      const { data, error } = await supabase
+      let insertRecord = { ...parsed.record };
+      let { data, error } = await supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
-        .insert(parsed.record)
+        .insert(insertRecord)
         .select('*')
         .single();
+
+      if (error && isMissingColumnError(error) && error.message?.includes('ten_phieu')) {
+        const { ten_phieu: _omitted, ...recordWithoutTenPhieu } = insertRecord;
+        const retry = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .insert(recordWithoutTenPhieu)
+          .select('*')
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) {
         console.error('Supabase mixing norm insert error:', error);
         return res.status(500).json({ error: mixingNormWriteError(error) });
       }
 
-      return res.status(201).json({ success: true, record: data });
+      const returnedRecord = data && typeof data === 'object' ? {
+        ...data,
+        ten_phieu: (data as Record<string, unknown>).ten_phieu || parsed.record.ten_phieu
+      } : data;
+
+      return res.status(201).json({ success: true, record: returnedRecord });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi thêm dòng định mức.' });
     }
@@ -12445,19 +12505,37 @@ export function createApp() {
         if (duplicateError) return res.status(400).json({ error: duplicateError });
       }
 
-      const { data, error } = await supabase
+      let updateRecord = { ...parsed.record };
+      let { data, error } = await supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
-        .update(parsed.record)
+        .update(updateRecord)
         .eq('id', id)
         .select('*')
         .single();
+
+      if (error && isMissingColumnError(error) && error.message?.includes('ten_phieu')) {
+        const { ten_phieu: _omitted, ...recordWithoutTenPhieu } = updateRecord;
+        const retry = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .update(recordWithoutTenPhieu)
+          .eq('id', id)
+          .select('*')
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) {
         console.error('Supabase mixing norm update error:', error);
         return res.status(500).json({ error: mixingNormWriteError(error) });
       }
 
-      return res.json({ success: true, record: data });
+      const returnedRecord = data && typeof data === 'object' ? {
+        ...data,
+        ten_phieu: (data as Record<string, unknown>).ten_phieu || parsed.record.ten_phieu
+      } : data;
+
+      return res.json({ success: true, record: returnedRecord });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật dòng định mức.' });
     }

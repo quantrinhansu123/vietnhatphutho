@@ -1,4 +1,6 @@
 export interface OrderProductLine {
+  /** Bản ghi gốc trong JSON `don_hang.san_pham`, dùng để form sửa không làm mất dữ liệu đã lưu. */
+  sourceProduct?: Record<string, unknown>;
   productId?: string;
   productCode: string;
   productName: string;

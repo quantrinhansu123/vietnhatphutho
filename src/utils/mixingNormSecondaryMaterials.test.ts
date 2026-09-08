@@ -4,7 +4,8 @@ import {
   normalizeNhomVatTuPhuKey,
   resolveWorkshopType,
   calcAuxiliaryWeight,
-  getAllowedSecondaryGroups
+  getAllowedSecondaryGroups,
+  formatMixingNormSlipName
 } from './mixingNormAuxiliary';
 
 test('normalizeNhomVatTuPhuKey chuan hoa dung cac nhom vat tu phu', () => {
@@ -48,7 +49,24 @@ test('calcAuxiliaryWeight tinh dung cho TP; PX Dac', () => {
 });
 
 test('calcAuxiliaryWeight tinh dung cho TP; PX Song', () => {
-  assert.equal(calcAuxiliaryWeight('song', 'Băng Dính', 'Cuộn', 10), 0.013);
-  assert.equal(calcAuxiliaryWeight('song', 'Tem', 'Cái', 10), 4);
+  assert.equal(calcAuxiliaryWeight('song', 'Băng Dính', 'Cuộn', 10), 4);
+  assert.equal(calcAuxiliaryWeight('song', 'Tem', 'Cái', 100), 0.13);
   assert.equal(calcAuxiliaryWeight('song', 'Mực In', 'kg', 5), 5);
 });
+
+test('formatMixingNormSlipName ghep PTDM + ngay + ca + lenh san xuat', () => {
+  assert.equal(
+    formatMixingNormSlipName('2026-09-08', 'Ca 1', 'LSX-001'),
+    'PTĐM - 2026-09-08 - Ca 1 - LSX-001'
+  );
+  assert.equal(
+    formatMixingNormSlipName('2026-09-08', 'Ca 2', ''),
+    'PTĐM - 2026-09-08 - Ca 2'
+  );
+  assert.equal(
+    formatMixingNormSlipName('2026-09-08', '', 'LSX-002'),
+    'PTĐM - 2026-09-08 - LSX-002'
+  );
+  assert.equal(formatMixingNormSlipName('', '', ''), 'PTĐM');
+});
+
