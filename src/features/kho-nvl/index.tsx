@@ -62,7 +62,19 @@ export interface MaterialRow {
   inbound: string;
   outbound: string;
   phanLoai: string;
+  auxiliaryMaterialGroup: string;
 }
+
+export const AUXILIARY_MATERIAL_GROUPS = [
+  'Băng Dính',
+  'Bạt Bọc',
+  'Dây Đai',
+  'Dung Môi',
+  'Màng',
+  'Mực In',
+  'Tem',
+  'Kẹp Sắt'
+] as const;
 
 export function parseInventoryNumber(value: string): number | null {
   if (!value || value === '-') return null;
@@ -145,7 +157,8 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
         openingStock: formatCell(record.ton_dau_ky),
         inbound: formatCell(record.nhap_trong_ky),
         outbound: formatCell(record.xuat_trong_ky),
-        phanLoai: formatCell(record.phan_loai ?? record.kho_ngam_dinh)
+        phanLoai: formatCell(record.phan_loai ?? record.kho_ngam_dinh),
+        auxiliaryMaterialGroup: formatCell(record.nhom_vat_tu_phu === 'Bạt Dọc' ? 'Bạt Bọc' : record.nhom_vat_tu_phu)
       };
     })
     .filter((material): material is MaterialRow => Boolean(material));
@@ -166,6 +179,7 @@ export type MaterialFormState = {
   inbound: string;
   outbound: string;
   phanLoai: string;
+  auxiliaryMaterialGroup: string;
 };
 
 const emptyMaterialForm = (): MaterialFormState => ({
@@ -182,7 +196,8 @@ const emptyMaterialForm = (): MaterialFormState => ({
   openingStock: '',
   inbound: '',
   outbound: '',
-  phanLoai: ''
+  phanLoai: '',
+  auxiliaryMaterialGroup: ''
 });
 
 export function materialCellToInput(value: string) {
@@ -204,7 +219,10 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
     openingStock: materialCellToInput(material.openingStock),
     inbound: materialCellToInput(material.inbound),
     outbound: materialCellToInput(material.outbound),
-    phanLoai: materialCellToInput(material.phanLoai)
+    phanLoai: materialCellToInput(material.phanLoai),
+    auxiliaryMaterialGroup: materialCellToInput(
+      material.auxiliaryMaterialGroup === 'Bạt Dọc' ? 'Bạt Bọc' : material.auxiliaryMaterialGroup
+    )
   };
 }
 
@@ -270,7 +288,8 @@ function materialWithCatalogPayload(id: string, payload: MaterialCatalogPayload)
     openingStock: payload.openingStock || '-',
     inbound: payload.inbound || '-',
     outbound: payload.outbound || '-',
-    phanLoai: payload.phanLoai || '-'
+    phanLoai: payload.phanLoai || '-',
+    auxiliaryMaterialGroup: payload.auxiliaryMaterialGroup || '-'
   };
 }
 
@@ -683,6 +702,7 @@ export function MaterialViewModal({
     ['Tên NVL', material.name],
     ['Tên NVL sản xuất', material.productionName || '-'],
     ['Phân loại', material.phanLoai || '-'],
+    ['Nhóm vật tư phụ', material.auxiliaryMaterialGroup || '-'],
     ['Đơn vị', material.unit],
     ['Tồn đầu', material.openingStock],
     ['Nhập', inboundDisplay],
@@ -911,7 +931,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       const matchesUnit = selectedUnit === 'all' || material.unit === selectedUnit;
       const matchesSearch =
         !normalizedSearch ||
-        `${material.code} ${material.name} ${material.productionName} ${material.unit}`.toLowerCase().includes(normalizedSearch);
+        `${material.code} ${material.name} ${material.productionName} ${material.unit} ${material.auxiliaryMaterialGroup}`.toLowerCase().includes(normalizedSearch);
       return matchesUnit && matchesSearch;
     });
   }, [materials, normalizedSearch, selectedUnit]);
@@ -1159,6 +1179,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     { key: 'name', label: 'Tên nguyên vật liệu', required: true, placeholder: 'VD: Màng PE' },
     { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', placeholder: 'Tên dùng trong sản xuất' },
     { key: 'phanLoai', label: 'Phân loại' },
+    { key: 'auxiliaryMaterialGroup', label: 'Nhóm vật tư phụ' },
     { key: 'totalWeight', label: 'Tổng kg' },
     { key: 'plasticWeight', label: 'Kg nhựa' },
     { key: 'bagWeight', label: 'Kg túi' },
@@ -1338,6 +1359,15 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                       <option value="Nguyên vật liệu phụ">Nguyên vật liệu phụ</option>
                       <option value="Nguyên vật liệu chính">Nguyên vật liệu chính</option>
                     </select>
+                  ) : field.key === 'auxiliaryMaterialGroup' ? (
+                    <select
+                      value={materialForm[field.key]}
+                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      className={materialFieldClass}
+                    >
+                      <option value="">-- Chọn nhóm vật tư phụ --</option>
+                      {AUXILIARY_MATERIAL_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
+                    </select>
                   ) : (
                     <input
                       value={materialForm[field.key]}
@@ -1390,11 +1420,12 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         }}
       />
 
-      <TableShell minWidthClassName="min-w-[1000px]">
+      <TableShell minWidthClassName="min-w-[1150px]">
         <TableHead>
           <TableHeadCell>Mã NPL</TableHeadCell>
           <TableHeadCell>Tên nguyên vật liệu</TableHeadCell>
           <TableHeadCell>Phân loại</TableHeadCell>
+          <TableHeadCell>Nhóm vật tư phụ</TableHeadCell>
           <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
           <TableHeadCell>ĐV</TableHeadCell>
           <TableHeadCell align="center">Tổng kg</TableHeadCell>
@@ -1411,6 +1442,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-900">{material.name || '-'}</td>
                 <td className="px-4 py-3 text-xs font-semibold text-zinc-600">{material.phanLoai || '-'}</td>
+                <td className="px-4 py-3 text-xs font-semibold text-zinc-700">{material.auxiliaryMaterialGroup || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-700">{material.productionName || '-'}</td>
                 <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
                 <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>

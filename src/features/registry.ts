@@ -344,13 +344,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   bang_tron_vat_tu_dinh_muc: {
     table: 'bang_tron_vat_tu_dinh_muc',
     label: 'Bảng trộn vật tư định mức',
-    sql: ['supabase-bang-tron-vat-tu-dinh-muc.sql'],
+    sql: [
+      'supabase-bang-tron-vat-tu-dinh-muc.sql',
+      'supabase-bang-tron-vat-tu-dinh-muc-ngay-bat-buoc.sql',
+      'supabase-bang-tron-vat-tu-dinh-muc-ten-phieu.sql'
+    ],
     apiPrefix: '/api/bang-tron-vat-tu-dinh-muc',
     serverLines: 'bang_tron_vat_tu_dinh_muc routes',
     appTab: 'mixing-report-list',
     appLines: 'src/components/MixingNormMaterialsTab.tsx',
-    components: ['src/components/MixingNormMaterialsTab.tsx'],
-    utils: []
+    components: ['src/components/MixingNormMaterialsTab.tsx', 'src/components/MixingNormRatioPrintSheet.tsx'],
+    utils: ['src/utils/mixingNormAuxiliary.ts']
   },
   phieu_tron_thuc_te: {
     table: 'phieu_tron_thuc_te',

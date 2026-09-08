@@ -35,7 +35,8 @@ export function SearchableSelect({
   getSearchText,
   displaySelectedAsValue = false,
   desktopAutoFlip = true,
-  allowCustomValue = false
+  allowCustomValue = false,
+  skipUnchangedBlurCommit = false
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -57,6 +58,8 @@ export function SearchableSelect({
   desktopAutoFlip?: boolean;
   /** Cho phép gõ giá trị tự do không có trong danh sách — giữ nguyên khi blur thay vì revert. */
   allowCustomValue?: boolean;
+  /** Không gọi onChange khi chỉ focus rồi blur mà giá trị không đổi. */
+  skipUnchangedBlurCommit?: boolean;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +122,12 @@ export function SearchableSelect({
     window.setTimeout(() => {
       if (suppressBlurRef.current) {
         suppressBlurRef.current = false;
+        return;
+      }
+
+      if (skipUnchangedBlurCommit && query.trim() === selectedLabel.trim()) {
+        setQuery(selectedLabel);
+        setOpen(false);
         return;
       }
 

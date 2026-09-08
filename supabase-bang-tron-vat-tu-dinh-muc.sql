@@ -21,7 +21,16 @@ alter table public.bang_tron_vat_tu_dinh_muc
   add column if not exists ma_nvl text,
   add column if not exists ten_nvl text,
   add column if not exists dinh_muc numeric,
-  add column if not exists don_vi_dinh_muc text default '%';
+  add column if not exists don_vi_dinh_muc text default '%',
+  add column if not exists ten_phieu text;
+
+-- Dữ liệu cũ có thể chưa có ngày. Backfill trước khi bật ràng buộc bắt buộc.
+update public.bang_tron_vat_tu_dinh_muc
+set ngay = coalesce(ngay, created_at::date, current_date)
+where ngay is null;
+
+alter table public.bang_tron_vat_tu_dinh_muc
+  alter column ngay set not null;
 
 create index if not exists bang_tron_vat_tu_dinh_muc_ngay_idx
   on public.bang_tron_vat_tu_dinh_muc (ngay desc);

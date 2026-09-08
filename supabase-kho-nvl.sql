@@ -16,6 +16,7 @@ alter table public.kho_nvl
   add column if not exists trong_luong_loi numeric,
   add column if not exists kho_cuon numeric,
   add column if not exists chieu_dai_don_vi numeric,
+  add column if not exists nhom_vat_tu_phu text,
   add column if not exists ton_dau_ky numeric,
   add column if not exists nhap_trong_ky numeric,
   add column if not exists xuat_trong_ky numeric;
@@ -56,6 +57,7 @@ comment on column public.kho_nvl.ten_npl is 'Ten nguyen phu lieu.';
 alter table public.kho_nvl
   add column if not exists ten_nvl_sx text;
 comment on column public.kho_nvl.ten_nvl_sx is 'Ten nguyen vat lieu su dung trong san xuat.';
+comment on column public.kho_nvl.nhom_vat_tu_phu is 'Nhom vat tu phu dung de loc khi lap phieu tron dinh muc.';
 
 alter table public.kho_nvl
   add column if not exists phan_loai text;

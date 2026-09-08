@@ -54,6 +54,7 @@ type SecondaryLine = {
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat: string;
+  don_vi: string;
   khoi_luong_dinh_muc: number | null;
   trong_luong_thuc_te: number | null;
   trong_luong_thuc_te_input: string;
@@ -323,6 +324,7 @@ function normalizeSecondaryProducts(raw: unknown): ActualSecondaryProduct[] {
             ma_nvl,
             ten_nvl,
             ten_nvl_san_xuat: String(row.ten_nvl_san_xuat ?? '').trim(),
+            don_vi: String(row.don_vi ?? 'kg').trim() || 'kg',
             khoi_luong_dinh_muc: kl,
             trong_luong_thuc_te: kl,
             trong_luong_thuc_te_input: kl !== null ? String(kl) : ''
@@ -478,12 +480,14 @@ export default function ActualMixingSheetTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Phiếu trộn định mức đi 1-1 theo lệnh SX (không còn theo ngày) — tìm theo mã lệnh SX,
-  // không lọc theo ngày nữa (ngày ở đây là ngày thực hiện trộn thực tế, có thể khác ngày lập định mức).
+  // Một lệnh SX có thể có nhiều phiếu định mức; ngày phiếu giúp phân biệt
+  // các phiếu cùng mã lệnh. Ngày trộn thực tế vẫn là giá trị độc lập.
   const matchingNorms = useMemo(() => {
     return [...norms].sort((left, right) => {
       const byOrder = left.ma_lenh_sx.localeCompare(right.ma_lenh_sx, 'vi');
       if (byOrder !== 0) return byOrder;
+      const byDate = right.ngay.localeCompare(left.ngay, 'vi');
+      if (byDate !== 0) return byDate;
       return left.ca.localeCompare(right.ca, 'vi');
     });
   }, [norms]);
@@ -492,7 +496,7 @@ export default function ActualMixingSheetTab() {
     () => ({
       allowClear: true,
       minimumResultsForSearch: 0,
-      placeholder: matchingNorms.length ? 'Gõ để tìm mã lệnh SX...' : 'Chưa có phiếu trộn định mức nào',
+      placeholder: matchingNorms.length ? 'Gõ để tìm lệnh SX hoặc ngày phiếu...' : 'Chưa có phiếu trộn định mức nào',
       language: {
         noResults: () => 'Không tìm thấy lệnh SX phù hợp.',
         searching: () => 'Đang tìm...'
@@ -729,7 +733,7 @@ export default function ActualMixingSheetTab() {
           khoi_luong: line.khoi_luong_dinh_muc,
           gia_tri: line.khoi_luong_dinh_muc,
           tong_khoi_luong: line.khoi_luong_dinh_muc,
-          don_vi: 'kg',
+          don_vi: line.don_vi,
           trong_luong_thuc_te: line.trong_luong_thuc_te_input ? Number(line.trong_luong_thuc_te_input) : line.trong_luong_thuc_te
         }));
         payloadChiTiet.push({
@@ -771,8 +775,8 @@ export default function ActualMixingSheetTab() {
       setSecondaryProducts(attachSavedSecondary(standardSec, record.chi_tiet));
       setMessage(
         existing
-          ? `Đã cập nhật đúng dòng ${norm.ma_lenh_sx || norm.id} · ca ${norm.ca}.`
-          : `Đã lưu đúng dòng ${norm.ma_lenh_sx || norm.id} · ca ${norm.ca}.`
+          ? `Đã cập nhật phiếu ${norm.ma_lenh_sx || norm.id} · ${norm.ngay} · ca ${norm.ca}.`
+          : `Đã lưu phiếu ${norm.ma_lenh_sx || norm.id} · ${norm.ngay} · ca ${norm.ca}.`
       );
     } catch (err: any) {
       setError(err.message || 'Không thể lưu phiếu.');
@@ -848,7 +852,7 @@ export default function ActualMixingSheetTab() {
           ten_nvl: line.ten_nvl,
           ten_nvl_san_xuat: line.ten_nvl_san_xuat,
           gia_tri: line.khoi_luong_dinh_muc,
-          don_vi: 'kg',
+          don_vi: line.don_vi,
           khoi_luong: line.khoi_luong_dinh_muc,
           tong_khoi_luong: line.khoi_luong_dinh_muc,
           trong_luong_thuc_te: line.trong_luong_thuc_te
@@ -933,12 +937,13 @@ export default function ActualMixingSheetTab() {
             refreshKey={orderSelect2RefreshKey}
           >
             <option value="">
-              {matchingNorms.length ? 'Gõ để tìm mã lệnh SX...' : 'Chưa có phiếu trộn định mức nào'}
+              {matchingNorms.length ? 'Gõ để tìm lệnh SX hoặc ngày phiếu...' : 'Chưa có phiếu trộn định mức nào'}
             </option>
             {matchingNorms.map(row => {
               const hasActual = actuals.some(actual => String(actual.dinh_muc_id) === String(row.id));
               const label =
                 (row.ma_lenh_sx || 'Không có mã lệnh') +
+                (row.ngay ? ` · Ngày ${row.ngay}` : '') +
                 (row.ca ? ` · Ca ${row.ca}` : '') +
                 (hasActual ? ' · đã có thực tế' : '');
               return (
@@ -954,6 +959,7 @@ export default function ActualMixingSheetTab() {
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-700">
           Đang mở dòng:{' '}
           <span className="font-black text-zinc-950">{selectedNorm.ma_lenh_sx || selectedNorm.id}</span>
+          {' · '}Ngày định mức <span className="font-mono font-black">{selectedNorm.ngay || '—'}</span>
           {' · '}Ngày trộn thực tế <span className="font-mono font-black">{date}</span>
           {' · '}Ca <span className="font-black">{selectedNorm.ca || '—'}</span>
           {savedForSelected ? (

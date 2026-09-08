@@ -53,7 +53,10 @@ export interface OrderRow {
   khu_vuc?: string;
 }
 
-export function parseOrderProductsFromRecord(record: Record<string, unknown>): OrderProductLine[] {
+export function parseOrderProductsFromRecord(
+  record: Record<string, unknown>,
+  options?: { includeSourceProduct?: boolean }
+): OrderProductLine[] {
   let raw = record.san_pham ?? record.products;
   if (typeof raw === 'string') {
     const trimmed = raw.trim();
@@ -110,6 +113,7 @@ export function parseOrderProductsFromRecord(record: Record<string, unknown>): O
         const note = pickText(row, ['ghi_chu', 'note'], '');
         if (!productCode && !productName) return null;
         return {
+          ...(options?.includeSourceProduct ? { sourceProduct: { ...row } } : {}),
           productId,
           productCode,
           productName,

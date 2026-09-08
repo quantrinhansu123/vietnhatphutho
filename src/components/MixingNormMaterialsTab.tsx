@@ -18,6 +18,24 @@ import {
 } from './MixingNormRatioPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, resolveShiftName } from '../utils/shiftSettings';
 import { convertProductQuantity, type ProductConversionFactors } from '../utils/productUnitConversion';
+import {
+  type WorkshopType,
+  normalizeNhomVatTuPhuKey,
+  resolveWorkshopType,
+  roundWeight4,
+  calcAuxiliaryWeight,
+  getAllowedSecondaryGroups,
+  filterSecondaryMaterialOptions,
+  formatMixingNormSlipName
+} from '../utils/mixingNormAuxiliary';
+
+export {
+  type WorkshopType,
+  normalizeNhomVatTuPhuKey,
+  resolveWorkshopType,
+  calcAuxiliaryWeight,
+  getAllowedSecondaryGroups
+};
 
 export type MixingNormLine = {
   ma_nvl: string;
@@ -60,6 +78,7 @@ export type MixingNormProduct = {
 
 export type MixingNormRow = {
   id: string;
+  ten_phieu?: string;
   ngay: string;
   ca: string;
   ma_lenh_sx: string;
@@ -74,7 +93,9 @@ type MaterialOption = {
   name: string;
   productionName: string;
   unit: string;
+  donViGoc?: string;
   phanLoai: string;
+  nhomVatTuPhu?: string;
 };
 
 type ProductOption = {
@@ -86,6 +107,7 @@ type ProductOption = {
   tenSanXuat?: string;
   totalWeight?: number | null;
   wastePercent?: number;
+  nhomVthh?: string;
   nplItems?: MixingBomItem[];
 };
 
@@ -102,7 +124,7 @@ type LineForm = {
   tenNvl: string;
   tenNvlSanXuat: string;
   giaTri: string;
-  donVi: 'kg' | '%';
+  donVi: string;
   phanLoai: string;
 };
 
@@ -307,7 +329,9 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
         name,
         productionName,
         unit: unitRaw === '%' ? '%' : 'kg',
-        phanLoai: String(row.phan_loai ?? row.kho_ngam_dinh ?? '').trim()
+        donViGoc: unitRaw || 'kg',
+        phanLoai: String(row.phan_loai ?? row.kho_ngam_dinh ?? '').trim(),
+        nhomVatTuPhu: String(row.nhom_vat_tu_phu ?? '').trim()
       };
     })
     .filter((item): item is MaterialOption => Boolean(item));
@@ -351,6 +375,7 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       tenSanXuat: String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(),
       totalWeight: parseNumberOrNull(row.tong_trong_luong ?? row.totalWeight),
       wastePercent: parseNumberOrNull(row.ty_le_hao_hut ?? row.wastePercent) ?? 0,
+      nhomVthh: String(row.nhom_vthh ?? row.group ?? '').trim(),
       // This screen does not autofill BOMs. Avoid parsing a potentially large
       // JSON payload for every catalog row just to render the picker.
       nplItems: []
@@ -390,10 +415,12 @@ function normalizeProductLookupKey(value: string) {
   return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
 }
 
-function materialOptionLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'>) {
+function materialOptionLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'> & { nhomVatTuPhu?: string }) {
   const base = `${item.code} - ${item.name}`;
-  return item.productionName.trim() ? `${base} · ${item.productionName.trim()}` : base;
+  const withProd = item.productionName.trim() ? `${base} · ${item.productionName.trim()}` : base;
+  return item.nhomVatTuPhu ? `${withProd} (${item.nhomVatTuPhu})` : withProd;
 }
+
 
 /**
  * Trùng NVL: cùng mã (hoặc cùng tên) chỉ bị chặn khi tên NVL sản xuất cũng giống nhau.
@@ -493,6 +520,49 @@ function roundMixing(value: number) {
   return Math.round(value * 1000) / 1000;
 }
 
+function resolveSecondaryWorkshopType(
+  secondaryProduct: SecondaryProductForm,
+  formProducts: ProductForm[],
+  catalogProductsById: Map<string, ProductOption>,
+  catalogProducts: ProductOption[]
+): WorkshopType {
+  // 1. Kiểm tra các mã SP được chọn trong khối NVL phụ
+  for (const id of secondaryProduct.maSpIds) {
+    const catalog = catalogProductsById.get(id);
+    if (catalog?.nhomVthh) {
+      const type = resolveWorkshopType(catalog.nhomVthh);
+      if (type !== 'unknown') return type;
+    }
+  }
+  for (const code of secondaryProduct.maSpCodes) {
+    const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+    if (catalog?.nhomVthh) {
+      const type = resolveWorkshopType(catalog.nhomVthh);
+      if (type !== 'unknown') return type;
+    }
+  }
+
+  // 2. Dự phòng: Lấy theo sản phẩm chính của phiếu trộn
+  for (const p of formProducts) {
+    for (const id of p.maSpIds) {
+      const catalog = catalogProductsById.get(id);
+      if (catalog?.nhomVthh) {
+        const type = resolveWorkshopType(catalog.nhomVthh);
+        if (type !== 'unknown') return type;
+      }
+    }
+    for (const code of p.maSpCodes) {
+      const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+      if (catalog?.nhomVthh) {
+        const type = resolveWorkshopType(catalog.nhomVthh);
+        if (type !== 'unknown') return type;
+      }
+    }
+  }
+
+  return 'unknown';
+}
+
 function findMixingOrderByCode(orders: MixingProductionOrder[], code: string) {
   const needle = code.trim().toLowerCase();
   if (!needle) return null;
@@ -533,21 +603,19 @@ function nvlPhuToLineForms(
   idHint: string,
   materialsByCode: Map<string, MaterialOption>
 ): LineForm[] {
-  return lines.map(line =>
-    toKgLineForm(
-      {
-        key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-        materialId: '',
-        maNvl: line.ma_nvl,
-        tenNvl: line.ten_nvl,
-        tenNvlSanXuat: line.ten_nvl_san_xuat || '',
-        phanLoai: line.phan_loai || line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.phanLoai || '',
-        giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
-        donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
-      },
-      0
-    )
-  );
+  return lines.map(line => {
+    const mat = materialsByCode.get(line.ma_nvl);
+    return {
+      key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
+      materialId: mat?.id || '',
+      maNvl: line.ma_nvl,
+      tenNvl: line.ten_nvl,
+      tenNvlSanXuat: line.ten_nvl_san_xuat || '',
+      phanLoai: line.phan_loai || line.kho_ngam_dinh || mat?.phanLoai || '',
+      giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
+      donVi: mat?.donViGoc || line.don_vi || mat?.unit || 'kg'
+    };
+  });
 }
 
 function collectSavedSecondaryProducts(
@@ -592,7 +660,11 @@ function collectSavedSecondaryProducts(
   }));
 }
 
-function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): MixingNormLine[] {
+function normalizeLines(
+  raw: unknown,
+  tongTrongLuong: number | null = null,
+  options?: { preserveUnit?: boolean }
+): MixingNormLine[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((item): MixingNormLine | null => {
@@ -603,7 +675,8 @@ function normalizeLines(raw: unknown, tongTrongLuong: number | null = null): Mix
       const ten_nvl_san_xuat = String(line.ten_nvl_san_xuat ?? line.tenNvlSanXuat ?? '').trim();
       if (!ma_nvl && !ten_nvl) return null;
       const gia_tri = parseNumberOrNull(line.gia_tri ?? line.dinh_muc);
-      const don_vi = String(line.don_vi ?? 'kg').trim() === '%' ? '%' : 'kg';
+      const rawUnit = String(line.don_vi ?? 'kg').trim() || 'kg';
+      const don_vi = options?.preserveUnit ? rawUnit : rawUnit === '%' ? '%' : 'kg';
       const saved = parseNumberOrNull(line.khoi_luong ?? line.khoiLuong);
       return {
         ma_nvl,
@@ -661,7 +734,7 @@ function normalizeProductBlock(item: Record<string, unknown>): MixingNormProduct
     so_lan_tron: Math.max(0, Math.trunc(parseNumberOrNull(item.so_lan_tron) ?? 0)),
     lan_tron,
     chi_tiet,
-    nvl_phu: normalizeLines(item.nvl_phu ?? item.nvlPhu, tong_trong_luong),
+    nvl_phu: normalizeLines(item.nvl_phu ?? item.nvlPhu, tong_trong_luong, { preserveUnit: true }),
     loai: String(item.loai ?? '').trim() || undefined
   };
 }
@@ -775,6 +848,8 @@ function normalizeRows(data: unknown): MixingNormRow[] {
 
       return {
         id,
+        ten_phieu: String(row.ten_phieu ?? '').trim() ||
+          formatMixingNormSlipName(String(row.ngay ?? ''), String(row.ca ?? ''), String(row.ma_lenh_sx ?? '')),
         ngay: String(row.ngay ?? '').trim(),
         ca: String(row.ca ?? '').trim(),
         ma_lenh_sx: String(row.ma_lenh_sx ?? '').trim(),
@@ -814,13 +889,14 @@ type SummarizedMaterial = {
 };
 
 function secondaryMaterialTotalWeight(line: MixingNormLine) {
-  if (line.gia_tri !== null && line.gia_tri !== undefined && Number.isFinite(line.gia_tri)) return line.gia_tri;
   if (line.tong_khoi_luong !== null && line.tong_khoi_luong !== undefined && Number.isFinite(line.tong_khoi_luong)) {
     return line.tong_khoi_luong;
   }
-  return line.khoi_luong !== null && line.khoi_luong !== undefined && Number.isFinite(line.khoi_luong)
-    ? line.khoi_luong
-    : null;
+  if (line.khoi_luong !== null && line.khoi_luong !== undefined && Number.isFinite(line.khoi_luong)) {
+    return line.khoi_luong;
+  }
+  if (line.gia_tri !== null && line.gia_tri !== undefined && Number.isFinite(line.gia_tri)) return line.gia_tri;
+  return null;
 }
 
 /** Cộng khối lượng cùng NVL qua toàn bộ cối trộn; phiếu cũ dùng chi_tiet. */
@@ -931,15 +1007,15 @@ export default function MixingNormMaterialsTab() {
     if (byId) return byId;
 
     const code = normalizeProductLookupKey(line.maNvl);
+    if (!code) return undefined;
     const name = line.tenNvl.trim();
     const productionName = line.tenNvlSanXuat.trim();
-    const sameCodeAndName = (item: MaterialOption) =>
-      normalizeProductLookupKey(item.code) === code &&
-      (!name || item.name.trim() === name);
+    const sameCode = materials.filter(item => normalizeProductLookupKey(item.code) === code);
+    if (sameCode.length === 0) return undefined;
     return (
-      materials.find(item => sameCodeAndName(item) && item.productionName.trim() === productionName) ??
-      materials.find(item => sameCodeAndName(item) && !item.productionName.trim() && !productionName) ??
-      undefined
+      sameCode.find(item => (!name || item.name.trim() === name) && item.productionName.trim() === productionName) ??
+      sameCode.find(item => !name || item.name.trim() === name) ??
+      sameCode[0]
     );
   };
 
@@ -1199,7 +1275,7 @@ export default function MixingNormMaterialsTab() {
       const spText = row.products
         .map(p => `${p.ma_sp} ${p.ten_sp} ${p.tong_trong_luong ?? ''} ${p.ghi_chu} ${summarizeLines(p.chi_tiet)}`)
         .join(' ');
-      return `${row.ngay} ${row.ca} ${row.ma_lenh_sx} ${row.ghi_chu} ${spText}`.toLowerCase().includes(q);
+      return `${row.ten_phieu ?? ''} ${row.ngay} ${row.ca} ${row.ma_lenh_sx} ${row.ghi_chu} ${spText}`.toLowerCase().includes(q);
     });
   }, [query, rows]);
 
@@ -1247,8 +1323,7 @@ export default function MixingNormMaterialsTab() {
     setForm({
       ngay: new Date().toISOString().slice(0, 10),
       ca: row.ca,
-      // Mỗi lệnh SX chỉ có 1 phiếu trộn định mức — bỏ trống để buộc chọn lệnh SX khác khi nhân bản.
-      maLenhSx: '',
+      maLenhSx: row.ma_lenh_sx,
       ghiChu: row.ghi_chu,
       products: formulaProducts.length > 0
         ? formulaProducts.map(product => productToForm(product, `${row.id}-copy`, materialsByCode))
@@ -1638,7 +1713,8 @@ export default function MixingNormMaterialsTab() {
         ...line,
         maNvl: material.code,
         tenNvl: material.name,
-        phanLoai: material.phanLoai || line.phanLoai
+        phanLoai: material.phanLoai || line.phanLoai,
+        donVi: material.phanLoai === 'Nguyên vật liệu phụ' ? (material.donViGoc || material.unit || 'kg') : line.donVi
       };
     }
     const sameCode = normalizeProductLookupKey(material.code) === normalizeProductLookupKey(line.maNvl);
@@ -1649,7 +1725,8 @@ export default function MixingNormMaterialsTab() {
       maNvl: material.code,
       tenNvl: material.name,
       tenNvlSanXuat: nextProduction,
-      phanLoai: material.phanLoai
+      phanLoai: material.phanLoai,
+      donVi: material.phanLoai === 'Nguyên vật liệu phụ' ? (material.donViGoc || material.unit || 'kg') : (material.unit || line.donVi || 'kg')
     };
   };
 
@@ -1745,6 +1822,10 @@ export default function MixingNormMaterialsTab() {
 
   const handleSave = async () => {
     setErrorProductKey('');
+    if (!form.ngay.trim()) {
+      setError('Vui lòng chọn ngày phiếu trộn định mức.');
+      return;
+    }
     const resolvedCa = resolveShiftName(form.ca.trim(), shiftOptions) || form.ca.trim();
     if (!resolvedCa || resolvedCa === '-' || resolvedCa === '—') {
       setError('Vui lòng chọn ca.');
@@ -1754,14 +1835,6 @@ export default function MixingNormMaterialsTab() {
       setError('Vui lòng chọn lệnh SX.');
       return;
     }
-    const duplicateOrder = rows.find(
-      row => row.ma_lenh_sx.trim() === form.maLenhSx.trim() && row.id !== editingId
-    );
-    if (duplicateOrder) {
-      setError('Lệnh SX này đã có phiếu trộn định mức — mỗi lệnh SX chỉ được lập 1 phiếu.');
-      return;
-    }
-
     const products = form.products.filter(product => product.maSp.trim());
     if (products.length === 0) {
       setErrorProductKey(form.products[0]?.key || '');
@@ -1959,19 +2032,34 @@ export default function MixingNormMaterialsTab() {
         const codes = item.maSpCodes.map(code => code.trim()).filter(Boolean);
         if (codes.length === 0) continue;
         const validIds = resolveValidProductIds(codes, item.maSpIds);
-        const nvl_phu = serializeLines(
-          item.lines.map(line => ({ ...line, donVi: 'kg' })),
-          0,
-          0,
-          null,
-          codes.join(', ')
-        ).map(line => ({
-          ...line,
-          khoi_luong: line.gia_tri,
-          ty_le_coi: null,
-          ty_le_tong: null,
-          tong_khoi_luong: line.gia_tri
-        }));
+        const workshopType = resolveSecondaryWorkshopType(item, form.products, catalogProductsById, catalogProducts);
+
+        const nvl_phu: MixingNormLine[] = item.lines
+          .filter(line => line.maNvl.trim() || line.tenNvl.trim())
+          .map((line, index) => {
+            const gia_tri =
+              line.giaTri.trim() === '' ? null : Number(line.giaTri.replace(',', '.'));
+            if (gia_tri !== null && !Number.isFinite(gia_tri)) {
+              throw new Error(`Giá trị NVL phụ #${index + 1} của SP ${codes.join(', ')} không hợp lệ.`);
+            }
+            const mat = findMaterialForLine(line) || materialsByCode.get(line.maNvl) ||
+              materials.find(m => normalizeProductLookupKey(m.code) === normalizeProductLookupKey(line.maNvl));
+            const nhomVatTuPhu = mat?.nhomVatTuPhu || '';
+            const donVi = mat?.donViGoc || mat?.unit || line.donVi || 'kg';
+            const weight = calcAuxiliaryWeight(workshopType, nhomVatTuPhu, donVi, gia_tri);
+            return {
+              ma_nvl: line.maNvl.trim(),
+              ten_nvl: line.tenNvl.trim(),
+              ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
+              phan_loai: line.phanLoai.trim() || 'Nguyên vật liệu phụ',
+              gia_tri,
+              don_vi: donVi,
+              khoi_luong: weight,
+              ty_le_coi: null,
+              ty_le_tong: null,
+              tong_khoi_luong: weight
+            };
+          });
         if (nvl_phu.length === 0) continue;
         payloadProducts.push({
           loai: 'nvl_phu',
@@ -1992,7 +2080,8 @@ export default function MixingNormMaterialsTab() {
       }
 
       const payload = {
-        ngay: form.ngay.trim() || null,
+        ten_phieu: formatMixingNormSlipName(form.ngay.trim(), resolvedCa, form.maLenhSx.trim()),
+        ngay: form.ngay.trim(),
         ca: resolvedCa,
         ma_lenh_sx: form.maLenhSx.trim(),
         ghi_chu: form.ghiChu.trim(),
@@ -2119,6 +2208,7 @@ export default function MixingNormMaterialsTab() {
           <table className="min-w-[1100px] w-full text-left text-sm">
             <thead className="bg-zinc-950 text-xs uppercase tracking-wider text-white">
               <tr>
+                <th className="whitespace-nowrap px-3 py-3 font-black">Tên phiếu</th>
                 <th className="whitespace-nowrap px-3 py-3 font-black">Ngày</th>
                 <th className="whitespace-nowrap px-3 py-3 font-black">Ca</th>
                 <th className="whitespace-nowrap px-3 py-3 font-black">Lệnh SX</th>
@@ -2130,6 +2220,9 @@ export default function MixingNormMaterialsTab() {
             <tbody className="divide-y divide-zinc-100">
               {filtered.map(row => (
                 <tr key={row.id} className="hover:bg-red-50/40">
+                  <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs font-bold text-zinc-900">
+                    {row.ten_phieu || formatMixingNormSlipName(row.ngay, row.ca, row.ma_lenh_sx)}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-800">
                     {row.ngay || '—'}
                   </td>
@@ -2299,8 +2392,36 @@ export default function MixingNormMaterialsTab() {
                   {error}
                 </p>
               ) : null}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="space-y-1.5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                <label className="space-y-1.5 sm:col-span-1">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                    Tên phiếu
+                  </span>
+                  <input
+                    value={formatMixingNormSlipName(
+                      form.ngay,
+                      resolveShiftName(form.ca.trim(), shiftOptions) || form.ca.trim(),
+                      form.maLenhSx.trim()
+                    )}
+                    readOnly
+                    disabled
+                    className={`${inputClass} bg-zinc-100 font-mono text-xs text-zinc-700 select-all cursor-default`}
+                    title="Tên phiếu tự động ghép: PTĐM + ngày + ca + lệnh sản xuất"
+                  />
+                </label>
+                <label className="space-y-1.5 sm:col-span-1">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                    Ngày phiếu <span className="text-[#ef1b2d]">*</span>
+                  </span>
+                  <input
+                    type="date"
+                    required
+                    value={form.ngay}
+                    onChange={event => setForm(prev => ({ ...prev, ngay: event.target.value }))}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="space-y-1.5 sm:col-span-1">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca <span className="text-[#ef1b2d]">*</span></span>
                   <select value={form.ca} onChange={event => setForm(prev => ({ ...prev, ca: event.target.value }))} className={inputClass}>
                     <option value="">Chọn ca</option>
@@ -2310,7 +2431,7 @@ export default function MixingNormMaterialsTab() {
                     {shiftOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </label>
-                <label className="space-y-1.5">
+                <label className="space-y-1.5 sm:col-span-1">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                     Lệnh SX <span className="text-[#ef1b2d]">*</span>
                   </span>
@@ -2332,13 +2453,8 @@ export default function MixingNormMaterialsTab() {
                     displaySelectedAsValue
                     maxResults={60}
                   />
-                  {!editingId && form.maLenhSx.trim() && rows.some(row => row.ma_lenh_sx.trim() === form.maLenhSx.trim()) ? (
-                    <p className="text-[11px] font-bold text-rose-600">
-                      Lệnh SX này đã có phiếu trộn định mức — mỗi lệnh SX chỉ được lập 1 phiếu.
-                    </p>
-                  ) : null}
                 </label>
-                <label className="space-y-1.5 sm:col-span-2">
+                <label className="space-y-1.5 sm:col-span-4">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                     Ghi chú phiếu
                   </span>
@@ -2683,12 +2799,23 @@ export default function MixingNormMaterialsTab() {
                         if (!selectedOnThisRow && takenHere.has(identity)) return false;
                         return true;
                       });
+                      const workshopType = resolveSecondaryWorkshopType(product, form.products, catalogProductsById, catalogProducts);
+                      const allowedGroups = getAllowedSecondaryGroups(workshopType);
+                      const workshopLabel =
+                        workshopType === 'rong'
+                          ? 'PX Rỗng'
+                          : workshopType === 'dac'
+                            ? 'PX Đặc'
+                            : workshopType === 'song'
+                              ? 'PX Sóng'
+                              : '';
                       return (
                         <div key={product.key} className="rounded-xl border border-amber-200 bg-white p-3 shadow-sm">
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <p className="text-xs font-black uppercase tracking-wider text-zinc-600">
                               SP phụ #{productIndex + 1}
                               {product.maSp ? ` · ${product.maSp}` : ''}
+                              {workshopLabel ? ` (${workshopLabel})` : ''}
                             </p>
                             <button
                               type="button"
@@ -2726,7 +2853,7 @@ export default function MixingNormMaterialsTab() {
                             <div className="mt-3">
                               <div className="mb-2 flex items-center justify-between gap-2">
                                 <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                                  NVL phụ
+                                  NVL phụ {workshopLabel ? `(${workshopLabel})` : ''}
                                 </p>
                                 <button
                                   type="button"
@@ -2737,68 +2864,90 @@ export default function MixingNormMaterialsTab() {
                                   Thêm NVL phụ
                                 </button>
                               </div>
-                              <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
+                              <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
                                 <span>Mã NVL</span>
                                 <span>Tên NVL</span>
                                 <span>Tên NVL sản xuất</span>
-                                <span>Tổng trọng lượng (kg)</span>
+                                <span className="text-center">ĐVT</span>
+                                <span className="text-right">Giá trị</span>
+                                <span className="text-right">Trọng lượng (kg)</span>
                                 <span />
                               </div>
                               <div className="space-y-2">
-                                {product.lines.map((line, index) => (
-                                  <div
-                                    key={line.key}
-                                    className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_90px_30px]"
-                                  >
-                                    <SearchableSelect
-                                      value={materialSelectValue(line)}
-                                      onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
-                                      options={secondaryMaterialOptions}
-                                      placeholder={'Tìm NVL phụ #' + (index + 1)}
-                                      getValue={item => (item as MaterialOption).id}
-                                      getLabel={item => materialOptionLabel(item as MaterialOption)}
-                                      getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName}
-                                      inputClassName={inputClass}
-                                    />
-                                    <input
-                                      value={line.tenNvl}
-                                      readOnly
-                                      className={inputClass + ' bg-zinc-50'}
-                                      placeholder="Tên NVL"
-                                    />
-                                    <SearchableSelect
-                                      value={line.tenNvlSanXuat}
-                                      onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
-                                      options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
-                                      placeholder="Chọn hoặc nhập tên NVL sản xuất"
-                                      allowCustomValue
-                                      getValue={item => String(item)}
-                                      getLabel={item => String(item)}
-                                      getSearchText={item => String(item)}
-                                      allowEmpty
-                                      inputClassName={inputClass + ' bg-zinc-50'}
-                                    />
-                                    <input
-                                      value={line.giaTri}
-                                      onChange={event => updateSecondaryLine(product.key, line.key, {
-                                        giaTri: event.target.value
-                                      })}
-                                      className={inputClass + ' h-8 px-1 text-[10px]'}
-                                      placeholder="kg"
-                                      inputMode="decimal"
-                                      title="Tổng trọng lượng NVL phụ"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => removeSecondaryLine(product.key, line.key)}
-                                      disabled={product.lines.length <= 1}
-                                      className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-                                      title="Xóa dòng NVL phụ"
+                                {product.lines.map((line, index) => {
+                                  const lineMat = findMaterialForLine(line);
+                                  const nhomVatTuPhu = lineMat?.nhomVatTuPhu || '';
+                                  const lineVal = parseNumberOrNull(line.giaTri);
+                                  const donVi = lineMat?.donViGoc || line.donVi || 'kg';
+                                  const calcWeight = calcAuxiliaryWeight(workshopType, nhomVatTuPhu, donVi, lineVal);
+                                  const filteredOptions = filterSecondaryMaterialOptions(secondaryMaterialOptions, allowedGroups, line);
+                                  const calcWeightDisplay = calcWeight !== null ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 }).format(calcWeight)} kg` : '—';
+                                  return (
+                                    <div
+                                      key={line.key}
+                                      className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px]"
                                     >
-                                      <Trash2 className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                ))}
+                                      <SearchableSelect
+                                        value={materialSelectValue(line)}
+                                        onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
+                                        options={filteredOptions}
+                                        placeholder={'Tìm NVL phụ #' + (index + 1)}
+                                        getValue={item => (item as MaterialOption).id}
+                                        getLabel={item => materialOptionLabel(item as MaterialOption)}
+                                        getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName + ' ' + ((item as MaterialOption).nhomVatTuPhu || '')}
+                                        inputClassName={inputClass}
+                                      />
+                                      <input
+                                        value={line.tenNvl}
+                                        readOnly
+                                        className={inputClass + ' bg-zinc-50'}
+                                        placeholder="Tên NVL"
+                                      />
+                                      <SearchableSelect
+                                        value={line.tenNvlSanXuat}
+                                        onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
+                                        options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
+                                        placeholder="Chọn hoặc nhập tên NVL sản xuất"
+                                        allowCustomValue
+                                        getValue={item => String(item)}
+                                        getLabel={item => String(item)}
+                                        getSearchText={item => String(item)}
+                                        allowEmpty
+                                        inputClassName={inputClass + ' bg-zinc-50'}
+                                      />
+                                      <input
+                                        value={donVi}
+                                        readOnly
+                                        className={inputClass + ' bg-zinc-50 text-center text-xs font-bold text-zinc-600'}
+                                        title="Đơn vị tính"
+                                      />
+                                      <input
+                                        value={line.giaTri}
+                                        onChange={event => updateSecondaryLine(product.key, line.key, {
+                                          giaTri: event.target.value
+                                        })}
+                                        className={inputClass + ' text-right'}
+                                        inputMode="decimal"
+                                        title="Giá trị NVL phụ"
+                                      />
+                                      <input
+                                        value={calcWeightDisplay}
+                                        readOnly
+                                        className={inputClass + ' bg-zinc-50 text-right font-bold text-amber-900'}
+                                        title="Trọng lượng (kg) tự động tính"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => removeSecondaryLine(product.key, line.key)}
+                                        disabled={product.lines.length <= 1}
+                                        className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                        title="Xóa dòng NVL phụ"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           ) : (

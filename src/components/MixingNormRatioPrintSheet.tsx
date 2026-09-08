@@ -2,8 +2,10 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { MixingNormLine, MixingNormProduct, MixingNormRow } from './MixingNormMaterialsTab';
+import { formatMixingNormSlipName } from '../utils/mixingNormAuxiliary';
 
 export type MixingNormRatioPrintDoc = {
+  tenPhieu?: string;
   maLenhSx: string;
   ngay: string;
   ca?: string;
@@ -120,13 +122,14 @@ function resolveSecondaryActualWeight(line: MixingNormLine) {
 }
 
 function resolveSecondaryTotalWeight(line: MixingNormLine) {
-  if (line.gia_tri !== null && line.gia_tri !== undefined && Number.isFinite(line.gia_tri)) return line.gia_tri;
   if (line.tong_khoi_luong !== null && line.tong_khoi_luong !== undefined && Number.isFinite(line.tong_khoi_luong)) {
     return line.tong_khoi_luong;
   }
-  return line.khoi_luong !== null && line.khoi_luong !== undefined && Number.isFinite(line.khoi_luong)
-    ? line.khoi_luong
-    : null;
+  if (line.khoi_luong !== null && line.khoi_luong !== undefined && Number.isFinite(line.khoi_luong)) {
+    return line.khoi_luong;
+  }
+  if (line.gia_tri !== null && line.gia_tri !== undefined && Number.isFinite(line.gia_tri)) return line.gia_tri;
+  return null;
 }
 
 function productTitle(product: MixingNormProduct & { print_name?: string }) {
@@ -193,6 +196,7 @@ export function toPrintDoc(
   resolveProductName?: (code: string) => string
 ): MixingNormRatioPrintDoc {
   return {
+    tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.ngay, row.ca, row.ma_lenh_sx),
     maLenhSx: row.ma_lenh_sx.trim(),
     ngay: row.ngay || new Date().toISOString().slice(0, 10),
     ca: row.ca,
@@ -306,8 +310,10 @@ function NormPrintProductSection({
               <th className="col-stt">STT</th>
               <th className="col-code">Mã NVL</th>
               <th className="col-name">Tên NVL</th>
-              <th className="col-kg">{isActual ? 'Định mức' : 'Tổng trọng lượng'}</th>
-              {isActual ? <th className="col-kg col-round-actual">Thực tế</th> : null}
+              <th className="col-val">Giá trị</th>
+              <th className="col-unit">ĐVT</th>
+              <th className="col-kg">{isActual ? 'Định mức (kg)' : 'Tổng trọng lượng (kg)'}</th>
+              {isActual ? <th className="col-kg col-round-actual">Thực tế (kg)</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -319,6 +325,8 @@ function NormPrintProductSection({
                   <td className="col-stt">{lineIndex + 1}</td>
                   <td className="col-code">{line.ma_nvl || ''}</td>
                   <td className="col-name">{materialPrintName(line)}</td>
+                  <td className="col-val">{line.gia_tri !== null && line.gia_tri !== undefined ? formatNumberVi(line.gia_tri) : ''}</td>
+                  <td className="col-unit">{line.don_vi || 'kg'}</td>
                   <td className="col-kg">{totalWeight !== null ? `${formatNumberVi(totalWeight)} kg` : ''}</td>
                   {isActual ? (
                     <td className="col-kg col-round-actual font-bold">
@@ -331,7 +339,7 @@ function NormPrintProductSection({
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={3} className="mixing-norm-ratio-print-total-label">
+              <td colSpan={5} className="mixing-norm-ratio-print-total-label">
                 Tổng trọng lượng NVL phụ {isActual ? 'cần' : ''}
               </td>
               <td className="col-kg">
@@ -394,6 +402,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
         <h1 className="mixing-norm-ratio-print-title">TỶ LỆ TRỘN {doc.isActual ? 'THỰC TẾ' : 'ĐỊNH MỨC'}</h1>
         <p className="mixing-norm-ratio-print-intro">{intro}</p>
         <p className="mixing-norm-ratio-print-meta">
+          {doc.tenPhieu ? (
+            <>
+              Tên phiếu: <strong>{doc.tenPhieu}</strong>
+              <span className="mixing-norm-ratio-print-meta-sep">·</span>
+            </>
+          ) : null}
           Lệnh SX: <strong>{doc.maLenhSx || '—'}</strong>
           <span className="mixing-norm-ratio-print-meta-sep">·</span>
           Ngày: <strong>{`${dateParts.day}/${dateParts.month}/${dateParts.year}`}</strong>
