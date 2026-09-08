@@ -13548,6 +13548,47 @@ export function createApp() {
     return `${cleanName} ${quyCachSuffix}`;
   };
 
+  function extractLenhSxItemQuyCachMDai(item: any): number | null {
+    let raw = item?.quy_cach_m_dai ?? item?.quyCachMDai;
+    const rawQuyCach = String(item?.quy_cach ?? item?.quyCach ?? '');
+    if (!raw && rawQuyCach) {
+      const match = rawQuyCach.match(/(\d+(?:[.,]\d+)?)/);
+      if (match) raw = match[1].replace(',', '.');
+    }
+    if (!raw && (item?.dai_m || item?.daiM)) {
+      const daiM = Number(item?.dai_m ?? item?.daiM);
+      if (daiM > 0) raw = daiM;
+    }
+    if (raw !== undefined && raw !== null && !isNaN(Number(raw)) && Number(raw) > 0) {
+      return Number(raw);
+    }
+    return null;
+  }
+
+  function getLenhSxItemGroupKey(item: any, resolvedSpId: string): string {
+    const donVi = String(item?.don_vi ?? item?.unit ?? '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/\s+/g, '');
+    const mDai = extractLenhSxItemQuyCachMDai(item);
+    const mDaiKey = mDai !== null ? mDai.toFixed(3) : 'none';
+
+    if (resolvedSpId) {
+      return `pid:${resolvedSpId}__m:${mDaiKey}__u:${donVi}`;
+    }
+
+    const maSp = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '')
+      .trim()
+      .toLowerCase();
+    const tenSx = String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '')
+      .trim()
+      .toLowerCase();
+    return `code:${maSp}__ten:${tenSx}__m:${mDaiKey}__u:${donVi}`;
+  }
+
   app.get('/api/lenh-sx/:id/print-preview', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -13670,68 +13711,126 @@ export function createApp() {
         ? await fetchConversionMapBySanPhamIds(conversionSanPhamIds)
         : new Map<string, OrderProductConversionRecord>();
 
-      const rows = sanPhamArray.map((item, idx) => {
+      interface MergedGroup {
+        groupKey: string;
+        item_indices: number[];
+        firstIdx: number;
+        firstItem: any;
+        spId: string;
+        donVi: string;
+        quyCachMDaiNum: number | null;
+        totalSoLuong: number;
+        maDonHangs: Set<string>;
+        totalSavedBac: number;
+        totalSavedTrung: number;
+        totalSavedNam: number;
+        hasSavedDetail: boolean;
+        defaultBac: number;
+        defaultTrung: number;
+        defaultNam: number;
+        notes: Set<string>;
+      }
+
+      const groupsMap = new Map<string, MergedGroup>();
+      const groupList: MergedGroup[] = [];
+
+      sanPhamArray.forEach((item, idx) => {
+        const spId = resolveSanPhamId(item);
+        const quyCachMDaiNum = extractLenhSxItemQuyCachMDai(item);
+        const groupKey = getLenhSxItemGroupKey(item, spId);
         const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
         const maDonHang = String(item?.ma_don_hang ?? '').trim();
         const khuVuc = khuVucByMaDonHang.get(maDonHang) || defaultKhuVuc;
-        const conv = conversionMap.get(resolveSanPhamId(item)) || null;
+        const note = String(item?.ghi_chu ?? '').trim();
+
         const savedSlSx =
           item?.sl_sx && typeof item.sl_sx === 'object' ? (item.sl_sx as Record<string, unknown>) : null;
+        const itemSavedBac = savedSlSx ? Number(savedSlSx.bac) || 0 : 0;
+        const itemSavedTrung = savedSlSx ? Number(savedSlSx.trung) || 0 : 0;
+        const itemSavedNam = savedSlSx ? Number(savedSlSx.nam) || 0 : 0;
 
-        let bac = 0;
-        let trung = 0;
-        let nam = 0;
-        let hasSavedDetail = false;
+        let itemDefBac = 0;
+        let itemDefTrung = 0;
+        let itemDefNam = 0;
+        if (khuVuc === 'Bắc') itemDefBac = soLuong;
+        else if (khuVuc === 'Trung') itemDefTrung = soLuong;
+        else if (khuVuc === 'Nam') itemDefNam = soLuong;
 
-        if (savedSlSx) {
-          bac = Number(savedSlSx.bac) || 0;
-          trung = Number(savedSlSx.trung) || 0;
-          nam = Number(savedSlSx.nam) || 0;
-          hasSavedDetail = true;
-        } else if (khuVuc === 'Bắc') {
-          bac = soLuong;
-        } else if (khuVuc === 'Trung') {
-          trung = soLuong;
-        } else if (khuVuc === 'Nam') {
-          nam = soLuong;
+        let grp = groupsMap.get(groupKey);
+        if (!grp) {
+          grp = {
+            groupKey,
+            item_indices: [idx],
+            firstIdx: idx,
+            firstItem: item,
+            spId,
+            donVi: String(item?.don_vi ?? item?.unit ?? '').trim(),
+            quyCachMDaiNum,
+            totalSoLuong: soLuong,
+            maDonHangs: new Set(maDonHang ? [maDonHang] : (orderLevelMaDonHang ? [orderLevelMaDonHang] : [])),
+            totalSavedBac: itemSavedBac,
+            totalSavedTrung: itemSavedTrung,
+            totalSavedNam: itemSavedNam,
+            hasSavedDetail: Boolean(savedSlSx),
+            defaultBac: itemDefBac,
+            defaultTrung: itemDefTrung,
+            defaultNam: itemDefNam,
+            notes: new Set(note ? [note] : [])
+          };
+          groupsMap.set(groupKey, grp);
+          groupList.push(grp);
+        } else {
+          grp.item_indices.push(idx);
+          grp.totalSoLuong += soLuong;
+          if (maDonHang) grp.maDonHangs.add(maDonHang);
+          else if (orderLevelMaDonHang) grp.maDonHangs.add(orderLevelMaDonHang);
+          if (savedSlSx) {
+            grp.hasSavedDetail = true;
+            grp.totalSavedBac += itemSavedBac;
+            grp.totalSavedTrung += itemSavedTrung;
+            grp.totalSavedNam += itemSavedNam;
+          }
+          grp.defaultBac += itemDefBac;
+          grp.defaultTrung += itemDefTrung;
+          grp.defaultNam += itemDefNam;
+          if (note) grp.notes.add(note);
         }
+      });
 
-        let rawQuyCachMDai = item?.quy_cach_m_dai ?? item?.quyCachMDai;
-        const rawQuyCach = String(item?.quy_cach ?? item?.quyCach ?? '');
-        if (!rawQuyCachMDai && rawQuyCach) {
-          const match = rawQuyCach.match(/(\d+(?:[.,]\d+)?)/);
-          if (match) rawQuyCachMDai = match[1].replace(',', '.');
-        }
-        if (!rawQuyCachMDai && (item?.dai_m || item?.daiM)) {
-          const daiM = Number(item?.dai_m ?? item?.daiM);
-          if (daiM > 0) rawQuyCachMDai = daiM;
-        }
-        const quyCachMDaiNum = rawQuyCachMDai !== undefined && rawQuyCachMDai !== null && !isNaN(Number(rawQuyCachMDai)) && Number(rawQuyCachMDai) > 0 ? Number(rawQuyCachMDai) : null;
+      const rows = groupList.map((grp, grpIdx) => {
+        const item = grp.firstItem;
+        const conv = grp.spId ? conversionMap.get(grp.spId) || null : null;
         const rawTenSanXuat = String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim();
-        const formattedTenSanXuat = formatProductionNameWithLengthServer(rawTenSanXuat, quyCachMDaiNum ?? undefined);
+        const formattedTenSanXuat = formatProductionNameWithLengthServer(rawTenSanXuat, grp.quyCachMDaiNum ?? undefined);
+
+        const bac = grp.hasSavedDetail ? grp.totalSavedBac : grp.defaultBac;
+        const trung = grp.hasSavedDetail ? grp.totalSavedTrung : grp.defaultTrung;
+        const nam = grp.hasSavedDetail ? grp.totalSavedNam : grp.defaultNam;
+
+        const maDonHangMerged = Array.from(grp.maDonHangs).join(', ');
+        const ghiChuMerged = Array.from(grp.notes).join('; ');
 
         return {
-          key: `${id}__${idx + 1}`,
-          stt: Number(item?.stt ?? item?.STT) || (idx + 1),
-          item_index: idx,
-          ma_don_hang: maDonHang || orderLevelMaDonHang,
+          key: `${id}__grp_${grpIdx + 1}`,
+          stt: grpIdx + 1,
+          item_index: grp.firstIdx,
+          item_indices: grp.item_indices,
+          group_key: grp.groupKey,
+          ma_don_hang: maDonHangMerged,
           ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
           ten_sp: String(item?.ten_sp ?? item?.ten_hang ?? item?.productName ?? '').trim(),
           ten_san_xuat: formattedTenSanXuat,
-          don_vi: String(item?.don_vi ?? item?.unit ?? '').trim(),
-          so_luong: soLuong,
-          khu_vuc: khuVuc,
+          don_vi: grp.donVi,
+          so_luong: grp.totalSoLuong,
+          khu_vuc: '',
           slsx_bac: bac,
           slsx_trung: trung,
           slsx_nam: nam,
-          // `fetchConversionMapBySanPhamIds` trả về OrderProductConversionRecord
-          // với tên thuộc tính khớp tên cột Supabase (trong_luong_kg_*).
-          // Đọc nhầm kg_cuon/tl_tam khiến frontend nhận null và Tổng TL luôn 0.
           kg_cuon: conv?.trong_luong_kg_cuon ?? (Number(item?.tl_cuon ?? item?.kg_cuon ?? item?.trong_luong_kg_cuon) || null),
           tl_tam: conv?.trong_luong_kg_tam ?? (Number(item?.tl_tam ?? item?.trong_luong_kg_tam) || null),
-          ghi_chu: String(item?.ghi_chu ?? '').trim(),
-          has_saved_detail: hasSavedDetail,
-          quy_cach_m_dai: quyCachMDaiNum
+          ghi_chu: ghiChuMerged,
+          has_saved_detail: grp.hasSavedDetail,
+          quy_cach_m_dai: grp.quyCachMDaiNum
         };
       });
 
@@ -13781,35 +13880,90 @@ export function createApp() {
 
         // Lệnh SX cũ chưa có mảng san_pham → bỏ qua phần chia Bắc/Trung/Nam, chỉ lưu phần header.
         if (sanPhamArray.length > 0) {
-          for (let idx = 0; idx < sanPhamArray.length; idx++) {
-            const rowInput = rowsInput.find((r: any) => r && r.item_index === idx) || rowsInput[idx];
+          // Gom nhóm sanPhamArray theo đúng quy tắc san_pham_id + quy_cach_m_dai
+          const groupsMap = new Map<string, { groupKey: string; item_indices: number[]; totalSoLuong: number; firstItem: any }>();
+          const groupList: Array<{ groupKey: string; item_indices: number[]; totalSoLuong: number; firstItem: any }> = [];
+
+          sanPhamArray.forEach((item, idx) => {
+            const spId = String(item?.san_pham_id ?? '').trim();
+            const groupKey = getLenhSxItemGroupKey(item, spId);
+            const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
+
+            let grp = groupsMap.get(groupKey);
+            if (!grp) {
+              grp = { groupKey, item_indices: [idx], totalSoLuong: soLuong, firstItem: item };
+              groupsMap.set(groupKey, grp);
+              groupList.push(grp);
+            } else {
+              grp.item_indices.push(idx);
+              grp.totalSoLuong += soLuong;
+            }
+          });
+
+          // Validate từng nhóm gộp
+          for (let grpIdx = 0; grpIdx < groupList.length; grpIdx++) {
+            const grp = groupList[grpIdx];
+            const rowInput = rowsInput.find((r: any) =>
+              (r.group_key && r.group_key === grp.groupKey) ||
+              (Array.isArray(r.item_indices) && r.item_indices.length === grp.item_indices.length && r.item_indices[0] === grp.item_indices[0]) ||
+              (r.key && r.key === `${id}__grp_${grpIdx + 1}`) ||
+              r.item_index === grp.item_indices[0]
+            ) || rowsInput[grpIdx];
+
             if (!rowInput) continue;
-            const item = sanPhamArray[idx];
             const bac = Math.max(0, Number(rowInput.slsx_bac) || 0);
             const trung = Math.max(0, Number(rowInput.slsx_trung) || 0);
             const nam = Math.max(0, Number(rowInput.slsx_nam) || 0);
-            const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
-            if (bac + trung + nam > soLuong + 0.0001) {
+            if (bac + trung + nam > grp.totalSoLuong + 0.0001) {
+              const name = String(grp.firstItem?.ten_sp || grp.firstItem?.ten_san_xuat || '').trim() || 'không xác định';
               return res.status(400).json({
-                error: `Dòng ${idx + 1} (${String(item?.ten_sp ?? '').trim() || 'không xác định'}): tổng SL SX (${(bac + trung + nam).toFixed(2)}) vượt quá Số lượng (${soLuong.toFixed(2)}).`
+                error: `Dòng ${grpIdx + 1} (${name}): tổng SL SX (${(bac + trung + nam).toFixed(2)}) vượt quá Số lượng (${grp.totalSoLuong.toFixed(2)}).`
               });
             }
           }
 
-          const updatedSanPham = sanPhamArray.map((item, idx) => {
-            const rowInput = rowsInput.find((r: any) => r && r.item_index === idx) || rowsInput[idx];
-            if (!rowInput) return item;
-            return {
-              ...item,
-              stt: Number(item?.stt ?? item?.STT) || (idx + 1),
-              ghi_chu: String(rowInput.ghi_chu ?? '').trim() || null,
-              sl_sx: {
-                bac: Math.max(0, Number(rowInput.slsx_bac) || 0),
-                trung: Math.max(0, Number(rowInput.slsx_trung) || 0),
-                nam: Math.max(0, Number(rowInput.slsx_nam) || 0)
-              }
-            };
-          });
+          // Cập nhật phân bổ về các dòng trong sanPhamArray
+          const updatedSanPham = [...sanPhamArray];
+          for (let grpIdx = 0; grpIdx < groupList.length; grpIdx++) {
+            const grp = groupList[grpIdx];
+            const rowInput = rowsInput.find((r: any) =>
+              (r.group_key && r.group_key === grp.groupKey) ||
+              (Array.isArray(r.item_indices) && r.item_indices.length === grp.item_indices.length && r.item_indices[0] === grp.item_indices[0]) ||
+              (r.key && r.key === `${id}__grp_${grpIdx + 1}`) ||
+              r.item_index === grp.item_indices[0]
+            ) || rowsInput[grpIdx];
+
+            if (!rowInput) continue;
+            let remBac = Math.max(0, Number(rowInput.slsx_bac) || 0);
+            let remTrung = Math.max(0, Number(rowInput.slsx_trung) || 0);
+            let remNam = Math.max(0, Number(rowInput.slsx_nam) || 0);
+            const noteToSave = String(rowInput.ghi_chu ?? '').trim();
+
+            grp.item_indices.forEach(idx => {
+              const it = { ...updatedSanPham[idx] };
+              let cap = Number(it?.so_luong ?? it?.quantity) || 0;
+
+              const itBac = Math.min(remBac, cap);
+              remBac = Math.max(0, remBac - itBac);
+              cap -= itBac;
+
+              const itTrung = Math.min(remTrung, cap);
+              remTrung = Math.max(0, remTrung - itTrung);
+              cap -= itTrung;
+
+              const itNam = Math.min(remNam, cap);
+              remNam = Math.max(0, remNam - itNam);
+              cap -= itNam;
+
+              it.sl_sx = {
+                bac: itBac,
+                trung: itTrung,
+                nam: itNam
+              };
+              it.ghi_chu = noteToSave || null;
+              updatedSanPham[idx] = it;
+            });
+          }
 
           const { error: sanPhamError } = await supabase
             .from(SUPABASE_PRODUCTION_ORDERS_TABLE)

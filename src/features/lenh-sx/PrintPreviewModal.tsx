@@ -25,6 +25,8 @@ interface PreviewRow {
   stt: number;
   ma_don_hang?: string;
   item_index: number;
+  item_indices?: number[];
+  group_key?: string;
   ma_sp: string;
   ten_sp: string;
   ten_san_xuat: string;
@@ -146,6 +148,8 @@ export function ProductionOrderPrintPreviewModal({
               stt: Number(r.stt) || idx + 1,
               ma_don_hang: String(r.ma_don_hang || order.orderRef || '').trim(),
               item_index: Number(r.item_index) || idx,
+              item_indices: Array.isArray(r.item_indices) ? r.item_indices : [Number(r.item_index) || idx],
+              group_key: r.group_key || '',
               ma_sp: r.ma_sp || '',
               ten_sp: r.ten_sp || '',
               ten_san_xuat: formatProductionNameWithLength(rawTenSanXuat, quyCachNum ?? undefined),
@@ -264,7 +268,10 @@ export function ProductionOrderPrintPreviewModal({
         body: JSON.stringify({
           ...meta,
           rows: computedRows.map(r => ({
+            key: r.key,
+            group_key: r.group_key,
             item_index: r.item_index,
+            item_indices: r.item_indices,
             slsx_bac: r.bac,
             slsx_trung: r.trung,
             slsx_nam: r.nam,
