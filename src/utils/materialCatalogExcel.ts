@@ -7,6 +7,7 @@ export type MaterialCatalogExcelRow = {
   productionName: string;
   unit: string;
   phanLoai: string;
+  auxiliaryMaterialGroup: string;
   totalWeight: string;
   plasticWeight: string;
   bagWeight: string;
@@ -29,6 +30,7 @@ export const MATERIAL_CATALOG_EXCEL_HEADERS = [
   'Tên NVL sản xuất',
   'ĐV',
   'Phân loại',
+  'Nhóm vật tư phụ',
   'Tổng kg',
   'Tồn đầu',
   'Nhập',
@@ -46,15 +48,16 @@ const HEADER_ALIASES: Record<keyof Omit<MaterialCatalogExcelRow, 'rowNumber'>, s
   productionName: ['ten nvl san xuat', 'ten nvl sx', 'ten_nvl_sx', 'production name'],
   unit: ['don vi', 'don_vi', 'dv', 'unit'],
   phanLoai: ['phan loai', 'phan_loai', 'kho ngam dinh', 'kho_ngam_dinh', 'loai kho', 'loai_kho', 'warehouse type'],
+  auxiliaryMaterialGroup: ['nhom vat tu phu', 'nhom_vat_tu_phu', 'nhom nvl phu', 'auxiliary material group'],
   totalWeight: ['tong kg', 'tong trong luong', 'tong_trong_luong', 'tong tl', 'total weight'],
   plasticWeight: ['kg nhua', 'trong luong nhua', 'trong_luong_nhua', 'plastic weight'],
   bagWeight: ['kg tui', 'trong luong tui', 'trong_luong_tui', 'bag weight'],
   coreWeight: ['kg loi', 'trong luong loi', 'trong_luong_loi', 'core weight'],
   rollWidth: ['kho cuon', 'kho_cuon', 'roll width'],
   unitLength: ['chieu dai dv', 'chieu dai don vi', 'chieu_dai_don_vi', 'unit length'],
-  openingStock: ['ton dau', 'ton_dau_ky', 'opening stock'],
-  inbound: ['nhap', 'nhap trong ky', 'nhap_trong_ky', 'inbound'],
-  outbound: ['xuat', 'xuat trong ky', 'xuat_trong_ky', 'outbound']
+  openingStock: ['ton đầu', 'ton dau', 'ton_dau_ky', 'opening stock'],
+  inbound: ['nhập', 'nhap', 'nhap trong ky', 'nhap_trong_ky', 'inbound'],
+  outbound: ['xuất', 'xuat', 'xuat trong ky', 'xuat_trong_ky', 'outbound']
 };
 
 function normalizeHeader(value: unknown) {
@@ -134,6 +137,7 @@ export async function parseMaterialCatalogExcel(file: File): Promise<MaterialCat
         productionName: get('productionName'),
         unit: get('unit'),
         phanLoai: get('phanLoai'),
+        auxiliaryMaterialGroup: get('auxiliaryMaterialGroup'),
         totalWeight: get('totalWeight'),
         plasticWeight: get('plasticWeight'),
         bagWeight: get('bagWeight'),
@@ -158,6 +162,7 @@ export function downloadMaterialCatalogExcelTemplate() {
       'Màng PE sản xuất',
       'kg',
       'Nguyên vật liệu chính',
+      'Màng',
       '1.25',
       '100',
       '0',
@@ -169,7 +174,7 @@ export function downloadMaterialCatalogExcelTemplate() {
       ''
     ],
     // Dòng gần trống — vẫn đẩy lên được khi đã có mã + tên
-    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '']
+    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '']
   ]);
   worksheet['!cols'] = MATERIAL_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(28, Math.max(10, header.length + 2))
@@ -187,6 +192,7 @@ export function materialCatalogRowToPayload(row: MaterialCatalogExcelRow) {
     productionName: row.productionName.trim(),
     unit: row.unit.trim(),
     phanLoai: row.phanLoai.trim(),
+    auxiliaryMaterialGroup: row.auxiliaryMaterialGroup.trim(),
     totalWeight: row.totalWeight.trim(),
     plasticWeight: row.plasticWeight.trim(),
     bagWeight: row.bagWeight.trim(),

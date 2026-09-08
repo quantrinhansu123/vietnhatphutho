@@ -4220,6 +4220,43 @@ type MaterialWritePayload = {
   record: Record<string, string | number | null>;
 };
 
+const MATERIAL_AUXILIARY_GROUPS = new Set([
+  'Băng Dính',
+  'Bạt Bọc',
+  'Bạt Dọc',
+  'Dây Đai',
+  'Dung Môi',
+  'Màng',
+  'Mực In',
+  'Tem',
+  'Kẹp Sắt'
+]);
+
+const AUXILIARY_GROUP_CANONICAL_MAP: Record<string, string> = {
+  'bang dinh': 'Băng Dính',
+  'bat boc': 'Bạt Bọc',
+  'day dai': 'Dây Đai',
+  'dung moi': 'Dung Môi',
+  'mang': 'Màng',
+  'muc in': 'Mực In',
+  'tem': 'Tem',
+  'kep sat': 'Kẹp Sắt'
+};
+
+function normalizeAuxiliaryMaterialGroup(raw: unknown): string | null {
+  const text = parseMaterialText(raw);
+  if (!text) return null;
+  if (MATERIAL_AUXILIARY_GROUPS.has(text)) return text;
+  const key = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return AUXILIARY_GROUP_CANONICAL_MAP[key] ?? text;
+}
+
 function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayload {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const code = parseMaterialText(source.code);
@@ -4227,6 +4264,13 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
 
   if (!code) return { error: 'Vui lòng nhập mã NPL.' };
   if (!name) return { error: 'Vui lòng nhập tên nguyên phụ liệu.' };
+  const rawAuxiliaryGroup = parseMaterialText(
+    source.auxiliaryMaterialGroup ?? source.nhomVatTuPhu ?? source.nhom_vat_tu_phu
+  );
+  const auxiliaryMaterialGroup = normalizeAuxiliaryMaterialGroup(rawAuxiliaryGroup);
+  if (auxiliaryMaterialGroup && !MATERIAL_AUXILIARY_GROUPS.has(auxiliaryMaterialGroup)) {
+    return { error: `Nhóm vật tư phụ "${auxiliaryMaterialGroup}" không hợp lệ.` };
+  }
 
   const record: Record<string, string | number | null> = {
     ma_npl: code,
@@ -4244,7 +4288,8 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
     xuat_trong_ky: parseOptionalMaterialNumber(source.outbound),
     phan_loai: parseMaterialText(
       source.phanLoai ?? source.phan_loai ?? source.khoNgamDinh ?? source.kho_ngam_dinh
-    ) || null
+    ) || null,
+    nhom_vat_tu_phu: auxiliaryMaterialGroup || null
   };
 
   return { record };
