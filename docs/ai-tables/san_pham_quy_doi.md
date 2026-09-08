@@ -8,6 +8,7 @@
 
 **API:** CRUD `/api/bang-quy-doi-san-pham`; import lô `POST /api/bang-quy-doi-san-pham/import`; export CSV `GET /api/export-bang-quy-doi-san-pham` trong `server.ts`  
 **UI:** `src/features/san-pham/index.tsx`  
+**Công thức dùng chung:** `src/utils/productConversionCalculation.ts`
 **CSV:** `src/utils/productConversionCsv.ts`  
 **Menu:** Nhà máy → QC (`factory-qc`)
 

@@ -8,6 +8,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
 import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
+import { calculateProductConversionFormulas } from './src/utils/productConversionCalculation';
 
 dotenv.config();
 
@@ -2348,44 +2349,28 @@ function parseProductConversionBody(body: unknown) {
     record[field] = value;
   }
 
-  const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
   const tamRong = record.kho_tam_rong_m as number | null;
   const tamDai = record.kho_tam_dai_m as number | null;
   const cuonRong = record.kho_cuon_rong_m as number | null;
   const cuonDai = record.kho_cuon_dai_m as number | null;
   const kgM2 = record.trong_luong_kg_m2 as number | null;
   const kgMDai = record.trong_luong_kg_m_dai as number | null;
-  let dienTich = record.dien_tich_m2 as number | null;
+  const dienTich = record.dien_tich_m2 as number | null;
+  const formulas = calculateProductConversionFormulas({
+    sheetWidthM: tamRong,
+    sheetLengthM: tamDai,
+    rollWidthM: cuonRong,
+    rollLengthM: cuonDai,
+    areaM2: dienTich,
+    kgPerLinearM: kgMDai,
+    kgPerM2: kgM2
+  });
 
-  const effectiveCuonRong = cuonRong || tamRong;
-  const effectiveTamRong = tamRong || cuonRong;
-
-  if (!dienTich && effectiveCuonRong && cuonDai) {
-    dienTich = round2(effectiveCuonRong * cuonDai);
-    record.dien_tich_m2 = dienTich;
-  }
-
-  if (!record.trong_luong_kg_tam && tamDai && (kgM2 || kgMDai)) {
-    if (kgM2 && effectiveTamRong) {
-      record.trong_luong_kg_tam = round2(effectiveTamRong * tamDai * kgM2);
-    } else if (kgMDai) {
-      if (tamRong && cuonRong && cuonRong > 0 && Math.abs(tamRong - cuonRong) > 0.001) {
-        record.trong_luong_kg_tam = round2(tamDai * tamRong * (kgMDai / cuonRong));
-      } else {
-        record.trong_luong_kg_tam = round2(tamDai * kgMDai);
-      }
-    }
-  }
-
-  if (!record.trong_luong_kg_cuon && cuonDai && (kgM2 || kgMDai)) {
-    if (kgM2 && effectiveCuonRong) {
-      record.trong_luong_kg_cuon = round2(effectiveCuonRong * cuonDai * kgM2);
-    } else if (kgM2 && dienTich) {
-      record.trong_luong_kg_cuon = round2(dienTich * kgM2);
-    } else if (kgMDai) {
-      record.trong_luong_kg_cuon = round2(cuonDai * kgMDai);
-    }
-  }
+  // API/Excel giữ giá trị được cung cấp; công thức chỉ điền các trường còn trống.
+  if (!record.dien_tich_m2 && formulas.areaM2 !== null) record.dien_tich_m2 = formulas.areaM2;
+  if (!record.trong_luong_kg_m_dai && formulas.kgPerLinearM !== null) record.trong_luong_kg_m_dai = formulas.kgPerLinearM;
+  if (!record.trong_luong_kg_tam && formulas.kgPerSheet !== null) record.trong_luong_kg_tam = formulas.kgPerSheet;
+  if (!record.trong_luong_kg_cuon && formulas.kgPerRoll !== null) record.trong_luong_kg_cuon = formulas.kgPerRoll;
 
   return { record } as const;
 }
