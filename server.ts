@@ -4712,7 +4712,13 @@ function parseWarehouseSlipLines(
   return { items };
 }
 
-type WarehouseSlipLenhSxRef = { ma_lenh_sx: string; ngay: string; ca: string };
+type WarehouseSlipLenhSxRef = {
+  dinh_muc_id?: string;
+  ten_phieu?: string;
+  ma_lenh_sx: string;
+  ngay: string;
+  ca: string;
+};
 
 function parseWarehouseSlipLenhSxSelection(value: unknown): WarehouseSlipLenhSxRef[] {
   if (!Array.isArray(value)) return [];
@@ -4721,14 +4727,16 @@ function parseWarehouseSlipLenhSxSelection(value: unknown): WarehouseSlipLenhSxR
   value.forEach(item => {
     if (!item || typeof item !== 'object') return;
     const row = item as Record<string, unknown>;
+    const dinh_muc_id = String(row.dinh_muc_id ?? row.dinhMucId ?? '').trim();
+    const ten_phieu = String(row.ten_phieu ?? row.tenPhieu ?? '').trim();
     const ma_lenh_sx = String(row.ma_lenh_sx ?? row.maLenhSx ?? '').trim();
     const ngay = String(row.ngay ?? '').trim().slice(0, 10);
     const ca = String(row.ca ?? '').trim();
-    if (!ma_lenh_sx || !ngay) return;
-    const key = `${ma_lenh_sx}::${ngay}::${ca}`;
+    if (!dinh_muc_id || !ma_lenh_sx || !ngay) return;
+    const key = dinh_muc_id;
     if (seen.has(key)) return;
     seen.add(key);
-    result.push({ ma_lenh_sx, ngay, ca });
+    result.push({ dinh_muc_id, ten_phieu, ma_lenh_sx, ngay, ca });
   });
   return result;
 }
@@ -4761,6 +4769,12 @@ function parseWarehouseSlipBody(body: unknown): {
   if ('error' in parsedItems) {
     return parsedItems;
   }
+  const lenhSxDaChon = parseWarehouseSlipLenhSxSelection(
+    source.lenhSxDaChon ?? source.lenh_sx_da_chon ?? source.dinhMucDaChon ?? source.dinh_muc_da_chon
+  );
+  if (loaiPhieu === 'xuat' && loaiKho === 'nvl' && lenhSxDaChon.length === 0) {
+    return { error: 'Vui lòng chọn ít nhất một phiếu trộn định mức để xuất kho NVL.' };
+  }
 
   return {
     loaiPhieu,
@@ -4771,7 +4785,7 @@ function parseWarehouseSlipBody(body: unknown): {
     nguoiLap: String(source.nguoiLap ?? source.nguoi_lap ?? source.createdBy ?? '').trim() || null,
     ca: String(source.ca ?? source.shift ?? source.ca_san_xuat ?? '').trim() || null,
     items: parsedItems.items,
-    lenhSxDaChon: parseWarehouseSlipLenhSxSelection(source.lenhSxDaChon ?? source.lenh_sx_da_chon)
+    lenhSxDaChon
   };
 }
 
@@ -4842,7 +4856,7 @@ function generateWarehouseSlipCode(loaiPhieu: 'nhap' | 'xuat') {
   return `${loaiPhieu === 'nhap' ? 'PN' : 'PX'}-${date}-${time}`;
 }
 
-/** Xóa các dòng liên kết lệnh SX của 1 phiếu xuất kho NVL. Không chặn luồng chính nếu lỗi/bảng chưa tồn tại. */
+/** Xóa các liên kết phiếu trộn định mức của 1 phiếu xuất kho NVL. */
 async function deleteWarehouseLenhSxLinks(maPhieu: string) {
   if (!supabase || !maPhieu) return;
   try {
@@ -4858,7 +4872,7 @@ async function deleteWarehouseLenhSxLinks(maPhieu: string) {
   }
 }
 
-/** Thay toàn bộ dòng liên kết lệnh SX của 1 phiếu bằng danh sách mới. Không chặn luồng lưu phiếu nếu lỗi. */
+/** Thay toàn bộ liên kết phiếu trộn định mức của 1 phiếu xuất kho NVL bằng danh sách mới. */
 async function replaceWarehouseLenhSxLinks(maPhieu: string, items: WarehouseSlipLenhSxRef[]) {
   if (!supabase || !maPhieu) return;
   await deleteWarehouseLenhSxLinks(maPhieu);
@@ -4867,6 +4881,8 @@ async function replaceWarehouseLenhSxLinks(maPhieu: string, items: WarehouseSlip
     const { error } = await supabase.from(SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE).insert(
       items.map(item => ({
         ma_phieu: maPhieu,
+        dinh_muc_id: item.dinh_muc_id,
+        ten_phieu: item.ten_phieu || '',
         ma_lenh_sx: item.ma_lenh_sx,
         ngay: item.ngay,
         ca: item.ca
@@ -4875,7 +4891,7 @@ async function replaceWarehouseLenhSxLinks(maPhieu: string, items: WarehouseSlip
     if (error) {
       if (isMissingTableError(error)) {
         console.warn(
-          `Bảng ${SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE} chưa tồn tại. Hãy chạy supabase-phieu-xuat-nhap-kho-lenh-sx.sql để bật tính năng ẩn lệnh SX đã xuất.`
+          `Bảng ${SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE} chưa tồn tại. Hãy chạy supabase-phieu-xuat-nhap-kho-lenh-sx.sql để bật liên kết phiếu trộn định mức.`
         );
       } else {
         console.error('Supabase phieu_xuat_nhap_kho_lenh_sx insert error:', error);
@@ -9779,7 +9795,7 @@ export function createApp() {
     }
   });
 
-  app.get('/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat', async (req, res) => {
+  app.get(['/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat', '/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat'], async (req, res) => {
     if (!supabase) {
       return res.json({ items: [], total: 0, source: 'local' });
     }
@@ -9789,7 +9805,7 @@ export function createApp() {
 
       let query = supabase
         .from(SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE)
-        .select('ma_phieu, ma_lenh_sx, ngay, ca');
+        .select('ma_phieu, dinh_muc_id, ten_phieu, ma_lenh_sx, ngay, ca');
       if (maPhieu) query = query.eq('ma_phieu', maPhieu);
 
       const { data, error } = await query;
@@ -9798,27 +9814,29 @@ export function createApp() {
           return res.json({ items: [], total: 0, source: 'local' });
         }
         console.error('Supabase phieu_xuat_nhap_kho_lenh_sx query error:', error);
-        return res.status(500).json({ error: `Không thể tải danh sách lệnh SX đã xuất. ${error.message}` });
+        return res.status(500).json({ error: `Không thể tải danh sách phiếu trộn định mức đã xuất. ${error.message}` });
       }
 
       const seen = new Set<string>();
       const items: WarehouseSlipLenhSxRef[] = [];
       (data || []).forEach(row => {
         const record = row as Record<string, unknown>;
+        const dinh_muc_id = String(record.dinh_muc_id ?? '').trim();
+        const ten_phieu = String(record.ten_phieu ?? '').trim();
         const ma_lenh_sx = String(record.ma_lenh_sx ?? '').trim();
         const ngay = String(record.ngay ?? '').slice(0, 10);
         const ca = String(record.ca ?? '').trim();
-        if (!ma_lenh_sx || !ngay) return;
-        const key = `${ma_lenh_sx}::${ngay}::${ca}`;
+        if (!dinh_muc_id || !ma_lenh_sx || !ngay) return;
+        const key = dinh_muc_id;
         // Không dedupe khi lọc theo 1 phiếu cụ thể — cần trả đúng số dòng đã lưu cho phiếu đó.
         if (!maPhieu && seen.has(key)) return;
         seen.add(key);
-        items.push({ ma_lenh_sx, ngay, ca });
+        items.push({ dinh_muc_id, ten_phieu, ma_lenh_sx, ngay, ca });
       });
 
       return res.json({ items, total: items.length, source: 'supabase' });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách lệnh SX đã xuất.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách phiếu trộn định mức đã xuất.' });
     }
   });
 
