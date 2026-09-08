@@ -9,6 +9,7 @@ import {
 } from '../ke-hoach-san-xuat';
 import { splitProductNameAndNote } from '../ke-hoach-san-xuat/PrintPreviewModal';
 import { formatProductionNameWithLength } from '../_shared/productionProductHelpers';
+import { isCuonProduct, isTamProduct } from '../_shared/orderHelpers';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 
@@ -22,6 +23,7 @@ interface ProductionOrderPrintMeta {
 interface PreviewRow {
   key: string;
   stt: number;
+  ma_don_hang?: string;
   item_index: number;
   ma_sp: string;
   ten_sp: string;
@@ -142,6 +144,7 @@ export function ProductionOrderPrintPreviewModal({
             return {
               key: String(r.key || `${order.id}__${idx + 1}`),
               stt: Number(r.stt) || idx + 1,
+              ma_don_hang: String(r.ma_don_hang || order.orderRef || '').trim(),
               item_index: Number(r.item_index) || idx,
               ma_sp: r.ma_sp || '',
               ten_sp: r.ten_sp || '',
@@ -432,6 +435,7 @@ export function ProductionOrderPrintPreviewModal({
                     <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wide text-white print:static print:bg-gray-100 print:text-black">
                       <tr>
                         <th className={`${numHeadCell} w-10`}>STT</th>
+                        <th className={`${textHeadCell} min-w-28`}>Mã đơn hàng</th>
                         <th className={`${textHeadCell} min-w-40`}>Tên sản xuất</th>
                         <th className={`${textHeadCell} min-w-48`}>Ghi chú</th>
                         <th className={`${numHeadCell} w-14`}>ĐVT</th>
@@ -440,7 +444,7 @@ export function ProductionOrderPrintPreviewModal({
                           <span className="block leading-tight">kho</span>
                         </th>
                         <th className={`${numHeadCell} production-order-preview-th-nowrap w-16`}>
-                          Kg/cuộn
+                          TL/cuộn
                         </th>
                         <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
                           <span className="block leading-tight">Tổng</span>
@@ -470,7 +474,7 @@ export function ProductionOrderPrintPreviewModal({
                       {computedRows.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={13}
+                            colSpan={14}
                             className="px-4 py-10 text-center text-sm font-semibold text-zinc-400"
                           >
                             Lệnh sản xuất chưa có dòng sản phẩm.
@@ -479,6 +483,8 @@ export function ProductionOrderPrintPreviewModal({
                       ) : (
                         computedRows.map((row, rowIdx) => {
                           const editKey = `${row.key}-${rowIdx}`;
+                          const isCuon = isCuonProduct(row.don_vi);
+                          const isTam = isTamProduct(row.don_vi);
                           return (
                             <tr
                               key={editKey}
@@ -488,6 +494,9 @@ export function ProductionOrderPrintPreviewModal({
                             >
                               <td className={`${bodyCell} text-center font-bold text-zinc-500`}>
                                 {row.stt}
+                              </td>
+                              <td className={`${bodyCell} whitespace-nowrap font-bold text-zinc-700`}>
+                                {row.ma_don_hang || '—'}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
                                 {formatProductionNameWithLength(row.ten_san_xuat || row.ten_sp || '', row.quy_cach_m_dai)}
@@ -505,7 +514,7 @@ export function ProductionOrderPrintPreviewModal({
                               </td>
                               <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
                               <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>
-                                {formatNum(row.kg_cuon)}
+                                {isCuon ? formatNum(row.kg_cuon) : '—'}
                               </td>
                               <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>
                                 {row.so_luong.toFixed(2)}
@@ -541,7 +550,7 @@ export function ProductionOrderPrintPreviewModal({
                                 />
                               </td>
                               <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>
-                                {formatNum(row.tl_tam)}
+                                {isTam ? formatNum(row.tl_tam) : '—'}
                               </td>
                               <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>
                                 {row.tongTl.toFixed(2)}

@@ -205,6 +205,28 @@ export function normalizeConversionUnit(value: string) {
 
 export type ConversionUnit = 'sheet' | 'roll' | 'meter' | 'squareMeter' | 'kg' | 'unsupported';
 
+export function isCuonProduct(unit?: string): boolean {
+  const normUnit = String(unit || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '');
+  return normUnit === 'cuon' || normUnit === 'roll';
+}
+
+export function isTamProduct(unit?: string): boolean {
+  const normUnit = String(unit || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '');
+  return normUnit === 'tam' || normUnit === 'sheet';
+}
+
 export function resolveConversionUnit(value: string): ConversionUnit {
   const unit = normalizeConversionUnit(value);
   if (unit === 'tấm' || unit === 'tam') return 'sheet';

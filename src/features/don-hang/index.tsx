@@ -28,6 +28,8 @@ import {
   extractProductWidth,
   conversionSupportsUnit,
   allowedOrderUnits,
+  isCuonProduct,
+  isTamProduct,
   type OrderProductOption,
   type OrderProductConversion,
   type StaffOption,
@@ -1718,7 +1720,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               <div className="col-span-2 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 sm:col-span-3">
                 <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Sản phẩm</p>
                 <div className="mt-2 space-y-2">
-                  {getOrderProductLines(viewingOrder).map((line, index) => (
+                  {getOrderProductLines(viewingOrder).map((line, index) => {
+                    const isCuon = isCuonProduct(line.unit);
+                    const isTam = isTamProduct(line.unit);
+                    const showTlCuon = isCuon && Boolean(line.tlCuon);
+                    const showTlTam = isTam && Boolean(line.tlTam);
+                    return (
                     <div key={`${line.productCode}-${line.quantity}-${index}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm">
                       <p className="font-bold text-zinc-900">
                         <span className="mr-2 font-black tabular-nums text-zinc-400">{line.stt || index + 1}.</span>
@@ -1735,19 +1742,19 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           Quy cách: {line.quyCach || (line.daiM ? `Dài ${line.daiM}m` : [line.doLi, line.kho ? `Khổ ${line.kho}` : ''].filter(Boolean).join(' · '))}
                         </p>
                       ) : null}
-                      {(line.conversionResults?.some(result => result.unit !== 'kg/1 SP') || line.tlCuon || line.tlTam) ? (
+                      {(line.conversionResults?.some(result => result.unit !== 'kg/1 SP') || showTlCuon || showTlTam) ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {line.conversionResults?.filter(result => result.unit !== 'kg/1 SP').map(result => (
                             <span key={result.unit} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800">
                               {formatNumber(result.value, 3)} {result.unit}
                             </span>
                           ))}
-                          {line.tlCuon ? (
+                          {showTlCuon ? (
                             <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-800">
                               TL/cuộn: {line.tlCuon} kg
                             </span>
                           ) : null}
-                          {line.tlTam ? (
+                          {showTlTam ? (
                             <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-800">
                               TL/tấm: {line.tlTam} kg
                             </span>
@@ -1755,7 +1762,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         </div>
                       ) : null}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

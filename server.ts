@@ -13714,6 +13714,7 @@ export function createApp() {
           key: `${id}__${idx + 1}`,
           stt: Number(item?.stt ?? item?.STT) || (idx + 1),
           item_index: idx,
+          ma_don_hang: maDonHang || orderLevelMaDonHang,
           ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
           ten_sp: String(item?.ten_sp ?? item?.ten_hang ?? item?.productName ?? '').trim(),
           ten_san_xuat: formattedTenSanXuat,
@@ -13726,8 +13727,8 @@ export function createApp() {
           // `fetchConversionMapBySanPhamIds` trả về OrderProductConversionRecord
           // với tên thuộc tính khớp tên cột Supabase (trong_luong_kg_*).
           // Đọc nhầm kg_cuon/tl_tam khiến frontend nhận null và Tổng TL luôn 0.
-          kg_cuon: conv?.trong_luong_kg_cuon ?? null,
-          tl_tam: conv?.trong_luong_kg_tam ?? null,
+          kg_cuon: conv?.trong_luong_kg_cuon ?? (Number(item?.tl_cuon ?? item?.kg_cuon ?? item?.trong_luong_kg_cuon) || null),
+          tl_tam: conv?.trong_luong_kg_tam ?? (Number(item?.tl_tam ?? item?.trong_luong_kg_tam) || null),
           ghi_chu: String(item?.ghi_chu ?? '').trim(),
           has_saved_detail: hasSavedDetail,
           quy_cach_m_dai: quyCachMDaiNum
