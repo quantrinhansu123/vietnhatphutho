@@ -125,3 +125,33 @@ export function formatMixingNormSlipName(
   return parts.join(' - ');
 }
 
+/**
+ * Tính trọng lượng định mức (kg/ĐVT) cho nguyên vật liệu phụ.
+ * - Băng Dính: Rỗng = 0.5 kg/cuộn, Đặc/Sóng = 0.4 kg/cuộn
+ * - Tem: Rỗng = 0.0023 kg/cái, Đặc/Sóng = 0.0013 kg/cái
+ * - Đơn vị kg: luôn bằng 1.0
+ */
+export function resolveAuxiliaryWeightPerUnit(
+  groupOrName: string,
+  nhomVthh?: string | null,
+  unit?: string | null
+): number | undefined {
+  const normUnit = (unit || '').trim().toLowerCase();
+  if (normUnit === 'kg') return 1.0;
+  const group = normalizeNhomVatTuPhuKey(groupOrName || '');
+  const ws = resolveWorkshopType(nhomVthh || '');
+
+  if (group === 'Băng Dính') {
+    if (ws === 'rong') return 0.5;
+    if (ws === 'dac' || ws === 'song') return 0.4;
+    return 0.5;
+  }
+  if (group === 'Tem') {
+    if (ws === 'rong') return 0.0023;
+    if (ws === 'dac' || ws === 'song') return 0.0013;
+    return 0.0023;
+  }
+  return undefined;
+}
+
+

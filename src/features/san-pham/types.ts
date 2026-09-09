@@ -73,6 +73,8 @@ export interface ProductNplItem {
 }
 
 export interface MaterialOption {
+  /** Khóa định danh ổn định của dòng kho NVL; mã có thể bị trùng giữa nhiều dòng danh mục. */
+  id?: string;
   code: string;
   name: string;
   productionName?: string;

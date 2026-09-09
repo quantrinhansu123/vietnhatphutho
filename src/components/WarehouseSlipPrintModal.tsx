@@ -5,6 +5,8 @@ import { PRINT_COMPANY_NAME, COMPANY_BRANCH_NAME, vietNhatLogoUrl } from './layo
 import { formatMoney, formatNumber } from '../utils';
 import { formatVietnameseMoneyWords } from '../utils/vietnameseMoneyWords';
 import { waitForPrintImagesReady } from '../utils/printReady';
+import { resolveAuxiliaryWeightPerUnit, normalizeNhomVatTuPhuKey } from '../utils/mixingNormAuxiliary';
+import { mergeAuxiliaryWarehouseLines } from '../utils/warehouseNormMerge';
 export type WarehouseSlipPrintLine = {
   code: string;
   name: string;
@@ -312,6 +314,18 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
   );
 }
 
+function ensurePrintLineWeightKg(line: WarehouseSlipPrintLine): number | null {
+  if (Number.isFinite(line.weightKg) && Number(line.weightKg) > 0) {
+    return Number(line.weightKg);
+  }
+  const groupKey = normalizeNhomVatTuPhuKey(line.name || line.code);
+  const perUnit = resolveAuxiliaryWeightPerUnit(groupKey, line.nhomVthh, line.unit);
+  if (perUnit !== undefined && Number.isFinite(line.quantity) && Number(line.quantity) > 0) {
+    return Math.round(Number(line.quantity) * perUnit * 1000) / 1000;
+  }
+  return null;
+}
+
 function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
   const printShift = formatPrintShift(data.shift);
   const classOrder = ['nvl_chinh', 'nvl_phu', 'chua_phan_loai'] as const;
@@ -323,26 +337,75 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
   const normalizeClass = (value: WarehouseSlipPrintLine['materialClass']): (typeof classOrder)[number] =>
     value === 'nvl_chinh' || value === 'nvl_phu' ? value : 'chua_phan_loai';
   const quotaOf = (line: WarehouseSlipPrintLine) => line.quotaQuantity ?? line.documentQuantity ?? 0;
-  const machineMap = new Map<string, WarehouseSlipPrintLine[]>();
+
+  // Tách dòng thuộc máy và dòng thêm mới ngoài định mức (không theo máy)
+  const assignedLines: WarehouseSlipPrintLine[] = [];
+  const unassignedLines: WarehouseSlipPrintLine[] = [];
   data.lines.forEach(line => {
-    const machine = String(line.machine || '').trim();
-    const current = machineMap.get(machine) || [];
-    current.push(line);
-    machineMap.set(machine, current);
+    if (String(line.machine || '').trim()) {
+      assignedLines.push(line);
+    } else {
+      unassignedLines.push(line);
+    }
   });
-  const machineGroups = [...machineMap.entries()].sort(([machineA], [machineB]) => {
-    if (!machineA) return 1;
-    if (!machineB) return -1;
-    return machineA.localeCompare(machineB, 'vi', { numeric: true });
+
+  const machineMap = new Map<string, WarehouseSlipPrintLine[]>();
+  assignedLines.forEach(line => {
+    const m = String(line.machine || '').trim();
+    const cur = machineMap.get(m) || [];
+    cur.push(line);
+    machineMap.set(m, cur);
   });
+
+  type PrintSection = {
+    key: string;
+    machineTitle: string;
+    orderRefText: string;
+    isUnassigned: boolean;
+    lines: WarehouseSlipPrintLine[];
+  };
+
+  const sections: PrintSection[] = [...machineMap.entries()]
+    .sort(([mA], [mB]) => mA.localeCompare(mB, 'vi', { numeric: true }))
+    .map(([machineName, rawLines]) => {
+      const preparedLines = rawLines.map(line => {
+        const w = ensurePrintLineWeightKg(line);
+        return w !== null ? { ...line, weightKg: w } : line;
+      });
+      // Gộp NVL phụ theo ID (và VTHH nếu là Băng dính/Tem) cho từng máy
+      const mergedLines = mergeAuxiliaryWarehouseLines(preparedLines);
+      return {
+        key: machineName,
+        machineTitle: machineName,
+        orderRefText: data.productionOrderRef || '',
+        isUnassigned: false,
+        lines: mergedLines
+      };
+    });
+
+  // Nếu có dòng thêm mới không thuộc máy, lệnh nào: TẠO IN RIÊNG KHÔNG GỘP
+  if (unassignedLines.length > 0) {
+    const preparedUnassigned = unassignedLines.map(line => {
+      const w = ensurePrintLineWeightKg(line);
+      return w !== null ? { ...line, weightKg: w } : line;
+    });
+    sections.push({
+      key: 'unassigned',
+      machineTitle: 'Vật tư xuất thêm (Không theo máy)',
+      orderRefText: 'Thêm ngoài định mức',
+      isUnassigned: true,
+      lines: preparedUnassigned
+    });
+  }
+
   const grandTotal = data.lines.reduce((sum, line) => sum + line.lineAmount, 0);
 
   return (
     <>
-      {machineGroups.map(([machine, machineLines], machineIndex) => {
-        const machineTotal = machineLines.reduce((sum, line) => sum + line.lineAmount, 0);
+      {sections.map((section, sectionIndex) => {
+        const sectionTotal = section.lines.reduce((sum, line) => sum + line.lineAmount, 0);
         return (
-          <section className="warehouse-slip-print-doc warehouse-slip-print-machine-page" key={machine || 'chua-xac-dinh'}>
+          <section className="warehouse-slip-print-doc warehouse-slip-print-machine-page" key={section.key}>
             <header className="warehouse-slip-print-header">
               <div className="warehouse-slip-print-brand">
                 <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="warehouse-slip-print-logo" />
@@ -356,20 +419,20 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
             <div className="warehouse-slip-print-meta warehouse-slip-print-meta--nvl-export">
               <p><strong>Số phiếu:</strong> {data.slipCode || ''}</p>
               <p><strong>Ngày:</strong> {formatSlipDateShort(data.slipDate)}</p>
-              <p><strong>Căn cứ Lệnh SX/KH số:</strong> {data.productionOrderRef || ''}</p>
-              <p><strong>Máy:</strong> {machine || 'Chưa xác định máy'}</p>
+              <p><strong>Căn cứ Lệnh SX/KH số:</strong> {section.orderRefText}</p>
+              <p><strong>Máy:</strong> {section.machineTitle}</p>
               {printShift ? <p><strong>Ca:</strong> {printShift}</p> : null}
               <p><strong>Người nhận:</strong> {data.recipient || data.createdBy || ''}</p>
             </div>
 
             {classOrder.map(materialClass => {
-              const classLines = machineLines.filter(line => normalizeClass(line.materialClass) === materialClass);
+              const classLines = section.lines.filter(line => normalizeClass(line.materialClass) === materialClass);
               if (classLines.length === 0) return null;
               const classQuota = classLines.reduce((sum, line) => sum + quotaOf(line), 0);
               const classActual = classLines.reduce((sum, line) => sum + (line.quantity || 0), 0);
               const showWeightKg = materialClass === 'nvl_phu';
               const classWeightKg = classLines.reduce(
-                (sum, line) => sum + (Number.isFinite(line.weightKg) ? Number(line.weightKg) : 0),
+                (sum, line) => sum + (ensurePrintLineWeightKg(line) ?? 0),
                 0
               );
               const classAmount = classLines.reduce((sum, line) => sum + line.lineAmount, 0);
@@ -386,27 +449,30 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {classLines.map((line, index) => (
-                        <tr key={`${machine}-${materialClass}-${line.code}-${index}`}>
-                          <td className="warehouse-slip-print-center">{index + 1}</td>
-                          <td>{line.code || ''}</td>
-                          <td>
-                            {line.name || ''}
-                            {line.nhomVthh ? ` (${line.nhomVthh})` : ''}
-                          </td>
-                          <td className="warehouse-slip-print-center">{line.unit || ''}</td>
-                          <td className="warehouse-slip-print-center">
-                            {[line.sourceInboundSlipCode, line.unitPrice > 0 ? `${formatMoney(line.unitPrice, 0)} đ` : ''].filter(Boolean).join(' · ')}
-                          </td>
-                          <td className="warehouse-slip-print-right">{formatPrintQty(quotaOf(line))}</td>
-                          <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity)}</td>
-                          {showWeightKg ? (
-                            <td className="warehouse-slip-print-right">{formatPrintQty(line.weightKg)}</td>
-                          ) : null}
-                          <td className="warehouse-slip-print-right">{line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}</td>
-                          <td>{line.lineNote || ''}</td>
-                        </tr>
-                      ))}
+                      {classLines.map((line, index) => {
+                        const lineWeight = ensurePrintLineWeightKg(line);
+                        return (
+                          <tr key={`${section.key}-${materialClass}-${line.code}-${index}`}>
+                            <td className="warehouse-slip-print-center">{index + 1}</td>
+                            <td>{line.code || ''}</td>
+                            <td>
+                              {line.name || ''}
+                              {line.nhomVthh ? ` (${line.nhomVthh})` : ''}
+                            </td>
+                            <td className="warehouse-slip-print-center">{line.unit || ''}</td>
+                            <td className="warehouse-slip-print-center">
+                              {[line.sourceInboundSlipCode, line.unitPrice > 0 ? `${formatMoney(line.unitPrice, 0)} đ` : ''].filter(Boolean).join(' · ')}
+                            </td>
+                            <td className="warehouse-slip-print-right">{formatPrintQty(quotaOf(line))}</td>
+                            <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity)}</td>
+                            {showWeightKg ? (
+                              <td className="warehouse-slip-print-right">{formatPrintQty(lineWeight)}</td>
+                            ) : null}
+                            <td className="warehouse-slip-print-right">{line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}</td>
+                            <td>{line.lineNote || ''}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr>
@@ -426,9 +492,9 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
             })}
 
             <div className="warehouse-slip-print-machine-total">
-              <strong>TỔNG MÁY {machine || 'CHƯA XÁC ĐỊNH'}:</strong> {formatMoney(machineTotal, 0)} đ
+              <strong>{section.isUnassigned ? 'TỔNG VẬT TƯ XUẤT THÊM' : `TỔNG MÁY ${section.machineTitle}`}:</strong> {formatMoney(sectionTotal, 0)} đ
             </div>
-            {machineIndex === machineGroups.length - 1 && machineGroups.length > 1 ? (
+            {sectionIndex === sections.length - 1 && sections.length > 1 ? (
               <div className="warehouse-slip-print-grand-total"><strong>TỔNG TOÀN PHIẾU:</strong> {formatMoney(grandTotal, 0)} đ</div>
             ) : null}
             <p className="warehouse-slip-print-footnote">

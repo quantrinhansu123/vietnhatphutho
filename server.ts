@@ -9,7 +9,7 @@ import type { ProductionReport } from './src/types';
 import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { calculateProductConversionFormulas } from './src/utils/productConversionCalculation';
-import { formatMixingNormSlipName } from './src/utils/mixingNormAuxiliary';
+import { formatMixingNormSlipName, resolveAuxiliaryWeightPerUnit } from './src/utils/mixingNormAuxiliary';
 
 dotenv.config();
 
@@ -3109,6 +3109,9 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       .map((item, index) => {
         if (!item || typeof item !== 'object') return null;
         const line = item as Record<string, unknown>;
+        const material_id = String(
+          line.material_id ?? line.materialId ?? line.kho_nvl_id ?? line.khoNvlId ?? ''
+        ).trim();
         const ma_nvl = String(line.ma_nvl ?? line.maNvl ?? '').trim();
         const ten_nvl = String(line.ten_nvl ?? line.tenNvl ?? '').trim();
         const ten_nvl_san_xuat = String(
@@ -3156,6 +3159,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         const ty_le_tong = parseOptionalPercent(line.ty_le_tong ?? line.tyLeTong);
         const tong_khoi_luong = parseOptionalPercent(line.tong_khoi_luong ?? line.tongKhoiLuong);
         return {
+          material_id: material_id || null,
           ma_nvl: ma_nvl || null,
           ten_nvl: ten_nvl || null,
           ten_nvl_san_xuat: ten_nvl_san_xuat || null,
@@ -3180,6 +3184,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       (
         item
       ): item is {
+        material_id: string | null;
         ma_nvl: string | null;
         ten_nvl: string | null;
         ten_nvl_san_xuat: string | null;
@@ -3408,6 +3413,7 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
   if (!supabase) return null;
   const products = Array.isArray(record.chi_tiet) ? record.chi_tiet : [];
   const references: Array<{
+    materialId: string;
     code: string;
     name: string;
     productionName: string;
@@ -3426,6 +3432,7 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
         const row = line as Record<string, unknown>;
         const code = String(row.ma_nvl ?? '').trim();
         if (code) references.push({
+          materialId: String(row.material_id ?? row.materialId ?? '').trim(),
           code,
           name: String(row.ten_nvl ?? '').trim(),
           productionName: String(row.ten_nvl_san_xuat ?? '').trim(),
@@ -3448,7 +3455,7 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
   ])];
   const { data, error } = await supabase
     .from(SUPABASE_MATERIALS_TABLE)
-    .select('ma_npl, ten_npl, ten_nvl_sx, don_vi, phan_loai, nhom_vat_tu_phu')
+    .select('id, ma_npl, ten_npl, ten_nvl_sx, don_vi, phan_loai, nhom_vat_tu_phu')
     .in('ma_npl', queryCodes);
   if (error) {
     if (isMissingTableError(error) || isMissingColumnError(error)) return null;
@@ -3463,6 +3470,8 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
       String(row.ma_npl ?? '').trim().toLocaleLowerCase('vi') === normalizedCode
     );
     const material = candidates.find(row =>
+      Boolean(reference.materialId) && String(row.id ?? '').trim() === reference.materialId
+    ) ?? candidates.find(row =>
       String(row.ten_npl ?? '').trim() === reference.name &&
       String(row.ten_nvl_sx ?? '').trim() === reference.productionName
     ) ?? candidates.find(row =>
@@ -3470,6 +3479,9 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
     ) ?? candidates[0];
 
     const materialClass = String(material?.phan_loai ?? '').trim();
+    if (material?.id) {
+      reference.line.material_id = String(material.id);
+    }
     if (reference.secondary) {
       const primaryUnit = String(material?.don_vi ?? '').trim();
       if (primaryUnit) {
@@ -4741,7 +4753,7 @@ function parseWarehouseSlipLines(
           )
         : 'chua_phan_loai';
     const machine = String(record.machine ?? record.may ?? '').trim();
-    const weightKg = parseOptionalMaterialNumber(record.weightKg ?? record.trong_luong_kg);
+    let weightKg = parseOptionalMaterialNumber(record.weightKg ?? record.trong_luong_kg);
     const nhomVthh = String(record.nhom_vthh ?? record.nhomVthh ?? '').trim();
 
     if (!code) {
@@ -4752,6 +4764,13 @@ function parseWarehouseSlipLines(
     }
     if (unitPrice < 0) {
       return { error: `Giá của ${code} không hợp lệ.` };
+    }
+
+    if (loaiKho === 'nvl' && (weightKg === null || weightKg <= 0)) {
+      const perUnit = resolveAuxiliaryWeightPerUnit(name || code, nhomVthh, unit);
+      if (perUnit && perUnit > 0) {
+        weightKg = roundWarehouseQty(quantity * perUnit);
+      }
     }
 
     items.push({

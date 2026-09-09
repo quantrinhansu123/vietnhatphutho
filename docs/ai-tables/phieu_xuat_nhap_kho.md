@@ -29,6 +29,7 @@ Cột `phan_loai_nvl` không dùng CHECK constraint trong database; các file SQ
 Payload lưu dòng NVL gửi đồng thời `materialClass`, `warehouseClass` và `phan_loai_nvl`; server ưu tiên `phan_loai_nvl` để bảo toàn đúng `nvl_chinh`, `nvl_phu` hoặc `chua_phan_loai` từ phiếu trộn định mức.
 Với NVL phụ, `gia_tri` trên phiếu trộn là SL theo ĐVT gốc và `tong_khoi_luong` là kg đã quy đổi. Phiếu xuất kho dùng `gia_tri` cho **SL CT** và hệ số `tong_khoi_luong / gia_tri` để tính **Quy đổi kg** khi nhập SL thực.
 Trọng lượng quy đổi được lưu tại `trong_luong_kg`; bảng NVL phụ trên mẫu in/in lại có cột **Trọng lượng (kg)** và dòng tổng kg.
+Khi nạp nhiều dòng NVL phụ, hệ thống gộp và cộng SL định mức/thực xuất/trọng lượng theo `material_id` trong cùng máy. Riêng **Băng Dính** và **Tem** chỉ gộp khi đồng thời cùng `material_id` và cùng `nhom_vthh`; các NVL phụ khác không tách theo VTHH. Dữ liệu cũ thiếu ID dùng mã/tên làm khóa dự phòng.
 Danh sách **Chi tiết NVL** hiển thị thêm **Tên sản xuất**, ưu tiên tên trên phiếu định mức rồi đối chiếu `kho_nvl.ten_nvl_sx` theo mã NPL; trường tên sản xuất chỉ hiển thị, không tạo thêm cột lưu trữ trên phiếu.
 Bản in phiếu xuất NVL tách mỗi máy thành một trang; trong mỗi trang in riêng bảng NVL chính, NVL phụ và Chưa phân loại nếu có dữ liệu.
 

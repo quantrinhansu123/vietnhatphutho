@@ -40,6 +40,7 @@ export {
 };
 
 export type MixingNormLine = {
+  material_id?: string;
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat?: string;
@@ -650,7 +651,7 @@ function nvlPhuToLineForms(
     const mat = materialsByCode.get(line.ma_nvl);
     return {
       key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-      materialId: mat?.id || '',
+      materialId: line.material_id || mat?.id || '',
       maNvl: line.ma_nvl,
       tenNvl: line.ten_nvl,
       tenNvlSanXuat: line.ten_nvl_san_xuat || '',
@@ -733,6 +734,7 @@ function normalizeLines(
       const saved = parseNumberOrNull(line.khoi_luong ?? line.khoiLuong);
       const rawVthh = String(line.nhom_vthh ?? line.nhomVthh ?? '').trim();
       return {
+        material_id: String(line.material_id ?? line.materialId ?? '').trim() || undefined,
         ma_nvl,
         ten_nvl,
         ten_nvl_san_xuat,
@@ -2062,6 +2064,7 @@ export default function MixingNormMaterialsTab() {
           }
           const percents = computeNplPercents(gia_tri, line.donVi, batch, tong);
           return {
+            material_id: line.materialId || findMaterialForLine(line)?.id || undefined,
             ma_nvl: line.maNvl.trim(),
             ten_nvl: line.tenNvl.trim(),
             ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
@@ -2118,7 +2121,7 @@ export default function MixingNormMaterialsTab() {
         const validIds = resolveValidProductIds(codes, item.maSpIds);
         const workshopType = resolveSecondaryWorkshopType(item, form.products, catalogProductsById, catalogProducts);
 
-        const nvl_phu: MixingNormLine[] = item.lines
+        const nvl_phu = item.lines
           .filter(line => line.maNvl.trim() || line.tenNvl.trim())
           .map((line, index) => {
             const gia_tri =
@@ -2134,6 +2137,7 @@ export default function MixingNormMaterialsTab() {
             const lineWorkshop = isTapeOrStamp && line.nhomVthh ? resolveWorkshopType(line.nhomVthh) : workshopType;
             const weight = calcAuxiliaryWeight(lineWorkshop, nhomVatTuPhu, donVi, gia_tri);
             return {
+              material_id: line.materialId || mat?.id || undefined,
               ma_nvl: line.maNvl.trim(),
               ten_nvl: line.tenNvl.trim(),
               ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
@@ -2537,6 +2541,7 @@ export default function MixingNormMaterialsTab() {
                       const order = item as MixingProductionOrder;
                       return `${order.orderCode} ${order.productLines.map(l => `${l.productCode} ${l.productName}`).join(' ')}`;
                     }}
+                    inputClassName={inputClass}
                     displaySelectedAsValue
                     maxResults={60}
                   />
