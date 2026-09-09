@@ -32,7 +32,8 @@ alter table public.phieu_xuat_nhap_kho
 alter table public.phieu_xuat_nhap_kho
   add column if not exists may text,
   add column if not exists phan_loai_nvl text,
-  add column if not exists trong_luong_kg numeric;
+  add column if not exists trong_luong_kg numeric,
+  add column if not exists nhom_vthh text;
 
 update public.phieu_xuat_nhap_kho
 set phan_loai_nvl = 'chua_phan_loai'

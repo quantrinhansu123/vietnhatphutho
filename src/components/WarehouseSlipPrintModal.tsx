@@ -20,6 +20,7 @@ export type WarehouseSlipPrintLine = {
   machine?: string;
   weightKg?: number | null;
   sourceInboundSlipCode?: string;
+  nhomVthh?: string;
 };
 
 export type WarehouseSlipPrintData = {
@@ -388,7 +389,11 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                       {classLines.map((line, index) => (
                         <tr key={`${machine}-${materialClass}-${line.code}-${index}`}>
                           <td className="warehouse-slip-print-center">{index + 1}</td>
-                          <td>{line.code || ''}</td><td>{line.name || ''}</td>
+                          <td>{line.code || ''}</td>
+                          <td>
+                            {line.name || ''}
+                            {line.nhomVthh ? ` (${line.nhomVthh})` : ''}
+                          </td>
                           <td className="warehouse-slip-print-center">{line.unit || ''}</td>
                           <td className="warehouse-slip-print-center">
                             {[line.sourceInboundSlipCode, line.unitPrice > 0 ? `${formatMoney(line.unitPrice, 0)} đ` : ''].filter(Boolean).join(' · ')}

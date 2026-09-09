@@ -3138,6 +3138,15 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
           }
           khoi_luong = n;
         }
+        const rawVthh = String(line.nhom_vthh ?? line.nhomVthh ?? '').trim();
+        let nhom_vthh: string | null = null;
+        if (rawVthh) {
+          const vthhLower = rawVthh.toLowerCase().replace(/đ/g, 'd').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (vthhLower.includes('rong')) nhom_vthh = 'TP; PX Rỗng';
+          else if (vthhLower.includes('dac')) nhom_vthh = 'TP; PX Đặc';
+          else if (vthhLower.includes('song')) nhom_vthh = 'TP; PX Sóng';
+          else nhom_vthh = rawVthh;
+        }
         const parseOptionalPercent = (raw: unknown) => {
           if (raw === null || raw === undefined || String(raw).trim() === '') return null;
           const n = Number(String(raw).replace(',', '.'));
@@ -3151,6 +3160,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
           ten_nvl: ten_nvl || null,
           ten_nvl_san_xuat: ten_nvl_san_xuat || null,
           phan_loai: phan_loai || null,
+          nhom_vthh: nhom_vthh || null,
           gia_tri,
           don_vi,
           khoi_luong,
@@ -3174,6 +3184,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         ten_nvl: string | null;
         ten_nvl_san_xuat: string | null;
         phan_loai: string | null;
+        nhom_vthh: string | null;
         gia_tri: number | null;
         don_vi: string;
         khoi_luong: number | null;
@@ -3379,6 +3390,20 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   };
 }
 
+const VALID_NHOM_VTHH = ['TP; PX Rỗng', 'TP; PX Đặc', 'TP; PX Sóng'] as const;
+
+function isTapeOrStampGroup(groupOrName: string): 'Băng Dính' | 'Tem' | null {
+  const s = (groupOrName || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+  if (s.includes('bang dinh') || s.includes('bang keo')) return 'Băng Dính';
+  if (s.includes('tem')) return 'Tem';
+  return null;
+}
+
 async function validateMixingNormMaterialClasses(record: Record<string, unknown>): Promise<string | null> {
   if (!supabase) return null;
   const products = Array.isArray(record.chi_tiet) ? record.chi_tiet : [];
@@ -3423,7 +3448,7 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
   ])];
   const { data, error } = await supabase
     .from(SUPABASE_MATERIALS_TABLE)
-    .select('ma_npl, ten_npl, ten_nvl_sx, don_vi, phan_loai')
+    .select('ma_npl, ten_npl, ten_nvl_sx, don_vi, phan_loai, nhom_vat_tu_phu')
     .in('ma_npl', queryCodes);
   if (error) {
     if (isMissingTableError(error) || isMissingColumnError(error)) return null;
@@ -3449,6 +3474,38 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
       const primaryUnit = String(material?.don_vi ?? '').trim();
       if (primaryUnit) {
         reference.line.don_vi = primaryUnit;
+      }
+
+      // Băng Dính / Tem bắt buộc có Nhóm VTHH hợp lệ
+      const candidateStr = `${material?.nhom_vat_tu_phu || ''} ${reference.name || ''} ${reference.productionName || ''} ${reference.code || ''}`;
+      const tapeOrStamp = isTapeOrStampGroup(candidateStr);
+      if (tapeOrStamp) {
+        const lineVthh = String(reference.line.nhom_vthh || '').trim();
+        if (!lineVthh || !VALID_NHOM_VTHH.includes(lineVthh as any)) {
+          return `NVL ${reference.code} (${reference.name || tapeOrStamp}) thuộc ${tapeOrStamp} bắt buộc phải chọn Nhóm VTHH hợp lệ (TP; PX Rỗng, TP; PX Đặc, TP; PX Sóng).`;
+        }
+      } else {
+        delete reference.line.nhom_vthh;
+      }
+
+      // Tính trọng lượng chuẩn xác theo Nhóm VTHH của chính dòng
+      const giaTri = typeof reference.line.gia_tri === 'number' ? reference.line.gia_tri : null;
+      if (giaTri !== null && Number.isFinite(giaTri)) {
+        const donVi = String(reference.line.don_vi || '').trim().toLowerCase();
+        let factor = 1;
+        if (donVi !== 'kg') {
+          const isRong = reference.line.nhom_vthh === 'TP; PX Rỗng';
+          if (tapeOrStamp === 'Băng Dính') {
+            factor = isRong ? 0.5 : 0.4;
+          } else if (tapeOrStamp === 'Tem') {
+            factor = isRong ? 0.0023 : 0.0013;
+          }
+        }
+        if (tapeOrStamp || donVi === 'kg') {
+          const computedWeight = Math.round(giaTri * factor * 10000) / 10000;
+          reference.line.khoi_luong = computedWeight;
+          reference.line.tong_khoi_luong = computedWeight;
+        }
       }
     }
     if (!materialClass) continue;
@@ -4353,6 +4410,7 @@ type WarehouseSlipLineInput = {
   materialClass: WarehouseMaterialClass;
   machine?: string;
   weightKg?: number;
+  nhomVthh?: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
 };
@@ -4684,6 +4742,7 @@ function parseWarehouseSlipLines(
         : 'chua_phan_loai';
     const machine = String(record.machine ?? record.may ?? '').trim();
     const weightKg = parseOptionalMaterialNumber(record.weightKg ?? record.trong_luong_kg);
+    const nhomVthh = String(record.nhom_vthh ?? record.nhomVthh ?? '').trim();
 
     if (!code) {
       return { error: loaiKho === 'san_pham' ? 'Mỗi dòng cần có mã sản phẩm.' : 'Mỗi dòng cần có mã NPL.' };
@@ -4709,6 +4768,7 @@ function parseWarehouseSlipLines(
       materialClass,
       ...(machine ? { machine } : {}),
       ...(weightKg !== null && weightKg > 0 ? { weightKg: roundWarehouseQty(weightKg) } : {}),
+      ...(nhomVthh ? { nhomVthh } : {}),
       ...(sourceInboundLineId ? { sourceInboundLineId } : {}),
       ...(sourceInboundSlipCode ? { sourceInboundSlipCode } : {})
     });
@@ -4838,7 +4898,8 @@ function buildWarehouseSlipInsertRecords(
           : null,
       may: parsed.loaiKho === 'nvl' ? item.machine || null : null,
       phan_loai_nvl: parsed.loaiKho === 'nvl' ? item.materialClass : null,
-      trong_luong_kg: parsed.loaiKho === 'nvl' ? item.weightKg ?? null : null
+      trong_luong_kg: parsed.loaiKho === 'nvl' ? item.weightKg ?? null : null,
+      nhom_vthh: parsed.loaiKho === 'nvl' ? item.nhomVthh || null : null
     };
 
     if (parsed.loaiKho === 'san_pham') {

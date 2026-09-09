@@ -40,7 +40,11 @@ import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storageKeys';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch } from '../../utils/shiftSettings';
-import { formatMixingNormSlipName } from '../../utils/mixingNormAuxiliary';
+import {
+  formatMixingNormSlipName,
+  normalizeNhomVatTuPhuKey,
+  resolveWorkshopType
+} from '../../utils/mixingNormAuxiliary';
 import { normalizeProducts } from '../san-pham';
 import { normalizeMaterialsInventory } from '../kho-nvl';
 import type { ShiftSummaryWarehouseMovement } from '../../utils/controlBoardShiftSummary';
@@ -99,6 +103,7 @@ export interface WarehouseMovementRow {
   createdAt: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
+  nhomVthh?: string;
 }
 
 export interface WarehouseSlipLineDraft {
@@ -119,6 +124,7 @@ export interface WarehouseSlipLineDraft {
   normWeightPerUnitKg?: number;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
+  nhomVthh?: string;
 }
 
 /** Tham chiếu đúng 1 phiếu trộn định mức được chọn để xuất kho NVL. */
@@ -240,7 +246,8 @@ export function buildWarehouseSlipDraftFromHistoryRows(
       warehouseClass: row.materialClass,
       machine: row.machine,
       sourceInboundLineId: row.sourceInboundLineId || '',
-      sourceInboundSlipCode: row.sourceInboundSlipCode || ''
+      sourceInboundSlipCode: row.sourceInboundSlipCode || '',
+      nhomVthh: row.nhomVthh || ''
     }))
   };
 }
@@ -333,6 +340,8 @@ export type WarehouseSlipPayloadItem = {
   weightKg?: number;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
+  nhomVthh?: string;
+  nhom_vthh?: string;
 };
 
 export function parseWarehouseSlipPayloadItems(
@@ -365,6 +374,7 @@ export function parseWarehouseSlipPayloadItems(
         Number.isFinite(normWeightPerUnitKg) && normWeightPerUnitKg > 0
           ? quantity * normWeightPerUnitKg
           : undefined;
+      const nhomVthh = warehouseKind === 'nvl' ? String(line.nhomVthh || '').trim() || undefined : undefined;
       return {
         code: line.code.trim(),
         name: line.name.trim(),
@@ -385,7 +395,9 @@ export function parseWarehouseSlipPayloadItems(
         machine: warehouseKind === 'nvl' ? String(line.machine || '').trim() || undefined : undefined,
         weightKg,
         sourceInboundLineId: sourceInboundLineId || undefined,
-        sourceInboundSlipCode: sourceInboundSlipCode || undefined
+        sourceInboundSlipCode: sourceInboundSlipCode || undefined,
+        nhomVthh,
+        nhom_vthh: nhomVthh
       };
     })
     .filter(line => line.code || line.quantity);
@@ -444,7 +456,8 @@ export function buildWarehouseSlipPrintData(
     materialClass: item.materialClass,
     machine: item.machine,
     weightKg: item.weightKg,
-    sourceInboundSlipCode: item.sourceInboundSlipCode
+    sourceInboundSlipCode: item.sourceInboundSlipCode,
+    nhomVthh: item.nhomVthh
   }));
 
   return {
@@ -484,7 +497,8 @@ export function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     sourceInboundSlipCode: '',
     warehouseClass: 'chua_phan_loai',
     machine: '',
-    normWeightPerUnitKg: undefined
+    normWeightPerUnitKg: undefined,
+    nhomVthh: ''
   };
 }
 
@@ -506,6 +520,7 @@ export function createWarehouseLineDraftFromPrefill(
     | 'normWeightPerUnitKg'
     | 'sourceInboundLineId'
     | 'sourceInboundSlipCode'
+    | 'nhomVthh'
   >
 ): WarehouseSlipLineDraft {
   return {
@@ -527,7 +542,8 @@ export function createWarehouseLineDraftFromPrefill(
         ? Number(line.normWeightPerUnitKg)
         : undefined,
     sourceInboundLineId: line.sourceInboundLineId || '',
-    sourceInboundSlipCode: line.sourceInboundSlipCode || ''
+    sourceInboundSlipCode: line.sourceInboundSlipCode || '',
+    nhomVthh: line.nhomVthh || ''
   };
 }
 
@@ -600,7 +616,8 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
         sourceInboundLineId: String(record.id_dong_nhap_nguon ?? record.sourceInboundLineId ?? '').trim() || undefined,
         sourceInboundSlipCode:
-          String(record.ma_phieu_nhap_nguon ?? record.sourceInboundSlipCode ?? '').trim() || undefined
+          String(record.ma_phieu_nhap_nguon ?? record.sourceInboundSlipCode ?? '').trim() || undefined,
+        nhomVthh: String(record.nhom_vthh ?? record.nhomVthh ?? '').trim() || undefined
       };
     })
     .filter((row): row is WarehouseMovementRow => Boolean(row.id || row.slipCode));
@@ -669,6 +686,7 @@ type NormMaterialLine = {
   normWeightPerUnitKg?: number;
   warehouseClass: WarehouseMaterialClass;
   machine: string;
+  nhomVthh?: string;
 };
 
 type NormMaterialSource = {
@@ -714,6 +732,7 @@ function mergeNormMaterialLines(sources: NormMaterialSource[], materials: Materi
     const productionName = String(
       raw.ten_nvl_san_xuat ?? raw.ten_nvl_sx ?? raw.tenNvlSanXuat ?? raw.productionName ?? ''
     ).trim();
+    const nhomVthh = String(raw.nhom_vthh ?? raw.nhomVthh ?? '').trim();
     const normWeightKg = Number(raw.tong_khoi_luong ?? raw.tongKhoiLuong ?? raw.khoi_luong ?? raw.khoiLuong ?? 0);
     const sourceQuantity = warehouseClass === 'nvl_phu'
       ? Number(raw.gia_tri ?? raw.giaTri ?? normWeightKg)
@@ -726,7 +745,7 @@ function mergeNormMaterialLines(sources: NormMaterialSource[], materials: Materi
       sourceQuantity <= 0
     ) return;
     const normalizedMachine = String(machine || '').trim();
-    const key = `${normalizeMaterialKey(normalizedMachine) || 'chua-xac-dinh'}::${warehouseClass}::${normalizeMaterialKey(code || name)}`;
+    const key = `${normalizeMaterialKey(normalizedMachine) || 'chua-xac-dinh'}::${warehouseClass}::${normalizeMaterialKey(code || name)}::${normalizeMaterialKey(nhomVthh)}`;
     const current = merged.get(key);
     merged.set(key, {
       code: code || catalog?.code || '',
@@ -737,7 +756,8 @@ function mergeNormMaterialLines(sources: NormMaterialSource[], materials: Materi
       documentQuantity: (current?.documentQuantity || 0) + sourceQuantity,
       normWeightKg: (current?.normWeightKg || 0) + normWeightKg,
       warehouseClass,
-      machine: normalizedMachine
+      machine: normalizedMachine,
+      nhomVthh: nhomVthh || current?.nhomVthh || ''
     });
   };
   sources.forEach(source => {
@@ -767,17 +787,38 @@ function mergeNormMaterialLines(sources: NormMaterialSource[], materials: Materi
       });
     });
   });
-  return [...merged.values()].map(line => ({
-    ...line,
-    normWeightPerUnitKg:
-      line.warehouseClass === 'nvl_phu' && line.documentQuantity > 0
-        ? line.normWeightKg / line.documentQuantity
-        : undefined
-  })).sort((a, b) => {
+  return [...merged.values()].map(line => {
+    let normWeightPerUnitKg: number | undefined;
+    if (line.warehouseClass === 'nvl_phu') {
+      const vthhWorkshop = resolveWorkshopType(line.nhomVthh || '');
+      const catalog = byCode.get(normalizeMaterialKey(line.code)) || byName.get(normalizeMaterialKey(line.name));
+      const groupKey = normalizeNhomVatTuPhuKey(
+        catalog?.nhomVatTuPhu || line.productionName || line.name || line.code
+      );
+      const unit = (catalog?.unit || line.unit || '').trim().toLowerCase();
+      if (unit === 'kg') {
+        normWeightPerUnitKg = 1.0;
+      } else if (vthhWorkshop === 'rong') {
+        if (groupKey === 'Băng Dính') normWeightPerUnitKg = 0.5;
+        else if (groupKey === 'Tem') normWeightPerUnitKg = 0.0023;
+      } else if (vthhWorkshop === 'dac' || vthhWorkshop === 'song') {
+        if (groupKey === 'Băng Dính') normWeightPerUnitKg = 0.4;
+        else if (groupKey === 'Tem') normWeightPerUnitKg = 0.0013;
+      }
+      if (normWeightPerUnitKg === undefined && line.documentQuantity > 0) {
+        normWeightPerUnitKg = line.normWeightKg / line.documentQuantity;
+      }
+    }
+    return {
+      ...line,
+      normWeightPerUnitKg
+    };
+  }).sort((a, b) => {
     const rank = (value: WarehouseMaterialClass) => value === 'nvl_chinh' ? 0 : value === 'nvl_phu' ? 1 : 2;
     return (
       rank(a.warehouseClass) - rank(b.warehouseClass) ||
       a.code.localeCompare(b.code, 'vi', { numeric: true }) ||
+      (a.nhomVthh || '').localeCompare(b.nhomVthh || '', 'vi') ||
       (a.machine || '~~~').localeCompare(b.machine || '~~~', 'vi', { numeric: true })
     );
   });
@@ -1066,7 +1107,8 @@ export function WarehouseSlipPanel({
               name: material.name,
               productionName: material.productionName,
               unit: material.unit && material.unit !== '-' ? material.unit : '',
-              phanLoai: material.phanLoai
+              phanLoai: material.phanLoai,
+              nhomVatTuPhu: material.auxiliaryMaterialGroup
             }))
           );
           setWeightCatalog(materials.map(mapMaterialToWeightCatalogItem));
@@ -1354,7 +1396,8 @@ export function WarehouseSlipPanel({
             lineNote: '',
             warehouseClass: line.warehouseClass,
             machine: line.machine,
-            normWeightPerUnitKg: line.normWeightPerUnitKg
+            normWeightPerUnitKg: line.normWeightPerUnitKg,
+            nhomVthh: line.nhomVthh
           }))
         : [createWarehouseLineDraft()]);
       if (merged.length === 0) setNormLoadMessage('Phiếu trộn định mức đã chọn chưa có dòng NVL hợp lệ.');
@@ -2082,15 +2125,34 @@ export function WarehouseSlipPanel({
                 {warehouseKind === 'nvl' ? (
                   <div>
                     <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                      Tên sản xuất
+                      Tên sản xuất {line.nhomVthh ? '· Nhóm VTHH' : ''}
                     </span>
-                    <input
-                      value={line.productionName || ''}
-                      readOnly
-                      className={`${warehouseFieldClass} bg-zinc-100 text-zinc-700`}
-                      placeholder="Tên sản xuất"
-                      title={line.productionName || undefined}
-                    />
+                    {line.nhomVthh ? (
+                      <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-1">
+                        <input
+                          value={line.productionName || ''}
+                          readOnly
+                          className={`${warehouseFieldClass} bg-zinc-100 text-xs text-zinc-700`}
+                          placeholder="Tên sản xuất"
+                          title={line.productionName || undefined}
+                        />
+                        <input
+                          value={line.nhomVthh}
+                          readOnly
+                          className={`${warehouseFieldClass} border-amber-300 bg-amber-50 text-xs font-bold text-amber-900`}
+                          placeholder="Nhóm VTHH"
+                          title={`Nhóm VTHH: ${line.nhomVthh}`}
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        value={line.productionName || ''}
+                        readOnly
+                        className={`${warehouseFieldClass} bg-zinc-100 text-zinc-700`}
+                        placeholder="Tên sản xuất"
+                        title={line.productionName || undefined}
+                      />
+                    )}
                   </div>
                 ) : null}
                 <div>
@@ -2540,7 +2602,8 @@ export function WarehouseHistoryPanel({
         materialClass: row.materialClass,
         machine: row.machine,
         weightKg: resolveWarehouseRowWeightKg(row),
-        sourceInboundSlipCode: row.sourceInboundSlipCode
+        sourceInboundSlipCode: row.sourceInboundSlipCode,
+        nhomVthh: row.nhomVthh
       }))
     });
     setHistoryPrintAutoTrigger(autoPrint);
@@ -3001,7 +3064,14 @@ export function WarehouseHistoryPanel({
                   {viewingRows.map(row => (
                     <tr key={row.id || `${row.itemCode}-${row.quantity}`}>
                       <td className="py-2 pr-3 font-bold text-zinc-900">{row.itemCode}</td>
-                      <td className="py-2 pr-3 text-zinc-700">{row.itemName || '-'}</td>
+                      <td className="py-2 pr-3 text-zinc-700">
+                        {row.itemName || '-'}
+                        {row.nhomVthh ? (
+                          <span className="ml-1.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                            {row.nhomVthh}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatNumber(row.quantity, 2)}</td>
                       <td className="py-2 pr-3 text-zinc-700">{row.unit}</td>
                       <td className="py-2 pr-3 text-right font-mono font-bold text-emerald-800">

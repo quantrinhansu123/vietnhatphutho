@@ -18,6 +18,11 @@ export function normalizeNhomVatTuPhuKey(group: string): string {
   return (group || '').trim();
 }
 
+export function isTapeOrStampMaterial(groupOrName: string): boolean {
+  const norm = normalizeNhomVatTuPhuKey(groupOrName);
+  return norm === 'Băng Dính' || norm === 'Tem';
+}
+
 export function resolveWorkshopType(nhomVthh: string): WorkshopType {
   const s = (nhomVthh || '')
     .toLowerCase()
