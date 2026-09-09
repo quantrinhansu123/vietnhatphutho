@@ -71,7 +71,7 @@ export function DispatchFormInline({
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Ca chuyển đến *</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Máy chuyển đến *</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Bắt đầu *</th>
-              <th className="px-3 py-2 text-left font-medium text-zinc-700">Kết thúc *</th>
+              <th className="px-3 py-2 text-left font-medium text-zinc-700">Kết thúc</th>
               <th className="w-8 px-3 py-2" />
             </tr>
           </thead>

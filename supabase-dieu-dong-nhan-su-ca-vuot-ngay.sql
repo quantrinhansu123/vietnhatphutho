@@ -13,4 +13,7 @@ drop constraint if exists ex_dieu_dong_ns_overlap;
 alter table public.dieu_dong_nhan_su
 drop constraint if exists chk_dieu_dong_thoi_gian;
 
+alter table public.dieu_dong_nhan_su
+alter column thoi_gian_ket_thuc drop not null;
+
 commit;

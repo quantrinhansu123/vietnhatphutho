@@ -39,6 +39,7 @@ function timeToMinutes(value: string): number {
 
 /** Kiểm tra 2 khoảng giờ có chồng nhau không, hỗ trợ ca vượt ngày (start > end). */
 function rangesOverlap(a: { start: string; end: string }, b: { start: string; end: string }): boolean {
+  if (!a.start || !a.end || !b.start || !b.end) return false;
   const aStart = timeToMinutes(a.start);
   const aEnd = timeToMinutes(a.end) + (timeToMinutes(a.end) <= timeToMinutes(a.start) ? 1440 : 0);
   const bStart = timeToMinutes(b.start);
@@ -429,7 +430,7 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
 
     for (const item of selectedItems) {
       const who = resolveName(item.person.ma_nhan_su);
-      if (!item.caDieuDong || !item.mayDieuDong || !item.thoiGianBatDau || !item.thoiGianKetThuc) {
+      if (!item.caDieuDong || !item.mayDieuDong || !item.thoiGianBatDau) {
         setFormError(`${who}: vui lòng điền đầy đủ các trường bắt buộc.`);
         return;
       }
