@@ -10733,6 +10733,7 @@ export function createApp() {
   }
 
   function rangesOverlap(a: DispatchTimeRange, b: DispatchTimeRange): boolean {
+    if (!a.start || !a.end || !b.start || !b.end) return false;
     const aStart = timeToMinutes(a.start);
     const aEnd = timeToMinutes(a.end) + (timeToMinutes(a.end) <= timeToMinutes(a.start) ? 1440 : 0);
     const bStart = timeToMinutes(b.start);
@@ -10761,8 +10762,8 @@ export function createApp() {
     if (!mayDieuDong) return { error: 'Vui lòng chọn máy chuyển đến.' };
     
     if (!/^\d{1,2}:\d{2}$/.test(batDau)) return { error: 'Giờ bắt đầu không hợp lệ.' };
-    if (!/^\d{1,2}:\d{2}$/.test(ketThuc)) return { error: 'Giờ kết thúc không hợp lệ.' };
-    if (batDau === ketThuc) return { error: 'Giờ bắt đầu và giờ kết thúc không được trùng nhau.' };
+    if (ketThuc && !/^\d{1,2}:\d{2}$/.test(ketThuc)) return { error: 'Giờ kết thúc không hợp lệ.' };
+    if (ketThuc && batDau === ketThuc) return { error: 'Giờ bắt đầu và giờ kết thúc không được trùng nhau.' };
 
     return {
       record: {
@@ -10775,7 +10776,7 @@ export function createApp() {
         may_goc: mayGoc,
         may_dieu_dong: mayDieuDong,
         thoi_gian_bat_dau: batDau,
-        thoi_gian_ket_thuc: ketThuc,
+        thoi_gian_ket_thuc: ketThuc || null,
         ghi_chu: ghiChu || null
       }
     };
@@ -10799,7 +10800,7 @@ export function createApp() {
     return (data || []).some(row =>
       rangesOverlap(range, {
         start: String(row.thoi_gian_bat_dau).slice(0, 5),
-        end: String(row.thoi_gian_ket_thuc).slice(0, 5)
+        end: String(row.thoi_gian_ket_thuc || '').slice(0, 5)
       })
     );
   }
@@ -10871,7 +10872,7 @@ export function createApp() {
       const hasOverlap = await findOverlappingDispatch(
         String(parsed.record.ngay_lam_viec),
         String(parsed.record.ma_nhan_su),
-        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc) }
+        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc || '') }
       );
       if (hasOverlap) return res.status(409).json({ error: 'Nhân sự đã có khoảng điều động trùng giờ trong ngày này.' });
 
@@ -10898,7 +10899,7 @@ export function createApp() {
       const hasOverlap = await findOverlappingDispatch(
         String(parsed.record.ngay_lam_viec),
         String(parsed.record.ma_nhan_su),
-        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc) },
+        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc || '') },
         id
       );
       if (hasOverlap) return res.status(409).json({ error: 'Nhân sự đã có khoảng điều động trùng giờ trong ngày này.' });
@@ -11079,7 +11080,7 @@ export function createApp() {
                 dispatchHomeShift !== '' &&
                 currentShiftAliases.has(dispatchHomeShift) &&
                 timeToMinutes(dd.thoi_gian_bat_dau) != caEndMinutes &&
-                timeToMinutes(dd.thoi_gian_ket_thuc) != caStartMinutes
+                (!dd.thoi_gian_ket_thuc || timeToMinutes(dd.thoi_gian_ket_thuc) != caStartMinutes)
               );
             });
 
@@ -11108,9 +11109,9 @@ export function createApp() {
                   return `(${lastName} đi làm lúc ${dispatchStart} ${toMachineName})`;
                 }
                 if (sameCa) {
-                  return `(${lastName} đi làm lúc ${dispatchStart} - ${dispatchEnd})`;
+                  return `(${lastName} đi làm lúc ${dispatchStart}${dispatchEnd ? ` - ${dispatchEnd}` : ''})`;
                 }
-                return `(${lastName} được chuyển đến ca ${toCa} từ ${dispatchStart} - ${dispatchEnd})`;
+                return `(${lastName} được chuyển đến ca ${toCa} từ ${dispatchStart}${dispatchEnd ? ` - ${dispatchEnd}` : ''})`;
               });
 
               machineData[machineName][tenCa].push({

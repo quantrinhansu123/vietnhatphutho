@@ -7,7 +7,7 @@
 -- 2. Chỉ ghi nhận phát sinh vào dieu_dong_nhan_su.
 -- 3. Cho phép may_goc = may_dieu_dong.
 -- 4. Không cho một nhân sự có 2 lịch điều động bị chồng thời gian.
--- 5. Không cho thời gian kết thúc <= thời gian bắt đầu.
+-- 5. Giờ kết thúc là tùy chọn; API xử lý ca vượt ngày và kiểm tra giờ trùng nhau.
 -- 6. Lưu snapshot vai trò và máy gốc tại thời điểm điều động.
 -- 7. Không mở quyền CRUD public bằng RLS.
 -- ============================================================
@@ -53,7 +53,7 @@ create table if not exists public.dieu_dong_nhan_su (
 
     -- Thời gian điều động
     thoi_gian_bat_dau time not null,
-    thoi_gian_ket_thuc time not null,
+    thoi_gian_ket_thuc time,
 
     -- Ghi chú
     ghi_chu text,
@@ -65,9 +65,6 @@ create table if not exists public.dieu_dong_nhan_su (
     -- ========================================================
     -- VALIDATION
     -- ========================================================
-
-    constraint chk_dieu_dong_thoi_gian
-        check (thoi_gian_ket_thuc > thoi_gian_bat_dau),
 
     constraint chk_dieu_dong_ca_not_blank
         check (btrim(ca) <> ''),
@@ -121,49 +118,17 @@ on public.dieu_dong_nhan_su (
 -- 4. CHỐNG TRÙNG THỜI GIAN ĐIỀU ĐỘNG
 -- ============================================================
 --
--- Một nhân sự không thể có 2 lịch điều động chồng nhau
--- trong cùng một ngày.
---
--- Ví dụ:
---
--- NV000049
--- 08:00 -> 10:00
---
--- NV000049
--- 09:00 -> 11:00
---
--- => PostgreSQL CHẶN.
---
--- Nhưng:
---
--- 08:00 -> 10:00
--- 10:00 -> 12:00
---
--- => ĐƯỢC PHÉP.
---
--- Lưu ý:
--- Constraint này áp dụng cho các bản ghi trong
--- dieu_dong_nhan_su.
---
--- Việc kiểm tra overlap với phân công gốc trong
--- lenh_sx.phan_cong_nhan_su cần được xử lý ở backend.
+-- Gỡ constraint range cũ vì không hỗ trợ ca vượt ngày và bản ghi
+-- không có giờ kết thúc. API chịu trách nhiệm kiểm tra chồng giờ
+-- khi bản ghi có đủ cả giờ bắt đầu và giờ kết thúc.
 -- ============================================================
 
 alter table public.dieu_dong_nhan_su
 drop constraint if exists ex_dieu_dong_ns_overlap;
 
 
-alter table public.dieu_dong_nhan_su
-add constraint ex_dieu_dong_ns_overlap
-exclude using gist (
-    ma_nhan_su with =,
-    ngay_lam_viec with =,
-    tsrange(
-        ngay_lam_viec + thoi_gian_bat_dau,
-        ngay_lam_viec + thoi_gian_ket_thuc,
-        '[)'
-    ) with &&
-);
+-- Kiểm tra chồng thời gian được thực hiện ở API để hỗ trợ ca vượt ngày
+-- và bản ghi không nhập giờ kết thúc.
 
 
 -- ============================================================

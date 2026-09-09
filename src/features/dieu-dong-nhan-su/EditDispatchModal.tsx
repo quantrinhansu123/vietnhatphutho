@@ -12,7 +12,7 @@ export type DispatchRecord = {
   may_goc: string;
   may_dieu_dong: string;
   thoi_gian_bat_dau: string;
-  thoi_gian_ket_thuc: string;
+  thoi_gian_ket_thuc: string | null;
   ghi_chu?: string;
 };
 
@@ -48,7 +48,7 @@ export function EditDispatchModal({
       setCaDieuDong(record.ca_dieu_dong || record.ca || '');
       setMayDieuDong(record.may_dieu_dong);
       setThoiGianBatDau(record.thoi_gian_bat_dau.slice(0, 5));
-      setThoiGianKetThuc(record.thoi_gian_ket_thuc.slice(0, 5));
+      setThoiGianKetThuc(String(record.thoi_gian_ket_thuc || '').slice(0, 5));
       setError('');
     }
   }, [record]);
@@ -58,7 +58,7 @@ export function EditDispatchModal({
   const personName = staffMap.get(record.ma_nhan_su) || record.ma_nhan_su || '-';
 
   const handleSubmit = async () => {
-    if (!mayDieuDong || !caDieuDong || !thoiGianBatDau || !thoiGianKetThuc) {
+    if (!mayDieuDong || !caDieuDong || !thoiGianBatDau) {
       setError('Vui lòng điền đầy đủ các trường bắt buộc.');
       return;
     }
@@ -161,7 +161,7 @@ export function EditDispatchModal({
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-700">Kết thúc *</label>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-700">Kết thúc</label>
               <input
                 type="time"
                 value={thoiGianKetThuc}
