@@ -37,8 +37,13 @@ function timeToMinutes(value: string): number {
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
 }
 
+/** Kiểm tra 2 khoảng giờ có chồng nhau không, hỗ trợ ca vượt ngày (start > end). */
 function rangesOverlap(a: { start: string; end: string }, b: { start: string; end: string }): boolean {
-  return timeToMinutes(a.start) < timeToMinutes(b.end) && timeToMinutes(b.start) < timeToMinutes(a.end);
+  const aStart = timeToMinutes(a.start);
+  const aEnd = timeToMinutes(a.end) + (timeToMinutes(a.end) <= timeToMinutes(a.start) ? 1440 : 0);
+  const bStart = timeToMinutes(b.start);
+  const bEnd = timeToMinutes(b.end) + (timeToMinutes(b.end) <= timeToMinutes(b.start) ? 1440 : 0);
+  return aStart < bEnd && bStart < aEnd;
 }
 
 function formatDispatchTimeRange(start: unknown, end: unknown): string {
@@ -428,9 +433,8 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
         setFormError(`${who}: vui lòng điền đầy đủ các trường bắt buộc.`);
         return;
       }
-      
-      if (timeToMinutes(item.thoiGianBatDau) >= timeToMinutes(item.thoiGianKetThuc)) {
-        setFormError(`${who}: giờ bắt đầu phải nhỏ hơn giờ kết thúc.`);
+      if (item.thoiGianBatDau === item.thoiGianKetThuc) {
+        setFormError(`${who}: giờ bắt đầu và giờ kết thúc không được trùng nhau.`);
         return;
       }
       const overlap = history.some(

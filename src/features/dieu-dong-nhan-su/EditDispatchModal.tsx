@@ -26,10 +26,6 @@ interface Props {
   staffMap: Map<string, string>;
 }
 
-function timeToMinutes(value: string): number {
-  const [h, m] = String(value).split(':').map(Number);
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
-}
 
 export function EditDispatchModal({
   isOpen,
@@ -66,10 +62,11 @@ export function EditDispatchModal({
       setError('Vui lòng điền đầy đủ các trường bắt buộc.');
       return;
     }
-    if (timeToMinutes(thoiGianBatDau) >= timeToMinutes(thoiGianKetThuc)) {
-      setError('Giờ bắt đầu phải nhỏ hơn giờ kết thúc.');
+    if (thoiGianBatDau === thoiGianKetThuc) {
+      setError('Giờ bắt đầu và giờ kết thúc không được trùng nhau.');
       return;
     }
+    // Lưu ý: ca vượt ngày (giờ bắt đầu > giờ kết thúc) là hợp lệ — không chặn.
 
     setIsSaving(true);
     setError('');

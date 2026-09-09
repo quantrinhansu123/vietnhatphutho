@@ -8211,8 +8211,8 @@ export function createApp() {
           return res.status(400).json({ error: `Giờ bắt đầu không hợp lệ (${maNhanSu}).` });
         if (ketThuc && !PHAN_CONG_TIME_RE.test(ketThuc))
           return res.status(400).json({ error: `Giờ kết thúc không hợp lệ (${maNhanSu}).` });
-        if (batDau && ketThuc && batDau >= ketThuc)
-          return res.status(400).json({ error: `Giờ bắt đầu phải nhỏ hơn giờ kết thúc (${maNhanSu}).` });
+        if (batDau && ketThuc && batDau === ketThuc)
+          return res.status(400).json({ error: `Giờ bắt đầu và giờ kết thúc không được trùng nhau (${maNhanSu}).` });
         rows.push({
           id_lenh_sx: lenh ? lenh.id : null,
           ma_lenh_sx: lenh ? lenh.ma_lenh_sx || null : null,
@@ -10734,9 +10734,9 @@ export function createApp() {
 
   function rangesOverlap(a: DispatchTimeRange, b: DispatchTimeRange): boolean {
     const aStart = timeToMinutes(a.start);
-    const aEnd = timeToMinutes(a.end);
+    const aEnd = timeToMinutes(a.end) + (timeToMinutes(a.end) <= timeToMinutes(a.start) ? 1440 : 0);
     const bStart = timeToMinutes(b.start);
-    const bEnd = timeToMinutes(b.end);
+    const bEnd = timeToMinutes(b.end) + (timeToMinutes(b.end) <= timeToMinutes(b.start) ? 1440 : 0);
     return aStart < bEnd && bStart < aEnd;
   }
 
@@ -10762,7 +10762,7 @@ export function createApp() {
     
     if (!/^\d{1,2}:\d{2}$/.test(batDau)) return { error: 'Giờ bắt đầu không hợp lệ.' };
     if (!/^\d{1,2}:\d{2}$/.test(ketThuc)) return { error: 'Giờ kết thúc không hợp lệ.' };
-    if (batDau >= ketThuc) return { error: 'Giờ bắt đầu phải nhỏ hơn giờ kết thúc.' };
+    if (batDau === ketThuc) return { error: 'Giờ bắt đầu và giờ kết thúc không được trùng nhau.' };
 
     return {
       record: {
@@ -11067,11 +11067,21 @@ export function createApp() {
               machineData[machineName][tenCa] = [];
             }
             // Check all dispatches for this employee during this time
-            const dispatchesForEmployee = dieuDongList.filter(dd =>
-              dd.ma_nhan_su === phanCong.ma_nhan_su &&
-              timeToMinutes(dd.thoi_gian_bat_dau) != caEndMinutes &&
-              timeToMinutes(dd.thoi_gian_ket_thuc) != caStartMinutes
+            const currentShiftAliases = new Set(
+              [assignedCa, tenCa, String(ca.ma_cai_dat || '').trim()]
+                .map(value => value.toUpperCase())
+                .filter(Boolean)
             );
+            const dispatchesForEmployee = dieuDongList.filter(dd => {
+              const dispatchHomeShift = String(dd.ca || '').trim().toUpperCase();
+              return (
+                dd.ma_nhan_su === phanCong.ma_nhan_su &&
+                dispatchHomeShift !== '' &&
+                currentShiftAliases.has(dispatchHomeShift) &&
+                timeToMinutes(dd.thoi_gian_bat_dau) != caEndMinutes &&
+                timeToMinutes(dd.thoi_gian_ket_thuc) != caStartMinutes
+              );
+            });
 
             // Filter dispatches that apply to this specific machine (may_goc)
             const dispatchesForThisMachine = dispatchesForEmployee.filter(dd =>
