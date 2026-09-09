@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `phieu_xuat_nhap_kho` |
 | **Tab** | `warehouse-slip`, `warehouse-history` |
-| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`, `supabase-phieu-xuat-nhap-kho-lenh-sx.sql`) |
+| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`, `supabase-phieu-xuat-nhap-kho-lenh-sx.sql`, `supabase-phieu-xuat-nhap-kho-phan-loai-may.sql`, `supabase-phieu-xuat-nhap-kho-trong-luong-kg.sql`) |
 
 ## API (`server.ts`)
 
@@ -13,19 +13,24 @@
 | GET | `/api/phieu-xuat-nhap-kho` | ~5212 |
 | GET | `/api/phieu-xuat-nhap-kho/lo-ton` | (lô tồn theo `ma_npl`) |
 | GET | `/api/phieu-xuat-nhap-kho/gia-tb-nhap` | (giá BQ nhập theo mã NVL + tháng) |
-| GET | `/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat` | tập `{ma_lenh_sx, ngay, ca}` đã xuất — có `ma_phieu` thì lọc theo 1 phiếu |
+| GET | `/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat` | tập phiếu trộn định mức đã xuất (`dinh_muc_id`, `ten_phieu`) — có `ma_phieu` thì lọc theo 1 phiếu xuất kho |
 | POST | `/api/phieu-xuat-nhap-kho` | ~5263 |
 | PUT | `/api/phieu-xuat-nhap-kho/:slipCode` | ~5377 |
 | DELETE | slip / id | ~5495+ |
 
-### Bảng liên kết `phieu_xuat_nhap_kho_lenh_sx`
+### Liên kết phiếu trộn định mức
 
-Bảng phụ (không có tab riêng) lưu lệnh SX (`ma_lenh_sx, ngay, ca`) đã chọn khi lập phiếu **xuất kho NVL** — 1 dòng / lệnh SX / phiếu.
-Dùng để ẩn khỏi picker "Mã đơn hàng / Lệnh SX" các tổ hợp (mã lệnh SX, ngày, ca) đã có phiếu xuất, tránh xuất trùng.
-Ghi/xóa đồng bộ với POST/PUT/DELETE phiếu (`replaceWarehouseLenhSxLinks`, `deleteWarehouseLenhSxLinks` trong `server.ts`).
-Ngày trong picker được **tự sinh từ khoảng `ngay_bat_dau..ngay_ket_thuc`** của lệnh SX (hàm `expandWarehouseProductionOrderDates`,
-tối đa 60 ngày) — không lấy từ `bang_tron_vat_tu_dinh_muc` nữa, vì phiếu trộn định mức đi 1-1 theo lệnh SX (không theo ngày).
-Khi tra định mức NVL để điền SL CT, chỉ gửi `ma_lenh_sx` (bỏ `ngay`/`ca` khỏi query `/api/bang-tron-vat-tu-dinh-muc`).
+Bảng phụ `phieu_xuat_nhap_kho_lenh_sx` giữ tên cũ để tương thích, nhưng luồng **xuất kho NVL** liên kết trực tiếp bằng `dinh_muc_id` và lưu kèm `ten_phieu`.
+Picker tải từ `bang_tron_vat_tu_dinh_muc`, hiển thị `ten_phieu`, không sinh lựa chọn từ lệnh sản xuất. Một lệnh SX có nhiều phiếu định mức vẫn chọn/xuất độc lập.
+Phiếu định mức đã gắn với phiếu xuất khác bị ẩn để tránh xuất trùng; khi sửa phiếu, các lựa chọn của chính phiếu đó được khôi phục.
+Chi tiết NVL được đọc trực tiếp từ JSON `chi_tiet` của các phiếu định mức đã chọn. Màn hình nhập giữ cách chia nhóm NVL chính/NVL phụ như cũ, không chia nhóm hay hiển thị theo máy; lịch sử cũng không thêm cột máy/phân loại.
+Mỗi dòng lưu `may` và `phan_loai_nvl` (`nvl_chinh`, `nvl_phu`, `chua_phan_loai`) chỉ để bản in và luồng in lại từ lịch sử giữ đúng nhóm. Phiếu cũ không suy luận ngược: để máy trống và backfill `chua_phan_loai`.
+Cột `phan_loai_nvl` không dùng CHECK constraint trong database; các file SQL chủ động gỡ constraint `phieu_xuat_nhap_kho_phan_loai_nvl_check` nếu database cũ đã có.
+Payload lưu dòng NVL gửi đồng thời `materialClass`, `warehouseClass` và `phan_loai_nvl`; server ưu tiên `phan_loai_nvl` để bảo toàn đúng `nvl_chinh`, `nvl_phu` hoặc `chua_phan_loai` từ phiếu trộn định mức.
+Với NVL phụ, `gia_tri` trên phiếu trộn là SL theo ĐVT gốc và `tong_khoi_luong` là kg đã quy đổi. Phiếu xuất kho dùng `gia_tri` cho **SL CT** và hệ số `tong_khoi_luong / gia_tri` để tính **Quy đổi kg** khi nhập SL thực.
+Trọng lượng quy đổi được lưu tại `trong_luong_kg`; bảng NVL phụ trên mẫu in/in lại có cột **Trọng lượng (kg)** và dòng tổng kg.
+Danh sách **Chi tiết NVL** hiển thị thêm **Tên sản xuất**, ưu tiên tên trên phiếu định mức rồi đối chiếu `kho_nvl.ten_nvl_sx` theo mã NPL; trường tên sản xuất chỉ hiển thị, không tạo thêm cột lưu trữ trên phiếu.
+Bản in phiếu xuất NVL tách mỗi máy thành một trang; trong mỗi trang in riêng bảng NVL chính, NVL phụ và Chưa phân loại nếu có dữ liệu.
 
 ## Frontend
 

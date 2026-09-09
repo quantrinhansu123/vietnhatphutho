@@ -395,6 +395,7 @@ function buildWarehouseExportSlips(rows: WarehouseMovementRow[]): WarehouseSlipP
         note: header.note,
         createdBy: header.createdBy,
         shift: header.shift,
+        machine: [...new Set(group.map(row => row.machine).filter(Boolean))].join(', '),
         totalAmount: group.reduce((sum, row) => sum + row.lineAmount, 0),
         lines: group.map(row => ({
           code: row.itemCode,
@@ -403,7 +404,10 @@ function buildWarehouseExportSlips(rows: WarehouseMovementRow[]): WarehouseSlipP
           quantity: row.quantity,
           documentQuantity: row.documentQuantity ?? null,
           unitPrice: row.unitPrice,
-          lineAmount: row.lineAmount
+          lineAmount: row.lineAmount,
+          materialClass: row.materialClass,
+          machine: row.machine,
+          weightKg: row.weightKg
         }))
       };
     });

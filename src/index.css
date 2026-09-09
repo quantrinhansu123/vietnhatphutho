@@ -3982,6 +3982,50 @@ input[type="number"] {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.warehouse-slip-print-machine-page {
+  break-after: page;
+  page-break-after: always;
+}
+
+.warehouse-slip-print-machine-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
+.warehouse-slip-print-preview .warehouse-slip-print-machine-page + .warehouse-slip-print-machine-page {
+  margin-top: 10mm;
+  border-top: 2px dashed #d4d4d8;
+  padding-top: 10mm;
+}
+
+.warehouse-slip-print-material-group {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 5mm;
+}
+
+.warehouse-slip-print-material-title {
+  margin: 0 0 1.5mm;
+  font-size: 11pt;
+  font-weight: 900;
+}
+
+.warehouse-slip-print-material-group .warehouse-slip-print-table {
+  margin-bottom: 0;
+}
+
+.warehouse-slip-print-machine-total,
+.warehouse-slip-print-grand-total {
+  margin: 2mm 0;
+  text-align: right;
+  font-size: 10.5pt;
+}
+
+.warehouse-slip-print-grand-total {
+  font-size: 11pt;
+  font-weight: 900;
+}
+
 .warehouse-slip-print-sheet--nhap-kho,
 .warehouse-slip-print-doc--nhap-kho {
   font-family: 'Times New Roman', Times, serif;

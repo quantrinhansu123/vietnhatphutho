@@ -29,12 +29,27 @@ alter table public.phieu_xuat_nhap_kho
   add column if not exists id_dong_nhap_nguon uuid,
   add column if not exists ma_phieu_nhap_nguon text;
 
+alter table public.phieu_xuat_nhap_kho
+  add column if not exists may text,
+  add column if not exists phan_loai_nvl text,
+  add column if not exists trong_luong_kg numeric;
+
+update public.phieu_xuat_nhap_kho
+set phan_loai_nvl = 'chua_phan_loai'
+where coalesce(loai_kho, 'nvl') <> 'san_pham'
+  and phan_loai_nvl is null;
+
+alter table public.phieu_xuat_nhap_kho
+  drop constraint if exists phieu_xuat_nhap_kho_phan_loai_nvl_check;
+
 create index if not exists phieu_xuat_nhap_kho_ma_phieu_idx on public.phieu_xuat_nhap_kho (ma_phieu);
 create index if not exists phieu_xuat_nhap_kho_ngay_phieu_idx on public.phieu_xuat_nhap_kho (ngay_phieu desc);
 create index if not exists phieu_xuat_nhap_kho_loai_phieu_idx on public.phieu_xuat_nhap_kho (loai_phieu);
 create index if not exists phieu_xuat_nhap_kho_loai_kho_idx on public.phieu_xuat_nhap_kho (loai_kho);
 create index if not exists phieu_xuat_nhap_kho_ma_npl_loai_idx on public.phieu_xuat_nhap_kho (ma_npl, loai_phieu);
 create index if not exists phieu_xuat_nhap_kho_id_dong_nhap_nguon_idx on public.phieu_xuat_nhap_kho (id_dong_nhap_nguon);
+create index if not exists phieu_xuat_nhap_kho_may_phan_loai_idx
+  on public.phieu_xuat_nhap_kho (ma_phieu, may, phan_loai_nvl);
 
 alter table public.phieu_xuat_nhap_kho enable row level security;
 
@@ -67,3 +82,9 @@ comment on column public.phieu_xuat_nhap_kho.id_dong_nhap_nguon is
   'Id dong phieu nhap NVL ma dong xuat nay tru ton. Null voi nhap hoac xuat cu.';
 comment on column public.phieu_xuat_nhap_kho.ma_phieu_nhap_nguon is
   'Ma phieu nhap nguon (de in/hien thi nhanh).';
+comment on column public.phieu_xuat_nhap_kho.may is
+  'May san xuat cua dong NVL, lay tu lenh san xuat gan voi phieu tron dinh muc.';
+comment on column public.phieu_xuat_nhap_kho.phan_loai_nvl is
+  'Phan loai dong NVL: nvl_chinh, nvl_phu hoac chua_phan_loai.';
+comment on column public.phieu_xuat_nhap_kho.trong_luong_kg is
+  'Trong luong kg da quy doi cua dong NVL, uu tien he so tu phieu tron dinh muc.';

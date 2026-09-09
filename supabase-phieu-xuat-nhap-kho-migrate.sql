@@ -23,12 +23,25 @@ alter table public.phieu_xuat_nhap_kho
   add column if not exists nhan_su text,
   add column if not exists loai_kho text default 'nvl',
   add column if not exists ma_sp text,
-  add column if not exists ten_sp text;
+  add column if not exists ten_sp text,
+  add column if not exists may text,
+  add column if not exists phan_loai_nvl text,
+  add column if not exists trong_luong_kg numeric;
+
+update public.phieu_xuat_nhap_kho
+set phan_loai_nvl = 'chua_phan_loai'
+where coalesce(loai_kho, 'nvl') <> 'san_pham'
+  and phan_loai_nvl is null;
+
+alter table public.phieu_xuat_nhap_kho
+  drop constraint if exists phieu_xuat_nhap_kho_phan_loai_nvl_check;
 
 create index if not exists phieu_xuat_nhap_kho_ma_phieu_idx on public.phieu_xuat_nhap_kho (ma_phieu);
 create index if not exists phieu_xuat_nhap_kho_ngay_phieu_idx on public.phieu_xuat_nhap_kho (ngay_phieu desc);
 create index if not exists phieu_xuat_nhap_kho_loai_phieu_idx on public.phieu_xuat_nhap_kho (loai_phieu);
 create index if not exists phieu_xuat_nhap_kho_loai_kho_idx on public.phieu_xuat_nhap_kho (loai_kho);
+create index if not exists phieu_xuat_nhap_kho_may_phan_loai_idx
+  on public.phieu_xuat_nhap_kho (ma_phieu, may, phan_loai_nvl);
 
 alter table public.phieu_xuat_nhap_kho enable row level security;
 
