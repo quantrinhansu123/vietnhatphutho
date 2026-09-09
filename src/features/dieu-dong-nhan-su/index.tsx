@@ -433,6 +433,10 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
         setFormError(`${who}: vui lòng điền đầy đủ các trường bắt buộc.`);
         return;
       }
+      if (item.thoiGianBatDau === item.thoiGianKetThuc) {
+        setFormError(`${who}: giờ bắt đầu và giờ kết thúc không được trùng nhau.`);
+        return;
+      }
       const overlap = history.some(
         h =>
           h.ma_nhan_su === item.person.ma_nhan_su &&

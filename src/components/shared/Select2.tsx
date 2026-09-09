@@ -6,9 +6,13 @@ type Select2JQuery = JQuery<HTMLSelectElement> & {
   select2: (options?: Record<string, unknown> | string) => JQuery<HTMLSelectElement>;
 };
 
-export type Select2Props = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> & {
-  /** Giá trị được trả về khi người dùng chọn option. */
+export type Select2Props = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value'> & {
+  /** Giá trị hiện tại (chuỗi đơn hoặc mảng chuỗi khi multiple) */
+  value?: string | number | readonly string[] | string[];
+  /** Giá trị được trả về khi người dùng chọn option (đơn). */
   onValueChange?: (value: string) => void;
+  /** Danh sách giá trị được trả về khi chọn nhiều (multiple). */
+  onValuesChange?: (values: string[]) => void;
   /** Cấu hình Select2 riêng cho từng instance, nếu cần. */
   select2Options?: Record<string, unknown>;
   /** Đổi giá trị này khi nội dung option thay đổi cần Select2 render lại. */
@@ -23,14 +27,22 @@ if (typeof window !== 'undefined' && typeof initializeSelect2 === 'function') {
   initializeSelect2(window, $);
 }
 
-function readSelectValue(select: Select2JQuery) {
+function readSelectValue(select: Select2JQuery): string {
   const rawValue = select.val();
   const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
   return String(value ?? '');
 }
 
+function readSelectValues(select: Select2JQuery): string[] {
+  const rawValue = select.val();
+  if (!rawValue) return [];
+  if (Array.isArray(rawValue)) return rawValue.map(String);
+  return [String(rawValue)];
+}
+
 export function Select2({
   onValueChange,
+  onValuesChange,
   select2Options,
   refreshKey,
   dropdownParent,
@@ -39,10 +51,12 @@ export function Select2({
 }: Select2Props) {
   const selectRef = useRef<HTMLSelectElement | null>(null);
   const onValueChangeRef = useRef(onValueChange);
+  const onValuesChangeRef = useRef(onValuesChange);
 
   useEffect(() => {
     onValueChangeRef.current = onValueChange;
-  }, [onValueChange]);
+    onValuesChangeRef.current = onValuesChange;
+  }, [onValueChange, onValuesChange]);
 
   useEffect(() => {
     const element = selectRef.current;
@@ -56,7 +70,9 @@ export function Select2({
     });
 
     const handleChange = () => {
-      onValueChangeRef.current?.(readSelectValue(select));
+      const vals = readSelectValues(select);
+      onValuesChangeRef.current?.(vals);
+      onValueChangeRef.current?.(vals[0] ?? '');
     };
     select.on('change.select2Component', handleChange);
 
@@ -72,8 +88,20 @@ export function Select2({
     const element = selectRef.current;
     if (!element) return;
     const select = $(element) as Select2JQuery;
-    select.val(selectProps.value || null).trigger('change.select2');
-  }, [selectProps.value]);
+
+    const currentVal = select.val();
+    const targetVal = selectProps.value;
+
+    const currentArr = Array.isArray(currentVal) ? currentVal.map(String) : (currentVal ? [String(currentVal)] : []);
+    const targetArr = Array.isArray(targetVal) ? targetVal.map(String) : (targetVal ? [String(targetVal)] : []);
+
+    if (JSON.stringify(currentArr) !== JSON.stringify(targetArr)) {
+      const valToSet = selectProps.multiple
+        ? (targetVal ? (Array.isArray(targetVal) ? [...targetVal] : [targetVal]) : [])
+        : (targetVal ?? null);
+      select.val(valToSet as any).trigger('change.select2');
+    }
+  }, [selectProps.value, selectProps.multiple]);
 
   return (
     <select ref={selectRef} {...selectProps} onChange={() => undefined}>

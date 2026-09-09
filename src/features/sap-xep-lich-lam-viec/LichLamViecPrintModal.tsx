@@ -14,6 +14,13 @@ interface LichRow {
   machines: MachineCell[];
 }
 
+interface PreviewLichRow extends LichRow {
+  previewKhungGio: string;
+  previewTenCa: string;
+  khungGioRowSpan: number;
+  showKhungGio: boolean;
+}
+
 interface ScheduleNote {
   id: string;
   ngay_lam_viec: string;
@@ -111,6 +118,77 @@ function shiftLabel(shift: { ten_cai_dat?: string; ma_cai_dat?: string; khung_gi
   return range ? `${base} · ${range}` : base;
 }
 
+function scheduleShiftCode(row: LichRow) {
+  return String(row.maCa || row.tenCa || '').trim().toUpperCase();
+}
+
+function numberedShiftOrder(code: string, group: 'eight-hour' | 'twelve-hour') {
+  const match = group === 'eight-hour'
+    ? code.match(/^HC\s*(\d+)$/)
+    : code.match(/12\D*(\d+)\D*$/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function buildPreviewRows(rows: LichRow[]): PreviewLichRow[] {
+  const classified = rows.map((row, originalIndex) => {
+    const code = scheduleShiftCode(row);
+    const group = code === 'HC'
+      ? 'office'
+      : code.includes('12')
+        ? 'twelve-hour'
+        : /^HC\s*\d+$/.test(code)
+          ? 'eight-hour'
+          : 'other';
+    const groupOrder = group === 'eight-hour' ? 0 : group === 'twelve-hour' ? 1 : group === 'other' ? 2 : 3;
+    const shiftOrder = group === 'eight-hour' || group === 'twelve-hour'
+      ? numberedShiftOrder(code, group)
+      : originalIndex;
+    return { row, originalIndex, group, groupOrder, shiftOrder };
+  });
+
+  classified.sort((a, b) =>
+    a.groupOrder - b.groupOrder || a.shiftOrder - b.shiftOrder || a.originalIndex - b.originalIndex
+  );
+
+  const groupCounters = new Map<string, number>();
+  const previewRows: PreviewLichRow[] = classified.map(item => {
+    let previewKhungGio = item.row.khungGio;
+    let previewTenCa = item.row.tenCa;
+
+    if (item.group === 'eight-hour' || item.group === 'twelve-hour') {
+      const sequence = (groupCounters.get(item.group) ?? 0) + 1;
+      groupCounters.set(item.group, sequence);
+      previewKhungGio = item.group === 'eight-hour' ? 'Ca 8H' : 'Ca12H';
+      previewTenCa = `Ca${sequence}`;
+    } else if (item.group === 'office') {
+      previewKhungGio = 'HC';
+      previewTenCa = 'HC';
+    }
+
+    return {
+      ...item.row,
+      previewKhungGio,
+      previewTenCa,
+      khungGioRowSpan: 1,
+      showKhungGio: true
+    };
+  });
+
+  for (let start = 0; start < previewRows.length;) {
+    let end = start + 1;
+    while (end < previewRows.length && previewRows[end].previewKhungGio === previewRows[start].previewKhungGio) {
+      end += 1;
+    }
+    previewRows[start].khungGioRowSpan = end - start;
+    for (let index = start + 1; index < end; index += 1) {
+      previewRows[index].showKhungGio = false;
+    }
+    start = end;
+  }
+
+  return previewRows;
+}
+
 export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
   const [data, setData] = useState<ScheduleData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -192,6 +270,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
   const shiftList = data?.ca_list ?? [];
   const notes = data?.ghi_chu_chi_tiet ?? [];
   const hasSchedule = Boolean(data && displayMachineList.length > 0 && data.ca_list && data.ca_list.length > 0);
+  const previewRows = useMemo(() => buildPreviewRows(data?.lich ?? []), [data?.lich]);
 
   const machineOptions = useMemo(() => {
     return machineList
@@ -483,9 +562,8 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
             }
           : prev
       );
-      if (editingNoteId === note.id) {
-        setEditingNoteId('');
-        setNoteDrafts([emptyNoteDraft()]);
+      if (editingModalNote?.id === note.id) {
+        setEditingModalNote(null);
       }
     } catch (err: any) {
       setNoteError(err?.message || 'Không xóa được ghi chú.');
@@ -784,10 +862,17 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {(data?.lich ?? []).map((row, idx) => (
-                      <tr key={idx}>
-                        <td className="schedule-time-col border border-zinc-300 px-2 py-2 font-medium">{row.khungGio}</td>
-                        <td className="schedule-shift-col border border-zinc-300 px-2 py-2">{row.tenCa}</td>
+                    {previewRows.map((row, idx) => (
+                      <tr key={`${row.maCa || row.tenCa}-${idx}`}>
+                        {row.showKhungGio ? (
+                          <td
+                            rowSpan={row.khungGioRowSpan}
+                            className="schedule-time-col border border-zinc-300 px-2 py-2 align-middle font-medium"
+                          >
+                            {row.previewKhungGio}
+                          </td>
+                        ) : null}
+                        <td className="schedule-shift-col border border-zinc-300 px-2 py-2">{row.previewTenCa}</td>
                         {row.machines.map((cell, midx) => {
                           const employeeNames = cell.nhanSu.map(p => p.name);
                           const dispatched = cell.nhanSu.filter(p => p.dispatch);

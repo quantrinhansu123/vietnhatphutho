@@ -62,6 +62,10 @@ export function EditDispatchModal({
       setError('Vui lòng điền đầy đủ các trường bắt buộc.');
       return;
     }
+    if (thoiGianBatDau === thoiGianKetThuc) {
+      setError('Giờ bắt đầu và giờ kết thúc không được trùng nhau.');
+      return;
+    }
     // Lưu ý: ca vượt ngày (giờ bắt đầu > giờ kết thúc) là hợp lệ — không chặn.
 
     setIsSaving(true);

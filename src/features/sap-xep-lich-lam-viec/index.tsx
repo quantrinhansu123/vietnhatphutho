@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import { ArrowRightLeft, ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, Plus, Printer, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { DateInputVi } from '../../components/shared/DateInputVi';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
@@ -15,6 +15,46 @@ const PRODUCTION_WORKSHOP_DEPT = 'PHÂN XƯỞNG SẢN XUẤT';
 const inputClass =
   'h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 const SCHEDULE_NOTE_MARKER = '__SCHEDULE_NOTE__';
+
+// ── Bộ nhớ lưu vết (Memory) cho ca và nhân sự ──────────────────────────────
+const SCHEDULE_MEMORY_KEY = 'vietnhat_schedule_memory_v1';
+
+type ScheduleMemory = {
+  caLamViecList: string[];
+  people: { vaiTro: string; maNhanSuList: string[]; removable: boolean }[];
+  updatedAt: string;
+};
+
+function saveScheduleMemory(caLamViecList: string[], people: PersonForm[]) {
+  try {
+    const memoryData: ScheduleMemory = {
+      caLamViecList: caLamViecList || [],
+      people: people.map(p => ({
+        vaiTro: p.vaiTro,
+        maNhanSuList: p.maNhanSuList || [],
+        removable: p.removable
+      })),
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem(SCHEDULE_MEMORY_KEY, JSON.stringify(memoryData));
+  } catch (e) {
+    console.error('Failed to save schedule memory', e);
+  }
+}
+
+function loadScheduleMemory(): ScheduleMemory | null {
+  try {
+    const raw = localStorage.getItem(SCHEDULE_MEMORY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.people)) {
+      return parsed as ScheduleMemory;
+    }
+  } catch (e) {
+    console.error('Failed to load schedule memory', e);
+  }
+  return null;
+}
 
 // ── Kiểu dữ liệu ─────────────────────────────────────────────────────────────
 type SchedRow = {
@@ -62,6 +102,7 @@ type ScheduleForm = {
   ghiChu: string;
   people: PersonForm[];
 };
+
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -293,10 +334,11 @@ function MultiStaffSelect({ values, onChange, staff, staffByCode }: MultiStaffSe
   }, [staff, search]);
 
   const toggle = (code: string) => {
-    if (values.includes(code)) {
-      onChange(values.filter(v => v !== code));
+    const current = Array.isArray(values) ? values : [];
+    if (current.includes(code)) {
+      onChange(current.filter(v => v !== code));
     } else {
-      onChange([...values, code]);
+      onChange([...current, code]);
     }
   };
 
@@ -306,13 +348,14 @@ function MultiStaffSelect({ values, onChange, staff, staffByCode }: MultiStaffSe
         className="min-h-[36px] w-full cursor-pointer rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm focus-within:border-[#ef1b2d]"
         onClick={() => setOpen(o => !o)}
       >
-        {values.length === 0 ? (
+        {(!values || values.length === 0) ? (
           <span className="text-zinc-400">Chọn nhân sự...</span>
         ) : (
           <div className="flex flex-wrap gap-1">
             {values.map(code => (
               <span
                 key={code}
+                onClick={e => e.stopPropagation()}
                 className="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-bold text-[#ef1b2d] ring-1 ring-inset ring-red-200"
               >
                 {staffByCode.get(code)?.name || code}
@@ -401,10 +444,11 @@ function MultiShiftSelect({ values, onChange, options }: MultiShiftSelectProps) 
   }, [open]);
 
   const toggle = (value: string) => {
-    if (values.includes(value)) {
-      onChange(values.filter(v => v !== value));
+    const current = Array.isArray(values) ? values : [];
+    if (current.includes(value)) {
+      onChange(current.filter(v => v !== value));
     } else {
-      onChange([...values, value]);
+      onChange([...current, value]);
     }
   };
 
@@ -414,7 +458,7 @@ function MultiShiftSelect({ values, onChange, options }: MultiShiftSelectProps) 
         className="min-h-[40px] w-full cursor-pointer rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm focus-within:border-[#ef1b2d]"
         onClick={() => setOpen(o => !o)}
       >
-        {values.length === 0 ? (
+        {(!values || values.length === 0) ? (
           <span className="flex h-8 items-center text-zinc-400">Chọn ca làm việc...</span>
         ) : (
           <div className="flex flex-wrap gap-1 py-0.5">
@@ -423,6 +467,7 @@ function MultiShiftSelect({ values, onChange, options }: MultiShiftSelectProps) 
               return (
                 <span
                   key={v}
+                  onClick={e => e.stopPropagation()}
                   className="inline-flex items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] font-bold text-zinc-700 ring-1 ring-inset ring-zinc-200"
                 >
                   {opt?.label || v}
@@ -506,6 +551,16 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
   const [printOpen, setPrintOpen] = useState(false);
   const [printDate, setPrintDate] = useState(todayISO());
+
+  // ── Batch edit (sửa lịch theo ngày & máy) ─────────────────────────────────
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [batchDate, setBatchDate] = useState('');
+  const [batchMachine, setBatchMachine] = useState('');
+  const [batchCaList, setBatchCaList] = useState<string[]>([]);
+  const [batchPeople, setBatchPeople] = useState<PersonForm[]>([]);
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [batchError, setBatchError] = useState('');
+  const [batchMessage, setBatchMessage] = useState('');
 
   const staffByCode = useMemo(() => {
     const map = new Map<string, StaffOpt>();
@@ -636,19 +691,274 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     });
   }, [form.maMay, form.ngayLamViec, form.caLamViecList, editingKey, groups]);
 
+  // ── Sửa lịch theo ngày & máy ──────────────────────────────────────────────
+  const batchMatchingGroups = useMemo(() => {
+    if (!batchMachine || !batchDate) return [];
+    return groups.filter(g => g.ma_may === batchMachine && g.ngay_lam_viec === batchDate);
+  }, [groups, batchMachine, batchDate]);
+
+  const batchShiftOptions = useMemo<ShiftOpt[]>(() => {
+    const seen = new Set<string>();
+    const out: ShiftOpt[] = [];
+    const push = (value: string, label: string) => {
+      if (value && !seen.has(value)) {
+        seen.add(value);
+        out.push({ value, label: label || value });
+      }
+    };
+    for (const s of shiftOptions) push(s.value, s.label);
+    for (const g of groups) push(g.ca_lam_viec, g.ca_lam_viec);
+    for (const ca of batchCaList) push(ca, ca);
+    return out;
+  }, [shiftOptions, groups, batchCaList]);
+
+  // Nạp dữ liệu khi đổi máy hoặc ngày
+  const loadBatchDataForMachineAndDate = useCallback((date: string, machineCode: string) => {
+    if (!date || !machineCode) {
+      setBatchCaList([]);
+      setBatchPeople(DEFAULT_ROLES.map(role => emptyPerson(role, false)));
+      return;
+    }
+    const matching = groups
+      .filter(g => g.ma_may === machineCode && g.ngay_lam_viec === date)
+      .sort((a, b) => a.ca_lam_viec.localeCompare(b.ca_lam_viec, 'vi'));
+
+    if (matching.length === 0) {
+      setBatchCaList([]);
+      setBatchPeople(DEFAULT_ROLES.map(role => emptyPerson(role, false)));
+      return;
+    }
+
+    // Gom vai trò và nhân sự từ các ca hiện có
+    const byRole = new Map<string, string[]>();
+    for (const g of matching) {
+      for (const row of g.rows) {
+        const role = row.vai_tro || 'Nhân sự bổ sung';
+        if (!byRole.has(role)) byRole.set(role, []);
+        byRole.get(role)!.push(row.ma_nhan_su);
+      }
+    }
+    const usedRoles = new Set<string>();
+    const people: PersonForm[] = DEFAULT_ROLES.map(role => {
+      usedRoles.add(role);
+      return {
+        key: uid(),
+        vaiTro: role,
+        maNhanSuList: uniq(byRole.get(role) || []),
+        removable: false
+      };
+    });
+    for (const [role, codes] of byRole.entries()) {
+      if (usedRoles.has(role)) continue;
+      people.push({
+        key: uid(),
+        vaiTro: role,
+        maNhanSuList: uniq(codes),
+        removable: true
+      });
+    }
+
+    setBatchCaList(matching.map(g => g.ca_lam_viec));
+    setBatchPeople(people);
+  }, [groups]);
+
+  const openBatchModal = () => {
+    const initDate = filterDate || todayISO();
+    const initMachine = filterMachine || '';
+    setBatchDate(initDate);
+    setBatchMachine(initMachine);
+    setBatchError('');
+    setBatchMessage('');
+    loadBatchDataForMachineAndDate(initDate, initMachine);
+    setShowBatchModal(true);
+  };
+
+  const closeBatchModal = () => {
+    setShowBatchModal(false);
+    setBatchDate('');
+    setBatchMachine('');
+    setBatchCaList([]);
+    setBatchPeople(DEFAULT_ROLES.map(role => emptyPerson(role, false)));
+    setBatchError('');
+    setBatchMessage('');
+  };
+
+  const updateBatchPerson = (key: string, patch: Partial<PersonForm>) => {
+    setBatchPeople(prev => prev.map(p => (p.key === key ? { ...p, ...patch } : p)));
+  };
+
+  const addBatchPerson = () => {
+    setBatchPeople(prev => [...prev, emptyPerson('Nhân sự bổ sung', true)]);
+  };
+
+  const removeBatchPerson = (key: string) => {
+    setBatchPeople(prev => prev.filter(p => !(p.key === key && p.removable)));
+  };
+
+  const handleSaveBatch = async () => {
+    if (!batchMachine.trim()) return setBatchError('Vui lòng chọn máy.');
+    if (!batchDate.trim()) return setBatchError('Vui lòng chọn ngày làm việc.');
+    if (batchCaList.length === 0) return setBatchError('Vui lòng chọn ít nhất 1 ca làm việc.');
+
+    const filledPeople = batchPeople.filter(p => p.maNhanSuList.length > 0);
+    if (filledPeople.length === 0) return setBatchError('Vui lòng chọn ít nhất 1 nhân sự.');
+
+    // Kiểm tra trùng nhân sự trong cùng lịch
+    const allCodes = filledPeople.flatMap(p => p.maNhanSuList);
+    const seenCodes = new Set<string>();
+    for (const code of allCodes) {
+      if (seenCodes.has(code)) {
+        return setBatchError(`Nhân sự ${staffName(code)} bị chọn trùng trong cùng lịch.`);
+      }
+      seenCodes.add(code);
+    }
+
+    // Kiểm tra trùng nhân sự với các máy khác trong cùng ca
+    for (const ca of batchCaList) {
+      const conflictingGroup = groups.find(group =>
+        !(group.ma_may === batchMachine && group.ngay_lam_viec === batchDate) &&
+        group.ngay_lam_viec === batchDate &&
+        group.ca_lam_viec === ca &&
+        group.rows.some(row => allCodes.includes(row.ma_nhan_su))
+      );
+      if (conflictingGroup) {
+        const dupCode = allCodes.find(code =>
+          conflictingGroup.rows.some(row => row.ma_nhan_su === code)
+        );
+        return setBatchError(
+          `Ca ${ca}: Nhân sự ${dupCode ? staffName(dupCode) : ''} đã được xếp ở máy ${conflictingGroup.ten_may || conflictingGroup.ma_may} trong cùng ca.`
+        );
+      }
+    }
+
+    setBatchSaving(true);
+    setBatchError('');
+    setBatchMessage('');
+    try {
+      // Xóa các ca cũ đã được xếp trên máy này trong ngày này nhưng không còn trong batchCaList
+      const existingMatching = groups.filter(g => g.ma_may === batchMachine && g.ngay_lam_viec === batchDate);
+      for (const g of existingMatching) {
+        if (!batchCaList.includes(g.ca_lam_viec)) {
+          const params = new URLSearchParams({
+            ma_may: g.ma_may,
+            ngay_lam_viec: g.ngay_lam_viec,
+            ca_lam_viec: g.ca_lam_viec
+          });
+          await fetch(`/api/phan-cong-nhan-su/nhom?${params}`, { method: 'DELETE' });
+        }
+      }
+
+      // Lưu từng ca đã chọn
+      for (const ca of batchCaList) {
+        const nhanSuList = filledPeople.flatMap(p =>
+          p.maNhanSuList.map(code => ({
+            vai_tro: p.vaiTro,
+            ma_nhan_su: code.trim(),
+            thoi_gian_bat_dau: '',
+            thoi_gian_ket_thuc: '',
+            removable: p.removable
+          }))
+        );
+        const payload = {
+          ma_may: batchMachine.trim(),
+          may: machineName(batchMachine.trim()),
+          ngay_lam_viec: batchDate.trim(),
+          ca_lam_viec: ca,
+          ghi_chu: '',
+          nhan_su: nhanSuList
+        };
+        const res = await fetch('/api/phan-cong-nhan-su/nhom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Không lưu được lịch ca ${ca}.`);
+      }
+
+      // Lưu vào memory để lần tạo lịch tiếp theo có thể dùng lại ngay
+      saveScheduleMemory(batchCaList, batchPeople);
+
+      setMessage('Đã cập nhật lịch làm việc theo ngày và máy thành công.');
+      closeBatchModal();
+      await loadAll();
+    } catch (err: any) {
+      setBatchError(err?.message || 'Không lưu được lịch làm việc.');
+    } finally {
+      setBatchSaving(false);
+    }
+  };
+
   // ── Actions ───────────────────────────────────────────────────────────────
+
   const openCreate = () => {
     if (!canCreate) return;
     setEditingKey('');
+
+    // Đọc từ bộ nhớ (memory) nếu đã có
+    const mem = loadScheduleMemory();
+    const hasMem = Boolean(mem && mem.people && mem.people.some(p => p.maNhanSuList.length > 0));
+
+    const initPeople = hasMem
+      ? mem!.people.map(p => ({
+          key: uid(),
+          vaiTro: p.vaiTro,
+          maNhanSuList: [...p.maNhanSuList],
+          removable: p.removable
+        }))
+      : DEFAULT_ROLES.map(role => emptyPerson(role, false));
+
+    const initCaList = filterShift ? [filterShift] : (mem?.caLamViecList ?? []);
+
     setForm({
       ...emptyForm(),
       maMay: filterMachine || '',
-      caLamViecList: filterShift ? [filterShift] : [],
-      ngayLamViec: filterDate || todayISO()
+      caLamViecList: initCaList,
+      ngayLamViec: filterDate || todayISO(),
+      people: initPeople
     });
     setError('');
     setMessage('');
     setShowForm(true);
+  };
+
+  // Nạp lại dữ liệu từ bộ nhớ vào form
+  const applyMemoryToForm = () => {
+    const mem = loadScheduleMemory();
+    if (!mem) return;
+    setForm(prev => ({
+      ...prev,
+      caLamViecList: mem.caLamViecList.length > 0 ? mem.caLamViecList : prev.caLamViecList,
+      people: mem.people.map(p => ({
+        key: uid(),
+        vaiTro: p.vaiTro,
+        maNhanSuList: [...p.maNhanSuList],
+        removable: p.removable
+      }))
+    }));
+  };
+
+  // Xóa trắng danh sách nhân sự đang chọn trong form
+  const clearFormPeople = () => {
+    setForm(prev => ({
+      ...prev,
+      people: DEFAULT_ROLES.map(role => emptyPerson(role, false))
+    }));
+  };
+
+  // Nạp dữ liệu từ bộ nhớ vào modal sửa theo ngày & máy
+  const applyMemoryToBatch = () => {
+    const mem = loadScheduleMemory();
+    if (!mem) return;
+    if (mem.caLamViecList.length > 0) {
+      setBatchCaList(mem.caLamViecList);
+    }
+    setBatchPeople(mem.people.map(p => ({
+      key: uid(),
+      vaiTro: p.vaiTro,
+      maNhanSuList: [...p.maNhanSuList],
+      removable: p.removable
+    })));
   };
 
   const openEdit = (group: SchedGroup) => {
@@ -749,6 +1059,10 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Không lưu được lịch ca ${ca}.`);
       }
+
+      // Lưu vào memory để lần tạo lịch tiếp theo có thể dùng lại ngay
+      saveScheduleMemory(form.caLamViecList, form.people);
+
       setMessage(editingKey ? 'Đã cập nhật lịch làm việc.' : 'Đã thêm lịch làm việc.');
       closeForm();
       await loadAll();
@@ -927,15 +1241,27 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                 ))}
               </select>
             </label>
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               {canCreate ? (
                 <button
                   type="button"
                   onClick={openCreate}
-                  className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                  className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                  title="Thêm lịch làm việc"
                 >
-                  <Plus className="h-4 w-4" />
-                  Thêm lịch làm việc
+                  <Plus className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Thêm lịch</span>
+                </button>
+              ) : null}
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={openBatchModal}
+                  className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
+                  title="Sửa lịch làm việc theo ngày và máy"
+                >
+                  <Pencil className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Sửa theo ngày &amp; máy</span>
                 </button>
               ) : null}
             </div>
@@ -1114,7 +1440,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                 </label>
               </div>
 
-              <label className="block space-y-1.5">
+              <div className="space-y-1.5">
                 <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
                   Ca làm việc <span className="text-[#ef1b2d]">*</span>
                   {(!form.maMay || !form.ngayLamViec) && (
@@ -1129,20 +1455,44 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   onChange={vals => setForm(prev => ({ ...prev, caLamViecList: vals }))}
                   options={formShiftOptions}
                 />
-              </label>
+              </div>
 
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
                   Nhân sự theo vai trò ({form.people.filter(p => p.maNhanSuList.length > 0).length} vai trò có người)
                 </p>
-                <button
-                  type="button"
-                  onClick={addPerson}
-                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Thêm vai trò
-                </button>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {loadScheduleMemory() && (
+                    <button
+                      type="button"
+                      onClick={applyMemoryToForm}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+                      title="Nạp lại ca và nhân sự từ bộ nhớ gần nhất"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                      Tải từ bộ nhớ
+                    </button>
+                  )}
+                  {form.people.some(p => p.maNhanSuList.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={clearFormPeople}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
+                      title="Xóa trắng danh sách nhân sự đang chọn"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Xóa trắng
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={addPerson}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Thêm vai trò
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -1321,6 +1671,180 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Modal: Sửa lịch làm việc theo ngày và máy */}
+      {showBatchModal && canEdit ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Pencil className="h-4 w-4 text-amber-600" />
+                <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
+                  Sửa lịch làm việc theo ngày và máy
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeBatchModal}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-4">
+              {batchError ? (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{batchError}</p>
+              ) : null}
+              {batchMessage ? (
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">{batchMessage}</p>
+              ) : null}
+
+              {/* 1. Chọn ngày và chọn máy */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                    Ngày làm việc <span className="text-[#ef1b2d]">*</span>
+                  </span>
+                  <DateInputVi
+                    value={batchDate}
+                    onChange={val => {
+                      setBatchDate(val);
+                      loadBatchDataForMachineAndDate(val, batchMachine);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                    Máy <span className="text-[#ef1b2d]">*</span>
+                  </span>
+                  <SearchableSelect
+                    value={batchMachine}
+                    onChange={value => {
+                      setBatchMachine(value);
+                      loadBatchDataForMachineAndDate(batchDate, value);
+                    }}
+                    options={machines}
+                    placeholder="Chọn máy..."
+                    getValue={item => (item as MachineOpt).code}
+                    getLabel={item => (item as MachineOpt).name}
+                    getSearchText={item => `${(item as MachineOpt).code} ${(item as MachineOpt).name}`}
+                    maxResults={80}
+                  />
+                </label>
+              </div>
+
+              {/* Thông báo trạng thái lịch hiện có */}
+              {!batchDate || !batchMachine ? (
+                <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center text-xs font-bold text-zinc-500">
+                  Vui lòng chọn Ngày làm việc và Máy để tải thông tin ca và danh sách nhân sự.
+                </div>
+              ) : (
+                <>
+                  {batchMatchingGroups.length === 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-800">
+                      Chưa có lịch làm việc cho máy <strong className="font-extrabold">{machineName(batchMachine)}</strong> vào ngày <strong className="font-extrabold">{formatDate(batchDate)}</strong>. Bạn có thể chọn ca và thêm nhân sự để lưu mới ngay tại đây.
+                    </div>
+                  ) : null}
+
+                  {/* 2. Ca làm việc (chọn nhiều - giống lúc thêm) */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                      Ca làm việc <span className="text-[#ef1b2d]">*</span>
+                      <span className="ml-1 text-zinc-400 normal-case">(chọn nhiều ca)</span>
+                    </span>
+                    <MultiShiftSelect
+                      values={batchCaList}
+                      onChange={vals => setBatchCaList(vals)}
+                      options={batchShiftOptions}
+                    />
+                  </div>
+
+                  {/* 3. Danh sách nhân viên theo vai trò (giống lúc thêm) */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                      Nhân sự theo vai trò ({batchPeople.filter(p => p.maNhanSuList.length > 0).length} vai trò có người)
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {loadScheduleMemory() && (
+                        <button
+                          type="button"
+                          onClick={applyMemoryToBatch}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+                          title="Nạp lại ca và nhân sự từ bộ nhớ gần nhất"
+                        >
+                          <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                          Tải từ bộ nhớ
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={addBatchPerson}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Thêm vai trò
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {batchPeople.map(person => (
+                      <div
+                        key={person.key}
+                        className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 sm:grid-cols-[160px_minmax(0,1fr)_32px]"
+                      >
+                        {/* Tên vai trò — luôn cho phép sửa */}
+                        <input
+                          value={person.vaiTro}
+                          onChange={e => updateBatchPerson(person.key, { vaiTro: e.target.value })}
+                          className={`${inputClass} h-9`}
+                          placeholder="Vai trò"
+                        />
+                        {/* Chọn nhiều nhân sự */}
+                        <MultiStaffSelect
+                          values={person.maNhanSuList}
+                          onChange={vals => updateBatchPerson(person.key, { maNhanSuList: vals })}
+                          staff={staff}
+                          staffByCode={staffByCode}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeBatchPerson(person.key)}
+                          disabled={!person.removable}
+                          className="inline-flex h-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-30"
+                          title={person.removable ? 'Xóa dòng' : 'Vai trò mặc định không xóa được'}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={closeBatchModal}
+                className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveBatch()}
+                disabled={batchSaving || !batchDate || !batchMachine}
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white hover:bg-[#b30d1c] disabled:opacity-60"
+              >
+                {batchSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Cập nhật lịch làm việc
+              </button>
             </div>
           </div>
         </div>
