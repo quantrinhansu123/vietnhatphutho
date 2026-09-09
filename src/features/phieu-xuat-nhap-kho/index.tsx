@@ -56,6 +56,25 @@ import {
 
 export type WarehouseSlipType = 'nhap' | 'xuat';
 export type WarehouseKind = 'nvl' | 'san_pham';
+export type WarehouseMaterialClass = 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai';
+
+export function normalizeWarehouseMaterialClass(value: unknown): WarehouseMaterialClass {
+  const normalized = normalizeMaterialKey(value);
+  if (normalized === 'nvl_phu' || normalized.includes('nguyen vat lieu phu') || normalized.includes('nvl phu')) {
+    return 'nvl_phu';
+  }
+  if (normalized === 'nvl_chinh' || normalized.includes('nguyen vat lieu chinh') || normalized.includes('nvl chinh')) {
+    return 'nvl_chinh';
+  }
+  return 'chua_phan_loai';
+}
+
+function warehouseMaterialClassLabel(value: unknown): string {
+  const materialClass = normalizeWarehouseMaterialClass(value);
+  if (materialClass === 'nvl_chinh') return 'Nguyên vật liệu chính';
+  if (materialClass === 'nvl_phu') return 'Nguyên vật liệu phụ';
+  return 'Chưa phân loại';
+}
 
 export interface WarehouseMovementRow {
   id: string;
@@ -64,6 +83,8 @@ export interface WarehouseMovementRow {
   warehouseKind: WarehouseKind;
   slipDate: string;
   shift: string;
+  machine: string;
+  materialClass: WarehouseMaterialClass;
   itemCode: string;
   itemName: string;
   unit: string;
@@ -71,6 +92,7 @@ export interface WarehouseMovementRow {
   documentQuantity?: number;
   unitPrice: number;
   lineAmount: number;
+  weightKg?: number;
   reason: string;
   note: string;
   createdBy: string;
@@ -83,6 +105,7 @@ export interface WarehouseSlipLineDraft {
   key: string;
   code: string;
   name: string;
+  productionName?: string;
   unit: string;
   quantity: string;
   documentQuantity?: string;
@@ -91,6 +114,9 @@ export interface WarehouseSlipLineDraft {
   suggestedQuantity?: string;
   lineNote?: string;
   warehouseClass?: string;
+  machine?: string;
+  /** Hệ số kg/đơn vị đã được phiếu trộn định mức tính cho NVL phụ. */
+  normWeightPerUnitKg?: number;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
 }
@@ -157,6 +183,7 @@ export type WarehouseSlipPrefillDraft = {
       WarehouseSlipLineDraft,
       | 'code'
       | 'name'
+      | 'productionName'
       | 'unit'
       | 'quantity'
       | 'documentQuantity'
@@ -165,6 +192,8 @@ export type WarehouseSlipPrefillDraft = {
       | 'suggestedQuantity'
       | 'lineNote'
       | 'warehouseClass'
+      | 'machine'
+      | 'normWeightPerUnitKg'
       | 'sourceInboundLineId'
       | 'sourceInboundSlipCode'
     >
@@ -180,6 +209,12 @@ export function buildWarehouseSlipDraftFromHistoryRows(
 ): WarehouseSlipPrefillDraft | null {
   const header = rows[0];
   if (!header) return null;
+  const classRank = (value: WarehouseMaterialClass) => value === 'nvl_chinh' ? 0 : value === 'nvl_phu' ? 1 : 2;
+  const sortedRows = [...rows].sort((a, b) =>
+    classRank(a.materialClass) - classRank(b.materialClass) ||
+    a.itemCode.localeCompare(b.itemCode, 'vi', { numeric: true }) ||
+    (a.machine || '~~~').localeCompare(b.machine || '~~~', 'vi', { numeric: true })
+  );
 
   return {
     slipType: header.slipType,
@@ -189,10 +224,12 @@ export function buildWarehouseSlipDraftFromHistoryRows(
     note: header.note || '',
     createdBy: header.createdBy || '',
     shift: header.shift || '',
+    machine: [...new Set(sortedRows.map(row => row.machine).filter(Boolean))].join(', '),
     editSlipCode: slipCode,
-    lines: rows.map(row => ({
+    lines: sortedRows.map(row => ({
       code: row.itemCode,
       name: row.itemName,
+      productionName: '',
       unit: row.unit,
       quantity: formatNumber(row.quantity, 2),
       documentQuantity:
@@ -200,6 +237,8 @@ export function buildWarehouseSlipDraftFromHistoryRows(
           ? formatNumber(row.documentQuantity, 2)
           : '',
       unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : '',
+      warehouseClass: row.materialClass,
+      machine: row.machine,
       sourceInboundLineId: row.sourceInboundLineId || '',
       sourceInboundSlipCode: row.sourceInboundSlipCode || ''
     }))
@@ -287,6 +326,11 @@ export type WarehouseSlipPayloadItem = {
   quotaQuantity?: number;
   suggestedQuantity?: number;
   lineNote?: string;
+  materialClass: WarehouseMaterialClass;
+  phan_loai_nvl: WarehouseMaterialClass;
+  warehouseClass: WarehouseMaterialClass;
+  machine?: string;
+  weightKg?: number;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
 };
@@ -310,6 +354,17 @@ export function parseWarehouseSlipPayloadItems(
       const suggestedQuantity = parsePercentInput(line.suggestedQuantity ?? '');
       const sourceInboundLineId = String(line.sourceInboundLineId || '').trim();
       const sourceInboundSlipCode = String(line.sourceInboundSlipCode || '').trim();
+      const materialClass =
+        warehouseKind === 'nvl'
+          ? normalizeWarehouseMaterialClass(line.warehouseClass)
+          : 'chua_phan_loai';
+      const normWeightPerUnitKg = Number(line.normWeightPerUnitKg);
+      const weightKg =
+        materialClass === 'nvl_phu' &&
+        Number.isFinite(quantity) && quantity > 0 &&
+        Number.isFinite(normWeightPerUnitKg) && normWeightPerUnitKg > 0
+          ? quantity * normWeightPerUnitKg
+          : undefined;
       return {
         code: line.code.trim(),
         name: line.name.trim(),
@@ -322,6 +377,13 @@ export function parseWarehouseSlipPayloadItems(
         suggestedQuantity:
           Number.isFinite(suggestedQuantity) && suggestedQuantity > 0 ? suggestedQuantity : undefined,
         lineNote: line.lineNote?.trim() || undefined,
+        materialClass,
+        // Gửi kèm tên cột DB và tên tương thích để không mất phân loại
+        // qua các bản API/server đang được triển khai khác nhau.
+        phan_loai_nvl: materialClass,
+        warehouseClass: materialClass,
+        machine: warehouseKind === 'nvl' ? String(line.machine || '').trim() || undefined : undefined,
+        weightKg,
         sourceInboundLineId: sourceInboundLineId || undefined,
         sourceInboundSlipCode: sourceInboundSlipCode || undefined
       };
@@ -379,6 +441,9 @@ export function buildWarehouseSlipPrintData(
     quotaQuantity: item.quotaQuantity ?? null,
     suggestedQuantity: item.suggestedQuantity ?? null,
     lineNote: item.lineNote,
+    materialClass: item.materialClass,
+    machine: item.machine,
+    weightKg: item.weightKg,
     sourceInboundSlipCode: item.sourceInboundSlipCode
   }));
 
@@ -410,12 +475,16 @@ export function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     code: '',
     name: '',
+    productionName: '',
     unit: '',
     quantity: '',
     documentQuantity: '',
     unitPrice: '',
     sourceInboundLineId: '',
-    sourceInboundSlipCode: ''
+    sourceInboundSlipCode: '',
+    warehouseClass: 'chua_phan_loai',
+    machine: '',
+    normWeightPerUnitKg: undefined
   };
 }
 
@@ -424,6 +493,7 @@ export function createWarehouseLineDraftFromPrefill(
     WarehouseSlipLineDraft,
     | 'code'
     | 'name'
+    | 'productionName'
     | 'unit'
     | 'quantity'
     | 'documentQuantity'
@@ -432,6 +502,8 @@ export function createWarehouseLineDraftFromPrefill(
     | 'suggestedQuantity'
     | 'lineNote'
     | 'warehouseClass'
+    | 'machine'
+    | 'normWeightPerUnitKg'
     | 'sourceInboundLineId'
     | 'sourceInboundSlipCode'
   >
@@ -440,6 +512,7 @@ export function createWarehouseLineDraftFromPrefill(
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     code: line.code || '',
     name: line.name || '',
+    productionName: line.productionName || '',
     unit: line.unit || '',
     quantity: line.quantity || '',
     documentQuantity: line.documentQuantity || line.suggestedQuantity || '',
@@ -448,6 +521,11 @@ export function createWarehouseLineDraftFromPrefill(
     suggestedQuantity: line.suggestedQuantity || '',
     lineNote: line.lineNote || '',
     warehouseClass: line.warehouseClass || '',
+    machine: line.machine || '',
+    normWeightPerUnitKg:
+      Number.isFinite(line.normWeightPerUnitKg) && Number(line.normWeightPerUnitKg) > 0
+        ? Number(line.normWeightPerUnitKg)
+        : undefined,
     sourceInboundLineId: line.sourceInboundLineId || '',
     sourceInboundSlipCode: line.sourceInboundSlipCode || ''
   };
@@ -499,6 +577,11 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         warehouseKind,
         slipDate: String(record.ngay_phieu ?? record.slipDate ?? '').trim(),
         shift: String(record.ca ?? record.shift ?? record.ca_san_xuat ?? '').trim(),
+        machine: String(record.may ?? record.machine ?? '').trim(),
+        materialClass:
+          warehouseKind === 'nvl'
+            ? normalizeWarehouseMaterialClass(record.phan_loai_nvl ?? record.materialClass ?? record.warehouseClass)
+            : 'chua_phan_loai',
         itemCode,
         itemName,
         unit: String(record.don_vi ?? record.unit ?? '').trim() || '-',
@@ -506,6 +589,11 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         documentQuantity: Number.isFinite(documentQuantity) && documentQuantity > 0 ? documentQuantity : undefined,
         unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
         lineAmount: Number.isFinite(lineAmount) ? lineAmount : 0,
+        weightKg:
+          Number.isFinite(Number(record.trong_luong_kg ?? record.weightKg)) &&
+          Number(record.trong_luong_kg ?? record.weightKg) > 0
+            ? Number(record.trong_luong_kg ?? record.weightKg)
+            : undefined,
         reason: String(record.ly_do ?? record.reason ?? '').trim(),
         note: String(record.ghi_chu ?? record.note ?? '').trim(),
         createdBy: String(record.nguoi_lap ?? record.nhan_su ?? record.createdBy ?? '').trim(),
@@ -574,9 +662,18 @@ export function expandWarehouseProductionOrderDates(startDate: string, endDate: 
 type NormMaterialLine = {
   code: string;
   name: string;
+  productionName: string;
   unit: string;
   documentQuantity: number;
-  warehouseClass: string;
+  normWeightKg: number;
+  normWeightPerUnitKg?: number;
+  warehouseClass: WarehouseMaterialClass;
+  machine: string;
+};
+
+type NormMaterialSource = {
+  record: unknown;
+  machine: string;
 };
 
 function parseNormJson(value: unknown): Record<string, unknown>[] {
@@ -598,7 +695,7 @@ function normalizeMaterialKey(value: unknown) {
     .replace(/\s+/g, ' ');
 }
 
-function mergeNormMaterialLines(records: unknown[], materials: MaterialOption[]): NormMaterialLine[] {
+function mergeNormMaterialLines(sources: NormMaterialSource[], materials: MaterialOption[]): NormMaterialLine[] {
   const byCode = new Map<string, MaterialOption>();
   const byName = new Map<string, MaterialOption>();
   materials.forEach(item => {
@@ -606,31 +703,45 @@ function mergeNormMaterialLines(records: unknown[], materials: MaterialOption[])
     if (item.name) byName.set(normalizeMaterialKey(item.name), item);
   });
   const merged = new Map<string, NormMaterialLine>();
-  const add = (raw: Record<string, unknown>) => {
+  const add = (
+    raw: Record<string, unknown>,
+    machine: string,
+    warehouseClass: WarehouseMaterialClass
+  ) => {
     const code = String(raw.ma_nvl ?? raw.maNvl ?? '').trim();
     const name = String(raw.ten_nvl ?? raw.tenNvl ?? '').trim();
     const catalog = byCode.get(normalizeMaterialKey(code)) || byName.get(normalizeMaterialKey(name));
-    const quantity = Number(raw.tong_khoi_luong ?? raw.tongKhoiLuong ?? raw.khoi_luong ?? raw.khoiLuong ?? 0);
-    if ((!code && !name) || !Number.isFinite(quantity) || quantity <= 0) return;
-    const key = normalizeMaterialKey(code || name);
+    const productionName = String(
+      raw.ten_nvl_san_xuat ?? raw.ten_nvl_sx ?? raw.tenNvlSanXuat ?? raw.productionName ?? ''
+    ).trim();
+    const normWeightKg = Number(raw.tong_khoi_luong ?? raw.tongKhoiLuong ?? raw.khoi_luong ?? raw.khoiLuong ?? 0);
+    const sourceQuantity = warehouseClass === 'nvl_phu'
+      ? Number(raw.gia_tri ?? raw.giaTri ?? normWeightKg)
+      : normWeightKg;
+    if (
+      (!code && !name) ||
+      !Number.isFinite(normWeightKg) ||
+      normWeightKg <= 0 ||
+      !Number.isFinite(sourceQuantity) ||
+      sourceQuantity <= 0
+    ) return;
+    const normalizedMachine = String(machine || '').trim();
+    const key = `${normalizeMaterialKey(normalizedMachine) || 'chua-xac-dinh'}::${warehouseClass}::${normalizeMaterialKey(code || name)}`;
     const current = merged.get(key);
     merged.set(key, {
       code: code || catalog?.code || '',
       name: name || catalog?.name || '',
+      productionName: current?.productionName || productionName || catalog?.productionName || '',
       unit: catalog?.unit || String(raw.don_vi ?? raw.donVi ?? '').trim() || 'kg',
-      documentQuantity: (current?.documentQuantity || 0) + quantity,
-      warehouseClass: String(
-        raw.phan_loai ??
-        raw.phanLoai ??
-        raw.kho_ngam_dinh ??
-        raw.khoNgamDinh ??
-        catalog?.phanLoai ??
-        ''
-      ).trim()
+      // NVL phụ: gia_tri là SL theo ĐVT gốc; tong_khoi_luong là kg đã quy đổi.
+      documentQuantity: (current?.documentQuantity || 0) + sourceQuantity,
+      normWeightKg: (current?.normWeightKg || 0) + normWeightKg,
+      warehouseClass,
+      machine: normalizedMachine
     });
   };
-  records.forEach(record => {
-    parseNormJson(record).forEach(product => {
+  sources.forEach(source => {
+    parseNormJson(source.record).forEach(product => {
       // API trả về record.chi_tiet[].nvl[], còn một số phiên bản cũ trả
       // trực tiếp product.nvl[]. Chuẩn hoá cả hai dạng trước khi cộng dồn.
       const details = parseNormJson(product.chi_tiet);
@@ -638,19 +749,37 @@ function mergeNormMaterialLines(records: unknown[], materials: MaterialOption[])
       products.forEach(detail => {
         const directLines = parseNormJson(detail.nvl);
         const secondaryLines = parseNormJson(detail.nvl_phu ?? detail.nvlPhu);
+        const declaredClass = normalizeWarehouseMaterialClass(
+          detail.loai ?? detail.phan_loai_nvl ?? detail.materialClass
+        );
+        const directClass: WarehouseMaterialClass =
+          declaredClass === 'nvl_phu' ? 'nvl_phu' : 'nvl_chinh';
         if (directLines.length > 0) {
-          directLines.forEach(add);
-          secondaryLines.forEach(add);
+          // Phiếu cũ có thể lưu block `loai: nvl_phu` trong mảng `nvl` thay vì `nvl_phu`.
+          directLines.forEach(line => add(line, source.machine, directClass));
+          secondaryLines.forEach(line => add(line, source.machine, 'nvl_phu'));
           return;
         }
-        secondaryLines.forEach(add);
-        parseNormJson(detail.lan_tron).forEach(round => parseNormJson(round.nvl).forEach(add));
+        secondaryLines.forEach(line => add(line, source.machine, 'nvl_phu'));
+        parseNormJson(detail.lan_tron).forEach(round =>
+          parseNormJson(round.nvl).forEach(line => add(line, source.machine, 'nvl_chinh'))
+        );
       });
     });
   });
-  return [...merged.values()].sort((a, b) => {
-    const rank = (value: string) => normalizeMaterialKey(value).includes('phu') ? 1 : normalizeMaterialKey(value).includes('chinh') ? 0 : 2;
-    return rank(a.warehouseClass) - rank(b.warehouseClass) || a.code.localeCompare(b.code, 'vi');
+  return [...merged.values()].map(line => ({
+    ...line,
+    normWeightPerUnitKg:
+      line.warehouseClass === 'nvl_phu' && line.documentQuantity > 0
+        ? line.normWeightKg / line.documentQuantity
+        : undefined
+  })).sort((a, b) => {
+    const rank = (value: WarehouseMaterialClass) => value === 'nvl_chinh' ? 0 : value === 'nvl_phu' ? 1 : 2;
+    return (
+      rank(a.warehouseClass) - rank(b.warehouseClass) ||
+      a.code.localeCompare(b.code, 'vi', { numeric: true }) ||
+      (a.machine || '~~~').localeCompare(b.machine || '~~~', 'vi', { numeric: true })
+    );
   });
 }
 
@@ -935,6 +1064,7 @@ export function WarehouseSlipPanel({
             materials.map(material => ({
               code: material.code,
               name: material.name,
+              productionName: material.productionName,
               unit: material.unit && material.unit !== '-' ? material.unit : '',
               phanLoai: material.phanLoai
             }))
@@ -951,6 +1081,21 @@ export function WarehouseSlipPanel({
 
     loadItems();
   }, [warehouseKind]);
+
+  useEffect(() => {
+    if (warehouseKind !== 'nvl' || itemOptions.length === 0) return;
+    setLines(current => {
+      let changed = false;
+      const next = current.map(line => {
+        if (line.productionName || !line.code.trim()) return line;
+        const material = itemOptions.find(option => option.code === line.code);
+        if (!material?.productionName) return line;
+        changed = true;
+        return { ...line, productionName: material.productionName };
+      });
+      return changed ? next : current;
+    });
+  }, [warehouseKind, itemOptions]);
 
   const handleWarehouseKindChange = (kind: WarehouseKind) => {
     setWarehouseKind(kind);
@@ -1050,7 +1195,9 @@ export function WarehouseSlipPanel({
     updateLine(key, {
       code,
       name: item?.name || '',
+      productionName: item?.productionName || '',
       unit: item?.unit || '',
+      normWeightPerUnitKg: undefined,
       ...(isExportNvl
         ? {
             sourceInboundLineId: '',
@@ -1085,6 +1232,9 @@ export function WarehouseSlipPanel({
   // Xuất kho NVL chọn trực tiếp từng phiếu trộn định mức. ID phiếu là khóa duy nhất,
   // nên nhiều phiếu cùng lệnh SX/ngày/ca vẫn được phân biệt chính xác.
   const nvlExportInstances = useMemo((): PickerOption[] => {
+    const productionOrderByCode = new Map(
+      productionOrders.map(order => [normalizeMaterialKey(order.orderCode), order] as const)
+    );
     return mixingNormRecords
       .map((record): PickerOption | null => {
         const normId = String(record.id ?? '').trim();
@@ -1092,6 +1242,7 @@ export function WarehouseSlipPanel({
         const ngay = String(record.ngay ?? '').trim().slice(0, 10);
         const ca = String(record.ca ?? '').trim();
         if (!normId || !ngay) return null;
+        const productionOrder = productionOrderByCode.get(normalizeMaterialKey(orderCode));
         return {
           key: lenhSxInstanceKey({ dinh_muc_id: normId, ma_lenh_sx: orderCode, ngay, ca }),
           normId,
@@ -1100,7 +1251,7 @@ export function WarehouseSlipPanel({
           orderCode,
           ngay,
           ca,
-          machine: String(record.may ?? record.machine ?? '').trim(),
+          machine: String(productionOrder?.machine ?? record.may ?? record.machine ?? '').trim(),
           normRecord: record
         };
       })
@@ -1111,7 +1262,7 @@ export function WarehouseSlipPanel({
           b.ngay.localeCompare(a.ngay) ||
           String(a.normName || '').localeCompare(String(b.normName || ''), 'vi')
       );
-  }, [mixingNormRecords, exportedLenhSxKeys, ownInstanceKeys]);
+  }, [mixingNormRecords, productionOrders, exportedLenhSxKeys, ownInstanceKeys]);
 
   const pickerOptions = useMemo((): PickerOption[] => {
     if (isNvlExport) return nvlExportInstances;
@@ -1186,19 +1337,24 @@ export function WarehouseSlipPanel({
 
       setNormLoadMessage('');
       const merged = mergeNormMaterialLines(
-        selectedInstances.map(item => item.normRecord).filter(Boolean),
+        selectedInstances
+          .filter(item => Boolean(item.normRecord))
+          .map(item => ({ record: item.normRecord, machine: item.machine })),
         itemOptions
       );
       setLines(merged.length > 0
         ? merged.map(line => createWarehouseLineDraftFromPrefill({
             code: line.code,
             name: line.name,
+            productionName: line.productionName,
             unit: line.unit,
             documentQuantity: formatNumber(line.documentQuantity, 3),
             quantity: '',
             unitPrice: '',
-            lineNote: line.warehouseClass,
-            warehouseClass: line.warehouseClass
+            lineNote: '',
+            warehouseClass: line.warehouseClass,
+            machine: line.machine,
+            normWeightPerUnitKg: line.normWeightPerUnitKg
           }))
         : [createWarehouseLineDraft()]);
       if (merged.length === 0) setNormLoadMessage('Phiếu trộn định mức đã chọn chưa có dòng NVL hợp lệ.');
@@ -1309,28 +1465,34 @@ export function WarehouseSlipPanel({
     [lines]
   );
 
-  const resolveLineWeightKg = (line: WarehouseSlipLineDraft) =>
-    convertWarehouseQuantityToKg({
-      quantity: parsePercentInput(line.quantity),
+  const resolveLineWeightKg = (line: WarehouseSlipLineDraft) => {
+    const quantity = parsePercentInput(line.quantity);
+    const normWeightPerUnitKg = Number(line.normWeightPerUnitKg);
+    if (
+      isNvlExport &&
+      normalizeWarehouseMaterialClass(line.warehouseClass) === 'nvl_phu' &&
+      Number.isFinite(quantity) &&
+      quantity > 0 &&
+      Number.isFinite(normWeightPerUnitKg) &&
+      normWeightPerUnitKg > 0
+    ) {
+      return quantity * normWeightPerUnitKg;
+    }
+    return convertWarehouseQuantityToKg({
+      quantity,
       unit: line.unit,
       itemCode: line.code,
       warehouseKind,
       materials: warehouseKind === 'nvl' ? weightCatalog : [],
       products: warehouseKind === 'san_pham' ? weightCatalog : []
     });
+  };
 
   const slipTotalWeightKg = useMemo(() => {
     let total = 0;
     let hasWeight = false;
     for (const line of lines) {
-      const weight = convertWarehouseQuantityToKg({
-        quantity: parsePercentInput(line.quantity),
-        unit: line.unit,
-        itemCode: line.code,
-        warehouseKind,
-        materials: warehouseKind === 'nvl' ? weightCatalog : [],
-        products: warehouseKind === 'san_pham' ? weightCatalog : []
-      });
+      const weight = resolveLineWeightKg(line);
       if (weight !== null) {
         total += weight;
         hasWeight = true;
@@ -1833,7 +1995,9 @@ export function WarehouseSlipPanel({
 
           <div
             className={
-              slipType === 'nhap' || isNvlExport
+              warehouseKind === 'nvl'
+                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                : slipType === 'nhap' || isNvlExport
                 ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
                 : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
             }
@@ -1844,6 +2008,9 @@ export function WarehouseSlipPanel({
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
               {warehouseItemNameLabel(warehouseKind)}
             </span>
+            {warehouseKind === 'nvl' ? (
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên sản xuất</span>
+            ) : null}
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
             {slipType === 'nhap' ? (
               <>
@@ -1868,15 +2035,20 @@ export function WarehouseSlipPanel({
             {normLoadMessage ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{normLoadMessage}</p> : null}
             {lines.map((line, index) => (
               <React.Fragment key={line.key}>
-              {isNvlExport && (index === 0 || line.warehouseClass !== lines[index - 1]?.warehouseClass) ? (
+              {isNvlExport && (
+                index === 0 ||
+                normalizeWarehouseMaterialClass(line.warehouseClass) !== normalizeWarehouseMaterialClass(lines[index - 1]?.warehouseClass)
+              ) ? (
                 <div className="border-t border-zinc-200 bg-zinc-100 px-2 py-2 text-xs font-black uppercase tracking-wide text-zinc-700">
-                  {normalizeMaterialKey(line.warehouseClass).includes('phu') ? 'Nguyên vật liệu phụ' : normalizeMaterialKey(line.warehouseClass).includes('chinh') ? 'Nguyên vật liệu chính' : 'Chưa phân loại'}
+                  {warehouseMaterialClassLabel(line.warehouseClass)}
                 </div>
               ) : null}
               <div
                 key={line.key}
                 className={
-                  slipType === 'nhap' || isNvlExport
+                  warehouseKind === 'nvl'
+                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
+                    : slipType === 'nhap' || isNvlExport
                     ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                     : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                 }
@@ -1893,7 +2065,9 @@ export function WarehouseSlipPanel({
                     desktopAutoFlip
                     getLabel={item => {
                       const option = item as MaterialOption;
-                      return `${option.code} · ${option.name}`;
+                      return [option.code, option.name, warehouseKind === 'nvl' ? option.productionName : '']
+                        .filter(Boolean)
+                        .join(' · ');
                     }}
                     getValue={item => (item as MaterialOption).code}
                   />
@@ -1905,6 +2079,20 @@ export function WarehouseSlipPanel({
                     className={warehouseFieldClass}
                   />
                 </div>
+                {warehouseKind === 'nvl' ? (
+                  <div>
+                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                      Tên sản xuất
+                    </span>
+                    <input
+                      value={line.productionName || ''}
+                      readOnly
+                      className={`${warehouseFieldClass} bg-zinc-100 text-zinc-700`}
+                      placeholder="Tên sản xuất"
+                      title={line.productionName || undefined}
+                    />
+                  </div>
+                ) : null}
                 <div>
                   <input
                     value={line.unit}
@@ -2151,8 +2339,9 @@ export function WarehouseHistoryPanel({
     }
   };
 
-  const resolveWarehouseRowWeightKg = (row: WarehouseMovementRow) =>
-    convertWarehouseQuantityToKg({
+  const resolveWarehouseRowWeightKg = (row: WarehouseMovementRow) => {
+    if (Number.isFinite(row.weightKg) && Number(row.weightKg) > 0) return Number(row.weightKg);
+    return convertWarehouseQuantityToKg({
       quantity: row.quantity,
       unit: row.unit,
       itemCode: row.itemCode,
@@ -2160,6 +2349,7 @@ export function WarehouseHistoryPanel({
       materials: weightCatalogMaterials,
       products: weightCatalogProducts
     });
+  };
 
   useEffect(() => {
     void loadWeightCatalog();
@@ -2337,6 +2527,7 @@ export function WarehouseHistoryPanel({
       reason: header.reason,
       note: header.note,
       createdBy: header.createdBy,
+      machine: [...new Set(rows.map(row => row.machine).filter(Boolean))].join(', '),
       totalAmount,
       lines: rows.map(row => ({
         code: row.itemCode,
@@ -2346,6 +2537,9 @@ export function WarehouseHistoryPanel({
         documentQuantity: row.documentQuantity ?? null,
         unitPrice: row.unitPrice,
         lineAmount: row.lineAmount,
+        materialClass: row.materialClass,
+        machine: row.machine,
+        weightKg: resolveWarehouseRowWeightKg(row),
         sourceInboundSlipCode: row.sourceInboundSlipCode
       }))
     });
