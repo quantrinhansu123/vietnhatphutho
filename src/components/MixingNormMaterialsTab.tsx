@@ -21,6 +21,7 @@ import { convertProductQuantity, type ProductConversionFactors } from '../utils/
 import {
   type WorkshopType,
   normalizeNhomVatTuPhuKey,
+  isTapeOrStampMaterial,
   resolveWorkshopType,
   roundWeight4,
   calcAuxiliaryWeight,
@@ -32,12 +33,14 @@ import {
 export {
   type WorkshopType,
   normalizeNhomVatTuPhuKey,
+  isTapeOrStampMaterial,
   resolveWorkshopType,
   calcAuxiliaryWeight,
   getAllowedSecondaryGroups
 };
 
 export type MixingNormLine = {
+  material_id?: string;
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat?: string;
@@ -54,6 +57,7 @@ export type MixingNormLine = {
   ty_le_tong?: number | null;
   /** Tổng trọng lượng NVL này cần cho cả SP (kg) = ty_le_tong × tong_trong_luong / 100 */
   tong_khoi_luong?: number | null;
+  nhom_vthh?: string;
 };
 
 export type MixingNormProduct = {
@@ -126,6 +130,7 @@ type LineForm = {
   giaTri: string;
   donVi: string;
   phanLoai: string;
+  nhomVthh?: string;
 };
 
 type ProductForm = {
@@ -169,7 +174,36 @@ type NormForm = {
 const inputClass =
   'h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
-const emptyLine = (): LineForm => ({
+export const CANONICAL_NHOM_VTHH = ['TP; PX Rỗng', 'TP; PX Đặc', 'TP; PX Sóng'] as const;
+
+export function getProductCanonicalVthh(nhomVthh?: string): string | null {
+  const t = resolveWorkshopType(nhomVthh || '');
+  if (t === 'rong') return 'TP; PX Rỗng';
+  if (t === 'dac') return 'TP; PX Đặc';
+  if (t === 'song') return 'TP; PX Sóng';
+  return null;
+}
+
+export function getSecondaryProductVthhGroups(
+  product: Pick<SecondaryProductForm, 'maSpCodes' | 'maSpIds'>,
+  catalogProductsById: Map<string, ProductOption>,
+  catalogProducts: ProductOption[]
+): string[] {
+  const set = new Set<string>();
+  for (const id of product.maSpIds) {
+    const cat = catalogProductsById.get(id);
+    const v = getProductCanonicalVthh(cat?.nhomVthh);
+    if (v) set.add(v);
+  }
+  for (const code of product.maSpCodes) {
+    const cat = findCatalogProductByAnyCode(catalogProducts, code);
+    const v = getProductCanonicalVthh(cat?.nhomVthh);
+    if (v) set.add(v);
+  }
+  return [...set];
+}
+
+const emptyLine = (defaultNhomVthh = ''): LineForm => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   materialId: '',
   maNvl: '',
@@ -177,7 +211,8 @@ const emptyLine = (): LineForm => ({
   tenNvlSanXuat: '',
   giaTri: '',
   donVi: 'kg',
-  phanLoai: ''
+  phanLoai: '',
+  nhomVthh: defaultNhomVthh
 });
 
 const emptyProduct = (): ProductForm => ({
@@ -427,8 +462,9 @@ function materialOptionLabel(item: Pick<MaterialOption, 'code' | 'name' | 'produ
  * Cùng mã + một dòng có tên SX, dòng kia để trống → không trùng.
  */
 function isDuplicateMixingMaterialLine(
-  a: Pick<LineForm, 'maNvl' | 'tenNvl' | 'tenNvlSanXuat'>,
-  b: Pick<LineForm, 'maNvl' | 'tenNvl' | 'tenNvlSanXuat'>
+  a: Pick<LineForm, 'maNvl' | 'tenNvl' | 'tenNvlSanXuat'> & { nhomVthh?: string },
+  b: Pick<LineForm, 'maNvl' | 'tenNvl' | 'tenNvlSanXuat'> & { nhomVthh?: string },
+  isSecondary = false
 ) {
   const aCode = normalizeProductLookupKey(a.maNvl);
   const bCode = normalizeProductLookupKey(b.maNvl);
@@ -437,14 +473,20 @@ function isDuplicateMixingMaterialLine(
   const sameCode = Boolean(aCode && aCode === bCode);
   const sameName = Boolean(aName && aName === bName);
   if (!sameCode && !sameName) return false;
-  return normalizeProductLookupKey(a.tenNvlSanXuat) === normalizeProductLookupKey(b.tenNvlSanXuat);
+  if (normalizeProductLookupKey(a.tenNvlSanXuat) !== normalizeProductLookupKey(b.tenNvlSanXuat)) return false;
+  if (isSecondary) {
+    if (normalizeProductLookupKey(a.nhomVthh || '') !== normalizeProductLookupKey(b.nhomVthh || '')) {
+      return false;
+    }
+  }
+  return true;
 }
 
-function findDuplicateMixingMaterialLine(lines: LineForm[]) {
+function findDuplicateMixingMaterialLine(lines: LineForm[], isSecondary = false) {
   const filled = lines.filter(line => line.maNvl.trim() || line.tenNvl.trim());
   for (let index = 1; index < filled.length; index += 1) {
     const line = filled[index];
-    const duplicated = filled.slice(0, index).some(previous => isDuplicateMixingMaterialLine(previous, line));
+    const duplicated = filled.slice(0, index).some(previous => isDuplicateMixingMaterialLine(previous, line, isSecondary));
     if (duplicated) return line;
   }
   return null;
@@ -590,6 +632,7 @@ function nvlPhuSignature(lines: MixingNormLine[]) {
         normalizeProductLookupKey(line.ma_nvl),
         normalizeProductLookupKey(line.ten_nvl),
         normalizeProductLookupKey(line.ten_nvl_san_xuat || ''),
+        normalizeProductLookupKey(line.nhom_vthh || ''),
         String(line.gia_tri ?? ''),
         String(line.don_vi ?? '')
       ].join('\0')
@@ -601,19 +644,21 @@ function nvlPhuSignature(lines: MixingNormLine[]) {
 function nvlPhuToLineForms(
   lines: MixingNormLine[],
   idHint: string,
-  materialsByCode: Map<string, MaterialOption>
+  materialsByCode: Map<string, MaterialOption>,
+  inferredNhomVthh?: string
 ): LineForm[] {
   return lines.map(line => {
     const mat = materialsByCode.get(line.ma_nvl);
     return {
       key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-      materialId: mat?.id || '',
+      materialId: line.material_id || mat?.id || '',
       maNvl: line.ma_nvl,
       tenNvl: line.ten_nvl,
       tenNvlSanXuat: line.ten_nvl_san_xuat || '',
       phanLoai: line.phan_loai || line.kho_ngam_dinh || mat?.phanLoai || '',
       giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
-      donVi: mat?.donViGoc || line.don_vi || mat?.unit || 'kg'
+      donVi: mat?.donViGoc || line.don_vi || mat?.unit || 'kg',
+      nhomVthh: line.nhom_vthh || inferredNhomVthh || ''
     };
   });
 }
@@ -623,6 +668,9 @@ function collectSavedSecondaryProducts(
   materialsByCode: Map<string, MaterialOption>,
   catalogProducts: ProductOption[] = []
 ): SecondaryProductForm[] {
+  const catalogById = new Map<string, ProductOption>();
+  catalogProducts.forEach(p => { if (p.id) catalogById.set(p.id, p); });
+
   const groups = new Map<string, { codes: string[]; ids: string[]; lines: MixingNormLine[] }>();
   for (const product of products) {
     const nvlPhu = product.nvl_phu ?? [];
@@ -649,15 +697,21 @@ function collectSavedSecondaryProducts(
       lines: nvlPhu
     });
   }
-  return [...groups.values()].map((group, index) => ({
-    key: `secondary-${index}-${group.codes[0] || 'block'}`,
-    maSpCodes: group.codes,
-    maSpIds: group.codes.map((code, index) =>
-      group.ids[index] || findCatalogProductByAnyCode(catalogProducts, code)?.id || ''
-    ),
-    maSp: group.codes.join(', '),
-    lines: nvlPhuToLineForms(group.lines, `${index}-${group.codes[0] || 'block'}`, materialsByCode)
-  }));
+  return [...groups.values()].map((group, index) => {
+    const maSpIds = group.codes.map((code, idx) =>
+      group.ids[idx] || findCatalogProductByAnyCode(catalogProducts, code)?.id || ''
+    );
+    // Tự suy luận VTHH nếu toàn bộ sản phẩm trong block cùng một nhóm
+    const vthhGroups = getSecondaryProductVthhGroups({ maSpCodes: group.codes, maSpIds }, catalogById, catalogProducts);
+    const inferredVthh = vthhGroups.length === 1 ? vthhGroups[0] : '';
+    return {
+      key: `secondary-${index}-${group.codes[0] || 'block'}`,
+      maSpCodes: group.codes,
+      maSpIds,
+      maSp: group.codes.join(', '),
+      lines: nvlPhuToLineForms(group.lines, `${index}-${group.codes[0] || 'block'}`, materialsByCode, inferredVthh)
+    };
+  });
 }
 
 function normalizeLines(
@@ -678,7 +732,9 @@ function normalizeLines(
       const rawUnit = String(line.don_vi ?? 'kg').trim() || 'kg';
       const don_vi = options?.preserveUnit ? rawUnit : rawUnit === '%' ? '%' : 'kg';
       const saved = parseNumberOrNull(line.khoi_luong ?? line.khoiLuong);
+      const rawVthh = String(line.nhom_vthh ?? line.nhomVthh ?? '').trim();
       return {
+        material_id: String(line.material_id ?? line.materialId ?? '').trim() || undefined,
         ma_nvl,
         ten_nvl,
         ten_nvl_san_xuat,
@@ -687,7 +743,8 @@ function normalizeLines(
         khoi_luong: saved ?? calcNvlKhoiLuong(tongTrongLuong, gia_tri, don_vi),
         ty_le_coi: parseNumberOrNull(line.ty_le_coi ?? line.tyLeCoi),
         ty_le_tong: parseNumberOrNull(line.ty_le_tong ?? line.tyLeTong),
-        tong_khoi_luong: parseNumberOrNull(line.tong_khoi_luong ?? line.tongKhoiLuong)
+        tong_khoi_luong: parseNumberOrNull(line.tong_khoi_luong ?? line.tongKhoiLuong),
+        nhom_vthh: rawVthh || undefined
       };
     })
     .filter((line): line is MixingNormLine => Boolean(line));
@@ -1666,11 +1723,17 @@ export default function MixingNormMaterialsTab() {
           codes.every((code, index) => code === product.maSpCodes[index]) &&
           ids.every((id, index) => id === (product.maSpIds[index] || ''));
         if (unchanged) return product;
+        const groups = getSecondaryProductVthhGroups({ maSpCodes: codes, maSpIds: ids }, catalogProductsById, catalogProducts);
+        const defaultVthh = groups.length === 1 ? groups[0] : '';
+        const nextLines = defaultVthh
+          ? product.lines.map(line => (!line.nhomVthh ? { ...line, nhomVthh: defaultVthh } : line))
+          : product.lines;
         return {
           ...product,
           maSpCodes: codes,
           maSpIds: ids,
-          maSp: codes.join(', ')
+          maSp: codes.join(', '),
+          lines: nextLines
         };
       })
     }));
@@ -1749,16 +1812,24 @@ export default function MixingNormMaterialsTab() {
   const selectSecondaryMaterialCode = (productKey: string, lineKey: string, materialId: string) => {
     setForm(prev => ({
       ...prev,
-      secondaryProducts: prev.secondaryProducts.map(product =>
-        product.key !== productKey
-          ? product
-          : {
-              ...product,
-              lines: product.lines.map(line =>
-                line.key === lineKey ? patchLineFromMaterial(line, materialId) : line
-              )
-            }
-      )
+      secondaryProducts: prev.secondaryProducts.map(product => {
+        if (product.key !== productKey) return product;
+        const groups = getSecondaryProductVthhGroups(product, catalogProductsById, catalogProducts);
+        const defaultVthh = groups.length === 1 ? groups[0] : '';
+        return {
+          ...product,
+          lines: product.lines.map(line => {
+            if (line.key !== lineKey) return line;
+            const patched = patchLineFromMaterial(line, materialId);
+            const lineMat = findMaterialForLine(patched);
+            const isTapeOrStamp = isTapeOrStampMaterial(lineMat?.nhomVatTuPhu || patched.tenNvl || patched.maNvl);
+            return {
+              ...patched,
+              nhomVthh: isTapeOrStamp ? (patched.nhomVthh || defaultVthh) : ''
+            };
+          })
+        };
+      })
     }));
   };
 
@@ -1772,14 +1843,19 @@ export default function MixingNormMaterialsTab() {
   };
 
   const addSecondaryLine = (productKey: string) => {
-    setForm(prev => ({
-      ...prev,
-      secondaryProducts: prev.secondaryProducts.map(product =>
-        product.key !== productKey
-          ? product
-          : { ...product, lines: [...product.lines, emptyLine()] }
-      )
-    }));
+    setForm(prev => {
+      const target = prev.secondaryProducts.find(p => p.key === productKey);
+      const groups = target ? getSecondaryProductVthhGroups(target, catalogProductsById, catalogProducts) : [];
+      const defaultVthh = groups.length === 1 ? groups[0] : '';
+      return {
+        ...prev,
+        secondaryProducts: prev.secondaryProducts.map(product =>
+          product.key !== productKey
+            ? product
+            : { ...product, lines: [...product.lines, emptyLine(defaultVthh)] }
+        )
+      };
+    });
   };
 
   const removeLine = (productKey: string, lineKey: string) => {
@@ -1939,17 +2015,27 @@ export default function MixingNormMaterialsTab() {
         setError(`NVL phụ của SP ${product.maSp}: cần ít nhất 1 dòng NVL.`);
         return;
       }
-      const duplicateSecondary = findDuplicateMixingMaterialLine(product.lines);
+      const duplicateSecondary = findDuplicateMixingMaterialLine(product.lines, true);
       if (duplicateSecondary) {
         setError(
           duplicateSecondary.tenNvlSanXuat.trim()
-            ? `NVL phụ của SP ${product.maSp}: không được trùng mã và tên sản xuất.`
-            : `NVL phụ của SP ${product.maSp}: không được trùng mã hoặc tên.`
+            ? `NVL phụ của SP ${product.maSp}: không được trùng mã, tên sản xuất và Nhóm VTHH.`
+            : `NVL phụ của SP ${product.maSp}: không được trùng mã/tên và Nhóm VTHH.`
         );
         return;
       }
       for (const [lineIndex, line] of product.lines.entries()) {
         if (!line.maNvl.trim() && !line.tenNvl.trim()) continue;
+        const lineMat = findMaterialForLine(line);
+        const nhomVatTuPhuKey = normalizeNhomVatTuPhuKey(lineMat?.nhomVatTuPhu || line.tenNvl || line.maNvl);
+        if (nhomVatTuPhuKey === 'Băng Dính' || nhomVatTuPhuKey === 'Tem') {
+          if (!line.nhomVthh || !CANONICAL_NHOM_VTHH.includes(line.nhomVthh as any)) {
+            setError(
+              `NVL phụ #${lineIndex + 1} (${line.tenNvl || line.maNvl}) của SP ${product.maSp} thuộc ${nhomVatTuPhuKey} bắt buộc phải chọn Nhóm VTHH (TP; PX Rỗng, TP; PX Đặc, TP; PX Sóng).`
+            );
+            return;
+          }
+        }
         const value = parseNumberOrNull(line.giaTri);
         if (value === null || value < 0) {
           setError(`Giá trị NVL phụ #${lineIndex + 1} của SP ${product.maSp} phải là số không âm.`);
@@ -1978,6 +2064,7 @@ export default function MixingNormMaterialsTab() {
           }
           const percents = computeNplPercents(gia_tri, line.donVi, batch, tong);
           return {
+            material_id: line.materialId || findMaterialForLine(line)?.id || undefined,
             ma_nvl: line.maNvl.trim(),
             ten_nvl: line.tenNvl.trim(),
             ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
@@ -2034,7 +2121,7 @@ export default function MixingNormMaterialsTab() {
         const validIds = resolveValidProductIds(codes, item.maSpIds);
         const workshopType = resolveSecondaryWorkshopType(item, form.products, catalogProductsById, catalogProducts);
 
-        const nvl_phu: MixingNormLine[] = item.lines
+        const nvl_phu = item.lines
           .filter(line => line.maNvl.trim() || line.tenNvl.trim())
           .map((line, index) => {
             const gia_tri =
@@ -2046,12 +2133,16 @@ export default function MixingNormMaterialsTab() {
               materials.find(m => normalizeProductLookupKey(m.code) === normalizeProductLookupKey(line.maNvl));
             const nhomVatTuPhu = mat?.nhomVatTuPhu || '';
             const donVi = mat?.donViGoc || mat?.unit || line.donVi || 'kg';
-            const weight = calcAuxiliaryWeight(workshopType, nhomVatTuPhu, donVi, gia_tri);
+            const isTapeOrStamp = isTapeOrStampMaterial(nhomVatTuPhu || line.tenNvl || line.maNvl);
+            const lineWorkshop = isTapeOrStamp && line.nhomVthh ? resolveWorkshopType(line.nhomVthh) : workshopType;
+            const weight = calcAuxiliaryWeight(lineWorkshop, nhomVatTuPhu, donVi, gia_tri);
             return {
+              material_id: line.materialId || mat?.id || undefined,
               ma_nvl: line.maNvl.trim(),
               ten_nvl: line.tenNvl.trim(),
               ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
               phan_loai: line.phanLoai.trim() || 'Nguyên vật liệu phụ',
+              nhom_vthh: isTapeOrStamp ? (line.nhomVthh?.trim() || undefined) : undefined,
               gia_tri,
               don_vi: donVi,
               khoi_luong: weight,
@@ -2450,6 +2541,7 @@ export default function MixingNormMaterialsTab() {
                       const order = item as MixingProductionOrder;
                       return `${order.orderCode} ${order.productLines.map(l => `${l.productCode} ${l.productName}`).join(' ')}`;
                     }}
+                    inputClassName={inputClass}
                     displaySelectedAsValue
                     maxResults={60}
                   />
@@ -2877,9 +2969,11 @@ export default function MixingNormMaterialsTab() {
                                 {product.lines.map((line, index) => {
                                   const lineMat = findMaterialForLine(line);
                                   const nhomVatTuPhu = lineMat?.nhomVatTuPhu || '';
+                                  const isTapeOrStamp = isTapeOrStampMaterial(nhomVatTuPhu || line.tenNvl || line.maNvl);
                                   const lineVal = parseNumberOrNull(line.giaTri);
                                   const donVi = lineMat?.donViGoc || line.donVi || 'kg';
-                                  const calcWeight = calcAuxiliaryWeight(workshopType, nhomVatTuPhu, donVi, lineVal);
+                                  const lineWorkshop = isTapeOrStamp && line.nhomVthh ? resolveWorkshopType(line.nhomVthh) : workshopType;
+                                  const calcWeight = calcAuxiliaryWeight(lineWorkshop, nhomVatTuPhu, donVi, lineVal);
                                   const filteredOptions = filterSecondaryMaterialOptions(secondaryMaterialOptions, allowedGroups, line);
                                   const calcWeightDisplay = calcWeight !== null ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 }).format(calcWeight)} kg` : '—';
                                   return (
@@ -2903,18 +2997,46 @@ export default function MixingNormMaterialsTab() {
                                         className={inputClass + ' bg-zinc-50'}
                                         placeholder="Tên NVL"
                                       />
-                                      <SearchableSelect
-                                        value={line.tenNvlSanXuat}
-                                        onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
-                                        options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
-                                        placeholder="Chọn hoặc nhập tên NVL sản xuất"
-                                        allowCustomValue
-                                        getValue={item => String(item)}
-                                        getLabel={item => String(item)}
-                                        getSearchText={item => String(item)}
-                                        allowEmpty
-                                        inputClassName={inputClass + ' bg-zinc-50'}
-                                      />
+                                      {isTapeOrStamp ? (
+                                        <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-1">
+                                          <SearchableSelect
+                                            value={line.tenNvlSanXuat}
+                                            onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
+                                            options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
+                                            placeholder="Tên NVL SX"
+                                            allowCustomValue
+                                            getValue={item => String(item)}
+                                            getLabel={item => String(item)}
+                                            getSearchText={item => String(item)}
+                                            allowEmpty
+                                            inputClassName={inputClass + ' bg-zinc-50'}
+                                          />
+                                          <select
+                                            value={line.nhomVthh || ''}
+                                            onChange={event => updateSecondaryLine(product.key, line.key, { nhomVthh: event.target.value })}
+                                            className={inputClass + ' border-amber-300 bg-amber-50 text-xs font-bold text-amber-900'}
+                                            title="Nhóm VTHH (bắt buộc với Băng dính/Tem)"
+                                          >
+                                            <option value="">-- Chọn VTHH * --</option>
+                                            {CANONICAL_NHOM_VTHH.map(item => (
+                                              <option key={item} value={item}>{item}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      ) : (
+                                        <SearchableSelect
+                                          value={line.tenNvlSanXuat}
+                                          onChange={value => updateSecondaryLine(product.key, line.key, { tenNvlSanXuat: value })}
+                                          options={getMaterialProductionNameOptions(line, secondaryMaterialOptions)}
+                                          placeholder="Chọn hoặc nhập tên NVL sản xuất"
+                                          allowCustomValue
+                                          getValue={item => String(item)}
+                                          getLabel={item => String(item)}
+                                          getSearchText={item => String(item)}
+                                          allowEmpty
+                                          inputClassName={inputClass + ' bg-zinc-50'}
+                                        />
+                                      )}
                                       <input
                                         value={donVi}
                                         readOnly

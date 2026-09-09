@@ -53,6 +53,7 @@ Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). 
 **NVL phụ** nhập giống NVL chính: bấm **Thêm sản phẩm**, chọn **nhiều mã SP** dùng chung một danh sách NVL, rồi **Thêm NVL phụ**. Không tự fill theo lệnh SX. Lưu thành block `loai: "nvl_phu"` (`ma_sp` nối bằng dấu phẩy). Trùng mã SP chỉ chặn **trong** NVL chính hoặc **trong** NVL phụ — cùng mã ở cả hai phần là hợp lệ. Phiếu cũ gắn `nvl_phu` trên từng SP công thức vẫn mở được; nhóm các SP cùng danh sách NVL phụ thành 1 block.
 
 `nvl_phu[].don_vi` luôn lấy từ đơn vị chính `kho_nvl.don_vi` của NVL đã chọn; API tra lại danh mục trước khi lưu để không nhận đơn vị sai từ client/dữ liệu cũ.
+Mỗi dòng NVL lưu kèm `material_id` trong JSON để phiếu xuất kho gộp đúng theo ID danh mục; API tra lại `kho_nvl.id` và bổ sung ID cho payload mới.
 
 Khối lượng NVL phụ là **tổng trọng lượng (kg)** dùng cho toàn bộ SP, không có `% Cối trộn` và không có `Giá trị (kg/cối)`. Khi lưu, `gia_tri`, `khoi_luong` và `tong_khoi_luong` cùng mang giá trị tổng này; các trường tỷ lệ để `null`. Trên phiếu in, **toàn bộ NVL chính in trước**, rồi mới tới khối **Nguyên liệu phụ** (kể cả phiếu cũ gắn `nvl_phu` trên từng SP công thức). Bảng NVL phụ bỏ hẳn hai cột `% Cối trộn`, `Giá trị (kg/cối)`.
 

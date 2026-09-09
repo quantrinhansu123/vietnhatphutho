@@ -182,6 +182,13 @@ export function SearchableSelect({
   };
 
   const isDisabled = Boolean(disabled || isLoading);
+
+  const openMenu = () => {
+    if (isDisabled || open) return;
+    suppressBlurRef.current = false;
+    setOpen(true);
+    setJustOpened(true);
+  };
   const emptyText = isLoading ? 'Đang tải...' : options.length === 0 ? 'Không có dữ liệu' : placeholder;
 
   const updateMenuPosition = () => {
@@ -330,12 +337,10 @@ export function SearchableSelect({
             onChange(nextQuery);
           }
         }}
-        onFocus={() => {
-          if (!isDisabled) {
-            setOpen(true);
-            setJustOpened(true);
-          }
-        }}
+        onFocus={openMenu}
+        // Chọn option giữ focus trên input. Vì vậy lần bấm kế tiếp không có
+        // sự kiện focus mới; onClick vẫn phải mở lại danh sách.
+        onClick={openMenu}
         onBlur={handleBlur}
         disabled={isDisabled}
         placeholder={emptyText}
