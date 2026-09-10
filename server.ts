@@ -7095,6 +7095,87 @@ export function createApp() {
     }
   });
 
+  app.post('/api/san-pham/import-batch', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const createsInput = Array.isArray(req.body?.creates) ? req.body.creates : [];
+      const updatesInput = Array.isArray(req.body?.updates) ? req.body.updates : [];
+      if (createsInput.length === 0 && updatesInput.length === 0) {
+        return res.status(400).json({ error: 'Không có dòng sản phẩm hợp lệ để import.' });
+      }
+
+      const uuidRe =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+      const parseBatchRecords = (items: unknown[], includeId: boolean) => {
+        const records: Array<Record<string, string | number | null>> = [];
+        for (let index = 0; index < items.length; index += 1) {
+          const item = items[index];
+          const parsed = parseProductPatchBody(item, { requireIdentity: true });
+          if ('error' in parsed) {
+            return { error: `Dòng batch ${index + 1}: ${parsed.error}` } as const;
+          }
+          if (includeId) {
+            const source = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+            const id = String(source.id ?? '').trim();
+            if (!uuidRe.test(id)) {
+              return { error: `Dòng batch ${index + 1}: ID sản phẩm không hợp lệ.` } as const;
+            }
+            records.push({ ...parsed.record, id });
+          } else {
+            records.push(parsed.record);
+          }
+        }
+        return { records, error: null } as const;
+      };
+
+      const parsedCreates = parseBatchRecords(createsInput, false);
+      if (parsedCreates.error) return res.status(400).json({ error: parsedCreates.error });
+      const parsedUpdates = parseBatchRecords(updatesInput, true);
+      if (parsedUpdates.error) return res.status(400).json({ error: parsedUpdates.error });
+
+      let createdProducts: Record<string, unknown>[] = [];
+      let updatedProducts: Record<string, unknown>[] = [];
+
+      if (parsedCreates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_PRODUCTS_TABLE)
+          .insert(parsedCreates.records)
+          .select('*');
+        if (error) {
+          console.error('Supabase san_pham batch insert error:', error);
+          return res.status(500).json({ error: productWriteErrorMessage(error) });
+        }
+        createdProducts = data || [];
+      }
+
+      if (parsedUpdates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_PRODUCTS_TABLE)
+          .upsert(parsedUpdates.records, { onConflict: 'id' })
+          .select('*');
+        if (error) {
+          console.error('Supabase san_pham batch update error:', error);
+          return res.status(500).json({ error: productWriteErrorMessage(error) });
+        }
+        updatedProducts = data || [];
+      }
+
+      return res.status(200).json({
+        success: true,
+        created: createdProducts,
+        updated: updatedProducts,
+        createdCount: createdProducts.length,
+        updatedCount: updatedProducts.length
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi import hàng loạt sản phẩm.' });
+    }
+  });
+
   app.delete('/api/san-pham', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });

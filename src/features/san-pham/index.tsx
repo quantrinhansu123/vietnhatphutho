@@ -59,7 +59,6 @@ import { calculateProductConversionFormulas } from '../../utils/productConversio
 import {
   FILM_OPTIONS,
   WASTE_GRADE_OPTIONS,
-  classifyProductPxGroup,
   composeProductionDisplayName,
   extractDoLiDm,
   seedProductionSpecs
@@ -1417,15 +1416,6 @@ export function ProductEditModal({
     { key: 'description', label: 'Mô tả', span: true }
   ];
 
-  const songLengthNames = useMemo(() => {
-    const amis = form.amisCode.trim().toLocaleLowerCase('vi');
-    if (!amis) return [] as string[];
-    return products
-      .filter(item => item.amisCode.trim().toLocaleLowerCase('vi') === amis)
-      .map(item => item.productionName)
-      .filter(Boolean);
-  }, [form.amisCode, products]);
-
   const composedName = useMemo(
     () =>
       composeProductionDisplayName(
@@ -1450,11 +1440,7 @@ export function ProductEditModal({
     const seeded = seedProductionSpecs({
       tenSanXuat: productionName,
       maAmis: amisCode,
-      nhomVthh: group,
-      songLengthNames:
-        group === 'TP; PX Sóng'
-          ? Array.from(new Set([productionName, ...songLengthNames].filter(Boolean)))
-          : undefined
+      nhomVthh: group
     });
     return {
       ...next,
@@ -1546,10 +1532,7 @@ export function ProductEditModal({
                   const seeded = seedProductionSpecs({
                     tenSanXuat: item.productionName,
                     maAmis: item.amisCode,
-                    nhomVthh: item.group || prev.group,
-                    songLengthNames: products
-                      .filter(p => p.amisCode.trim().toLocaleLowerCase('vi') === item.amisCode.trim().toLocaleLowerCase('vi'))
-                      .map(p => p.productionName)
+                    nhomVthh: item.group || prev.group
                   });
                   return {
                     ...nextBase,
@@ -1617,7 +1600,7 @@ export function ProductEditModal({
             <div>
               <h4 className="text-xs font-black uppercase text-amber-900">Thông số SX / ghép tên</h4>
               <p className="text-[10px] font-semibold text-amber-800/80">
-                ĐM lấy `(đm n li)` từ tên SX. Sóng: m dài mặc định = dài nhất cùng AMIS. Không đổi unique `AMIS + Tên SP + Tên SX`.
+                ĐM lấy `(đm n li)` từ tên SX. Đặc: ưu tiên 8/9/20/30m làm m dài. Sóng: m dài đúng theo tên SX dòng. Không đổi unique `AMIS + Tên SP + Tên SX`.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1639,7 +1622,7 @@ export function ProductEditModal({
               </label>
               <label className="space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Mét dài</span>
-                <input value={form.doDaiM} onChange={event => setForm(prev => ({ ...prev, doDaiM: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="Sóng: max m" />
+                <input value={form.doDaiM} onChange={event => setForm(prev => ({ ...prev, doDaiM: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="Đặc: 8/9/20/30m; Sóng: theo tên SX" />
               </label>
               <label className="space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Màng</span>
@@ -2065,17 +2048,6 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         throw new Error('File Excel không có dòng sản phẩm hợp lệ.');
       }
 
-      // Sóng: gom tên SX theo AMIS trong file để seed m dài = max
-      const songNamesByAmis = new Map<string, string[]>();
-      for (const row of rows) {
-        if (classifyProductPxGroup(row.group) !== 'song') continue;
-        const amisKey = (row.amisCode.trim() || row.code.trim()).toLocaleLowerCase('vi');
-        if (!amisKey || !row.productionName.trim()) continue;
-        const list = songNamesByAmis.get(amisKey) || [];
-        list.push(row.productionName.trim());
-        songNamesByAmis.set(amisKey, list);
-      }
-
       // Build map từ cả 3 trường: Mã SP + Tên SP + Tên sản xuất
       const byIdentity = new Map(
         products
@@ -2083,8 +2055,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           .filter(([key]) => Boolean(key))
       );
 
-      let created = 0;
-      let updated = 0;
+      const creates: Array<ReturnType<typeof productCatalogRowToPayload>> = [];
+      const updates: Array<ReturnType<typeof productCatalogRowToPayload> & { id: string }> = [];
       const failures: string[] = [];
 
       for (const row of rows) {
@@ -2103,56 +2075,66 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           continue;
         }
 
-        const amisKey = (row.amisCode.trim() || code).toLocaleLowerCase('vi');
-        const songLengthNames = songNamesByAmis.get(amisKey);
-        const payload = productCatalogRowToPayload(row, songLengthNames ? { songLengthNames } : undefined);
-
-        // Logic UPDATE vs INSERT:
-        // - UPDATE: Cả 3 trường (Mã SP, Tên SP, Tên sản xuất) đều có dữ liệu VÀ khớp sản phẩm trong DB
-        // - INSERT: Bất kỳ trường nào rỗng, HOẶC không khớp sản phẩm nào
+        const payload = productCatalogRowToPayload(row);
         let existing: ProductRow | undefined;
-
         if (code && name && productionName) {
-          // Cả 3 trường đều có dữ liệu → kiểm tra khớp
           const identityKey = buildProductIdentityKey(code, name, productionName);
-          existing = identityKey ? byIdentity.get(identityKey) as ProductRow | undefined : undefined;
+          existing = identityKey ? (byIdentity.get(identityKey) as ProductRow | undefined) : undefined;
         }
-        // Nếu bất kỳ trường nào rỗng → existing = undefined → INSERT
 
-        const res = existing
-          ? await fetch(`/api/san-pham/${existing.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            })
-          : await fetch('/api/san-pham', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
+        if (existing?.id) {
+          const identityKey = buildProductIdentityKey(code, name, productionName) || existing.id;
+          // Bỏ payload update cũ cùng identity trong batch
+          const prevIdx = updates.findIndex(item => item.id === existing!.id);
+          if (prevIdx >= 0) updates.splice(prevIdx, 1);
+          updates.push({ ...payload, id: existing.id });
+        } else {
+          const identityKey = buildProductIdentityKey(
+            payload.code || payload.amisCode,
+            payload.name,
+            payload.productionName
+          );
+          if (identityKey) {
+            const prevIdx = creates.findIndex(item =>
+              buildProductIdentityKey(item.code || item.amisCode, item.name, item.productionName) === identityKey
+            );
+            if (prevIdx >= 0) creates.splice(prevIdx, 1);
+          }
+          creates.push(payload);
+        }
+      }
 
+      const CHUNK_SIZE = 150;
+      const chunkArray = <T,>(items: T[], size: number): T[][] => {
+        const chunks: T[][] = [];
+        for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+        return chunks;
+      };
+
+      let created = 0;
+      let updated = 0;
+
+      const postBatch = async (createsChunk: typeof creates, updatesChunk: typeof updates, label: string) => {
+        if (createsChunk.length === 0 && updatesChunk.length === 0) return;
+        const res = await fetch('/api/san-pham/import-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creates: createsChunk, updates: updatesChunk })
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
-          continue;
+          failures.push(data.error || `${label} thất bại`);
+          return;
         }
+        created += Number(data.createdCount || 0);
+        updated += Number(data.updatedCount || 0);
+      };
 
-        const saved = data.product && typeof data.product === 'object' ? data.product : null;
-        const savedId = saved ? String(saved.id ?? '').trim() : '';
-        const savedCode = saved ? String(saved.ma_sp ?? code).trim() : code;
-        const savedName = saved ? String(saved.ten_sp ?? name).trim() : name;
-        const savedProductionName = saved ? String(saved.ten_san_xuat ?? productionName).trim() : productionName;
-
-        if (savedId && savedCode) {
-          const savedIdentityKey = buildProductIdentityKey(savedCode, savedName, savedProductionName);
-          if (savedIdentityKey) {
-            byIdentity.set(savedIdentityKey, { id: savedId } as ProductRow);
-          }
-        }
-
-        // Chỉ dựa vào existing (có gửi PATCH hay không), không dựa vào data.upserted
-        if (existing) updated += 1;
-        else created += 1;
+      for (const [index, chunk] of chunkArray(creates, CHUNK_SIZE).entries()) {
+        await postBatch(chunk, [], `Insert batch ${index + 1}`);
+      }
+      for (const [index, chunk] of chunkArray(updates, CHUNK_SIZE).entries()) {
+        await postBatch([], chunk, `Update batch ${index + 1}`);
       }
 
       if (created > 0 || updated > 0) {
@@ -2160,8 +2142,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       }
 
       const summary = [
-        created || updated ? `Đã nhập Excel SP: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
-        failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
+        created || updated ? `Đã nhập Excel SP (batch): thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        failures.length ? `${failures.length} lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
         .join(' ');

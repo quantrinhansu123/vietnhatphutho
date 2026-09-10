@@ -153,10 +153,20 @@ export function isValidDoLiToken(value: string): boolean {
   return /^\d+[.,]?\d*\s*li$/i.test(t) || /^\d+\s*zem$/i.test(t);
 }
 
-/** Đặc: các mét standalone sau `-` (không tính pattern `x …m`). Lớn hơn = dài, nhỏ hơn = dày/khổ. */
+/** Mét dài Đặc thường gặp — ưu tiên nhận diện là do_dai_m. */
+export const DEFAULT_DAC_LENGTH_METERS = [8, 9, 20, 30] as const;
+
+function isDefaultDacLength(n: number): boolean {
+  return (DEFAULT_DAC_LENGTH_METERS as readonly number[]).some(v => Math.abs(v - n) < 1e-9);
+}
+
+/**
+ * Đặc: các mét standalone sau `-` (không tính pattern `x …m`).
+ * Ưu tiên 8m / 9m / 20m / 30m làm mét dài; mét còn lại = độ dày/khổ.
+ * Fallback: lớn = dài, nhỏ = dày.
+ */
 export function parseDacDashMeters(tenSanXuat: string): { doDayM: string; doDaiM: string } {
   const text = String(tenSanXuat || '');
-  // Bỏ đoạn `x Nm` để không lẫn khổ trong pattern x
   const withoutX = text.replace(/\bx\s*[\d.,]+\s*m\b/giu, ' ');
   const values: number[] = [];
   for (const match of withoutX.matchAll(DASH_METER_RE)) {
@@ -165,9 +175,23 @@ export function parseDacDashMeters(tenSanXuat: string): { doDayM: string; doDaiM
   }
   if (values.length === 0) return { doDayM: '', doDaiM: '' };
   if (values.length === 1) {
-    // Một mét standalone sau li/đm thường là độ dài (vd hiếm); khổ thường đi kèm `x`
-    return { doDayM: '', doDaiM: formatMetersLabel(values[0]) };
+    const only = values[0];
+    if (isDefaultDacLength(only)) {
+      return { doDayM: '', doDaiM: formatMetersLabel(only) };
+    }
+    // Một mét không thuộc bộ dài mặc định → coi là độ dày/khổ (vd chỉ có 1.56m)
+    return { doDayM: formatMetersLabel(only), doDaiM: '' };
   }
+
+  const knownLength = values.find(isDefaultDacLength);
+  if (knownLength != null) {
+    const other = values.find(v => Math.abs(v - knownLength) >= 1e-9);
+    return {
+      doDayM: other != null ? formatMetersLabel(other) : '',
+      doDaiM: formatMetersLabel(knownLength)
+    };
+  }
+
   const max = Math.max(...values);
   const min = Math.min(...values);
   return {
@@ -204,8 +228,7 @@ function songTenGoc(tenSanXuat: string, lengthMeters: number | null): string {
 export function parseProductionNameParts(
   tenSanXuat: string,
   nhomVthh: string,
-  maAmis = '',
-  options?: { songLengthNames?: string[] }
+  maAmis = ''
 ): ProductionNameParts {
   const group = classifyProductPxGroup(nhomVthh);
   const text = String(tenSanXuat || '').trim();
@@ -217,16 +240,14 @@ export function parseProductionNameParts(
   if (doLi && !isValidDoLiToken(doLi)) doLi = '';
 
   if (group === 'song') {
-    const singleLen = parseSongLengthMeters(text);
-    const maxLen = options?.songLengthNames?.length
-      ? pickMaxSongLengthMeters(options.songLengthNames)
-      : singleLen;
-    const tenGoc = songTenGoc(text, singleLen);
+    // Sóng: lấy đúng mét dài từ tên SX của dòng (không lấy max giữa các biến thể)
+    const lengthM = parseSongLengthMeters(text);
+    const tenGoc = songTenGoc(text, lengthM);
     return {
       tenGoc,
       doLi,
       doDayM: '',
-      doDaiM: maxLen != null ? formatMetersLabel(maxLen) : '',
+      doDaiM: lengthM != null ? formatMetersLabel(lengthM) : '',
       mang,
       hangPhe,
       doLiDm
@@ -320,18 +341,16 @@ export function composeProductionDisplayName(
   );
 }
 
-/** Seed đầy đủ từ bản ghi catalog (1 dòng hoặc nhiều tên sóng để lấy max m). */
+/** Seed đầy đủ từ bản ghi catalog theo đúng tên SX của dòng. */
 export function seedProductionSpecs(input: {
   tenSanXuat: string;
   maAmis?: string;
   nhomVthh: string;
-  songLengthNames?: string[];
 }): ProductionNameParts & { tenGhep: string } {
   const parts = parseProductionNameParts(
     input.tenSanXuat,
     input.nhomVthh,
-    input.maAmis || '',
-    { songLengthNames: input.songLengthNames }
+    input.maAmis || ''
   );
   return {
     ...parts,

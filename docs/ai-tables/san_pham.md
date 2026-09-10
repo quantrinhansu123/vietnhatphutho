@@ -12,6 +12,7 @@
 |--------|------|------|
 | GET | `/api/san-pham` | 3507 |
 | POST | `/api/san-pham` | 3564 |
+| POST | `/api/san-pham/import-batch` | batch insert `creates` + upsert `updates` (chunk phía client ~150) |
 | PATCH | `/api/san-pham/:id` | 3629 |
 | DELETE | `/api/san-pham` | 3592 |
 | POST | `/api/kiem-kho/dong-bo-ton-dau` | Đồng bộ phiếu kiểm kho vào `ton_dau_ky` |

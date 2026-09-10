@@ -334,21 +334,18 @@ export function downloadProductCatalogExcelTemplate() {
   XLSX.writeFile(workbook, 'mau-danh-muc-san-pham.xlsx');
 }
 
-export function productCatalogRowToPayload(
-  row: ProductCatalogExcelRow,
-  options?: { songLengthNames?: string[] }
-) {
+export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   const productionName = row.productionName.trim();
   const group = row.group.trim();
   const amisCode = row.amisCode.trim();
   const seeded = seedProductionSpecs({
     tenSanXuat: productionName,
     maAmis: amisCode,
-    nhomVthh: group,
-    songLengthNames: options?.songLengthNames
+    nhomVthh: group
   });
   // Chuỗi rỗng vẫn gửi lên — API map thành null / bỏ trống, không chặn import.
   // Không đổi ten_san_xuat khi import → tránh đụng unique AMIS+tên SP+tên SX.
+  // Sóng: do_dai_m lấy đúng theo tên SX dòng (không max).
   return {
     code: row.code.trim(),
     newCode: row.newCode.trim(),

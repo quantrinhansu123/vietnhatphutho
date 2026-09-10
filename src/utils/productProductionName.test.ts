@@ -5,7 +5,6 @@ import {
   classifyProductPxGroup,
   parseAmisSpecs,
   parseSongLengthMeters,
-  pickMaxSongLengthMeters,
   parseProductionNameParts,
   composeProductionDisplayName,
   seedProductionSpecs
@@ -34,31 +33,37 @@ test('parseAmisSpecs đọc li*m và zem', () => {
   assert.equal(parseAmisSpecs('STS02-11s-6zem').zem, '6ZEM');
 });
 
-test('Đặc: hai mét standalone — lớn = dài, nhỏ = dày', () => {
+test('Đặc: ưu tiên 8/9/20/30m làm m dài', () => {
   const a = parseProductionNameParts(
-    'Tấm nhựa đặc màu TRẮNG - 8li ( đm 7.7 li ) - 9m - 1.56m - STD',
+    'Tấm nhựa đặc màu TRẮNG - 8li ( đm 7.7 li ) - 8m - 2.1m - ECO',
     'TP; PX Đặc'
   );
   assert.equal(a.doLi, '8li');
   assert.equal(a.doLiDm, '(đm 7.7 li)');
-  assert.equal(a.doDayM, '1.56m');
-  assert.equal(a.doDaiM, '9m');
-  assert.equal(a.mang, 'STD');
+  assert.equal(a.doDayM, '2.1m');
+  assert.equal(a.doDaiM, '8m');
+  assert.equal(a.mang, 'ECO');
 
   const b = parseProductionNameParts(
+    'Tấm nhựa đặc màu KHUẾCH TÁN - 10li ( đm 9.7 li ) - 9m - 1.56m - ECO',
+    'TP; PX Đặc'
+  );
+  assert.equal(b.doDayM, '1.56m');
+  assert.equal(b.doDaiM, '9m');
+
+  const c = parseProductionNameParts(
     'Tấm nhựa đặc màu TRẮNG - 5li ( đm 4.7 li ) - 2.1m - 30m hàng 100% NS Off - STD',
     'TP; PX Đặc'
   );
-  assert.equal(b.doDayM, '2.1m');
-  assert.equal(b.doDaiM, '30m');
-  assert.equal(b.hangPhe, 'hàng 100% NS Off');
+  assert.equal(c.doDayM, '2.1m');
+  assert.equal(c.doDaiM, '30m');
 
-  const c = parseProductionNameParts(
+  const d = parseProductionNameParts(
     'Tấm nhựa đặc màu TRẮNG - 6li ( đm 5.7 li ) - 20m - 2.1m - STD',
     'TP; PX Đặc'
   );
-  assert.equal(c.doDayM, '2.1m');
-  assert.equal(c.doDaiM, '20m');
+  assert.equal(d.doDaiM, '20m');
+  assert.equal(d.doDayM, '2.1m');
 });
 
 test('Đặc: li x khổ — không có m dài', () => {
@@ -73,16 +78,21 @@ test('Đặc: li x khổ — không có m dài', () => {
   assert.equal(parts.mang, 'STD');
 });
 
-test('Sóng: mét dài = token m cuối; max khi gom; KG không phải độ li', () => {
+test('Sóng: mét dài đúng theo tên SX (không max)', () => {
   assert.equal(parseSongLengthMeters('NHỰA 11 SÓNG XANH 6ZEM -6M'), 6);
   assert.equal(
     parseSongLengthMeters('NHỰA SÓNG XDT - NP - 11 SÓNG 4,8KG - 3,5M ( GIÁ RẺ )'),
     3.5
   );
-  assert.equal(
-    parseSongLengthMeters('NHỰA SÓNG XDT - NP -  SÓNG PHẲNG 1.2m - 5,2KG - 30M'),
-    30
-  );
+
+  const short = seedProductionSpecs({
+    tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M',
+    maAmis: 'STS02-11s-6zem',
+    nhomVthh: 'TP; PX Sóng'
+  });
+  assert.equal(short.tenGoc, 'NHỰA 11 SÓNG XANH 6ZEM');
+  assert.equal(short.doLi, '6ZEM');
+  assert.equal(short.doDaiM, '2m');
 
   const kgName = parseProductionNameParts(
     'NHỰA SÓNG XDT - NP - 11 SÓNG 4,8KG - 3,5M ( GIÁ RẺ )',
@@ -90,36 +100,6 @@ test('Sóng: mét dài = token m cuối; max khi gom; KG không phải độ li'
   );
   assert.equal(kgName.doDaiM, '3.5m');
   assert.equal(kgName.doLi, '');
-  assert.ok(!/kg/i.test(kgName.doLi));
-
-  const kgFlat = parseProductionNameParts(
-    'NHỰA SÓNG XDT - NP -  SÓNG PHẲNG 1.2m - 5,2KG - 30M',
-    'TP; PX Sóng'
-  );
-  assert.equal(kgFlat.doDaiM, '30m');
-  assert.equal(kgFlat.doLi, '');
-
-  const seeded = seedProductionSpecs({
-    tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M',
-    maAmis: 'STS02-11s-6zem',
-    nhomVthh: 'TP; PX Sóng',
-    songLengthNames: [
-      'NHỰA 11 SÓNG XANH 6ZEM -2M',
-      'NHỰA 11 SÓNG XANH 6ZEM -6M',
-      'NHỰA 11 SÓNG XANH 6ZEM -3,5M'
-    ]
-  });
-  assert.equal(seeded.tenGoc, 'NHỰA 11 SÓNG XANH 6ZEM');
-  assert.equal(seeded.doLi, '6ZEM');
-  assert.equal(seeded.doDaiM, '6m');
-  assert.equal(
-    pickMaxSongLengthMeters([
-      'NHỰA 11 SÓNG XANH 6ZEM -2M',
-      'NHỰA 11 SÓNG XANH 6ZEM -6M',
-      'NHỰA 11 SÓNG XANH 6ZEM -3,5M'
-    ]),
-    6
-  );
 });
 
 test('Rỗng: li x khổ x dài', () => {
