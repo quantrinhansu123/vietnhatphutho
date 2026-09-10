@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import { TimePicker24h } from '../../components/shared/TimePicker24h';
+import { MAY_VIEC_KHAC } from './DispatchFormInline';
 
 export type DispatchRecord = {
   id: string;
@@ -26,6 +28,9 @@ interface Props {
   staffMap: Map<string, string>;
 }
 
+function shiftsDiffer(caGoc: string, caDieuDong: string) {
+  return String(caGoc || '').trim().toUpperCase() !== String(caDieuDong || '').trim().toUpperCase();
+}
 
 export function EditDispatchModal({
   isOpen,
@@ -40,8 +45,15 @@ export function EditDispatchModal({
   const [mayDieuDong, setMayDieuDong] = useState('');
   const [thoiGianBatDau, setThoiGianBatDau] = useState('');
   const [thoiGianKetThuc, setThoiGianKetThuc] = useState('');
+  const [ghiChu, setGhiChu] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const destinationMachines = useMemo(() => {
+    const names = machineNames.filter(Boolean);
+    if (!names.includes(MAY_VIEC_KHAC)) return [...names, MAY_VIEC_KHAC];
+    return names;
+  }, [machineNames]);
 
   useEffect(() => {
     if (record) {
@@ -49,6 +61,7 @@ export function EditDispatchModal({
       setMayDieuDong(record.may_dieu_dong);
       setThoiGianBatDau(record.thoi_gian_bat_dau.slice(0, 5));
       setThoiGianKetThuc(String(record.thoi_gian_ket_thuc || '').slice(0, 5));
+      setGhiChu(record.ghi_chu || '');
       setError('');
     }
   }, [record]);
@@ -56,6 +69,7 @@ export function EditDispatchModal({
   if (!isOpen || !record) return null;
 
   const personName = staffMap.get(record.ma_nhan_su) || record.ma_nhan_su || '-';
+  const needNote = shiftsDiffer(record.ca || '', caDieuDong);
 
   const handleSubmit = async () => {
     if (!mayDieuDong || !caDieuDong || !thoiGianBatDau) {
@@ -64,6 +78,10 @@ export function EditDispatchModal({
     }
     if (thoiGianBatDau === thoiGianKetThuc) {
       setError('Giờ bắt đầu và giờ kết thúc không được trùng nhau.');
+      return;
+    }
+    if (needNote && !ghiChu.trim()) {
+      setError('Đổi ca: vui lòng nhập ghi chú tại máy chuyển đến.');
       return;
     }
     // Lưu ý: ca vượt ngày (giờ bắt đầu > giờ kết thúc) là hợp lệ — không chặn.
@@ -75,7 +93,8 @@ export function EditDispatchModal({
         ca_dieu_dong: caDieuDong,
         may_dieu_dong: mayDieuDong,
         thoi_gian_bat_dau: thoiGianBatDau,
-        thoi_gian_ket_thuc: thoiGianKetThuc
+        thoi_gian_ket_thuc: thoiGianKetThuc,
+        ghi_chu: ghiChu.trim() || undefined
       });
     } catch (err: any) {
       setError(err.message || 'Lỗi khi lưu.');
@@ -143,7 +162,7 @@ export function EditDispatchModal({
                 className="w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none"
               >
                 <option value="">-- Chọn máy --</option>
-                {machineNames.map(m => (
+                {destinationMachines.map(m => (
                   <option key={m} value={m}>{m}</option>
                 ))}
               </select>
@@ -153,22 +172,35 @@ export function EditDispatchModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-700">Bắt đầu *</label>
-              <input
-                type="time"
+              <TimePicker24h
                 value={thoiGianBatDau}
-                onChange={e => setThoiGianBatDau(e.target.value)}
-                className="w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none"
+                onChange={setThoiGianBatDau}
+                className="w-full rounded border border-zinc-300 px-2 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none"
               />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-700">Kết thúc</label>
-              <input
-                type="time"
+              <TimePicker24h
                 value={thoiGianKetThuc}
-                onChange={e => setThoiGianKetThuc(e.target.value)}
-                className="w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none"
+                onChange={setThoiGianKetThuc}
+                className="w-full rounded border border-zinc-300 px-2 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-700">
+              Ghi chú máy chuyển đến {needNote ? <span className="text-rose-500">*</span> : null}
+            </label>
+            <textarea
+              value={ghiChu}
+              onChange={e => setGhiChu(e.target.value)}
+              rows={2}
+              placeholder={needNote ? 'Bắt buộc khi đổi ca' : 'Tuỳ chọn'}
+              className={`w-full rounded border px-3 py-2 text-sm focus:border-[#ef1b2d] focus:outline-none ${
+                needNote && !ghiChu.trim() ? 'border-rose-300 bg-rose-50' : 'border-zinc-300'
+              }`}
+            />
           </div>
 
           {error && (

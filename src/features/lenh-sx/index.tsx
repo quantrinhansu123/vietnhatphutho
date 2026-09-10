@@ -43,6 +43,16 @@ import type { OrderRow } from '../_shared/orderRecordHelpers';
 import { useTabAccess } from '../../app/useTabAccess';
 import type { AuthUser } from '../../app/authUser';
 import {
+  normalizeReportFromApi,
+  type AcceptanceReport
+} from '../../components/AcceptanceReportForm';
+import {
+  buildProductionProgressForOrder,
+  productionProgressStatusClass,
+  productionProgressStatusLabel
+} from '../../utils/productionProgressByProduct';
+import { parseProductionOrderFilterDate } from '../cai-dat-thoi-gian';
+import {
   Eye,
   Loader2,
   MoreHorizontal,
@@ -153,6 +163,39 @@ export function ProductionOrdersPanel({
   const [actionMessage, setActionMessage] = useState('');
   const [staffBranches, setStaffBranches] = useState<any[]>([]);
   const [previewOrder, setPreviewOrder] = useState<ProductionOrderRow | null>(null);
+  const [acceptanceReports, setAcceptanceReports] = useState<AcceptanceReport[]>([]);
+
+  const loadAcceptanceReportsForOrders = async (productionRows: ProductionOrderRow[]) => {
+    const dates = [
+      ...new Set(
+        productionRows
+          .map(row => parseProductionOrderFilterDate(row.startDate) || String(row.startDate || '').slice(0, 10))
+          .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
+      )
+    ].sort();
+
+    if (dates.length === 0) {
+      setAcceptanceReports([]);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/bao-cao-nghiem-thu?tu_ngay=${encodeURIComponent(dates[0])}&den_ngay=${encodeURIComponent(dates[dates.length - 1])}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAcceptanceReports([]);
+        return;
+      }
+      const rows = Array.isArray((data as { reports?: unknown }).reports)
+        ? ((data as { reports: Record<string, unknown>[] }).reports)
+        : [];
+      setAcceptanceReports(rows.map(normalizeReportFromApi));
+    } catch {
+      setAcceptanceReports([]);
+    }
+  };
 
   const loadProductionOrders = async () => {
     setIsLoading(true);
@@ -188,8 +231,10 @@ export function ProductionOrdersPanel({
       });
       setOrders(orderRows);
       setRows(productionRows);
+      void loadAcceptanceReportsForOrders(productionRows);
     } catch (error: any) {
       setRows([]);
+      setAcceptanceReports([]);
       setLoadError(error.message || 'Không thể tải lệnh sản xuất từ Supabase.');
     } finally {
       setIsLoading(false);
@@ -545,11 +590,13 @@ export function ProductionOrdersPanel({
                   <TableHead>
                     <TableHeadCell>Mã lệnh</TableHeadCell>
                     <TableHeadCell>Ca</TableHeadCell>
-                    <TableHeadCell className="min-w-[320px]">
-                      <div className="grid grid-cols-[minmax(80px,0.85fr)_minmax(120px,1.5fr)_64px] gap-2">
+                    <TableHeadCell className="min-w-[420px]">
+                      <div className="grid grid-cols-[minmax(72px,0.75fr)_minmax(110px,1.3fr)_52px_52px_64px] gap-1.5">
                         <span>Mã hàng</span>
                         <span>Tên sản xuất</span>
-                        <span className="text-right">Số lượng</span>
+                        <span className="text-right">KH</span>
+                        <span className="text-right">Đã SX</span>
+                        <span className="text-right">TT</span>
                       </div>
                     </TableHeadCell>
                     <TableHeadCell className="w-32 min-w-32 whitespace-nowrap">Trạng thái</TableHeadCell>
@@ -562,6 +609,7 @@ export function ProductionOrdersPanel({
                   </TableHead>
                   <TableBody>
                     {group.rows.map(row => {
+                      const progressLines = buildProductionProgressForOrder(row, acceptanceReports);
                       const productLines = getProductionOrderProductLines(row);
                       return (
                       <React.Fragment key={row.id}>
@@ -569,28 +617,61 @@ export function ProductionOrdersPanel({
                         <td className="px-4 py-3 align-top font-black text-zinc-950">{row.code || '-'}</td>
                         <td className="px-4 py-3 align-top text-zinc-700">{row.shift || '-'}</td>
                         <td className="px-4 py-3 align-top">
-                          {productLines.length > 0 ? (
+                          {progressLines.length > 0 || productLines.length > 0 ? (
                             <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
                               <table className="w-full border-collapse text-left text-xs">
                                 <tbody className="divide-y divide-zinc-100">
-                                  {productLines.map((product, index) => (
-                                    <tr key={`${row.id}-${product.productCode}-${index}`}>
-                                      <td className="w-[28%] px-2.5 py-1.5 font-black text-zinc-950">
-                                        {product.productCode || '-'}
-                                      </td>
-                                      <td className="px-2.5 py-1.5 font-semibold text-zinc-700">
-                                        {formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai)}
-                                      </td>
-                                      <td className="w-[22%] whitespace-nowrap px-2.5 py-1.5 text-right font-mono font-bold text-zinc-900">
-                                        {product.quantity || '-'}
-                                        {product.unit && product.unit !== '-' ? (
-                                          <span className="ml-1 font-sans text-[10px] font-semibold text-zinc-500">
-                                            {product.unit}
-                                          </span>
-                                        ) : null}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {(progressLines.length > 0
+                                    ? progressLines.map((product, index) => (
+                                        <tr key={`${row.id}-${product.productCode}-${index}`}>
+                                          <td className="w-[22%] px-2 py-1.5 font-black text-zinc-950">
+                                            {product.productCode || '-'}
+                                          </td>
+                                          <td className="px-2 py-1.5 font-semibold text-zinc-700">
+                                            {formatProductionNameWithLength(
+                                              product.productionName || product.productName,
+                                              product.quyCachMDai
+                                            )}
+                                          </td>
+                                          <td className="w-[12%] whitespace-nowrap px-1.5 py-1.5 text-right font-mono font-bold text-zinc-900">
+                                            {product.plannedQty > 0 ? formatNumber(product.plannedQty) : '-'}
+                                          </td>
+                                          <td className="w-[12%] whitespace-nowrap px-1.5 py-1.5 text-right font-mono font-bold text-emerald-800">
+                                            {product.actualQty > 0 ? formatNumber(product.actualQty) : '0'}
+                                          </td>
+                                          <td className="w-[16%] whitespace-nowrap px-1.5 py-1.5 text-right">
+                                            <span
+                                              className={`inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ring-1 ${productionProgressStatusClass(product.status)}`}
+                                            >
+                                              {productionProgressStatusLabel(product.status)}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))
+                                    : productLines.map((product, index) => (
+                                        <tr key={`${row.id}-${product.productCode}-${index}`}>
+                                          <td className="w-[28%] px-2.5 py-1.5 font-black text-zinc-950">
+                                            {product.productCode || '-'}
+                                          </td>
+                                          <td className="px-2.5 py-1.5 font-semibold text-zinc-700">
+                                            {formatProductionNameWithLength(
+                                              product.productionName || product.productName,
+                                              product.quyCachMDai
+                                            )}
+                                          </td>
+                                          <td
+                                            className="w-[22%] whitespace-nowrap px-2.5 py-1.5 text-right font-mono font-bold text-zinc-900"
+                                            colSpan={3}
+                                          >
+                                            {product.quantity || '-'}
+                                            {product.unit && product.unit !== '-' ? (
+                                              <span className="ml-1 font-sans text-[10px] font-semibold text-zinc-500">
+                                                {product.unit}
+                                              </span>
+                                            ) : null}
+                                          </td>
+                                        </tr>
+                                      )))}
                                 </tbody>
                               </table>
                             </div>

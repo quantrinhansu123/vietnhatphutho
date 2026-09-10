@@ -3,7 +3,11 @@ import { ArrowRightLeft, ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, P
 import { useTabAccess } from '../../app/useTabAccess';
 import { DateInputVi } from '../../components/shared/DateInputVi';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
-import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
+import {
+  getProductionShiftOptions,
+  normalizeShiftSettings,
+  type ShiftSetting
+} from '../../utils/shiftSettings';
 import { LichLamViecPrintModal } from './LichLamViecPrintModal';
 
 /** 4 vai trò mặc định — luôn hiển thị, không xóa được. */
@@ -95,13 +99,40 @@ type PersonForm = {
   removable: boolean;
 };
 
-type ScheduleForm = {
+type ScheduleBlock = {
+  key: string;
   maMay: string;
-  caLamViecList: string[];   // nhiều ca
+  caLamViecList: string[];
   ngayLamViec: string;
   ghiChu: string;
   people: PersonForm[];
 };
+
+type ShiftTimeRange = { start: string; end: string };
+
+function buildShiftTimeMap(settings: ShiftSetting[]): Map<string, ShiftTimeRange> {
+  const map = new Map<string, ShiftTimeRange>();
+  for (const s of settings) {
+    const range = {
+      start: s.startTime || '',
+      end: s.endTime || ''
+    };
+    if (s.name) map.set(s.name, range);
+    if (s.code) map.set(s.code, range);
+  }
+  return map;
+}
+
+function lookupShiftTimes(ca: string, timeMap: Map<string, ShiftTimeRange>): ShiftTimeRange {
+  const key = String(ca || '').trim();
+  if (!key) return { start: '', end: '' };
+  if (timeMap.has(key)) return timeMap.get(key)!;
+  for (const [name, range] of timeMap.entries()) {
+    if (name.toLowerCase() === key.toLowerCase()) return range;
+    if (key.includes(name) || name.includes(key)) return range;
+  }
+  return { start: '', end: '' };
+}
 
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -251,16 +282,26 @@ const emptyPerson = (vaiTro: string, removable: boolean): PersonForm => ({
   removable
 });
 
-const emptyForm = (): ScheduleForm => ({
-  maMay: '',
-  caLamViecList: [],
-  ngayLamViec: '',
-  ghiChu: '',
-  people: DEFAULT_ROLES.map(role => emptyPerson(role, false))
+const emptyBlock = (
+  overrides: Partial<Omit<ScheduleBlock, 'key' | 'people'>> & { people?: PersonForm[] } = {}
+): ScheduleBlock => ({
+  key: uid(),
+  maMay: overrides.maMay ?? '',
+  caLamViecList: overrides.caLamViecList ? [...overrides.caLamViecList] : [],
+  ngayLamViec: overrides.ngayLamViec ?? '',
+  ghiChu: overrides.ghiChu ?? '',
+  people: overrides.people
+    ? overrides.people.map(p => ({
+        key: uid(),
+        vaiTro: p.vaiTro,
+        maNhanSuList: [...p.maNhanSuList],
+        removable: p.removable
+      }))
+    : DEFAULT_ROLES.map(role => emptyPerson(role, false))
 });
 
 /** Ghép các dòng đã lưu của 1 nhóm vào 4 vai trò mặc định + các dòng bổ sung. */
-function groupToForm(group: SchedGroup): ScheduleForm {
+function groupToBlock(group: SchedGroup): ScheduleBlock {
   // Gom nhân sự theo vai trò
   const byRole = new Map<string, string[]>();
   for (const row of group.rows) {
@@ -292,6 +333,7 @@ function groupToForm(group: SchedGroup): ScheduleForm {
   }
 
   return {
+    key: uid(),
     maMay: group.ma_may,
     caLamViecList: [group.ca_lam_viec],
     ngayLamViec: group.ngay_lam_viec,
@@ -425,11 +467,17 @@ interface MultiShiftSelectProps {
   values: string[];
   onChange: (values: string[]) => void;
   options: ShiftOpt[];
+  /** Tăng giá trị này để mở dropdown từ nút bên ngoài. */
+  openRequest?: number;
 }
 
-function MultiShiftSelect({ values, onChange, options }: MultiShiftSelectProps) {
+function MultiShiftSelect({ values, onChange, options, openRequest = 0 }: MultiShiftSelectProps) {
   const [open, setOpen] = useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (openRequest > 0) setOpen(true);
+  }, [openRequest]);
 
   // Đóng dropdown khi click ngoài
   useEffect(() => {
@@ -534,6 +582,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
   const [machines, setMachines] = useState<MachineOpt[]>([]);
   const [staff, setStaff] = useState<StaffOpt[]>([]);
   const [shiftOptions, setShiftOptions] = useState<ShiftOpt[]>([]);
+  const [shiftTimeMap, setShiftTimeMap] = useState<Map<string, ShiftTimeRange>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -545,7 +594,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
   const [showForm, setShowForm] = useState(false);
   const [editingKey, setEditingKey] = useState('');
-  const [form, setForm] = useState<ScheduleForm>(emptyForm);
+  const [formBlocks, setFormBlocks] = useState<ScheduleBlock[]>(() => [emptyBlock()]);
 
   const [detailGroup, setDetailGroup] = useState<SchedGroup | null>(null);
 
@@ -596,9 +645,11 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         staffRes.json().catch(() => ({})),
         settingRes.json().catch(() => ({}))
       ]);
+      const settings = normalizeShiftSettings(settingData);
       setMachines(normalizeMachines(mayData));
       setStaff(normalizeStaff(staffData));
-      setShiftOptions(getProductionShiftOptions(normalizeShiftSettings(settingData)));
+      setShiftOptions(getProductionShiftOptions(settings));
+      setShiftTimeMap(buildShiftTimeMap(settings));
       setRows(normalizeRows(schedData));
     } catch (err: any) {
       setError(err?.message || 'Không tải được dữ liệu lịch làm việc.');
@@ -648,48 +699,57 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
   );
 
   /**
-   * Ca options cho form:
+   * Ca options cho từng tổ hợp:
    * - Chỉ hiển thị khi đã chọn máy VÀ ngày
-   * - Chỉ hiển thị ca chưa có lịch cho máy+ngày đã chọn
-   * - Khi đang sửa (editingKey): giữ ca hiện tại trong danh sách
+   * - Loại ca đã có lịch + ca đã chọn ở tổ hợp khác cùng máy/ngày
    */
-  const formShiftOptions = useMemo<ShiftOpt[]>(() => {
-    if (!form.maMay || !form.ngayLamViec) return [];
+  const getBlockShiftOptions = useCallback(
+    (block: ScheduleBlock): ShiftOpt[] => {
+      if (!block.maMay || !block.ngayLamViec) return [];
 
-    // Tập ca đã có lịch cho máy+ngày này
-    const taken = new Set<string>();
-    for (const g of groups) {
-      if (g.ma_may === form.maMay && g.ngay_lam_viec === form.ngayLamViec) {
-        // Khi đang sửa: bỏ qua nhóm đang edit để không tự loại ca của nó
-        if (g.key === editingKey) continue;
-        taken.add(g.ca_lam_viec);
+      const taken = new Set<string>();
+      for (const g of groups) {
+        if (g.ma_may === block.maMay && g.ngay_lam_viec === block.ngayLamViec) {
+          if (g.key === editingKey) continue;
+          taken.add(g.ca_lam_viec);
+        }
       }
-    }
+      for (const other of formBlocks) {
+        if (other.key === block.key) continue;
+        if (other.maMay !== block.maMay || other.ngayLamViec !== block.ngayLamViec) continue;
+        for (const ca of other.caLamViecList) taken.add(ca);
+      }
 
-    const seen = new Set<string>();
-    const out: ShiftOpt[] = [];
-    const push = (value: string, label: string) => {
-      if (value && !seen.has(value)) {
-        seen.add(value);
-        out.push({ value, label: label || value });
+      const seen = new Set<string>();
+      const out: ShiftOpt[] = [];
+      const push = (value: string, label: string) => {
+        if (value && !seen.has(value)) {
+          seen.add(value);
+          out.push({ value, label: label || value });
+        }
+      };
+      for (const s of shiftOptions) {
+        if (!taken.has(s.value)) push(s.value, s.label);
       }
-    };
-    // Thêm tất cả ca từ cài đặt, loại bỏ ca đã có lịch
-    for (const s of shiftOptions) {
-      if (!taken.has(s.value)) push(s.value, s.label);
-    }
-    // Đảm bảo ca đang chọn vẫn hiển thị (khi sửa)
-    for (const ca of form.caLamViecList) push(ca, ca);
-    return out;
-  }, [shiftOptions, groups, form.maMay, form.ngayLamViec, form.caLamViecList, editingKey]);
+      for (const ca of block.caLamViecList) push(ca, ca);
+      return out;
+    },
+    [shiftOptions, groups, formBlocks, editingKey]
+  );
 
   const duplicateGroup = useMemo(() => {
-    if (!form.maMay || !form.ngayLamViec || form.caLamViecList.length === 0) return false;
-    return form.caLamViecList.some(ca => {
-      const key = groupKey(form.maMay, form.ngayLamViec, ca);
-      return key !== editingKey && groups.some(g => g.key === key);
+    return formBlocks.some(block => {
+      if (!block.maMay || !block.ngayLamViec || block.caLamViecList.length === 0) return false;
+      return block.caLamViecList.some(ca => {
+        const key = groupKey(block.maMay, block.ngayLamViec, ca);
+        return key !== editingKey && groups.some(g => g.key === key);
+      });
     });
-  }, [form.maMay, form.ngayLamViec, form.caLamViecList, editingKey, groups]);
+  }, [formBlocks, editingKey, groups]);
+
+  const updateBlock = (blockKey: string, patch: Partial<ScheduleBlock>) => {
+    setFormBlocks(prev => prev.map(b => (b.key === blockKey ? { ...b, ...patch } : b)));
+  };
 
   // ── Sửa lịch theo ngày & máy ──────────────────────────────────────────────
   const batchMatchingGroups = useMemo(() => {
@@ -850,12 +910,13 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
       // Lưu từng ca đã chọn
       for (const ca of batchCaList) {
+        const times = resolveTimesForCa(ca);
         const nhanSuList = filledPeople.flatMap(p =>
           p.maNhanSuList.map(code => ({
             vai_tro: p.vaiTro,
             ma_nhan_su: code.trim(),
-            thoi_gian_bat_dau: '',
-            thoi_gian_ket_thuc: '',
+            thoi_gian_bat_dau: times.start,
+            thoi_gian_ket_thuc: times.end,
             removable: p.removable
           }))
         );
@@ -891,11 +952,15 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
+  const resolveTimesForCa = useCallback(
+    (ca: string) => lookupShiftTimes(ca, shiftTimeMap),
+    [shiftTimeMap]
+  );
+
   const openCreate = () => {
     if (!canCreate) return;
     setEditingKey('');
 
-    // Đọc từ bộ nhớ (memory) nếu đã có
     const mem = loadScheduleMemory();
     const hasMem = Boolean(mem && mem.people && mem.people.some(p => p.maNhanSuList.length > 0));
 
@@ -910,40 +975,73 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
     const initCaList = filterShift ? [filterShift] : (mem?.caLamViecList ?? []);
 
-    setForm({
-      ...emptyForm(),
-      maMay: filterMachine || '',
-      caLamViecList: initCaList,
-      ngayLamViec: filterDate || todayISO(),
-      people: initPeople
-    });
+    setFormBlocks([
+      emptyBlock({
+        maMay: filterMachine || '',
+        caLamViecList: initCaList,
+        ngayLamViec: filterDate || todayISO(),
+        people: initPeople
+      })
+    ]);
     setError('');
     setMessage('');
     setShowForm(true);
   };
 
-  // Nạp lại dữ liệu từ bộ nhớ vào form
-  const applyMemoryToForm = () => {
-    const mem = loadScheduleMemory();
-    if (!mem) return;
-    setForm(prev => ({
-      ...prev,
-      caLamViecList: mem.caLamViecList.length > 0 ? mem.caLamViecList : prev.caLamViecList,
-      people: mem.people.map(p => ({
-        key: uid(),
-        vaiTro: p.vaiTro,
-        maNhanSuList: [...p.maNhanSuList],
-        removable: p.removable
-      }))
-    }));
+  const addScheduleBlock = () => {
+    setFormBlocks(prev => {
+      const last = prev[prev.length - 1];
+      const mem = loadScheduleMemory();
+      const peopleFromMem =
+        mem && mem.people.some(p => p.maNhanSuList.length > 0)
+          ? mem.people.map(p => ({
+              key: uid(),
+              vaiTro: p.vaiTro,
+              maNhanSuList: [...p.maNhanSuList],
+              removable: p.removable
+            }))
+          : undefined;
+      return [
+        ...prev,
+        emptyBlock({
+          maMay: last?.maMay || filterMachine || '',
+          ngayLamViec: last?.ngayLamViec || filterDate || todayISO(),
+          people: peopleFromMem
+        })
+      ];
+    });
   };
 
-  // Xóa trắng danh sách nhân sự đang chọn trong form
-  const clearFormPeople = () => {
-    setForm(prev => ({
-      ...prev,
+  const removeScheduleBlock = (blockKey: string) => {
+    setFormBlocks(prev => (prev.length <= 1 ? prev : prev.filter(b => b.key !== blockKey)));
+  };
+
+  // Nạp lại dữ liệu từ bộ nhớ vào tổ hợp
+  const applyMemoryToBlock = (blockKey: string) => {
+    const mem = loadScheduleMemory();
+    if (!mem) return;
+    setFormBlocks(prev =>
+      prev.map(block => {
+        if (block.key !== blockKey) return block;
+        const caList = mem.caLamViecList.length > 0 ? mem.caLamViecList : block.caLamViecList;
+        return {
+          ...block,
+          caLamViecList: caList,
+          people: mem.people.map(p => ({
+            key: uid(),
+            vaiTro: p.vaiTro,
+            maNhanSuList: [...p.maNhanSuList],
+            removable: p.removable
+          }))
+        };
+      })
+    );
+  };
+
+  const clearBlockPeople = (blockKey: string) => {
+    updateBlock(blockKey, {
       people: DEFAULT_ROLES.map(role => emptyPerson(role, false))
-    }));
+    });
   };
 
   // Nạp dữ liệu từ bộ nhớ vào modal sửa theo ngày & máy
@@ -964,7 +1062,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
   const openEdit = (group: SchedGroup) => {
     if (!canEdit) return;
     setEditingKey(group.key);
-    setForm(groupToForm(group));
+    setFormBlocks([groupToBlock(group)]);
     setError('');
     setMessage('');
     setShowForm(true);
@@ -973,58 +1071,96 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
   const closeForm = () => {
     setShowForm(false);
     setEditingKey('');
-    setForm(emptyForm());
+    setFormBlocks([emptyBlock()]);
   };
 
-  const updatePerson = (key: string, patch: Partial<PersonForm>) => {
-    setForm(prev => ({
-      ...prev,
-      people: prev.people.map(p => (p.key === key ? { ...p, ...patch } : p))
-    }));
+  const updatePerson = (blockKey: string, personKey: string, patch: Partial<PersonForm>) => {
+    setFormBlocks(prev =>
+      prev.map(block =>
+        block.key !== blockKey
+          ? block
+          : {
+              ...block,
+              people: block.people.map(p => (p.key === personKey ? { ...p, ...patch } : p))
+            }
+      )
+    );
   };
 
-  const addPerson = () => {
-    setForm(prev => ({ ...prev, people: [...prev.people, emptyPerson('Nhân sự bổ sung', true)] }));
+  const addPerson = (blockKey: string) => {
+    setFormBlocks(prev =>
+      prev.map(block =>
+        block.key !== blockKey
+          ? block
+          : { ...block, people: [...block.people, emptyPerson('Nhân sự bổ sung', true)] }
+      )
+    );
   };
 
-  const removePerson = (key: string) => {
-    setForm(prev => ({ ...prev, people: prev.people.filter(p => !(p.key === key && p.removable)) }));
+  const removePerson = (blockKey: string, personKey: string) => {
+    setFormBlocks(prev =>
+      prev.map(block =>
+        block.key !== blockKey
+          ? block
+          : {
+              ...block,
+              people: block.people.filter(p => !(p.key === personKey && p.removable))
+            }
+      )
+    );
   };
 
   const handleSave = async () => {
-    if (!form.maMay.trim()) return setError('Vui lòng chọn máy.');
-    if (form.caLamViecList.length === 0) return setError('Vui lòng chọn ít nhất 1 ca làm việc.');
-    if (!form.ngayLamViec.trim()) return setError('Vui lòng chọn ngày làm việc.');
+    if (formBlocks.length === 0) return setError('Chưa có tổ hợp ca làm việc.');
 
-    // Flatten tất cả nhân sự đã chọn
-    const filledPeople = form.people.filter(p => p.maNhanSuList.length > 0);
-    if (filledPeople.length === 0) return setError('Vui lòng chọn ít nhất 1 nhân sự.');
+    for (let i = 0; i < formBlocks.length; i++) {
+      const block = formBlocks[i];
+      const label = formBlocks.length > 1 ? `Tổ hợp ${i + 1}: ` : '';
+      if (!block.maMay.trim()) return setError(`${label}Vui lòng chọn máy.`);
+      if (block.caLamViecList.length === 0) return setError(`${label}Vui lòng chọn ít nhất 1 ca làm việc.`);
+      if (!block.ngayLamViec.trim()) return setError(`${label}Vui lòng chọn ngày làm việc.`);
 
-    // Kiểm tra trùng nhân sự trong cùng lịch
-    const allCodes = filledPeople.flatMap(p => p.maNhanSuList);
-    const seenCodes = new Set<string>();
-    for (const code of allCodes) {
-      if (seenCodes.has(code)) {
-        return setError(`Nhân sự ${staffName(code)} bị chọn trùng trong cùng lịch.`);
+      const filledPeople = block.people.filter(p => p.maNhanSuList.length > 0);
+      if (filledPeople.length === 0) return setError(`${label}Vui lòng chọn ít nhất 1 nhân sự.`);
+
+      const allCodes = filledPeople.flatMap(p => p.maNhanSuList);
+      const seenCodes = new Set<string>();
+      for (const code of allCodes) {
+        if (seenCodes.has(code)) {
+          return setError(`${label}Nhân sự ${staffName(code)} bị chọn trùng trong cùng lịch.`);
+        }
+        seenCodes.add(code);
       }
-      seenCodes.add(code);
+
+      for (const ca of block.caLamViecList) {
+        const conflictingGroup = groups.find(
+          group =>
+            group.key !== editingKey &&
+            group.ngay_lam_viec === block.ngayLamViec.trim() &&
+            group.ca_lam_viec === ca &&
+            group.rows.some(row => allCodes.includes(row.ma_nhan_su))
+        );
+        if (conflictingGroup) {
+          const dupCode = allCodes.find(code =>
+            conflictingGroup.rows.some(row => row.ma_nhan_su === code)
+          );
+          return setError(
+            `${label}Ca ${ca}: Nhân sự ${dupCode ? staffName(dupCode) : ''} đã được xếp ở máy ${conflictingGroup.ten_may || conflictingGroup.ma_may} trong cùng ca.`
+          );
+        }
+      }
     }
 
-    // Kiểm tra trùng nhân sự với lịch đã có (theo ca)
-    for (const ca of form.caLamViecList) {
-      const conflictingGroup = groups.find(group =>
-        group.key !== editingKey &&
-        group.ngay_lam_viec === form.ngayLamViec.trim() &&
-        group.ca_lam_viec === ca &&
-        group.rows.some(row => allCodes.includes(row.ma_nhan_su))
-      );
-      if (conflictingGroup) {
-        const dupCode = allCodes.find(code =>
-          conflictingGroup.rows.some(row => row.ma_nhan_su === code)
-        );
-        return setError(
-          `Ca ${ca}: Nhân sự ${dupCode ? staffName(dupCode) : ''} đã được xếp ở máy ${conflictingGroup.ten_may || conflictingGroup.ma_may} trong cùng ca.`
-        );
+    // Trùng ca giữa các tổ hợp trong cùng form
+    const seenCombos = new Set<string>();
+    for (let i = 0; i < formBlocks.length; i++) {
+      const block = formBlocks[i];
+      for (const ca of block.caLamViecList) {
+        const combo = groupKey(block.maMay.trim(), block.ngayLamViec.trim(), ca);
+        if (seenCombos.has(combo)) {
+          return setError(`Tổ hợp ${i + 1}: trùng máy / ngày / ca với tổ hợp khác trong form.`);
+        }
+        seenCombos.add(combo);
       }
     }
 
@@ -1032,38 +1168,51 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     setError('');
     setMessage('');
     try {
-      // Lưu từng ca một
-      for (const ca of form.caLamViecList) {
-        const nhanSuList = filledPeople.flatMap(p =>
-          p.maNhanSuList.map(code => ({
-            vai_tro: p.vaiTro,
-            ma_nhan_su: code.trim(),
-            thoi_gian_bat_dau: '',
-            thoi_gian_ket_thuc: '',
-            removable: p.removable
-          }))
-        );
-        const payload = {
-          ma_may: form.maMay.trim(),
-          may: machineName(form.maMay.trim()),
-          ngay_lam_viec: form.ngayLamViec.trim(),
-          ca_lam_viec: ca,
-          ghi_chu: form.ghiChu.trim(),
-          nhan_su: nhanSuList
-        };
-        const res = await fetch('/api/phan-cong-nhan-su/nhom', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Không lưu được lịch ca ${ca}.`);
+      let lastMemoryCa: string[] = [];
+      let lastMemoryPeople: PersonForm[] = [];
+
+      for (const block of formBlocks) {
+        const filledPeople = block.people.filter(p => p.maNhanSuList.length > 0);
+        for (const ca of block.caLamViecList) {
+          const times = resolveTimesForCa(ca);
+          const nhanSuList = filledPeople.flatMap(p =>
+            p.maNhanSuList.map(code => ({
+              vai_tro: p.vaiTro,
+              ma_nhan_su: code.trim(),
+              thoi_gian_bat_dau: times.start,
+              thoi_gian_ket_thuc: times.end,
+              removable: p.removable
+            }))
+          );
+          const payload = {
+            ma_may: block.maMay.trim(),
+            may: machineName(block.maMay.trim()),
+            ngay_lam_viec: block.ngayLamViec.trim(),
+            ca_lam_viec: ca,
+            ghi_chu: block.ghiChu.trim(),
+            nhan_su: nhanSuList
+          };
+          const res = await fetch('/api/phan-cong-nhan-su/nhom', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || `Không lưu được lịch ca ${ca}.`);
+        }
+        lastMemoryCa = block.caLamViecList;
+        lastMemoryPeople = block.people;
       }
 
-      // Lưu vào memory để lần tạo lịch tiếp theo có thể dùng lại ngay
-      saveScheduleMemory(form.caLamViecList, form.people);
+      saveScheduleMemory(lastMemoryCa, lastMemoryPeople);
 
-      setMessage(editingKey ? 'Đã cập nhật lịch làm việc.' : 'Đã thêm lịch làm việc.');
+      setMessage(
+        editingKey
+          ? 'Đã cập nhật ca làm việc.'
+          : formBlocks.length > 1
+            ? `Đã thêm ${formBlocks.length} tổ hợp ca làm việc.`
+            : 'Đã thêm ca làm việc.'
+      );
       closeForm();
       await loadAll();
     } catch (err: any) {
@@ -1247,10 +1396,10 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   type="button"
                   onClick={openCreate}
                   className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-                  title="Thêm lịch làm việc"
+                  title="Thêm ca làm việc"
                 >
                   <Plus className="h-4 w-4 shrink-0" />
-                  <span className="truncate">Thêm lịch</span>
+                  <span className="truncate">Thêm ca làm việc</span>
                 </button>
               ) : null}
               {canEdit ? (
@@ -1278,7 +1427,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
             <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-12 text-center text-sm font-bold text-zinc-500">
               {filterDate
                 ? `Không có lịch làm việc ngày ${formatDate(filterDate)}.`
-                : 'Chưa có lịch làm việc. Bấm "Thêm lịch làm việc".'}
+                : 'Chưa có lịch làm việc. Bấm "Thêm ca làm việc".'}
             </div>
           ) : (
             filteredGroups.map(group => {
@@ -1383,7 +1532,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
           <div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
-                {editingKey ? 'Sửa lịch làm việc' : 'Thêm lịch làm việc'}
+                {editingKey ? 'Sửa ca làm việc' : 'Thêm ca làm việc'}
               </h3>
               <button
                 type="button"
@@ -1404,129 +1553,183 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                 </p>
               ) : null}
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="space-y-1.5">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                    Máy <span className="text-[#ef1b2d]">*</span>
-                  </span>
-                  <SearchableSelect
-                    value={form.maMay}
-                    onChange={value => setForm(prev => ({
-                      ...prev,
-                      maMay: value,
-                      caLamViecList: [] // reset ca khi đổi máy
-                    }))}
-                    options={machines}
-                    placeholder="Chọn máy..."
-                    getValue={item => (item as MachineOpt).code}
-                    getLabel={item => (item as MachineOpt).name}
-                    getSearchText={item => `${(item as MachineOpt).code} ${(item as MachineOpt).name}`}
-                    maxResults={80}
-                  />
-                </label>
-                <label className="space-y-1.5">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                    Ngày làm việc <span className="text-[#ef1b2d]">*</span>
-                  </span>
-                  <DateInputVi
-                    value={form.ngayLamViec}
-                    onChange={val => setForm(prev => ({
-                      ...prev,
-                      ngayLamViec: val,
-                      caLamViecList: [] // reset ca khi đổi ngày
-                    }))}
-                    disabled={!form.maMay}
-                  />
-                </label>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                  Ca làm việc <span className="text-[#ef1b2d]">*</span>
-                  {(!form.maMay || !form.ngayLamViec) && (
-                    <span className="ml-1 font-normal normal-case text-zinc-400">— hãy chọn máy và ngày trước</span>
-                  )}
-                  {form.maMay && form.ngayLamViec && (
-                    <span className="ml-1 font-normal normal-case text-zinc-400">(chỉ hiển thị ca chưa có lịch)</span>
-                  )}
-                </span>
-                <MultiShiftSelect
-                  values={form.caLamViecList}
-                  onChange={vals => setForm(prev => ({ ...prev, caLamViecList: vals }))}
-                  options={formShiftOptions}
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                  Nhân sự theo vai trò ({form.people.filter(p => p.maNhanSuList.length > 0).length} vai trò có người)
-                </p>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {loadScheduleMemory() && (
-                    <button
-                      type="button"
-                      onClick={applyMemoryToForm}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
-                      title="Nạp lại ca và nhân sự từ bộ nhớ gần nhất"
-                    >
-                      <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                      Tải từ bộ nhớ
-                    </button>
-                  )}
-                  {form.people.some(p => p.maNhanSuList.length > 0) && (
-                    <button
-                      type="button"
-                      onClick={clearFormPeople}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
-                      title="Xóa trắng danh sách nhân sự đang chọn"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      Xóa trắng
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={addPerson}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Thêm vai trò
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {form.people.map(person => (
+              {formBlocks.map((block, blockIndex) => {
+                const blockShiftOptions = getBlockShiftOptions(block);
+                return (
                   <div
-                    key={person.key}
-                    className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 sm:grid-cols-[160px_minmax(0,1fr)_32px]"
+                    key={block.key}
+                    className="space-y-4 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-3 sm:p-4"
                   >
-                    {/* Tên vai trò — luôn cho phép sửa */}
-                    <input
-                      value={person.vaiTro}
-                      onChange={e => updatePerson(person.key, { vaiTro: e.target.value })}
-                      className={`${inputClass} h-9`}
-                      placeholder="Vai trò"
-                    />
-                    {/* Chọn nhiều nhân sự */}
-                    <MultiStaffSelect
-                      values={person.maNhanSuList}
-                      onChange={vals => updatePerson(person.key, { maNhanSuList: vals })}
-                      staff={staff}
-                      staffByCode={staffByCode}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removePerson(person.key)}
-                      disabled={!person.removable}
-                      className="inline-flex h-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-30"
-                      title={person.removable ? 'Xóa dòng' : 'Vai trò mặc định không xóa được'}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-black uppercase tracking-wider text-zinc-700">
+                        Tổ hợp {blockIndex + 1}
+                        {formBlocks.length > 1 ? (
+                          <span className="ml-2 font-semibold normal-case text-zinc-400">
+                            / {formBlocks.length}
+                          </span>
+                        ) : null}
+                      </p>
+                      {formBlocks.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => removeScheduleBlock(block.key)}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50"
+                          title="Xóa tổ hợp này"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Xóa tổ hợp
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="space-y-1.5">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                          Máy <span className="text-[#ef1b2d]">*</span>
+                        </span>
+                        <SearchableSelect
+                          value={block.maMay}
+                          onChange={value => {
+                            updateBlock(block.key, {
+                              maMay: value,
+                              caLamViecList: []
+                            });
+                          }}
+                          options={machines}
+                          placeholder="Chọn máy..."
+                          getValue={item => (item as MachineOpt).code}
+                          getLabel={item => (item as MachineOpt).name}
+                          getSearchText={item => `${(item as MachineOpt).code} ${(item as MachineOpt).name}`}
+                          maxResults={80}
+                        />
+                      </label>
+                      <label className="space-y-1.5">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                          Ngày làm việc <span className="text-[#ef1b2d]">*</span>
+                        </span>
+                        <DateInputVi
+                          value={block.ngayLamViec}
+                          onChange={val => {
+                            updateBlock(block.key, {
+                              ngayLamViec: val,
+                              caLamViecList: []
+                            });
+                          }}
+                          disabled={!block.maMay}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                        Ca làm việc <span className="text-[#ef1b2d]">*</span>
+                        {(!block.maMay || !block.ngayLamViec) && (
+                          <span className="ml-1 font-normal normal-case text-zinc-400">— hãy chọn máy và ngày trước</span>
+                        )}
+                        {block.maMay && block.ngayLamViec && (
+                          <span className="ml-1 font-normal normal-case text-zinc-400">(chỉ hiển thị ca chưa có lịch)</span>
+                        )}
+                      </span>
+                      <MultiShiftSelect
+                        values={block.caLamViecList}
+                        onChange={vals => updateBlock(block.key, { caLamViecList: vals })}
+                        options={blockShiftOptions}
+                      />
+                    </div>
+
+                    <label className="space-y-1.5 block">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                        Ghi chú
+                      </span>
+                      <textarea
+                        value={block.ghiChu}
+                        onChange={e => updateBlock(block.key, { ghiChu: e.target.value })}
+                        rows={2}
+                        placeholder="Ghi chú cho ca / máy này (tuỳ chọn)."
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                      />
+                    </label>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                        Nhân sự theo vai trò ({block.people.filter(p => p.maNhanSuList.length > 0).length} vai trò có người)
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {loadScheduleMemory() && (
+                          <button
+                            type="button"
+                            onClick={() => applyMemoryToBlock(block.key)}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+                            title="Nạp lại ca và nhân sự từ bộ nhớ gần nhất"
+                          >
+                            <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                            Tải từ bộ nhớ
+                          </button>
+                        )}
+                        {block.people.some(p => p.maNhanSuList.length > 0) && (
+                          <button
+                            type="button"
+                            onClick={() => clearBlockPeople(block.key)}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
+                            title="Xóa trắng danh sách nhân sự đang chọn"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            Xóa trắng
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => addPerson(block.key)}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Thêm vai trò
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {block.people.map(person => (
+                        <div
+                          key={person.key}
+                          className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-2.5 sm:grid-cols-[160px_minmax(0,1fr)_32px]"
+                        >
+                          <input
+                            value={person.vaiTro}
+                            onChange={e => updatePerson(block.key, person.key, { vaiTro: e.target.value })}
+                            className={`${inputClass} h-9`}
+                            placeholder="Vai trò"
+                          />
+                          <MultiStaffSelect
+                            values={person.maNhanSuList}
+                            onChange={vals => updatePerson(block.key, person.key, { maNhanSuList: vals })}
+                            staff={staff}
+                            staffByCode={staffByCode}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePerson(block.key, person.key)}
+                            disabled={!person.removable}
+                            className="inline-flex h-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-30"
+                            title={person.removable ? 'Xóa dòng' : 'Vai trò mặc định không xóa được'}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={addScheduleBlock}
+                className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#ef1b2d]/40 bg-red-50/50 px-3 text-xs font-extrabold text-[#ef1b2d] hover:bg-red-50"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm ca làm việc
+              </button>
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
@@ -1544,7 +1747,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                 className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white hover:bg-[#b30d1c] disabled:opacity-60"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {editingKey ? 'Cập nhật' : 'Lưu lịch'}
+                {editingKey ? 'Cập nhật' : 'Lưu ca'}
               </button>
             </div>
           </div>

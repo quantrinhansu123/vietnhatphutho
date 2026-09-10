@@ -36,6 +36,8 @@ export type MixingSalesOrder = {
 export type MixingProductionOrder = {
   id: string;
   orderCode: string;
+  /** Mã đơn hàng (nếu lệnh SX gắn ĐH). */
+  salesOrderCode?: string;
   shift: string;
   machine: string;
   startDate: string;
@@ -369,6 +371,7 @@ export function normalizeMixingProductionOrders(data: unknown): MixingProduction
       return {
         id: String(record.id ?? '').trim() || orderCode,
         orderCode,
+        salesOrderCode: pickText(record, ['ma_don_hang', 'don_hang', 'order_ref', 'orderRef'], ''),
         shift: pickText(record, ['ca', 'shift'], ''),
         machine: pickText(record, ['may', 'ma_may', 'ten_may', 'machine'], ''),
         startDate: pickText(record, ['ngay_gio_bat_dau', 'ngay_bat_dau', 'ngay_san_xuat', 'start_date'], '').slice(

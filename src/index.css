@@ -4437,11 +4437,37 @@ input[type="number"] {
   margin: 0 0 2px;
   font-size: 9.5pt;
   font-weight: 800;
-  text-transform: uppercase;
+  text-transform: none;
   border-bottom: 1px solid #111;
   padding-bottom: 2px;
   break-after: avoid;
   page-break-after: avoid;
+  font-family: "Times New Roman", Times, serif;
+  line-height: 1.25;
+}
+
+.mixing-norm-ratio-print-product-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.mixing-norm-ratio-print-ordinal {
+  font-weight: 900;
+  font-size: 10pt;
+}
+
+.mixing-norm-ratio-print-inline-note {
+  color: #1d4ed8;
+  font-weight: 800;
+  font-size: 9.5pt;
+  text-transform: none;
+}
+
+.mixing-norm-ratio-print-product-code {
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .mixing-norm-ratio-print-product-name {
@@ -4451,23 +4477,26 @@ input[type="number"] {
   font-weight: 700;
   text-transform: none;
   color: #374151;
+  font-family: "Times New Roman", Times, serif;
 }
 
 .mixing-norm-ratio-print-worker-name {
   display: block;
   margin-top: 1px;
   margin-bottom: 1px;
-  font-size: 10.5pt;
-  font-weight: 900;
+  font-size: 9.5pt;
+  font-weight: 800;
   color: #1e3a8a;
   text-transform: none;
   line-height: 1.2;
-  letter-spacing: 0.2px;
+  letter-spacing: 0;
+  font-family: "Times New Roman", Times, serif;
 }
 
 .mixing-norm-ratio-print-tonnage {
   margin: 0 0 2px;
   font-size: 8.5pt;
+  font-family: "Times New Roman", Times, serif;
 }
 
 .mixing-norm-ratio-print-table {
@@ -4477,6 +4506,7 @@ input[type="number"] {
   margin-bottom: 3px;
   break-inside: avoid;
   page-break-inside: avoid;
+  font-family: "Times New Roman", Times, serif;
 }
 
 .mixing-norm-ratio-print-table th,
@@ -4485,6 +4515,8 @@ input[type="number"] {
   padding: 2px 3px;
   font-size: 8.5pt;
   vertical-align: middle;
+  font-family: "Times New Roman", Times, serif;
+  line-height: 1.2;
 }
 
 .mixing-norm-ratio-print-table th {
@@ -4499,8 +4531,9 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-table .col-code {
-  width: 22%;
-  font-family: Consolas, "Courier New", monospace;
+  width: 18%;
+  font-family: "Times New Roman", Times, serif;
+  word-break: break-word;
 }
 
 .mixing-norm-ratio-print-table.is-secondary-only .col-name {
@@ -4576,7 +4609,9 @@ input[type="number"] {
 .mixing-norm-ratio-print-note {
   margin: 3px 0 0;
   font-size: 8.5pt;
-  text-transform: uppercase;
+  text-transform: none;
+  color: #1d4ed8;
+  font-family: "Times New Roman", Times, serif;
 }
 
 .mixing-norm-ratio-print-place {

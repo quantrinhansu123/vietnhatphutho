@@ -54,14 +54,14 @@ test('calcAuxiliaryWeight tinh dung cho TP; PX Song', () => {
   assert.equal(calcAuxiliaryWeight('song', 'Mực In', 'kg', 5), 5);
 });
 
-test('formatMixingNormSlipName ghep PTDM + ngay + ca + lenh san xuat', () => {
+test('formatMixingNormSlipName ghep PTDM + ngay + may + LSX/DH + ty le', () => {
   assert.equal(
-    formatMixingNormSlipName('2026-09-08', 'Ca 1', 'LSX-001'),
-    'PTĐM - 2026-09-08 - Ca 1 - LSX-001'
+    formatMixingNormSlipName('2026-09-08', 'Máy Đặc 1', 'LSX-001/DH-01', [1, 2, 3]),
+    'PTĐM - 2026-09-08 - Máy Đặc 1 - LSX-001/DH-01 - tỷ lệ 1,2,3'
   );
   assert.equal(
-    formatMixingNormSlipName('2026-09-08', 'Ca 2', ''),
-    'PTĐM - 2026-09-08 - Ca 2'
+    formatMixingNormSlipName('2026-09-08', 'Máy 2', 'LSX-002', [1]),
+    'PTĐM - 2026-09-08 - Máy 2 - LSX-002 - tỷ lệ 1'
   );
   assert.equal(
     formatMixingNormSlipName('2026-09-08', '', 'LSX-002'),

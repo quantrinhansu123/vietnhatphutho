@@ -110,6 +110,7 @@ export function ProductionOrderPrintPreviewModal({
   const [isSaving, setIsSaving] = useState(false);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [meta, setMeta] = useState<ProductionOrderPrintMeta>(EMPTY_META);
+  const [orderHeaderNote, setOrderHeaderNote] = useState('');
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
 
@@ -121,6 +122,7 @@ export function ProductionOrderPrintPreviewModal({
     setError('');
     setFormError('');
     setMeta(EMPTY_META);
+    setOrderHeaderNote('');
     setRows([]);
     setEdits({});
 
@@ -138,6 +140,9 @@ export function ProductionOrderPrintPreviewModal({
           dac_ta: previewData.plan?.dac_ta || '',
           lan_ban_hanh: previewData.plan?.lan_ban_hanh || '01'
         });
+        setOrderHeaderNote(
+          String(previewData.plan?.don_hang_ghi_chu || previewData.plan?.lenh_ghi_chu || '').trim()
+        );
         const previewRows: PreviewRow[] = (previewData.rows || [])
           .map((r: any, idx: number) => {
             const rawQuyCach = r.quy_cach_m_dai ?? r.quyCachMDai ?? r.dai_m ?? r.daiM;
@@ -432,10 +437,21 @@ export function ProductionOrderPrintPreviewModal({
                   {meta.dac_ta}
                 </div>
               )}
+              {orderHeaderNote ? (
+                <div className="whitespace-pre-wrap break-words border-b border-gray-300 px-2 py-1 text-[10px]">
+                  <strong>Ghi chú đơn hàng:</strong> {orderHeaderNote}
+                </div>
+              ) : null}
             </div>
 
             {/* Screen wrapper — min-h-full + sm:p-6 làm thừa trang khi in */}
             <div className="production-order-preview-print-body bg-zinc-100 p-4 sm:p-6 print:bg-transparent print:p-0">
+              {orderHeaderNote ? (
+                <div className="production-order-preview-noprint mx-auto mb-3 max-w-[1400px] rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-900">
+                  <span className="font-black uppercase tracking-wide text-sky-700">Ghi chú đơn hàng: </span>
+                  {orderHeaderNote}
+                </div>
+              ) : null}
               <div className="mx-auto max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
                 <div className="overflow-x-auto print:overflow-hidden">
                   <table className="w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">
@@ -512,8 +528,10 @@ export function ProductionOrderPrintPreviewModal({
                                 <input
                                   type="text"
                                   value={edits[editKey]?.ghiChu ?? ''}
+                                  disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { ghiChu: e.target.value })}
-                                  className={CELL_INPUT_CLASS}
+                                  className={`${CELL_INPUT_CLASS} ${!canEdit ? 'bg-zinc-50 text-zinc-600' : ''}`}
+                                  title={canEdit ? 'Quản đốc có thể sửa ghi chú trước khi in' : 'Chỉ xem'}
                                 />
                               </td>
                               <td className={`${bodyCell} text-center text-zinc-700`}>
@@ -532,6 +550,7 @@ export function ProductionOrderPrintPreviewModal({
                                   min="0"
                                   step="any"
                                   value={edits[editKey]?.bac ?? '0'}
+                                  disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { bac: e.target.value })}
                                   className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS}
                                 />
@@ -542,6 +561,7 @@ export function ProductionOrderPrintPreviewModal({
                                   min="0"
                                   step="any"
                                   value={edits[editKey]?.trung ?? '0'}
+                                  disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { trung: e.target.value })}
                                   className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS}
                                 />
@@ -552,6 +572,7 @@ export function ProductionOrderPrintPreviewModal({
                                   min="0"
                                   step="any"
                                   value={edits[editKey]?.nam ?? '0'}
+                                  disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { nam: e.target.value })}
                                   className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS}
                                 />

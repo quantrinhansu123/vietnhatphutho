@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { MixingNormLine, MixingNormProduct, MixingNormRow } from './MixingNormMaterialsTab';
-import { formatMixingNormSlipName } from '../utils/mixingNormAuxiliary';
+import { formatMixingNormSlipName, isMixingNormStdLabel, stripMixingNormStdPrefix } from '../utils/mixingNormAuxiliary';
 
 export type MixingNormRatioPrintDoc = {
   tenPhieu?: string;
@@ -76,7 +76,7 @@ function resolveLinePercentAndKg(
   return { percent, kg: formatNumberVi(kg) };
 }
 
-/** Cối trộn tiêu chuẩn: quy đổi 1 dòng NVL về %Cối trộn, KL/cối và Tổng trọng lượng cả SP. */
+/** Cối trộn mẫu tiêu chuẩn: quy đổi 1 dòng NVL về %Cối trộn, KL/cối và Tổng trọng lượng cả SP. */
 function resolveStandardBatchRow(line: MixingNormLine, product: MixingNormProduct) {
   const batch = product.dinh_luong_coi ?? null;
   const tong = product.tong_trong_luong ?? null;
@@ -228,20 +228,31 @@ function NormPrintProductSection({
       ? ((product.nvl_phu?.length ?? 0) > 0 ? product.nvl_phu! : (product.chi_tiet ?? []))
       : [];
   const showBatchMeta = mode === 'primary';
-  const showNote = Boolean(product.ghi_chu) && (mode === 'primary' || product.loai === 'nvl_phu');
+  const noteText = stripMixingNormStdPrefix(product.ghi_chu);
+  const workerLabel = stripMixingNormStdPrefix(product.ten_sp);
+  const showWorker =
+    Boolean(workerLabel) && !isMixingNormStdLabel(product.ten_sp) && workerLabel !== noteText;
 
   return (
     <section className={`mixing-norm-ratio-print-block ${isActual ? 'is-actual' : ''}`}>
       <h2 className="mixing-norm-ratio-print-product">
-        <span>{index + 1}. {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}</span>
+        <span className="mixing-norm-ratio-print-product-title">
+          <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
+          {noteText ? (
+            <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
+          ) : null}
+          <span className="mixing-norm-ratio-print-product-code">
+            {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
+          </span>
+        </span>
         {product.print_name ? (
           <span className="mixing-norm-ratio-print-product-name">
             ({product.print_name})
           </span>
         ) : null}
-        {product.ten_sp ? (
+        {showWorker ? (
           <span className="mixing-norm-ratio-print-worker-name">
-            {formatWorkerName(product.ten_sp)}
+            {formatWorkerName(workerLabel)}
           </span>
         ) : null}
       </h2>
@@ -252,13 +263,7 @@ function NormPrintProductSection({
       ) : null}
       {showBatchMeta && product.dinh_luong_coi ? (
         <p className="mixing-norm-ratio-print-tonnage">
-          Cối trộn tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
-          {product.so_lan_tron ? (
-            <>
-              <span className="mixing-norm-ratio-print-meta-sep">·</span>
-              Số cối cần trộn: <strong>{product.so_lan_tron}</strong>
-            </>
-          ) : null}
+          Cối trộn mẫu tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
         </p>
       ) : null}
 
@@ -269,7 +274,7 @@ function NormPrintProductSection({
               <th className="col-stt">STT</th>
               <th className="col-code">Mã NVL</th>
               <th className="col-name">Tên NVL</th>
-              <th className="col-kg">Giá trị (kg/cối)</th>
+              <th className="col-kg">Giá trị (kg/cối trộn mẫu)</th>
               <th className="col-kg">Tổng trọng lượng</th>
             </tr>
           </thead>
@@ -368,12 +373,6 @@ function NormPrintProductSection({
       {mode === 'secondary' && secondaryLines.length === 0 ? (
         <p className="mixing-norm-ratio-print-empty">Chưa có dòng NVL phụ</p>
       ) : null}
-
-      {showNote ? (
-        <p className="mixing-norm-ratio-print-note">
-          <strong>Ghi chú:</strong> {product.ghi_chu}
-        </p>
-      ) : null}
     </section>
   );
 }
@@ -420,7 +419,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
           </p>
         ) : null}
 
-        {formulaProducts.length === 0 && secondaryProducts.length === 0 ? (
+        {formulaProducts.length === 0 && (doc.isActual ? secondaryProducts.length === 0 : true) ? (
           <p className="mixing-norm-ratio-print-empty">Chưa có sản phẩm định mức cho lệnh này.</p>
         ) : doc.isActual ? (
           <>
@@ -431,21 +430,33 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               const tong = product.tong_trong_luong;
               const displayLines = product.chi_tiet;
               const roundWeights = buildMixingRoundWeights(product, doc.isActual);
+              const noteText = stripMixingNormStdPrefix(product.ghi_chu);
+              const workerLabel = stripMixingNormStdPrefix(product.ten_sp);
+              const showWorker =
+                Boolean(workerLabel) && !isMixingNormStdLabel(product.ten_sp) && workerLabel !== noteText;
               return (
                 <section
                   key={`actual-${product.ma_sp}-${index}`}
                   className="mixing-norm-ratio-print-block is-actual"
                 >
                   <h2 className="mixing-norm-ratio-print-product">
-                    <span>{index + 1}. {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}</span>
+                    <span className="mixing-norm-ratio-print-product-title">
+                      <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
+                      {noteText ? (
+                        <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
+                      ) : null}
+                      <span className="mixing-norm-ratio-print-product-code">
+                        {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
+                      </span>
+                    </span>
                     {product.print_name ? (
                       <span className="mixing-norm-ratio-print-product-name">
                         ({product.print_name})
                       </span>
                     ) : null}
-                    {product.ten_sp ? (
+                    {showWorker ? (
                       <span className="mixing-norm-ratio-print-worker-name">
-                        {formatWorkerName(product.ten_sp)}
+                        {formatWorkerName(workerLabel)}
                       </span>
                     ) : null}
                   </h2>
@@ -456,7 +467,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   ) : null}
                   {product.dinh_luong_coi ? (
                     <p className="mixing-norm-ratio-print-tonnage">
-                      Cối trộn tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
+                      Cối trộn mẫu tiêu chuẩn: <strong>{formatNumberVi(product.dinh_luong_coi)} kg</strong>
                     </p>
                   ) : null}
 
@@ -558,11 +569,6 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   </table>
                   )}
 
-                  {product.ghi_chu ? (
-                    <p className="mixing-norm-ratio-print-note">
-                      <strong>Ghi chú:</strong> {product.ghi_chu}
-                    </p>
-                  ) : null}
                 </section>
               );
             })}
@@ -584,9 +590,6 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
           </>
         ) : (
           <>
-            {formulaProducts.length > 0 && secondaryProducts.length > 0 ? (
-              <h2 className="mixing-norm-ratio-print-group-title">Nguyên liệu chính</h2>
-            ) : null}
             {formulaProducts.map((product, index) => (
               <NormPrintProductSection
                 key={`primary-${product.ma_sp}-${index}`}
@@ -595,19 +598,6 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                 mode="primary"
               />
             ))}
-            {secondaryProducts.length > 0 ? (
-              <>
-                <h2 className="mixing-norm-ratio-print-group-title">Nguyên liệu phụ</h2>
-                {secondaryProducts.map((product, index) => (
-                  <NormPrintProductSection
-                    key={`secondary-${product.ma_sp}-${index}`}
-                    product={product}
-                    index={index}
-                    mode="secondary"
-                  />
-                ))}
-              </>
-            ) : null}
           </>
         )}
 

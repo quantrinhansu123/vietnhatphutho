@@ -1,5 +1,9 @@
 import React from 'react';
 import { X, Loader2 } from 'lucide-react';
+import { TimePicker24h } from '../../components/shared/TimePicker24h';
+
+/** Giá trị đặc biệt cho máy chuyển đến = Việc khác */
+export const MAY_VIEC_KHAC = 'Việc khác';
 
 export type SelectedDispatchItem = {
   key: string;
@@ -15,6 +19,8 @@ export type SelectedDispatchItem = {
   mayDieuDong: string;
   thoiGianBatDau: string;
   thoiGianKetThuc: string;
+  /** Bắt buộc khi đổi ca — ghi chú tại máy chuyển đến (giống thêm ghi chú NS). */
+  ghiChu: string;
 };
 
 interface Props {
@@ -33,6 +39,10 @@ interface Props {
 const cellInput =
   'w-full rounded border border-zinc-300 px-2 py-1 text-xs focus:border-[#ef1b2d] focus:outline-none';
 
+function shiftsDiffer(caGoc: string, caDieuDong: string) {
+  return String(caGoc || '').trim().toUpperCase() !== String(caDieuDong || '').trim().toUpperCase();
+}
+
 export function DispatchFormInline({
   selectedList,
   machineNames,
@@ -46,6 +56,12 @@ export function DispatchFormInline({
   staffMap
 }: Props) {
   if (selectedList.length === 0) return null;
+
+  const destinationMachines = React.useMemo(() => {
+    const names = machineNames.filter(Boolean);
+    if (!names.includes(MAY_VIEC_KHAC)) return [...names, MAY_VIEC_KHAC];
+    return names;
+  }, [machineNames]);
 
   return (
     <div id="dispatch-inline-form" className="rounded-lg border border-amber-200 bg-amber-50 p-4 md:p-6">
@@ -72,12 +88,14 @@ export function DispatchFormInline({
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Máy chuyển đến *</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Bắt đầu *</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Kết thúc</th>
+              <th className="px-3 py-2 text-left font-medium text-zinc-700">Ghi chú máy đến</th>
               <th className="w-8 px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {selectedList.map(item => {
               const personName = staffMap.get(item.person.ma_nhan_su) || item.tenNhanSu || item.person.ma_nhan_su || '-';
+              const needNote = shiftsDiffer(item.caGoc, item.caDieuDong);
               return (
                 <tr key={item.key} className="border-b border-amber-100 transition-colors hover:bg-white">
                   <td className="px-3 py-2 font-medium text-zinc-900">{personName}</td>
@@ -106,28 +124,39 @@ export function DispatchFormInline({
                       className={cellInput}
                     >
                       <option value="">-- Chọn máy --</option>
-                      {item.mayDieuDong && !machineNames.includes(item.mayDieuDong) && (
-                        <option value={item.mayDieuDong}>{item.mayDieuDong}</option>
-                      )}
-                      {machineNames.map(m => (
+                      {item.mayDieuDong &&
+                        item.mayDieuDong !== MAY_VIEC_KHAC &&
+                        !destinationMachines.includes(item.mayDieuDong) && (
+                          <option value={item.mayDieuDong}>{item.mayDieuDong}</option>
+                        )}
+                      {destinationMachines.map(m => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="time"
+                    <TimePicker24h
                       value={item.thoiGianBatDau}
-                      onChange={e => onUpdatePerson(item.key, { thoiGianBatDau: e.target.value })}
+                      onChange={v => onUpdatePerson(item.key, { thoiGianBatDau: v })}
                       className={cellInput}
+                      aria-label="Giờ bắt đầu"
                     />
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="time"
+                    <TimePicker24h
                       value={item.thoiGianKetThuc}
-                      onChange={e => onUpdatePerson(item.key, { thoiGianKetThuc: e.target.value })}
+                      onChange={v => onUpdatePerson(item.key, { thoiGianKetThuc: v })}
                       className={cellInput}
+                      aria-label="Giờ kết thúc"
+                    />
+                  </td>
+                  <td className="px-3 py-2 min-w-[160px]">
+                    <input
+                      type="text"
+                      value={item.ghiChu}
+                      onChange={e => onUpdatePerson(item.key, { ghiChu: e.target.value })}
+                      placeholder={needNote ? 'Bắt buộc khi đổi ca *' : 'Tuỳ chọn'}
+                      className={`${cellInput} ${needNote && !item.ghiChu.trim() ? 'border-rose-300 bg-rose-50' : ''}`}
                     />
                   </td>
                   <td className="px-3 py-2 text-center">
@@ -144,6 +173,10 @@ export function DispatchFormInline({
           </tbody>
         </table>
       </div>
+
+      <p className="mb-3 text-[11px] text-zinc-600">
+        Đổi ca → bắt buộc ghi chú tại máy chuyển đến (hiển thị giống thêm ghi chú NS trên lịch in). Máy chuyển đến có thêm lựa chọn «Việc khác».
+      </p>
 
       <div className="flex items-center justify-end gap-2 border-t border-amber-200 pt-4">
         <button
