@@ -11065,6 +11065,14 @@ export function createApp() {
         const maMay = getMachineCode(note.ma_may);
         if (maMay) activeMachineCodes.add(maMay);
       }
+      // Máy đích điều động cũng hiện trên lưới (kể cả chưa có phân công riêng)
+      for (const dd of dieuDongList) {
+        const rawDest = String((dd as any).may_dieu_dong || '').trim();
+        if (!rawDest || rawDest === 'Việc khác') continue;
+        const dest = mayList.find((m: any) => m.ma_may === rawDest || m.ten_may === rawDest);
+        const code = getMachineCode(dest?.ma_may || rawDest);
+        if (code) activeMachineCodes.add(code);
+      }
       const mayListHienThi = mayList.filter(may => activeMachineCodes.has(getMachineCode(may.ma_may)));
 
       // Apply shift filter precedence: 'Thời gian' first, then 'Sản xuất', then regex match on name/code
@@ -11166,30 +11174,50 @@ export function createApp() {
 
             // Filter dispatches that apply to this specific machine (may_goc)
             const dispatchesForThisMachine = dispatchesForEmployee.filter(dd =>
-              dd.may_goc === machineName
+              dd.may_goc === machineName || dd.may_goc === phanCong.ma_may
             );
+
+            const resolveDestMachineName = (dd: any) => {
+              const raw = String(dd.may_dieu_dong || '').trim();
+              if (!raw) return '';
+              if (raw === 'Việc khác') return 'Việc khác';
+              const found = mayList.find(m => m.ma_may === raw || m.ten_may === raw);
+              return found?.ten_may || raw;
+            };
+
+            const shiftsMatch = (a: string, b: string) => {
+              const na = String(a || '').trim().toUpperCase();
+              const nb = String(b || '').trim().toUpperCase();
+              if (!na || !nb) return false;
+              if (na === nb) return true;
+              for (const shift of sortedCaList) {
+                const aliases = [shift.ten_cai_dat, shift.ma_cai_dat]
+                  .map((v: unknown) => String(v || '').trim().toUpperCase())
+                  .filter(Boolean);
+                if (aliases.includes(na) && aliases.includes(nb)) return true;
+              }
+              return false;
+            };
             
             if (dispatchesForThisMachine.length > 0) {
               // Note điều động ghi vào Ô CA CHÍNH của nhân sự (trong ngoặc, cạnh tên):
-              //  5. Cùng máy + cùng ca  → "{tên} đi làm lúc hh:mm - hh:mm"
-              //  6. Sang máy khác        → "{tên} đi làm lúc hh:mm {tên máy được chuyển đến}"
+              //  5. Cùng máy + cùng ca  → "{tên} làm lúc hh:mm - hh:mm"
+              //  6. Sang máy khác        → "{tên} làm lúc hh:mm {tên máy được chuyển đến}"
               //  7. Cùng máy + khác ca   → "{tên} được chuyển đến ca {tên ca} từ hh:mm - hh:mm"
               const dispatchNotes = dispatchesForThisMachine.map(dd => {
-                const toMachine = mayList.find(
-                  m => m.ma_may === dd.may_dieu_dong || m.ten_may === dd.may_dieu_dong
-                );
-                const toMachineName = toMachine?.ten_may || dd.may_dieu_dong || '';
+                const toMachineName = resolveDestMachineName(dd);
                 const dispatchStart = String(dd.thoi_gian_bat_dau || '').slice(0, 5);
                 const dispatchEnd = String(dd.thoi_gian_ket_thuc || '').slice(0, 5);
-                const toCa = String(dd.ca_dieu_dong || '').trim();
+                const toCa = String(dd.ca_dieu_dong || dd.ca || '').trim();
                 const homeCa = String(phanCong.ca_lam_viec || '').trim();
                 const sameMachine = !toMachineName || toMachineName === machineName;
-                const sameCa = !toCa || toCa === homeCa;
+                const sameCa = !toCa || shiftsMatch(toCa, homeCa);
                 if (!sameMachine) {
-                  return `(${lastName} đi làm lúc ${dispatchStart} ${toMachineName})`;
+                  // Chuyển máy mới → ghi nhận Máy + giờ
+                  return `(${lastName} làm lúc ${dispatchStart} ${toMachineName})`;
                 }
                 if (sameCa) {
-                  return `(${lastName} đi làm lúc ${dispatchStart}${dispatchEnd ? ` - ${dispatchEnd}` : ''})`;
+                  return `(${lastName} làm lúc ${dispatchStart}${dispatchEnd ? ` - ${dispatchEnd}` : ''})`;
                 }
                 return `(${lastName} được chuyển đến ca ${toCa} từ ${dispatchStart}${dispatchEnd ? ` - ${dispatchEnd}` : ''})`;
               });
@@ -11205,6 +11233,62 @@ export function createApp() {
               });
             }
           }
+        }
+
+        // Người được điều động ĐẾN ca/máy này (kể cả cùng máy khác ca) — hiện ở ô đích
+        const shiftsMatchDest = (a: string, b: string) => {
+          const na = String(a || '').trim().toUpperCase();
+          const nb = String(b || '').trim().toUpperCase();
+          if (!na || !nb) return false;
+          if (na === nb) return true;
+          for (const shift of sortedCaList) {
+            const aliases = [shift.ten_cai_dat, shift.ma_cai_dat]
+              .map((v: unknown) => String(v || '').trim().toUpperCase())
+              .filter(Boolean);
+            if (aliases.includes(na) && aliases.includes(nb)) return true;
+          }
+          return false;
+        };
+
+        for (const dd of dieuDongList) {
+          const toCa = String(dd.ca_dieu_dong || '').trim();
+          const matchesDestCa =
+            !!toCa &&
+            (shiftsMatchDest(toCa, tenCa) || shiftsMatchDest(toCa, String(ca.ma_cai_dat || '')));
+          if (!matchesDestCa) continue;
+          // Chỉ hiện ở ô ca đích khi ca đích khác ca gốc (tránh trùng với ô gốc cùng ca)
+          const homeCa = String(dd.ca || '').trim();
+          if (shiftsMatchDest(toCa, homeCa)) continue;
+
+          const rawDest = String(dd.may_dieu_dong || '').trim();
+          if (!rawDest || rawDest === 'Việc khác') continue;
+          const destMachine = mayList.find(m => m.ma_may === rawDest || m.ten_may === rawDest);
+          const destMachineName = destMachine?.ten_may || rawDest;
+          if (!machineData[destMachineName]) continue;
+          if (!machineData[destMachineName][tenCa]) {
+            machineData[destMachineName][tenCa] = [];
+          }
+
+          const fullName = nhanSuMap.get(dd.ma_nhan_su) || dd.ma_nhan_su;
+          const lastName = extractLastName(String(fullName || ''));
+          const dispatchStart = String(dd.thoi_gian_bat_dau || '').slice(0, 5);
+          const fromMachine = String(dd.may_goc || '').trim();
+          const alreadyListed = machineData[destMachineName][tenCa].some(
+            p => p.name === lastName && String(p.dispatch || '').includes(lastName)
+          );
+          if (alreadyListed) continue;
+
+          const homeMachine = mayList.find(m => m.ma_may === fromMachine || m.ten_may === fromMachine);
+          const homeMachineName = homeMachine?.ten_may || fromMachine;
+          const sameMachine = homeMachineName === destMachineName;
+          const arrivalNote = sameMachine
+            ? `(${lastName} làm lúc ${dispatchStart}${dd.thoi_gian_ket_thuc ? ` - ${String(dd.thoi_gian_ket_thuc).slice(0, 5)}` : ''} — từ ca ${homeCa || '—'})`
+            : `(${lastName} làm lúc ${dispatchStart} từ ${homeMachineName || 'máy khác'})`;
+
+          machineData[destMachineName][tenCa].push({
+            name: lastName,
+            dispatch: arrivalNote
+          });
         }
 
         return {
@@ -13772,14 +13856,14 @@ export function createApp() {
 
       let { data: order, error } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-        .select('id, ma_so, ngay_lien_lac, dac_ta, lan_ban_hanh, san_pham, ma_don_hang, ma_hang, ten_hang, ten_san_xuat, don_vi, so_luong')
+        .select('id, ma_so, ngay_lien_lac, dac_ta, lan_ban_hanh, ghi_chu, san_pham, ma_don_hang, ma_hang, ten_hang, ten_san_xuat, don_vi, so_luong')
         .eq('id', id)
         .maybeSingle();
 
       if (error && isMissingColumnError(error)) {
         ({ data: order, error } = await supabase
           .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-          .select('id, san_pham, ma_don_hang, ma_hang, ten_hang, don_vi, so_luong')
+          .select('id, san_pham, ma_don_hang, ma_hang, ten_hang, don_vi, so_luong, ghi_chu')
           .eq('id', id)
           .maybeSingle());
       }
@@ -13823,17 +13907,49 @@ export function createApp() {
       });
 
       const khuVucByMaDonHang = new Map<string, string>();
+      const orderHeaderNoteByCode = new Map<string, string>();
+      const orderLineNotesByCode = new Map<string, Array<Record<string, unknown>>>();
       if (maDonHangSet.size > 0) {
         const { data: orders } = await supabase
           .from(SUPABASE_ORDERS_TABLE)
-          .select('ma_don_hang, khu_vuc')
+          .select('ma_don_hang, khu_vuc, ghi_chu, san_pham')
           .in('ma_don_hang', Array.from(maDonHangSet));
         (orders || []).forEach(row => {
-          const code = String((row as Record<string, unknown>).ma_don_hang ?? '').trim();
-          const khuVuc = String((row as Record<string, unknown>).khu_vuc ?? '').trim();
-          if (code && khuVuc) khuVucByMaDonHang.set(code, khuVuc);
+          const rec = row as Record<string, unknown>;
+          const code = String(rec.ma_don_hang ?? '').trim();
+          if (!code) return;
+          const khuVuc = String(rec.khu_vuc ?? '').trim();
+          if (khuVuc) khuVucByMaDonHang.set(code, khuVuc);
+          const headerNote = String(rec.ghi_chu ?? '').trim();
+          if (headerNote) orderHeaderNoteByCode.set(code, headerNote);
+          const lines = Array.isArray(rec.san_pham) ? (rec.san_pham as Record<string, unknown>[]) : [];
+          orderLineNotesByCode.set(code, lines);
         });
       }
+
+      const resolveOrderLineNote = (item: any, maDonHang: string): string => {
+        if (!maDonHang) return '';
+        const lines = orderLineNotesByCode.get(maDonHang) || [];
+        if (lines.length === 0) return '';
+        const spId = String(item?.san_pham_id ?? '').trim();
+        const maSp = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim().toLowerCase();
+        const stt = String(item?.stt ?? '').trim();
+        const tenSx = String(item?.ten_san_xuat ?? item?.productionName ?? '').trim().toLowerCase();
+
+        const matched =
+          (spId && lines.find(line => String(line.san_pham_id ?? '').trim() === spId)) ||
+          (stt && lines.find(line => String(line.stt ?? '').trim() === stt && String(line.ma_sp ?? '').trim().toLowerCase() === maSp)) ||
+          (maSp &&
+            lines.find(line => {
+              const lineCode = String(line.ma_sp ?? line.ma_hang ?? '').trim().toLowerCase();
+              if (lineCode !== maSp) return false;
+              if (!tenSx) return true;
+              const lineTen = String(line.ten_san_xuat ?? line.ten_sp ?? '').trim().toLowerCase();
+              return !lineTen || lineTen === tenSx;
+            }));
+
+        return String(matched?.ghi_chu ?? matched?.note ?? '').trim();
+      };
 
       const defaultKhuVuc = orderLevelMaDonHang
         ? khuVucByMaDonHang.get(orderLevelMaDonHang.split(',')[0].trim()) || ''
@@ -13911,9 +14027,11 @@ export function createApp() {
         const quyCachMDaiNum = extractLenhSxItemQuyCachMDai(item);
         const groupKey = getLenhSxItemGroupKey(item, spId);
         const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
-        const maDonHang = String(item?.ma_don_hang ?? '').trim();
+        const maDonHang = String(item?.ma_don_hang ?? '').trim() || orderLevelMaDonHang.split(',')[0]?.trim() || '';
         const khuVuc = khuVucByMaDonHang.get(maDonHang) || defaultKhuVuc;
-        const note = String(item?.ghi_chu ?? '').trim();
+        const noteFromLenh = String(item?.ghi_chu ?? '').trim();
+        const noteFromDonHang = resolveOrderLineNote(item, maDonHang);
+        const note = noteFromLenh || noteFromDonHang;
 
         const savedSlSx =
           item?.sl_sx && typeof item.sl_sx === 'object' ? (item.sl_sx as Record<string, unknown>) : null;
@@ -14006,13 +14124,20 @@ export function createApp() {
         };
       });
 
+      const donHangGhiChu = Array.from(orderHeaderNoteByCode.entries())
+        .map(([code, note]) => (maDonHangSet.size > 1 ? `${code}: ${note}` : note))
+        .filter(Boolean)
+        .join(' | ');
+
       return res.json({
         plan: {
           id: orderRecord.id,
           ma_so: (orderRecord.ma_so as string) || '',
           ngay_lien_lac: (orderRecord.ngay_lien_lac as string) || '',
           dac_ta: (orderRecord.dac_ta as string) || '',
-          lan_ban_hanh: (orderRecord.lan_ban_hanh as string) || '01'
+          lan_ban_hanh: (orderRecord.lan_ban_hanh as string) || '01',
+          don_hang_ghi_chu: donHangGhiChu,
+          lenh_ghi_chu: String(orderRecord.ghi_chu ?? '').trim()
         },
         rows
       });

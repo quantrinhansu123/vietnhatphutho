@@ -22,6 +22,9 @@ import { CAMERA_IMAGE_INPUT_PROPS, compressImageDataUrl } from '../utils/cameraC
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../lib/appToast';
 import { isRecyclingMachine } from '../utils/machineKind';
 import { getProductionShiftOptions, normalizeShiftSettings, type ShiftSetting } from '../utils/shiftSettings';
+import { parseOrderProductsFromRecord } from '../features/_shared/orderRecordHelpers';
+import { listUnproducedProducts } from '../utils/productionProgressByProduct';
+import { parseProductionOrderFilterDate } from '../features/cai-dat-thoi-gian';
 
 const productLineGridClass =
   'grid-cols-1 sm:grid-cols-[2.25rem_minmax(0,1.1fr)_minmax(0,1.3fr)_4rem_6rem_2.5rem]';
@@ -226,22 +229,37 @@ function normalizeProductionOrders(data: unknown): ProductionOrderOption[] {
   const rows = (data as { productionOrders?: unknown }).productionOrders;
   if (!Array.isArray(rows)) return [];
 
-  return rows
-    .map((item): ProductionOrderOption | null => {
-      if (!item || typeof item !== 'object') return null;
-      const record = item as Record<string, unknown>;
-      const shift = String(record.ca ?? record.shift ?? '').trim();
-      const machine = String(record.may ?? record.ma_may ?? record.ten_may ?? '').trim();
-      const productCode = String(record.ma_hang ?? record.ma_sp ?? '').trim();
-      const productName = String(record.ten_hang ?? record.san_pham ?? record.ten_sp ?? '').trim();
-      const unit = String(record.don_vi ?? record.unit ?? '').trim();
-      const startDate = extractIsoDate(
-        String(record.ngay_gio_bat_dau ?? record.ngay_bat_dau ?? record.start_date ?? '')
-      );
-      if (!shift && !machine && !productName && !startDate) return null;
-      return { shift, machine, productCode, productName, unit, startDate };
-    })
-    .filter((row): row is ProductionOrderOption => Boolean(row));
+  const options: ProductionOrderOption[] = [];
+
+  rows.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const record = item as Record<string, unknown>;
+    const shift = String(record.ca ?? record.shift ?? '').trim();
+    const machine = String(record.may ?? record.ma_may ?? record.ten_may ?? '').trim();
+    const startDate = extractIsoDate(
+      String(record.ngay_gio_bat_dau ?? record.ngay_bat_dau ?? record.start_date ?? '')
+    );
+    const products = parseOrderProductsFromRecord(record);
+
+    if (products.length > 0) {
+      products.forEach(product => {
+        const productCode = String(product.productCode || '').trim();
+        const productName = String(product.productName || product.productionName || '').trim();
+        const unit = String(product.unit || '').trim();
+        if (!shift && !machine && !productName && !productCode && !startDate) return;
+        options.push({ shift, machine, productCode, productName, unit, startDate });
+      });
+      return;
+    }
+
+    const productCode = String(record.ma_hang ?? record.ma_sp ?? '').trim();
+    const productName = String(record.ten_hang ?? record.san_pham ?? record.ten_sp ?? '').trim();
+    const unit = String(record.don_vi ?? record.unit ?? '').trim();
+    if (!shift && !machine && !productName && !startDate) return;
+    options.push({ shift, machine, productCode, productName, unit, startDate });
+  });
+
+  return options;
 }
 
 function normalizeMachines(data: unknown): MachineOption[] {
@@ -356,6 +374,9 @@ export default function AcceptanceReportForm({
   const [scannerMode, setScannerMode] = useState<'hardware' | 'camera'>('hardware');
   const [highlightLineId, setHighlightLineId] = useState('');
   const [viewingImage, setViewingImage] = useState<WeighingPreviewImage | null>(null);
+  const [pendingProductsAfterSave, setPendingProductsAfterSave] = useState<
+    Array<{ productCode: string; productName: string; unit: string }>
+  >([]);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -414,6 +435,7 @@ export default function AcceptanceReportForm({
     setEditingId(null);
     setError('');
     setMessage('');
+    setPendingProductsAfterSave([]);
     onCreatePrefillConsumed?.();
   }, [createPrefill, onCreatePrefillConsumed]);
 
@@ -857,6 +879,15 @@ export default function AcceptanceReportForm({
     setIsSaving(true);
     setError('');
     setMessage('');
+    setPendingProductsAfterSave([]);
+
+    const savedBucket = {
+      ngay: form.ngay.trim(),
+      ca: form.ca.trim(),
+      maMay: form.ma_may.trim(),
+      tenMay: form.ten_may.trim(),
+      machine: form.ten_may.trim() || form.ma_may.trim()
+    };
 
     try {
       const resolvedImage = await resolveImageForSave();
@@ -876,6 +907,7 @@ export default function AcceptanceReportForm({
         hinh_anh_public_id: resolvedImage.hinh_anh_public_id
       };
 
+      let okMsg = '';
       if (editingId) {
         const line = validLines[0];
         const res = await fetch(`/api/bao-cao-nghiem-thu/${editingId}`, {
@@ -890,9 +922,7 @@ export default function AcceptanceReportForm({
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không thể lưu báo cáo sản lượng.'));
-        const okMsg = 'Đã cập nhật báo cáo sản lượng.';
-        setMessage(okMsg);
-        showAppToast(okMsg);
+        okMsg = 'Đã cập nhật báo cáo sản lượng.';
       } else {
         let savedCount = 0;
         for (const line of validLines) {
@@ -910,13 +940,61 @@ export default function AcceptanceReportForm({
           if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không thể lưu báo cáo sản lượng.'));
           savedCount += 1;
         }
-        const okMsg =
+        okMsg =
           savedCount > 1 ? `Đã lưu ${savedCount} dòng sản lượng với ảnh chung.` : 'Đã lưu báo cáo sản lượng.';
-        setMessage(okMsg);
-        showAppToast(okMsg);
+      }
+
+      let pending: Array<{ productCode: string; productName: string; unit: string }> = [];
+      try {
+        const day = parseProductionOrderFilterDate(savedBucket.ngay) || savedBucket.ngay;
+        const reportRes = await fetch(`/api/bao-cao-nghiem-thu?ngay=${encodeURIComponent(day)}`);
+        const reportData = await reportRes.json().catch(() => ({}));
+        const reportRows =
+          reportRes.ok && Array.isArray((reportData as { reports?: unknown }).reports)
+            ? ((reportData as { reports: Record<string, unknown>[] }).reports).map(normalizeReportFromApi)
+            : [];
+
+        const planned = ordersForSelectedDay
+          .filter(
+            order =>
+              shiftMatches(order.shift, savedBucket.ca) &&
+              machineMatches(
+                order.machine,
+                savedBucket.maMay,
+                savedBucket.tenMay,
+                savedBucket.machine
+              )
+          )
+          .map(order => ({
+            productCode: productCodeFromOrder(order),
+            productName: order.productName,
+            unit: order.unit
+          }))
+          .filter(item => item.productCode && item.productCode !== '-');
+
+        pending = listUnproducedProducts({
+          planned,
+          reports: reportRows,
+          bucket: {
+            ngay: day,
+            ca: savedBucket.ca,
+            maMay: savedBucket.maMay,
+            tenMay: savedBucket.tenMay,
+            machine: savedBucket.machine
+          }
+        });
+      } catch {
+        // Không chặn flow lưu nếu đối chiếu MH thất bại
       }
 
       resetForm();
+
+      const pendingMsg =
+        pending.length > 0 ? `MH chưa SX: ${pending.map(item => item.productCode).join(', ')}` : '';
+      const finalMsg = pendingMsg ? `${okMsg} — ${pendingMsg}` : okMsg;
+      setMessage(finalMsg);
+      setPendingProductsAfterSave(pending);
+      showAppToast(pendingMsg || okMsg);
     } catch (err: any) {
       setError(showSaveFailure(err, 'Không thể lưu báo cáo sản lượng.'));
     } finally {
@@ -1249,6 +1327,21 @@ export default function AcceptanceReportForm({
           {message}
         </div>
       )}
+      {pendingProductsAfterSave.length > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+          <p className="font-black uppercase tracking-wide text-amber-800">MH chưa SX trên ca/máy này</p>
+          <ul className="mt-2 space-y-1">
+            {pendingProductsAfterSave.map(item => (
+              <li key={item.productCode} className="font-semibold text-amber-900">
+                <span className="font-black">{item.productCode}</span>
+                {item.productName ? (
+                  <span className="ml-2 font-medium text-amber-800/80">{item.productName}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <ProductQrScanner
         open={isQrScannerOpen}

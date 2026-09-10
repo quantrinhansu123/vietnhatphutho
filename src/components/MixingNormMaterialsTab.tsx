@@ -30,6 +30,28 @@ import {
   formatMixingNormSlipName
 } from '../utils/mixingNormAuxiliary';
 
+function buildMixingNormLsxDhRef(orderCode?: string | null, salesOrderCode?: string | null) {
+  const lsx = String(orderCode ?? '').trim();
+  const dh = String(salesOrderCode ?? '').trim();
+  if (lsx && dh && lsx !== dh) return `${lsx}/${dh}`;
+  return lsx || dh || '';
+}
+
+function buildMixingNormSlipNameFromContext(params: {
+  ngay?: string | null;
+  machine?: string | null;
+  ca?: string | null;
+  maLenhSx?: string | null;
+  salesOrderCode?: string | null;
+  productCount?: number;
+}) {
+  const may = String(params.machine ?? '').trim() || String(params.ca ?? '').trim();
+  const ref = buildMixingNormLsxDhRef(params.maLenhSx, params.salesOrderCode);
+  const count = Math.max(0, Number(params.productCount) || 0);
+  const tyLe = count > 0 ? Array.from({ length: count }, (_, i) => i + 1) : [];
+  return formatMixingNormSlipName(params.ngay, may, ref, tyLe);
+}
+
 export {
   type WorkshopType,
   normalizeNhomVatTuPhuKey,
@@ -1100,6 +1122,24 @@ export default function MixingNormMaterialsTab() {
     [form.maLenhSx, productionOrders]
   );
 
+  const formulaProductCount = useMemo(
+    () => form.products.filter(product => product.maSpCodes.some(code => code.trim())).length,
+    [form.products]
+  );
+
+  const currentSlipName = useMemo(
+    () =>
+      buildMixingNormSlipNameFromContext({
+        ngay: form.ngay,
+        machine: selectedOrder?.machine,
+        ca: resolveShiftName(form.ca.trim(), shiftOptions) || form.ca.trim(),
+        maLenhSx: form.maLenhSx,
+        salesOrderCode: selectedOrder?.salesOrderCode,
+        productCount: formulaProductCount
+      }),
+    [form.ngay, form.ca, form.maLenhSx, formulaProductCount, selectedOrder, shiftOptions]
+  );
+
   const productOptions = useMemo((): ProductOption[] => {
     const byIdentity = new Map<string, ProductOption>();
     const add = (code: string, name: string, productId = '', productionName = '') => {
@@ -1955,7 +1995,7 @@ export default function MixingNormMaterialsTab() {
       const batch = parseNumberOrNull(product.dinhLuongCoi);
       if (batch === null || batch <= 0) {
         setErrorProductKey(product.key);
-        setError(`Định lượng 1 cối của SP ${product.maSp} phải lớn hơn 0.`);
+        setError(`Định lượng 1 cối trộn mẫu của SP ${product.maSp} phải lớn hơn 0.`);
         return;
       }
       const duplicateMain = findDuplicateMixingMaterialLine(product.lines);
@@ -1982,7 +2022,7 @@ export default function MixingNormMaterialsTab() {
         setErrorProductKey(product.key);
         setError(
           `SP ${product.maSp}: tổng giá trị NVL (${formatKhoiLuongDisplay(materialTotal)}) ` +
-          `không được lớn hơn Định lượng 1 cối trộn tiêu chuẩn (${formatKhoiLuongDisplay(batch)}).`
+          `không được lớn hơn Định lượng 1 cối trộn mẫu tiêu chuẩn (${formatKhoiLuongDisplay(batch)}).`
         );
         return;
       }
@@ -2171,7 +2211,7 @@ export default function MixingNormMaterialsTab() {
       }
 
       const payload = {
-        ten_phieu: formatMixingNormSlipName(form.ngay.trim(), resolvedCa, form.maLenhSx.trim()),
+        ten_phieu: currentSlipName,
         ngay: form.ngay.trim(),
         ca: resolvedCa,
         ma_lenh_sx: form.maLenhSx.trim(),
@@ -2489,15 +2529,11 @@ export default function MixingNormMaterialsTab() {
                     Tên phiếu
                   </span>
                   <input
-                    value={formatMixingNormSlipName(
-                      form.ngay,
-                      resolveShiftName(form.ca.trim(), shiftOptions) || form.ca.trim(),
-                      form.maLenhSx.trim()
-                    )}
+                    value={currentSlipName}
                     readOnly
                     disabled
                     className={`${inputClass} bg-zinc-100 font-mono text-xs text-zinc-700 select-all cursor-default`}
-                    title="Tên phiếu tự động ghép: PTĐM + ngày + ca + lệnh sản xuất"
+                    title="Tên phiếu tự động: PTĐM - ngày - Máy - LSX/ĐH - tỷ lệ 1,2,3"
                   />
                 </label>
                 <label className="space-y-1.5 sm:col-span-1">
@@ -2720,7 +2756,7 @@ export default function MixingNormMaterialsTab() {
                           />
                         </label>
                         <label className="space-y-1 sm:col-span-2">
-                          <span className="text-[11px] font-bold text-zinc-500">Định lượng 1 cối trộn tiêu chuẩn (kg)</span>
+                          <span className="text-[11px] font-bold text-zinc-500">Định lượng 1 cối trộn mẫu tiêu chuẩn (kg)</span>
                           <input
                             value={product.dinhLuongCoi}
                             onChange={event => updateMixingBatch(product.key, event.target.value)}
@@ -2736,7 +2772,7 @@ export default function MixingNormMaterialsTab() {
                           <div className="w-full min-w-[760px] rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2">
                             <div className="mb-2 flex items-center justify-between gap-2">
                               <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                                Cối trộn tiêu chuẩn · {formatKhoiLuongDisplay(standardBatch)}
+                                Cối trộn mẫu tiêu chuẩn · {formatKhoiLuongDisplay(standardBatch)}
                                 {mixingRoundCount > 0 ? ` · Cần trộn ~${mixingRoundCount} cối` : ''}
                               </p>
                               <button
@@ -2751,7 +2787,7 @@ export default function MixingNormMaterialsTab() {
                             <p className="mb-1.5 hidden text-[9px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px] sm:gap-1 sm:px-1">
                               <span>Mã NVL - Tên NVL</span>
                               <span>Tên NVL sản xuất</span>
-                              <span>Giá trị</span>
+                              <span>Giá trị (kg/cối trộn mẫu)</span>
                               <span>% Cối trộn</span>
                               <span>% Tổng SL</span>
                               <span>Tổng trọng lượng</span>
@@ -2803,13 +2839,13 @@ export default function MixingNormMaterialsTab() {
                                       className={`${inputClass} h-8 px-1 text-[10px]`}
                                       placeholder={line.donVi === '%' ? '%' : 'kg'}
                                       inputMode="decimal"
-                                      title="Giá trị NVL cho 1 cối tiêu chuẩn"
+                                      title="Giá trị NVL cho 1 cối trộn mẫu tiêu chuẩn"
                                     />
                                     <input
                                       value={ty_le_coi === null ? '' : `${ty_le_coi}%`}
                                       readOnly
                                       className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-zinc-700`}
-                                      title="% Cối trộn = giá trị (kg) / Định lượng 1 cối tiêu chuẩn"
+                                      title="% Cối trộn = giá trị (kg) / Định lượng 1 cối trộn mẫu tiêu chuẩn"
                                     />
                                     <input
                                       value={ty_le_tong === null ? '' : `${ty_le_tong}%`}

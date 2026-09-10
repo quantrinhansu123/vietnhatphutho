@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Pencil, Trash2 } from 'lucide-react';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
 import { MachineCardRow, type MachineGroup, type SchedPerson } from './MachineCardRow';
-import { DispatchFormInline, type SelectedDispatchItem } from './DispatchFormInline';
+import { DispatchFormInline, MAY_VIEC_KHAC, type SelectedDispatchItem } from './DispatchFormInline';
 import { EditDispatchModal, type DispatchRecord } from './EditDispatchModal';
 import { DateInputVi } from '../../components/shared/DateInputVi';
 
@@ -196,9 +196,14 @@ function buildInitialSelectedItems(prefill: DispatchPrefill | null): SelectedDis
       caDieuDong: caGoc,
       mayDieuDong: '',
       thoiGianBatDau: prefill.thoi_gian_bat_dau || '',
-      thoiGianKetThuc: prefill.thoi_gian_ket_thuc || ''
+      thoiGianKetThuc: prefill.thoi_gian_ket_thuc || '',
+      ghiChu: ''
     }
   ];
+}
+
+function shiftsDiffer(caGoc: string, caDieuDong: string) {
+  return String(caGoc || '').trim().toUpperCase() !== String(caDieuDong || '').trim().toUpperCase();
 }
 
 interface DieuDongNhanSuPanelProps {
@@ -350,7 +355,8 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
               maLenhSx: match.ma_lenh_sx || cur.maLenhSx,
               person: { ma_nhan_su: p.ma_nhan_su, vai_tro: match.vai_tro || cur.person.vai_tro },
               thoiGianBatDau: cur.thoiGianBatDau || match.thoi_gian_bat_dau || '',
-              thoiGianKetThuc: cur.thoiGianKetThuc || match.thoi_gian_ket_thuc || ''
+              thoiGianKetThuc: cur.thoiGianKetThuc || match.thoi_gian_ket_thuc || '',
+              ghiChu: cur.ghiChu || ''
             };
             const copy = [...prev];
             copy[idx] = updated;
@@ -412,7 +418,8 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
           caDieuDong: person.ca_lam_viec,
           mayDieuDong: '',
           thoiGianBatDau: person.thoi_gian_bat_dau,
-          thoiGianKetThuc: person.thoi_gian_ket_thuc
+          thoiGianKetThuc: person.thoi_gian_ket_thuc,
+          ghiChu: ''
         }
       ]);
     } else {
@@ -425,6 +432,43 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
   };
   const removeItem = (key: string) => setSelectedItems(prev => prev.filter(i => i.key !== key));
 
+  const resolveDestinationMachineCode = useCallback(
+    (mayDieuDong: string) => {
+      if (!mayDieuDong || mayDieuDong === MAY_VIEC_KHAC) return '';
+      const byName = machines.find(m => m.name === mayDieuDong);
+      if (byName?.code) return byName.code;
+      const byCode = machines.find(m => m.code === mayDieuDong);
+      return byCode?.code || '';
+    },
+    [machines]
+  );
+
+  const postDestinationScheduleNote = async (item: SelectedDispatchItem) => {
+    const note = item.ghiChu.trim();
+    if (!note) return;
+    if (!shiftsDiffer(item.caGoc, item.caDieuDong)) return;
+    if (item.mayDieuDong === MAY_VIEC_KHAC) return;
+
+    const maMay = resolveDestinationMachineCode(item.mayDieuDong);
+    if (!maMay) return;
+
+    const res = await fetch('/api/phan-cong-nhan-su/ghi-chu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ngay_lam_viec: selectedDate,
+        ma_may: maMay,
+        may: item.mayDieuDong,
+        ca_lam_viec: item.caDieuDong,
+        ghi_chu: note
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Không lưu được ghi chú tại máy chuyển đến.');
+    }
+  };
+
   const handleSubmit = async () => {
     if (selectedItems.length === 0) return;
 
@@ -436,6 +480,10 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
       }
       if (item.thoiGianBatDau === item.thoiGianKetThuc) {
         setFormError(`${who}: giờ bắt đầu và giờ kết thúc không được trùng nhau.`);
+        return;
+      }
+      if (shiftsDiffer(item.caGoc, item.caDieuDong) && !item.ghiChu.trim()) {
+        setFormError(`${who}: đổi ca — bắt buộc ghi chú tại máy chuyển đến.`);
         return;
       }
       const overlap = history.some(
@@ -468,7 +516,8 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
           may_goc: item.tenMayGoc,
           may_dieu_dong: item.mayDieuDong,
           thoi_gian_bat_dau: item.thoiGianBatDau,
-          thoi_gian_ket_thuc: item.thoiGianKetThuc
+          thoi_gian_ket_thuc: item.thoiGianKetThuc,
+          ghi_chu: item.ghiChu.trim() || null
         };
         const res = await fetch('/api/dieu-dong-nhan-su', {
           method: 'POST',
@@ -478,6 +527,15 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           setFormError(`${resolveName(item.person.ma_nhan_su)}: ${err.error || 'Lỗi khi lưu.'}`);
+          return;
+        }
+        try {
+          await postDestinationScheduleNote(item);
+        } catch (noteErr: any) {
+          setFormError(
+            `${resolveName(item.person.ma_nhan_su)}: đã lưu điều động nhưng ${noteErr?.message || 'không lưu được ghi chú.'}`
+          );
+          await reloadHistory();
           return;
         }
       }
@@ -492,6 +550,13 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
 
   const handleEditSubmit = async (patch: Partial<DispatchRecord>) => {
     if (!editingRecord) return;
+    const nextCa = String(patch.ca_dieu_dong ?? editingRecord.ca_dieu_dong ?? editingRecord.ca ?? '');
+    const nextMay = String(patch.may_dieu_dong ?? editingRecord.may_dieu_dong ?? '');
+    const nextNote = String(patch.ghi_chu ?? editingRecord.ghi_chu ?? '').trim();
+    if (shiftsDiffer(editingRecord.ca || '', nextCa) && !nextNote) {
+      throw new Error('Đổi ca — bắt buộc ghi chú tại máy chuyển đến.');
+    }
+
     const payload = {
       ngay_lam_viec: editingRecord.ngay_lam_viec,
       ca: editingRecord.ca,
@@ -510,6 +575,28 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Lỗi khi lưu.');
     }
+
+    if (shiftsDiffer(editingRecord.ca || '', nextCa) && nextNote && nextMay && nextMay !== MAY_VIEC_KHAC) {
+      const maMay = resolveDestinationMachineCode(nextMay);
+      if (maMay) {
+        const noteRes = await fetch('/api/phan-cong-nhan-su/ghi-chu', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ngay_lam_viec: editingRecord.ngay_lam_viec,
+            ma_may: maMay,
+            may: nextMay,
+            ca_lam_viec: nextCa,
+            ghi_chu: nextNote
+          })
+        });
+        if (!noteRes.ok) {
+          const err = await noteRes.json().catch(() => ({}));
+          throw new Error(err.error || 'Đã cập nhật điều động nhưng không lưu được ghi chú.');
+        }
+      }
+    }
+
     setIsEditOpen(false);
     setEditingRecord(null);
     await reloadHistory();

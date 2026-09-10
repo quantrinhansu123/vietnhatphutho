@@ -107,22 +107,39 @@ export function filterSecondaryMaterialOptions<T extends { id?: string; code: st
 }
 
 /**
- * Ghép tên phiếu trộn định mức: PTĐM + ngày + ca + lệnh sản xuất
- * Ví dụ: formatMixingNormSlipName('2026-09-08', 'Ca 1', 'LSX-001') => 'PTĐM - 2026-09-08 - Ca 1 - LSX-001'
+ * Ghép tên phiếu trộn định mức khi lưu bản thay đổi.
+ * Ví dụ: PTĐM - 2026-09-10 - Máy Đặc 1 - LSX-001/DH-01 - tỷ lệ 1,2,3
  */
 export function formatMixingNormSlipName(
   ngay?: string | null,
-  ca?: string | null,
-  maLenhSx?: string | null
+  mayOrCa?: string | null,
+  lsxOrDh?: string | null,
+  tyLeIndexes?: Array<number | string> | null
 ): string {
   const parts: string[] = ['PTĐM'];
   const n = String(ngay ?? '').trim();
-  const c = String(ca ?? '').trim();
-  const lsx = String(maLenhSx ?? '').trim();
+  const may = String(mayOrCa ?? '').trim();
+  const ref = String(lsxOrDh ?? '').trim();
+  const tyLe = (tyLeIndexes || [])
+    .map(item => String(item ?? '').trim())
+    .filter(Boolean);
   if (n) parts.push(n);
-  if (c) parts.push(c);
-  if (lsx) parts.push(lsx);
+  if (may) parts.push(may);
+  if (ref) parts.push(ref);
+  if (tyLe.length > 0) parts.push(`tỷ lệ ${tyLe.join(',')}`);
   return parts.join(' - ');
+}
+
+/** Ẩn nhãn chuẩn kiểu STD01/STD02 trên phiếu in. */
+export function isMixingNormStdLabel(value?: string | null): boolean {
+  return /^STD\s*\d+$/i.test(String(value ?? '').trim());
+}
+
+/** Lấy phần ghi chú còn lại sau khi bỏ tiền tố STD0x. */
+export function stripMixingNormStdPrefix(value?: string | null): string {
+  return String(value ?? '')
+    .replace(/^\s*STD\s*\d+\s*[-–—:]?\s*/i, '')
+    .trim();
 }
 
 /**
