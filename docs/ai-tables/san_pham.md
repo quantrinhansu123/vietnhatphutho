@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `san_pham` |
 | **Tab** | `products` → `/san-pham` |
-| **SQL** | `supabase-san-pham.sql`, `supabase-san-pham-ma-amis-khong-unique.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-nhom-vthh-kinh-doanh.sql`, `supabase-san-pham-nhom-vthh-them-khac.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql` |
+| SQL | `supabase-san-pham.sql`, `supabase-san-pham-ma-amis-khong-unique.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-nhom-vthh-kinh-doanh.sql`, `supabase-san-pham-nhom-vthh-them-khac.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql`, `supabase-san-pham-thong-so-sx.sql` |
 
 ## API (`server.ts`)
 
@@ -30,6 +30,11 @@
 ## Cột quan trọng
 
 `ma_sp`, `ten_sp`, `ten_san_xuat`, `don_vi` (`m`, `m2`, `Tấm`), `nhom_vthh`, `ton_dau_ky`, `npl_phan_tram` (JSON NPL, mỗi dòng lưu thêm `ten_nvl_sx` tương ứng từ Kho NVL).
+
+Thông số SX (migration `supabase-san-pham-thong-so-sx.sql`): `ten_goc`, `do_li`, `do_li_dm` (extract `(đm n li)` từ `ten_san_xuat`), `do_day_m`, `do_dai_m`, `mang`, `hang_phe`.  
+**Unique không đổi:** API vẫn chặn trùng bộ `ma_amis + ten_sp + ten_san_xuat`. Không tạo unique mới trên các cột thông số.
+
+Utils ghép tên: `src/utils/productProductionName.ts` (Đặc/Rỗng/Sóng; Sóng seed `do_dai_m` = m dài nhất cùng AMIS).
 
 Đồng bộ kiểm kho dùng `supabase-san-pham-kiem-kho-dong-bo.sql` trên DB chính để bảo đảm mỗi `kiem_kho.id` chỉ cộng một lần.
 

@@ -2141,7 +2141,9 @@ function parseProductPatchBody(
     'origin', 'nguon_goc', 'description', 'mo_ta',
     'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
     'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua',
-    'wastePercent', 'ty_le_hao_hut'
+    'wastePercent', 'ty_le_hao_hut',
+    'tenGoc', 'ten_goc', 'doLi', 'do_li', 'doLiDm', 'do_li_dm', 'doDayM', 'do_day_m',
+    'doDaiM', 'do_dai_m', 'mang', 'hangPhe', 'hang_phe'
   ].some(key => Object.prototype.hasOwnProperty.call(source, key));
 
   if (!hasProductField) {
@@ -2254,6 +2256,42 @@ function parseProductPatchBody(
     record.trong_luong_nhua = parseOptionalMaterialDecimalText(source.plasticWeight ?? source.trong_luong_nhua);
   }
 
+  // Thông số SX (không đụng unique ma_amis+ten_sp+ten_san_xuat)
+  if (Object.prototype.hasOwnProperty.call(source, 'tenGoc') || Object.prototype.hasOwnProperty.call(source, 'ten_goc')) {
+    record.ten_goc = parseMaterialText(source.tenGoc ?? source.ten_goc) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'doLi') || Object.prototype.hasOwnProperty.call(source, 'do_li')) {
+    record.do_li = parseMaterialText(source.doLi ?? source.do_li) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'doDayM') || Object.prototype.hasOwnProperty.call(source, 'do_day_m')) {
+    record.do_day_m = parseMaterialText(source.doDayM ?? source.do_day_m) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'doDaiM') || Object.prototype.hasOwnProperty.call(source, 'do_dai_m')) {
+    record.do_dai_m = parseMaterialText(source.doDaiM ?? source.do_dai_m) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'mang')) {
+    record.mang = parseMaterialText(source.mang) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'hangPhe') || Object.prototype.hasOwnProperty.call(source, 'hang_phe')) {
+    record.hang_phe = parseMaterialText(source.hangPhe ?? source.hang_phe) || null;
+  }
+
+  const hasDoLiDmField =
+    Object.prototype.hasOwnProperty.call(source, 'doLiDm') || Object.prototype.hasOwnProperty.call(source, 'do_li_dm');
+  if (hasDoLiDmField) {
+    record.do_li_dm = parseMaterialText(source.doLiDm ?? source.do_li_dm) || null;
+  } else if (
+    Object.prototype.hasOwnProperty.call(source, 'productionName') ||
+    Object.prototype.hasOwnProperty.call(source, 'tenSanXuat') ||
+    Object.prototype.hasOwnProperty.call(source, 'ten_san_xuat')
+  ) {
+    // Tự extract (đm n li) từ ten_san_xuat khi client không gửi do_li_dm
+    const dmMatch = String(productionName || '').match(/\(\s*đm\s*([\d.,]+)\s*li\s*\)/iu);
+    if (dmMatch) {
+      record.do_li_dm = `(đm ${dmMatch[1].trim()} li)`;
+    }
+  }
+
   return { record };
 }
 
@@ -2300,7 +2338,7 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} chưa tồn tại trên Supabase.`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy các migration san_pham liên quan, gồm supabase-san-pham-ty-le-hao-hut.sql.`;
+    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy các migration san_pham liên quan, gồm supabase-san-pham-thong-so-sx.sql và supabase-san-pham-ty-le-hao-hut.sql.`;
   }
   if (productUniqueViolationColumn(error) === 'ma_amis') {
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang chặn trùng mã AMIS. Hãy chạy supabase-san-pham-ma-amis-khong-unique.sql trong Supabase SQL Editor rồi tải Excel lại.`;

@@ -136,3 +136,10 @@ export function formatProductionNameWithLength(name: string, length?: number | s
   return `${cleanName} ${quyCachSuffix}`;
 }
 
+/** Re-export engine ghép tên SP (Đặc/Sóng/Rỗng) — dùng dần thay raw ten_san_xuat khi đã có thông số. */
+export {
+  composeProductionDisplayName,
+  extractDoLiDm,
+  seedProductionSpecs
+} from '../../utils/productProductionName';
+

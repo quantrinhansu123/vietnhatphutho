@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { extractDoLiDm, seedProductionSpecs } from './productProductionName';
 
 /** Dòng Excel danh mục sản phẩm — khớp form / bảng UI / cột `san_pham`. */
 export type ProductCatalogExcelRow = {
@@ -7,6 +8,13 @@ export type ProductCatalogExcelRow = {
   newCode: string;
   name: string;
   productionName: string;
+  tenGoc: string;
+  doLi: string;
+  doLiDm: string;
+  doDayM: string;
+  doDaiM: string;
+  mang: string;
+  hangPhe: string;
   nature: string;
   group: string;
   unit: string;
@@ -33,6 +41,13 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
   newCode: ['ma moi', 'ma_sp_moi', 'ma sp moi'],
   name: ['ten san pham', 'ten_sp', 'ten sp', 'name'],
   productionName: ['ten san xuat', 'ten_san_xuat', 'production name'],
+  tenGoc: ['ten goc', 'ten_goc'],
+  doLi: ['do li', 'do_li'],
+  doLiDm: ['dm n li', 'do li dm', 'do_li_dm', 'dinh muc dm', 'dm'],
+  doDayM: ['do day m', 'do_day_m', 'do day'],
+  doDaiM: ['met dai', 'do dai m', 'do_dai_m', 'm dai'],
+  mang: ['mang', 'mang eco'],
+  hangPhe: ['hang phe', 'hang_phe'],
   nature: ['tinh chat', 'tinh_chat', 'nature'],
   group: ['nhom vthh', 'nhom_vthh', 'nhom', 'group'],
   unit: ['don vi tinh', 'don_vi', 'don vi', 'unit'],
@@ -67,6 +82,13 @@ export const PRODUCT_CATALOG_EXCEL_HEADERS = [
   'Mã SP',
   'Tên sản phẩm',
   'Tên sản xuất',
+  'Tên gốc',
+  'Độ li',
+  'ĐM (đm n li)',
+  'Độ dày (m)',
+  'Mét dài',
+  'Màng',
+  'Hàng phế',
   'Tính chất',
   'Nhóm',
   'Đơn vị',
@@ -154,6 +176,13 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
     newCode: findColumn(headers, HEADER_ALIASES.newCode),
     name: nameIndex,
     productionName: findColumn(headers, HEADER_ALIASES.productionName),
+    tenGoc: findColumn(headers, HEADER_ALIASES.tenGoc),
+    doLi: findColumn(headers, HEADER_ALIASES.doLi),
+    doLiDm: findColumn(headers, HEADER_ALIASES.doLiDm),
+    doDayM: findColumn(headers, HEADER_ALIASES.doDayM),
+    doDaiM: findColumn(headers, HEADER_ALIASES.doDaiM),
+    mang: findColumn(headers, HEADER_ALIASES.mang),
+    hangPhe: findColumn(headers, HEADER_ALIASES.hangPhe),
     nature: findColumn(headers, HEADER_ALIASES.nature),
     group: findColumn(headers, HEADER_ALIASES.group),
     unit: findColumn(headers, HEADER_ALIASES.unit),
@@ -198,6 +227,13 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
         newCode: get('newCode'),
         name: get('name'),
         productionName: get('productionName'),
+        tenGoc: get('tenGoc'),
+        doLi: get('doLi'),
+        doLiDm: get('doLiDm'),
+        doDayM: get('doDayM'),
+        doDaiM: get('doDaiM'),
+        mang: get('mang'),
+        hangPhe: get('hangPhe'),
         nature: get('nature'),
         group: get('group'),
         unit: get('unit'),
@@ -224,24 +260,31 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
 export function downloadProductCatalogExcelTemplate() {
   const worksheet = XLSX.utils.aoa_to_sheet([
     [...PRODUCT_CATALOG_EXCEL_HEADERS],
-    // 1 dòng đủ mẫu
+    // 1 dòng đủ mẫu (Đặc có đm)
     [
       'SP-001',
-      'Tấm nhựa sóng mẫu',
-      'Tấm nhựa sóng dùng sản xuất',
+      'Tấm nhựa đặc Standart màu trắng sứ 2.5li',
+      'Tấm nhựa đặc màu trắng sứ - 2.5li x 1.22m ( đm 2.1 li ) - ECO',
+      'Tấm nhựa đặc màu trắng sứ',
+      '2.5li',
+      '(đm 2.1 li)',
+      '1.22m',
+      '',
+      'ECO',
+      '',
       'Thành phẩm',
-      'Nhựa',
-      'tấm',
+      'TP; PX Đặc',
+      'Tấm',
       '12.5',
-      '2.5',
+      '13',
       '0',
       '0',
       '0',
       '0',
       '10',
-      'AMIS-001',
+      'STD01-2.5li*1.22m',
       '',
-      '1.2',
+      '1.22',
       '50',
       '0.2',
       '0.1',
@@ -250,7 +293,37 @@ export function downloadProductCatalogExcelTemplate() {
       ''
     ],
     // 1 dòng gần như trống — vẫn hợp lệ khi tải lên (chỉ cần Mã SP hoặc Tên)
-    ['SP-002', 'Sản phẩm để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    [
+      'SP-002',
+      'Sản phẩm để trống các cột còn lại',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      ''
+    ]
   ]);
   worksheet['!cols'] = PRODUCT_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(34, Math.max(12, header.length + 2))
@@ -262,15 +335,31 @@ export function downloadProductCatalogExcelTemplate() {
 }
 
 export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
+  const productionName = row.productionName.trim();
+  const group = row.group.trim();
+  const amisCode = row.amisCode.trim();
+  const seeded = seedProductionSpecs({
+    tenSanXuat: productionName,
+    maAmis: amisCode,
+    nhomVthh: group
+  });
   // Chuỗi rỗng vẫn gửi lên — API map thành null / bỏ trống, không chặn import.
+  // Không đổi ten_san_xuat khi import → tránh đụng unique AMIS+tên SP+tên SX.
   return {
     code: row.code.trim(),
     newCode: row.newCode.trim(),
-    amisCode: row.amisCode.trim(),
+    amisCode,
     name: row.name.trim(),
-    productionName: row.productionName.trim(),
+    productionName,
+    tenGoc: row.tenGoc.trim() || seeded.tenGoc,
+    doLi: row.doLi.trim() || seeded.doLi,
+    doLiDm: row.doLiDm.trim() || extractDoLiDm(productionName) || seeded.doLiDm,
+    doDayM: row.doDayM.trim() || seeded.doDayM,
+    doDaiM: row.doDaiM.trim() || seeded.doDaiM,
+    mang: row.mang.trim() || seeded.mang,
+    hangPhe: row.hangPhe.trim() || seeded.hangPhe,
     nature: row.nature.trim(),
-    group: row.group.trim(),
+    group,
     unit: row.unit.trim(),
     totalWeight: row.totalWeight.trim(),
     wastePercent: row.wastePercent.trim().replace(',', '.'),
