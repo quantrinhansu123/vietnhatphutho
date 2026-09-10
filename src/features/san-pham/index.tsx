@@ -59,6 +59,7 @@ import { calculateProductConversionFormulas } from '../../utils/productConversio
 import {
   FILM_OPTIONS,
   WASTE_GRADE_OPTIONS,
+  classifyProductPxGroup,
   composeProductionDisplayName,
   extractDoLiDm,
   seedProductionSpecs
@@ -2064,6 +2065,17 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         throw new Error('File Excel không có dòng sản phẩm hợp lệ.');
       }
 
+      // Sóng: gom tên SX theo AMIS trong file để seed m dài = max
+      const songNamesByAmis = new Map<string, string[]>();
+      for (const row of rows) {
+        if (classifyProductPxGroup(row.group) !== 'song') continue;
+        const amisKey = (row.amisCode.trim() || row.code.trim()).toLocaleLowerCase('vi');
+        if (!amisKey || !row.productionName.trim()) continue;
+        const list = songNamesByAmis.get(amisKey) || [];
+        list.push(row.productionName.trim());
+        songNamesByAmis.set(amisKey, list);
+      }
+
       // Build map từ cả 3 trường: Mã SP + Tên SP + Tên sản xuất
       const byIdentity = new Map(
         products
@@ -2091,7 +2103,9 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           continue;
         }
 
-        const payload = productCatalogRowToPayload(row);
+        const amisKey = (row.amisCode.trim() || code).toLocaleLowerCase('vi');
+        const songLengthNames = songNamesByAmis.get(amisKey);
+        const payload = productCatalogRowToPayload(row, songLengthNames ? { songLengthNames } : undefined);
 
         // Logic UPDATE vs INSERT:
         // - UPDATE: Cả 3 trường (Mã SP, Tên SP, Tên sản xuất) đều có dữ liệu VÀ khớp sản phẩm trong DB

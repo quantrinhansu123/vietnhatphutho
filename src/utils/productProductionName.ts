@@ -26,22 +26,33 @@ export interface ProductionNameParts {
 }
 
 const DO_LI_DM_RE = /\(\s*đm\s*([\d.,]+)\s*li\s*\)/iu;
-const SONG_LENGTH_TAIL_RE = /-\s*([\d.,]+)\s*m\s*$/iu;
 const AMIS_LI_RE = /-\s*([\d.,]+)\s*li\b/iu;
 const AMIS_DAY_RE = /\*\s*([\d.,]+)\s*m\b/iu;
 const AMIS_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_MANG_RE = /(?:màng\s+)?(ECO|STD|SUN\s*PC|HA|LUX|STANDA)\b/iu;
-const NAME_HANG_PHE_RE = /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế)/iu;
+const NAME_HANG_PHE_RE =
+  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế)/iu;
+/** Mét sau dấu `-` (standalone), cho phép text theo sau như `30m hàng…`. */
+const DASH_METER_RE = /-\s*([\d.,]+)\s*m(?=\b)/giu;
+/** Mọi token mét trong chuỗi (Sóng: lấy cái cuối). */
+const ANY_METER_RE = /([\d.,]+)\s*m\b/giu;
+/** Rỗng/Đặc: `Nli x Am x Bm` hoặc `Nli x Am`. */
+const LI_X_METERS_RE = /([\d.,]+)\s*li\s*x\s*([\d.,]+)\s*m(?:\s*x\s*([\d.,]+)\s*m)?/iu;
 
-function normalizeDecimalToken(raw: string): string {
+export function normalizeDecimalToken(raw: string): string {
   return String(raw || '').trim().replace(/\s+/g, '').replace(',', '.');
 }
 
-function formatMetersLabel(value: number): string {
+export function formatMetersLabel(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '';
   const n = Number.isInteger(value) ? String(value) : String(Math.round(value * 1000) / 1000);
   return `${n}m`;
+}
+
+function parseMeterNumber(raw: string): number | null {
+  const n = Number(normalizeDecimalToken(raw));
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /** Extract `(đm n li)` từ ten_san_xuat → chuỗi chuẩn hóa lưu cột `do_li_dm`. Không lấy `(đm …kg)`. */
@@ -73,12 +84,12 @@ export function parseAmisSpecs(maAmis: string): AmisSpecs {
   return { doLi, doDayM, zem };
 }
 
+/** Sóng: mét dài = token `…m` cuối cùng trong tên (vd 3,5M trước ghi chú, hoặc 30M sau 1.2m). */
 export function parseSongLengthMeters(tenSanXuat: string): number | null {
   const text = String(tenSanXuat || '').trim();
-  const match = text.match(SONG_LENGTH_TAIL_RE);
-  if (!match) return null;
-  const n = Number(normalizeDecimalToken(match[1]));
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const matches = [...text.matchAll(ANY_METER_RE)];
+  if (matches.length === 0) return null;
+  return parseMeterNumber(matches[matches.length - 1][1]);
 }
 
 /** Với TP; PX Sóng: lấy mét dài nhất trong danh sách tên SX biến thể. */
@@ -98,12 +109,6 @@ function splitFirstDash(text: string): { before: string; after: string } {
   return { before: text.slice(0, idx).trim(), after: text.slice(idx + 1).trim() };
 }
 
-function splitLastDash(text: string): { before: string; after: string } {
-  const idx = text.lastIndexOf('-');
-  if (idx < 0) return { before: text.trim(), after: '' };
-  return { before: text.slice(0, idx).trim(), after: text.slice(idx + 1).trim() };
-}
-
 function extractMang(tenSanXuat: string): string {
   const match = String(tenSanXuat || '').match(NAME_MANG_RE);
   if (!match) return '';
@@ -117,7 +122,7 @@ function extractHangPhe(tenSanXuat: string, maAmis = ''): string {
   const fromName = String(tenSanXuat || '').match(NAME_HANG_PHE_RE);
   if (fromName) {
     const t = fromName[1].trim();
-    if (/100%\s*phế/i.test(t) && !/chạy/i.test(t) && !/NS\s*Off/i.test(t)) {
+    if (/^chạy\s+100%\s+phế$/i.test(t) || (/100%\s*phế/i.test(t) && !/NS\s*Off/i.test(t))) {
       return 'hàng chạy 100% phế';
     }
     return t;
@@ -128,19 +133,72 @@ function extractHangPhe(tenSanXuat: string, maAmis = ''): string {
   return '';
 }
 
-function resolveDoLi(maAmis: string, tenSanXuat: string, group: ProductPxGroup): string {
+function resolveDoLi(maAmis: string, tenSanXuat: string, _group: ProductPxGroup): string {
   const amis = parseAmisSpecs(maAmis);
-  if (amis.doLi) return amis.doLi;
+  if (amis.doLi && !/\bkg\b/i.test(amis.doLi)) return amis.doLi;
   if (amis.zem) return amis.zem;
   const zemInName = String(tenSanXuat || '').match(NAME_ZEM_RE);
   if (zemInName) return `${zemInName[1]}ZEM`;
-  if (group === 'song') {
-    const liInName = String(tenSanXuat || '').match(/([\d.,]+)\s*li\b/iu);
-    if (liInName) return `${normalizeDecimalToken(liInName[1])}li`;
-    const kgInName = String(tenSanXuat || '').match(/([\d.,]+)\s*kg\b/iu);
-    if (kgInName) return `${normalizeDecimalToken(kgInName[1])}KG`;
-  }
+  // Chỉ nhận token …li — không lấy …KG làm độ li
+  const liInName = String(tenSanXuat || '').match(/([\d.,]+)\s*li\b/iu);
+  if (liInName) return `${normalizeDecimalToken(liInName[1])}li`;
   return '';
+}
+
+/** Token độ li hợp lệ: …li hoặc …ZEM — không phải KG. */
+export function isValidDoLiToken(value: string): boolean {
+  const t = String(value || '').trim();
+  if (!t) return false;
+  if (/kg/i.test(t)) return false;
+  return /^\d+[.,]?\d*\s*li$/i.test(t) || /^\d+\s*zem$/i.test(t);
+}
+
+/** Đặc: các mét standalone sau `-` (không tính pattern `x …m`). Lớn hơn = dài, nhỏ hơn = dày/khổ. */
+export function parseDacDashMeters(tenSanXuat: string): { doDayM: string; doDaiM: string } {
+  const text = String(tenSanXuat || '');
+  // Bỏ đoạn `x Nm` để không lẫn khổ trong pattern x
+  const withoutX = text.replace(/\bx\s*[\d.,]+\s*m\b/giu, ' ');
+  const values: number[] = [];
+  for (const match of withoutX.matchAll(DASH_METER_RE)) {
+    const n = parseMeterNumber(match[1]);
+    if (n != null) values.push(n);
+  }
+  if (values.length === 0) return { doDayM: '', doDaiM: '' };
+  if (values.length === 1) {
+    // Một mét standalone sau li/đm thường là độ dài (vd hiếm); khổ thường đi kèm `x`
+    return { doDayM: '', doDaiM: formatMetersLabel(values[0]) };
+  }
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  return {
+    doDayM: formatMetersLabel(min),
+    doDaiM: formatMetersLabel(max)
+  };
+}
+
+/** Rỗng (và Đặc kiểu x): `li x khổ x dài` hoặc `li x khổ` (không có dài). */
+export function parseLiXMeters(tenSanXuat: string): { doLi: string; doDayM: string; doDaiM: string } {
+  const match = String(tenSanXuat || '').match(LI_X_METERS_RE);
+  if (!match) return { doLi: '', doDayM: '', doDaiM: '' };
+  const doLi = `${normalizeDecimalToken(match[1])}li`;
+  const doDayM = formatMetersLabel(Number(normalizeDecimalToken(match[2])));
+  const doDaiM = match[3] ? formatMetersLabel(Number(normalizeDecimalToken(match[3]))) : '';
+  return { doLi, doDayM, doDaiM };
+}
+
+function songTenGoc(tenSanXuat: string, lengthMeters: number | null): string {
+  const text = String(tenSanXuat || '').trim();
+  if (lengthMeters == null) {
+    const idx = text.lastIndexOf('-');
+    return idx >= 0 ? text.slice(0, idx).trim() : text;
+  }
+  // Cắt từ dấu `-` gắn với mét dài cuối (cho phép ghi chú sau như `( GIÁ RẺ )`)
+  const re = new RegExp(
+    `-\\s*${String(lengthMeters).replace('.', '[,.]')}\\s*m\\b.*$`,
+    'iu'
+  );
+  const cut = text.replace(re, '').trim().replace(/[-\s]+$/u, '').trim();
+  return cut || text;
 }
 
 export function parseProductionNameParts(
@@ -155,43 +213,76 @@ export function parseProductionNameParts(
   const doLiDm = extractDoLiDm(text) || '';
   const mang = extractMang(text);
   const hangPhe = extractHangPhe(text, maAmis);
-  const doLi = resolveDoLi(maAmis, text, group);
+  let doLi = resolveDoLi(maAmis, text, group);
+  if (doLi && !isValidDoLiToken(doLi)) doLi = '';
 
   if (group === 'song') {
-    const { before, after } = splitLastDash(text);
     const singleLen = parseSongLengthMeters(text);
     const maxLen = options?.songLengthNames?.length
       ? pickMaxSongLengthMeters(options.songLengthNames)
       : singleLen;
+    const tenGoc = songTenGoc(text, singleLen);
     return {
-      tenGoc: before || text,
+      tenGoc,
       doLi,
       doDayM: '',
-      doDaiM: maxLen != null ? formatMetersLabel(maxLen) : (after.match(/^[\d.,]+\s*m$/iu) ? after.replace(/\s+/g, '') : ''),
+      doDaiM: maxLen != null ? formatMetersLabel(maxLen) : '',
       mang,
       hangPhe,
       doLiDm
     };
   }
 
-  // Đặc / Rỗng / other: ten_goc trước dấu - đầu
   const { before } = splitFirstDash(text);
-  let doDaiM = '';
-  const xDims = text.match(/x\s*([\d.,]+)\s*m(?:\s*x\s*([\d.,]+)\s*m)?/iu);
-  if (xDims?.[2]) {
-    doDaiM = formatMetersLabel(Number(normalizeDecimalToken(xDims[2])));
-  } else if (xDims?.[1] && !amis.doDayM) {
-    doDaiM = formatMetersLabel(Number(normalizeDecimalToken(xDims[1])));
-  } else {
-    const tail = text.match(/-\s*([\d.,]+)\s*m\s*$/iu);
-    if (tail) doDaiM = formatMetersLabel(Number(normalizeDecimalToken(tail[1])));
+  const xParts = parseLiXMeters(text);
+
+  if (group === 'rong') {
+    if (xParts.doLi && !doLi) doLi = xParts.doLi;
+    return {
+      tenGoc: before || text,
+      doLi,
+      doDayM: xParts.doDayM || amis.doDayM,
+      doDaiM: xParts.doDaiM,
+      mang,
+      hangPhe,
+      doLiDm
+    };
   }
 
+  // Đặc (+ other)
+  if (xParts.doDayM && !xParts.doDaiM) {
+    // `2.6li x 1.22m` → chỉ có độ dày/khổ, không có m dài
+    if (xParts.doLi && !doLi) doLi = xParts.doLi;
+    return {
+      tenGoc: before || text,
+      doLi,
+      doDayM: xParts.doDayM || amis.doDayM,
+      doDaiM: '',
+      mang,
+      hangPhe,
+      doLiDm
+    };
+  }
+
+  if (xParts.doDaiM) {
+    if (xParts.doLi && !doLi) doLi = xParts.doLi;
+    return {
+      tenGoc: before || text,
+      doLi,
+      doDayM: xParts.doDayM || amis.doDayM,
+      doDaiM: xParts.doDaiM,
+      mang,
+      hangPhe,
+      doLiDm
+    };
+  }
+
+  const dashMeters = parseDacDashMeters(text);
   return {
     tenGoc: before || text,
     doLi,
-    doDayM: amis.doDayM,
-    doDaiM,
+    doDayM: dashMeters.doDayM || amis.doDayM,
+    doDaiM: dashMeters.doDaiM,
     mang,
     hangPhe,
     doLiDm
@@ -205,25 +296,28 @@ function joinSegments(parts: Array<string | null | undefined>): string {
     .join(' - ');
 }
 
-/** Ghép tên hiển thị theo nhóm VTHH. */
+/**
+ * Ghép tên hiển thị.
+ * Thứ tự: ten_goc - hàng phế - màng - độ li - đm - độ dày - mét dài (mét dài luôn cuối).
+ */
 export function composeProductionDisplayName(
   parts: Partial<ProductionNameParts>,
   nhomVthh: string
 ): string {
-  const group = classifyProductPxGroup(nhomVthh);
   const tenGoc = String(parts.tenGoc || '').trim();
   const doLi = String(parts.doLi || '').trim();
   const mang = String(parts.mang || '').trim();
   const hangPhe = String(parts.hangPhe || '').trim();
   const doLiDm = String(parts.doLiDm || '').trim();
+  const doDayM = String(parts.doDayM || '').trim();
   const doDaiM = String(parts.doDaiM || '').trim();
 
-  if (group === 'song') {
-    return joinSegments([tenGoc, doLi]) || tenGoc || '-';
-  }
-
-  // Đặc + Rỗng
-  return joinSegments([tenGoc, hangPhe, mang, doLi, doLiDm, doDaiM]) || tenGoc || '-';
+  // Mét dài luôn segment cuối cùng khi có.
+  return (
+    joinSegments([tenGoc, hangPhe, mang, doLi, doLiDm, doDayM, doDaiM]) ||
+    tenGoc ||
+    '-'
+  );
 }
 
 /** Seed đầy đủ từ bản ghi catalog (1 dòng hoặc nhiều tên sóng để lấy max m). */
