@@ -29,7 +29,8 @@ import {
   calcAuxiliaryWeight,
   getAllowedSecondaryGroups,
   filterSecondaryMaterialOptions,
-  formatMixingNormSlipName
+  formatMixingNormSlipName,
+  hasMixingNormMaterialWeightChanges
 } from '../utils/mixingNormAuxiliary';
 
 function buildMixingNormLsxDhRef(orderCode?: string | null, salesOrderCode?: string | null) {
@@ -45,13 +46,10 @@ function buildMixingNormSlipNameFromContext(params: {
   ca?: string | null;
   maLenhSx?: string | null;
   salesOrderCode?: string | null;
-  productCount?: number;
 }) {
   const may = String(params.machine ?? '').trim() || String(params.ca ?? '').trim();
   const ref = buildMixingNormLsxDhRef(params.maLenhSx, params.salesOrderCode);
-  const count = Math.max(0, Number(params.productCount) || 0);
-  const tyLe = count > 0 ? Array.from({ length: count }, (_, i) => i + 1) : [];
-  return formatMixingNormSlipName(params.ngay, may, ref, tyLe);
+  return formatMixingNormSlipName(params.ngay, may, ref);
 }
 
 export {
@@ -108,6 +106,7 @@ export type MixingNormProduct = {
 
 export type MixingNormRow = {
   id: string;
+  id_phieu_tron_dm_ban_dau?: string;
   ten_phieu?: string;
   ngay: string;
   ca: string;
@@ -940,6 +939,7 @@ function normalizeRows(data: unknown): MixingNormRow[] {
 
       return {
         id,
+        id_phieu_tron_dm_ban_dau: String(row.id_phieu_tron_dm_ban_dau ?? '').trim() || undefined,
         ten_phieu: String(row.ten_phieu ?? '').trim() ||
           formatMixingNormSlipName(String(row.ngay ?? ''), String(row.ca ?? ''), String(row.ma_lenh_sx ?? '')),
         ngay: String(row.ngay ?? '').trim(),
@@ -1135,11 +1135,6 @@ export default function MixingNormMaterialsTab() {
     [form.maLenhSx, productionOrders]
   );
 
-  const formulaProductCount = useMemo(
-    () => form.products.filter(product => product.maSpCodes.some(code => code.trim())).length,
-    [form.products]
-  );
-
   const currentSlipName = useMemo(
     () =>
       buildMixingNormSlipNameFromContext({
@@ -1147,10 +1142,9 @@ export default function MixingNormMaterialsTab() {
         machine: selectedOrder?.machine,
         ca: resolveShiftName(form.ca.trim(), shiftOptions) || form.ca.trim(),
         maLenhSx: form.maLenhSx,
-        salesOrderCode: selectedOrder?.salesOrderCode,
-        productCount: formulaProductCount
+        salesOrderCode: selectedOrder?.salesOrderCode
       }),
-    [form.ngay, form.ca, form.maLenhSx, formulaProductCount, selectedOrder, shiftOptions]
+    [form.ngay, form.ca, form.maLenhSx, selectedOrder, shiftOptions]
   );
 
   const productOptions = useMemo((): ProductOption[] => {
@@ -2285,13 +2279,20 @@ export default function MixingNormMaterialsTab() {
         });
       }
 
+      const editingRow = editingId ? rows.find(row => row.id === editingId) : undefined;
+      const taoLichSu = Boolean(
+        editingRow && hasMixingNormMaterialWeightChanges(editingRow.products, payloadProducts)
+      );
       const payload = {
-        ten_phieu: currentSlipName,
+        ten_phieu: editingRow?.id_phieu_tron_dm_ban_dau
+          ? editingRow.ten_phieu || currentSlipName
+          : currentSlipName,
         ngay: form.ngay.trim(),
         ca: resolvedCa,
         ma_lenh_sx: form.maLenhSx.trim(),
         ghi_chu: form.ghiChu.trim(),
-        products: payloadProducts
+        products: payloadProducts,
+        tao_lich_su: taoLichSu
       };
 
       const res = await fetch(
@@ -2309,7 +2310,9 @@ export default function MixingNormMaterialsTab() {
 
       setMessage(
         editingId
-          ? `Đã cập nhật phiếu định mức (${products.length} SP).`
+          ? taoLichSu
+            ? `Đã lưu phiên bản định mức mới (${products.length} SP).`
+            : `Đã cập nhật phiếu định mức (${products.length} SP).`
           : `Đã thêm phiếu định mức (${products.length} SP).`
       );
       closeForm();
@@ -2624,7 +2627,7 @@ export default function MixingNormMaterialsTab() {
                     readOnly
                     disabled
                     className={`${inputClass} bg-zinc-100 font-mono text-xs text-zinc-700 select-all cursor-default`}
-                    title="Tên phiếu tự động: PTĐM - ngày - Máy - LSX/ĐH - tỷ lệ 1,2,3"
+                    title="Tên phiếu tự động: PTĐM - ngày - Máy - LSX/ĐH"
                   />
                 </label>
                 <label className="space-y-1.5 sm:col-span-1">

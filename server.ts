@@ -9,8 +9,14 @@ import type { ProductionReport } from './src/types';
 import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { calculateProductConversionFormulas } from './src/utils/productConversionCalculation';
-import { formatMixingNormSlipName, resolveAuxiliaryWeightPerUnit } from './src/utils/mixingNormAuxiliary';
-import { buildOrderTenGhep } from './src/utils/productProductionName';
+import {
+  buildMixingNormRevisionName,
+  formatMixingNormSlipName,
+  getMixingNormRevisionNumber,
+  resolveAuxiliaryWeightPerUnit,
+  stripMixingNormRevisionSuffix
+} from './src/utils/mixingNormAuxiliary';
+import { buildOrderTenGhep, replaceCutLengthMeters } from './src/utils/productProductionName';
 
 dotenv.config();
 
@@ -2144,7 +2150,7 @@ function parseProductPatchBody(
     'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua',
     'wastePercent', 'ty_le_hao_hut',
     'tenGoc', 'ten_goc', 'doLi', 'do_li', 'doLiDm', 'do_li_dm', 'doDayM', 'do_day_m',
-    'doDaiM', 'do_dai_m', 'mang', 'hangPhe', 'hang_phe'
+    'doDaiM', 'do_dai_m', 'mang', 'hangPhe', 'hang_phe', 'tenGhep', 'ten_ghep'
   ].some(key => Object.prototype.hasOwnProperty.call(source, key));
 
   if (!hasProductField) {
@@ -2275,6 +2281,9 @@ function parseProductPatchBody(
   }
   if (Object.prototype.hasOwnProperty.call(source, 'hangPhe') || Object.prototype.hasOwnProperty.call(source, 'hang_phe')) {
     record.hang_phe = parseMaterialText(source.hangPhe ?? source.hang_phe) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'tenGhep') || Object.prototype.hasOwnProperty.call(source, 'ten_ghep')) {
+    record.ten_ghep = parseMaterialText(source.tenGhep ?? source.ten_ghep) || null;
   }
 
   const hasDoLiDmField =
@@ -5178,6 +5187,25 @@ function parseOrderQuantity(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+/**
+ * Tên ghép lấy từ SP/đơn (đã lưu) được ưu tiên tuyệt đối; đơn cắt lẻ thì thay
+ * mét dài cuối thành mét cắt. Thiếu mới ghép lại từ tên SX.
+ */
+function resolveStoredOrderTenGhep(
+  tenGhepRaw: unknown,
+  tenSanXuat: string,
+  tenSp: string,
+  cutLengthM: number | null
+): string {
+  const stored = String(tenGhepRaw ?? '').trim();
+  if (stored) {
+    return cutLengthM !== null && cutLengthM > 0
+      ? replaceCutLengthMeters(stored, cutLengthM)
+      : stored;
+  }
+  return buildOrderTenGhep(tenSanXuat || tenSp, { cutLengthM }) || '';
+}
+
 type OrderProductRecord = {
   san_pham_id?: string;
   ma_don_hang?: string;
@@ -5335,12 +5363,12 @@ function parseOrderProductsInput(
       const match = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
       if (match) parsedQuyCachMDai = Number(match[1].replace(',', '.'));
     }
-    const ten_ghep =
-      ten_ghep_raw ||
-      buildOrderTenGhep(ten_san_xuat || ten_sp, {
-        cutLengthM: parsedQuyCachMDai
-      }) ||
-      '';
+    const ten_ghep = resolveStoredOrderTenGhep(
+      ten_ghep_raw,
+      ten_san_xuat || ten_sp,
+      '',
+      parsedQuyCachMDai
+    );
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
     const nguon_quy_doi = pickRowField(row, ['nguon_quy_doi', 'conversionSource']);
@@ -5896,12 +5924,12 @@ function buildProductionOrderRecordFromOrder(
   const quyCachForTenGhep =
     selectedProduct?.quy_cach_m_dai ??
     (selectedProduct?.dai_m && selectedProduct.dai_m > 0 ? selectedProduct.dai_m : null);
-  const productTenGhep =
-    String(selectedProduct?.ten_ghep || '').trim() ||
-    buildOrderTenGhep(productProductionName || productName, {
-      cutLengthM: quyCachForTenGhep
-    }) ||
-    '';
+  const productTenGhep = resolveStoredOrderTenGhep(
+    selectedProduct?.ten_ghep,
+    productProductionName || productName,
+    '',
+    quyCachForTenGhep ?? null
+  );
   const customer = pickRowField(order, ['khach_hang', 'customer']);
   const unit = selectedProduct?.don_vi ?? '';
   const workers =
@@ -6001,12 +6029,12 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       const match = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
       if (match) parsedQuyCachMDai = Number(match[1].replace(',', '.'));
     }
-    const ten_ghep =
-      ten_ghep_raw ||
-      buildOrderTenGhep(ten_san_xuat || ten_sp, {
-        cutLengthM: parsedQuyCachMDai
-      }) ||
-      '';
+    const ten_ghep = resolveStoredOrderTenGhep(
+      ten_ghep_raw,
+      ten_san_xuat || ten_sp,
+      '',
+      parsedQuyCachMDai
+    );
     const m2 = parseOrderQuantity(row.m2 ?? row.dien_tich_m2);
     const m_dai = parseOrderQuantity(row.m_dai ?? row.mDai ?? row.met_dai ?? row.chieu_dai_m);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
@@ -12964,6 +12992,82 @@ export function createApp() {
       const materialClassError = await validateMixingNormMaterialClasses(parsed.record);
       if (materialClassError) return res.status(400).json({ error: materialClassError });
 
+      const source = req.body && typeof req.body === 'object'
+        ? req.body as Record<string, unknown>
+        : {};
+      const createHistory = source.tao_lich_su === true || source.createHistory === true;
+
+      if (createHistory) {
+        const currentResult = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .select('id, ten_phieu, id_phieu_tron_dm_ban_dau')
+          .eq('id', id)
+          .single();
+        if (currentResult.error) {
+          console.error('Supabase mixing norm history source query error:', currentResult.error);
+          return res.status(500).json({ error: mixingNormWriteError(currentResult.error) });
+        }
+
+        const currentRow = currentResult.data as Record<string, unknown>;
+        // Nếu đang sửa một bản tỷ lệ, dùng luôn ID ban đầu; tuyệt đối không trỏ tới bản trung gian.
+        const originalId = String(currentRow.id_phieu_tron_dm_ban_dau ?? currentRow.id ?? id).trim();
+        let originalName = String(currentRow.ten_phieu ?? parsed.record.ten_phieu ?? '').trim();
+
+        if (originalId !== id) {
+          const originalResult = await supabase
+            .from(SUPABASE_MIXING_NORM_TABLE)
+            .select('ten_phieu')
+            .eq('id', originalId)
+            .maybeSingle();
+          if (originalResult.error) {
+            console.error('Supabase mixing norm original query error:', originalResult.error);
+            return res.status(500).json({ error: mixingNormWriteError(originalResult.error) });
+          }
+          originalName = String(
+            (originalResult.data as Record<string, unknown> | null)?.ten_phieu ?? originalName
+          ).trim();
+        }
+
+        const historyResult = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .select('ten_phieu')
+          .eq('id_phieu_tron_dm_ban_dau', originalId);
+        if (historyResult.error) {
+          console.error('Supabase mixing norm history query error:', historyResult.error);
+          return res.status(500).json({ error: mixingNormWriteError(historyResult.error) });
+        }
+
+        const historyRows = Array.isArray(historyResult.data) ? historyResult.data : [];
+        const lastRevision = Math.max(
+          historyRows.length,
+          ...historyRows.map(row => getMixingNormRevisionNumber(
+            String((row as Record<string, unknown>).ten_phieu ?? '')
+          ))
+        );
+        const baseName = stripMixingNormRevisionSuffix(originalName) ||
+          String(parsed.record.ten_phieu ?? '').trim();
+        const insertRecord = {
+          ...parsed.record,
+          id_phieu_tron_dm_ban_dau: originalId,
+          ten_phieu: buildMixingNormRevisionName(baseName, lastRevision + 1)
+        };
+        const insertResult = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .insert(insertRecord)
+          .select('*')
+          .single();
+        if (insertResult.error) {
+          console.error('Supabase mixing norm history insert error:', insertResult.error);
+          return res.status(500).json({ error: mixingNormWriteError(insertResult.error) });
+        }
+
+        return res.status(201).json({
+          success: true,
+          created_history: true,
+          record: insertResult.data
+        });
+      }
+
       let updateRecord = { ...parsed.record };
       let { data, error } = await supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
@@ -14230,6 +14334,7 @@ export function createApp() {
       };
 
       // TL/cuộn & TL/tấm lấy từ JSON san_pham của lệnh SX — không tra bảng quy đổi.
+      // Tên ghép hiển thị lấy từ JSON (ten_ghep) — không tự ghép lại.
       interface MergedGroup {
         groupKey: string;
         item_indices: number[];
@@ -14248,6 +14353,7 @@ export function createApp() {
         defaultTrung: number;
         defaultNam: number;
         notes: Set<string>;
+        tenGheps: Set<string>;
       }
 
       const groupsMap = new Map<string, MergedGroup>();
@@ -14263,6 +14369,7 @@ export function createApp() {
         const noteFromLenh = String(item?.ghi_chu ?? '').trim();
         const noteFromDonHang = resolveOrderLineNote(item, maDonHang);
         const note = noteFromLenh || noteFromDonHang;
+        const tenGhepFromJson = String(item?.ten_ghep ?? item?.tenGhep ?? '').trim();
 
         const savedSlSx =
           item?.sl_sx && typeof item.sl_sx === 'object' ? (item.sl_sx as Record<string, unknown>) : null;
@@ -14316,7 +14423,8 @@ export function createApp() {
             defaultBac: itemDefBac,
             defaultTrung: itemDefTrung,
             defaultNam: itemDefNam,
-            notes: new Set(note ? [note] : [])
+            notes: new Set(note ? [note] : []),
+            tenGheps: new Set(tenGhepFromJson ? [tenGhepFromJson] : [])
           };
           groupsMap.set(groupKey, grp);
           groupList.push(grp);
@@ -14335,17 +14443,16 @@ export function createApp() {
           grp.defaultTrung += itemDefTrung;
           grp.defaultNam += itemDefNam;
           if (note) grp.notes.add(note);
+          if (tenGhepFromJson) grp.tenGheps.add(tenGhepFromJson);
         }
       });
 
       const rows = groupList.map((grp, grpIdx) => {
         const item = grp.firstItem;
+        // Tên hiển thị: ten_ghep đã lưu trong JSON san_pham lệnh SX.
+        // Không tự ghép lại — thiếu thì để tên SX thô, frontend hiển thị nguyên văn.
         const rawTenSanXuat = String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim();
-        const formattedTenSanXuat = formatProductionNameWithLengthServer(
-          rawTenSanXuat,
-          grp.quyCachMDaiNum ?? undefined,
-          String(item?.ten_ghep ?? item?.tenGhep ?? '').trim() || undefined
-        );
+        const tenGhepMerged = Array.from(grp.tenGheps).join(' / ');
 
         // Ưu tiên lệnh SX đã lưu (sl_sx); chưa lưu thì fill từ B/T/N của đơn hàng.
         const bac = grp.hasSavedDetail ? grp.totalSavedBac : grp.defaultBac;
@@ -14369,7 +14476,8 @@ export function createApp() {
           ma_don_hang: maDonHangMerged,
           ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
           ten_sp: String(item?.ten_sp ?? item?.ten_hang ?? item?.productName ?? '').trim(),
-          ten_san_xuat: formattedTenSanXuat,
+          ten_san_xuat: rawTenSanXuat,
+          ten_ghep: tenGhepMerged,
           don_vi: grp.donVi,
           so_luong: grp.totalSoLuong,
           khu_vuc: '',

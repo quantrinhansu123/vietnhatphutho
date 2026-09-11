@@ -22,7 +22,8 @@ alter table public.bang_tron_vat_tu_dinh_muc
   add column if not exists ten_nvl text,
   add column if not exists dinh_muc numeric,
   add column if not exists don_vi_dinh_muc text default '%',
-  add column if not exists ten_phieu text;
+  add column if not exists ten_phieu text,
+  add column if not exists id_phieu_tron_dm_ban_dau uuid;
 
 -- Dữ liệu cũ có thể chưa có ngày. Backfill trước khi bật ràng buộc bắt buộc.
 update public.bang_tron_vat_tu_dinh_muc
@@ -40,6 +41,9 @@ create index if not exists bang_tron_vat_tu_dinh_muc_ma_lenh_sx_idx
 
 create index if not exists bang_tron_vat_tu_dinh_muc_ngay_ca_idx
   on public.bang_tron_vat_tu_dinh_muc (ngay desc, ca);
+
+create index if not exists bang_tron_vat_tu_dinh_muc_ban_dau_idx
+  on public.bang_tron_vat_tu_dinh_muc (id_phieu_tron_dm_ban_dau);
 
 alter table public.bang_tron_vat_tu_dinh_muc enable row level security;
 
@@ -65,3 +69,5 @@ comment on column public.bang_tron_vat_tu_dinh_muc.ma_lenh_sx is 'Ma lenh san xu
 comment on column public.bang_tron_vat_tu_dinh_muc.tong_trong_luong is 'Tong trong luong (kg) cua phieu dinh muc.';
 comment on column public.bang_tron_vat_tu_dinh_muc.chi_tiet is
   'Mang SP: [{ma_sp, ten_sp, tong_trong_luong, ghi_chu, nvl:[{ma_nvl, ten_nvl, gia_tri, don_vi, khoi_luong}]}]. khoi_luong = tong_tl * % / 100 (hoac = gia_tri neu don_vi kg). 1 dong = 1 phieu.';
+comment on column public.bang_tron_vat_tu_dinh_muc.id_phieu_tron_dm_ban_dau is
+  'ID phieu tron dinh muc ban dau. Cac ban thay doi luon tro truc tiep ve ban dau, khong noi chuoi.';

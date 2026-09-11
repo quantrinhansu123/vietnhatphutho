@@ -1089,6 +1089,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         doDaiM: String(record.do_dai_m ?? '').trim(),
         mang: String(record.mang ?? '').trim(),
         hangPhe: String(record.hang_phe ?? '').trim(),
+        tenGhep: String(record.ten_ghep ?? '').trim(),
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
@@ -1345,6 +1346,18 @@ export function emptyProductForm(): ProductFormState {
 
 export function productFormToPayload(form: ProductFormState) {
   const doLiDm = form.doLiDm.trim() || extractDoLiDm(form.productionName) || '';
+  const tenGhep = composeProductionDisplayName(
+    {
+      tenGoc: form.tenGoc.trim(),
+      doLi: form.doLi.trim(),
+      doLiDm,
+      doDayM: form.doDayM.trim(),
+      doDaiM: form.doDaiM.trim(),
+      mang: form.mang.trim(),
+      hangPhe: form.hangPhe.trim()
+    },
+    form.group.trim()
+  );
   return {
     code: form.amisCode.trim(),
     newCode: form.newCode.trim(),
@@ -1358,6 +1371,7 @@ export function productFormToPayload(form: ProductFormState) {
     doDaiM: form.doDaiM.trim(),
     mang: form.mang.trim(),
     hangPhe: form.hangPhe.trim(),
+    tenGhep,
     nature: form.nature.trim(),
     group: form.group.trim(),
     unit: form.unit.trim(),

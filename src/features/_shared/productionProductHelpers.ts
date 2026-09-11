@@ -168,6 +168,7 @@ export {
   buildOrderTenGhep,
   composeProductionDisplayName,
   extractDoLiDm,
+  replaceCutLengthMeters,
   seedProductionSpecs
 } from '../../utils/productProductionName';
 

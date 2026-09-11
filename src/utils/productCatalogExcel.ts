@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx';
-import { extractDoLiDm, seedProductionSpecs } from './productProductionName';
+import {
+  composeProductionDisplayName,
+  extractDoLiDm,
+  isValidDoLiToken,
+  seedProductionSpecs
+} from './productProductionName';
 
 /** Dòng Excel danh mục sản phẩm — khớp form / bảng UI / cột `san_pham`. */
 export type ProductCatalogExcelRow = {
@@ -334,6 +339,17 @@ export function downloadProductCatalogExcelTemplate() {
   XLSX.writeFile(workbook, 'mau-danh-muc-san-pham.xlsx');
 }
 
+/** ĐVT import: "CUỘN, TẤM" (ghi cả 2) chuẩn hóa về "Tấm"; còn lại giữ nguyên. */
+export function normalizeImportUnit(raw: string): string {
+  const text = String(raw ?? '').trim();
+  if (!text) return '';
+  const low = text.toLocaleLowerCase('vi');
+  const hasCuon = low.includes('cuộn') || low.includes('cuon');
+  const hasTam = low.includes('tấm') || low.includes('tam');
+  if (hasCuon && hasTam) return 'Tấm';
+  return text;
+}
+
 export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   const productionName = row.productionName.trim();
   const group = row.group.trim();
@@ -343,6 +359,22 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     maAmis: amisCode,
     nhomVthh: group
   });
+  // Độ li Excel ghi tay phải hợp lệ (…li / …ZEM) — chứa KG thì không phải độ li,
+  // bỏ qua để dùng giá trị suy từ tên SX.
+  const rawDoLi = row.doLi.trim();
+  const doLi = (rawDoLi && isValidDoLiToken(rawDoLi) ? rawDoLi : '') || seeded.doLi;
+  const doLiDm = row.doLiDm.trim() || extractDoLiDm(productionName) || seeded.doLiDm;
+  const tenGoc = row.tenGoc.trim() || seeded.tenGoc;
+  const doDayM = row.doDayM.trim() || seeded.doDayM;
+  const doDaiM = row.doDaiM.trim() || seeded.doDaiM;
+  const mang = row.mang.trim() || seeded.mang;
+  const hangPhe = row.hangPhe.trim() || seeded.hangPhe;
+  const unit = normalizeImportUnit(row.unit);
+  // Tên ghép luôn tính từ tên SX (+ cột ghi tay nếu có), lưu DB để dùng chung.
+  const tenGhep = composeProductionDisplayName(
+    { tenGoc, doLi, doLiDm, doDayM, doDaiM, mang, hangPhe },
+    group
+  );
   // Chuỗi rỗng vẫn gửi lên — API map thành null / bỏ trống, không chặn import.
   // Không đổi ten_san_xuat khi import → tránh đụng unique AMIS+tên SP+tên SX.
   // Sóng: do_dai_m lấy đúng theo tên SX dòng (không max).
@@ -352,16 +384,17 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     amisCode,
     name: row.name.trim(),
     productionName,
-    tenGoc: row.tenGoc.trim() || seeded.tenGoc,
-    doLi: row.doLi.trim() || seeded.doLi,
-    doLiDm: row.doLiDm.trim() || extractDoLiDm(productionName) || seeded.doLiDm,
-    doDayM: row.doDayM.trim() || seeded.doDayM,
-    doDaiM: row.doDaiM.trim() || seeded.doDaiM,
-    mang: row.mang.trim() || seeded.mang,
-    hangPhe: row.hangPhe.trim() || seeded.hangPhe,
+    tenGoc,
+    doLi,
+    doLiDm,
+    doDayM,
+    doDaiM,
+    mang,
+    hangPhe,
+    tenGhep,
     nature: row.nature.trim(),
     group,
-    unit: row.unit.trim(),
+    unit,
     totalWeight: row.totalWeight.trim(),
     wastePercent: row.wastePercent.trim().replace(',', '.'),
     rollWidth: row.rollWidth.trim(),

@@ -35,7 +35,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { buildOrderTenGhep } from '../../utils/productProductionName';
+import { buildOrderTenGhep, classifyProductPxGroup, replaceCutLengthMeters } from '../../utils/productProductionName';
 import { formatProductionNameWithLength } from '../_shared/productionProductHelpers';
 import {
   parseOrderProductsFromRecord,
@@ -497,7 +497,27 @@ export function orderProductLinesToPayload(
           }
         : {};
 
+      const catalogTenGhep = String(selectedProduct?.tenGhep || '').trim();
+      const catalogProductionName = String(selectedProduct?.productionName || '').trim();
+      const catalogMainLength = Number(String(selectedProduct?.doDaiM ?? '').replace(',', '.'));
+      // Chỉ nhóm Đặc/Sóng mới thay đúng token m dài chính (kể cả khi không đứng cuối);
+      // các nhóm VTHH khác giữ luật cũ (thay mét cuối / thêm - Nm).
+      const pxGroup = classifyProductPxGroup(selectedProduct?.group || '');
+      const mainForCut =
+        (pxGroup === 'dac' || pxGroup === 'song') &&
+        Number.isFinite(catalogMainLength) &&
+        catalogMainLength > 0
+          ? catalogMainLength
+          : undefined;
       const resolveTenGhep = (tenSanXuat: string, cutLength?: number) => {
+        // Ưu tiên tên ghép đã lưu trên danh mục SP (đúng tuyệt đối).
+        // Đơn cắt lẻ: thay đúng token m dài chính thành mét cắt
+        // (tránh "...6m - 8m" khi m dài không đứng cuối).
+        if (catalogTenGhep && (!tenSanXuat || tenSanXuat === catalogProductionName)) {
+          return cutLength != null
+            ? replaceCutLengthMeters(catalogTenGhep, cutLength, mainForCut)
+            : catalogTenGhep;
+        }
         const tenGhep = buildOrderTenGhep(tenSanXuat, {
           nhomVthh: selectedProduct?.group,
           maAmis: selectedProduct?.newCode,

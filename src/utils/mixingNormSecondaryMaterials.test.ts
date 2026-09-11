@@ -5,7 +5,11 @@ import {
   resolveWorkshopType,
   calcAuxiliaryWeight,
   getAllowedSecondaryGroups,
-  formatMixingNormSlipName
+  formatMixingNormSlipName,
+  buildMixingNormRevisionName,
+  getMixingNormRevisionNumber,
+  hasMixingNormMaterialWeightChanges,
+  stripMixingNormRevisionSuffix
 } from './mixingNormAuxiliary.ts';
 
 test('normalizeNhomVatTuPhuKey chuan hoa dung cac nhom vat tu phu', () => {
@@ -54,20 +58,60 @@ test('calcAuxiliaryWeight tinh dung cho TP; PX Song', () => {
   assert.equal(calcAuxiliaryWeight('song', 'Mực In', 'kg', 5), 5);
 });
 
-test('formatMixingNormSlipName ghep PTDM + ngay + may + LSX/DH + ty le', () => {
+test('formatMixingNormSlipName ghep ten phieu ban dau', () => {
   assert.equal(
-    formatMixingNormSlipName('2026-09-08', 'Máy Đặc 1', 'LSX-001/DH-01', [1, 2, 3]),
-    'PTĐM - 2026-09-08 - Máy Đặc 1 - LSX-001/DH-01 - tỷ lệ 1,2,3'
+    formatMixingNormSlipName('2026-09-08', 'Máy Đặc 1', 'LSX-001/DH-01'),
+    'PTĐM - 2026-09-08 - Máy Đặc 1 - LSX-001/DH-01'
   );
   assert.equal(
-    formatMixingNormSlipName('2026-09-08', 'Máy 2', 'LSX-002', [1]),
-    'PTĐM - 2026-09-08 - Máy 2 - LSX-002 - tỷ lệ 1'
+    formatMixingNormSlipName('2026-09-08', 'Máy 2', 'LSX-002'),
+    'PTĐM - 2026-09-08 - Máy 2 - LSX-002'
   );
   assert.equal(
     formatMixingNormSlipName('2026-09-08', '', 'LSX-002'),
     'PTĐM - 2026-09-08 - LSX-002'
   );
   assert.equal(formatMixingNormSlipName('', '', ''), 'PTĐM');
+});
+
+test('ten lich su dinh muc luon dung ten goc va so lan thay doi', () => {
+  const baseName = 'PTĐM - 2026-09-08 - Máy 2 - LSX-002';
+  assert.equal(buildMixingNormRevisionName(baseName, 1), `${baseName} - tỷ lệ 1`);
+  assert.equal(buildMixingNormRevisionName(`${baseName} - tỷ lệ 1`, 2), `${baseName} - tỷ lệ 2`);
+  assert.equal(stripMixingNormRevisionSuffix(`${baseName} - tỷ lệ 12`), baseName);
+  assert.equal(getMixingNormRevisionNumber(`${baseName} - tỷ lệ 12`), 12);
+});
+
+test('chi thay doi trong luong NVL moi bat co tao lich su', () => {
+  const before = [{
+    san_pham_id: 'sp-1',
+    ma_sp: 'SP01',
+    chi_tiet: [{ material_id: 'nvl-1', ma_nvl: 'NVL01', gia_tri: 10, don_vi: 'kg', khoi_luong: 10, tong_khoi_luong: 100 }]
+  }];
+  const metadataOnly = [{
+    ...before[0],
+    ten_sp: 'Tên mới'
+  }];
+  const changedWeight = [{
+    ...before[0],
+    nvl: [{ material_id: 'nvl-1', ma_nvl: 'NVL01', gia_tri: 11, don_vi: 'kg', khoi_luong: 11, tong_khoi_luong: 110 }],
+    chi_tiet: undefined
+  }];
+  assert.equal(hasMixingNormMaterialWeightChanges(before, metadataOnly), false);
+  assert.equal(hasMixingNormMaterialWeightChanges(before, changedWeight), true);
+});
+
+test('thay doi trong luong NVL phu bat co tao lich su', () => {
+  const before = [{
+    loai: 'nvl_phu',
+    san_pham_id: 'sp-1',
+    nvl_phu: [{ material_id: 'nvl-phu-1', gia_tri: 10, don_vi: 'Cuộn', khoi_luong: 5, tong_khoi_luong: 5 }]
+  }];
+  const after = [{
+    ...before[0],
+    nvl_phu: [{ material_id: 'nvl-phu-1', gia_tri: 12, don_vi: 'Cuộn', khoi_luong: 6, tong_khoi_luong: 6 }]
+  }];
+  assert.equal(hasMixingNormMaterialWeightChanges(before, after), true);
 });
 
 test('mergeNormMaterialLines: Bang Dinh va Tem cung VTHH thi gop, khac VTHH thi tach rieng; NVL phu khac luon gop', async () => {

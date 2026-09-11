@@ -49,6 +49,8 @@ export interface ProductRow {
   doDaiM: string;
   mang: string;
   hangPhe: string;
+  /** Tên ghép hiển thị (lưu DB từ import/form, ghép từ 7 thông số SX) */
+  tenGhep: string;
   nature: string;
   group: string;
   unit: string;

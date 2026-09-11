@@ -50,6 +50,7 @@ import {
   expandProductionOrderProductLines,
   formatProductionNameWithLength,
   buildOrderTenGhep,
+  replaceCutLengthMeters,
   splitProductionProductCodes,
   splitProductionProductNames,
   splitProductionFieldValues,
@@ -5364,10 +5365,12 @@ export function productionOrderFormToCreatePayload(
   const products = lines.map((line, index) => {
     const quyCachMDai = optionalNumber(line.quyCachMDai ?? line.daiM);
     const tenSanXuat = (line.productionName || '').trim();
+    // Ưu tiên tên ghép đã lưu từ đơn hàng/SP; có mét cắt thì thay mét cuối.
+    const storedTenGhep = String(line.tenGhep || '').trim();
     const tenGhep =
-      String(line.tenGhep || '').trim() ||
-      buildOrderTenGhep(tenSanXuat || line.productName.trim(), { cutLengthM: quyCachMDai }) ||
-      '';
+      storedTenGhep
+        ? (quyCachMDai ? replaceCutLengthMeters(storedTenGhep, quyCachMDai) : storedTenGhep)
+        : (buildOrderTenGhep(tenSanXuat || line.productName.trim(), { cutLengthM: quyCachMDai }) || '');
     const conversionResults = line.conversionResults
       ?.filter(item => item.unit.trim() && Number.isFinite(item.value))
       .map(item => ({ don_vi: item.unit.trim(), gia_tri: item.value }));
