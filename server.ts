@@ -13038,7 +13038,9 @@ export function createApp() {
         }
 
         const historyRows = Array.isArray(historyResult.data) ? historyResult.data : [];
+        // Phiếu gốc ngầm hiểu là "tỷ lệ 1", nên bản lịch sử đầu tiên bắt đầu từ "tỷ lệ 2".
         const lastRevision = Math.max(
+          1,
           historyRows.length,
           ...historyRows.map(row => getMixingNormRevisionNumber(
             String((row as Record<string, unknown>).ten_phieu ?? '')
