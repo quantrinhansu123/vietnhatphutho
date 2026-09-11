@@ -157,7 +157,9 @@ export function ProductionOrderPrintPreviewModal({
               group_key: r.group_key || '',
               ma_sp: r.ma_sp || '',
               ten_sp: r.ten_sp || '',
-              ten_san_xuat: formatProductionNameWithLength(rawTenSanXuat, quyCachNum ?? undefined),
+              ten_san_xuat: formatProductionNameWithLength(rawTenSanXuat, quyCachNum ?? undefined, {
+                tenGhep: String(r.ten_ghep || r.tenGhep || '').trim() || undefined
+              }),
               don_vi: r.don_vi || '',
               so_luong: Number(r.so_luong) || 0,
               khu_vuc: r.khu_vuc || '',
@@ -522,7 +524,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.ma_don_hang || '—'}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {formatProductionNameWithLength(row.ten_san_xuat || row.ten_sp || '', row.quy_cach_m_dai)}
+                                {row.ten_san_xuat || row.ten_sp || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <input

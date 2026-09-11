@@ -36,5 +36,6 @@ Tạo lệnh SX: `POST /api/lenh-sx/from-don-hang/:id`
 - **Khách hàng**: Select2 (gõ để tìm) lấy từ `/api/khach-hang` (bảng danh mục Khách hàng), bắt buộc chọn.
 - **Sản phẩm JSON `san_pham`**: mỗi object có `stt` (1, 2, 3…) theo thứ tự dòng. Form thêm/sửa: kéo thả hoặc cụm action cố định `[Xóa] [↑] [↓]` bên phải; Lên/Xuống disabled ở đầu/cuối. Lưu luôn chuẩn hóa `stt` liên tục. Dữ liệu cũ chưa có `stt` hiển thị theo vị trí mảng.
 - **Quy đổi khi thêm/sửa**: tải `san_pham_quy_doi`, áp dụng quy tắc nhóm VTHH và công thức tại `.ai/spec/tinh_toan_quy_doi.md`. Khi sửa, dòng chưa bị tác động hiển thị/giữ nguyên quy đổi trong JSON `san_pham`; chỉ tính theo bảng mới sau khi người dùng đổi dữ liệu ảnh hưởng quy đổi hoặc chọn lại sản phẩm cũ.
-- Dòng JSON `san_pham` lưu mã AMIS, `ten_san_xuat` và mảng `ket_qua_quy_doi`; thiếu cấu hình quy đổi vẫn cho phép lưu đơn.
+- Dòng JSON `san_pham` lưu mã AMIS, `ten_san_xuat`, `ten_ghep` và mảng `ket_qua_quy_doi`; thiếu cấu hình quy đổi vẫn cho phép lưu đơn.
+- **`ten_ghep`**: luôn lưu cho mọi loại đơn (ghép từ `ten_san_xuat`; nếu có `quy_cach_m_dai` / dài cắt thì thay mét dài cuối). In đơn hàng và lệnh SX (thêm/sửa) hiển thị và lưu `ten_ghep`.
 - **Ngày giao hàng**: cột `ngay_giao_hang`, migration `supabase-don-hang-ngay-giao-hang.sql`.

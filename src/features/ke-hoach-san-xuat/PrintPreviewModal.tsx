@@ -149,7 +149,8 @@ export function ProductionPlanPrintPreviewModal({
           ten_sp: String(r.ten_sp || '').trim(),
           ten_san_xuat: formatProductionNameWithLength(
             String(r.ten_san_xuat || r.productionName || r.ten_sp || r.ten_hang || r.ten_san_pham || r.productName || '').trim(),
-            Number(r.quy_cach_m_dai) > 0 ? Number(r.quy_cach_m_dai) : undefined
+            Number(r.quy_cach_m_dai) > 0 ? Number(r.quy_cach_m_dai) : undefined,
+            { tenGhep: String(r.ten_ghep || r.tenGhep || '').trim() || undefined }
           ),
           don_vi: String(r.don_vi || '').trim(),
           slsx_bac: Number(r.slsx_bac) || 0,

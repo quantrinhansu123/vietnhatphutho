@@ -7,7 +7,8 @@ import {
   parseSongLengthMeters,
   parseProductionNameParts,
   composeProductionDisplayName,
-  seedProductionSpecs
+  seedProductionSpecs,
+  buildOrderTenGhep
 } from './productProductionName.ts';
 
 test('extractDoLiDm bắt (đm n li) và bỏ (đm …kg)', () => {
@@ -151,4 +152,16 @@ test('compose: độ dày trước, mét dài luôn cuối', () => {
     'TP; PX Sóng'
   );
   assert.equal(song, 'NHỰA 11 SÓNG XANH 6ZEM - 6ZEM - 6m');
+});
+
+test('buildOrderTenGhep: cắt lẻ thay mét dài cuối', () => {
+  const sx = 'Tấm nhựa đặc màu TRẮNG - 10li ( đm 9,7 li ) - 9m - 1,22m - STD';
+  assert.equal(
+    buildOrderTenGhep(sx, { nhomVthh: 'TP; PX Đặc' }),
+    'Tấm nhựa đặc màu TRẮNG - STD - 10li - (đm 9,7 li) - 1.22m - 9m'
+  );
+  assert.equal(
+    buildOrderTenGhep(sx, { nhomVthh: 'TP; PX Đặc', cutLengthM: 3 }),
+    'Tấm nhựa đặc màu TRẮNG - STD - 10li - (đm 9,7 li) - 1.22m - 3m'
+  );
 });

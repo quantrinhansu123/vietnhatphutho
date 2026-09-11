@@ -86,6 +86,7 @@ export function parseOrderProductsFromRecord(
         const productCode = pickText(row, ['ma_sp', 'ma_hang', 'productCode', 'code'], '');
         const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
         const productionName = pickText(row, ['ten_san_xuat', 'productionName'], '');
+        const tenGhep = pickText(row, ['ten_ghep', 'tenGhep'], '');
         const unit = formatCell(row.don_vi ?? row.unit);
         const quantity = formatCell(row.so_luong ?? row.quantity);
         const doLi = pickText(row, ['do_li', 'doLi'], '');
@@ -121,6 +122,7 @@ export function parseOrderProductsFromRecord(
           productCode,
           productName,
           productionName,
+          tenGhep: tenGhep || undefined,
           unit,
           quantity,
           stt: readOrderProductStt(row.stt ?? row.STT, index),

@@ -1,3 +1,5 @@
+import { buildOrderTenGhep } from '../../utils/productProductionName';
+
 export interface OrderProductLine {
   /** Bản ghi gốc trong JSON `don_hang.san_pham`, dùng để form sửa không làm mất dữ liệu đã lưu. */
   sourceProduct?: Record<string, unknown>;
@@ -21,6 +23,8 @@ export interface OrderProductLine {
   note?: string;
   quyCach?: string;
   quyCachMDai?: number | string;
+  /** Tên ghép (đơn cắt lẻ) — hiển thị thay ten_san_xuat khi in đơn / lệnh SX. */
+  tenGhep?: string;
   tlCuon?: string;
   tlTam?: string;
   m2?: string;
@@ -122,26 +126,29 @@ export function expandProductionOrderProductLines(lines: OrderProductLine[]): Or
   });
 }
 
-export function formatProductionNameWithLength(name: string, length?: number | string): string {
+export function formatProductionNameWithLength(
+  name: string,
+  length?: number | string,
+  options?: { tenGhep?: string; nhomVthh?: string; maAmis?: string }
+): string {
+  const storedTenGhep = String(options?.tenGhep || '').trim();
+  if (storedTenGhep) return storedTenGhep;
+
   const cleanName = (name || '').trim();
   const numericLength = Number(String(length ?? '').replace(',', '.'));
   if (!Number.isFinite(numericLength) || numericLength <= 0) return cleanName || '-';
+  if (!cleanName || cleanName === '-') return buildOrderTenGhep('', { cutLengthM: numericLength }) || '-';
 
-  const nStr = Number.isInteger(numericLength) ? String(numericLength) : String(Math.round(numericLength * 100) / 100);
-  const quyCachSuffix = `(Quy cách: ${nStr} m)`;
-
-  if (!cleanName || cleanName === '-') return quyCachSuffix;
-  if (cleanName.includes(`(Quy cách: ${nStr} m)`)) {
-    return cleanName;
-  }
-  if (cleanName.includes(`(${nStr}m)`) || cleanName.includes(`(${nStr} m)`)) {
-    return cleanName.replace(new RegExp(`\\(${nStr}\\s*m\\)`, 'g'), quyCachSuffix);
-  }
-  return `${cleanName} ${quyCachSuffix}`;
+  return buildOrderTenGhep(cleanName, {
+    nhomVthh: options?.nhomVthh,
+    maAmis: options?.maAmis,
+    cutLengthM: numericLength
+  });
 }
 
 /** Re-export engine ghép tên SP (Đặc/Sóng/Rỗng) — dùng dần thay raw ten_san_xuat khi đã có thông số. */
 export {
+  buildOrderTenGhep,
   composeProductionDisplayName,
   extractDoLiDm,
   seedProductionSpecs

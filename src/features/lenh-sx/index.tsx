@@ -630,7 +630,8 @@ export function ProductionOrdersPanel({
                                           <td className="px-2 py-1.5 font-semibold text-zinc-700">
                                             {formatProductionNameWithLength(
                                               product.productionName || product.productName,
-                                              product.quyCachMDai
+                                              product.quyCachMDai,
+                                              { tenGhep: product.tenGhep }
                                             )}
                                           </td>
                                           <td className="w-[12%] whitespace-nowrap px-1.5 py-1.5 text-right font-mono font-bold text-zinc-900">
@@ -656,7 +657,8 @@ export function ProductionOrdersPanel({
                                           <td className="px-2.5 py-1.5 font-semibold text-zinc-700">
                                             {formatProductionNameWithLength(
                                               product.productionName || product.productName,
-                                              product.quyCachMDai
+                                              product.quyCachMDai,
+                                              { tenGhep: product.tenGhep }
                                             )}
                                           </td>
                                           <td

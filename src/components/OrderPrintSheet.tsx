@@ -3,6 +3,7 @@ import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
 import { CUT_ORDER_TYPE } from '../features/_shared/orderHelpers';
+import { formatProductionNameWithLength } from '../features/_shared/productionProductHelpers';
 
 function formatOrderCreatedAt(value: string): string {
   const trimmed = String(value || '').trim();
@@ -88,7 +89,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
             <tr>
               <th>STT</th>
               <th>Mã sản phẩm</th>
-              <th>Tên sản xuất</th>
+              <th>Tên ghép</th>
               <th>Quy cách</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
@@ -109,7 +110,13 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                   <td className="order-print-center">{line.stt || idx + 1}</td>
                   <td className="order-print-mono">{displayCell(line.productCode)}</td>
                   <td className="order-print-product-name">
-                    {displayCell(line.productionName) || displayCell(line.productName)}
+                    {displayCell(
+                      formatProductionNameWithLength(
+                        line.productionName || line.productName || '',
+                        line.quyCachMDai,
+                        { tenGhep: line.tenGhep }
+                      )
+                    ) || displayCell(line.productName)}
                   </td>
                   <td>{formatLineSpec(line)}</td>
                   <td className="order-print-center">{displayCell(line.unit)}</td>
