@@ -2,7 +2,7 @@
 
 | **Bảng** | `bang_tron_vat_tu_dinh_muc` |
 | **Tab** | `/danh-sach-bao-cao-phoi-tron` → **Phiếu trộn định mức** |
-| **SQL** | `supabase-bang-tron-vat-tu-dinh-muc.sql`, `supabase-bang-tron-vat-tu-dinh-muc-ngay-bat-buoc.sql`, `supabase-bang-tron-vat-tu-dinh-muc-ten-phieu.sql` |
+| **SQL** | `supabase-bang-tron-vat-tu-dinh-muc.sql`, `supabase-bang-tron-vat-tu-dinh-muc-ngay-bat-buoc.sql`, `supabase-bang-tron-vat-tu-dinh-muc-ten-phieu.sql`, `supabase-bang-tron-vat-tu-dinh-muc-lich-su.sql` |
 
 **API:** `/api/bang-tron-vat-tu-dinh-muc`  
 Query: `ngay`, `ca`, `q`  
@@ -11,6 +11,7 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
 
 **Nghiệp vụ hiện tại (2026-09-08):**
 - Một `ma_lenh_sx` có thể có nhiều phiếu trộn định mức; không chặn trùng theo mã lệnh.
+- Khi sửa làm thay đổi trọng lượng NVL chính/phụ, FE gửi `tao_lich_su: true`; API tạo dòng mới, giữ dòng cũ và gán `id_phieu_tron_dm_ban_dau` thẳng về phiếu gốc. Tên bản mới có hậu tố ` - tỷ lệ N`. Sửa metadata khác cập nhật tại chỗ.
 - `ngay` là ô nhập bắt buộc trên form và cột `bang_tron_vat_tu_dinh_muc.ngay` là `NOT NULL`.
 - Nhân bản phiếu giữ lại `ma_lenh_sx`, người dùng chọn ngày cho phiếu mới.
 - Phiếu xuất kho NVL tra định mức theo `ma_lenh_sx + ngay + ca`.

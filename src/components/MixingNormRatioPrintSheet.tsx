@@ -235,10 +235,11 @@ function NormPrintProductSection({
       <h2 className="mixing-norm-ratio-print-product">
         <span className="mixing-norm-ratio-print-product-title">
           <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
-          <span className="mixing-norm-ratio-print-product-code">{displayName}</span>
           {noteText ? (
-            <span className="mixing-norm-ratio-print-inline-note"> · {noteText}</span>
+            <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
           ) : null}
+          {noteText ? <br /> : null}
+          <span className="mixing-norm-ratio-print-product-code">{displayName}</span>
         </span>
       </h2>
       {showBatchMeta && product.tong_trong_luong !== null && product.tong_trong_luong !== undefined ? (
@@ -424,12 +425,13 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   <h2 className="mixing-norm-ratio-print-product">
                     <span className="mixing-norm-ratio-print-product-title">
                       <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
+                      {noteText ? (
+                        <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
+                      ) : null}
+                      {noteText ? <br /> : null}
                       <span className="mixing-norm-ratio-print-product-code">
                         {String(product.print_name || product.ten_ghep || product.ten_sp || product.ma_sp || 'SẢN PHẨM').trim() || 'SẢN PHẨM'}
                       </span>
-                      {noteText ? (
-                        <span className="mixing-norm-ratio-print-inline-note"> · {noteText}</span>
-                      ) : null}
                     </span>
                   </h2>
                   {tong !== null && tong !== undefined ? (

@@ -106,28 +106,130 @@ export function filterSecondaryMaterialOptions<T extends { id?: string; code: st
   });
 }
 
-/**
- * Ghép tên phiếu trộn định mức khi lưu bản thay đổi.
- * Ví dụ: PTĐM - 2026-09-10 - Máy Đặc 1 - LSX-001/DH-01 - tỷ lệ 1,2,3
- */
+/** Ghép tên phiếu trộn định mức ban đầu. */
 export function formatMixingNormSlipName(
   ngay?: string | null,
   mayOrCa?: string | null,
-  lsxOrDh?: string | null,
-  tyLeIndexes?: Array<number | string> | null
+  lsxOrDh?: string | null
 ): string {
   const parts: string[] = ['PTĐM'];
   const n = String(ngay ?? '').trim();
   const may = String(mayOrCa ?? '').trim();
   const ref = String(lsxOrDh ?? '').trim();
-  const tyLe = (tyLeIndexes || [])
-    .map(item => String(item ?? '').trim())
-    .filter(Boolean);
   if (n) parts.push(n);
   if (may) parts.push(may);
   if (ref) parts.push(ref);
-  if (tyLe.length > 0) parts.push(`tỷ lệ ${tyLe.join(',')}`);
   return parts.join(' - ');
+}
+
+/** Bỏ hậu tố phiên bản để luôn lấy đúng tên của phiếu định mức ban đầu. */
+export function stripMixingNormRevisionSuffix(value?: string | null): string {
+  return String(value ?? '')
+    .replace(/\s*-\s*tỷ lệ\s+\d+\s*$/iu, '')
+    .trim();
+}
+
+/** Tên một phiên bản thay đổi định mức, ví dụ "PTĐM ... - tỷ lệ 2". */
+export function buildMixingNormRevisionName(baseName: string, revision: number): string {
+  const normalizedRevision = Math.max(1, Math.trunc(Number(revision) || 1));
+  const normalizedBaseName = stripMixingNormRevisionSuffix(baseName) || 'PTĐM';
+  return `${normalizedBaseName} - tỷ lệ ${normalizedRevision}`;
+}
+
+/** Đọc số lần thay đổi từ hậu tố tên phiếu. */
+export function getMixingNormRevisionNumber(value?: string | null): number {
+  const match = String(value ?? '').trim().match(/\s-\s*tỷ lệ\s+(\d+)\s*$/iu);
+  return match ? Math.max(0, Math.trunc(Number(match[1]) || 0)) : 0;
+}
+
+type MixingNormHistoryLine = {
+  material_id?: unknown;
+  ma_nvl?: unknown;
+  ten_nvl?: unknown;
+  ten_nvl_san_xuat?: unknown;
+  nhom_vthh?: unknown;
+  gia_tri?: unknown;
+  don_vi?: unknown;
+  khoi_luong?: unknown;
+  tong_khoi_luong?: unknown;
+};
+
+type MixingNormHistoryProduct = {
+  loai?: unknown;
+  san_pham_id?: unknown;
+  san_pham_ids?: unknown;
+  ma_sp?: unknown;
+  nvl?: MixingNormHistoryLine[];
+  chi_tiet?: MixingNormHistoryLine[];
+  nvl_phu?: MixingNormHistoryLine[];
+};
+
+function normalizeHistoryNumber(value: unknown): number | null {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const parsed = Number(String(value).replace(',', '.'));
+  return Number.isFinite(parsed) ? Math.round(parsed * 1_000_000) / 1_000_000 : null;
+}
+
+function mixingNormMaterialWeightSnapshot(products: MixingNormHistoryProduct[]): string[] {
+  const snapshots: string[] = [];
+  for (const product of Array.isArray(products) ? products : []) {
+    const productIds = Array.isArray(product.san_pham_ids)
+      ? product.san_pham_ids.map(value => String(value ?? '').trim()).filter(Boolean)
+      : String(product.san_pham_id ?? '').trim()
+        ? [String(product.san_pham_id).trim()]
+        : [];
+    const productKey = String(product.ma_sp ?? '').trim().toLocaleLowerCase('vi') || productIds.sort().join(',');
+    const isSecondaryBlock = String(product.loai ?? '').trim() === 'nvl_phu';
+    const groups: Array<{ kind: 'chinh' | 'phu'; lines: MixingNormHistoryLine[] }> = isSecondaryBlock
+      ? [{ kind: 'phu', lines: Array.isArray(product.nvl_phu) ? product.nvl_phu : [] }]
+      : [
+          {
+            kind: 'chinh',
+            lines: Array.isArray(product.nvl)
+              ? product.nvl
+              : Array.isArray(product.chi_tiet)
+                ? product.chi_tiet
+                : []
+          },
+          { kind: 'phu', lines: Array.isArray(product.nvl_phu) ? product.nvl_phu : [] }
+        ];
+
+    for (const group of groups) {
+      for (const line of group.lines) {
+        const materialKey = [
+          line.ma_nvl,
+          line.ten_nvl,
+          line.ten_nvl_san_xuat,
+          line.nhom_vthh
+        ].map(value => String(value ?? '').trim().toLocaleLowerCase('vi')).join('|') ||
+          String(line.material_id ?? '').trim();
+        snapshots.push(JSON.stringify({
+          kind: group.kind,
+          product: productKey,
+          material: materialKey,
+          giaTri: normalizeHistoryNumber(line.gia_tri),
+          donVi: String(line.don_vi ?? '').trim().toLocaleLowerCase('vi'),
+          khoiLuong: normalizeHistoryNumber(line.khoi_luong),
+          tongKhoiLuong: normalizeHistoryNumber(line.tong_khoi_luong)
+        }));
+      }
+    }
+  }
+  return snapshots.sort();
+}
+
+/**
+ * FE dùng hàm này để quyết định có yêu cầu API tạo bản ghi lịch sử hay không.
+ * Chỉ snapshot trọng lượng các dòng NVL chính/phụ được so sánh; metadata phiếu không tham gia.
+ */
+export function hasMixingNormMaterialWeightChanges(
+  before: MixingNormHistoryProduct[],
+  after: MixingNormHistoryProduct[]
+): boolean {
+  const beforeSnapshot = mixingNormMaterialWeightSnapshot(before);
+  const afterSnapshot = mixingNormMaterialWeightSnapshot(after);
+  return beforeSnapshot.length !== afterSnapshot.length ||
+    beforeSnapshot.some((value, index) => value !== afterSnapshot[index]);
 }
 
 /** Ẩn nhãn chuẩn kiểu STD01/STD02 trên phiếu in. */

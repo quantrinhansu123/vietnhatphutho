@@ -1089,6 +1089,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         doDaiM: String(record.do_dai_m ?? '').trim(),
         mang: String(record.mang ?? '').trim(),
         hangPhe: String(record.hang_phe ?? '').trim(),
+        tenGhep: String(record.ten_ghep ?? '').trim(),
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
@@ -1345,6 +1346,18 @@ export function emptyProductForm(): ProductFormState {
 
 export function productFormToPayload(form: ProductFormState) {
   const doLiDm = form.doLiDm.trim() || extractDoLiDm(form.productionName) || '';
+  const tenGhep = composeProductionDisplayName(
+    {
+      tenGoc: form.tenGoc.trim(),
+      doLi: form.doLi.trim(),
+      doLiDm,
+      doDayM: form.doDayM.trim(),
+      doDaiM: form.doDaiM.trim(),
+      mang: form.mang.trim(),
+      hangPhe: form.hangPhe.trim()
+    },
+    form.group.trim()
+  );
   return {
     code: form.amisCode.trim(),
     newCode: form.newCode.trim(),
@@ -1358,6 +1371,7 @@ export function productFormToPayload(form: ProductFormState) {
     doDaiM: form.doDaiM.trim(),
     mang: form.mang.trim(),
     hangPhe: form.hangPhe.trim(),
+    tenGhep,
     nature: form.nature.trim(),
     group: form.group.trim(),
     unit: form.unit.trim(),
@@ -1450,7 +1464,9 @@ export function ProductEditModal({
       doDayM: seeded.doDayM,
       doDaiM: seeded.doDaiM,
       mang: seeded.mang,
-      hangPhe: seeded.hangPhe
+      // Hàng phế chỉ tự đổi khi tên SX ghi rõ cụm hàng phế; tên không ghi
+      // thì giữ nguyên giá trị đang có (kể cả chọn tay) để tên ghép không sai.
+      hangPhe: seeded.hangPhe || base.hangPhe
     };
   };
 
@@ -1542,7 +1558,9 @@ export function ProductEditModal({
                     doDayM: seeded.doDayM,
                     doDaiM: seeded.doDaiM,
                     mang: seeded.mang,
-                    hangPhe: seeded.hangPhe
+                    // Ưu tiên marker trong tên SX mới; không có thì lấy hàng phế
+                    // đã lưu của SP được chọn, tránh giữ nhầm của SP trước đó.
+                    hangPhe: seeded.hangPhe || item.hangPhe || ''
                   };
                 });
                 setAmisOpen(false);

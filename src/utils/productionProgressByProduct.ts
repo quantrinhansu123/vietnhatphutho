@@ -20,6 +20,8 @@ export type ProductionProgressLine = {
   productCode: string;
   productName: string;
   productionName?: string;
+  /** Tên ghép đã lưu trong JSON san_pham lệnh SX — hiển thị nguyên văn. */
+  tenGhep?: string;
   quyCachMDai?: number | string;
   unit: string;
   plannedQty: number;
@@ -135,11 +137,13 @@ export function buildProductionProgressForOrder(
     if (!key) return;
 
     const plannedQty = parseProductionOrderQuantity(line.quantity) || 0;
+    const lineTenGhep = String(line.tenGhep || '').trim() || undefined;
     const existing = merged.get(key);
     if (existing) {
       existing.plannedQty += plannedQty;
       if (!existing.productName && productName) existing.productName = productName;
       if (!existing.productionName && productionName) existing.productionName = productionName;
+      if (!existing.tenGhep && lineTenGhep) existing.tenGhep = lineTenGhep;
       if (existing.quyCachMDai == null && line.quyCachMDai != null) existing.quyCachMDai = line.quyCachMDai;
       if (!existing.unit && line.unit) existing.unit = line.unit;
       return;
@@ -149,6 +153,7 @@ export function buildProductionProgressForOrder(
       productCode: productCode || productName || productionName,
       productName,
       productionName: productionName || undefined,
+      tenGhep: lineTenGhep,
       quyCachMDai: line.quyCachMDai,
       unit: line.unit && line.unit !== '-' ? line.unit : '',
       plannedQty,

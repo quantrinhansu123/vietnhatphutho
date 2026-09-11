@@ -32,6 +32,10 @@ export interface OrderProductOption {
   group: string;
   unit: string;
   newCode: string;
+  /** Tên ghép đã lưu trên danh mục SP — đơn hàng/lệnh SX ưu tiên lấy, khỏi ghép lại. */
+  tenGhep: string;
+  /** Mét dài chuẩn trên danh mục SP — đơn cắt lẻ dùng làm "m dài chính" để thay đúng token. */
+  doDaiM: string;
 }
 
 export function normalizeLookupText(value: string) {
@@ -122,7 +126,9 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     productionName: product.productionName,
     group: product.group,
     unit: product.unit === '-' ? '' : product.unit,
-    newCode: product.newCode
+    newCode: product.newCode,
+    tenGhep: product.tenGhep || '',
+    doDaiM: product.doDaiM || ''
   })).filter(product => product.code);
 }
 

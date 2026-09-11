@@ -6,7 +6,9 @@ export const FILM_OPTIONS = ['ECO', 'STD', 'SUN PC', 'HA'] as const;
 
 export const WASTE_GRADE_OPTIONS = [
   'hàng 100% NS Off',
-  'hàng chạy 100% phế'
+  'hàng chạy 100% phế',
+  'hàng nguyên phế',
+  'hàng tiêu chuẩn'
 ] as const;
 
 export interface AmisSpecs {
@@ -32,7 +34,7 @@ const AMIS_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_MANG_RE = /(?:màng\s+)?(ECO|STD|SUN\s*PC|HA|LUX|STANDA)\b/iu;
 const NAME_HANG_PHE_RE =
-  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế)/iu;
+  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế|hàng\s+nguyên\s+phế|hàng\s+tiêu\s+chuẩn|100%\s*NS\b)/iu;
 /** Mét sau dấu `-` (standalone), cho phép text theo sau như `30m hàng…`. */
 const DASH_METER_RE = /-\s*([\d.,]+)\s*m(?=\b)/giu;
 /** Mọi token mét trong chuỗi (Sóng: lấy cái cuối). */
@@ -118,30 +120,36 @@ function extractMang(tenSanXuat: string): string {
   return raw;
 }
 
-function extractHangPhe(tenSanXuat: string, maAmis = ''): string {
+/**
+ * Hàng phế CHỈ khi tên sản xuất ghi rõ cụm hàng phế
+ * (hàng 100% NS Off / hàng chạy 100% phế / hàng 100% phế / chạy 100% phế /
+ *  hàng nguyên phế / hàng tiêu chuẩn / 100%NS giữ nguyên text).
+ * Không suy diễn từ mã AMIS hay token "NP" — tránh gán nhầm hàng phế
+ * cho sản phẩm thường rồi lọt vào tên ghép.
+ */
+function extractHangPhe(tenSanXuat: string): string {
   const fromName = String(tenSanXuat || '').match(NAME_HANG_PHE_RE);
-  if (fromName) {
-    const t = fromName[1].trim();
-    if (/^chạy\s+100%\s+phế$/i.test(t) || (/100%\s*phế/i.test(t) && !/NS\s*Off/i.test(t))) {
-      return 'hàng chạy 100% phế';
-    }
-    return t;
-  }
-  if (/\bNP\b/i.test(tenSanXuat) || /(?:^|-)NP(?:-|$)/i.test(maAmis)) {
+  if (!fromName) return '';
+  const t = fromName[1].trim();
+  if (/^chạy\s+100%\s*phế$/i.test(t) || (/100%\s*phế/i.test(t) && !/NS\s*Off/i.test(t))) {
     return 'hàng chạy 100% phế';
   }
-  return '';
+  return t;
 }
 
 function resolveDoLi(maAmis: string, tenSanXuat: string, _group: ProductPxGroup): string {
   const amis = parseAmisSpecs(maAmis);
   if (amis.doLi && !/\bkg\b/i.test(amis.doLi)) return amis.doLi;
+  // Ưu tiên li tường minh trong tên SX trước ZEM: ZEM lẫn trong tên gốc
+  // (vd "...TRẮNG 8ZEM... - 0.8li...") không phải độ li.
+  const liInName = String(tenSanXuat || '').match(/([\d.,]+)\s*li\b/iu);
+  if (liInName) {
+    const li = `${normalizeDecimalToken(liInName[1])}li`;
+    if (isValidDoLiToken(li)) return li;
+  }
   if (amis.zem) return amis.zem;
   const zemInName = String(tenSanXuat || '').match(NAME_ZEM_RE);
   if (zemInName) return `${zemInName[1]}ZEM`;
-  // Chỉ nhận token …li — không lấy …KG làm độ li
-  const liInName = String(tenSanXuat || '').match(/([\d.,]+)\s*li\b/iu);
-  if (liInName) return `${normalizeDecimalToken(liInName[1])}li`;
   return '';
 }
 
@@ -235,7 +243,7 @@ export function parseProductionNameParts(
   const amis = parseAmisSpecs(maAmis);
   const doLiDm = extractDoLiDm(text) || '';
   const mang = extractMang(text);
-  const hangPhe = extractHangPhe(text, maAmis);
+  const hangPhe = extractHangPhe(text);
   let doLi = resolveDoLi(maAmis, text, group);
   if (doLi && !isValidDoLiToken(doLi)) doLi = '';
 
@@ -384,4 +392,49 @@ export function buildOrderTenGhep(
     );
   }
   return seeded.tenGhep;
+}
+
+/**
+ * Đơn cắt lẻ: thay mét dài của tên ghép đã lưu thành mét cắt.
+ * - Ưu tiên thay đúng token m dài chính (vd 6m), kể cả khi nó không đứng cuối.
+ *   Tránh ra "...6m - 8m" khi token cuối là khổ (vd "...6m - 2.1m" cắt 8m → "...8m - 2.1m").
+ * - Không tìm thấy m dài chính: token cuối là số + m thì thay số đó,
+ *   ngược lại thêm "- Nm" vào cuối (vd `… (Quy cách: 3 m)`, `… - 1.22m - 30m`).
+ * Ví dụ cắt 15m: `…8ZEM - … - 0.8li - 1.22m - 30m` → `… - 0.8li - 1.22m - 15m`.
+ */
+export function replaceCutLengthMeters(
+  tenGhep: string,
+  cutLengthM: number | string | null | undefined,
+  mainLengthM?: number | string | null
+): string {
+  const text = String(tenGhep || '').trim();
+  const cut = Number(String(cutLengthM ?? '').replace(',', '.'));
+  if (!text || !Number.isFinite(cut) || cut <= 0) return text;
+  const label = formatMetersLabel(cut);
+  const main = Number(String(mainLengthM ?? '').replace(',', '.'));
+
+  if (Number.isFinite(main) && main > 0) {
+    const tokenRe = /(\d[\d.,]*)\s*m\b/giu;
+    let match: RegExpExecArray | null;
+    let lastIndex = -1;
+    let lastLen = 0;
+    while ((match = tokenRe.exec(text)) !== null) {
+      const prev = match.index > 0 ? text[match.index - 1] : '';
+      // Bỏ qua khớp nằm trong số dài hơn (vd "22m" trong "1.22m").
+      if (prev && /[\d.,]/.test(prev)) continue;
+      const value = Number(match[1].replace(',', '.'));
+      if (Number.isFinite(value) && Math.abs(value - main) < 1e-9) {
+        lastIndex = match.index;
+        lastLen = match[0].length;
+      }
+    }
+    if (lastIndex >= 0) {
+      return `${text.slice(0, lastIndex)}${label}${text.slice(lastIndex + lastLen)}`.trim();
+    }
+  }
+
+  if (/[\d.,]+\s*m\s*$/iu.test(text)) {
+    return text.replace(/[\d.,]+\s*m\s*$/iu, label);
+  }
+  return `${text} - ${label}`;
 }

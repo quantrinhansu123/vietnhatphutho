@@ -8,7 +8,6 @@ import {
   type ProductionOrderRow
 } from '../ke-hoach-san-xuat';
 import { splitProductNameAndNote } from '../ke-hoach-san-xuat/PrintPreviewModal';
-import { formatProductionNameWithLength } from '../_shared/productionProductHelpers';
 import { isCuonProduct, isTamProduct } from '../_shared/orderHelpers';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { waitForPrintImagesReady } from '../../utils/printReady';
@@ -30,6 +29,8 @@ interface PreviewRow {
   ma_sp: string;
   ten_sp: string;
   ten_san_xuat: string;
+  /** Tên ghép đã lưu trong JSON san_pham lệnh SX — hiển thị nguyên văn, không ghép lại. */
+  ten_ghep: string;
   don_vi: string;
   so_luong: number;
   khu_vuc: string;
@@ -147,7 +148,10 @@ export function ProductionOrderPrintPreviewModal({
           .map((r: any, idx: number) => {
             const rawQuyCach = r.quy_cach_m_dai ?? r.quyCachMDai ?? r.dai_m ?? r.daiM;
             const quyCachNum = rawQuyCach !== undefined && rawQuyCach !== null && !isNaN(Number(rawQuyCach)) && Number(rawQuyCach) > 0 ? Number(rawQuyCach) : null;
-            const rawTenSanXuat = r.ten_san_xuat || r.ten_sp || '';
+            // Hiển thị tên ghép trong JSON san_pham lệnh SX; thiếu thì tên SX thô.
+            // Không tự ghép lại.
+            const storedTenGhep = String(r.ten_ghep || r.tenGhep || '').trim();
+            const rawTenSanXuat = String(r.ten_san_xuat || r.ten_sp || '').trim();
             return {
               key: String(r.key || `${order.id}__${idx + 1}`),
               stt: Number(r.stt) || idx + 1,
@@ -157,9 +161,8 @@ export function ProductionOrderPrintPreviewModal({
               group_key: r.group_key || '',
               ma_sp: r.ma_sp || '',
               ten_sp: r.ten_sp || '',
-              ten_san_xuat: formatProductionNameWithLength(rawTenSanXuat, quyCachNum ?? undefined, {
-                tenGhep: String(r.ten_ghep || r.tenGhep || '').trim() || undefined
-              }),
+              ten_san_xuat: rawTenSanXuat,
+              ten_ghep: storedTenGhep,
               don_vi: r.don_vi || '',
               so_luong: Number(r.so_luong) || 0,
               khu_vuc: r.khu_vuc || '',
@@ -213,7 +216,7 @@ export function ProductionOrderPrintPreviewModal({
 
       const tongTl = calculateTotalWeightByUnit(row);
 
-      const { name } = splitProductNameAndNote(row.ten_san_xuat);
+      const { name } = splitProductNameAndNote(row.ten_ghep || row.ten_san_xuat);
 
       return {
         ...row,
@@ -224,7 +227,7 @@ export function ProductionOrderPrintPreviewModal({
         totalSlsx,
         overLimit,
         tongTl,
-        productName: name || row.ten_san_xuat || row.ten_sp || '-'
+        productName: name || row.ten_ghep || row.ten_san_xuat || row.ten_sp || '-'
       };
     });
   }, [rows, edits]);
@@ -524,7 +527,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.ma_don_hang || '—'}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {row.ten_san_xuat || row.ten_sp || '—'}
+                                {row.ten_ghep || row.ten_san_xuat || row.ten_sp || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <input

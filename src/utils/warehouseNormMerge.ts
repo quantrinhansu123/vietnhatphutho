@@ -68,6 +68,41 @@ export function normalizeWarehouseVthh(value: unknown): string {
   return raw;
 }
 
+/** Chuẩn hóa đơn giá làm khóa gộp: "24.000" -> 24000 (cùng logic parseMoneyInput). */
+export function normalizeWarehousePriceKey(value: unknown): string {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '';
+  }
+  const trimmed = String(value ?? '').trim().replace(/\s/g, '');
+  if (!trimmed) return '';
+  const parsed = Number(trimmed.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? String(parsed) : '';
+}
+
+/**
+ * Khóa gộp dòng NVL phụ trên phiếu xuất kho NVL:
+ * cùng máy + cùng tên (+mã khi tên trống) + cùng ĐVT + cùng giá.
+ * Riêng Băng Dính / Tem phải trùng thêm nhóm VTHH.
+ */
+export function buildAuxMergeKey(parts: {
+  machine?: unknown;
+  name?: unknown;
+  code?: unknown;
+  unit?: unknown;
+  unitPrice?: unknown;
+  tapeOrStamp: boolean;
+  vthh?: unknown;
+}): string {
+  const identity = normalizeMaterialKey(parts.name) || normalizeMaterialKey(parts.code);
+  return [
+    normalizeMaterialKey(parts.machine) || '__no_machine__',
+    identity,
+    normalizeMaterialKey(parts.unit),
+    normalizeWarehousePriceKey(parts.unitPrice),
+    parts.tapeOrStamp ? normalizeMaterialKey(parts.vthh) || '__chua_vthh__' : ''
+  ].join('::');
+}
+
 export function mergeNormMaterialLines(sources: NormMaterialSource[], materials: MaterialOption[]): NormMaterialLine[] {
   const byCode = new Map<string, MaterialOption>();
   const byName = new Map<string, MaterialOption>();
@@ -241,15 +276,27 @@ function sumOptionalWarehouseNumber(left: unknown, right: unknown): number | und
 }
 
 /**
- * Gộp NVL phụ theo ID trong cùng máy. Riêng Băng dính/Tem chỉ gộp khi Nhóm VTHH cũng giống nhau.
+ * Gộp NVL phụ trên phiếu xuất kho NVL: cùng máy + cùng tên + cùng ĐVT + cùng giá
+ * thành 1 dòng (cộng SL, trọng lượng, thành tiền). Riêng Băng dính/Tem chỉ gộp
+ * khi Nhóm VTHH cũng giống nhau.
  * Nếu các NVL thêm mới không thuộc máy, lệnh nào (machine rỗng) thì giữ in riêng KHÔNG GỘP.
+ * options.includeClasses: mở rộng gộp cho lớp khác (vd trang tổng hợp gộp cả 'nvl_chinh'
+ * xuyên máy); mặc định chỉ gộp 'nvl_phu'.
  */
-export function mergeAuxiliaryWarehouseLines<T extends AuxiliaryWarehouseLine>(lines: T[]): T[] {
+export function mergeAuxiliaryWarehouseLines<T extends AuxiliaryWarehouseLine>(
+  lines: T[],
+  options?: { includeClasses?: WarehouseMaterialClass[] }
+): T[] {
   const result: T[] = [];
   const indexByKey = new Map<string, number>();
+  const mergeableClass = (value: T['materialClass']) => {
+    const cls = normalizeWarehouseMaterialClass(value);
+    if (cls === 'nvl_phu') return true;
+    return options?.includeClasses?.includes(cls) ?? false;
+  };
 
   for (const source of lines) {
-    if (normalizeWarehouseMaterialClass(source.materialClass) !== 'nvl_phu') {
+    if (!mergeableClass(source.materialClass)) {
       result.push(source);
       continue;
     }
@@ -276,17 +323,20 @@ export function mergeAuxiliaryWarehouseLines<T extends AuxiliaryWarehouseLine>(l
       continue;
     }
 
-    const materialIdentity = String(source.materialId || '').trim() || normalizeMaterialKey(source.code || source.name);
     const groupKey = normalizeNhomVatTuPhuKey(
       source.auxiliaryGroup || source.name || source.code
     );
     const tapeOrStamp = isTapeOrStampMaterial(groupKey);
     const vthh = tapeOrStamp ? normalizeWarehouseVthh(source.nhomVthh) : '';
-    const key = [
-      normalizeMaterialKey(machineName),
-      materialIdentity,
-      tapeOrStamp ? normalizeMaterialKey(vthh) || '__chua_vthh__' : ''
-    ].join('::');
+    const key = buildAuxMergeKey({
+      machine: machineName,
+      name: source.name,
+      code: source.code,
+      unit: source.unit,
+      unitPrice: source.unitPrice,
+      tapeOrStamp,
+      vthh
+    });
     const existingIndex = indexByKey.get(key);
 
     const perUnit = resolveAuxiliaryWeightPerUnit(groupKey, vthh, source.unit);
@@ -344,7 +394,7 @@ export function mergeAuxiliaryWarehouseLines<T extends AuxiliaryWarehouseLine>(l
 
 /**
  * Gộp các dòng NVL phụ trên bảng chỉnh sửa phiếu xuất kho:
- * - Cùng ID (hoặc cùng mã vật tư) và cùng máy.
+ * - Cùng máy + cùng tên + cùng ĐVT + cùng giá.
  * - Riêng Băng Dính hoặc Tem: chỉ gộp khi có Nhóm VTHH giống nhau.
  * - Tính tổng SL CT (documentQuantity), SL Thực (quantity) và tính lại normWeightPerUnitKg.
  */
@@ -388,18 +438,20 @@ export function consolidateWarehouseLines<T extends {
       (effectiveCode && normalizeMaterialKey(c.code) === normalizeMaterialKey(effectiveCode)) ||
       (effectiveName && normalizeMaterialKey(c.name) === normalizeMaterialKey(effectiveName))
     );
-    const materialIdentity = line.materialId || catalogItem?.id || normalizeMaterialKey(effectiveCode || effectiveName);
     const groupKey = normalizeNhomVatTuPhuKey(
       line.auxiliaryGroup || catalogItem?.nhomVatTuPhu || line.productionName || effectiveName || effectiveCode
     );
     const tapeOrStamp = isTapeOrStampMaterial(groupKey);
     const vthh = tapeOrStamp ? normalizeWarehouseVthh(line.nhomVthh) : '';
-    const machineKey = normalizeMaterialKey(line.machine) || '__no_machine__';
-    const key = [
-      machineKey,
-      materialIdentity,
-      tapeOrStamp ? normalizeMaterialKey(vthh) || '__chua_vthh__' : ''
-    ].join('::');
+    const key = buildAuxMergeKey({
+      machine: line.machine,
+      name: effectiveName,
+      code: effectiveCode,
+      unit: line.unit,
+      unitPrice: line.unitPrice,
+      tapeOrStamp,
+      vthh
+    });
 
     const perUnit = resolveAuxiliaryWeightPerUnit(groupKey, vthh, line.unit);
     const existingIndex = indexByKey.get(key);

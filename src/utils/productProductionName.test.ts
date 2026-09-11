@@ -8,7 +8,8 @@ import {
   parseProductionNameParts,
   composeProductionDisplayName,
   seedProductionSpecs,
-  buildOrderTenGhep
+  buildOrderTenGhep,
+  replaceCutLengthMeters
 } from './productProductionName.ts';
 
 test('extractDoLiDm bắt (đm n li) và bỏ (đm …kg)', () => {
@@ -163,5 +164,100 @@ test('buildOrderTenGhep: cắt lẻ thay mét dài cuối', () => {
   assert.equal(
     buildOrderTenGhep(sx, { nhomVthh: 'TP; PX Đặc', cutLengthM: 3 }),
     'Tấm nhựa đặc màu TRẮNG - STD - 10li - (đm 9,7 li) - 1.22m - 3m'
+  );
+});
+
+test('hàng phế: chỉ khi tên SX ghi rõ, không suy diễn từ NP/mã AMIS', () => {
+  const seed = (tenSanXuat: string, maAmis = '', nhomVthh = 'TP; PX Sóng') =>
+    seedProductionSpecs({ tenSanXuat, maAmis, nhomVthh });
+
+  // Token NP trong tên hoặc mã AMIS không còn gán hàng phế.
+  assert.equal(seed('NHỰA 11 SÓNG XANH 6ZEM -2M', 'STS02-11s-6zem').hangPhe, '');
+  assert.equal(seed('Màng PE - NP - 2m', 'STD01-NP-2m', 'TP; PX Đặc').hangPhe, '');
+  assert.ok(!seed('NHỰA 11 SÓNG XANH 6ZEM -2M', 'STS02-11s-6zem').tenGhep.includes('phế'));
+
+  // Cụm ghi rõ trong tên vẫn nhận + chuẩn hóa.
+  assert.equal(
+    seed('Tấm nhựa rỗng - 4.5li x 2.1m x 5.8m chạy 100% phế - màng LUX', '', 'TP; PX Rỗng').hangPhe,
+    'hàng chạy 100% phế'
+  );
+  assert.equal(
+    seed('Tấm đặc - 8li - 8m - hàng 100% NS Off', '', 'TP; PX Đặc').hangPhe,
+    'hàng 100% NS Off'
+  );
+  assert.equal(
+    seed('Tấm đặc - 8li - 8m - hàng nguyên phế', '', 'TP; PX Đặc').hangPhe,
+    'hàng nguyên phế'
+  );
+  assert.ok(
+    seed('Tấm đặc - 8li - 8m - hàng nguyên phế', '', 'TP; PX Đặc').tenGhep.includes('hàng nguyên phế')
+  );
+  // Marker 100%NS giữ nguyên text, không chuẩn hóa.
+  assert.equal(seed('Tấm đặc - 8li - 8m - 100%NS - màng STD', '', 'TP; PX Đặc').hangPhe, '100%NS');
+  assert.ok(
+    seed('Tấm đặc - 8li - 8m - 100%NS - màng STD', '', 'TP; PX Đặc').tenGhep.includes('100%NS')
+  );
+  // Hàng tiêu chuẩn.
+  assert.equal(seed('Tấm đặc - 8li - 8m - hàng tiêu chuẩn', '', 'TP; PX Đặc').hangPhe, 'hàng tiêu chuẩn');
+  assert.ok(
+    seed('Tấm đặc - 8li - 8m - hàng tiêu chuẩn', '', 'TP; PX Đặc').tenGhep.includes('hàng tiêu chuẩn')
+  );
+});
+
+test('ZEM lẫn trong tên gốc thì không phải độ li — ưu tiên li tường minh', () => {
+  const seeded = seedProductionSpecs({
+    tenSanXuat: 'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m',
+    maAmis: '',
+    nhomVthh: 'TP; PX Đặc'
+  });
+  assert.equal(seeded.doLi, '0.8li');
+  assert.equal(
+    seeded.tenGhep,
+    'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m'
+  );
+  // Không có li tường minh thì ZEM vẫn làm độ li (Sóng).
+  assert.equal(
+    seedProductionSpecs({ tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M', maAmis: 'STS02-11s-6zem', nhomVthh: 'TP; PX Sóng' }).doLi,
+    '6ZEM'
+  );
+});
+
+test('replaceCutLengthMeters: thay mét cuối, thiếu thì thêm - Nm', () => {
+  assert.equal(
+    replaceCutLengthMeters('Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m', 15),
+    'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 15m'
+  );
+  assert.equal(
+    replaceCutLengthMeters('Tấm đặc - 8li - ECO', 3),
+    'Tấm đặc - 8li - ECO - 3m'
+  );
+  assert.equal(
+    replaceCutLengthMeters('Hàng mẫu - test', 2.5),
+    'Hàng mẫu - test - 2.5m'
+  );
+  assert.equal(replaceCutLengthMeters('Tấm đặc - 8li', 0), 'Tấm đặc - 8li');
+  assert.equal(replaceCutLengthMeters('', 5), '');
+});
+
+test('replaceCutLengthMeters: ưu tiên thay token m dài chính (lỗi 6m-8m)', () => {
+  // M dài chính 6m không đứng cuối (cuối là khổ 2.1m): thay đúng 6m, không đụng 2.1m.
+  assert.equal(
+    replaceCutLengthMeters('Băng keo X - 6m - 2.1m', 8, 6),
+    'Băng keo X - 8m - 2.1m'
+  );
+  // M dài chính đứng cuối: thay như thường.
+  assert.equal(
+    replaceCutLengthMeters('Tấm - 2.1m - 30m', 15, 30),
+    'Tấm - 2.1m - 15m'
+  );
+  // Không truyền m dài chính: giữ hành vi cũ (thay token mét cuối).
+  assert.equal(
+    replaceCutLengthMeters('Băng keo X - 6m - 2.1m', 8),
+    'Băng keo X - 6m - 8m'
+  );
+  // Không tìm thấy m dài chính trong chuỗi: fallback token cuối.
+  assert.equal(
+    replaceCutLengthMeters('Tấm - 2.1m - 9m', 3, 30),
+    'Tấm - 2.1m - 3m'
   );
 });
