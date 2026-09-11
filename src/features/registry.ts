@@ -119,13 +119,13 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   san_pham: {
     table: 'san_pham',
     label: 'Danh mục sản phẩm',
-    sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-nhom-vthh-kinh-doanh.sql', 'supabase-san-pham-nhom-vthh-them-khac.sql', 'supabase-san-pham-ton-dau-ky.sql', 'supabase-san-pham-kiem-kho-dong-bo.sql'],
+    sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-nhom-vthh-kinh-doanh.sql', 'supabase-san-pham-nhom-vthh-them-khac.sql', 'supabase-san-pham-ton-dau-ky.sql', 'supabase-san-pham-kiem-kho-dong-bo.sql', 'supabase-san-pham-thong-so-sx.sql'],
     apiPrefix: '/api/san-pham',
     serverLines: '3507–3695',
     appTab: 'products',
     appLines: 'src/features/san-pham/index.tsx, src/features/san-pham/types.ts, src/features/san-pham/productFieldClass.ts',
     components: ['src/components/ProductQrScanner.tsx', 'src/components/LineEditorSheet.tsx'],
-    utils: ['src/utils/productNplComponentsExcel.ts', 'src/utils/productCatalogExcel.ts']
+    utils: ['src/utils/productNplComponentsExcel.ts', 'src/utils/productCatalogExcel.ts', 'src/utils/productProductionName.ts']
   },
   danh_sach_may: {
     table: 'danh_sach_may',

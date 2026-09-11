@@ -68,8 +68,12 @@ interface OrderRowExt extends OrderRow {
 }
 
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1180px]';
+const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1420px]';
+export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
   'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
+const orderProductionProductGridClass =
+  'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderCutProductGridClass =
   'grid-cols-[2.25rem_minmax(10rem,1.2fr)_minmax(13rem,1.5fr)_4.5rem_5.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
@@ -177,6 +181,10 @@ export type OrderProductFormLine = {
   productionName: string;
   unit: string;
   quantity: string;
+  /** SL theo miền — chỉ dùng cho loại "Đơn sản xuất". SL tổng = Bắc + Trung + Nam. */
+  slBac?: string;
+  slTrung?: string;
+  slNam?: string;
   /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
   doLi?: string;
   kho?: string;
@@ -229,6 +237,9 @@ export function newOrderProductFormLine(): OrderProductFormLine {
     productionName: '',
     unit: '',
     quantity: '',
+    slBac: '',
+    slTrung: '',
+    slNam: '',
     daiM: '',
     shouldRecalculateConversion: false,
     note: ''
@@ -443,6 +454,7 @@ export function orderProductLinesToPayload(
   productConversions: OrderProductConversion[] = []
 ) {
   const isCutOrder = orderType === CUT_ORDER_TYPE;
+  const isProductionOrder = orderType === PRODUCTION_ORDER_TYPE;
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
     .map((line, index) => {
@@ -459,10 +471,29 @@ export function orderProductLinesToPayload(
         : selectedProduct
           ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
           : line.unit.trim() || resolved.unit;
-      const quantity = parsePercentInput(line.quantity);
+      const bacVal = parsePercentInput(String(line.slBac ?? ''));
+      const trungVal = parsePercentInput(String(line.slTrung ?? ''));
+      const namVal = parsePercentInput(String(line.slNam ?? ''));
+      const hasRegionInput = isProductionOrder &&
+        ((Number.isFinite(bacVal) && String(line.slBac ?? '').trim() !== '') ||
+          (Number.isFinite(trungVal) && String(line.slTrung ?? '').trim() !== '') ||
+          (Number.isFinite(namVal) && String(line.slNam ?? '').trim() !== ''));
+      const regionTotal = (Number.isFinite(bacVal) ? Math.max(0, bacVal) : 0) +
+        (Number.isFinite(trungVal) ? Math.max(0, trungVal) : 0) +
+        (Number.isFinite(namVal) ? Math.max(0, namVal) : 0);
+      const typedQuantity = parsePercentInput(line.quantity);
+      // Đơn sản xuất: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
+      const quantity = isProductionOrder && hasRegionInput ? regionTotal : typedQuantity;
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
       const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;
+      const regionFields = isProductionOrder
+        ? {
+            ...(Number.isFinite(bacVal) ? { so_luong_bac: Math.max(0, bacVal) } : {}),
+            ...(Number.isFinite(trungVal) ? { so_luong_trung: Math.max(0, trungVal) } : {}),
+            ...(Number.isFinite(namVal) ? { so_luong_nam: Math.max(0, namVal) } : {})
+          }
+        : {};
 
       if (!shouldRecalculateConversion) {
         const storedConversionResults = line.conversionResults
@@ -480,6 +511,7 @@ export function orderProductLinesToPayload(
           ghi_chu: note || undefined,
           stt: index + 1,
           recalculate_conversion: false,
+          ...regionFields,
           ...(!line.sourceProduct && line.kg1Sp ? { kg_1_sp: parsePercentInput(line.kg1Sp) } : {}),
           ...(!line.sourceProduct && line.tongKg ? { tong_kg: parsePercentInput(line.tongKg) } : {}),
           ...(!line.sourceProduct && line.m2 ? { m2: parsePercentInput(line.m2) } : {}),
@@ -552,6 +584,7 @@ export function orderProductLinesToPayload(
         ghi_chu: note || undefined,
         stt: index + 1,
         recalculate_conversion: true,
+        ...regionFields,
         ...(isCutOrder
           ? {
               ...(quyCachMDai !== undefined ? { quy_cach_m_dai: quyCachMDai } : {}),
@@ -602,6 +635,9 @@ export function orderToForm(order: OrderRow): OrderFormState {
     productionName: orderCellToInput(line.productionName || ''),
     unit: orderCellToInput(line.unit),
     quantity: orderCellToInput(line.quantity),
+    slBac: line.soLuongBac || '',
+    slTrung: line.soLuongTrung || '',
+    slNam: line.soLuongNam || '',
     daiM: line.daiM || '',
     kg1Sp: line.kg1Sp || '',
     tongKg: line.tongKg || '',
@@ -1198,6 +1234,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   }, 0);
 
   const isFormCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
+  const isFormProductionOrder = orderForm.orderType === PRODUCTION_ORDER_TYPE;
+  const productGridClass = isFormCutOrder
+    ? orderCutProductGridClass
+    : isFormProductionOrder
+      ? orderProductionProductGridClass
+      : orderProductGridClass;
   const customerSelect2Options = useMemo(
     () => ({
       allowClear: true,
@@ -1378,14 +1420,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
               <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-4">
               <div className="overflow-x-auto">
-              <div className={ORDER_PRODUCT_TABLE_MIN_WIDTH}>
+              <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
               <RepeatableLinesBlock
                 title="Sản phẩm"
                 required
                 showColumnHeaders
                 alwaysShowColumnHeaders
                 linesClassName="flex flex-col gap-2"
-                gridTemplateClass={isFormCutOrder ? orderCutProductGridClass : orderProductGridClass}
+                gridTemplateClass={productGridClass}
                 onAdd={() =>
                   setOrderForm(prev => ({
                     ...prev,
@@ -1406,7 +1448,24 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'note', label: 'Ghi chú' },
                         { key: 'actions', label: '' }
                       ]
-                    : [
+                    : isFormProductionOrder
+                      ? [
+                          { key: 'stt', label: 'STT' },
+                          { key: 'code', label: 'Mã AMIS', required: true },
+                          { key: 'name', label: 'Tên sản phẩm' },
+                          { key: 'productionName', label: 'Tên sản xuất' },
+                          { key: 'note', label: 'Ghi chú' },
+                          { key: 'unit', label: 'ĐVT' },
+                          { key: 'bac', label: 'Bắc' },
+                          { key: 'trung', label: 'Trung' },
+                          { key: 'nam', label: 'Nam' },
+                          { key: 'qty', label: 'SL (tổng)', required: true },
+                          { key: 'kg', label: 'KG' },
+                          { key: 'm2', label: 'M2' },
+                          { key: 'mdai', label: 'M dài' },
+                          { key: 'actions', label: '' }
+                        ]
+                      : [
                         { key: 'stt', label: 'STT' },
                         { key: 'code', label: 'Mã AMIS', required: true },
                         { key: 'name', label: 'Tên sản phẩm' },
@@ -1537,8 +1596,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const effectiveUnit = matchedLineProduct && line.shouldRecalculateConversion
                     ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
                     : line.unit;
+                  // Đơn sản xuất: SL tổng = Bắc + Trung + Nam; quy đổi tính theo SL tổng.
+                  const bacNum = parsePercentInput(String(line.slBac ?? ''));
+                  const trungNum = parsePercentInput(String(line.slTrung ?? ''));
+                  const namNum = parsePercentInput(String(line.slNam ?? ''));
+                  const hasRegionQty = isFormProductionOrder &&
+                    (String(line.slBac ?? '').trim() !== '' || String(line.slTrung ?? '').trim() !== '' || String(line.slNam ?? '').trim() !== '');
+                  const regionQtyTotal = (Number.isFinite(bacNum) ? Math.max(0, bacNum) : 0) +
+                    (Number.isFinite(trungNum) ? Math.max(0, trungNum) : 0) +
+                    (Number.isFinite(namNum) ? Math.max(0, namNum) : 0);
+                  const effectiveQtyText = isFormProductionOrder && hasRegionQty ? String(regionQtyTotal) : line.quantity;
                   const calculatedConversion = line.shouldRecalculateConversion && matchedConversion
-                    ? calculateOrderConversion(line.quantity, effectiveUnit, matchedConversion, matchedLineProduct?.group)
+                    ? calculateOrderConversion(effectiveQtyText, effectiveUnit, matchedConversion, matchedLineProduct?.group)
                     : [];
 
                   const kgValue = line.shouldRecalculateConversion
@@ -1554,7 +1623,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   return renderProductLineShell(
                     line,
                     index,
-                    orderProductGridClass,
+                    productGridClass,
                     <>
                     <div className="min-w-0">
                         <SearchableSelect
@@ -1618,15 +1687,64 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       <div className="col-span-1 min-w-0">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                       </div>
-                      <div className="col-span-1 min-w-0">
-                        <input
-                          type="number"
-                          value={line.quantity}
-                          onChange={e => updateConversionProductLine(line.key, { quantity: e.target.value })}
-                          className={`${orderFieldClass} bg-white`}
-                          placeholder="0"
-                        />
-                      </div>
+                      {isFormProductionOrder ? (
+                        <>
+                          <div className="col-span-1 min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              value={line.slBac ?? ''}
+                              onChange={e => updateConversionProductLine(line.key, { slBac: e.target.value })}
+                              className={`${orderFieldClass} bg-white text-right`}
+                              placeholder="0"
+                              title="SL Bắc"
+                            />
+                          </div>
+                          <div className="col-span-1 min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              value={line.slTrung ?? ''}
+                              onChange={e => updateConversionProductLine(line.key, { slTrung: e.target.value })}
+                              className={`${orderFieldClass} bg-white text-right`}
+                              placeholder="0"
+                              title="SL Trung"
+                            />
+                          </div>
+                          <div className="col-span-1 min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              value={line.slNam ?? ''}
+                              onChange={e => updateConversionProductLine(line.key, { slNam: e.target.value })}
+                              className={`${orderFieldClass} bg-white text-right`}
+                              placeholder="0"
+                              title="SL Nam"
+                            />
+                          </div>
+                          <div className="col-span-1 min-w-0">
+                            <input
+                              type="text"
+                              value={hasRegionQty ? formatNumber(regionQtyTotal, 3) : line.quantity}
+                              readOnly={hasRegionQty}
+                              onChange={e => updateConversionProductLine(line.key, { quantity: e.target.value })}
+                              title={hasRegionQty ? 'SL tổng = Bắc + Trung + Nam (tự động)' : 'Nhập Bắc/Trung/Nam để tự tính tổng'}
+                              className={`${orderFieldClass} ${hasRegionQty ? 'bg-zinc-50 text-right font-black' : 'bg-white'}`}
+                              placeholder="0"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="number"
+                            value={line.quantity}
+                            onChange={e => updateConversionProductLine(line.key, { quantity: e.target.value })}
+                            className={`${orderFieldClass} bg-white`}
+                            placeholder="0"
+                          />
+                        </div>
+                      )}
                       <div className="col-span-1 min-w-0">
                         <input
                           type="text"
@@ -1736,6 +1854,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
+                        {(line.soLuongBac || line.soLuongTrung || line.soLuongNam) ? (
+                          <span className="ml-2 text-xs font-bold text-sky-700">
+                            (Bắc {line.soLuongBac || 0} · Trung {line.soLuongTrung || 0} · Nam {line.soLuongNam || 0})
+                          </span>
+                        ) : null}
                       </p>
                       {line.quyCach || line.daiM || line.doLi || line.kho ? (
                         <p className="mt-0.5 text-xs font-semibold text-zinc-500">
@@ -1908,6 +2031,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                             </div>
                             {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
+                            {(line.soLuongBac || line.soLuongTrung || line.soLuongNam) ? (
+                              <div className="mt-0.5 text-[11px] font-bold text-sky-700">
+                                Bắc {line.soLuongBac || 0} · Trung {line.soLuongTrung || 0} · Nam {line.soLuongNam || 0}
+                              </div>
+                            ) : null}
                             {line.conversionResults && line.conversionResults.length > 0 ? (
                               <div className="mt-1 flex flex-wrap gap-1">
                                 {line.conversionResults.filter(r => r.unit !== 'kg/1 SP').map(r => (

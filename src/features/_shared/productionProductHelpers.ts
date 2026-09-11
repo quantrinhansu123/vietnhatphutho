@@ -25,6 +25,10 @@ export interface OrderProductLine {
   tlTam?: string;
   m2?: string;
   mDai?: string;
+  /** SL theo miền cho loại "Đơn sản xuất" (Bắc/Trung/Nam). SL tổng = B + T + N. */
+  soLuongBac?: string;
+  soLuongTrung?: string;
+  soLuongNam?: string;
 }
 
 export function splitProductionProductCodes(raw: string): string[] {
@@ -135,4 +139,11 @@ export function formatProductionNameWithLength(name: string, length?: number | s
   }
   return `${cleanName} ${quyCachSuffix}`;
 }
+
+/** Re-export engine ghép tên SP (Đặc/Sóng/Rỗng) — dùng dần thay raw ten_san_xuat khi đã có thông số. */
+export {
+  composeProductionDisplayName,
+  extractDoLiDm,
+  seedProductionSpecs
+} from '../../utils/productProductionName';
 

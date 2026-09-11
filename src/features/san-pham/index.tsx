@@ -56,6 +56,13 @@ import { showAppToast } from '../../lib/appToast';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 import { availableConvertedUnits, convertProductQuantity, type ProductConversionFactors, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { calculateProductConversionFormulas } from '../../utils/productConversionCalculation';
+import {
+  FILM_OPTIONS,
+  WASTE_GRADE_OPTIONS,
+  composeProductionDisplayName,
+  extractDoLiDm,
+  seedProductionSpecs
+} from '../../utils/productProductionName';
 
 const PRODUCT_QR_LABEL_FOOTER_ROWS = ['Cơ sở sản xuất', 'Công nhân sx', 'Ngày sản xuất'] as const;
 
@@ -662,6 +669,26 @@ export function ProductViewModal({
 
   const normSpecCells = [
     { label: 'Tên sản xuất', value: product.productionName || '-' },
+    { label: 'ĐM (đm n li)', value: product.doLiDm || '-' },
+    {
+      label: 'Tên ghép',
+      value: composeProductionDisplayName(
+        {
+          tenGoc: product.tenGoc || product.productionName,
+          doLi: product.doLi,
+          doLiDm: product.doLiDm,
+          doDayM: product.doDayM,
+          doDaiM: product.doDaiM,
+          mang: product.mang,
+          hangPhe: product.hangPhe
+        },
+        product.group
+      )
+    },
+    { label: 'Độ li', value: product.doLi || '-' },
+    { label: 'Mét dài', value: product.doDaiM || '-' },
+    { label: 'Màng', value: product.mang || '-' },
+    { label: 'Hàng phế', value: product.hangPhe || '-' },
     { label: 'Đơn vị tính', value: product.unit && product.unit !== '-' ? product.unit : '-' },
     { label: 'Tổng trọng lượng TP (kg)', value: formatProductSpecDisplay(product.totalWeight), highlight: true },
     { label: 'Khổ cuộn (m)', value: formatProductSpecDisplay(product.rollWidth) },
@@ -1055,6 +1082,13 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         amisCode: String(record.ma_amis ?? '').trim(),
         name,
         productionName: String(record.ten_san_xuat ?? '').trim(),
+        tenGoc: String(record.ten_goc ?? '').trim(),
+        doLi: String(record.do_li ?? '').trim(),
+        doLiDm: String(record.do_li_dm ?? '').trim(),
+        doDayM: String(record.do_day_m ?? '').trim(),
+        doDaiM: String(record.do_dai_m ?? '').trim(),
+        mang: String(record.mang ?? '').trim(),
+        hangPhe: String(record.hang_phe ?? '').trim(),
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
@@ -1094,6 +1128,13 @@ export type ProductFormState = {
   amisCode: string;
   name: string;
   productionName: string;
+  tenGoc: string;
+  doLi: string;
+  doLiDm: string;
+  doDayM: string;
+  doDaiM: string;
+  mang: string;
+  hangPhe: string;
   nature: string;
   group: string;
   unit: string;
@@ -1239,6 +1280,13 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     amisCode: productCellToInput(product.amisCode),
     name: productCellToInput(product.name),
     productionName: productCellToInput(product.productionName),
+    tenGoc: productCellToInput(product.tenGoc),
+    doLi: productCellToInput(product.doLi),
+    doLiDm: productCellToInput(product.doLiDm),
+    doDayM: productCellToInput(product.doDayM),
+    doDaiM: productCellToInput(product.doDaiM),
+    mang: productCellToInput(product.mang),
+    hangPhe: productCellToInput(product.hangPhe),
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
     unit: normalizeUnitForForm(product.unit),
@@ -1267,6 +1315,13 @@ export function emptyProductForm(): ProductFormState {
     amisCode: '',
     name: '',
     productionName: '',
+    tenGoc: '',
+    doLi: '',
+    doLiDm: '',
+    doDayM: '',
+    doDaiM: '',
+    mang: '',
+    hangPhe: '',
     nature: '',
     group: '',
     unit: '',
@@ -1289,12 +1344,20 @@ export function emptyProductForm(): ProductFormState {
 }
 
 export function productFormToPayload(form: ProductFormState) {
+  const doLiDm = form.doLiDm.trim() || extractDoLiDm(form.productionName) || '';
   return {
     code: form.amisCode.trim(),
     newCode: form.newCode.trim(),
     amisCode: form.amisCode.trim(),
     name: form.name.trim(),
     productionName: form.productionName.trim(),
+    tenGoc: form.tenGoc.trim(),
+    doLi: form.doLi.trim(),
+    doLiDm,
+    doDayM: form.doDayM.trim(),
+    doDaiM: form.doDaiM.trim(),
+    mang: form.mang.trim(),
+    hangPhe: form.hangPhe.trim(),
     nature: form.nature.trim(),
     group: form.group.trim(),
     unit: form.unit.trim(),
@@ -1350,9 +1413,46 @@ export function ProductEditModal({
 
   const fields: Array<{ key: Exclude<keyof ProductFormState, 'conversions'>; label: string; required?: boolean; span?: boolean }> = [
     { key: 'name', label: 'Tên sản phẩm', required: true },
-    { key: 'productionName', label: 'Tên sản xuất' },
     { key: 'description', label: 'Mô tả', span: true }
   ];
+
+  const composedName = useMemo(
+    () =>
+      composeProductionDisplayName(
+        {
+          tenGoc: form.tenGoc,
+          doLi: form.doLi,
+          doLiDm: form.doLiDm,
+          doDayM: form.doDayM,
+          doDaiM: form.doDaiM,
+          mang: form.mang,
+          hangPhe: form.hangPhe
+        },
+        form.group
+      ),
+    [form.tenGoc, form.doLi, form.doLiDm, form.doDayM, form.doDaiM, form.mang, form.hangPhe, form.group]
+  );
+
+  const seedSpecsFromName = (next: Partial<ProductFormState>, base: ProductFormState = form) => {
+    const productionName = next.productionName ?? base.productionName;
+    const amisCode = next.amisCode ?? base.amisCode;
+    const group = next.group ?? base.group;
+    const seeded = seedProductionSpecs({
+      tenSanXuat: productionName,
+      maAmis: amisCode,
+      nhomVthh: group
+    });
+    return {
+      ...next,
+      tenGoc: seeded.tenGoc,
+      doLi: seeded.doLi,
+      doLiDm: seeded.doLiDm || extractDoLiDm(productionName) || '',
+      doDayM: seeded.doDayM,
+      doDaiM: seeded.doDaiM,
+      mang: seeded.mang,
+      hangPhe: seeded.hangPhe
+    };
+  };
 
   const handleSave = async () => {
     await onSave(form);
@@ -1360,15 +1460,18 @@ export function ProductEditModal({
 
   const applyGroup = (group: string) => {
     const rule = PRODUCT_GROUP_RULES[group as ProductGroup];
-    if (!rule) return setForm(prev => ({ ...prev, group }));
     setForm(prev => {
-      return {
-        ...prev,
-        group,
-        unit: rule.primaryUnit || prev.unit,
-        wastePercent: rule.wastePercent,
-        conversions: [prev.conversions[0] || emptyConversion()]
-      };
+      const withGroup = rule
+        ? {
+            ...prev,
+            group,
+            unit: rule.primaryUnit || prev.unit,
+            wastePercent: rule.wastePercent,
+            conversions: [prev.conversions[0] || emptyConversion()]
+          }
+        : { ...prev, group };
+      const seeded = seedSpecsFromName({ group }, withGroup);
+      return { ...withGroup, ...seeded };
     });
   };
 
@@ -1423,7 +1526,27 @@ export function ProductEditModal({
               className={productFieldClass}
             />
             {amisOpen && filteredAmisOptions.length > 0 && <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-auto rounded-lg border border-zinc-200 bg-white shadow-xl">
-              {filteredAmisOptions.map(item => <button key={item.id} type="button" onMouseDown={event => event.preventDefault()} onClick={() => { setForm(prev => ({ ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName })); setAmisOpen(false); }} className="block w-full px-3 py-2 text-left hover:bg-red-50">
+              {filteredAmisOptions.map(item => <button key={item.id} type="button" onMouseDown={event => event.preventDefault()} onClick={() => {
+                setForm(prev => {
+                  const nextBase = { ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName, group: item.group || prev.group };
+                  const seeded = seedProductionSpecs({
+                    tenSanXuat: item.productionName,
+                    maAmis: item.amisCode,
+                    nhomVthh: item.group || prev.group
+                  });
+                  return {
+                    ...nextBase,
+                    tenGoc: seeded.tenGoc,
+                    doLi: seeded.doLi,
+                    doLiDm: seeded.doLiDm,
+                    doDayM: seeded.doDayM,
+                    doDaiM: seeded.doDaiM,
+                    mang: seeded.mang,
+                    hangPhe: seeded.hangPhe
+                  };
+                });
+                setAmisOpen(false);
+              }} className="block w-full px-3 py-2 text-left hover:bg-red-50">
                 <span className="block text-xs font-black text-zinc-900">{item.amisCode}</span><span className="block text-[11px] font-semibold text-zinc-500">{item.name || '—'} · {item.productionName || '—'}</span>
               </button>)}
             </div>}
@@ -1458,6 +1581,83 @@ export function ProductEditModal({
               <input value={String(form[field.key])} onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))} className={productFieldClass} />
             </label>
           ))}
+          <label className="block space-y-1.5 sm:col-span-2">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên sản xuất</span>
+            <input
+              value={form.productionName}
+              onChange={event => {
+                const productionName = event.target.value;
+                setForm(prev => {
+                  const seeded = seedSpecsFromName({ productionName }, prev);
+                  return { ...prev, productionName, ...seeded };
+                });
+              }}
+              className={productFieldClass}
+              placeholder="Nhập tên sản xuất — hệ thống suy luận ĐM / thông số"
+            />
+          </label>
+          <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 sm:col-span-2">
+            <div>
+              <h4 className="text-xs font-black uppercase text-amber-900">Thông số SX / ghép tên</h4>
+              <p className="text-[10px] font-semibold text-amber-800/80">
+                ĐM lấy `(đm n li)` từ tên SX. Đặc: ưu tiên 8/9/20/30m làm m dài. Sóng: m dài đúng theo tên SX dòng. Không đổi unique `AMIS + Tên SP + Tên SX`.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Tên gốc</span>
+                <input value={form.tenGoc} onChange={event => setForm(prev => ({ ...prev, tenGoc: event.target.value }))} className={`${productFieldClass} bg-white`} />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li</span>
+                <input value={form.doLi} onChange={event => setForm(prev => ({ ...prev, doLi: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="5.0li / 6ZEM" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm n li)</span>
+                <input value={form.doLiDm} onChange={event => setForm(prev => ({ ...prev, doLiDm: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="(đm 5.7 li)" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ dày (m)</span>
+                <input value={form.doDayM} onChange={event => setForm(prev => ({ ...prev, doDayM: event.target.value }))} className={`${productFieldClass} bg-white`} />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Mét dài</span>
+                <input value={form.doDaiM} onChange={event => setForm(prev => ({ ...prev, doDaiM: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="Đặc: 8/9/20/30m; Sóng: theo tên SX" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Màng</span>
+                <select
+                  value={
+                    FILM_OPTIONS.includes(form.mang as (typeof FILM_OPTIONS)[number])
+                      ? form.mang
+                      : ''
+                  }
+                  onChange={event => setForm(prev => ({ ...prev, mang: event.target.value }))}
+                  className={`${productFieldClass} bg-white`}
+                >
+                  <option value="">— / tự nhập bên dưới</option>
+                  {FILM_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+                <input
+                  value={form.mang}
+                  onChange={event => setForm(prev => ({ ...prev, mang: event.target.value }))}
+                  className={`${productFieldClass} mt-1 bg-white`}
+                  placeholder="ECO / STD / SUN PC / HA hoặc nhập tay"
+                />
+              </label>
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Hàng phế</span>
+                <select value={form.hangPhe} onChange={event => setForm(prev => ({ ...prev, hangPhe: event.target.value }))} className={`${productFieldClass} bg-white`}>
+                  <option value="">—</option>
+                  {WASTE_GRADE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Tên ghép (tự động)</span>
+                <input value={composedName} readOnly className={`${productFieldClass} bg-zinc-100 font-semibold text-zinc-800`} />
+              </label>
+            </div>
+          </section>
           <section className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:col-span-2">
             <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước.</p></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1855,8 +2055,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           .filter(([key]) => Boolean(key))
       );
 
-      let created = 0;
-      let updated = 0;
+      const creates: Array<ReturnType<typeof productCatalogRowToPayload>> = [];
+      const updates: Array<ReturnType<typeof productCatalogRowToPayload> & { id: string }> = [];
       const failures: string[] = [];
 
       for (const row of rows) {
@@ -1876,53 +2076,65 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         }
 
         const payload = productCatalogRowToPayload(row);
-
-        // Logic UPDATE vs INSERT:
-        // - UPDATE: Cả 3 trường (Mã SP, Tên SP, Tên sản xuất) đều có dữ liệu VÀ khớp sản phẩm trong DB
-        // - INSERT: Bất kỳ trường nào rỗng, HOẶC không khớp sản phẩm nào
         let existing: ProductRow | undefined;
-
         if (code && name && productionName) {
-          // Cả 3 trường đều có dữ liệu → kiểm tra khớp
           const identityKey = buildProductIdentityKey(code, name, productionName);
-          existing = identityKey ? byIdentity.get(identityKey) as ProductRow | undefined : undefined;
+          existing = identityKey ? (byIdentity.get(identityKey) as ProductRow | undefined) : undefined;
         }
-        // Nếu bất kỳ trường nào rỗng → existing = undefined → INSERT
 
-        const res = existing
-          ? await fetch(`/api/san-pham/${existing.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            })
-          : await fetch('/api/san-pham', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
+        if (existing?.id) {
+          const identityKey = buildProductIdentityKey(code, name, productionName) || existing.id;
+          // Bỏ payload update cũ cùng identity trong batch
+          const prevIdx = updates.findIndex(item => item.id === existing!.id);
+          if (prevIdx >= 0) updates.splice(prevIdx, 1);
+          updates.push({ ...payload, id: existing.id });
+        } else {
+          const identityKey = buildProductIdentityKey(
+            payload.code || payload.amisCode,
+            payload.name,
+            payload.productionName
+          );
+          if (identityKey) {
+            const prevIdx = creates.findIndex(item =>
+              buildProductIdentityKey(item.code || item.amisCode, item.name, item.productionName) === identityKey
+            );
+            if (prevIdx >= 0) creates.splice(prevIdx, 1);
+          }
+          creates.push(payload);
+        }
+      }
 
+      const CHUNK_SIZE = 150;
+      const chunkArray = <T,>(items: T[], size: number): T[][] => {
+        const chunks: T[][] = [];
+        for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+        return chunks;
+      };
+
+      let created = 0;
+      let updated = 0;
+
+      const postBatch = async (createsChunk: typeof creates, updatesChunk: typeof updates, label: string) => {
+        if (createsChunk.length === 0 && updatesChunk.length === 0) return;
+        const res = await fetch('/api/san-pham/import-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creates: createsChunk, updates: updatesChunk })
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
-          continue;
+          failures.push(data.error || `${label} thất bại`);
+          return;
         }
+        created += Number(data.createdCount || 0);
+        updated += Number(data.updatedCount || 0);
+      };
 
-        const saved = data.product && typeof data.product === 'object' ? data.product : null;
-        const savedId = saved ? String(saved.id ?? '').trim() : '';
-        const savedCode = saved ? String(saved.ma_sp ?? code).trim() : code;
-        const savedName = saved ? String(saved.ten_sp ?? name).trim() : name;
-        const savedProductionName = saved ? String(saved.ten_san_xuat ?? productionName).trim() : productionName;
-
-        if (savedId && savedCode) {
-          const savedIdentityKey = buildProductIdentityKey(savedCode, savedName, savedProductionName);
-          if (savedIdentityKey) {
-            byIdentity.set(savedIdentityKey, { id: savedId } as ProductRow);
-          }
-        }
-
-        // Chỉ dựa vào existing (có gửi PATCH hay không), không dựa vào data.upserted
-        if (existing) updated += 1;
-        else created += 1;
+      for (const [index, chunk] of chunkArray(creates, CHUNK_SIZE).entries()) {
+        await postBatch(chunk, [], `Insert batch ${index + 1}`);
+      }
+      for (const [index, chunk] of chunkArray(updates, CHUNK_SIZE).entries()) {
+        await postBatch([], chunk, `Update batch ${index + 1}`);
       }
 
       if (created > 0 || updated > 0) {
@@ -1930,8 +2142,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       }
 
       const summary = [
-        created || updated ? `Đã nhập Excel SP: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
-        failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
+        created || updated ? `Đã nhập Excel SP (batch): thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        failures.length ? `${failures.length} lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
         .join(' ');
@@ -2707,6 +2919,8 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell align="center">Mã QR</TableHeadCell>
           <TableHeadCell>Tên sản phẩm</TableHeadCell>
           <TableHeadCell>Tên sản xuất</TableHeadCell>
+          <TableHeadCell>ĐM</TableHeadCell>
+          <TableHeadCell>Tên ghép</TableHeadCell>
           <TableHeadCell>Tính chất</TableHeadCell>
           <TableHeadCell align="center">Nhóm</TableHeadCell>
           <TableHeadCell align="center">Đơn vị</TableHeadCell>
@@ -2760,6 +2974,21 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
                   )}
                 </td>
                 <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-bold text-zinc-700">{product.productionName || '-'}</td>
+                <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle font-mono text-xs font-bold text-amber-800">{product.doLiDm || '-'}</td>
+                <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle text-xs font-semibold text-zinc-700">
+                  {composeProductionDisplayName(
+                    {
+                      tenGoc: product.tenGoc || product.productionName,
+                      doLi: product.doLi,
+                      doLiDm: product.doLiDm,
+                      doDayM: product.doDayM,
+                      doDaiM: product.doDaiM,
+                      mang: product.mang,
+                      hangPhe: product.hangPhe
+                    },
+                    product.group
+                  )}
+                </td>
                 <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
                   <StatusBadge label={product.nature} color="rose" />
                 </td>

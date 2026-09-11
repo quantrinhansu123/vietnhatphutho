@@ -40,6 +40,15 @@ export interface ProductRow {
   amisCode: string;
   name: string;
   productionName: string;
+  /** Phần tên gốc dùng ghép hiển thị */
+  tenGoc: string;
+  doLi: string;
+  /** Chuỗi chuẩn hóa `(đm n li)` lưu DB */
+  doLiDm: string;
+  doDayM: string;
+  doDaiM: string;
+  mang: string;
+  hangPhe: string;
   nature: string;
   group: string;
   unit: string;
