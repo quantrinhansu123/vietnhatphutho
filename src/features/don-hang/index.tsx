@@ -35,6 +35,8 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
+import { buildOrderTenGhep } from '../../utils/productProductionName';
+import { formatProductionNameWithLength } from '../_shared/productionProductHelpers';
 import {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -495,17 +497,34 @@ export function orderProductLinesToPayload(
           }
         : {};
 
+      const resolveTenGhep = (tenSanXuat: string, cutLength?: number) => {
+        const tenGhep = buildOrderTenGhep(tenSanXuat, {
+          nhomVthh: selectedProduct?.group,
+          maAmis: selectedProduct?.newCode,
+          cutLengthM: cutLength
+        });
+        return tenGhep || undefined;
+      };
+
       if (!shouldRecalculateConversion) {
         const storedConversionResults = line.conversionResults
           ?.filter(result => result.unit && Number.isFinite(result.value))
           .map(result => ({ don_vi: result.unit, gia_tri: result.value }));
+        const tenSanXuat = line.productionName.trim() || '';
+        const quyCachMDaiStored = Number.isFinite(daiM) && daiM > 0
+          ? daiM
+          : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
+            ? Number(line.quyCachMDai)
+            : undefined;
+        const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDaiStored);
 
         return {
           ...(line.sourceProduct || {}),
           san_pham_id: line.productId.trim() || selectedProduct?.id || undefined,
           ma_sp: productCode,
           ten_sp: line.productName.trim(),
-          ten_san_xuat: line.productionName.trim() || '',
+          ten_san_xuat: tenSanXuat,
+          ...(tenGhep ? { ten_ghep: tenGhep } : {}),
           don_vi: line.unit.trim() || resolved.unit,
           so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
           ghi_chu: note || undefined,
@@ -574,11 +593,16 @@ export function orderProductLinesToPayload(
         cutResults.push({ don_vi: 'm dài', gia_tri: cutMDai });
       }
 
+      const tenSanXuat =
+        line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '';
+      const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDai);
+
       return {
         san_pham_id: selectedProduct?.id || line.productId.trim() || undefined,
         ma_sp: productCode,
         ten_sp: productName,
-        ten_san_xuat: line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '',
+        ten_san_xuat: tenSanXuat,
+        ...(tenGhep ? { ten_ghep: tenGhep } : {}),
         don_vi: unit,
         so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
         ghi_chu: note || undefined,
@@ -1984,7 +2008,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
                 <span>STT</span>
                 <span>Mã SP</span>
-                <span>Tên sản xuất</span>
+                <span>Tên SP / Tên ghép</span>
                 <span className="text-right">SL</span>
                 <span>ĐVT</span>
               </div>
@@ -2026,7 +2050,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
                               <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
                               <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                              <span className="text-zinc-800">{line.productionName || line.productName || '-'}</span>
+                              <span className="text-zinc-800">
+                                {line.tenGhep ||
+                                  formatProductionNameWithLength(
+                                    line.productionName || line.productName || '',
+                                    line.quyCachMDai
+                                  ) ||
+                                  '-'}
+                              </span>
                               <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                             </div>

@@ -357,3 +357,31 @@ export function seedProductionSpecs(input: {
     tenGhep: composeProductionDisplayName(parts, input.nhomVthh)
   };
 }
+
+/**
+ * Tên ghép cho đơn cắt lẻ: ghép từ ten_san_xuat; nếu có m dài cắt thì thay segment mét dài cuối.
+ * Ví dụ cắt 3m: `… - 1.22m - 9m` → `… - 1.22m - 3m`.
+ */
+export function buildOrderTenGhep(
+  tenSanXuat: string,
+  options?: {
+    nhomVthh?: string;
+    maAmis?: string;
+    cutLengthM?: number | string | null;
+  }
+): string {
+  const nhomVthh = String(options?.nhomVthh || '').trim();
+  const seeded = seedProductionSpecs({
+    tenSanXuat,
+    nhomVthh,
+    maAmis: options?.maAmis || ''
+  });
+  const cut = Number(String(options?.cutLengthM ?? '').replace(',', '.'));
+  if (Number.isFinite(cut) && cut > 0) {
+    return composeProductionDisplayName(
+      { ...seeded, doDaiM: formatMetersLabel(cut) },
+      nhomVthh
+    );
+  }
+  return seeded.tenGhep;
+}

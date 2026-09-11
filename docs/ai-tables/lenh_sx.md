@@ -53,5 +53,5 @@ Mỗi dòng lệnh: cột **Mã hàng / Tên hàng / Số lượng** trình bày
 - Giữ riêng từng dòng trong JSON `don_hang.san_pham`, kể cả các dòng trùng mã hoặc `san_pham_id`; không gộp số lượng.
 - Trong form thêm/sửa Lệnh SX, sau khi chọn đơn hàng và chọn sản phẩm, ô **SL** tự điền theo `so_luong` của đúng dòng sản phẩm đã chọn trong đơn hàng (ưu tiên nhận diện theo `san_pham_id` + STT dòng).
 - `lenh_sx.san_pham[].san_pham_id` phải giữ nguyên ID từ đúng dòng `don_hang.san_pham[]`; frontend và backend không được fallback/dò lại theo mã hoặc tên sản phẩm vì có thể trỏ sang một dòng danh mục khác.
-- Sản phẩm có `quy_cach_m_dai` hiển thị quy cách mét bên cạnh tên sản phẩm.
+- Sản phẩm luôn lưu và hiển thị **tên ghép** (`ten_ghep`; thiếu thì ghép lại từ `ten_san_xuat` + mét cắt nếu có).
 - Các cột KG / M2 / M dài và JSON `lenh_sx.san_pham` lấy trực tiếp dữ liệu quy đổi từ dòng đơn hàng (`ket_qua_quy_doi` và các trường liên quan), không tải lại `san_pham_quy_doi` trong form lệnh SX.

@@ -10,6 +10,7 @@ import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews'
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { calculateProductConversionFormulas } from './src/utils/productConversionCalculation';
 import { formatMixingNormSlipName, resolveAuxiliaryWeightPerUnit } from './src/utils/mixingNormAuxiliary';
+import { buildOrderTenGhep } from './src/utils/productProductionName';
 
 dotenv.config();
 
@@ -5183,6 +5184,7 @@ type OrderProductRecord = {
   ma_sp: string;
   ten_sp: string;
   ten_san_xuat?: string;
+  ten_ghep?: string;
   don_vi: string;
   so_luong: number | null;
   stt?: number;
@@ -5310,6 +5312,7 @@ function parseOrderProductsInput(
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
+    const ten_ghep_raw = pickRowField(row, ['ten_ghep', 'tenGhep']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong_bac = parseOrderQuantity(row.so_luong_bac ?? row.sl_bac ?? row.slsx_bac ?? row.bac ?? row.slBac);
     const so_luong_trung = parseOrderQuantity(row.so_luong_trung ?? row.sl_trung ?? row.slsx_trung ?? row.trung ?? row.slTrung);
@@ -5332,6 +5335,12 @@ function parseOrderProductsInput(
       const match = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
       if (match) parsedQuyCachMDai = Number(match[1].replace(',', '.'));
     }
+    const ten_ghep =
+      ten_ghep_raw ||
+      buildOrderTenGhep(ten_san_xuat || ten_sp, {
+        cutLengthM: parsedQuyCachMDai
+      }) ||
+      '';
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
     const nguon_quy_doi = pickRowField(row, ['nguon_quy_doi', 'conversionSource']);
@@ -5347,6 +5356,7 @@ function parseOrderProductsInput(
       ...(kho !== null && kho > 0 ? { kho } : {}),
       ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
       ...(ghi_chu ? { ghi_chu } : {}),
+      ...(ten_ghep ? { ten_ghep } : {}),
       ...(parsedQuyCachMDai !== null && parsedQuyCachMDai > 0 ? { quy_cach_m_dai: parsedQuyCachMDai } : {}),
       ...(m2 !== null && m2 > 0 ? { m2 } : {}),
       ...(m_dai !== null && m_dai > 0 ? { m_dai } : {}),
@@ -5484,6 +5494,9 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ma_sp,
           ten_sp,
           ten_san_xuat: pickRowField(record, ['ten_san_xuat', 'productionName']),
+          ...(pickRowField(record, ['ten_ghep', 'tenGhep'])
+            ? { ten_ghep: pickRowField(record, ['ten_ghep', 'tenGhep']) }
+            : {}),
           don_vi: pickRowField(record, ['don_vi', 'unit']),
           so_luong: parseOrderQuantity(record.so_luong ?? record.quantity),
           ...(san_pham_id ? { san_pham_id } : {}),
@@ -5880,6 +5893,15 @@ function buildProductionOrderRecordFromOrder(
   const productCode = selectedProduct?.ma_sp ?? '';
   const productName = selectedProduct?.ten_sp ?? '';
   const productProductionName = selectedProduct?.ten_san_xuat ?? '';
+  const quyCachForTenGhep =
+    selectedProduct?.quy_cach_m_dai ??
+    (selectedProduct?.dai_m && selectedProduct.dai_m > 0 ? selectedProduct.dai_m : null);
+  const productTenGhep =
+    String(selectedProduct?.ten_ghep || '').trim() ||
+    buildOrderTenGhep(productProductionName || productName, {
+      cutLengthM: quyCachForTenGhep
+    }) ||
+    '';
   const customer = pickRowField(order, ['khach_hang', 'customer']);
   const unit = selectedProduct?.don_vi ?? '';
   const workers =
@@ -5899,6 +5921,7 @@ function buildProductionOrderRecordFromOrder(
         ma_sp: productCode,
         ten_sp: productName,
         ten_san_xuat: productProductionName,
+        ...(productTenGhep ? { ten_ghep: productTenGhep } : {}),
         don_vi: unit,
         so_luong: selectedProduct?.so_luong ?? null,
         ...(selectedProduct?.do_li ? { do_li: selectedProduct.do_li } : {}),
@@ -5956,6 +5979,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
+    const ten_ghep_raw = pickRowField(row, ['ten_ghep', 'tenGhep']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     let so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
@@ -5977,6 +6001,12 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       const match = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
       if (match) parsedQuyCachMDai = Number(match[1].replace(',', '.'));
     }
+    const ten_ghep =
+      ten_ghep_raw ||
+      buildOrderTenGhep(ten_san_xuat || ten_sp, {
+        cutLengthM: parsedQuyCachMDai
+      }) ||
+      '';
     const m2 = parseOrderQuantity(row.m2 ?? row.dien_tich_m2);
     const m_dai = parseOrderQuantity(row.m_dai ?? row.mDai ?? row.met_dai ?? row.chieu_dai_m);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
@@ -6010,6 +6040,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       ma_sp,
       ten_sp,
       ten_san_xuat,
+      ...(ten_ghep ? { ten_ghep } : {}),
       don_vi,
       so_luong,
       ...(stt ? { stt } : {}),
@@ -8812,7 +8843,8 @@ export function createApp() {
             ten_sp: String(item.ten_sp || item.ten_hang || item.ten_san_pham || item.productName || '').trim(),
             ten_san_xuat: formatProductionNameWithLengthServer(
               String(item.ten_san_xuat || item.productionName || item.ten_sx || item.ten_sp || item.ten_hang || item.ten_san_pham || item.productName || '').trim(),
-              Number.isFinite(quyCachNum) && quyCachNum > 0 ? quyCachNum : undefined
+              Number.isFinite(quyCachNum) && quyCachNum > 0 ? quyCachNum : undefined,
+              String(item.ten_ghep || item.tenGhep || '').trim() || undefined
             ),
             don_vi: String(item.don_vi || '').trim(),
             tong_sx: Number(item.so_luong) || 0,
@@ -13973,22 +14005,18 @@ export function createApp() {
       .sort((a, b) => a.stt - b.stt || a.index - b.index)
       .map(x => x.item);
   };
-  const formatProductionNameWithLengthServer = (name: string, length?: number | string): string => {
+  const formatProductionNameWithLengthServer = (
+    name: string,
+    length?: number | string,
+    tenGhep?: string
+  ): string => {
+    const stored = String(tenGhep || '').trim();
+    if (stored) return stored;
     const cleanName = (name || '').trim();
     const numericLength = Number(String(length ?? '').replace(',', '.'));
     if (!Number.isFinite(numericLength) || numericLength <= 0) return cleanName || '-';
-
-    const nStr = Number.isInteger(numericLength) ? String(numericLength) : String(Math.round(numericLength * 100) / 100);
-    const quyCachSuffix = `(Quy cách: ${nStr} m)`;
-
-    if (!cleanName || cleanName === '-') return quyCachSuffix;
-    if (cleanName.includes(`(Quy cách: ${nStr} m)`)) {
-      return cleanName;
-    }
-    if (cleanName.includes(`(${nStr}m)`) || cleanName.includes(`(${nStr} m)`)) {
-      return cleanName.replace(new RegExp(`\\(${nStr}\\s*m\\)`, 'g'), quyCachSuffix);
-    }
-    return `${cleanName} ${quyCachSuffix}`;
+    if (!cleanName || cleanName === '-') return '-';
+    return buildOrderTenGhep(cleanName, { cutLengthM: numericLength });
   };
 
   function extractLenhSxItemQuyCachMDai(item: any): number | null {
@@ -14313,7 +14341,11 @@ export function createApp() {
       const rows = groupList.map((grp, grpIdx) => {
         const item = grp.firstItem;
         const rawTenSanXuat = String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim();
-        const formattedTenSanXuat = formatProductionNameWithLengthServer(rawTenSanXuat, grp.quyCachMDaiNum ?? undefined);
+        const formattedTenSanXuat = formatProductionNameWithLengthServer(
+          rawTenSanXuat,
+          grp.quyCachMDaiNum ?? undefined,
+          String(item?.ten_ghep ?? item?.tenGhep ?? '').trim() || undefined
+        );
 
         // Ưu tiên lệnh SX đã lưu (sl_sx); chưa lưu thì fill từ B/T/N của đơn hàng.
         const bac = grp.hasSavedDetail ? grp.totalSavedBac : grp.defaultBac;

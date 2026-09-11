@@ -49,6 +49,7 @@ import {
   expandMergedProductionProducts,
   expandProductionOrderProductLines,
   formatProductionNameWithLength,
+  buildOrderTenGhep,
   splitProductionProductCodes,
   splitProductionProductNames,
   splitProductionFieldValues,
@@ -262,12 +263,16 @@ export function formatProductionOrderProductsSummary(row: Pick<ProductionOrderRo
   if (products.length === 0) return '-';
   if (products.length === 1) {
     const product = products[0];
-    const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai);
+    const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai, {
+      tenGhep: product.tenGhep
+    });
     return `${product.productCode || '-'} · ${name} · ${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}`;
   }
   return products
     .map(product => {
-      const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai);
+      const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai, {
+        tenGhep: product.tenGhep
+      });
       return `${product.productCode || '-'} (${name}) (${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''})`;
     })
     .join(' | ');
@@ -4330,7 +4335,7 @@ export function ProductionOrderPrintSheet({
                 return (
                 <tr key={`${line.productCode}-${index}`}>
                   <td>{line.productCode || '-'}</td>
-                  <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(line.productionName || line.productName, line.quyCachMDai)}</td>
+                  <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(line.productionName || line.productName, line.quyCachMDai, { tenGhep: line.tenGhep })}</td>
                   <td className="production-order-print-center">{line.unit && line.unit !== '-' ? line.unit : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.quantity)}</td>
                   <td className="production-order-print-right">{weight}</td>
@@ -4351,7 +4356,7 @@ export function ProductionOrderPrintSheet({
                 return (
               <tr>
                 <td>{order.productCode || '-'}</td>
-                <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(order.productionName || order.productName, (order as any).quyCachMDai || (order as any).products?.[0]?.quyCachMDai)}</td>
+                <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(order.productionName || order.productName, (order as any).quyCachMDai || (order as any).products?.[0]?.quyCachMDai, { tenGhep: (order as any).tenGhep || (order as any).products?.[0]?.tenGhep })}</td>
                 <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
                 <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
                 <td className="production-order-print-right">{weight}</td>
@@ -5222,6 +5227,7 @@ export type ProductionOrderEntryLine = {
   conversionSource?: string;
   note?: string;
   quyCachMDai?: number | string;
+  tenGhep?: string;
   tlCuon?: string;
   tlTam?: string;
   m2?: string;
@@ -5234,6 +5240,12 @@ export type ProductionOrderEntryLine = {
 
 function productionEntryMetadataFromOrderLine(line?: OrderProductLine): Partial<ProductionOrderEntryLine> {
   if (!line) return {};
+  const tenGhep =
+    String(line.tenGhep || '').trim() ||
+    buildOrderTenGhep(line.productionName || line.productName || '', {
+      cutLengthM: line.quyCachMDai ?? line.daiM
+    }) ||
+    undefined;
   return {
     orderProductStt: line.stt,
     conversionResults: line.conversionResults?.map(item => ({ ...item })),
@@ -5245,6 +5257,7 @@ function productionEntryMetadataFromOrderLine(line?: OrderProductLine): Partial<
     conversionSource: line.conversionSource,
     note: line.note,
     quyCachMDai: line.quyCachMDai,
+    tenGhep,
     tlCuon: line.tlCuon,
     tlTam: line.tlTam,
     m2: line.m2,
@@ -5267,6 +5280,7 @@ function emptyProductionEntryMetadata(): Partial<ProductionOrderEntryLine> {
     conversionSource: undefined,
     note: undefined,
     quyCachMDai: undefined,
+    tenGhep: undefined,
     tlCuon: undefined,
     tlTam: undefined,
     m2: undefined,
@@ -5349,6 +5363,11 @@ export function productionOrderFormToCreatePayload(
   };
   const products = lines.map((line, index) => {
     const quyCachMDai = optionalNumber(line.quyCachMDai ?? line.daiM);
+    const tenSanXuat = (line.productionName || '').trim();
+    const tenGhep =
+      String(line.tenGhep || '').trim() ||
+      buildOrderTenGhep(tenSanXuat || line.productName.trim(), { cutLengthM: quyCachMDai }) ||
+      '';
     const conversionResults = line.conversionResults
       ?.filter(item => item.unit.trim() && Number.isFinite(item.value))
       .map(item => ({ don_vi: item.unit.trim(), gia_tri: item.value }));
@@ -5357,7 +5376,8 @@ export function productionOrderFormToCreatePayload(
       ma_don_hang: line.orderRef.trim(),
       ma_sp: line.productCode.trim(),
       ten_sp: line.productName.trim(),
-      ten_san_xuat: (line.productionName || '').trim(),
+      ten_san_xuat: tenSanXuat,
+      ...(tenGhep ? { ten_ghep: tenGhep } : {}),
       don_vi: line.unit.trim(),
       so_luong: Number(line.quantity),
       stt: index + 1,
@@ -6390,7 +6410,8 @@ export function AddProductionOrderModal({
                                       : '';
                                 const productName = formatProductionNameWithLength(
                                   product.productionName || product.name,
-                                  product.sourceLine.quyCachMDai
+                                  product.sourceLine.quyCachMDai,
+                                  { tenGhep: product.sourceLine.tenGhep }
                                 );
                                 return product.code ? `${product.code} - ${productName}${remaining}` : productName;
                               }}
@@ -6401,7 +6422,8 @@ export function AddProductionOrderModal({
                             <input
                               value={formatProductionNameWithLength(
                                 line.productionName || selectedProduct?.productionName || line.productName,
-                                line.quyCachMDai
+                                line.quyCachMDai,
+                                { tenGhep: line.tenGhep }
                               )}
                               readOnly
                               className={`${orderFieldClass} bg-white text-[#18181b]`}
@@ -6816,7 +6838,8 @@ export function AddProductionOrderModal({
                                 <p className="mt-0.5 text-xs font-semibold text-zinc-600">
                                   {formatProductionNameWithLength(
                                     product.productionName || product.productName,
-                                    product.sourceLine.quyCachMDai
+                                    product.sourceLine.quyCachMDai,
+                                    { tenGhep: product.sourceLine.tenGhep }
                                   )}
                                 </p>
                               </div>
@@ -6941,7 +6964,8 @@ export function AddProductionOrderModal({
                     const product = item as ReturnType<typeof listProductOptionsForOrder>[number];
                     const productName = formatProductionNameWithLength(
                       product.productionName || product.name,
-                      product.sourceLine.quyCachMDai
+                      product.sourceLine.quyCachMDai,
+                      { tenGhep: product.sourceLine.tenGhep }
                     );
                     return product.code
                       ? `${product.code} - ${productName}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0` : ''}`
@@ -7449,7 +7473,7 @@ export function ProductionOrderViewModal({
                   <tr key={`${product.productCode}-${index}`}>
                     <td className="px-3 py-2 text-center font-bold text-zinc-500">{product.stt || (index + 1)}</td>
                     <td className="px-3 py-2 font-black text-zinc-950">{product.productCode || '-'}</td>
-                    <td className="px-3 py-2 font-semibold text-zinc-700">{formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai)}</td>
+                    <td className="px-3 py-2 font-semibold text-zinc-700">{formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai, { tenGhep: product.tenGhep })}</td>
                     <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{product.quantity || '-'}</td>
                     <td className="px-3 py-2 text-zinc-600">{product.unit && product.unit !== '-' ? product.unit : '-'}</td>
                   </tr>
@@ -8081,7 +8105,8 @@ export function EditProductionOrderModal({
                                 const product = item as (typeof productOptions)[number];
                                 const productName = formatProductionNameWithLength(
                                   product.productionName || product.name,
-                                  product.sourceLine.quyCachMDai
+                                  product.sourceLine.quyCachMDai,
+                                  { tenGhep: product.sourceLine.tenGhep }
                                 );
                                 return product.code ? `${product.code} - ${productName}` : productName;
                               }}
@@ -8092,7 +8117,8 @@ export function EditProductionOrderModal({
                             <input
                               value={formatProductionNameWithLength(
                                 line.productionName || selectedProduct?.productionName || line.productName,
-                                line.quyCachMDai
+                                line.quyCachMDai,
+                                { tenGhep: line.tenGhep }
                               )}
                               readOnly
                               className={`${orderFieldClass} bg-white text-[#18181b]`}
