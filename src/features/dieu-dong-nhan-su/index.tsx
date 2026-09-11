@@ -50,10 +50,10 @@ function rangesOverlap(a: { start: string; end: string }, b: { start: string; en
 function formatDispatchTimeRange(start: unknown, end: unknown): string {
   const s = timeHHMM(start);
   const e = timeHHMM(end);
-  if (s && e) return `${s} - ${e}`;
-  if (s) return `${s} - --:--`;
-  if (e) return `--:-- - ${e}`;
-  return '--:-- - --:--';
+  const parts: string[] = [];
+  if (s) parts.push(`làm lúc ${s}`);
+  if (e) parts.push(`về lúc ${e}`);
+  return parts.length > 0 ? parts.join(' ') : '—';
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -195,8 +195,8 @@ function buildInitialSelectedItems(prefill: DispatchPrefill | null): SelectedDis
       tenNhanSu: prefill.ten_nhan_su || '',
       caDieuDong: caGoc,
       mayDieuDong: '',
-      thoiGianBatDau: prefill.thoi_gian_bat_dau || '',
-      thoiGianKetThuc: prefill.thoi_gian_ket_thuc || '',
+      thoiGianBatDau: '',
+      thoiGianKetThuc: '',
       ghiChu: ''
     }
   ];
@@ -354,8 +354,9 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
               gocBatDau: match.thoi_gian_bat_dau || cur.gocBatDau,
               maLenhSx: match.ma_lenh_sx || cur.maLenhSx,
               person: { ma_nhan_su: p.ma_nhan_su, vai_tro: match.vai_tro || cur.person.vai_tro },
-              thoiGianBatDau: cur.thoiGianBatDau || match.thoi_gian_bat_dau || '',
-              thoiGianKetThuc: cur.thoiGianKetThuc || match.thoi_gian_ket_thuc || '',
+              // Giữ giờ điều động do user chọn; không tự fill từ lịch (tránh ép 00:00 / giờ ca).
+              thoiGianBatDau: cur.thoiGianBatDau || '',
+              thoiGianKetThuc: cur.thoiGianKetThuc || '',
               ghiChu: cur.ghiChu || ''
             };
             const copy = [...prev];
@@ -417,8 +418,8 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
           person: { ma_nhan_su: person.ma_nhan_su, vai_tro: person.vai_tro },
           caDieuDong: person.ca_lam_viec,
           mayDieuDong: '',
-          thoiGianBatDau: person.thoi_gian_bat_dau,
-          thoiGianKetThuc: person.thoi_gian_ket_thuc,
+          thoiGianBatDau: '',
+          thoiGianKetThuc: '',
           ghiChu: ''
         }
       ]);
@@ -474,11 +475,11 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
 
     for (const item of selectedItems) {
       const who = resolveName(item.person.ma_nhan_su);
-      if (!item.caDieuDong || !item.mayDieuDong || !item.thoiGianBatDau) {
+      if (!item.caDieuDong || !item.mayDieuDong) {
         setFormError(`${who}: vui lòng điền đầy đủ các trường bắt buộc.`);
         return;
       }
-      if (item.thoiGianBatDau === item.thoiGianKetThuc) {
+      if (item.thoiGianBatDau && item.thoiGianKetThuc && item.thoiGianBatDau === item.thoiGianKetThuc) {
         setFormError(`${who}: giờ bắt đầu và giờ kết thúc không được trùng nhau.`);
         return;
       }
@@ -515,8 +516,8 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
           vai_tro: item.person.vai_tro,
           may_goc: item.tenMayGoc,
           may_dieu_dong: item.mayDieuDong,
-          thoi_gian_bat_dau: item.thoiGianBatDau,
-          thoi_gian_ket_thuc: item.thoiGianKetThuc,
+          thoi_gian_bat_dau: item.thoiGianBatDau.trim() ? item.thoiGianBatDau.trim().slice(0, 5) : null,
+          thoi_gian_ket_thuc: item.thoiGianKetThuc.trim() ? item.thoiGianKetThuc.trim().slice(0, 5) : null,
           ghi_chu: item.ghiChu.trim() || null
         };
         const res = await fetch('/api/dieu-dong-nhan-su', {

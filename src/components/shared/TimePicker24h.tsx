@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 type Props = {
   value: string;
@@ -23,18 +23,27 @@ function splitTime(value: string): { hour: string; minute: string } {
   };
 }
 
-/** Picker giờ phút theo khung 24h (00:00–23:59), không dùng AM/PM. */
+/** Picker giờ phút theo khung 24h (00:00–23:59). Để trống thì giữ trống — không ép thành 00:00. */
 export function TimePicker24h({ value, onChange, className, required, disabled, ...rest }: Props) {
-  const { hour, minute } = splitTime(value);
+  const parsed = splitTime(value);
+  const [hour, setHour] = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+
+  useEffect(() => {
+    const next = splitTime(value);
+    setHour(next.hour);
+    setMinute(next.minute);
+  }, [value]);
 
   const commit = (nextHour: string, nextMinute: string) => {
-    if (!nextHour && !nextMinute) {
-      onChange('');
+    setHour(nextHour);
+    setMinute(nextMinute);
+    // Chỉ emit HH:mm khi đủ cả giờ và phút; còn lại giữ trống (không fallback 00).
+    if (nextHour && nextMinute) {
+      onChange(`${nextHour}:${nextMinute}`);
       return;
     }
-    const h = nextHour || '00';
-    const m = nextMinute || '00';
-    onChange(`${h}:${m}`);
+    onChange('');
   };
 
   const selectClass =
@@ -47,7 +56,7 @@ export function TimePicker24h({ value, onChange, className, required, disabled, 
         value={hour}
         required={required}
         disabled={disabled}
-        onChange={e => commit(e.target.value, minute || (e.target.value ? '00' : ''))}
+        onChange={e => commit(e.target.value, minute)}
         className={selectClass}
         aria-label="Giờ"
       >
@@ -63,7 +72,7 @@ export function TimePicker24h({ value, onChange, className, required, disabled, 
         value={minute}
         required={required}
         disabled={disabled}
-        onChange={e => commit(hour || (e.target.value ? '00' : ''), e.target.value)}
+        onChange={e => commit(hour, e.target.value)}
         className={selectClass}
         aria-label="Phút"
       >

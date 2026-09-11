@@ -13,7 +13,7 @@ export type DispatchRecord = {
   vai_tro: string | null;
   may_goc: string;
   may_dieu_dong: string;
-  thoi_gian_bat_dau: string;
+  thoi_gian_bat_dau: string | null;
   thoi_gian_ket_thuc: string | null;
   ghi_chu?: string;
 };
@@ -59,7 +59,7 @@ export function EditDispatchModal({
     if (record) {
       setCaDieuDong(record.ca_dieu_dong || record.ca || '');
       setMayDieuDong(record.may_dieu_dong);
-      setThoiGianBatDau(record.thoi_gian_bat_dau.slice(0, 5));
+      setThoiGianBatDau(String(record.thoi_gian_bat_dau || '').slice(0, 5));
       setThoiGianKetThuc(String(record.thoi_gian_ket_thuc || '').slice(0, 5));
       setGhiChu(record.ghi_chu || '');
       setError('');
@@ -72,11 +72,11 @@ export function EditDispatchModal({
   const needNote = shiftsDiffer(record.ca || '', caDieuDong);
 
   const handleSubmit = async () => {
-    if (!mayDieuDong || !caDieuDong || !thoiGianBatDau) {
+    if (!mayDieuDong || !caDieuDong) {
       setError('Vui lòng điền đầy đủ các trường bắt buộc.');
       return;
     }
-    if (thoiGianBatDau === thoiGianKetThuc) {
+    if (thoiGianBatDau && thoiGianKetThuc && thoiGianBatDau === thoiGianKetThuc) {
       setError('Giờ bắt đầu và giờ kết thúc không được trùng nhau.');
       return;
     }
@@ -84,7 +84,7 @@ export function EditDispatchModal({
       setError('Đổi ca: vui lòng nhập ghi chú tại máy chuyển đến.');
       return;
     }
-    // Lưu ý: ca vượt ngày (giờ bắt đầu > giờ kết thúc) là hợp lệ — không chặn.
+    // Giờ bắt đầu / kết thúc đều tuỳ chọn; có thể chỉ nhập một trong hai.
 
     setIsSaving(true);
     setError('');
@@ -92,8 +92,8 @@ export function EditDispatchModal({
       await onSubmit({
         ca_dieu_dong: caDieuDong,
         may_dieu_dong: mayDieuDong,
-        thoi_gian_bat_dau: thoiGianBatDau,
-        thoi_gian_ket_thuc: thoiGianKetThuc,
+        thoi_gian_bat_dau: thoiGianBatDau.trim() ? thoiGianBatDau.trim().slice(0, 5) : null,
+        thoi_gian_ket_thuc: thoiGianKetThuc.trim() ? thoiGianKetThuc.trim().slice(0, 5) : null,
         ghi_chu: ghiChu.trim() || undefined
       });
     } catch (err: any) {
@@ -171,7 +171,7 @@ export function EditDispatchModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-zinc-700">Bắt đầu *</label>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-700">Bắt đầu</label>
               <TimePicker24h
                 value={thoiGianBatDau}
                 onChange={setThoiGianBatDau}

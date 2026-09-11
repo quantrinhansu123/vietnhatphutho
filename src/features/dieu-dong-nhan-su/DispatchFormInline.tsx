@@ -86,7 +86,7 @@ export function DispatchFormInline({
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Ca gốc</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Ca chuyển đến *</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Máy chuyển đến *</th>
-              <th className="px-3 py-2 text-left font-medium text-zinc-700">Bắt đầu *</th>
+              <th className="px-3 py-2 text-left font-medium text-zinc-700">Bắt đầu</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Kết thúc</th>
               <th className="px-3 py-2 text-left font-medium text-zinc-700">Ghi chú máy đến</th>
               <th className="w-8 px-3 py-2" />
@@ -175,7 +175,7 @@ export function DispatchFormInline({
       </div>
 
       <p className="mb-3 text-[11px] text-zinc-600">
-        Đổi ca → bắt buộc ghi chú tại máy chuyển đến (hiển thị giống thêm ghi chú NS trên lịch in). Máy chuyển đến có thêm lựa chọn «Việc khác».
+        Giờ bắt đầu / kết thúc tuỳ chọn (có thể chỉ nhập một trong hai). Đổi ca → bắt buộc ghi chú tại máy chuyển đến (hiển thị giống thêm ghi chú NS trên lịch in). Máy chuyển đến có thêm lựa chọn «Việc khác».
       </p>
 
       <div className="flex items-center justify-end gap-2 border-t border-amber-200 pt-4">

@@ -10989,19 +10989,36 @@ export function createApp() {
     const vaiTro = pickRowField(source, ['vai_tro', 'vaiTro', 'role'], '');
     const mayGoc = pickRowField(source, ['may_goc', 'mayGoc'], '');
     const mayDieuDong = pickRowField(source, ['may_dieu_dong', 'mayDieuDong'], '');
-    const batDau = pickRowField(source, ['thoi_gian_bat_dau', 'thoiGianBatDau', 'start'], '');
-    const ketThuc = pickRowField(source, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
-    const gocBatDau = pickRowField(source, ['goc_bat_dau', 'gocBatDau'], '');
+    const batDauRaw = pickRowField(source, ['thoi_gian_bat_dau', 'thoiGianBatDau', 'start'], '');
+    const ketThucRaw = pickRowField(source, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
     const ghiChu = pickRowField(source, ['ghi_chu', 'note'], '');
+
+    /** Giờ tuỳ chọn: trống / null / -- → null; HH:mm[:ss] → HH:mm. Không báo lỗi bắt buộc nhập. */
+    const normalizeOptionalTime = (raw: string): string | null => {
+      const s = String(raw || '')
+        .trim()
+        .toLowerCase();
+      if (!s || s === 'null' || s === 'undefined' || s === '--' || s === '--:--' || s === ':') {
+        return null;
+      }
+      const match = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if (!match) return null;
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour > 23 || minute > 59) return null;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    };
+
+    const batDau = normalizeOptionalTime(batDauRaw);
+    const ketThuc = normalizeOptionalTime(ketThucRaw);
 
     if (!ngayLamViec) return { error: 'Thiếu ngày.' };
     if (!maNhanSu) return { error: 'Thiếu nhân sự.' };
     if (!mayGoc) return { error: 'Thiếu máy gốc.' };
     if (!mayDieuDong) return { error: 'Vui lòng chọn máy chuyển đến.' };
-    
-    if (!/^\d{1,2}:\d{2}$/.test(batDau)) return { error: 'Giờ bắt đầu không hợp lệ.' };
-    if (ketThuc && !/^\d{1,2}:\d{2}$/.test(ketThuc)) return { error: 'Giờ kết thúc không hợp lệ.' };
-    if (ketThuc && batDau === ketThuc) return { error: 'Giờ bắt đầu và giờ kết thúc không được trùng nhau.' };
+    if (batDau && ketThuc && batDau === ketThuc) {
+      return { error: 'Giờ bắt đầu và giờ kết thúc không được trùng nhau.' };
+    }
 
     return {
       record: {
@@ -11014,7 +11031,7 @@ export function createApp() {
         may_goc: mayGoc,
         may_dieu_dong: mayDieuDong,
         thoi_gian_bat_dau: batDau,
-        thoi_gian_ket_thuc: ketThuc || null,
+        thoi_gian_ket_thuc: ketThuc,
         ghi_chu: ghiChu || null
       }
     };
@@ -11026,6 +11043,8 @@ export function createApp() {
     range: DispatchTimeRange,
     excludeId?: string
   ): Promise<boolean> {
+    // Chỉ kiểm tra chồng giờ khi đủ cả bắt đầu và kết thúc.
+    if (!range.start || !range.end) return false;
     if (!supabase) return false;
     let query = supabase
       .from(SUPABASE_DISPATCH_TABLE)
@@ -11037,7 +11056,7 @@ export function createApp() {
     if (error) throw error;
     return (data || []).some(row =>
       rangesOverlap(range, {
-        start: String(row.thoi_gian_bat_dau).slice(0, 5),
+        start: String(row.thoi_gian_bat_dau || '').slice(0, 5),
         end: String(row.thoi_gian_ket_thuc || '').slice(0, 5)
       })
     );
@@ -11110,7 +11129,10 @@ export function createApp() {
       const hasOverlap = await findOverlappingDispatch(
         String(parsed.record.ngay_lam_viec),
         String(parsed.record.ma_nhan_su),
-        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc || '') }
+        {
+          start: parsed.record.thoi_gian_bat_dau ? String(parsed.record.thoi_gian_bat_dau) : '',
+          end: parsed.record.thoi_gian_ket_thuc ? String(parsed.record.thoi_gian_ket_thuc) : ''
+        }
       );
       if (hasOverlap) return res.status(409).json({ error: 'Nhân sự đã có khoảng điều động trùng giờ trong ngày này.' });
 
@@ -11137,7 +11159,10 @@ export function createApp() {
       const hasOverlap = await findOverlappingDispatch(
         String(parsed.record.ngay_lam_viec),
         String(parsed.record.ma_nhan_su),
-        { start: String(parsed.record.thoi_gian_bat_dau), end: String(parsed.record.thoi_gian_ket_thuc || '') },
+        {
+          start: parsed.record.thoi_gian_bat_dau ? String(parsed.record.thoi_gian_bat_dau) : '',
+          end: parsed.record.thoi_gian_ket_thuc ? String(parsed.record.thoi_gian_ket_thuc) : ''
+        },
         id
       );
       if (hasOverlap) return res.status(409).json({ error: 'Nhân sự đã có khoảng điều động trùng giờ trong ngày này.' });
@@ -11257,11 +11282,55 @@ export function createApp() {
       });
 
       // Build the schedule grid
+      const shiftAliasesOf = (shift: { ten_cai_dat?: string; ma_cai_dat?: string }) =>
+        [shift.ten_cai_dat, shift.ma_cai_dat]
+          .map((value: unknown) => String(value || '').trim().toUpperCase())
+          .filter(Boolean);
+
+      /** In lịch: có giờ bắt đầu → "làm lúc hh:mm"; có giờ kết thúc → "về lúc hh:mm". */
+      const formatDispatchPrintTime = (startRaw: unknown, endRaw: unknown) => {
+        const start = String(startRaw || '').trim().slice(0, 5);
+        const end = String(endRaw || '').trim().slice(0, 5);
+        const parts: string[] = [];
+        if (/^\d{1,2}:\d{2}$/.test(start)) parts.push(`làm lúc ${start}`);
+        if (/^\d{1,2}:\d{2}$/.test(end)) parts.push(`về lúc ${end}`);
+        return parts.join(' ');
+      };
+
+      const shiftsMatchLabel = (a: string, b: string) => {
+        const na = String(a || '').trim().toUpperCase();
+        const nb = String(b || '').trim().toUpperCase();
+        if (!na || !nb) return false;
+        if (na === nb) return true;
+        for (const shift of sortedCaList) {
+          const aliases = shiftAliasesOf(shift);
+          if (aliases.includes(na) && aliases.includes(nb)) return true;
+        }
+        return false;
+      };
+
+      const assignmentMatchesShift = (
+        phanCong: Record<string, unknown>,
+        shift: { ten_cai_dat?: string; ma_cai_dat?: string; gio_bat_dau?: string; gio_ket_thuc?: string }
+      ) => {
+        const assignedCa = String(phanCong.ca_lam_viec || '').trim();
+        const aliases = shiftAliasesOf(shift);
+        // Ưu tiên khớp đúng mã/tên ca đã lưu trong sắp xếp lịch — không phụ thuộc khung giờ
+        // (tránh mất ca đêm / ca 12C2 khi time-overlap xử lý sai ca qua đêm).
+        if (assignedCa) {
+          return aliases.includes(assignedCa.toUpperCase());
+        }
+        const start = String(phanCong.thoi_gian_bat_dau || '').trim();
+        const end = String(phanCong.thoi_gian_ket_thuc || '').trim();
+        const caStart = String(shift.gio_bat_dau || '').trim();
+        const caEnd = String(shift.gio_ket_thuc || '').trim();
+        if (!start || !end || !caStart || !caEnd) return false;
+        return rangesOverlap({ start, end }, { start: caStart, end: caEnd });
+      };
+
       const lichRows = sortedCaList.map(ca => {
         const khungGio = ca.khung_gio || '';
         const tenCa = ca.ten_cai_dat || '';
-        const gioBatDau = ca.gio_bat_dau || '';
-        const gioKetThuc = ca.gio_ket_thuc || '';
 
         // For each time slot, find employees and their machine assignments
         // Structure: machineData[tenMay][tenCa] to separate by both machine and shift
@@ -11278,158 +11347,114 @@ export function createApp() {
         // Find employees assigned to machines in this time period
         for (const phanCong of phanCongList) {
           if (!phanCong.ma_may || !phanCong.ma_nhan_su) continue;
-
-          // Filter by shift: check ca_lam_viec matches current shift
-          const assignedCa = String(phanCong.ca_lam_viec || '').trim();
-          if (assignedCa && assignedCa !== tenCa && assignedCa !== ca.ma_cai_dat) {
-            continue;
-          }
-
-          // Also check time overlap if time data exists
-          const startMinutes = timeToMinutes(phanCong.thoi_gian_bat_dau || '');
-          const endMinutes = timeToMinutes(phanCong.thoi_gian_ket_thuc || '');
-          const caStartMinutes = timeToMinutes(gioBatDau);
-          const caEndMinutes = timeToMinutes(gioKetThuc);
-
-          // If both have time data, check overlap
-          if (startMinutes && endMinutes && caStartMinutes && caEndMinutes) {
-            if (startMinutes >= caEndMinutes || endMinutes <= caStartMinutes) {
-              continue;
-            }
-          }
+          if (!assignmentMatchesShift(phanCong as Record<string, unknown>, ca)) continue;
 
           // Get employee name (last word only)
           const fullName = nhanSuMap.get(phanCong.ma_nhan_su) || phanCong.ma_nhan_su;
           const lastName = extractLastName(fullName);
 
           // Find machine name from ma_may
-          const machine = mayList.find(m => m.ma_may === phanCong.ma_may);
-          const machineName = machine?.ten_may;
+          const machine = mayList.find(
+            m => m.ma_may === phanCong.ma_may || m.ten_may === phanCong.ma_may || m.ten_may === phanCong.may
+          );
+          const machineName = machine?.ten_may || String(phanCong.may || '').trim();
 
           if (!machineName) continue;
 
           // Always add employee to original machine for this shift
-          if (machineData[machineName]) {
-            if (!machineData[machineName][tenCa]) {
-              machineData[machineName][tenCa] = [];
-            }
-            // Check all dispatches for this employee during this time
-            const currentShiftAliases = new Set(
-              [assignedCa, tenCa, String(ca.ma_cai_dat || '').trim()]
-                .map(value => value.toUpperCase())
-                .filter(Boolean)
+          if (!machineData[machineName]) {
+            machineData[machineName] = {};
+          }
+          if (!machineData[machineName][tenCa]) {
+            machineData[machineName][tenCa] = [];
+          }
+          // Check all dispatches for this employee during this time
+          const currentShiftAliases = new Set(shiftAliasesOf(ca));
+          const assignedCa = String(phanCong.ca_lam_viec || '').trim();
+          if (assignedCa) currentShiftAliases.add(assignedCa.toUpperCase());
+
+          const dispatchesForEmployee = dieuDongList.filter(dd => {
+            const dispatchHomeShift = String(dd.ca || '').trim().toUpperCase();
+            return (
+              dd.ma_nhan_su === phanCong.ma_nhan_su &&
+              dispatchHomeShift !== '' &&
+              currentShiftAliases.has(dispatchHomeShift)
             );
-            const dispatchesForEmployee = dieuDongList.filter(dd => {
-              const dispatchHomeShift = String(dd.ca || '').trim().toUpperCase();
-              return (
-                dd.ma_nhan_su === phanCong.ma_nhan_su &&
-                dispatchHomeShift !== '' &&
-                currentShiftAliases.has(dispatchHomeShift) &&
-                timeToMinutes(dd.thoi_gian_bat_dau) != caEndMinutes &&
-                (!dd.thoi_gian_ket_thuc || timeToMinutes(dd.thoi_gian_ket_thuc) != caStartMinutes)
-              );
+          });
+
+          // Filter dispatches that apply to this specific machine (may_goc)
+          const dispatchesForThisMachine = dispatchesForEmployee.filter(dd =>
+            dd.may_goc === machineName || dd.may_goc === phanCong.ma_may
+          );
+
+          const resolveDestMachineName = (dd: any) => {
+            const raw = String(dd.may_dieu_dong || '').trim();
+            if (!raw) return '';
+            if (raw === 'Việc khác') return 'Việc khác';
+            const found = mayList.find(m => m.ma_may === raw || m.ten_may === raw);
+            return found?.ten_may || raw;
+          };
+
+          if (dispatchesForThisMachine.length > 0) {
+            // Note điều động ghi vào Ô CA CHÍNH của nhân sự (trong ngoặc, cạnh tên).
+            // Giờ: "làm lúc hh:mm" / "về lúc hh:mm" (tuỳ phần nào có dữ liệu).
+            const dispatchNotes = dispatchesForThisMachine.map(dd => {
+              const toMachineName = resolveDestMachineName(dd);
+              const timePhrase = formatDispatchPrintTime(dd.thoi_gian_bat_dau, dd.thoi_gian_ket_thuc);
+              const toCa = String(dd.ca_dieu_dong || dd.ca || '').trim();
+              const homeCa = String(phanCong.ca_lam_viec || '').trim();
+              const sameMachine = !toMachineName || toMachineName === machineName;
+              const sameCa = !toCa || shiftsMatchLabel(toCa, homeCa);
+              if (!sameMachine) {
+                return timePhrase
+                  ? `(${lastName} ${timePhrase} ${toMachineName})`
+                  : `(${lastName} ${toMachineName})`;
+              }
+              if (sameCa) {
+                return timePhrase ? `(${lastName} ${timePhrase})` : `(${lastName})`;
+              }
+              return timePhrase
+                ? `(${lastName} được chuyển đến ca ${toCa} ${timePhrase})`
+                : `(${lastName} được chuyển đến ca ${toCa})`;
             });
 
-            // Filter dispatches that apply to this specific machine (may_goc)
-            const dispatchesForThisMachine = dispatchesForEmployee.filter(dd =>
-              dd.may_goc === machineName || dd.may_goc === phanCong.ma_may
-            );
-
-            const resolveDestMachineName = (dd: any) => {
-              const raw = String(dd.may_dieu_dong || '').trim();
-              if (!raw) return '';
-              if (raw === 'Việc khác') return 'Việc khác';
-              const found = mayList.find(m => m.ma_may === raw || m.ten_may === raw);
-              return found?.ten_may || raw;
-            };
-
-            const shiftsMatch = (a: string, b: string) => {
-              const na = String(a || '').trim().toUpperCase();
-              const nb = String(b || '').trim().toUpperCase();
-              if (!na || !nb) return false;
-              if (na === nb) return true;
-              for (const shift of sortedCaList) {
-                const aliases = [shift.ten_cai_dat, shift.ma_cai_dat]
-                  .map((v: unknown) => String(v || '').trim().toUpperCase())
-                  .filter(Boolean);
-                if (aliases.includes(na) && aliases.includes(nb)) return true;
-              }
-              return false;
-            };
-            
-            if (dispatchesForThisMachine.length > 0) {
-              // Note điều động ghi vào Ô CA CHÍNH của nhân sự (trong ngoặc, cạnh tên):
-              //  5. Cùng máy + cùng ca  → "{tên} làm lúc hh:mm - hh:mm"
-              //  6. Sang máy khác        → "{tên} làm lúc hh:mm {tên máy được chuyển đến}"
-              //  7. Cùng máy + khác ca   → "{tên} được chuyển đến ca {tên ca} từ hh:mm - hh:mm"
-              const dispatchNotes = dispatchesForThisMachine.map(dd => {
-                const toMachineName = resolveDestMachineName(dd);
-                const dispatchStart = String(dd.thoi_gian_bat_dau || '').slice(0, 5);
-                const dispatchEnd = String(dd.thoi_gian_ket_thuc || '').slice(0, 5);
-                const toCa = String(dd.ca_dieu_dong || dd.ca || '').trim();
-                const homeCa = String(phanCong.ca_lam_viec || '').trim();
-                const sameMachine = !toMachineName || toMachineName === machineName;
-                const sameCa = !toCa || shiftsMatch(toCa, homeCa);
-                if (!sameMachine) {
-                  // Chuyển máy mới → ghi nhận Máy + giờ
-                  return `(${lastName} làm lúc ${dispatchStart} ${toMachineName})`;
-                }
-                if (sameCa) {
-                  return `(${lastName} làm lúc ${dispatchStart}${dispatchEnd ? ` - ${dispatchEnd}` : ''})`;
-                }
-                return `(${lastName} được chuyển đến ca ${toCa} từ ${dispatchStart}${dispatchEnd ? ` - ${dispatchEnd}` : ''})`;
-              });
-
-              machineData[machineName][tenCa].push({
-                name: lastName,
-                dispatch: dispatchNotes.join('\n')
-              });
-            } else {
-              // Employee stays in this machine (no dispatch from this machine)
-              machineData[machineName][tenCa].push({
-                name: lastName
-              });
-            }
+            machineData[machineName][tenCa].push({
+              name: lastName,
+              dispatch: dispatchNotes.join('\n')
+            });
+          } else {
+            // Employee stays in this machine (no dispatch from this machine)
+            machineData[machineName][tenCa].push({
+              name: lastName
+            });
           }
         }
 
         // Người được điều động ĐẾN ca/máy này (kể cả cùng máy khác ca) — hiện ở ô đích
-        const shiftsMatchDest = (a: string, b: string) => {
-          const na = String(a || '').trim().toUpperCase();
-          const nb = String(b || '').trim().toUpperCase();
-          if (!na || !nb) return false;
-          if (na === nb) return true;
-          for (const shift of sortedCaList) {
-            const aliases = [shift.ten_cai_dat, shift.ma_cai_dat]
-              .map((v: unknown) => String(v || '').trim().toUpperCase())
-              .filter(Boolean);
-            if (aliases.includes(na) && aliases.includes(nb)) return true;
-          }
-          return false;
-        };
-
         for (const dd of dieuDongList) {
           const toCa = String(dd.ca_dieu_dong || '').trim();
           const matchesDestCa =
             !!toCa &&
-            (shiftsMatchDest(toCa, tenCa) || shiftsMatchDest(toCa, String(ca.ma_cai_dat || '')));
+            (shiftsMatchLabel(toCa, tenCa) || shiftsMatchLabel(toCa, String(ca.ma_cai_dat || '')));
           if (!matchesDestCa) continue;
           // Chỉ hiện ở ô ca đích khi ca đích khác ca gốc (tránh trùng với ô gốc cùng ca)
           const homeCa = String(dd.ca || '').trim();
-          if (shiftsMatchDest(toCa, homeCa)) continue;
+          if (shiftsMatchLabel(toCa, homeCa)) continue;
 
           const rawDest = String(dd.may_dieu_dong || '').trim();
           if (!rawDest || rawDest === 'Việc khác') continue;
           const destMachine = mayList.find(m => m.ma_may === rawDest || m.ten_may === rawDest);
           const destMachineName = destMachine?.ten_may || rawDest;
-          if (!machineData[destMachineName]) continue;
+          if (!machineData[destMachineName]) {
+            machineData[destMachineName] = {};
+          }
           if (!machineData[destMachineName][tenCa]) {
             machineData[destMachineName][tenCa] = [];
           }
 
           const fullName = nhanSuMap.get(dd.ma_nhan_su) || dd.ma_nhan_su;
           const lastName = extractLastName(String(fullName || ''));
-          const dispatchStart = String(dd.thoi_gian_bat_dau || '').slice(0, 5);
+          const timePhrase = formatDispatchPrintTime(dd.thoi_gian_bat_dau, dd.thoi_gian_ket_thuc);
           const fromMachine = String(dd.may_goc || '').trim();
           const alreadyListed = machineData[destMachineName][tenCa].some(
             p => p.name === lastName && String(p.dispatch || '').includes(lastName)
@@ -11440,8 +11465,12 @@ export function createApp() {
           const homeMachineName = homeMachine?.ten_may || fromMachine;
           const sameMachine = homeMachineName === destMachineName;
           const arrivalNote = sameMachine
-            ? `(${lastName} làm lúc ${dispatchStart}${dd.thoi_gian_ket_thuc ? ` - ${String(dd.thoi_gian_ket_thuc).slice(0, 5)}` : ''} — từ ca ${homeCa || '—'})`
-            : `(${lastName} làm lúc ${dispatchStart} từ ${homeMachineName || 'máy khác'})`;
+            ? timePhrase
+              ? `(${lastName} ${timePhrase} — từ ca ${homeCa || '—'})`
+              : `(${lastName} — từ ca ${homeCa || '—'})`
+            : timePhrase
+              ? `(${lastName} ${timePhrase} từ ${homeMachineName || 'máy khác'})`
+              : `(${lastName} từ ${homeMachineName || 'máy khác'})`;
 
           machineData[destMachineName][tenCa].push({
             name: lastName,
