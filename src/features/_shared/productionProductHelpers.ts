@@ -1,4 +1,4 @@
-import { buildOrderTenGhep } from '../../utils/productProductionName';
+import { buildOrderTenGhep, seedProductionSpecs } from '../../utils/productProductionName';
 
 export interface OrderProductLine {
   /** Bản ghi gốc trong JSON `don_hang.san_pham`, dùng để form sửa không làm mất dữ liệu đã lưu. */
@@ -136,8 +136,25 @@ export function formatProductionNameWithLength(
 
   const cleanName = (name || '').trim();
   const numericLength = Number(String(length ?? '').replace(',', '.'));
-  if (!Number.isFinite(numericLength) || numericLength <= 0) return cleanName || '-';
-  if (!cleanName || cleanName === '-') return buildOrderTenGhep('', { cutLengthM: numericLength }) || '-';
+  const hasValidLength = Number.isFinite(numericLength) && numericLength > 0;
+  if (!cleanName || cleanName === '-') {
+    if (!hasValidLength) return '-';
+    return buildOrderTenGhep('', { cutLengthM: numericLength }) || '-';
+  }
+  if (!hasValidLength) {
+    // Mọi loại đơn đều hiển thị tên ghép (kể cả khi không có mét dài).
+    // Chỉ ghép lại khi tên chứa thông số parse được; tên tự do (vd "Hàng mẫu - test")
+    // giữ nguyên để không cắt mất đoạn sau dấu '-'.
+    const seeded = seedProductionSpecs({
+      tenSanXuat: cleanName,
+      nhomVthh: options?.nhomVthh || '',
+      maAmis: options?.maAmis || ''
+    });
+    const hasSpecs = [seeded.doLi, seeded.doDayM, seeded.doDaiM, seeded.mang, seeded.hangPhe, seeded.doLiDm]
+      .some(part => String(part || '').trim() !== '');
+    if (!hasSpecs) return cleanName;
+    return seeded.tenGhep || cleanName;
+  }
 
   return buildOrderTenGhep(cleanName, {
     nhomVthh: options?.nhomVthh,

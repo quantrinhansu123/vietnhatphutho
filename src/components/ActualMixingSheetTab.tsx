@@ -8,6 +8,7 @@ import {
 import { Select2 } from './shared/Select2';
 import { waitForPrintImagesReady } from '../utils/printReady';
 import { normalizeProducts, type ProductRow } from '../features/san-pham';
+import { buildOrderTenGhep } from '../utils/productProductionName';
 import type { MixingNormProduct } from './MixingNormMaterialsTab';
 
 /** Cối trộn mẫu tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
@@ -43,6 +44,7 @@ type ActualProduct = {
   ma_sp: string;
   ten_sp: string;
   ten_san_xuat: string;
+  ten_ghep?: string;
   /** Tổng SL sau hao hụt — từ định mức, dùng để cảnh báo/chặn khi tổng các cối thực tế vượt quá. */
   tong_trong_luong: number | null;
   dinh_luong_coi: number | null;
@@ -191,6 +193,10 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
       const ma_sp = String(product.ma_sp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? '').trim();
       const ten_san_xuat = String(product.ten_san_xuat ?? product.tenSanXuat ?? '').trim();
+      const ten_ghep =
+        String(product.ten_ghep ?? product.tenGhep ?? '').trim() ||
+        buildOrderTenGhep(ten_san_xuat) ||
+        undefined;
       const tong_trong_luong = numberValue(product.tong_trong_luong);
       const dinh_luong_coi = numberValue(product.dinh_luong_coi);
       const rawNvl = Array.isArray(product.nvl)
@@ -203,7 +209,7 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
         .filter((line): line is StandardLineRaw => Boolean(line))
         .map(line => fillStandardPercents(line, dinh_luong_coi, tong_trong_luong));
       if (standardNvl.length === 0) return null;
-      return { ma_sp, ten_sp, ten_san_xuat, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
+      return { ma_sp, ten_sp, ten_san_xuat, ten_ghep, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
     })
     .filter((product): product is ActualProduct => Boolean(product));
 }
@@ -285,8 +291,19 @@ function resolveCatalogProductName(catalog: ProductRow[], codeStr: string): stri
   const codes = codeStr.split(',').map(c => c.trim()).filter(Boolean);
   const names = codes
     .map(c => {
-      const match = catalog.find(p => p.ma_sp === c || p.ma_amis === c);
-      return match?.ten_san_xuat || match?.ten_sp || '';
+      const match = catalog.find(
+        p => p.code === c || p.amisCode === c || p.newCode === c
+      );
+      if (!match) return '';
+      return (
+        buildOrderTenGhep(match.productionName || '', {
+          nhomVthh: match.group,
+          maAmis: match.amisCode
+        }) ||
+        match.productionName ||
+        match.name ||
+        ''
+      );
     })
     .filter(Boolean);
   const uniqueNames = [...new Set(names)];
@@ -813,7 +830,8 @@ export default function ActualMixingSheetTab() {
         return {
           ma_sp: product.ma_sp,
           ten_sp: product.ten_sp,
-          print_name: catalogName || undefined,
+          ten_ghep: product.ten_ghep,
+          print_name: product.ten_ghep || catalogName || undefined,
           tong_trong_luong: product.tong_trong_luong,
           dinh_luong_coi: product.dinh_luong_coi,
           ghi_chu: '',
@@ -999,7 +1017,9 @@ export default function ActualMixingSheetTab() {
                 <div>
                   <div className="text-sm font-black text-zinc-900">
                     Sản phẩm: {product.ma_sp}
-                    {catalogName ? ` · ${catalogName}` : ''}
+                    {product.ten_ghep || catalogName
+                      ? ` · ${product.ten_ghep || catalogName}`
+                      : ''}
                   </div>
                   {product.ten_sp ? (
                     <div className="mt-0.5 text-xs font-bold text-blue-700">

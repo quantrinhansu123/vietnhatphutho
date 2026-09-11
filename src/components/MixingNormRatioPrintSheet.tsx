@@ -143,6 +143,8 @@ function resolveProductPrintName(
   product: MixingNormProduct,
   resolveName?: (code: string) => string
 ) {
+  const stored = String(product.ten_ghep || '').trim();
+  if (stored) return stored;
   const names = product.ma_sp
     .split(',')
     .map(code => String(resolveName?.(code.trim()) ?? '').trim())
@@ -224,19 +226,19 @@ function NormPrintProductSection({
       : [];
   const showBatchMeta = mode === 'primary';
   const noteText = stripMixingNormStdPrefix(product.ghi_chu);
+  const displayName =
+    String(product.print_name || product.ten_ghep || product.ten_sp || product.ma_sp || 'SẢN PHẨM').trim() ||
+    'SẢN PHẨM';
 
   return (
     <section className={`mixing-norm-ratio-print-block ${isActual ? 'is-actual' : ''}`}>
       <h2 className="mixing-norm-ratio-print-product">
         <span className="mixing-norm-ratio-print-product-title">
           <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
+          <span className="mixing-norm-ratio-print-product-code">{displayName}</span>
           {noteText ? (
-            <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
-          ) : (
-            <span className="mixing-norm-ratio-print-product-code">
-              {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
-            </span>
-          )}
+            <span className="mixing-norm-ratio-print-inline-note"> · {noteText}</span>
+          ) : null}
         </span>
       </h2>
       {showBatchMeta && product.tong_trong_luong !== null && product.tong_trong_luong !== undefined ? (
@@ -422,13 +424,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   <h2 className="mixing-norm-ratio-print-product">
                     <span className="mixing-norm-ratio-print-product-title">
                       <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
+                      <span className="mixing-norm-ratio-print-product-code">
+                        {String(product.print_name || product.ten_ghep || product.ten_sp || product.ma_sp || 'SẢN PHẨM').trim() || 'SẢN PHẨM'}
+                      </span>
                       {noteText ? (
-                        <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
-                      ) : (
-                        <span className="mixing-norm-ratio-print-product-code">
-                          {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
-                        </span>
-                      )}
+                        <span className="mixing-norm-ratio-print-inline-note"> · {noteText}</span>
+                      ) : null}
                     </span>
                   </h2>
                   {tong !== null && tong !== undefined ? (
