@@ -10,7 +10,7 @@ import { waitForPrintImagesReady } from '../utils/printReady';
 import { normalizeProducts, type ProductRow } from '../features/san-pham';
 import type { MixingNormProduct } from './MixingNormMaterialsTab';
 
-/** Cối trộn tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
+/** Cối trộn mẫu tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
 type StandardLine = {
   ma_nvl: string;
   ten_nvl: string;
@@ -119,7 +119,7 @@ function lineKey(maNvl: string, tenNvl: string) {
   return `${maNvl.trim().toLowerCase()}|${tenNvl.trim().toLowerCase()}`;
 }
 
-/** TL ĐM = % Cối trộn tiêu chuẩn × Tổng KL cối thực tế đã nhập ÷ 100 — chỉ để tham chiếu, không lưu riêng. */
+/** TL ĐM = % Cối trộn mẫu tiêu chuẩn × Tổng KL cối thực tế đã nhập ÷ 100 — chỉ để tham chiếu, không lưu riêng. */
 function computeTlDm(standard: StandardLine | undefined, tongTrongLuongThucTe: number | null): number | null {
   if (!standard || standard.ty_le_coi === null || tongTrongLuongThucTe === null) return null;
   return roundTo2((standard.ty_le_coi / 100) * tongTrongLuongThucTe);
@@ -1016,7 +1016,7 @@ export default function ActualMixingSheetTab() {
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[11px] font-black uppercase tracking-wider text-[#ef1b2d]">
-                      Cối trộn tiêu chuẩn (định mức — không sửa)
+                      Cối trộn mẫu tiêu chuẩn (định mức — không sửa)
                     </span>
                     {product.dinh_luong_coi !== null && product.dinh_luong_coi !== undefined ? (
                       <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-0.5 text-[11px] font-bold text-zinc-700 shadow-sm">
@@ -1035,7 +1035,7 @@ export default function ActualMixingSheetTab() {
                         <th className="px-2 py-1.5">Mã NVL</th>
                         <th className="px-2 py-1.5">Tên NVL</th>
                         <th className="px-2 py-1.5">Tên NVL SX</th>
-                        <th className="px-2 py-1.5 text-center">Giá trị (kg)</th>
+                        <th className="px-2 py-1.5 text-center">Giá trị (kg/cối trộn mẫu)</th>
                         <th className="px-2 py-1.5 text-center">% Cối trộn</th>
                         <th className="px-2 py-1.5 text-center">% Tổng SL</th>
                         <th className="px-2 py-1.5 text-center">Tổng trọng lượng</th>

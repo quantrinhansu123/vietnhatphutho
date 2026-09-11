@@ -5914,6 +5914,15 @@ function buildProductionOrderRecordFromOrder(
         ...(selectedProduct?.so_luong_bac != null ? { so_luong_bac: selectedProduct.so_luong_bac } : {}),
         ...(selectedProduct?.so_luong_trung != null ? { so_luong_trung: selectedProduct.so_luong_trung } : {}),
         ...(selectedProduct?.so_luong_nam != null ? { so_luong_nam: selectedProduct.so_luong_nam } : {}),
+        ...((selectedProduct?.so_luong_bac != null || selectedProduct?.so_luong_trung != null || selectedProduct?.so_luong_nam != null)
+          ? {
+              sl_sx: {
+                bac: Math.max(0, selectedProduct?.so_luong_bac ?? 0),
+                trung: Math.max(0, selectedProduct?.so_luong_trung ?? 0),
+                nam: Math.max(0, selectedProduct?.so_luong_nam ?? 0)
+              }
+            }
+          : {}),
         ...(selectedProduct?.kg_1_sp && selectedProduct.kg_1_sp !== selectedProduct.tl_tam && selectedProduct.kg_1_sp !== selectedProduct.tl_cuon ? { kg_1_sp: selectedProduct.kg_1_sp } : {}),
         ...(selectedProduct?.nguon_quy_doi ? { nguon_quy_doi: selectedProduct.nguon_quy_doi } : {}),
         ...(selectedProduct?.ket_qua_quy_doi?.length ? { ket_qua_quy_doi: selectedProduct.ket_qua_quy_doi } : {})
@@ -14204,12 +14213,26 @@ export function createApp() {
         const itemSavedTrung = savedSlSx ? Number(savedSlSx.trung) || 0 : 0;
         const itemSavedNam = savedSlSx ? Number(savedSlSx.nam) || 0 : 0;
 
-        // Ưu tiên 1: lệnh SX đã lưu (sl_sx). Ưu tiên 2: B/T/N từ đơn hàng. Fallback: khu_vuc cũ.
+        // Ưu tiên 1: lệnh SX đã lưu (sl_sx). Ưu tiên 2: B/T/N đã lưu trên dòng lệnh SX.
+        // Ưu tiên 3: B/T/N từ đơn hàng. Fallback: khu_vuc cũ.
+        const toRegionNum = (v: unknown): number | null => {
+          if (v === null || v === undefined || v === '') return null;
+          const n = Number(v);
+          return Number.isFinite(n) ? Math.max(0, n) : null;
+        };
+        const itemBac = toRegionNum(item?.so_luong_bac ?? item?.sl_bac);
+        const itemTrung = toRegionNum(item?.so_luong_trung ?? item?.sl_trung);
+        const itemNam = toRegionNum(item?.so_luong_nam ?? item?.sl_nam);
+        const hasItemRegion = itemBac !== null || itemTrung !== null || itemNam !== null;
         const region = resolveOrderLineRegion(item, maDonHang);
         let itemDefBac = 0;
         let itemDefTrung = 0;
         let itemDefNam = 0;
-        if (region.hasRegion) {
+        if (hasItemRegion) {
+          itemDefBac = itemBac ?? 0;
+          itemDefTrung = itemTrung ?? 0;
+          itemDefNam = itemNam ?? 0;
+        } else if (region.hasRegion) {
           itemDefBac = region.bac;
           itemDefTrung = region.trung;
           itemDefNam = region.nam;
