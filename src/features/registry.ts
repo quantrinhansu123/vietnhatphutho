@@ -414,7 +414,12 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   dieu_dong_nhan_su: {
     table: 'dieu_dong_nhan_su',
     label: 'Điều động nhân sự (Quản đốc)',
-    sql: ['supabase-dieu-dong-nhan-su.sql'],
+    sql: [
+      'supabase-dieu-dong-nhan-su.sql',
+      'supabase-dieu-dong-nhan-su-ca-chuyen-den.sql',
+      'supabase-dieu-dong-nhan-su-ca-vuot-ngay.sql',
+      'supabase-dieu-dong-nhan-su-thoi-gian-nullable.sql'
+    ],
     apiPrefix: '/api/dieu-dong-nhan-su',
     serverLines: '9181–9347',
     appTab: 'dieu-dong-nhan-su',

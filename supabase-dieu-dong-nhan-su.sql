@@ -51,8 +51,8 @@ create table if not exists public.dieu_dong_nhan_su (
     -- Ví dụ: Máy A -> Máy A để ghi nhận đi làm sớm
     may_dieu_dong text not null,
 
-    -- Thời gian điều động
-    thoi_gian_bat_dau time not null,
+    -- Thời gian điều động (tuỳ chọn — có thể để trống)
+    thoi_gian_bat_dau time,
     thoi_gian_ket_thuc time,
 
     -- Ghi chú
