@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { MixingNormLine, MixingNormProduct, MixingNormRow } from './MixingNormMaterialsTab';
-import { formatMixingNormSlipName, isMixingNormStdLabel, stripMixingNormStdPrefix } from '../utils/mixingNormAuxiliary';
+import { formatMixingNormSlipName, stripMixingNormStdPrefix } from '../utils/mixingNormAuxiliary';
 
 export type MixingNormRatioPrintDoc = {
   tenPhieu?: string;
@@ -132,11 +132,6 @@ function resolveSecondaryTotalWeight(line: MixingNormLine) {
   return null;
 }
 
-function productTitle(product: MixingNormProduct & { print_name?: string }) {
-  const name = (product.print_name || product.ma_sp || product.ten_sp || 'SẢN PHẨM').trim();
-  return name.toUpperCase();
-}
-
 function comparePrintProducts(a: MixingNormProduct, b: MixingNormProduct) {
   const aSecondary = a.loai === 'nvl_phu' ? 1 : 0;
   const bSecondary = b.loai === 'nvl_phu' ? 1 : 0;
@@ -229,9 +224,6 @@ function NormPrintProductSection({
       : [];
   const showBatchMeta = mode === 'primary';
   const noteText = stripMixingNormStdPrefix(product.ghi_chu);
-  const workerLabel = stripMixingNormStdPrefix(product.ten_sp);
-  const showWorker =
-    Boolean(workerLabel) && !isMixingNormStdLabel(product.ten_sp) && workerLabel !== noteText;
 
   return (
     <section className={`mixing-norm-ratio-print-block ${isActual ? 'is-actual' : ''}`}>
@@ -240,21 +232,12 @@ function NormPrintProductSection({
           <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
           {noteText ? (
             <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
-          ) : null}
-          <span className="mixing-norm-ratio-print-product-code">
-            {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
-          </span>
+          ) : (
+            <span className="mixing-norm-ratio-print-product-code">
+              {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
+            </span>
+          )}
         </span>
-        {product.print_name ? (
-          <span className="mixing-norm-ratio-print-product-name">
-            ({product.print_name})
-          </span>
-        ) : null}
-        {showWorker ? (
-          <span className="mixing-norm-ratio-print-worker-name">
-            {formatWorkerName(workerLabel)}
-          </span>
-        ) : null}
       </h2>
       {showBatchMeta && product.tong_trong_luong !== null && product.tong_trong_luong !== undefined ? (
         <p className="mixing-norm-ratio-print-tonnage">
@@ -334,7 +317,7 @@ function NormPrintProductSection({
                   <td className="col-unit">{line.don_vi || 'kg'}</td>
                   <td className="col-kg">{totalWeight !== null ? `${formatNumberVi(totalWeight)} kg` : ''}</td>
                   {isActual ? (
-                    <td className="col-kg col-round-actual font-bold">
+                    <td className="col-kg col-round-actual">
                       {actualWeight !== null ? `${formatNumberVi(actualWeight)} kg` : ''}
                     </td>
                   ) : null}
@@ -354,7 +337,7 @@ function NormPrintProductSection({
                 ))}{' '}kg
               </td>
               {isActual ? (
-                <td className="col-kg font-bold">
+                <td className="col-kg">
                   {formatNumberVi(secondaryLines.reduce(
                     (sum, line) => sum + (resolveSecondaryActualWeight(line) ?? 0),
                     0
@@ -431,9 +414,6 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               const displayLines = product.chi_tiet;
               const roundWeights = buildMixingRoundWeights(product, doc.isActual);
               const noteText = stripMixingNormStdPrefix(product.ghi_chu);
-              const workerLabel = stripMixingNormStdPrefix(product.ten_sp);
-              const showWorker =
-                Boolean(workerLabel) && !isMixingNormStdLabel(product.ten_sp) && workerLabel !== noteText;
               return (
                 <section
                   key={`actual-${product.ma_sp}-${index}`}
@@ -444,21 +424,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                       <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
                       {noteText ? (
                         <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
-                      ) : null}
-                      <span className="mixing-norm-ratio-print-product-code">
-                        {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
-                      </span>
+                      ) : (
+                        <span className="mixing-norm-ratio-print-product-code">
+                          {(product.ma_sp || 'SẢN PHẨM').toUpperCase()}
+                        </span>
+                      )}
                     </span>
-                    {product.print_name ? (
-                      <span className="mixing-norm-ratio-print-product-name">
-                        ({product.print_name})
-                      </span>
-                    ) : null}
-                    {showWorker ? (
-                      <span className="mixing-norm-ratio-print-worker-name">
-                        {formatWorkerName(workerLabel)}
-                      </span>
-                    ) : null}
                   </h2>
                   {tong !== null && tong !== undefined ? (
                     <p className="mixing-norm-ratio-print-tonnage">

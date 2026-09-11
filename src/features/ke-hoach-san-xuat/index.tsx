@@ -5226,6 +5226,10 @@ export type ProductionOrderEntryLine = {
   tlTam?: string;
   m2?: string;
   mDai?: string;
+  /** SL theo miền, tự điền từ đơn hàng (so_luong_bac/trung/nam), lưu vào JSON san_pham lệnh SX. */
+  slBac?: string;
+  slTrung?: string;
+  slNam?: string;
 };
 
 function productionEntryMetadataFromOrderLine(line?: OrderProductLine): Partial<ProductionOrderEntryLine> {
@@ -5244,7 +5248,10 @@ function productionEntryMetadataFromOrderLine(line?: OrderProductLine): Partial<
     tlCuon: line.tlCuon,
     tlTam: line.tlTam,
     m2: line.m2,
-    mDai: line.mDai
+    mDai: line.mDai,
+    slBac: line.soLuongBac,
+    slTrung: line.soLuongTrung,
+    slNam: line.soLuongNam
   };
 }
 
@@ -5263,7 +5270,10 @@ function emptyProductionEntryMetadata(): Partial<ProductionOrderEntryLine> {
     tlCuon: undefined,
     tlTam: undefined,
     m2: undefined,
-    mDai: undefined
+    mDai: undefined,
+    slBac: undefined,
+    slTrung: undefined,
+    slNam: undefined
   };
 }
 
@@ -5312,7 +5322,7 @@ export function newProductionOrderEntryLine(): ProductionOrderEntryLine {
 }
 
 export const productionOrderLineGridClass =
-  'grid-cols-[2.75rem_8.5rem_11rem_minmax(12rem,1fr)_6rem_4.5rem_4.5rem_4.5rem_4.5rem_2.5rem]';
+  'grid-cols-[2.75rem_8.5rem_11rem_minmax(10rem,1fr)_5rem_4rem_4rem_4rem_4.5rem_4.5rem_4.5rem_4.5rem_2.5rem]';
 
 export function emptyProductionOrderForm(): ProductionOrderFormState {
   return {
@@ -5361,6 +5371,9 @@ export function productionOrderFormToCreatePayload(
       ...(line.conversionSource?.trim() ? { nguon_quy_doi: line.conversionSource.trim() } : {}),
       ...(optionalNumber(line.tlCuon) ? { tl_cuon: optionalNumber(line.tlCuon) } : {}),
       ...(optionalNumber(line.tlTam) ? { tl_tam: optionalNumber(line.tlTam) } : {}),
+      ...(optionalNumber(line.slBac) ? { so_luong_bac: optionalNumber(line.slBac) } : {}),
+      ...(optionalNumber(line.slTrung) ? { so_luong_trung: optionalNumber(line.slTrung) } : {}),
+      ...(optionalNumber(line.slNam) ? { so_luong_nam: optionalNumber(line.slNam) } : {}),
       ...(optionalNumber(line.m2) ? { m2: optionalNumber(line.m2) } : {}),
       ...(optionalNumber(line.mDai) ? { m_dai: optionalNumber(line.mDai) } : {}),
       ...(conversionResults?.length ? { ket_qua_quy_doi: conversionResults } : {})
@@ -6181,7 +6194,7 @@ export function AddProductionOrderModal({
             </p>
 
             <div className="col-span-2 overflow-x-auto">
-              <div className="min-w-[1080px]">
+              <div className="min-w-[1380px]">
                 <RepeatableLinesBlock
                   className="w-full"
                   linesClassName="space-y-3 pt-1"
@@ -6227,6 +6240,9 @@ export function AddProductionOrderModal({
                     { key: 'code', label: 'Mã hàng', required: true },
                     { key: 'name', label: 'Tên sản xuất' },
                     { key: 'unit', label: 'ĐVT', className: 'text-center' },
+                    { key: 'bac', label: 'Bắc', className: 'text-center' },
+                    { key: 'trung', label: 'Trung', className: 'text-center' },
+                    { key: 'nam', label: 'Nam', className: 'text-center' },
                     { key: 'qty', label: 'SL', className: 'text-center', required: true },
                     { key: 'kg', label: 'KG', className: 'text-center' },
                     { key: 'm2', label: 'M2', className: 'text-center' },
@@ -6413,6 +6429,42 @@ export function AddProductionOrderModal({
                                 placeholder="ĐVT"
                               />
                             )}
+                          </div>
+                          <div className="w-full min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.slBac ?? ''}
+                              onChange={e => updateEntryLine(line.key, { slBac: e.target.value })}
+                              title="SL Bắc (tự điền từ đơn hàng)"
+                              placeholder="Bắc"
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                          <div className="w-full min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.slTrung ?? ''}
+                              onChange={e => updateEntryLine(line.key, { slTrung: e.target.value })}
+                              title="SL Trung (tự điền từ đơn hàng)"
+                              placeholder="Trung"
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                          <div className="w-full min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.slNam ?? ''}
+                              onChange={e => updateEntryLine(line.key, { slNam: e.target.value })}
+                              title="SL Nam (tự điền từ đơn hàng)"
+                              placeholder="Nam"
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
                           </div>
                           <div className="w-full min-w-0">
                             <input
@@ -7852,7 +7904,7 @@ export function EditProductionOrderModal({
             </label>
 
             <div className="col-span-2 overflow-x-auto">
-              <div className="min-w-[1080px]">
+              <div className="min-w-[1380px]">
                 <RepeatableLinesBlock
                   className="w-full"
                   linesClassName="space-y-3 pt-1"
@@ -7887,6 +7939,9 @@ export function EditProductionOrderModal({
                     { key: 'code', label: 'Mã hàng', required: true },
                     { key: 'name', label: 'Tên sản xuất' },
                     { key: 'unit', label: 'ĐVT', className: 'text-center' },
+                    { key: 'bac', label: 'Bắc', className: 'text-center' },
+                    { key: 'trung', label: 'Trung', className: 'text-center' },
+                    { key: 'nam', label: 'Nam', className: 'text-center' },
                     { key: 'qty', label: 'SL', className: 'text-center', required: true },
                     { key: 'kg', label: 'KG', className: 'text-center' },
                     { key: 'm2', label: 'M2', className: 'text-center' },
@@ -8065,6 +8120,42 @@ export function EditProductionOrderModal({
                                 placeholder="ĐVT"
                               />
                             )}
+                          </div>
+                          <div className="w-full min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.slBac ?? ''}
+                              onChange={e => updateEntryLine(line.key, { slBac: e.target.value })}
+                              title="SL Bắc (tự điền từ đơn hàng)"
+                              placeholder="Bắc"
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                          <div className="w-full min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.slTrung ?? ''}
+                              onChange={e => updateEntryLine(line.key, { slTrung: e.target.value })}
+                              title="SL Trung (tự điền từ đơn hàng)"
+                              placeholder="Trung"
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                          <div className="w-full min-w-0">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.slNam ?? ''}
+                              onChange={e => updateEntryLine(line.key, { slNam: e.target.value })}
+                              title="SL Nam (tự điền từ đơn hàng)"
+                              placeholder="Nam"
+                              className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
                           </div>
                           <div className="w-full min-w-0">
                             <input

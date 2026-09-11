@@ -273,7 +273,7 @@ function roundMixingWeight2(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-/** % Cối trộn = giá trị / Định lượng 1 cối tiêu chuẩn; % Tổng SL giữ nguyên vì tỷ lệ không đổi theo mẻ. */
+/** % Cối trộn = giá trị / Định lượng 1 cối trộn mẫu tiêu chuẩn; % Tổng SL giữ nguyên vì tỷ lệ không đổi theo mẻ. */
 function computeNplPercents(
   giaTri: number | null,
   donVi: 'kg' | '%',
