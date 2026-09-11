@@ -25,6 +25,10 @@ export interface OrderProductLine {
   tlTam?: string;
   m2?: string;
   mDai?: string;
+  /** SL theo miền cho loại "Đơn sản xuất" (Bắc/Trung/Nam). SL tổng = B + T + N. */
+  soLuongBac?: string;
+  soLuongTrung?: string;
+  soLuongNam?: string;
 }
 
 export function splitProductionProductCodes(raw: string): string[] {

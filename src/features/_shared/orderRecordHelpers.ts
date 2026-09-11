@@ -111,6 +111,9 @@ export function parseOrderProductsFromRecord(
         const m2 = pickText(row, ['m2', 'dien_tich_m2'], '');
         const mDai = pickText(row, ['m_dai', 'mDai', 'met_dai', 'chieu_dai_m'], '');
         const note = pickText(row, ['ghi_chu', 'note'], '');
+        const soLuongBac = pickText(row, ['so_luong_bac', 'sl_bac', 'slsx_bac', 'bac', 'slBac'], '');
+        const soLuongTrung = pickText(row, ['so_luong_trung', 'sl_trung', 'slsx_trung', 'trung', 'slTrung'], '');
+        const soLuongNam = pickText(row, ['so_luong_nam', 'sl_nam', 'slsx_nam', 'nam', 'slNam'], '');
         if (!productCode && !productName) return null;
         return {
           ...(options?.includeSourceProduct ? { sourceProduct: { ...row } } : {}),
@@ -134,6 +137,9 @@ export function parseOrderProductsFromRecord(
           tlTam: tlTam || undefined,
           m2: m2 || undefined,
           mDai: mDai || undefined,
+          soLuongBac: soLuongBac || undefined,
+          soLuongTrung: soLuongTrung || undefined,
+          soLuongNam: soLuongNam || undefined,
           conversionResults: Array.isArray(row.ket_qua_quy_doi)
             ? row.ket_qua_quy_doi.map(item => {
                 const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};
