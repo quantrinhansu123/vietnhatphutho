@@ -28,10 +28,10 @@ Mỗi dòng lưu `may` và `phan_loai_nvl` (`nvl_chinh`, `nvl_phu`, `chua_phan_l
 Cột `phan_loai_nvl` không dùng CHECK constraint trong database; các file SQL chủ động gỡ constraint `phieu_xuat_nhap_kho_phan_loai_nvl_check` nếu database cũ đã có.
 Payload lưu dòng NVL gửi đồng thời `materialClass`, `warehouseClass` và `phan_loai_nvl`; server ưu tiên `phan_loai_nvl` để bảo toàn đúng `nvl_chinh`, `nvl_phu` hoặc `chua_phan_loai` từ phiếu trộn định mức.
 Với NVL phụ, `gia_tri` trên phiếu trộn là SL theo ĐVT gốc và `tong_khoi_luong` là kg đã quy đổi. Phiếu xuất kho dùng `gia_tri` cho **SL CT** và hệ số `tong_khoi_luong / gia_tri` để tính **Quy đổi kg** khi nhập SL thực.
-Trọng lượng quy đổi được lưu tại `trong_luong_kg`; bảng NVL phụ trên mẫu in/in lại có cột **Trọng lượng (kg)** và dòng tổng kg.
-Khi nạp nhiều dòng NVL phụ, hệ thống gộp và cộng SL định mức/thực xuất/trọng lượng theo `material_id` trong cùng máy. Riêng **Băng Dính** và **Tem** chỉ gộp khi đồng thời cùng `material_id` và cùng `nhom_vthh`; các NVL phụ khác không tách theo VTHH. Dữ liệu cũ thiếu ID dùng mã/tên làm khóa dự phòng.
+Trọng lượng quy đổi được lưu tại `trong_luong_kg` (cả NVL chính: lấy kg/đơn vị từ định mức, lẫn NVL phụ). Bảng NVL chính và NVL phụ trên mẫu in/in lại đều có cột **Trọng lượng (kg)** và dòng tổng kg riêng; cuối phiếu in (nhiều máy) thêm **TỔNG TL NVL CHÍNH TOÀN PHIẾU** và **TỔNG TL NVL PHỤ TOÀN PHIẾU**. Màn lập phiếu và chi tiết lịch sử hiển thị tổng TL chính/phụ riêng.
+Khi nạp nhiều dòng NVL phụ, hệ thống gộp và cộng SL định mức/thực xuất/trọng lượng theo cùng máy + cùng tên (+mã khi tên trống) + cùng ĐVT + cùng giá. Riêng **Băng Dính** và **Tem** chỉ gộp khi đồng thời trùng `nhom_vthh`; các NVL phụ khác không tách theo VTHH. Dữ liệu cũ thiếu ID dùng mã/tên làm khóa dự phòng.
 Danh sách **Chi tiết NVL** hiển thị thêm **Tên sản xuất**, ưu tiên tên trên phiếu định mức rồi đối chiếu `kho_nvl.ten_nvl_sx` theo mã NPL; trường tên sản xuất chỉ hiển thị, không tạo thêm cột lưu trữ trên phiếu.
-Bản in phiếu xuất NVL tách mỗi máy thành một trang; trong mỗi trang in riêng bảng NVL chính, NVL phụ và Chưa phân loại nếu có dữ liệu.
+Bản in phiếu xuất NVL tách mỗi máy thành một trang; trong mỗi trang in riêng bảng NVL chính, NVL phụ và Chưa phân loại nếu có dữ liệu. Cuối bản in luôn có 1 trang **TỔNG HỢP** gộp dòng toàn bộ máy/ca (cùng tên + cùng ĐVT + cùng giá; Băng Dính/Tem trùng thêm VTHH) với 2 bảng riêng và 2 tổng **TỔNG TL NVL CHÍNH TOÀN PHIẾU** / **TỔNG TL NVL PHỤ TOÀN PHIẾU**. Màn nhập hiển thị tổng TL ngay tại header nhóm NVL chính/phụ và hộp tổng cuối bảng.
 
 ## Frontend
 

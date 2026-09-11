@@ -190,15 +190,38 @@ test('mergeAuxiliaryWarehouseLines cong SL, trong luong va chi tach Bang Dinh/Te
     { ...base, materialId: 'material-a', quantity: 1, documentQuantity: 1, weightKg: 0.5, lineAmount: 10, nhomVthh: 'TP; PX Rong' },
     { ...base, materialId: 'material-a', quantity: 2, documentQuantity: 2, weightKg: 1, lineAmount: 20, nhomVthh: 'TP; PX Rỗng' },
     { ...base, materialId: 'material-a', quantity: 4, documentQuantity: 4, weightKg: 1.6, lineAmount: 40, nhomVthh: 'TP; PX Dac' },
+    // Cùng tên + cùng giá + cùng VTHH nhưng khác materialId -> VẪN GỘP (quy tắc tên+giá)
     { ...base, materialId: 'material-b', quantity: 8, documentQuantity: 8, weightKg: 4, lineAmount: 80, nhomVthh: 'TP; PX Rong' }
   ]);
 
+  assert.equal(lines.length, 2);
+  const mergedRong = lines.find(line => line.nhomVthh === 'TP; PX Rỗng');
+  assert.equal(mergedRong?.quantity, 11);
+  assert.equal(mergedRong?.documentQuantity, 11);
+  assert.equal(mergedRong?.weightKg, 5.5);
+  assert.equal(mergedRong?.lineAmount, 110);
+  assert.equal(mergedRong?.unitPrice, 10);
+});
+
+test('mergeAuxiliaryWarehouseLines tach khi khac gia hoac khac DVT', async () => {
+  const { mergeAuxiliaryWarehouseLines } = await import('./warehouseNormMerge.ts');
+  const base = {
+    code: 'M01',
+    name: 'Mang PE',
+    unit: 'Cuon',
+    materialClass: 'nvl_phu' as const,
+    machine: 'May 1',
+    auxiliaryGroup: 'Mang'
+  };
+  const lines = mergeAuxiliaryWarehouseLines([
+    { ...base, quantity: 2, documentQuantity: 2, unitPrice: 5, lineAmount: 10, weightKg: 2 },
+    // Cùng tên nhưng khác giá -> TÁCH
+    { ...base, quantity: 3, documentQuantity: 3, unitPrice: 6, lineAmount: 18, weightKg: 3 },
+    // Cùng tên + cùng giá nhưng khác ĐVT -> TÁCH
+    { ...base, unit: 'kg', quantity: 1, documentQuantity: 1, unitPrice: 5, lineAmount: 5, weightKg: 1 }
+  ]);
+
   assert.equal(lines.length, 3);
-  const mergedRong = lines.find(line => line.materialId === 'material-a' && line.nhomVthh === 'TP; PX Rỗng');
-  assert.equal(mergedRong?.quantity, 3);
-  assert.equal(mergedRong?.documentQuantity, 3);
-  assert.equal(mergedRong?.weightKg, 1.5);
-  assert.equal(mergedRong?.lineAmount, 30);
 });
 
 test('mergeAuxiliaryWarehouseLines bo qua VTHH voi NVL phu khac', async () => {

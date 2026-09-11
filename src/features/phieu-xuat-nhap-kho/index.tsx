@@ -403,14 +403,14 @@ export function parseWarehouseSlipPayloadItems(
           ? normalizeWarehouseMaterialClass(line.warehouseClass)
           : 'chua_phan_loai';
       let effectivePerUnit = Number(line.normWeightPerUnitKg);
-      if ((!Number.isFinite(effectivePerUnit) || effectivePerUnit <= 0) && (materialClass === 'nvl_phu' || materialClass === 'chua_phan_loai')) {
+      if ((!Number.isFinite(effectivePerUnit) || effectivePerUnit <= 0) && (materialClass === 'nvl_phu' || materialClass === 'nvl_chinh' || materialClass === 'chua_phan_loai')) {
         const groupKey = normalizeNhomVatTuPhuKey(
           line.auxiliaryGroup || line.productionName || line.name || line.code
         );
         effectivePerUnit = resolveAuxiliaryWeightPerUnit(groupKey, line.nhomVthh, line.unit) ?? 0;
       }
       const weightKg =
-        (materialClass === 'nvl_phu' || materialClass === 'chua_phan_loai') &&
+        (materialClass === 'nvl_phu' || materialClass === 'nvl_chinh' || materialClass === 'chua_phan_loai') &&
         Number.isFinite(quantity) && quantity > 0 &&
         Number.isFinite(effectivePerUnit) && effectivePerUnit > 0
           ? Math.round(quantity * effectivePerUnit * 1000) / 1000
@@ -1346,7 +1346,12 @@ export function WarehouseSlipPanel({
             lineNote: '',
             warehouseClass: line.warehouseClass,
             machine: line.machine,
-            normWeightPerUnitKg: line.normWeightPerUnitKg,
+            // NVL chính không có hệ số phụ: lấy kg/đơn vị từ định mức
+            // (tong_khoi_luong / SL) để tổng TL toàn phiếu gồm cả chính + phụ.
+            normWeightPerUnitKg: line.normWeightPerUnitKg
+              ?? (line.warehouseClass === 'nvl_chinh' && line.documentQuantity > 0 && line.normWeightKg > 0
+                ? Math.round((line.normWeightKg / line.documentQuantity) * 1000000) / 1000000
+                : undefined),
             nhomVthh: line.nhomVthh
           }))
         : [createWarehouseLineDraft()]);
@@ -1495,6 +1500,29 @@ export function WarehouseSlipPanel({
       }
     }
     return hasWeight ? total : null;
+  }, [lines, warehouseKind, weightCatalog]);
+
+  const slipWeightKgByClass = useMemo(() => {
+    let chinh = 0;
+    let phu = 0;
+    let hasChinh = false;
+    let hasPhu = false;
+    for (const line of lines) {
+      const weight = resolveLineWeightKg(line);
+      if (weight === null) continue;
+      const materialClass = normalizeWarehouseMaterialClass(line.warehouseClass);
+      if (materialClass === 'nvl_chinh') {
+        chinh += weight;
+        hasChinh = true;
+      } else if (materialClass === 'nvl_phu') {
+        phu += weight;
+        hasPhu = true;
+      }
+    }
+    return {
+      chinh: hasChinh ? chinh : null,
+      phu: hasPhu ? phu : null
+    };
   }, [lines, warehouseKind, weightCatalog]);
 
   const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
@@ -1719,7 +1747,18 @@ export function WarehouseSlipPanel({
           <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-emerald-600/20 bg-emerald-50 px-4 py-3">
             <div>
               <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Quy đổi khối lượng</p>
-              <p className="mt-1 text-2xl font-black text-zinc-950">{formatWarehouseWeightKg(slipTotalWeightKg)}</p>
+              {warehouseKind === 'nvl' ? (
+                <>
+                  <p className="mt-1 text-sm font-black text-zinc-950">
+                    NVL chính: {formatWarehouseWeightKg(slipWeightKgByClass.chinh)}
+                  </p>
+                  <p className="text-sm font-black text-zinc-950">
+                    NVL phụ: {formatWarehouseWeightKg(slipWeightKgByClass.phu)}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-2xl font-black text-zinc-950">{formatWarehouseWeightKg(slipTotalWeightKg)}</p>
+              )}
             </div>
             <p className="text-xs font-semibold text-zinc-500">
               Tự động quy đổi SL × định mức kg (kg, tấn, g hoặc theo danh mục {warehouseKind === 'san_pham' ? 'SP' : 'NVL'})
@@ -2004,7 +2043,7 @@ export function WarehouseSlipPanel({
                     type="button"
                     onClick={() => setLines(current => consolidateWarehouseLines(current, itemOptions))}
                     className="flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 transition hover:bg-amber-100"
-                    title="Gộp các dòng NVL phụ cùng mã vật tư và nhóm VTHH"
+                    title="Gộp các dòng NVL phụ cùng tên + cùng giá (Băng Dính/Tem phải trùng thêm nhóm VTHH)"
                   >
                     <Layers className="h-3.5 w-3.5" />
                     Gộp NVL phụ
@@ -2069,8 +2108,14 @@ export function WarehouseSlipPanel({
                 index === 0 ||
                 normalizeWarehouseMaterialClass(line.warehouseClass) !== normalizeWarehouseMaterialClass(lines[index - 1]?.warehouseClass)
               ) ? (
-                <div className="border-t border-zinc-200 bg-zinc-100 px-2 py-2 text-xs font-black uppercase tracking-wide text-zinc-700">
-                  {warehouseMaterialClassLabel(line.warehouseClass)}
+                <div className="flex items-center justify-between gap-2 border-t border-zinc-200 bg-zinc-100 px-2 py-2 text-xs font-black uppercase tracking-wide text-zinc-700">
+                  <span>{warehouseMaterialClassLabel(line.warehouseClass)}</span>
+                  {(() => {
+                    const cls = normalizeWarehouseMaterialClass(line.warehouseClass);
+                    if (cls !== 'nvl_chinh' && cls !== 'nvl_phu') return null;
+                    const total = cls === 'nvl_chinh' ? slipWeightKgByClass.chinh : slipWeightKgByClass.phu;
+                    return <span className="font-mono normal-case">Tổng TL: {formatWarehouseWeightKg(total)}</span>;
+                  })()}
                 </div>
               ) : null}
               <div
@@ -2332,6 +2377,14 @@ export function WarehouseSlipPanel({
           <p className="mr-auto text-[11px] font-semibold text-zinc-500">
             Phiếu chỉ xuất hiện trong lịch sử sau khi bấm <strong>Lưu &amp; in</strong> hoặc <strong>In phiếu</strong>.
           </p>
+          {isNvlExport ? (
+            <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border-2 border-zinc-900/10 bg-zinc-50 px-4 py-2.5 text-xs font-black">
+              <span className="uppercase tracking-wide text-zinc-500">Tổng phiếu:</span>
+              <span className="text-zinc-950">Tiền: {formatWarehouseMoney(slipTotal)} đ</span>
+              <span className="text-sky-800">TL NVL chính: {formatWarehouseWeightKg(slipWeightKgByClass.chinh)}</span>
+              <span className="text-emerald-800">TL NVL phụ: {formatWarehouseWeightKg(slipWeightKgByClass.phu)}</span>
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={handlePrintPreview}
@@ -2597,6 +2650,28 @@ export function WarehouseHistoryPanel({
       }
     }
     return hasWeight ? total : 0;
+  }, [viewingRows, weightCatalogMaterials, weightCatalogProducts]);
+
+  const viewingSlipWeightKgByClass = useMemo(() => {
+    let chinh = 0;
+    let phu = 0;
+    let hasChinh = false;
+    let hasPhu = false;
+    for (const row of viewingRows) {
+      const weight = resolveWarehouseRowWeightKg(row);
+      if (weight === null) continue;
+      if (row.materialClass === 'nvl_chinh') {
+        chinh += weight;
+        hasChinh = true;
+      } else if (row.materialClass === 'nvl_phu') {
+        phu += weight;
+        hasPhu = true;
+      }
+    }
+    return {
+      chinh: hasChinh ? chinh : null,
+      phu: hasPhu ? phu : null
+    };
   }, [viewingRows, weightCatalogMaterials, weightCatalogProducts]);
 
   const handlePrintSlipByCode = (slipCode: string, autoPrint = false) => {
@@ -3058,7 +3133,14 @@ export function WarehouseHistoryPanel({
                   ['Ngày', viewingRows[0].slipDate || '-'],
                   ['Ca', viewingRows[0].shift || '-'],
                   ['Tổng tiền', `${formatWarehouseMoney(viewingSlipTotal)} đ`],
-                  ['Tổng trọng lượng', formatWarehouseWeightKg(viewingSlipTotalWeightKg > 0 ? viewingSlipTotalWeightKg : null)],
+                  ...(viewingRows[0].warehouseKind === 'nvl'
+                    ? [
+                        ['Tổng TL NVL chính', formatWarehouseWeightKg(viewingSlipWeightKgByClass.chinh)],
+                        ['Tổng TL NVL phụ', formatWarehouseWeightKg(viewingSlipWeightKgByClass.phu)]
+                      ]
+                    : [
+                        ['Tổng trọng lượng', formatWarehouseWeightKg(viewingSlipTotalWeightKg > 0 ? viewingSlipTotalWeightKg : null)]
+                      ]),
                   ['Lý do', viewingRows[0].reason || '-'],
                   ['Ghi chú', viewingRows[0].note || '-'],
                   ['Người lập', viewingRows[0].createdBy || '-']

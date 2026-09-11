@@ -400,6 +400,25 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
 
   const grandTotal = data.lines.reduce((sum, line) => sum + line.lineAmount, 0);
 
+  // Tổng TL riêng NVL chính / NVL phụ toàn phiếu (tính trên dòng đã gộp
+  // theo từng máy, khớp số hiển thị trên phiếu).
+  const sumClassWeightKg = (
+    lines: WarehouseSlipPrintLine[],
+    materialClass: 'nvl_chinh' | 'nvl_phu'
+  ) =>
+    lines
+      .filter(line => normalizeClass(line.materialClass) === materialClass)
+      .reduce((sum, line) => sum + (ensurePrintLineWeightKg(line) ?? 0), 0);
+  const grandChinhWeightKg = sections.reduce((sum, section) => sum + sumClassWeightKg(section.lines, 'nvl_chinh'), 0);
+  const grandPhuWeightKg = sections.reduce((sum, section) => sum + sumClassWeightKg(section.lines, 'nvl_phu'), 0);
+
+  // Trang tổng hợp: gộp dòng toàn bộ máy/ca (cùng tên + cùng ĐVT + cùng giá;
+  // Băng Dính/Tem trùng thêm VTHH), chia riêng bảng NVL chính / NVL phụ.
+  const summaryLines = mergeAuxiliaryWarehouseLines(
+    sections.flatMap(section => section.lines.map(line => ({ ...line, machine: 'TỔNG HỢP' }))),
+    { includeClasses: ['nvl_chinh', 'nvl_phu'] }
+  );
+
   return (
     <>
       {sections.map((section, sectionIndex) => {
@@ -430,7 +449,7 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
               if (classLines.length === 0) return null;
               const classQuota = classLines.reduce((sum, line) => sum + quotaOf(line), 0);
               const classActual = classLines.reduce((sum, line) => sum + (line.quantity || 0), 0);
-              const showWeightKg = materialClass === 'nvl_phu';
+              const showWeightKg = materialClass === 'nvl_phu' || materialClass === 'nvl_chinh';
               const classWeightKg = classLines.reduce(
                 (sum, line) => sum + (ensurePrintLineWeightKg(line) ?? 0),
                 0
@@ -508,6 +527,103 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
           </section>
         );
       })}
+
+      {summaryLines.length > 0 ? (
+        <section className="warehouse-slip-print-doc warehouse-slip-print-machine-page" key="tong-hop">
+          <header className="warehouse-slip-print-header">
+            <div className="warehouse-slip-print-brand">
+              <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="warehouse-slip-print-logo" />
+              <div className="warehouse-slip-print-company">
+                <p className="warehouse-slip-print-company-name">{PRINT_COMPANY_NAME}</p>
+              </div>
+            </div>
+            <h1 className="warehouse-slip-print-title">{slipTypeTitle(data)} - TỔNG HỢP</h1>
+          </header>
+
+          <div className="warehouse-slip-print-meta warehouse-slip-print-meta--nvl-export">
+            <p><strong>Số phiếu:</strong> {data.slipCode || ''}</p>
+            <p><strong>Ngày:</strong> {formatSlipDateShort(data.slipDate)}</p>
+            <p><strong>Căn cứ Lệnh SX/KH số:</strong> {data.productionOrderRef || ''}</p>
+            <p><strong>Phạm vi:</strong> Toàn bộ máy / ca</p>
+            {printShift ? <p><strong>Ca:</strong> {printShift}</p> : null}
+            <p><strong>Người nhận:</strong> {data.recipient || data.createdBy || ''}</p>
+          </div>
+
+          {(['nvl_chinh', 'nvl_phu'] as const).map(materialClass => {
+            const classLines = summaryLines.filter(line => normalizeClass(line.materialClass) === materialClass);
+            if (classLines.length === 0) return null;
+            const classQuota = classLines.reduce((sum, line) => sum + quotaOf(line), 0);
+            const classActual = classLines.reduce((sum, line) => sum + (line.quantity || 0), 0);
+            const classWeight = classLines.reduce((sum, line) => sum + (ensurePrintLineWeightKg(line) ?? 0), 0);
+            const classAmount = classLines.reduce((sum, line) => sum + line.lineAmount, 0);
+            return (
+              <div className="warehouse-slip-print-material-group" key={materialClass}>
+                <h2 className="warehouse-slip-print-material-title">
+                  {classLabel[materialClass]} (TỔNG HỢP)
+                </h2>
+                <table className="warehouse-slip-print-table warehouse-slip-print-table--nvl-export">
+                  <thead>
+                    <tr>
+                      <th>STT</th><th>Mã vật tư</th><th>Tên vật tư</th><th>ĐVT</th>
+                      <th>PN nhập / giá</th><th>SL định mức xuất</th><th>SL thực xuất</th>
+                      <th>Trọng lượng (kg)</th>
+                      <th>Thành tiền</th><th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {classLines.map((line, index) => {
+                      const lineWeight = ensurePrintLineWeightKg(line);
+                      return (
+                        <tr key={`tong-hop-${materialClass}-${line.code}-${index}`}>
+                          <td className="warehouse-slip-print-center">{index + 1}</td>
+                          <td>{line.code || ''}</td>
+                          <td>
+                            {line.name || ''}
+                            {line.nhomVthh ? ` (${line.nhomVthh})` : ''}
+                          </td>
+                          <td className="warehouse-slip-print-center">{line.unit || ''}</td>
+                          <td className="warehouse-slip-print-center">
+                            {[line.sourceInboundSlipCode, line.unitPrice > 0 ? `${formatMoney(line.unitPrice, 0)} đ` : ''].filter(Boolean).join(' · ')}
+                          </td>
+                          <td className="warehouse-slip-print-right">{formatPrintQty(quotaOf(line))}</td>
+                          <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity)}</td>
+                          <td className="warehouse-slip-print-right">{formatPrintQty(lineWeight)}</td>
+                          <td className="warehouse-slip-print-right">{line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}</td>
+                          <td>{line.lineNote || ''}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={5} className="warehouse-slip-print-total-label">TỔNG {classLabel[materialClass]} TOÀN PHIẾU</td>
+                      <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classQuota, 3)}</td>
+                      <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classActual, 3)}</td>
+                      <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classWeight, 3)}</td>
+                      <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatMoney(classAmount, 0)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            );
+          })}
+
+          <div className="warehouse-slip-print-machine-total">
+            <strong>TỔNG TIỀN TOÀN PHIẾU:</strong> {formatMoney(grandTotal, 0)} đ
+          </div>
+          {grandChinhWeightKg > 0 ? (
+            <div className="warehouse-slip-print-grand-total">
+              <strong>TỔNG TL NVL CHÍNH TOÀN PHIẾU:</strong> {formatNumber(grandChinhWeightKg, 3)} kg
+            </div>
+          ) : null}
+          {grandPhuWeightKg > 0 ? (
+            <div className="warehouse-slip-print-grand-total">
+              <strong>TỔNG TL NVL PHỤ TOÀN PHIẾU:</strong> {formatNumber(grandPhuWeightKg, 3)} kg
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </>
   );
 }
