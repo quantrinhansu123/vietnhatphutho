@@ -10,6 +10,8 @@ import {
   type MixingBomItem,
   type MixingProductionOrder
 } from '../utils/mixingOrderAutofill';
+import { buildOrderTenGhep } from '../utils/productProductionName';
+import { isCuonProduct, isTamProduct } from '../features/_shared/orderHelpers';
 import { waitForPrintImagesReady } from '../utils/printReady';
 import {
   MixingNormRatioPrintBatch,
@@ -88,6 +90,8 @@ export type MixingNormProduct = {
   san_pham_id?: string;
   san_pham_ids?: string[];
   ten_sp: string;
+  /** Tên ghép hiển thị trên phiếu in (ưu tiên hơn ten_san_xuat). */
+  ten_ghep?: string;
   tong_trong_luong: number | null;
   ghi_chu: string;
   ty_le_hao_hut?: number | null;
@@ -131,6 +135,7 @@ type ProductOption = {
   newCode?: string;
   name: string;
   tenSanXuat?: string;
+  tenGhep?: string;
   totalWeight?: number | null;
   wastePercent?: number;
   nhomVthh?: string;
@@ -430,6 +435,13 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       newCode: String(row.ma_sp_moi ?? row.newCode ?? '').trim(),
       name: name || code,
       tenSanXuat: String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(),
+      tenGhep:
+        String(row.ten_ghep ?? row.tenGhep ?? '').trim() ||
+        buildOrderTenGhep(String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(), {
+          nhomVthh: String(row.nhom_vthh ?? row.group ?? '').trim(),
+          maAmis: String(row.ma_amis ?? row.amisCode ?? '').trim()
+        }) ||
+        undefined,
       totalWeight: parseNumberOrNull(row.tong_trong_luong ?? row.totalWeight),
       wastePercent: parseNumberOrNull(row.ty_le_hao_hut ?? row.wastePercent) ?? 0,
       nhomVthh: String(row.nhom_vthh ?? row.group ?? '').trim(),
@@ -805,6 +817,7 @@ function normalizeProductBlock(item: Record<string, unknown>): MixingNormProduct
       ? item.san_pham_ids.map(id => String(id).trim()).filter(Boolean)
       : undefined,
     ten_sp,
+    ten_ghep: String(item.ten_ghep ?? item.tenGhep ?? '').trim() || undefined,
     tong_trong_luong,
     ghi_chu: String(item.ghi_chu ?? '').trim(),
     ty_le_hao_hut: parseNumberOrNull(item.ty_le_hao_hut),
@@ -1142,7 +1155,7 @@ export default function MixingNormMaterialsTab() {
 
   const productOptions = useMemo((): ProductOption[] => {
     const byIdentity = new Map<string, ProductOption>();
-    const add = (code: string, name: string, productId = '', productionName = '') => {
+    const add = (code: string, name: string, productId = '', productionName = '', tenGhep = '', quyCachMDai?: number | null) => {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
       const catalog = productId
@@ -1157,24 +1170,43 @@ export default function MixingNormMaterialsTab() {
       const identityKey = productId || catalog?.id || '';
       if (!identityKey) return;
       if (byIdentity.has(identityKey)) return;
+      const resolvedTenSanXuat = productionName.trim() || catalog?.tenSanXuat || '';
+      const resolvedTenGhep =
+        tenGhep.trim() ||
+        catalog?.tenGhep ||
+        buildOrderTenGhep(resolvedTenSanXuat, {
+          nhomVthh: catalog?.nhomVthh,
+          maAmis: catalog?.amisCode || catalog?.newCode,
+          cutLengthM: quyCachMDai
+        }) ||
+        undefined;
       byIdentity.set(identityKey, catalog
         ? {
             ...catalog,
             name: name.trim() || catalog.name,
-            tenSanXuat: productionName.trim() || catalog.tenSanXuat
+            tenSanXuat: resolvedTenSanXuat || catalog.tenSanXuat,
+            tenGhep: resolvedTenGhep
           }
         : {
             id: productId || '',
             code: trimmedCode,
             name: name.trim(),
-            tenSanXuat: productionName.trim()
+            tenSanXuat: resolvedTenSanXuat,
+            tenGhep: resolvedTenGhep
           });
     };
 
     if (selectedOrder) {
       // Đã chọn lệnh SX → chỉ cho chọn SP THUỘC lệnh đó (NVL vẫn được enrich từ catalog trong add()).
       for (const line of selectedOrder.productLines) {
-        add(line.productCode, line.productName, line.productId, line.productionName);
+        add(
+          line.productCode,
+          line.productName,
+          line.productId,
+          line.productionName,
+          line.tenGhep || '',
+          line.quyCachMDai
+        );
       }
       // Giữ lại sản phẩm đã chọn sẵn trong phiếu khi sửa, chỉ theo ID.
       for (const product of [...form.products, ...form.secondaryProducts]) {
@@ -1186,31 +1218,39 @@ export default function MixingNormMaterialsTab() {
             catalog?.code || code,
             catalog?.name || code,
             productId,
-            catalog?.tenSanXuat || ''
+            catalog?.tenSanXuat || '',
+            catalog?.tenGhep || ''
           );
         });
       }
-      return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenSanXuat || b.name}`, 'vi'));
+      return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenGhep || a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenGhep || b.tenSanXuat || b.name}`, 'vi'));
     }
 
     // Chưa chọn lệnh SX → nạp toàn bộ catalog + SP của mọi lệnh SX.
     for (const product of catalogProducts) {
-      add(product.code, product.name, product.id || '', product.tenSanXuat || '');
+      add(product.code, product.name, product.id || '', product.tenSanXuat || '', product.tenGhep || '');
     }
     for (const order of productionOrders) {
       for (const line of order.productLines) {
-        add(line.productCode, line.productName, line.productId, line.productionName);
+        add(
+          line.productCode,
+          line.productName,
+          line.productId,
+          line.productionName,
+          line.tenGhep || '',
+          line.quyCachMDai
+        );
       }
     }
 
-    return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenSanXuat || b.name}`, 'vi'));
+    return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenGhep || a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenGhep || b.tenSanXuat || b.name}`, 'vi'));
   }, [catalogProducts, catalogProductsById, productionOrders, selectedOrder, form.products, form.secondaryProducts]);
 
   const productLabel = (option: ProductOption) =>
-    `${option.amisCode || option.code} — ${option.tenSanXuat || option.name}`;
+    `${option.amisCode || option.code} — ${option.tenGhep || option.tenSanXuat || option.name}`;
 
   const productSearchText = (option: ProductOption) =>
-    `${option.code} ${option.amisCode ?? ''} ${option.newCode ?? ''} ${option.name} ${option.tenSanXuat ?? ''}`;
+    `${option.code} ${option.amisCode ?? ''} ${option.newCode ?? ''} ${option.name} ${option.tenSanXuat ?? ''} ${option.tenGhep ?? ''}`;
 
   const productOptionsByCode = useMemo(() => {
     const map = new Map<string, ProductOption>();
@@ -1530,21 +1570,51 @@ export default function MixingNormMaterialsTab() {
         const orderLine = orderLines[0];
         // Không quy đổi được ra kg → coi như 0 (null làm sai công thức tổng).
         const kg = sumOrderProductWeight(orderLines, catalog).sourceKg;
+        const tenSanXuat =
+          selectedOption?.tenSanXuat?.trim() ||
+          orderLine?.productionName?.trim() ||
+          orderLine?.productName?.trim() ||
+          catalog?.tenSanXuat?.trim() ||
+          catalog?.name ||
+          code;
+        const tenGhep =
+          selectedOption?.tenGhep?.trim() ||
+          orderLine?.tenGhep?.trim() ||
+          catalog?.tenGhep?.trim() ||
+          buildOrderTenGhep(tenSanXuat, {
+            nhomVthh: catalog?.nhomVthh,
+            maAmis: catalog?.amisCode || catalog?.newCode,
+            cutLengthM: orderLine?.quyCachMDai
+          }) ||
+          tenSanXuat;
         return {
           code,
           name: selectedOption?.name?.trim() || orderLine?.productName?.trim() || catalog?.name || code,
-          // Keep this identical to the selected chip label (ten_san_xuat first).
-          tenSanXuat:
-            selectedOption?.tenSanXuat?.trim() ||
-            orderLine?.productionName?.trim() ||
-            orderLine?.productName?.trim() ||
-            catalog?.tenSanXuat?.trim() ||
-            catalog?.name ||
-            code,
+          // Keep this identical to the selected chip label (ten_ghep first).
+          tenSanXuat: tenGhep,
           waste: catalog?.wastePercent ?? 0,
           kg
         };
       });
+
+  /** Tổng SL theo ĐVT Cuộn / Tấm của các SP đã chọn trên lệnh SX. */
+  const resolveSelectedUnitTotals = (codes: string[], ids: string[] = []) => {
+    let cuon = 0;
+    let tam = 0;
+    codes
+      .map(code => code.trim())
+      .filter(Boolean)
+      .forEach((code, index) => {
+        const orderLines = findOrderProductLines(selectedOrder, code, ids[index]);
+        for (const line of orderLines) {
+          const qty = Number(line.quantity);
+          if (!Number.isFinite(qty) || qty <= 0) continue;
+          if (isCuonProduct(line.unit)) cuon += qty;
+          else if (isTamProduct(line.unit)) tam += qty;
+        }
+      });
+    return { cuon: roundMixing(cuon), tam: roundMixing(tam) };
+  };
 
   const updateProduct = (productKey: string, patch: Partial<ProductForm>) => {
     setForm(prev => ({
@@ -2137,12 +2207,17 @@ export default function MixingNormMaterialsTab() {
           return { lan: roundIndex + 1, tong_trong_luong: roundWeight, nvl: serializeLines(product.lines, roundWeight, batch, tong, product.maSp) };
         });
         const nvl = lan_tron[0]?.nvl ?? [];
+        const tenGhepList = resolveWasteBreakdown(product.maSpCodes, validIds)
+          .map(row => row.tenSanXuat.trim())
+          .filter(Boolean);
+        const ten_ghep = [...new Set(tenGhepList)].join(' / ');
         return {
           loai: undefined as string | undefined,
           ma_sp: product.maSp.trim(),
           san_pham_id: validIds[0] || undefined,
           ...(validIds.length > 1 ? { san_pham_ids: validIds } : {}),
           ten_sp: product.tenSp.trim(),
+          ...(ten_ghep ? { ten_ghep } : {}),
           tong_trong_luong: tong,
           ty_le_hao_hut: parseNumberOrNull(product.haoHut),
           so_luong_goc: parseNumberOrNull(product.soLuongGoc),
@@ -2271,7 +2346,23 @@ export default function MixingNormMaterialsTab() {
 
   const resolvePrintProductName = (code: string) => {
     const product = findCatalogProductByAnyCode(catalogProducts, code);
-    return product?.tenSanXuat?.trim() || product?.name.trim() || '';
+    const orderLine = selectedOrder?.productLines.find(
+      line => normalizeProductLookupKey(line.productCode) === normalizeProductLookupKey(code)
+    ) || productionOrders
+      .flatMap(order => order.productLines)
+      .find(line => normalizeProductLookupKey(line.productCode) === normalizeProductLookupKey(code));
+    return (
+      orderLine?.tenGhep?.trim() ||
+      product?.tenGhep?.trim() ||
+      buildOrderTenGhep(orderLine?.productionName || product?.tenSanXuat || '', {
+        nhomVthh: product?.nhomVthh,
+        maAmis: product?.amisCode || product?.newCode,
+        cutLengthM: orderLine?.quyCachMDai
+      }) ||
+      product?.tenSanXuat?.trim() ||
+      product?.name.trim() ||
+      ''
+    );
   };
 
   const handlePrintRow = (row: MixingNormRow) => {
@@ -2622,6 +2713,7 @@ export default function MixingNormMaterialsTab() {
                   // NVL đã lưu vẫn hiện bảng NVL kể cả khi mã SP bị bỏ chọn.
                   const showNvlEditor = productSelected || product.nvlFilled;
                   const wasteRows = resolveWasteBreakdown(product.maSpCodes, product.maSpIds);
+                  const unitTotals = resolveSelectedUnitTotals(product.maSpCodes, product.maSpIds);
                   const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
                   const standardBatch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
                   const mixingRoundCount = computeMixingRoundCount(productTotal, standardBatch);
@@ -2719,6 +2811,16 @@ export default function MixingNormMaterialsTab() {
                                   Hao hụt: <strong className="text-rose-600">{product.haoHut || '0'}%</strong>
                                 </p>
                               )}
+                              <p className="pt-0.5 font-bold text-zinc-800">
+                                Tổng sản phẩm:{' '}
+                                <strong className="text-[#ef1b2d]">
+                                  {new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(unitTotals.cuon)} Cuộn
+                                </strong>
+                                {', '}
+                                <strong className="text-[#ef1b2d]">
+                                  {new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(unitTotals.tam)} Tấm
+                                </strong>
+                              </p>
                             </div>
                           ) : null}
                         </label>

@@ -1874,6 +1874,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         {line.productCode || '-'} · {line.productName || '-'}
                       </p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || '-'}</p>
+                      <p className="mt-0.5 text-xs font-bold text-zinc-700">Tên ghép: {formatProductionNameWithLength(line.productionName || line.productName || '', line.quyCachMDai, { tenGhep: line.tenGhep }) || '-'}</p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note || '-'}</p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
