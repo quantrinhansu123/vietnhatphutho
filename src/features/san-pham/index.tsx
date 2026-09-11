@@ -1450,7 +1450,9 @@ export function ProductEditModal({
       doDayM: seeded.doDayM,
       doDaiM: seeded.doDaiM,
       mang: seeded.mang,
-      hangPhe: seeded.hangPhe
+      // Hàng phế chỉ tự đổi khi tên SX ghi rõ cụm hàng phế; tên không ghi
+      // thì giữ nguyên giá trị đang có (kể cả chọn tay) để tên ghép không sai.
+      hangPhe: seeded.hangPhe || base.hangPhe
     };
   };
 
@@ -1542,7 +1544,9 @@ export function ProductEditModal({
                     doDayM: seeded.doDayM,
                     doDaiM: seeded.doDaiM,
                     mang: seeded.mang,
-                    hangPhe: seeded.hangPhe
+                    // Ưu tiên marker trong tên SX mới; không có thì lấy hàng phế
+                    // đã lưu của SP được chọn, tránh giữ nhầm của SP trước đó.
+                    hangPhe: seeded.hangPhe || item.hangPhe || ''
                   };
                 });
                 setAmisOpen(false);

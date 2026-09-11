@@ -6,7 +6,8 @@ export const FILM_OPTIONS = ['ECO', 'STD', 'SUN PC', 'HA'] as const;
 
 export const WASTE_GRADE_OPTIONS = [
   'hàng 100% NS Off',
-  'hàng chạy 100% phế'
+  'hàng chạy 100% phế',
+  'hàng nguyên phế'
 ] as const;
 
 export interface AmisSpecs {
@@ -32,7 +33,7 @@ const AMIS_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_MANG_RE = /(?:màng\s+)?(ECO|STD|SUN\s*PC|HA|LUX|STANDA)\b/iu;
 const NAME_HANG_PHE_RE =
-  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế)/iu;
+  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế|hàng\s+nguyên\s+phế)/iu;
 /** Mét sau dấu `-` (standalone), cho phép text theo sau như `30m hàng…`. */
 const DASH_METER_RE = /-\s*([\d.,]+)\s*m(?=\b)/giu;
 /** Mọi token mét trong chuỗi (Sóng: lấy cái cuối). */
@@ -118,19 +119,20 @@ function extractMang(tenSanXuat: string): string {
   return raw;
 }
 
-function extractHangPhe(tenSanXuat: string, maAmis = ''): string {
+/**
+ * Hàng phế CHỈ khi tên sản xuất ghi rõ cụm hàng phế
+ * (hàng 100% NS Off / hàng chạy 100% phế / hàng 100% phế / chạy 100% phế / hàng nguyên phế).
+ * Không suy diễn từ mã AMIS hay token "NP" — tránh gán nhầm hàng phế
+ * cho sản phẩm thường rồi lọt vào tên ghép.
+ */
+function extractHangPhe(tenSanXuat: string): string {
   const fromName = String(tenSanXuat || '').match(NAME_HANG_PHE_RE);
-  if (fromName) {
-    const t = fromName[1].trim();
-    if (/^chạy\s+100%\s+phế$/i.test(t) || (/100%\s*phế/i.test(t) && !/NS\s*Off/i.test(t))) {
-      return 'hàng chạy 100% phế';
-    }
-    return t;
-  }
-  if (/\bNP\b/i.test(tenSanXuat) || /(?:^|-)NP(?:-|$)/i.test(maAmis)) {
+  if (!fromName) return '';
+  const t = fromName[1].trim();
+  if (/^chạy\s+100%\s*phế$/i.test(t) || (/100%\s*phế/i.test(t) && !/NS\s*Off/i.test(t))) {
     return 'hàng chạy 100% phế';
   }
-  return '';
+  return t;
 }
 
 function resolveDoLi(maAmis: string, tenSanXuat: string, _group: ProductPxGroup): string {
@@ -235,7 +237,7 @@ export function parseProductionNameParts(
   const amis = parseAmisSpecs(maAmis);
   const doLiDm = extractDoLiDm(text) || '';
   const mang = extractMang(text);
-  const hangPhe = extractHangPhe(text, maAmis);
+  const hangPhe = extractHangPhe(text);
   let doLi = resolveDoLi(maAmis, text, group);
   if (doLi && !isValidDoLiToken(doLi)) doLi = '';
 

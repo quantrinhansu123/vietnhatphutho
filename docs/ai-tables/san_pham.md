@@ -33,6 +33,7 @@
 `ma_sp`, `ten_sp`, `ten_san_xuat`, `don_vi` (`m`, `m2`, `Tấm`), `nhom_vthh`, `ton_dau_ky`, `npl_phan_tram` (JSON NPL, mỗi dòng lưu thêm `ten_nvl_sx` tương ứng từ Kho NVL).
 
 Thông số SX (migration `supabase-san-pham-thong-so-sx.sql`): `ten_goc`, `do_li`, `do_li_dm` (extract `(đm n li)` từ `ten_san_xuat`), `do_day_m`, `do_dai_m`, `mang`, `hang_phe`.  
+**`hang_phe` chỉ khi `ten_san_xuat` ghi rõ** (`hàng 100% NS Off` / `hàng chạy 100% phế` / `hàng 100% phế` / `chạy 100% phế` / `hàng nguyên phế`); không suy diễn từ mã AMIS hay token `NP`. Form chỉ tự đổi Hàng phế khi tên có marker, còn lại giữ giá trị đang có. Sửa dữ liệu cũ: `supabase-san-pham-fix-hang-phe.sql`; cập nhật riêng hàng nguyên phế: `supabase-san-pham-cap-nhat-hang-nguyen-phe.sql`.
 **Unique không đổi:** API vẫn chặn trùng bộ `ma_amis + ten_sp + ten_san_xuat`. Không tạo unique mới trên các cột thông số.
 
 Utils ghép tên: `src/utils/productProductionName.ts` (Đặc/Rỗng/Sóng; Sóng seed `do_dai_m` = m dài nhất cùng AMIS).

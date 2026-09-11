@@ -165,3 +165,30 @@ test('buildOrderTenGhep: cắt lẻ thay mét dài cuối', () => {
     'Tấm nhựa đặc màu TRẮNG - STD - 10li - (đm 9,7 li) - 1.22m - 3m'
   );
 });
+
+test('hàng phế: chỉ khi tên SX ghi rõ, không suy diễn từ NP/mã AMIS', () => {
+  const seed = (tenSanXuat: string, maAmis = '', nhomVthh = 'TP; PX Sóng') =>
+    seedProductionSpecs({ tenSanXuat, maAmis, nhomVthh });
+
+  // Token NP trong tên hoặc mã AMIS không còn gán hàng phế.
+  assert.equal(seed('NHỰA 11 SÓNG XANH 6ZEM -2M', 'STS02-11s-6zem').hangPhe, '');
+  assert.equal(seed('Màng PE - NP - 2m', 'STD01-NP-2m', 'TP; PX Đặc').hangPhe, '');
+  assert.ok(!seed('NHỰA 11 SÓNG XANH 6ZEM -2M', 'STS02-11s-6zem').tenGhep.includes('phế'));
+
+  // Cụm ghi rõ trong tên vẫn nhận + chuẩn hóa.
+  assert.equal(
+    seed('Tấm nhựa rỗng - 4.5li x 2.1m x 5.8m chạy 100% phế - màng LUX', '', 'TP; PX Rỗng').hangPhe,
+    'hàng chạy 100% phế'
+  );
+  assert.equal(
+    seed('Tấm đặc - 8li - 8m - hàng 100% NS Off', '', 'TP; PX Đặc').hangPhe,
+    'hàng 100% NS Off'
+  );
+  assert.equal(
+    seed('Tấm đặc - 8li - 8m - hàng nguyên phế', '', 'TP; PX Đặc').hangPhe,
+    'hàng nguyên phế'
+  );
+  assert.ok(
+    seed('Tấm đặc - 8li - 8m - hàng nguyên phế', '', 'TP; PX Đặc').tenGhep.includes('hàng nguyên phế')
+  );
+});
