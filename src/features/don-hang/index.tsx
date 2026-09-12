@@ -71,13 +71,14 @@ interface OrderRowExt extends OrderRow {
 
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1180px]';
 const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1420px]';
+const ORDER_CUT_TABLE_MIN_WIDTH = 'min-w-[1480px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
   'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
   'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-[2.25rem_minmax(10rem,1.2fr)_minmax(13rem,1.5fr)_4.5rem_5.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
+  'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
 const ORDER_AMIS_SEARCH_MAX_RESULTS = 400;
@@ -183,7 +184,7 @@ export type OrderProductFormLine = {
   productionName: string;
   unit: string;
   quantity: string;
-  /** SL theo miền — chỉ dùng cho loại "Đơn sản xuất". SL tổng = Bắc + Trung + Nam. */
+  /** SL theo miền — dùng cho "Đơn sản xuất" và "Đơn theo quy cách của khách đặt". SL tổng = Bắc + Trung + Nam. */
   slBac?: string;
   slTrung?: string;
   slNam?: string;
@@ -476,7 +477,8 @@ export function orderProductLinesToPayload(
       const bacVal = parsePercentInput(String(line.slBac ?? ''));
       const trungVal = parsePercentInput(String(line.slTrung ?? ''));
       const namVal = parsePercentInput(String(line.slNam ?? ''));
-      const hasRegionInput = isProductionOrder &&
+      const isRegionOrder = isProductionOrder || isCutOrder;
+      const hasRegionInput = isRegionOrder &&
         ((Number.isFinite(bacVal) && String(line.slBac ?? '').trim() !== '') ||
           (Number.isFinite(trungVal) && String(line.slTrung ?? '').trim() !== '') ||
           (Number.isFinite(namVal) && String(line.slNam ?? '').trim() !== ''));
@@ -484,12 +486,12 @@ export function orderProductLinesToPayload(
         (Number.isFinite(trungVal) ? Math.max(0, trungVal) : 0) +
         (Number.isFinite(namVal) ? Math.max(0, namVal) : 0);
       const typedQuantity = parsePercentInput(line.quantity);
-      // Đơn sản xuất: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
-      const quantity = isProductionOrder && hasRegionInput ? regionTotal : typedQuantity;
+      // Đơn sản xuất + Đơn theo quy cách: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
+      const quantity = isRegionOrder && hasRegionInput ? regionTotal : typedQuantity;
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
       const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;
-      const regionFields = isProductionOrder
+      const regionFields = isRegionOrder
         ? {
             ...(Number.isFinite(bacVal) ? { so_luong_bac: Math.max(0, bacVal) } : {}),
             ...(Number.isFinite(trungVal) ? { so_luong_trung: Math.max(0, trungVal) } : {}),
@@ -1464,7 +1466,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
               <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-4">
               <div className="overflow-x-auto">
-              <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
+              <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : isFormCutOrder ? ORDER_CUT_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
               <RepeatableLinesBlock
                 title="Sản phẩm"
                 required
@@ -1487,7 +1489,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'daiM', label: 'Dài (m)', required: true },
-                        { key: 'qty', label: 'SL', required: true },
+                        { key: 'bac', label: 'Bắc' },
+                        { key: 'trung', label: 'Trung' },
+                        { key: 'nam', label: 'Nam' },
+                        { key: 'qty', label: 'SL (tổng)', required: true },
                         { key: 'tongKg', label: 'Tổng KG' },
                         { key: 'note', label: 'Ghi chú' },
                         { key: 'actions', label: '' }
@@ -1529,8 +1534,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
                       const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
                       const matchedConversion = lineSanPhamId ? productConversions.find(item => item.sanPhamId === lineSanPhamId) : undefined;
+                      // Đơn theo quy cách: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
+                      const cutBacNum = parsePercentInput(String(line.slBac ?? ''));
+                      const cutTrungNum = parsePercentInput(String(line.slTrung ?? ''));
+                      const cutNamNum = parsePercentInput(String(line.slNam ?? ''));
+                      const cutHasRegionQty =
+                        String(line.slBac ?? '').trim() !== '' || String(line.slTrung ?? '').trim() !== '' || String(line.slNam ?? '').trim() !== '';
+                      const cutRegionTotal = (Number.isFinite(cutBacNum) ? Math.max(0, cutBacNum) : 0) +
+                        (Number.isFinite(cutTrungNum) ? Math.max(0, cutTrungNum) : 0) +
+                        (Number.isFinite(cutNamNum) ? Math.max(0, cutNamNum) : 0);
+                      const cutEffectiveQty = cutHasRegionQty ? String(cutRegionTotal) : line.quantity;
                       const cutWeight = line.shouldRecalculateConversion
-                        ? calculateCutOrderWeight(line.daiM, line.quantity, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName)
+                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName)
                         : null;
                       const displayedCutWeight = line.shouldRecalculateConversion
                         ? cutWeight?.tongKg ?? null
@@ -1600,9 +1615,44 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <input
                             type="number"
-                            value={line.quantity}
+                            min="0"
+                            value={line.slBac ?? ''}
+                            onChange={e => updateConversionProductLine(line.key, { slBac: e.target.value })}
+                            className={`${orderFieldClass} bg-white text-right`}
+                            placeholder="0"
+                            title="SL Bắc"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="number"
+                            min="0"
+                            value={line.slTrung ?? ''}
+                            onChange={e => updateConversionProductLine(line.key, { slTrung: e.target.value })}
+                            className={`${orderFieldClass} bg-white text-right`}
+                            placeholder="0"
+                            title="SL Trung"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="number"
+                            min="0"
+                            value={line.slNam ?? ''}
+                            onChange={e => updateConversionProductLine(line.key, { slNam: e.target.value })}
+                            className={`${orderFieldClass} bg-white text-right`}
+                            placeholder="0"
+                            title="SL Nam"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="text"
+                            value={cutHasRegionQty ? formatNumber(cutRegionTotal, 3) : line.quantity}
+                            readOnly={cutHasRegionQty}
                             onChange={e => updateConversionProductLine(line.key, { quantity: e.target.value })}
-                            className={`${orderFieldClass} bg-white`}
+                            title={cutHasRegionQty ? 'SL tổng = Bắc + Trung + Nam (tự động)' : 'Nhập Bắc/Trung/Nam để tự tính tổng'}
+                            className={`${orderFieldClass} ${cutHasRegionQty ? 'bg-zinc-50 text-right font-black' : 'bg-white'}`}
                             placeholder="0"
                           />
                         </div>
