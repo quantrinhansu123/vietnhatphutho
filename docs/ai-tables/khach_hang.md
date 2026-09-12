@@ -3,7 +3,7 @@
 | **Bảng** | `khach_hang` |
 | **Tab** | `customers` → `/khach-hang` |
 
-**API:** `server.ts` — CRUD `/api/khach-hang`; `POST /api/khach-hang/replace`; `GET /api/address-lookup`; `PATCH /api/khach-hang/:id/dia-chi-moi`
+**API:** `server.ts` — CRUD `/api/khach-hang` (Supabase cắt 1000 dòng/request nên API đọc theo lô `range()` để mặc định trả HẾT; tùy chọn `?search=` lọc server-side theo mã/tên/địa chỉ/MST/SĐT/đơn vị, `?page=&pageSize=` phân trang kèm `total`); `POST /api/khach-hang/replace`; `GET /api/address-lookup`; `PATCH /api/khach-hang/:id/dia-chi-moi`
 **UI:** `src/features/khach-hang/index.tsx` — `CustomersPanel`
 **Utils:** `src/utils/customerExcel.ts` — tải mẫu và đọc dữ liệu khách hàng từ Excel
 
