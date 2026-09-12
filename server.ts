@@ -9316,48 +9316,86 @@ export function createApp() {
     }
   });
 
-  app.get('/api/khach-hang', async (_req, res) => {
+  app.get('/api/khach-hang', async (req, res) => {
     if (!supabase) {
       return res.json({ customers: [], total: 0, source: 'local' });
     }
 
-    try {
-      const { data, error } = await supabase
-        .from(SUPABASE_CUSTOMERS_TABLE)
-        .select('*')
-        .order('ten_khach_hang', { ascending: true });
-
-      if (error && isMissingColumnError(error)) {
-        const fallback = await supabase
+    // Supabase/PostgREST cắt tối đa 1000 dòng/request nên phải đọc theo lô.
+    const PAGE_CHUNK = 1000;
+    const MAX_PAGES = 100;
+    const searchText = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const escapeLike = (value: string) => value.replace(/[%_\\]/g, char => `\\${char}`);
+    const applySearchFilter = (query: any) => {
+      if (!searchText) return query;
+      // Bỏ dấu phẩy trong từ khóa vì PostgREST dùng phẩy để tách điều kiện OR.
+      const pattern = `%${escapeLike(searchText).replace(/,/g, '')}%`;
+      if (pattern === '%%') return query;
+      return query.or(
+        [
+          `ma_khach_hang.ilike.${pattern}`,
+          `ten_khach_hang.ilike.${pattern}`,
+          `dia_chi.ilike.${pattern}`,
+          `dia_chi_moi.ilike.${pattern}`,
+          `ma_so_thue.ilike.${pattern}`,
+          `so_dien_thoai.ilike.${pattern}`,
+          `don_vi_quan_ly.ilike.${pattern}`
+        ].join(',')
+      );
+    };
+    // Đọc 1 lô; order ten_khach_hang có thể thiếu ở DB cũ → fallback không order.
+    const fetchChunk = async (from: number, to: number): Promise<{ rows: any[] }> => {
+      const ordered = await applySearchFilter(
+        supabase
           .from(SUPABASE_CUSTOMERS_TABLE)
-          .select('*');
-        if (fallback.error) {
-          console.error('Supabase khach_hang query error:', fallback.error);
-          return res.status(500).json({
-            error: `Không thể tải khách hàng từ ${SUPABASE_CUSTOMERS_TABLE}. ${fallback.error.message}`
-          });
-        }
+          .select('*')
+          .order('ten_khach_hang', { ascending: true })
+      ).range(from, to);
+      if (!ordered.error) return { rows: ordered.data || [] };
+      if (!isMissingColumnError(ordered.error)) throw ordered.error;
+      const fallback = await applySearchFilter(
+        supabase.from(SUPABASE_CUSTOMERS_TABLE).select('*')
+      ).range(from, to);
+      if (fallback.error) throw fallback.error;
+      return { rows: fallback.data || [] };
+    };
+
+    try {
+      const hasPagingParams = req.query.page !== undefined || req.query.pageSize !== undefined;
+      if (hasPagingParams) {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const pageSize = Math.min(1000, Math.max(1, Number(req.query.pageSize) || 200));
+        const countQuery = await applySearchFilter(
+          supabase.from(SUPABASE_CUSTOMERS_TABLE).select('ma_khach_hang', { count: 'exact', head: true })
+        );
+        if (countQuery.error) throw countQuery.error;
+        const { rows } = await fetchChunk((page - 1) * pageSize, page * pageSize - 1);
         return res.json({
-          customers: fallback.data || [],
-          total: fallback.data?.length || 0,
+          customers: rows,
+          total: countQuery.count ?? rows.length,
+          page,
+          pageSize,
           source: 'supabase'
         });
       }
 
-      if (error) {
-        console.error('Supabase khach_hang query error:', error);
-        return res.status(500).json({
-          error: `Không thể tải khách hàng từ ${SUPABASE_CUSTOMERS_TABLE}. ${error.message}`
-        });
+      // Mặc định: trả HẾT (giữ tương thích các màn hình đang đọc .customers).
+      const all: any[] = [];
+      for (let pageIndex = 0; pageIndex < MAX_PAGES; pageIndex += 1) {
+        const { rows } = await fetchChunk(pageIndex * PAGE_CHUNK, (pageIndex + 1) * PAGE_CHUNK - 1);
+        all.push(...rows);
+        if (rows.length < PAGE_CHUNK) break;
       }
-
       return res.json({
-        customers: data || [],
-        total: data?.length || 0,
+        customers: all,
+        total: all.length,
         source: 'supabase'
       });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi tải khách hàng.' });
+      console.error('Supabase khach_hang query error:', err);
+      return res.status(500).json({
+        error: `Không thể tải khách hàng từ ${SUPABASE_CUSTOMERS_TABLE}. ${err.message || ''}`.trim()
+      });
     }
   });
 
@@ -13038,7 +13076,9 @@ export function createApp() {
         }
 
         const historyRows = Array.isArray(historyResult.data) ? historyResult.data : [];
+        // Phiếu gốc ngầm hiểu là "tỷ lệ 1", nên bản lịch sử đầu tiên bắt đầu từ "tỷ lệ 2".
         const lastRevision = Math.max(
+          1,
           historyRows.length,
           ...historyRows.map(row => getMixingNormRevisionNumber(
             String((row as Record<string, unknown>).ten_phieu ?? '')
