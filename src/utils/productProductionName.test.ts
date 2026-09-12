@@ -9,7 +9,8 @@ import {
   composeProductionDisplayName,
   seedProductionSpecs,
   buildOrderTenGhep,
-  replaceCutLengthMeters
+  replaceCutLengthMeters,
+  stripDuplicateLiFromTenGoc
 } from './productProductionName.ts';
 
 test('extractDoLiDm bắt (đm n li) và bỏ (đm …kg)', () => {
@@ -93,7 +94,7 @@ test('Sóng: mét dài đúng theo tên SX (không max)', () => {
     nhomVthh: 'TP; PX Sóng'
   });
   assert.equal(short.tenGoc, 'NHỰA 11 SÓNG XANH 6ZEM');
-  assert.equal(short.doLi, '6ZEM');
+  assert.equal(short.doLi, '', 'ZEM không phải độ li');
   assert.equal(short.doDaiM, '2m');
 
   const kgName = parseProductionNameParts(
@@ -215,10 +216,14 @@ test('ZEM lẫn trong tên gốc thì không phải độ li — ưu tiên li t�
     seeded.tenGhep,
     'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m'
   );
-  // Không có li tường minh thì ZEM vẫn làm độ li (Sóng).
+  // ZEM không bao giờ là độ li — kể cả khi không có li tường minh.
   assert.equal(
     seedProductionSpecs({ tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M', maAmis: 'STS02-11s-6zem', nhomVthh: 'TP; PX Sóng' }).doLi,
-    '6ZEM'
+    ''
+  );
+  assert.equal(
+    seedProductionSpecs({ tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M', maAmis: 'STS02-11s-6zem', nhomVthh: 'TP; PX Sóng' }).tenGhep,
+    'NHỰA 11 SÓNG XANH 6ZEM - 2m'
   );
 });
 
@@ -260,4 +265,37 @@ test('replaceCutLengthMeters: ưu tiên thay token m dài chính (lỗi 6m-8m)',
     replaceCutLengthMeters('Tấm - 2.1m - 9m', 3, 30),
     'Tấm - 2.1m - 3m'
   );
+});
+
+test('stripDuplicateLiFromTenGoc: cắt đuôi li trùng độ li', () => {
+  assert.equal(
+    stripDuplicateLiFromTenGoc('NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1,2LI', '1.2li'),
+    'NHỰA SÓNG TRẮNG - NP - 11 SÓNG'
+  );
+  // Khác số thì giữ nguyên.
+  assert.equal(
+    stripDuplicateLiFromTenGoc('Tấm đặc - 5li', '8li'),
+    'Tấm đặc - 5li'
+  );
+  // Trong ngoặc (đm) thì giữ nguyên.
+  assert.equal(
+    stripDuplicateLiFromTenGoc('Tấm đặc (đm 5.7 li)', '5.7li'),
+    'Tấm đặc (đm 5.7 li)'
+  );
+  // Không có độ li thì giữ nguyên.
+  assert.equal(
+    stripDuplicateLiFromTenGoc('NHỰA 11 SÓNG XANH 6ZEM', ''),
+    'NHỰA 11 SÓNG XANH 6ZEM'
+  );
+});
+
+test('seed Sóng STS06: tên gốc cắt đuôi li, tên ghép đúng', () => {
+  const seeded = seedProductionSpecs({
+    tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1,2LI - 4M',
+    maAmis: 'STS06-1.2li- NP',
+    nhomVthh: 'TP; PX Sóng'
+  });
+  assert.equal(seeded.tenGoc, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG');
+  assert.equal(seeded.doLi, '1.2li');
+  assert.equal(seeded.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.2li - 4m');
 });

@@ -92,3 +92,18 @@ test('import: marker 100%NS giữ nguyên text trong hangPhe và ten_ghep', () =
   assert.equal(payload.hangPhe, '100%NS');
   assert.ok(String(payload.tenGhep).includes('100%NS'));
 });
+
+test('import: tên gốc đuôi li trùng độ li thì cắt, tên ghép hết trùng', () => {
+  const payload = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS06-1.2li- NP',
+      amisCode: 'STS06-1.2li- NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1,2LI - 4M',
+      group: 'TP; PX Sóng'
+    })
+  );
+  assert.equal(payload.tenGoc, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG');
+  assert.equal(payload.doLi, '1.2li');
+  assert.equal(payload.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.2li - 4m');
+});

@@ -31,7 +31,6 @@ const DO_LI_DM_RE = /\(\s*đm\s*([\d.,]+)\s*li\s*\)/iu;
 const AMIS_LI_RE = /-\s*([\d.,]+)\s*li\b/iu;
 const AMIS_DAY_RE = /\*\s*([\d.,]+)\s*m\b/iu;
 const AMIS_ZEM_RE = /(\d+)\s*zem\b/iu;
-const NAME_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_MANG_RE = /(?:màng\s+)?(ECO|STD|SUN\s*PC|HA|LUX|STANDA)\b/iu;
 const NAME_HANG_PHE_RE =
   /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế|hàng\s+nguyên\s+phế|hàng\s+tiêu\s+chuẩn|100%\s*NS\b)/iu;
@@ -140,25 +139,22 @@ function extractHangPhe(tenSanXuat: string): string {
 function resolveDoLi(maAmis: string, tenSanXuat: string, _group: ProductPxGroup): string {
   const amis = parseAmisSpecs(maAmis);
   if (amis.doLi && !/\bkg\b/i.test(amis.doLi)) return amis.doLi;
-  // Ưu tiên li tường minh trong tên SX trước ZEM: ZEM lẫn trong tên gốc
-  // (vd "...TRẮNG 8ZEM... - 0.8li...") không phải độ li.
+  // Chỉ nhận li tường minh (…li). ZEM trong tên SX/mã AMIS KHÔNG phải độ li.
   const liInName = String(tenSanXuat || '').match(/([\d.,]+)\s*li\b/iu);
   if (liInName) {
     const li = `${normalizeDecimalToken(liInName[1])}li`;
     if (isValidDoLiToken(li)) return li;
   }
-  if (amis.zem) return amis.zem;
-  const zemInName = String(tenSanXuat || '').match(NAME_ZEM_RE);
-  if (zemInName) return `${zemInName[1]}ZEM`;
   return '';
 }
 
-/** Token độ li hợp lệ: …li hoặc …ZEM — không phải KG. */
+/** Token độ li hợp lệ: …li — không phải KG, không phải ZEM. */
 export function isValidDoLiToken(value: string): boolean {
   const t = String(value || '').trim();
   if (!t) return false;
   if (/kg/i.test(t)) return false;
-  return /^\d+[.,]?\d*\s*li$/i.test(t) || /^\d+\s*zem$/i.test(t);
+  if (/zem/i.test(t)) return false;
+  return /^\d+[.,]?\d*\s*li$/i.test(t);
 }
 
 /** Mét dài Đặc thường gặp — ưu tiên nhận diện là do_dai_m. */
@@ -326,6 +322,28 @@ function joinSegments(parts: Array<string | null | undefined>): string {
 }
 
 /**
+ * Bỏ token độ li ở cuối tên gốc khi trùng với segment độ li
+ * (vd tenGoc "...11 SÓNG 1,2LI" + doLi "1.2li" → "...11 SÓNG").
+ * Tránh tên ghép bị trùng ("1,2LI - 1.2li"). Không đụng token trong ngoặc (vd đm).
+ */
+export function stripDuplicateLiFromTenGoc(tenGoc: string, doLi: string): string {
+  const base = String(tenGoc || '').trim();
+  const li = String(doLi || '').trim();
+  if (!base || !li) return base;
+  const tail = base.match(/([\d.,]+)\s*li\s*$/iu);
+  if (!tail) return base;
+  const prefix = base.slice(0, base.length - tail[0].length);
+  const opens = (prefix.match(/\(/g) || []).length;
+  const closes = (prefix.match(/\)/g) || []).length;
+  if (opens > closes) return base;
+  const tailNum = Number(normalizeDecimalToken(tail[1]));
+  const liNum = Number(normalizeDecimalToken(li.replace(/\s*li\s*$/iu, '')));
+  if (!Number.isFinite(tailNum) || !Number.isFinite(liNum)) return base;
+  if (Math.abs(tailNum - liNum) > 1e-9) return base;
+  return prefix.trim().replace(/\s*[-–—]\s*$/, '') || base;
+}
+
+/**
  * Ghép tên hiển thị.
  * Thứ tự: ten_goc - hàng phế - màng - độ li - đm - độ dày - mét dài (mét dài luôn cuối).
  */
@@ -333,7 +351,10 @@ export function composeProductionDisplayName(
   parts: Partial<ProductionNameParts>,
   nhomVthh: string
 ): string {
-  const tenGoc = String(parts.tenGoc || '').trim();
+  const tenGoc = stripDuplicateLiFromTenGoc(
+    String(parts.tenGoc || '').trim(),
+    String(parts.doLi || '').trim()
+  );
   const doLi = String(parts.doLi || '').trim();
   const mang = String(parts.mang || '').trim();
   const hangPhe = String(parts.hangPhe || '').trim();
@@ -360,9 +381,11 @@ export function seedProductionSpecs(input: {
     input.nhomVthh,
     input.maAmis || ''
   );
+  const tenGoc = stripDuplicateLiFromTenGoc(parts.tenGoc, parts.doLi);
+  const deduped = { ...parts, tenGoc };
   return {
-    ...parts,
-    tenGhep: composeProductionDisplayName(parts, input.nhomVthh)
+    ...deduped,
+    tenGhep: composeProductionDisplayName(deduped, input.nhomVthh)
   };
 }
 

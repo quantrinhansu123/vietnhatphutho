@@ -3,7 +3,8 @@ import {
   composeProductionDisplayName,
   extractDoLiDm,
   isValidDoLiToken,
-  seedProductionSpecs
+  seedProductionSpecs,
+  stripDuplicateLiFromTenGoc
 } from './productProductionName';
 
 /** Dòng Excel danh mục sản phẩm — khớp form / bảng UI / cột `san_pham`. */
@@ -359,12 +360,13 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     maAmis: amisCode,
     nhomVthh: group
   });
-  // Độ li Excel ghi tay phải hợp lệ (…li / …ZEM) — chứa KG thì không phải độ li,
+  // Độ li Excel ghi tay phải hợp lệ (…li) — chứa KG hay ZEM thì không phải độ li,
   // bỏ qua để dùng giá trị suy từ tên SX.
   const rawDoLi = row.doLi.trim();
   const doLi = (rawDoLi && isValidDoLiToken(rawDoLi) ? rawDoLi : '') || seeded.doLi;
   const doLiDm = row.doLiDm.trim() || extractDoLiDm(productionName) || seeded.doLiDm;
-  const tenGoc = row.tenGoc.trim() || seeded.tenGoc;
+  // Tên gốc ghi tay đuôi li trùng độ li thì cắt (vd "...11 SÓNG 1,2LI" + 1.2li).
+  const tenGoc = stripDuplicateLiFromTenGoc(row.tenGoc.trim() || seeded.tenGoc, doLi);
   const doDayM = row.doDayM.trim() || seeded.doDayM;
   const doDaiM = row.doDaiM.trim() || seeded.doDaiM;
   const mang = row.mang.trim() || seeded.mang;
