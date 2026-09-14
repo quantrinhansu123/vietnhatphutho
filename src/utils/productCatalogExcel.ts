@@ -2,10 +2,10 @@ import * as XLSX from 'xlsx';
 import {
   composeProductionDisplayName,
   extractDoLiDm,
-  isValidDoLiToken,
+  normalizeDoLiToken,
   seedProductionSpecs,
   stripDuplicateLiFromTenGoc
-} from './productProductionName';
+} from './productProductionName.ts';
 
 /** Dòng Excel danh mục sản phẩm — khớp form / bảng UI / cột `san_pham`. */
 export type ProductCatalogExcelRow = {
@@ -360,10 +360,10 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     maAmis: amisCode,
     nhomVthh: group
   });
-  // Độ li Excel ghi tay phải hợp lệ (…li) — chứa KG hay ZEM thì không phải độ li,
-  // bỏ qua để dùng giá trị suy từ tên SX.
+  // Độ li Excel ghi tay phải hợp lệ (…li, chấp nhận `10i`) — chứa KG hay ZEM thì
+  // không phải độ li, bỏ qua để dùng giá trị suy từ tên SX.
   const rawDoLi = row.doLi.trim();
-  const doLi = (rawDoLi && isValidDoLiToken(rawDoLi) ? rawDoLi : '') || seeded.doLi;
+  const doLi = normalizeDoLiToken(rawDoLi) || seeded.doLi;
   const doLiDm = row.doLiDm.trim() || extractDoLiDm(productionName) || seeded.doLiDm;
   // Tên gốc ghi tay đuôi li trùng độ li thì cắt (vd "...11 SÓNG 1,2LI" + 1.2li).
   const tenGoc = stripDuplicateLiFromTenGoc(row.tenGoc.trim() || seeded.tenGoc, doLi);

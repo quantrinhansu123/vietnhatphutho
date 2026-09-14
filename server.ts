@@ -16,7 +16,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildOrderTenGhep, replaceCutLengthMeters } from './src/utils/productProductionName';
+import { buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, replaceCutLengthMeters } from './src/utils/productProductionName';
 
 dotenv.config();
 
@@ -2295,10 +2295,32 @@ function parseProductPatchBody(
     Object.prototype.hasOwnProperty.call(source, 'tenSanXuat') ||
     Object.prototype.hasOwnProperty.call(source, 'ten_san_xuat')
   ) {
-    // Tự extract (đm n li) từ ten_san_xuat khi client không gửi do_li_dm
-    const dmMatch = String(productionName || '').match(/\(\s*đm\s*([\d.,]+)\s*li\s*\)/iu);
+    // Tự extract (đm n li/kg) từ ten_san_xuat khi client không gửi do_li_dm
+    const dmMatch = String(productionName || '').match(/\(\s*đm\s*([\d.,]+)\s*(li|kg)\s*\)/iu);
     if (dmMatch) {
-      record.do_li_dm = `(đm ${dmMatch[1].trim()} li)`;
+      record.do_li_dm = `(đm ${dmMatch[1].trim()} ${dmMatch[2].trim().toLowerCase()})`;
+    }
+  }
+  // Đặc thiếu đm: tự tính theo bảng trừ lùi từ độ li (kể cả hàng ZEM).
+  if (!record.do_li_dm && record.nhom_vthh === 'TP; PX Đặc' && typeof record.do_li === 'string' && record.do_li) {
+    const autoDm = calculateDoLiDm(record.do_li, 'TP; PX Đặc');
+    if (autoDm) record.do_li_dm = autoDm;
+  }
+
+  // Nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh — chặn thêm/sửa/import.
+  // Chỉ xét khi request có đủ nhóm (PATCH từng phần không có nhóm thì bỏ qua).
+  if (record.nhom_vthh === 'TP; PX Đặc') {
+    const names = [record.ten_sp, record.ten_san_xuat].filter(
+      (value): value is string => typeof value === 'string' && Boolean(value)
+    );
+    if (
+      isDiscontinuedWhiteSuProduct({
+        group: 'TP; PX Đặc',
+        maAmis: typeof record.ma_amis === 'string' ? record.ma_amis : '',
+        names
+      })
+    ) {
+      return { error: 'Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh.' };
     }
   }
 

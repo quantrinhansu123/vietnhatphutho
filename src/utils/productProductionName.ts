@@ -2,13 +2,16 @@
 
 export type ProductPxGroup = 'dac' | 'song' | 'rong' | 'other';
 
-export const FILM_OPTIONS = ['ECO', 'STD', 'SUN PC', 'HA'] as const;
+export const FILM_OPTIONS = ['ECO', 'STD', 'SUN PC', 'HA', 'LUX'] as const;
 
 export const WASTE_GRADE_OPTIONS = [
   'hàng 100% NS Off',
   'hàng chạy 100% phế',
   'hàng nguyên phế',
-  'hàng tiêu chuẩn'
+  'hàng tiêu chuẩn',
+  '(GIÁ RẺ)',
+  '100% NS',
+  'hàng chạy 100% NS Off'
 ] as const;
 
 export interface AmisSpecs {
@@ -27,13 +30,13 @@ export interface ProductionNameParts {
   doLiDm: string;
 }
 
-const DO_LI_DM_RE = /\(\s*đm\s*([\d.,]+)\s*li\s*\)/iu;
+const DO_LI_DM_RE = /\(\s*đm\s*([\d.,]+)\s*(li|kg)\s*\)/iu;
 const AMIS_LI_RE = /-\s*([\d.,]+)\s*li\b/iu;
 const AMIS_DAY_RE = /\*\s*([\d.,]+)\s*m\b/iu;
 const AMIS_ZEM_RE = /(\d+)\s*zem\b/iu;
 const NAME_MANG_RE = /(?:màng\s+)?(ECO|STD|SUN\s*PC|HA|LUX|STANDA)\b/iu;
 const NAME_HANG_PHE_RE =
-  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế|hàng\s+nguyên\s+phế|hàng\s+tiêu\s+chuẩn|100%\s*NS\b)/iu;
+  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế|hàng\s+nguyên\s+phế|hàng\s+tiêu\s+chuẩn|100%\s*NS\b|\(\s*GIÁ\s+RẺ\s*\))/iu;
 /** Mét sau dấu `-` (standalone), cho phép text theo sau như `30m hàng…`. */
 const DASH_METER_RE = /-\s*([\d.,]+)\s*m(?=\b)/giu;
 /** Mọi token mét trong chuỗi (Sóng: lấy cái cuối). */
@@ -66,14 +69,41 @@ export function parseDoDaiMLength(raw: string): number | null {
   return parseMeterNumber(text.replace(/\s*m\s*$/iu, ''));
 }
 
-/** Extract `(đm n li)` từ ten_san_xuat → chuỗi chuẩn hóa lưu cột `do_li_dm`. Không lấy `(đm …kg)`. */
+/** Extract `(đm n li)` hoặc `(đm n kg)` (sóng) từ ten_san_xuat → chuỗi lưu cột `do_li_dm`. */
 export function extractDoLiDm(tenSanXuat: string): string | null {
   const text = String(tenSanXuat || '');
   const match = text.match(DO_LI_DM_RE);
   if (!match) return null;
   const n = match[1].trim();
   if (!n) return null;
-  return `(đm ${n} li)`;
+  return `(đm ${n} ${match[2].trim().toLowerCase()})`;
+}
+
+/**
+ * Tự tính `(đm n li)` cho TP; PX Đặc từ độ li (bảng đã đối chiếu dữ liệu):
+ * li < 1 → trừ 0.05; li < 2.8 → trừ 0.1; li < 5 → trừ 0.2; còn lại → trừ 0.3.
+ * Trả '' khi không phải Đặc hoặc không parse được độ li.
+ */
+export function calculateDoLiDm(doLiText: string, nhomVthh: string): string {
+  if (classifyProductPxGroup(nhomVthh) !== 'dac') return '';
+  const numText = normalizeDecimalToken(String(doLiText || '').replace(/\s*l?i\s*$/iu, ''));
+  const li = Number(numText);
+  if (!Number.isFinite(li) || li <= 0) return '';
+  const delta = li < 1 ? 0.05 : li < 2.8 ? 0.1 : li < 5 ? 0.2 : 0.3;
+  const dm = Math.round((li - delta) * 100) / 100;
+  if (!Number.isFinite(dm) || dm <= 0) return '';
+  return `(đm ${String(dm)} li)`;
+}
+
+/** SP nhựa Đặc màu trắng sứ (STD01) đã ngừng kinh doanh — chặn thêm/sửa/import. */
+export function isDiscontinuedWhiteSuProduct(input: {
+  group?: string;
+  maAmis?: string;
+  names?: Array<string | null | undefined>;
+}): boolean {
+  if (classifyProductPxGroup(input.group || '') !== 'dac') return false;
+  if (/^STD01/i.test(String(input.maAmis || '').trim())) return true;
+  return (input.names || []).some(name => /trắng\s*sứ/iu.test(String(name || '')));
 }
 
 export function classifyProductPxGroup(nhomVthh: string): ProductPxGroup {
@@ -132,7 +162,8 @@ function extractMang(tenSanXuat: string): string {
 /**
  * Hàng phế CHỈ khi tên sản xuất ghi rõ cụm hàng phế
  * (hàng 100% NS Off / hàng chạy 100% phế / hàng 100% phế / chạy 100% phế /
- *  hàng nguyên phế / hàng tiêu chuẩn / 100%NS giữ nguyên text).
+ *  hàng nguyên phế / hàng tiêu chuẩn / 100% NS (chuẩn hóa từ 100%NS) /
+ *  (GIÁ RẺ) của sóng NP2 → chuẩn hóa `(GIÁ RẺ)`).
  * Không suy diễn từ mã AMIS hay token "NP" — tránh gán nhầm hàng phế
  * cho sản phẩm thường rồi lọt vào tên ghép.
  */
@@ -140,6 +171,8 @@ function extractHangPhe(tenSanXuat: string): string {
   const fromName = String(tenSanXuat || '').match(NAME_HANG_PHE_RE);
   if (!fromName) return '';
   const t = fromName[1].trim();
+  if (/GIÁ\s+RẺ/i.test(t)) return '(GIÁ RẺ)';
+  if (/^100%\s*NS$/i.test(t)) return '100% NS';
   if (/^chạy\s+100%\s*phế$/i.test(t) || (/100%\s*phế/i.test(t) && !/NS\s*Off/i.test(t))) {
     return 'hàng chạy 100% phế';
   }
@@ -149,8 +182,8 @@ function extractHangPhe(tenSanXuat: string): string {
 function resolveDoLi(maAmis: string, tenSanXuat: string, _group: ProductPxGroup): string {
   const amis = parseAmisSpecs(maAmis);
   if (amis.doLi && !/\bkg\b/i.test(amis.doLi)) return amis.doLi;
-  // Chỉ nhận li tường minh (…li). ZEM trong tên SX/mã AMIS KHÔNG phải độ li.
-  const liInName = String(tenSanXuat || '').match(/([\d.,]+)\s*li\b/iu);
+  // Chỉ nhận li tường minh (…li, …i như "10i"). ZEM trong tên SX/mã AMIS KHÔNG phải độ li.
+  const liInName = String(tenSanXuat || '').match(/([\d.,]+)\s*l?i\b/iu);
   if (liInName) {
     const li = `${normalizeDecimalToken(liInName[1])}li`;
     if (isValidDoLiToken(li)) return li;
@@ -158,14 +191,24 @@ function resolveDoLi(maAmis: string, tenSanXuat: string, _group: ProductPxGroup)
   return '';
 }
 
-/** Token độ li hợp lệ: …li — không phải KG, không phải ZEM. */
+/** Chuẩn hóa token độ li về dạng `Nli` (vd `10i` → `10li`). Trả '' khi không hợp lệ. */
+export function normalizeDoLiToken(value: string): string {
+  const t = String(value || '').trim();
+  if (!isValidDoLiToken(t)) return '';
+  return `${normalizeDecimalToken(t.replace(/\s*l?i\s*$/iu, ''))}li`;
+}
+
+/** Token độ li hợp lệ: …li hoặc …i (vd `10i`) — không phải KG, không phải ZEM. */
 export function isValidDoLiToken(value: string): boolean {
   const t = String(value || '').trim();
   if (!t) return false;
   if (/kg/i.test(t)) return false;
   if (/zem/i.test(t)) return false;
-  return /^\d+[.,]?\d*\s*li$/i.test(t);
+  return /^\d+[.,]?\d*\s*l?i$/i.test(t);
 }
+
+/** Khổ mặc định của TP; PX Rỗng — bỏ khỏi tên ghép nhưng vẫn lưu DB. */
+export const DEFAULT_RONG_WIDTH_M = 2.1;
 
 /** Mét dài Đặc thường gặp — ưu tiên nhận diện là do_dai_m. */
 export const DEFAULT_DAC_LENGTH_METERS = [8, 9, 20, 30] as const;
@@ -247,11 +290,13 @@ export function parseProductionNameParts(
   const group = classifyProductPxGroup(nhomVthh);
   const text = String(tenSanXuat || '').trim();
   const amis = parseAmisSpecs(maAmis);
-  const doLiDm = extractDoLiDm(text) || '';
+  let doLiDm = extractDoLiDm(text) || '';
   const mang = extractMang(text);
   const hangPhe = extractHangPhe(text);
   let doLi = resolveDoLi(maAmis, text, group);
   if (doLi && !isValidDoLiToken(doLi)) doLi = '';
+  // Đặc: thiếu đm trong tên thì tự tính theo bảng trừ lùi (kể cả hàng ZEM).
+  if (!doLiDm) doLiDm = calculateDoLiDm(doLi, nhomVthh);
 
   if (group === 'song') {
     // Sóng: lấy đúng mét dài từ tên SX của dòng (không lấy max giữa các biến thể)
@@ -340,7 +385,7 @@ export function stripDuplicateLiFromTenGoc(tenGoc: string, doLi: string): string
   const base = String(tenGoc || '').trim();
   const li = String(doLi || '').trim();
   if (!base || !li) return base;
-  const tail = base.match(/([\d.,]+)\s*li\s*$/iu);
+  const tail = base.match(/([\d.,]+)\s*l?i\s*$/iu);
   if (!tail) return base;
   const prefix = base.slice(0, base.length - tail[0].length);
   const opens = (prefix.match(/\(/g) || []).length;
@@ -356,6 +401,7 @@ export function stripDuplicateLiFromTenGoc(tenGoc: string, doLi: string): string
 /**
  * Ghép tên hiển thị.
  * Thứ tự: ten_goc - hàng phế - màng - độ li - đm - độ dày - mét dài (mét dài luôn cuối).
+ * TP; PX Rỗng: bỏ khổ 2.1m mặc định khỏi tên ghép (DB vẫn lưu do_day_m).
  */
 export function composeProductionDisplayName(
   parts: Partial<ProductionNameParts>,
@@ -369,7 +415,13 @@ export function composeProductionDisplayName(
   const mang = String(parts.mang || '').trim();
   const hangPhe = String(parts.hangPhe || '').trim();
   const doLiDm = String(parts.doLiDm || '').trim();
-  const doDayM = String(parts.doDayM || '').trim();
+  const rawDayM = String(parts.doDayM || '').trim();
+  // Rỗng mặc định khổ 2.1m → không ghi vào tên ghép (vẫn lưu DB).
+  const dayMNum = Number(normalizeDecimalToken(rawDayM.replace(/\s*m\s*$/iu, '')));
+  const doDayM =
+    classifyProductPxGroup(nhomVthh) === 'rong' && Number.isFinite(dayMNum) && Math.abs(dayMNum - DEFAULT_RONG_WIDTH_M) < 1e-9
+      ? ''
+      : rawDayM;
   const doDaiM = String(parts.doDaiM || '').trim();
 
   // Mét dài luôn segment cuối cùng khi có.
@@ -469,5 +521,13 @@ export function replaceCutLengthMeters(
   if (/[\d.,]+\s*m\s*$/iu.test(text)) {
     return text.replace(/[\d.,]+\s*m\s*$/iu, label);
   }
-  return `${text} - ${label}`;
+  // Tên sóng NP2 kết thúc bằng marker (GIÁ RẺ): chèn mét cắt trước marker,
+  // không để ra dạng `… (GIÁ RẺ) - 3m`. Marker chuẩn hóa về `(GIÁ RẺ)`.
+  const hasGiaReSuffix = /\(\s*GIÁ\s+RẺ\s*\)\s*$/iu.test(text);
+  const coreText = hasGiaReSuffix ? text.replace(/\(\s*GIÁ\s+RẺ\s*\)\s*$/iu, '').trim() : text;
+  const suffix = hasGiaReSuffix ? ' (GIÁ RẺ)' : '';
+  if (/[\d.,]+\s*m\s*$/iu.test(coreText)) {
+    return `${coreText.replace(/[\d.,]+\s*m\s*$/iu, label)}${suffix}`;
+  }
+  return `${coreText} - ${label}${suffix}`;
 }

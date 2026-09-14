@@ -59,8 +59,10 @@ import { calculateProductConversionFormulas } from '../../utils/productConversio
 import {
   FILM_OPTIONS,
   WASTE_GRADE_OPTIONS,
+  calculateDoLiDm,
   composeProductionDisplayName,
   extractDoLiDm,
+  isDiscontinuedWhiteSuProduct,
   parseDoDaiMLength,
   seedProductionSpecs
 } from '../../utils/productProductionName';
@@ -670,7 +672,7 @@ export function ProductViewModal({
 
   const normSpecCells = [
     { label: 'Tên sản xuất', value: product.productionName || '-' },
-    { label: 'ĐM (đm n li)', value: product.doLiDm || '-' },
+    { label: 'ĐM (đm n li/kg)', value: product.doLiDm || '-' },
     {
       label: 'Tên ghép',
       value: composeProductionDisplayName(
@@ -1346,7 +1348,12 @@ export function emptyProductForm(): ProductFormState {
 }
 
 export function productFormToPayload(form: ProductFormState) {
-  const doLiDm = form.doLiDm.trim() || extractDoLiDm(form.productionName) || '';
+  // Đặc thiếu đm: tên có thì extract, không thì tự tính theo bảng trừ lùi.
+  const doLiDm =
+    form.doLiDm.trim() ||
+    extractDoLiDm(form.productionName) ||
+    calculateDoLiDm(form.doLi, form.group) ||
+    '';
   const tenGhep = composeProductionDisplayName(
     {
       tenGoc: form.tenGoc.trim(),
@@ -1947,6 +1954,16 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
       return;
     }
+    if (
+      isDiscontinuedWhiteSuProduct({
+        group: form.group,
+        maAmis: form.amisCode,
+        names: [form.name, form.productionName, form.tenGoc]
+      })
+    ) {
+      setProductFormError('Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh, không thể thêm mới.');
+      return;
+    }
     const duplicateError = findDuplicateProductIdentity(products, form);
     if (duplicateError) {
       setProductFormError(duplicateError);
@@ -1991,6 +2008,16 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     }
     if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
       setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+      return;
+    }
+    if (
+      isDiscontinuedWhiteSuProduct({
+        group: form.group,
+        maAmis: form.amisCode,
+        names: [form.name, form.productionName, form.tenGoc]
+      })
+    ) {
+      setProductFormError('Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh, không thể cập nhật.');
       return;
     }
     const duplicateError = findDuplicateProductIdentity(products, form, editingProduct.id);
@@ -2117,6 +2144,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       const creates: Array<ReturnType<typeof productCatalogRowToPayload>> = [];
       const updates: Array<ReturnType<typeof productCatalogRowToPayload> & { id: string }> = [];
       const failures: string[] = [];
+      let skippedWhiteSu = 0;
 
       for (const row of rows) {
         const code = row.code.trim();
@@ -2125,6 +2153,18 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
         if (!code && !name) {
           failures.push(`dòng ${row.rowNumber}: thiếu mã SP và tên`);
+          continue;
+        }
+
+        // Nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh — bỏ qua khi nhập.
+        if (
+          isDiscontinuedWhiteSuProduct({
+            group: row.group,
+            maAmis: row.amisCode,
+            names: [name, productionName]
+          })
+        ) {
+          skippedWhiteSu += 1;
           continue;
         }
 
@@ -2202,6 +2242,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
       const summary = [
         created || updated ? `Đã nhập Excel SP (batch): thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        skippedWhiteSu ? `Bỏ qua ${skippedWhiteSu} dòng trắng sứ (STD01, đã ngừng kinh doanh).` : '',
         failures.length ? `${failures.length} lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
