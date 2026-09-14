@@ -78,7 +78,7 @@ const orderProductGridClass =
 const orderProductionProductGridClass =
   'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-[4.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
@@ -325,20 +325,7 @@ function OrderProductActions({
         <Trash2 className="h-3.5 w-3.5" />
         <span className="sr-only">Xóa</span>
       </button>
-      {moveButtonsInStt ? (
-        <button
-          type="button"
-          title="Thêm dòng giống sản phẩm này ở bên dưới"
-          className={`${orderProductActionBtnClass} border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`}
-          onClick={event => {
-            event.stopPropagation();
-            onDuplicate?.();
-          }}
-        >
-          <Plus className="h-4 w-4" />
-          <span className="sr-only">Nhân bản dòng bên dưới</span>
-        </button>
-      ) : (
+      {moveButtonsInStt ? null : (
         <>
           <button
             type="button"
@@ -455,6 +442,20 @@ function OrderProductLineShell({
                 <ArrowDown className="h-3 w-3" />
               </button>
             </span>
+          ) : null}
+          {moveButtonsInStt && onDuplicate ? (
+            <button
+              type="button"
+              title="Thêm dòng giống sản phẩm này ở bên dưới"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+              onClick={event => {
+                event.stopPropagation();
+                onDuplicate();
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span className="sr-only">Nhân bản dòng bên dưới</span>
+            </button>
           ) : null}
         </div>
         {children}
