@@ -4,7 +4,7 @@ import { Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 interface MachineCell {
   maMay: string;
   tenMay: string;
-  nhanSu: Array<{ name: string; dispatch?: string }>;
+  nhanSu: Array<{ name: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>;
 }
 
 interface LichRow {
@@ -116,6 +116,15 @@ function shiftLabel(shift: { ten_cai_dat?: string; ma_cai_dat?: string; khung_gi
   const base = String(shift.ten_cai_dat ?? shift.ma_cai_dat ?? '').trim();
   const range = String(shift.khung_gio ?? '').trim();
   return range ? `${base} · ${range}` : base;
+}
+
+function formatPersonTimeRange(startRaw: unknown, endRaw: unknown) {
+  const start = String(startRaw || '').trim().slice(0, 5);
+  const end = String(endRaw || '').trim().slice(0, 5);
+  const parts: string[] = [];
+  if (/^\d{1,2}:\d{2}$/.test(start)) parts.push(`làm lúc ${start}`);
+  if (/^\d{1,2}:\d{2}$/.test(end)) parts.push(`về lúc ${end}`);
+  return parts.join(' ');
 }
 
 function scheduleShiftCode(row: LichRow) {
@@ -874,8 +883,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                         ) : null}
                         <td className="schedule-shift-col border border-zinc-300 px-2 py-2">{row.previewTenCa}</td>
                         {row.machines.map((cell, midx) => {
-                          const employeeNames = cell.nhanSu.map(p => p.name);
-                          const dispatched = cell.nhanSu.filter(p => p.dispatch);
+                          // Giữ đúng thứ tự đã xếp lúc xếp lịch (không sort lại).
                           const cellNotes =
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.tenCa))) ??
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.maCa || ''))) ??
@@ -886,12 +894,22 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                                 <span className="text-zinc-400">-</span>
                               ) : (
                                 <div className="space-y-1">
-                                  {employeeNames.length > 0 ? <div>{employeeNames.join(', ')}</div> : null}
-                                  {dispatched.map((p, pidx) => (
-                                    <div key={`dispatch-${pidx}`} className="note-cell italic text-zinc-600" style={{ whiteSpace: 'pre-line' }}>
-                                      {p.dispatch}
-                                    </div>
-                                  ))}
+                                  {cell.nhanSu.map((p, pidx) => {
+                                    // So sánh giờ LV (lịch) vs điều động: dispatch đã là giờ hiệu lực
+                                    // (ưu tiên điều động, thiếu thì lấy giờ lịch). Không dispatch thì hiện giờ lịch.
+                                    const schedPhrase = !p.dispatch ? formatPersonTimeRange(p.batDau, p.ketThuc) : '';
+                                    return (
+                                      <div key={`ns-${pidx}`}>
+                                        <span>{p.name}</span>
+                                        {schedPhrase ? <span> ({schedPhrase})</span> : null}
+                                        {p.dispatch ? (
+                                          <div className="note-cell italic text-zinc-600" style={{ whiteSpace: 'pre-line' }}>
+                                            {p.dispatch}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
                                   {cellNotes.map(note => (
                                     <div key={note.id} className="schedule-note-item">
                                       ({note.ghi_chu})

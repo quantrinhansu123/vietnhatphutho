@@ -8552,12 +8552,11 @@ export function createApp() {
         if (!maNhanSu) continue;
         const batDau = pickRowField(item, ['thoi_gian_bat_dau', 'thoiGianBatDau', 'start'], '');
         const ketThuc = pickRowField(item, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
+        // Không validate thời gian (cho phép trống, cho phép trùng) — yêu cầu màn xếp lịch #3.
         if (batDau && !PHAN_CONG_TIME_RE.test(batDau))
           return res.status(400).json({ error: `Giờ bắt đầu không hợp lệ (${maNhanSu}).` });
         if (ketThuc && !PHAN_CONG_TIME_RE.test(ketThuc))
           return res.status(400).json({ error: `Giờ kết thúc không hợp lệ (${maNhanSu}).` });
-        if (batDau && ketThuc && batDau === ketThuc)
-          return res.status(400).json({ error: `Giờ bắt đầu và giờ kết thúc không được trùng nhau (${maNhanSu}).` });
         rows.push({
           id_lenh_sx: lenh ? lenh.id : null,
           ma_lenh_sx: lenh ? lenh.ma_lenh_sx || null : null,
@@ -11440,7 +11439,7 @@ export function createApp() {
       const [caRes, mayRes, phanCongRes, dieuDongRes, nhanSuRes] = await Promise.all([
         supabase.from('cai_dat_thoi_gian').select('*'),
         supabase.from('danh_sach_may').select('*'),
-        supabase.from('phan_cong_nhan_su_chi_tiet').select('*').eq('ngay_lam_viec', ngayLamViec),
+        supabase.from('phan_cong_nhan_su_chi_tiet').select('*').eq('ngay_lam_viec', ngayLamViec).order('created_at', { ascending: true }),
         supabase.from('dieu_dong_nhan_su').select('*').eq('ngay_lam_viec', ngayLamViec),
         supabase.from('nhan_su').select('ma_nhan_su, nhan_su')
       ]);
@@ -11448,9 +11447,10 @@ export function createApp() {
       let caList = (caRes.data || []) as any[];
       const mayList = mayRes.data || [];
       const phanCongAllRows = phanCongRes.data || [];
-      const phanCongList = phanCongAllRows.filter(
-        row => !isScheduleNoteRow(row) && !isGeneralScheduleNoteRow(row)
-      );
+      // Giữ đúng thứ tự đã xếp lúc xếp lịch (Trưởng ca → Trộn → Ra tấm...): sắp theo created_at.
+      const phanCongList = phanCongAllRows
+        .filter(row => !isScheduleNoteRow(row) && !isGeneralScheduleNoteRow(row))
+        .sort((a: any, b: any) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
       const dieuDongList = dieuDongRes.data || [];
       const nhanSuMap = new Map((nhanSuRes.data || []).map(ns => [String(ns.ma_nhan_su), ns.nhan_su]));
       const ghiChuChiTiet = normalizeScheduleNotes(phanCongAllRows);
@@ -11482,6 +11482,24 @@ export function createApp() {
         if (code) activeMachineCodes.add(code);
       }
       const mayListHienThi = mayList.filter(may => activeMachineCodes.has(getMachineCode(may.ma_may)));
+      // Máy bổ sung (Công việc khác / Hành chính) không có trong danh_sach_may — vẫn hiện nếu có lịch.
+      const PSEUDO_MACHINES: Array<{ ma_may: string; ten_may: string }> = [
+        { ma_may: 'CONG_VIEC_KHAC', ten_may: 'Công việc khác' },
+        { ma_may: 'HANH_CHINH', ten_may: 'Hành chính' }
+      ];
+      for (const pseudo of PSEUDO_MACHINES) {
+        if (activeMachineCodes.has(getMachineCode(pseudo.ma_may)) && !mayListHienThi.some((m: any) => getMachineCode(m.ma_may) === getMachineCode(pseudo.ma_may))) {
+          mayListHienThi.push(pseudo as any);
+        }
+      }
+      // Mã máy lạ khác (nếu có) — vẫn hiện để không mất lịch.
+      for (const code of activeMachineCodes) {
+        if (!mayListHienThi.some((m: any) => getMachineCode(m.ma_may) === code)) {
+          const sample = phanCongList.find((r: any) => getMachineCode(r.ma_may) === code) as any;
+          const label = String(sample?.may || '').trim() || code;
+          mayListHienThi.push({ ma_may: code, ten_may: label } as any);
+        }
+      }
 
       // Apply shift filter precedence: 'Thời gian' first, then 'Sản xuất', then regex match on name/code
       const fromTimeSettings = caList.filter(setting => setting.loai_cai_dat === 'Thời gian');
@@ -11559,7 +11577,8 @@ export function createApp() {
 
         // For each time slot, find employees and their machine assignments
         // Structure: machineData[tenMay][tenCa] to separate by both machine and shift
-        type MachineShiftData = Record<string, Record<string, Array<{ name: string; dispatch?: string }>>>;
+        // Giữ đúng thứ tự đã xếp (push theo created_at) — không sort lại theo tên.
+        type MachineShiftData = Record<string, Record<string, Array<{ name: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>>>;
         const machineData: MachineShiftData = {};
 
         for (const may of mayListHienThi) {
@@ -11568,6 +11587,7 @@ export function createApp() {
             machineData[may.ten_may][shiftCa.ten_cai_dat] = [];
           }
         }
+        const allMachinesForLookup: any[] = [...mayListHienThi, ...mayList];
 
         // Find employees assigned to machines in this time period
         for (const phanCong of phanCongList) {
@@ -11577,12 +11597,15 @@ export function createApp() {
           // Get employee name (last word only)
           const fullName = nhanSuMap.get(phanCong.ma_nhan_su) || phanCong.ma_nhan_su;
           const lastName = extractLastName(fullName);
+          const schedStart = String((phanCong as any).thoi_gian_bat_dau || '').trim().slice(0, 5);
+          const schedEnd = String((phanCong as any).thoi_gian_ket_thuc || '').trim().slice(0, 5);
+          const vaiTro = String((phanCong as any).vai_tro || '').trim();
 
-          // Find machine name from ma_may
-          const machine = mayList.find(
+          // Find machine name from ma_may (kể cả máy bổ sung)
+          const machine = allMachinesForLookup.find(
             m => m.ma_may === phanCong.ma_may || m.ten_may === phanCong.ma_may || m.ten_may === phanCong.may
           );
-          const machineName = machine?.ten_may || String(phanCong.may || '').trim();
+          const machineName = machine?.ten_may || String(phanCong.may || '').trim() || String(phanCong.ma_may || '').trim();
 
           if (!machineName) continue;
 
@@ -11616,16 +11639,18 @@ export function createApp() {
             const raw = String(dd.may_dieu_dong || '').trim();
             if (!raw) return '';
             if (raw === 'Việc khác') return 'Việc khác';
-            const found = mayList.find(m => m.ma_may === raw || m.ten_may === raw);
+            const found = allMachinesForLookup.find(m => m.ma_may === raw || m.ten_may === raw);
             return found?.ten_may || raw;
           };
 
           if (dispatchesForThisMachine.length > 0) {
-            // Note điều động ghi vào Ô CA CHÍNH của nhân sự (trong ngoặc, cạnh tên).
-            // Giờ: "làm lúc hh:mm" / "về lúc hh:mm" (tuỳ phần nào có dữ liệu).
+            // So sánh giờ làm việc (lịch) vs giờ điều động để ra "làm lúc / về lúc":
+            // ưu tiên giờ điều động, thiếu phần nào thì lấy giờ lịch.
             const dispatchNotes = dispatchesForThisMachine.map(dd => {
               const toMachineName = resolveDestMachineName(dd);
-              const timePhrase = formatDispatchPrintTime(dd.thoi_gian_bat_dau, dd.thoi_gian_ket_thuc);
+              const effStart = String(dd.thoi_gian_bat_dau || '').trim().slice(0, 5) || schedStart;
+              const effEnd = String(dd.thoi_gian_ket_thuc || '').trim().slice(0, 5) || schedEnd;
+              const timePhrase = formatDispatchPrintTime(effStart, effEnd);
               const toCa = String(dd.ca_dieu_dong || dd.ca || '').trim();
               const homeCa = String(phanCong.ca_lam_viec || '').trim();
               const sameMachine = !toMachineName || toMachineName === machineName;
@@ -11645,12 +11670,18 @@ export function createApp() {
 
             machineData[machineName][tenCa].push({
               name: lastName,
+              vaiTro,
+              batDau: schedStart,
+              ketThuc: schedEnd,
               dispatch: dispatchNotes.join('\n')
             });
           } else {
             // Employee stays in this machine (no dispatch from this machine)
             machineData[machineName][tenCa].push({
-              name: lastName
+              name: lastName,
+              vaiTro,
+              batDau: schedStart,
+              ketThuc: schedEnd
             });
           }
         }
@@ -11668,7 +11699,7 @@ export function createApp() {
 
           const rawDest = String(dd.may_dieu_dong || '').trim();
           if (!rawDest || rawDest === 'Việc khác') continue;
-          const destMachine = mayList.find(m => m.ma_may === rawDest || m.ten_may === rawDest);
+          const destMachine = allMachinesForLookup.find(m => m.ma_may === rawDest || m.ten_may === rawDest);
           const destMachineName = destMachine?.ten_may || rawDest;
           if (!machineData[destMachineName]) {
             machineData[destMachineName] = {};
@@ -11686,7 +11717,7 @@ export function createApp() {
           );
           if (alreadyListed) continue;
 
-          const homeMachine = mayList.find(m => m.ma_may === fromMachine || m.ten_may === fromMachine);
+          const homeMachine = allMachinesForLookup.find(m => m.ma_may === fromMachine || m.ten_may === fromMachine);
           const homeMachineName = homeMachine?.ten_may || fromMachine;
           const sameMachine = homeMachineName === destMachineName;
           const arrivalNote = sameMachine
