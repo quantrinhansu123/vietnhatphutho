@@ -5662,11 +5662,25 @@ async function enrichOrderProductsWithConversionData(
       const isCutOrder = orderType === 'Đơn theo quy cách của khách đặt';
       const conversion = spId ? conversionMap.get(spId) : null;
       const round = (val: number) => Math.round((val + Number.EPSILON) * 100) / 100;
+      const isCustomerEnteredKg = product.nguon_quy_doi === 'khach_hang_nhap_kg' &&
+        Number.isFinite(product.tong_kg) && Number(product.tong_kg) > 0;
+      const quantity = Number(product.so_luong);
+      const manualKgPerUnit = isCustomerEnteredKg && Number.isFinite(quantity) && quantity > 0
+        ? round(Number(product.tong_kg) / quantity)
+        : null;
+      const normalizedUnit = String(product.don_vi || '')
+        .trim()
+        .toLocaleLowerCase('vi')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd');
+      const isSheetUnit = normalizedUnit === 'tam' || normalizedUnit === 'sheet';
+      const isRollUnit = normalizedUnit === 'cuon' || normalizedUnit === 'roll';
 
       if (isCutOrder) {
         const cutWeight = calculateCutOrderWeightServer(product.dai_m ?? null, product.so_luong, product.don_vi, conversion || null, product.ma_sp, product.ten_sp);
-        const kg1Sp = cutWeight?.kg1Sp ?? product.kg_1_sp ?? null;
-        const tongKg = cutWeight?.tongKg ?? product.tong_kg ?? null;
+        const kg1Sp = manualKgPerUnit ?? cutWeight?.kg1Sp ?? product.kg_1_sp ?? null;
+        const tongKg = isCustomerEnteredKg ? product.tong_kg ?? null : cutWeight?.tongKg ?? product.tong_kg ?? null;
 
         const width = extractProductWidthServer(product.ma_sp, product.ten_sp, conversion);
         const daiM = product.dai_m ?? null;
@@ -5674,8 +5688,12 @@ async function enrichOrderProductsWithConversionData(
         const m2 = width && width > 0 && daiM && qty && daiM > 0 && qty > 0 ? round(daiM * width * qty) : (product.m2 ?? null);
         const mDai = daiM && qty && daiM > 0 && qty > 0 ? round(daiM * qty) : (product.m_dai ?? null);
 
-        const tlCuon = conversion?.trong_luong_kg_cuon ?? product.tl_cuon ?? null;
-        const tlTam = kg1Sp ?? conversion?.trong_luong_kg_tam ?? product.tl_tam ?? null;
+        const tlCuon = manualKgPerUnit !== null && isRollUnit
+          ? manualKgPerUnit
+          : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
+        const tlTam = manualKgPerUnit !== null && isSheetUnit
+          ? manualKgPerUnit
+          : kg1Sp ?? product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null;
 
         const quyCachMDai = product.quy_cach_m_dai ?? (daiM && daiM > 0 ? daiM : null);
 
@@ -5693,13 +5711,21 @@ async function enrichOrderProductsWithConversionData(
           ...(tlCuon !== null ? { tl_cuon: tlCuon } : {}),
           ...(tlTam !== null ? { tl_tam: tlTam } : {}),
           ...(kg1Sp !== null && kg1Sp !== tlTam && kg1Sp !== tlCuon ? { kg_1_sp: kg1Sp } : {}),
-          ...(cutWeight?.source ? { nguon_quy_doi: cutWeight.source } : {}),
+          ...(isCustomerEnteredKg
+            ? { nguon_quy_doi: 'khach_hang_nhap_kg' }
+            : cutWeight?.source
+              ? { nguon_quy_doi: cutWeight.source }
+              : {}),
           ket_qua_quy_doi: results.length > 0 ? results : (product.ket_qua_quy_doi ?? [])
         };
       }
 
-      const tlCuon = conversion?.trong_luong_kg_cuon ?? product.tl_cuon ?? null;
-      const tlTam = conversion?.trong_luong_kg_tam ?? product.tl_tam ?? null;
+      const tlCuon = manualKgPerUnit !== null && isRollUnit
+        ? manualKgPerUnit
+        : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
+      const tlTam = manualKgPerUnit !== null && isSheetUnit
+        ? manualKgPerUnit
+        : product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null;
 
       return {
         ...product,

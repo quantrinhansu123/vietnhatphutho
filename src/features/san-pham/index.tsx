@@ -672,7 +672,7 @@ export function ProductViewModal({
 
   const normSpecCells = [
     { label: 'Tên sản xuất', value: product.productionName || '-' },
-    { label: 'ĐM (đm n li/kg)', value: product.doLiDm || '-' },
+    { label: 'ĐM (đm li, đm kg)', value: product.doLiDm || '-' },
     {
       label: 'Tên ghép',
       value: composeProductionDisplayName(
@@ -688,7 +688,7 @@ export function ProductViewModal({
         product.group
       )
     },
-    { label: 'Độ li', value: product.doLi || '-' },
+    { label: 'Độ li / ZEM', value: product.doLi || '-' },
     { label: 'Mét dài', value: product.doDaiM || '-' },
     { label: 'Màng', value: product.mang || '-' },
     { label: 'Hàng phế', value: product.hangPhe || '-' },
@@ -1666,7 +1666,7 @@ export function ProductEditModal({
             <div>
               <h4 className="text-xs font-black uppercase text-amber-900">Thông số SX / ghép tên</h4>
               <p className="text-[10px] font-semibold text-amber-800/80">
-                ĐM lấy `(đm n li)` từ tên SX. Đặc: ưu tiên 8/9/20/30m làm m dài. Sóng: m dài đúng theo tên SX dòng. Không đổi unique `AMIS + Tên SP + Tên SX`.
+                ĐM lấy `(đm n li/kg)` từ tên SX. Đặc: ưu tiên 8/9/20/30m làm m dài. Sóng: m dài đúng theo tên SX dòng. Không đổi unique `AMIS + Tên SP + Tên SX`.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1675,11 +1675,11 @@ export function ProductEditModal({
                 <input value={form.tenGoc} onChange={event => setForm(prev => ({ ...prev, tenGoc: event.target.value }))} className={`${productFieldClass} bg-white`} />
               </label>
               <label className="space-y-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li</span>
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li / ZEM</span>
                 <input value={form.doLi} onChange={event => setForm(prev => ({ ...prev, doLi: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="5.0li / 6ZEM" />
               </label>
               <label className="space-y-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm n li)</span>
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm li, đm kg)</span>
                 <input value={form.doLiDm} onChange={event => setForm(prev => ({ ...prev, doLiDm: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="(đm 5.7 li)" />
               </label>
               <label className="space-y-1.5">

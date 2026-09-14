@@ -56,3 +56,8 @@ Mỗi dòng lệnh: cột **Mã hàng / Tên hàng / Số lượng** trình bày
 - Sản phẩm luôn lưu và hiển thị **tên ghép** (`ten_ghep` lấy từ dòng đơn hàng; có mét cắt thì thay mét cuối bằng `replaceCutLengthMeters`; thiếu mới ghép lại từ `ten_san_xuat` + mét cắt nếu có).
 - Xem trước/in lệnh SX hiển thị đúng `ten_ghep` trong JSON `san_pham` (thiếu thì tên SX thô) — **không tự ghép lại**.
 - Các cột KG / M2 / M dài và JSON `lenh_sx.san_pham` lấy trực tiếp dữ liệu quy đổi từ dòng đơn hàng (`ket_qua_quy_doi` và các trường liên quan), không tải lại `san_pham_quy_doi` trong form lệnh SX.
+
+### Nhiều ca trên một lệnh
+
+- Form thêm Lệnh SX cho phép tick nhiều ca nhưng chỉ gọi `POST /api/lenh-sx` một lần và chỉ tạo một bản ghi `lenh_sx`.
+- Các ca được lưu chung trong cột `ca`, phân cách bằng dấu phẩy; ngày giờ bắt đầu/kết thúc bao trùm các ca đã chọn. Danh sách/in hiển thị nhãn từng ca và đối chiếu phiếu xuất kho khớp nếu có ít nhất một ca trùng nhau.

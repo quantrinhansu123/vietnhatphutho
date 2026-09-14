@@ -43,7 +43,7 @@ export interface ProductRow {
   /** Phần tên gốc dùng ghép hiển thị */
   tenGoc: string;
   doLi: string;
-  /** Chuỗi chuẩn hóa `(đm n li)` lưu DB */
+  /** Chuỗi chuẩn hóa `(đm n li/kg)` lưu DB */
   doLiDm: string;
   doDayM: string;
   doDaiM: string;

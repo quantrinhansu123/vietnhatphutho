@@ -4117,9 +4117,12 @@ function warehouseSlipShiftMatchesOrder(slipShift: string | undefined, orderShif
     .map(part => part.trim())
     .filter(Boolean);
   if (slipShifts.length === 0) return true;
-  const target = (orderShift || '').trim();
-  if (!target || target === '-') return true;
-  return slipShifts.some(part => shiftNamesMatch(part, target));
+  const orderShifts = String(orderShift || '')
+    .split(/[,;+]/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  if (orderShifts.length === 0 || orderShifts.every(item => item === '-')) return true;
+  return slipShifts.some(slip => orderShifts.some(order => shiftNamesMatch(slip, order)));
 }
 
 /**
@@ -4692,6 +4695,11 @@ export function settingMatchesShift(setting: ProductionOrderLookupSetting, shift
 export function formatProductionOrderShiftLabel(shift: string, settings: ProductionOrderLookupSetting[] = []) {
   const trimmed = shift.trim();
   if (!trimmed || trimmed === '-') return '-';
+
+  const combinedShifts = trimmed.split(/[,;+]/).map(item => item.trim()).filter(Boolean);
+  if (combinedShifts.length > 1) {
+    return combinedShifts.map(item => formatProductionOrderShiftLabel(item, settings)).join(', ');
+  }
 
   if (/\(\s*\d{1,2}:\d{2}/.test(trimmed)) {
     return trimmed;
@@ -6107,28 +6115,23 @@ export function AddProductionOrderModal({
     setIsSaving(true);
     setFormError('');
 
-    const multipleShifts = selectedShifts.length > 1;
-
     try {
-      for (const shift of selectedShifts) {
-        const shiftForm: ProductionOrderFormState = {
-          ...form,
-          shift,
-          // Nhiều ca: để trống mã để tự sinh, tránh trùng mã lệnh
-          code: multipleShifts ? '' : form.code
-        };
-        const res = await fetch('/api/lenh-sx', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(
-            productionOrderFormToCreatePayload(shiftForm, filledLines)
-          )
-        });
-        const data = await res.json().catch(() => ({}));
+      const shiftForm: ProductionOrderFormState = {
+        ...form,
+        // Một lệnh SX có thể phụ trách nhiều ca; lưu danh sách ca trên cùng bản ghi.
+        shift: selectedShifts.join(', ')
+      };
+      const res = await fetch('/api/lenh-sx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          productionOrderFormToCreatePayload(shiftForm, filledLines)
+        )
+      });
+      const data = await res.json().catch(() => ({}));
 
-        if (!res.ok) {
-          throw new Error(data.error || `Không thể tạo lệnh SX cho ${shift}.`);
-        }
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể tạo lệnh sản xuất.');
       }
 
       await onCreated();
@@ -6587,7 +6590,7 @@ export function AddProductionOrderModal({
               )}
               {selectedShifts.length > 1 && (
                 <p className="text-[11px] font-semibold text-emerald-700">
-                  Sẽ tạo {selectedShifts.length} lệnh SX — mỗi ca một lệnh (cùng sản phẩm, máy, ngày).
+                  Sẽ tạo 1 lệnh SX áp dụng cho {selectedShifts.length} ca đã chọn.
                 </p>
               )}
             </label>
