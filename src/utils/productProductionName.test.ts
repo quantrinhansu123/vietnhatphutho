@@ -10,7 +10,8 @@ import {
   seedProductionSpecs,
   buildOrderTenGhep,
   replaceCutLengthMeters,
-  stripDuplicateLiFromTenGoc
+  stripDuplicateLiFromTenGoc,
+  parseDoDaiMLength
 } from './productProductionName.ts';
 
 test('extractDoLiDm bắt (đm n li) và bỏ (đm …kg)', () => {
@@ -298,4 +299,15 @@ test('seed Sóng STS06: tên gốc cắt đuôi li, tên ghép đúng', () => {
   assert.equal(seeded.tenGoc, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG');
   assert.equal(seeded.doLi, '1.2li');
   assert.equal(seeded.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.2li - 4m');
+});
+
+test('parseDoDaiMLength đọc số m dài từ ô Mét dài (SP cắt lẻ)', () => {
+  assert.equal(parseDoDaiMLength('6m'), 6);
+  assert.equal(parseDoDaiMLength('5.8m'), 5.8);
+  assert.equal(parseDoDaiMLength('5,8m'), 5.8);
+  assert.equal(parseDoDaiMLength('5.8'), 5.8);
+  assert.equal(parseDoDaiMLength(' 9M '), 9);
+  assert.equal(parseDoDaiMLength(''), null);
+  assert.equal(parseDoDaiMLength('abc'), null);
+  assert.equal(parseDoDaiMLength('0m'), null);
 });

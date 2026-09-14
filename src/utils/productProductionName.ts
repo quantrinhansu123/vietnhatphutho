@@ -56,6 +56,16 @@ function parseMeterNumber(raw: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/**
+ * Parse số m dài từ ô "Mét dài" của form SP (`6m`, `5.8`, `5,8m`) → số mét.
+ * Dùng để tự động tính quy đổi khi tạo SP mới cắt lẻ. Trả `null` khi không parse được.
+ */
+export function parseDoDaiMLength(raw: string): number | null {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  return parseMeterNumber(text.replace(/\s*m\s*$/iu, ''));
+}
+
 /** Extract `(đm n li)` từ ten_san_xuat → chuỗi chuẩn hóa lưu cột `do_li_dm`. Không lấy `(đm …kg)`. */
 export function extractDoLiDm(tenSanXuat: string): string | null {
   const text = String(tenSanXuat || '');

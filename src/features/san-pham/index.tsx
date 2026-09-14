@@ -61,6 +61,7 @@ import {
   WASTE_GRADE_OPTIONS,
   composeProductionDisplayName,
   extractDoLiDm,
+  parseDoDaiMLength,
   seedProductionSpecs
 } from '../../utils/productProductionName';
 
@@ -1420,10 +1421,38 @@ export function ProductEditModal({
     mode === 'edit' && product ? productToForm(product, productConversions.filter(item => item.sanPhamId === product.id)) : emptyProductForm()
   );
   const [amisOpen, setAmisOpen] = useState(false);
+  // Mét dài trong Thông số SX chính là Khổ tấm dài (m dài/tấm) của khối quy đổi.
+  // Ghi nhận giá trị lúc nạp form để chỉ đồng bộ khi người dùng đổi Mét dài
+  // (dữ liệu đã lưu lúc mở form không bao giờ bị tự sửa).
+  const prevDoDaiMRef = useRef<string>('');
 
   useEffect(() => {
-    setForm(mode === 'edit' && product ? productToForm(product, productConversions.filter(item => item.sanPhamId === product.id)) : emptyProductForm());
+    const next = mode === 'edit' && product ? productToForm(product, productConversions.filter(item => item.sanPhamId === product.id)) : emptyProductForm();
+    setForm(next);
+    prevDoDaiMRef.current = next.doDaiM;
   }, [mode, product?.id, productConversions]);
+
+  // Mét dài đổi → Khổ tấm dài đồng bộ theo, các thông tin gốc (khổ rộng,
+  // khổ cuộn, diện tích, kg/1 m dài, kg/m2) giữ nguyên rồi tính lại
+  // Trọng lượng (kg/Tấm), kg/cuộn theo công thức sẵn có.
+  useEffect(() => {
+    if (prevDoDaiMRef.current === form.doDaiM) return;
+    prevDoDaiMRef.current = form.doDaiM;
+    const meters = parseDoDaiMLength(form.doDaiM);
+    if (meters === null) return;
+    const nextValue = String(meters);
+    setForm(prev => {
+      const conv = prev.conversions[0] || emptyConversion();
+      if (conv.khoTamDaiM.trim() === nextValue) return prev;
+      return {
+        ...prev,
+        conversions: [
+          autoCalculateProductConversion({ ...conv, khoTamDaiM: nextValue }, 'khoTamDaiM'),
+          ...prev.conversions.slice(1)
+        ]
+      };
+    });
+  }, [form.doDaiM]);
 
   const fields: Array<{ key: Exclude<keyof ProductFormState, 'conversions'>; label: string; required?: boolean; span?: boolean }> = [
     { key: 'name', label: 'Tên sản phẩm', required: true },
@@ -1543,6 +1572,17 @@ export function ProductEditModal({
             />
             {amisOpen && filteredAmisOptions.length > 0 && <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-auto rounded-lg border border-zinc-200 bg-white shadow-xl">
               {filteredAmisOptions.map(item => <button key={item.id} type="button" onMouseDown={event => event.preventDefault()} onClick={() => {
+                // Tạo SP cắt lẻ từ SP chính: lấy sẵn quy đổi gốc nếu khối quy đổi
+                // đang trống (không ghi đè số đã gõ tay). Chỉ áp dụng khi thêm mới.
+                let seededBaseConversion: ProductConversionForm | null = null;
+                if (mode === 'add') {
+                  const baseConv = productConversions.find(conv => conv.sanPhamId === item.id);
+                  const currentConv = form.conversions[0];
+                  const convEmpty = !currentConv || Object.values(currentConv).every(value => String(value ?? '').trim() === '');
+                  if (baseConv && convEmpty) {
+                    seededBaseConversion = conversionToForm(baseConv);
+                  }
+                }
                 setForm(prev => {
                   const nextBase = { ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName, group: item.group || prev.group };
                   const seeded = seedProductionSpecs({
@@ -1552,6 +1592,7 @@ export function ProductEditModal({
                   });
                   return {
                     ...nextBase,
+                    ...(seededBaseConversion ? { conversions: [seededBaseConversion] } : {}),
                     tenGoc: seeded.tenGoc,
                     doLi: seeded.doLi,
                     doLiDm: seeded.doLiDm,
@@ -1677,7 +1718,7 @@ export function ProductEditModal({
             </div>
           </section>
           <section className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:col-span-2">
-            <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước.</p></div>
+            <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước. Mét dài trong Thông số SX chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm). Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.</p></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {([
                 ['khoTamRongM', 'Khổ tấm rộng (m rộng)'], ['khoTamDaiM', 'Khổ tấm dài (m dài / tấm)'],
