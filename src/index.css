@@ -4475,6 +4475,9 @@ input[type="number"] {
   font-weight: 700;
   text-transform: uppercase;
   font-size: 9.5pt;
+  color: #1d4ed8;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .mixing-norm-ratio-print-product-name {
@@ -4618,7 +4621,7 @@ input[type="number"] {
   margin: 3px 0 0;
   font-size: 8.5pt;
   text-transform: none;
-  color: #1d4ed8;
+  color: #111;
   font-family: "Times New Roman", Times, serif;
 }
 

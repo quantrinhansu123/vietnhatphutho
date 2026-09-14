@@ -66,7 +66,11 @@ function findColumn(headers: string[], aliases: string[]) {
 }
 
 export async function parseCustomerExcel(file: File): Promise<CustomerExcelRow[]> {
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  // XLSX.read đọc được cả .xlsx/.xls (arrayBuffer) lẫn .csv (text).
+  const isCsv = /\.csv$/i.test(file.name || '');
+  const workbook = isCsv
+    ? XLSX.read(await file.text(), { type: 'string' })
+    : XLSX.read(await file.arrayBuffer(), { type: 'array' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!sheet) return [];
 
@@ -81,7 +85,7 @@ export async function parseCustomerExcel(file: File): Promise<CustomerExcelRow[]
   const codeIndex = findColumn(headers, CODE_HEADERS);
   const nameIndex = findColumn(headers, NAME_HEADERS);
   if (nameIndex < 0) {
-    throw new Error('Không tìm thấy cột "Tên khách hàng" trong file Excel.');
+    throw new Error('Không tìm thấy cột "Tên khách hàng" trong file (Excel/CSV).');
   }
 
   const addressIndex = findColumn(headers, ADDRESS_HEADERS);
@@ -207,4 +211,44 @@ export function downloadCustomerExcel(customers: CustomerExcelExportRow[]) {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Khach_hang');
   XLSX.writeFile(workbook, 'danh-sach-khach-hang.xlsx');
+}
+
+// Alias: đọc được cả Excel (.xlsx/.xls) lẫn CSV (.csv) — cùng header.
+export const parseCustomerFile = parseCustomerExcel;
+
+const CUSTOMER_CSV_HEADERS = [
+  'Mã khách hàng',
+  'Tên khách hàng',
+  'Địa chỉ cũ',
+  'Địa chỉ mới',
+  'Công nợ',
+  'Mã số thuế/CCCD chủ hộ',
+  'Điện thoại',
+  'ĐT di động NLH',
+  'Là đối tượng nội bộ',
+  'Đơn vị quản lý',
+  'Ghi chú'
+];
+
+function escapeCsvCell(value: string | number) {
+  const text = String(value ?? '');
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export function downloadCustomerCsvTemplate() {
+  const lines = [
+    CUSTOMER_CSV_HEADERS.join(','),
+    ['KH001', 'Công ty mẫu', '', '', '', '', '', '', 'Không', '', ''].map(escapeCsvCell).join(','),
+    ['KH002', 'Khách hàng để trống các cột còn lại', '', '', '', '', '', '', '', '', ''].map(escapeCsvCell).join(',')
+  ];
+  // BOM giúp Excel mở tiếng Việt đúng.
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'mau-nhap-khach-hang.csv';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }

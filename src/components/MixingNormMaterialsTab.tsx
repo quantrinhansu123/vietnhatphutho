@@ -978,6 +978,7 @@ type SummarizedMaterial = {
   khoi_luong: number | null;
   gia_tri: number | null;
   don_vi: string;
+  isSecondary: boolean;
 };
 
 function secondaryMaterialTotalWeight(line: MixingNormLine) {
@@ -1004,7 +1005,7 @@ function summarizeProductMaterials(product: MixingNormProduct): SummarizedMateri
   const byMaterial = new Map<string, SummarizedMaterial>();
 
   sourceLines.forEach(({ line, isSecondary }, index) => {
-    const key = `${line.ma_nvl.trim().toLocaleLowerCase('vi')}|${line.ten_nvl.trim().toLocaleLowerCase('vi')}|${(line.ten_nvl_san_xuat ?? '').trim().toLocaleLowerCase('vi')}`
+    const key = `${isSecondary ? 'phu' : 'chinh'}|${line.ma_nvl.trim().toLocaleLowerCase('vi')}|${line.ten_nvl.trim().toLocaleLowerCase('vi')}|${(line.ten_nvl_san_xuat ?? '').trim().toLocaleLowerCase('vi')}`
       || `line-${index}`;
     const current = byMaterial.get(key);
     const weight = isSecondary ? secondaryMaterialTotalWeight(line) : line.khoi_luong;
@@ -1015,7 +1016,8 @@ function summarizeProductMaterials(product: MixingNormProduct): SummarizedMateri
         ten_nvl_san_xuat: line.ten_nvl_san_xuat,
         khoi_luong: weight,
         gia_tri: line.gia_tri,
-        don_vi: line.don_vi
+        don_vi: line.don_vi,
+        isSecondary
       });
       return;
     }
@@ -1033,7 +1035,7 @@ function summarizeProductsNvl(products: MixingNormProduct[]) {
   if (products.length === 0) return '—';
   return products
     .map(product => {
-      const label = product.ma_sp || product.ten_sp || 'SP';
+      const label = String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || 'SP';
       const materials = summarizeProductMaterials(product);
       const details = materials.length === 0
         ? 'Chưa có NVL'
@@ -2445,7 +2447,7 @@ export default function MixingNormMaterialsTab() {
             <tbody className="divide-y divide-zinc-100">
               {filtered.map(row => (
                 <tr key={row.id} className="hover:bg-red-50/40">
-                  <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs font-bold text-zinc-900">
+                  <td className="max-w-[180px] break-words px-3 py-2.5 font-mono text-xs font-bold text-zinc-900">
                     {row.ten_phieu || formatMixingNormSlipName(row.ngay, row.ca, row.ma_lenh_sx)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-800">
@@ -2460,18 +2462,17 @@ export default function MixingNormMaterialsTab() {
                       <span className="text-zinc-400">—</span>
                     ) : (
                       <div className="space-y-1">
-                        {row.products.filter(isFormulaNormProduct).map((product, index) => (
-                          <div key={`${row.id}-sp-${index}`}>
-                            <span className="font-mono text-zinc-500">{product.ma_sp || '—'}</span>
-                            {product.ten_sp ? <span className="ml-1">{product.ten_sp}</span> : null}
-                            {product.tong_trong_luong !== null &&
-                            product.tong_trong_luong !== undefined ? (
-                              <span className="ml-1 font-black text-[#ef1b2d]">
-                                ({product.tong_trong_luong} kg)
-                              </span>
-                            ) : null}
-                          </div>
-                        ))}
+                      {row.products.filter(isFormulaNormProduct).map((product, index) => (
+                        <div key={`${row.id}-sp-${index}`}>
+                          <span>{String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || '—'}</span>
+                          {product.tong_trong_luong !== null &&
+                          product.tong_trong_luong !== undefined ? (
+                            <span className="ml-1 font-black text-[#ef1b2d]">
+                              ({product.tong_trong_luong} kg)
+                            </span>
+                          ) : null}
+                        </div>
+                      ))}
                       </div>
                     )}
                   </td>
@@ -2485,33 +2486,51 @@ export default function MixingNormMaterialsTab() {
                       <div className="space-y-2">
                         {visibleNormProducts(row.products).map((product, pIndex) => {
                           const materials = summarizeProductMaterials(product);
+                          const primaryMaterials = materials.filter(line => !line.isSecondary);
+                          const secondaryMaterials = materials.filter(line => line.isSecondary);
+                          const showGroupLabels = primaryMaterials.length > 0 && secondaryMaterials.length > 0;
+                          const renderMaterialLine = (line: SummarizedMaterial, index: number, secondary: boolean) => (
+                            <div
+                              key={`${row.id}-${pIndex}-${secondary ? 'phu' : 'chinh'}-${index}`}
+                              className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                            >
+                              <span className={secondary ? 'text-amber-800' : undefined}>{mixingMaterialDisplayName(line)}</span>
+                              <span className="font-black text-[#ef1b2d]">
+                                {line.khoi_luong !== null && line.khoi_luong !== undefined
+                                  ? formatKhoiLuongDisplay(line.khoi_luong)
+                                  : line.gia_tri === null || line.gia_tri === undefined
+                                    ? '—'
+                                    : `${line.gia_tri} ${line.don_vi || 'kg'}`}
+                              </span>
+                            </div>
+                          );
                           return (
                           <div key={`${row.id}-nvl-${pIndex}`}>
                             <p className="mb-0.5 font-black text-zinc-800">
-                              {product.ma_sp || product.ten_sp || `SP #${pIndex + 1}`}
+                              {String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || `SP #${pIndex + 1}`}
                             </p>
                             {materials.length === 0 ? (
                               <span className="text-zinc-400">Chưa có NVL</span>
                             ) : (
-                              <div className="space-y-0.5">
-                                {materials.map((line, index) => (
-                                  <div
-                                    key={`${row.id}-${pIndex}-${index}`}
-                                    className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
-                                  >
-                                    <span className="font-mono text-zinc-500">
-                                      {line.ma_nvl || '—'}
-                                    </span>
-                                    <span>{mixingMaterialDisplayName(line)}</span>
-                                    <span className="font-black text-[#ef1b2d]">
-                                      {line.khoi_luong !== null && line.khoi_luong !== undefined
-                                        ? formatKhoiLuongDisplay(line.khoi_luong)
-                                        : line.gia_tri === null || line.gia_tri === undefined
-                                          ? '—'
-                                          : `${line.gia_tri} ${line.don_vi || 'kg'}`}
-                                    </span>
+                              <div className="space-y-1">
+                                {primaryMaterials.length > 0 ? (
+                                  <div>
+                                    {showGroupLabels ? (
+                                      <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">NVL chính</p>
+                                    ) : null}
+                                    <div className="space-y-0.5">
+                                      {primaryMaterials.map((line, index) => renderMaterialLine(line, index, false))}
+                                    </div>
                                   </div>
-                                ))}
+                                ) : null}
+                                {secondaryMaterials.length > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-black uppercase tracking-wide text-amber-700">NVL phụ</p>
+                                    <div className="space-y-0.5">
+                                      {secondaryMaterials.map((line, index) => renderMaterialLine(line, index, true))}
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                             )}
                           </div>
