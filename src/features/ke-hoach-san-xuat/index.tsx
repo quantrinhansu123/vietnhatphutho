@@ -9,6 +9,7 @@ import { RowActionsMenu } from '../../components/shared/table';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
+import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
 import ProductionPlanNvlPrintSheet, { type ProductionPlanNvlPrintShiftGroup } from '../../components/ProductionPlanNvlPrintSheet';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
@@ -5978,11 +5979,7 @@ export function AddProductionOrderModal({
     updateEntryLine(key, built);
   };
 
-  const toggleShift = (shift: string) => {
-    const nextShifts = selectedShifts.includes(shift)
-      ? selectedShifts.filter(item => item !== shift)
-      : [...selectedShifts, shift];
-
+  const applyShifts = (nextShifts: string[]) => {
     setSelectedShifts(nextShifts);
     setForm(prev => {
       const baseDate = prev.startDate || todayIsoDate();
@@ -6563,30 +6560,18 @@ export function AddProductionOrderModal({
                   {isLoadingLookups ? 'Đang tải ca...' : 'Chưa có ca nào được khai báo.'}
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
-                  {shiftOptions.map(shift => {
-                    const shiftValue = String(shift);
-                    const checked = selectedShifts.includes(shiftValue);
-                    return (
-                      <label
-                        key={shiftValue}
-                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
-                          checked
-                            ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
-                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleShift(shiftValue)}
-                          className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                        />
-                        {formatProductionOrderShiftLabel(shiftValue, settings)}
-                      </label>
-                    );
-                  })}
-                </div>
+                <SearchableMultiSelect
+                  values={selectedShifts}
+                  onChange={applyShifts}
+                  options={shiftOptions}
+                  getValue={shift => String(shift)}
+                  getLabel={shift => formatProductionOrderShiftLabel(String(shift), settings)}
+                  getSearchText={shift => formatProductionOrderShiftLabel(String(shift), settings)}
+                  allowCustomValues={false}
+                  hideSelectedFromList
+                  placeholder="Gõ để tìm ca..."
+                  inputClassName={orderFieldClass}
+                />
               )}
               {selectedShifts.length > 1 && (
                 <p className="text-[11px] font-semibold text-emerald-700">
@@ -8265,19 +8250,29 @@ export function EditProductionOrderModal({
               </label>
 
               <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
-                <input
-                  value={form.shift}
-                  onChange={e => {
-                    const shift = e.target.value;
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  Ca * <span className="text-zinc-400">(chọn nhiều ca)</span>
+                </span>
+                <SearchableMultiSelect
+                  values={selectedShift.split(',').map(item => item.trim()).filter(Boolean)}
+                  onChange={shifts => {
+                    const shift = shifts.join(', ');
+                    setSelectedShift(shift);
                     setForm(prev => {
                       const baseDate = prev.startDate || todayIsoDate();
-                      const endDateTime = shift ? computeLatestShiftEndDateTime(baseDate, [shift], settings) : prev.endDateTime;
-                      const startDateTime = shift ? computeEarliestShiftStartDateTime(baseDate, [shift], settings) : prev.startDateTime;
+                      const endDateTime = shifts.length > 0 ? computeLatestShiftEndDateTime(baseDate, shifts, settings) : prev.endDateTime;
+                      const startDateTime = shifts.length > 0 ? computeEarliestShiftStartDateTime(baseDate, shifts, settings) : prev.startDateTime;
                       return { ...prev, shift, endDateTime, startDateTime };
                     });
                   }}
-                  className={orderFieldClass}
+                  options={shiftOptions}
+                  getValue={item => String(item)}
+                  getLabel={item => formatProductionOrderShiftLabel(String(item), settings)}
+                  getSearchText={item => formatProductionOrderShiftLabel(String(item), settings)}
+                  allowCustomValues={false}
+                  hideSelectedFromList
+                  placeholder="Gõ để tìm ca..."
+                  inputClassName={orderFieldClass}
                 />
               </label>
 

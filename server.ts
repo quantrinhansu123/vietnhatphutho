@@ -3156,9 +3156,19 @@ function mixingNormWriteError(error: { code?: string; message?: string }) {
     return `Bảng ${SUPABASE_MIXING_NORM_TABLE} chưa tồn tại. Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql.`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_MIXING_NORM_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql.`;
+    return `Bảng ${SUPABASE_MIXING_NORM_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql và supabase-bang-tron-vat-tu-dinh-muc-may.sql.`;
   }
   return `Không thể lưu bảng trộn vật tư định mức. ${error.message || ''}`.trim();
+}
+
+/** Bỏ cột may khi DB chưa chạy migration may (giữ tương thích ngược). */
+function stripMixingNormMayColumn(record: Record<string, unknown>): Record<string, unknown> {
+  const { may: _omitted, ...rest } = record;
+  return rest;
+}
+
+function isMissingMixingNormMayColumn(error: { code?: string; message?: string }) {
+  return Boolean(error) && isMissingColumnError(error) && /may/i.test(String(error.message ?? ''));
 }
 
 function parseMixingNormBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
@@ -3168,10 +3178,11 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   const ngayRaw = String(source.ngay ?? '').trim();
   const ngay = ngayRaw ? parseWarehouseSlipDate(ngayRaw) || ngayRaw : null;
   const ma_lenh_sx = String(source.ma_lenh_sx ?? source.maLenhSx ?? '').trim() || null;
+  const may = String(source.may ?? source.ma_may ?? source.ten_may ?? '').trim() || null;
   const caRaw = String(source.ca ?? source.shift ?? '').trim();
   const ca = !caRaw || caRaw === '-' || caRaw === '—' ? null : caRaw;
   const ten_phieu = String(source.ten_phieu ?? source.tenPhieu ?? '').trim() ||
-    formatMixingNormSlipName(ngay, ca, ma_lenh_sx);
+    formatMixingNormSlipName(ngay, may || ca, ma_lenh_sx);
 
   const parseNvlLines = (raw: unknown, label: string, required = true) => {
     const linesRaw = Array.isArray(raw) ? raw : [];
@@ -3410,7 +3421,6 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
     }
 
     if (products.length === 0) return { error: 'Vui lòng thêm ít nhất 1 sản phẩm.' };
-    if (!ca) return { error: 'Vui lòng chọn ca.' };
 
     const first = products[0];
     return {
@@ -3419,6 +3429,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         ngay,
         ca,
         ma_lenh_sx,
+        may,
         ma_sp: first.ma_sp,
         ten_sp: first.ten_sp,
         tong_trong_luong: first.tong_trong_luong,
@@ -13140,12 +13151,50 @@ export function createApp() {
       const materialClassError = await validateMixingNormMaterialClasses(parsed.record);
       if (materialClassError) return res.status(400).json({ error: materialClassError });
 
+      // Lệnh SX đã xong (Hoàn thành/Hủy) thì không tạo PTĐM mới.
+      const normOrderCodes = String(parsed.record.ma_lenh_sx ?? '')
+        .split(/[,;|/]+/).map(value => value.trim()).filter(Boolean);
+      if (normOrderCodes.length > 0 && supabase) {
+        try {
+          const { data: linkedOrders } = await supabase
+            .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+            .select('ma_lenh_sx, trang_thai')
+            .in('ma_lenh_sx', normOrderCodes);
+          const normStatus = (value: unknown) =>
+            String(value ?? '').trim().toLowerCase().normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/đ/g, 'd');
+          const done = (Array.isArray(linkedOrders) ? linkedOrders : []).find(row => {
+            const status = normStatus((row as Record<string, unknown>).trang_thai);
+            return status === 'hoan thanh' || status === 'huy';
+          }) as Record<string, unknown> | undefined;
+          if (done) {
+            return res.status(400).json({
+              error: `Lệnh SX ${String(done.ma_lenh_sx ?? '').trim()} đã ${String(done.trang_thai ?? '').trim()}, không thể tạo phiếu trộn định mức.`
+            });
+          }
+        } catch {
+          // Bỏ qua kiểm tra khi không tra được trạng thái lệnh.
+        }
+      }
+
       let insertRecord = { ...parsed.record };
       let { data, error } = await supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
         .insert(insertRecord)
         .select('*')
         .single();
+
+      if (error && isMissingMixingNormMayColumn(error)) {
+        insertRecord = stripMixingNormMayColumn(insertRecord);
+        const retryMay = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .insert(insertRecord)
+          .select('*')
+          .single();
+        data = retryMay.data;
+        error = retryMay.error;
+      }
 
       if (error && isMissingColumnError(error) && error.message?.includes('ten_phieu')) {
         const { ten_phieu: _omitted, ...recordWithoutTenPhieu } = insertRecord;
@@ -13254,6 +13303,22 @@ export function createApp() {
           .insert(insertRecord)
           .select('*')
           .single();
+        if (insertResult.error && isMissingMixingNormMayColumn(insertResult.error)) {
+          const retryMay = await supabase
+            .from(SUPABASE_MIXING_NORM_TABLE)
+            .insert(stripMixingNormMayColumn(insertRecord))
+            .select('*')
+            .single();
+          if (retryMay.error) {
+            console.error('Supabase mixing norm history insert error:', retryMay.error);
+            return res.status(500).json({ error: mixingNormWriteError(retryMay.error) });
+          }
+          return res.status(201).json({
+            success: true,
+            created_history: true,
+            record: retryMay.data
+          });
+        }
         if (insertResult.error) {
           console.error('Supabase mixing norm history insert error:', insertResult.error);
           return res.status(500).json({ error: mixingNormWriteError(insertResult.error) });
@@ -13273,6 +13338,18 @@ export function createApp() {
         .eq('id', id)
         .select('*')
         .single();
+
+      if (error && isMissingMixingNormMayColumn(error)) {
+        updateRecord = stripMixingNormMayColumn(updateRecord);
+        const retryMay = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .update(updateRecord)
+          .eq('id', id)
+          .select('*')
+          .single();
+        data = retryMay.data;
+        error = retryMay.error;
+      }
 
       if (error && isMissingColumnError(error) && error.message?.includes('ten_phieu')) {
         const { ten_phieu: _omitted, ...recordWithoutTenPhieu } = updateRecord;

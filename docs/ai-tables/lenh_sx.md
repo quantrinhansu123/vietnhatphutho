@@ -59,5 +59,5 @@ Mỗi dòng lệnh: cột **Mã hàng / Tên hàng / Số lượng** trình bày
 
 ### Nhiều ca trên một lệnh
 
-- Form thêm Lệnh SX cho phép tick nhiều ca nhưng chỉ gọi `POST /api/lenh-sx` một lần và chỉ tạo một bản ghi `lenh_sx`.
+- Form thêm/sửa Lệnh SX chọn ca bằng component select2 tìm kiếm (`SearchableMultiSelect`), vẫn cho phép chọn nhiều ca nhưng chỉ gọi `POST /api/lenh-sx` một lần và chỉ tạo một bản ghi `lenh_sx`.
 - Các ca được lưu chung trong cột `ca`, phân cách bằng dấu phẩy; ngày giờ bắt đầu/kết thúc bao trùm các ca đã chọn. Danh sách/in hiển thị nhãn từng ca và đối chiếu phiếu xuất kho khớp nếu có ít nhất một ca trùng nhau.

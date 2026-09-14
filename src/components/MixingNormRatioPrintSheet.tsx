@@ -7,6 +7,7 @@ import { formatMixingNormSlipName, stripMixingNormStdPrefix } from '../utils/mix
 export type MixingNormRatioPrintDoc = {
   tenPhieu?: string;
   maLenhSx: string;
+  may?: string;
   ngay: string;
   ca?: string;
   ghiChu?: string;
@@ -193,8 +194,9 @@ export function toPrintDoc(
   resolveProductName?: (code: string) => string
 ): MixingNormRatioPrintDoc {
   return {
-    tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.ngay, row.ca, row.ma_lenh_sx),
+    tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.ngay, row.may || row.ca, row.ma_lenh_sx),
     maLenhSx: row.ma_lenh_sx.trim(),
+    may: row.may?.trim(),
     ngay: row.ngay || new Date().toISOString().slice(0, 10),
     ca: row.ca,
     ghiChu: row.ghi_chu?.trim(),
@@ -402,6 +404,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
           {doc.tenPhieu ? (
             <>
               Tên phiếu: <strong>{doc.tenPhieu}</strong>
+              <span className="mixing-norm-ratio-print-meta-sep">·</span>
+            </>
+          ) : null}
+          {doc.may ? (
+            <>
+              Máy: <strong>{doc.may}</strong>
               <span className="mixing-norm-ratio-print-meta-sep">·</span>
             </>
           ) : null}
