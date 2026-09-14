@@ -191,7 +191,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     label: 'Khách hàng',
     sql: ['supabase-don-hang-san-pham.sql'],
     apiPrefix: '/api/khach-hang',
-    serverLines: '5601–5644',
+    serverLines: '5601–5644 + POST /api/khach-hang/import-batch (batch insert creates + upsert updates)',
     appTab: 'customers',
     appLines: 'src/features/khach-hang/index.tsx',
     components: [],

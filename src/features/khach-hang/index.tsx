@@ -5,7 +5,7 @@ import { pickText } from '../_shared/recordHelpers';
 import { normalizeHrBranches } from '../_shared/hr';
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { showAppToast, showSaveFailure, readApiErrorMessage } from '../../lib/appToast';
-import { downloadCustomerExcel, downloadCustomerExcelTemplate, parseCustomerExcel } from '../../utils/customerExcel';
+import { downloadCustomerExcel, downloadCustomerExcelTemplate, downloadCustomerCsvTemplate, parseCustomerExcel } from '../../utils/customerExcel';
 import {
   FilterCombobox,
   TableToolbar,
@@ -16,6 +16,8 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
+  TablePagination,
+  usePagination,
   RowActionsMenu
 } from '../../components/shared/table';
 
@@ -203,6 +205,8 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
   const [searchText, setSearchText] = useState('');
   const [selectedCustomerType, setSelectedCustomerType] = useState('all');
   const [selectedManagingUnit, setSelectedManagingUnit] = useState('all');
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerPageSize, setCustomerPageSize] = useState(100);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -396,6 +400,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
     setSearchText('');
     setSelectedCustomerType('all');
     setSelectedManagingUnit('all');
+    setCustomerPage(1);
   };
 
   const normalizedSearch = searchText.trim().toLowerCase();
@@ -415,6 +420,16 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
         return matchesSearch && matchesCustomerType && matchesManagingUnit;
       });
   }, [customers, normalizedSearch, selectedCustomerType, selectedManagingUnit]);
+
+  const { paginatedItems: paginatedCustomers, totalPages: customerTotalPages } = usePagination(
+    filteredCustomers,
+    customerPage,
+    customerPageSize
+  );
+
+  useEffect(() => {
+    setCustomerPage(1);
+  }, [normalizedSearch, selectedCustomerType, selectedManagingUnit]);
 
   const openCreate = () => {
     if (!canCreate) return;
@@ -520,7 +535,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
     setError('');
     try {
       const rows = await parseCustomerExcel(file);
-      if (rows.length === 0) throw new Error('File Excel không có dòng dữ liệu khách hàng.');
+      if (rows.length === 0) throw new Error('File Excel/CSV không có dòng dữ liệu khách hàng.');
 
       const byCode = new Map(
         customers
@@ -529,10 +544,11 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       );
       const generatedCodes = customers.map(item => item.code).filter(Boolean);
 
-      let created = 0;
-      let updated = 0;
+      // Gom theo insert batch (mã mới) / update batch (mã đã có) — trùng mã trong
+      // file thì dòng sau ghi đè dòng trước (last-wins) thay vì báo lỗi.
+      const createMap = new Map<string, Record<string, unknown>>();
+      const updateMap = new Map<string, Record<string, unknown>>();
       const failures: string[] = [];
-      const seenFileCodes = new Set<string>();
 
       for (const row of rows) {
         const name = row.name.trim();
@@ -548,12 +564,6 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
         }
 
         const codeKey = code.toUpperCase();
-        if (seenFileCodes.has(codeKey)) {
-          failures.push(`dòng ${row.rowNumber}: mã ${code} trùng trong file`);
-          continue;
-        }
-        seenFileCodes.add(codeKey);
-
         const payload = {
           ma_khach_hang: code,
           ten_khach_hang: name,
@@ -570,47 +580,57 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
           ghi_chu: row.note.trim()
         };
 
-        const existing = byCode.get(codeKey);
-        const res = existing
-          ? await fetch(`/api/khach-hang/${encodeURIComponent(existing.code || existing.id)}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            })
-          : await fetch('/api/khach-hang', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${readApiErrorMessage(res, data, 'Không lưu được')}`);
-          continue;
-        }
-
-        if (existing) {
-          updated += 1;
+        if (byCode.has(codeKey)) {
+          updateMap.set(codeKey, payload);
         } else {
-          created += 1;
-          byCode.set(codeKey, {
-            id: code,
-            dbId: '',
-            code,
-            name,
-            address: payload.dia_chi,
-            newAddress: payload.dia_chi_moi,
-            debt: Number(payload.cong_no) || 0,
-            taxCode: payload.ma_so_thue,
-            phone: payload.so_dien_thoai,
-            mobilePhoneNlh: payload.dt_di_dong_nlh,
-            isInternal: payload.la_doi_tuong_noi_bo,
-            managingUnit: payload.don_vi_quan_ly,
-            note: payload.ghi_chu
-          });
+          createMap.set(codeKey, payload);
           if (!generatedCodes.some(item => item.toUpperCase() === codeKey)) {
             generatedCodes.push(code);
           }
         }
+      }
+
+      const creates = [...createMap.values()];
+      const updates = [...updateMap.values()];
+
+      // Gửi batch 200 dòng/lần: insert batch riêng, update batch riêng.
+      const IMPORT_BATCH_SIZE = 200;
+      const chunkArray = <T,>(items: T[], size: number): T[][] => {
+        const chunks: T[][] = [];
+        for (let index = 0; index < items.length; index += size) {
+          chunks.push(items.slice(index, index + size));
+        }
+        return chunks;
+      };
+
+      let created = 0;
+      let updated = 0;
+
+      const postBatch = async (
+        createsChunk: Record<string, unknown>[],
+        updatesChunk: Record<string, unknown>[],
+        label: string
+      ) => {
+        if (createsChunk.length === 0 && updatesChunk.length === 0) return;
+        const res = await fetch('/api/khach-hang/import-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creates: createsChunk, updates: updatesChunk })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          failures.push(`${label}: ${readApiErrorMessage(res, data, 'Không lưu được')}`);
+          return;
+        }
+        created += Number(data.createdCount || 0);
+        updated += Number(data.updatedCount || 0);
+      };
+
+      for (const [index, chunk] of chunkArray(creates, IMPORT_BATCH_SIZE).entries()) {
+        await postBatch(chunk, [], `Insert batch ${index + 1}`);
+      }
+      for (const [index, chunk] of chunkArray(updates, IMPORT_BATCH_SIZE).entries()) {
+        await postBatch([], chunk, `Update batch ${index + 1}`);
       }
 
       if (created > 0 || updated > 0) {
@@ -618,7 +638,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       }
 
       const summary = [
-        created || updated ? `Đã nhập Excel: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        created || updated ? `Đã nhập Excel/CSV: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
         failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
@@ -627,7 +647,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       if (created > 0 || updated > 0) showAppToast(summary);
       else setError(summary);
     } catch (importError: unknown) {
-      setError(showSaveFailure(importError, 'Không thể đọc hoặc nhập file Excel.'));
+      setError(showSaveFailure(importError, 'Không thể đọc hoặc nhập file Excel/CSV.'));
     } finally {
       setIsImporting(false);
       if (excelInputRef.current) excelInputRef.current.value = '';
@@ -643,10 +663,20 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
             onClick={() => downloadCustomerExcelTemplate()}
             disabled={isImporting || isLoading}
             className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50"
-            title="Tải file mẫu nhập khách hàng (ô trống vẫn được)"
+            title="Tải file mẫu Excel nhập khách hàng (ô trống vẫn được)"
           >
             <Download className="h-4 w-4" />
             Tải mẫu Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadCustomerCsvTemplate()}
+            disabled={isImporting || isLoading}
+            className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50"
+            title="Tải file mẫu CSV nhập khách hàng (cùng header với Excel)"
+          >
+            <Download className="h-4 w-4" />
+            Tải mẫu CSV
           </button>
           <button
             type="button"
@@ -666,13 +696,13 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
               className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
             >
               {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-              {isImporting ? 'Đang nhập...' : 'Tải Excel lên'}
+              {isImporting ? 'Đang nhập...' : 'Tải Excel/CSV lên'}
             </button>
           ) : null}
           <input
             ref={excelInputRef}
             type="file"
-            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
             className="hidden"
             onChange={event => void handleExcelImport(event.target.files?.[0])}
           />
@@ -765,7 +795,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
           ) : filteredCustomers.length === 0 ? (
             <TableEmptyRow colSpan={12}>Chưa có khách hàng phù hợp.</TableEmptyRow>
           ) : (
-            filteredCustomers.map((customer, index) => (
+            paginatedCustomers.map((customer, index) => (
               <React.Fragment key={customer.id}>
                 <TableRow>
                   <td className="px-4 py-3 font-black text-[#ef1b2d]">
@@ -841,6 +871,23 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
           )}
         </TableBody>
       </TableShell>
+
+      {filteredCustomers.length > 0 && (
+        <div className="mt-4 flex justify-center rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+          <TablePagination
+            totalRecords={filteredCustomers.length}
+            currentPage={customerPage}
+            totalPages={customerTotalPages}
+            pageSize={customerPageSize}
+            onPageChange={setCustomerPage}
+            onPageSizeChange={(size) => {
+              setCustomerPageSize(size);
+              setCustomerPage(1);
+            }}
+            noBorderTop={true}
+          />
+        </div>
+      )}
 
       {formOpen ? (
         <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-4">

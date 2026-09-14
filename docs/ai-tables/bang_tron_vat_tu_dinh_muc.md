@@ -50,7 +50,7 @@ Trong danh sách NVL của form thêm/sửa, ô chọn mã + tên NVL tìm đư�
 
 **Ô "Mã sản phẩm" trong mỗi dòng SP là multi-select, hiển thị `ma_amis — ten_san_xuat`** — 1 dòng SP (1 công thức "cối trộn tiêu chuẩn") có thể gán cho nhiều mã SP cùng lúc (`ma_sp` lưu dạng chuỗi nối bằng dấu phẩy, ví dụ `"A, B"`). **NVL chính không tự điền** khi chọn mã SP (không lấy từ `san_pham.npl_phan_tram`); người dùng tự bấm “Thêm NVL chính”. Đổi/thêm/bớt mã SP trên cùng 1 dòng **không xóa** NVL chính đã nhập.
 
-Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). In A4 ngang: phiếu định mức in 1 bảng cối tiêu chuẩn/SP (kèm dòng "Tổng trọng lượng NVL cần"); cột tổng trọng lượng của NVL chính và tổng cuối bảng được làm tròn tối đa 2 chữ số thập phân. Phiếu thực tế (`isActual`) vẫn in theo từng lần trộn, tối đa 6 lần trộn mỗi bảng.
+Danh sách hiển thị **1 dòng / phiếu** (nhiều SP gộp trong phiếu). In A4 ngang: phiếu định mức in 1 bảng cối tiêu chuẩn/SP (kèm dòng "Tổng trọng lượng NVL cần"); cột tổng trọng lượng của NVL chính và tổng cuối bảng được làm tròn tối đa 2 chữ số thập phân. Tiêu đề mỗi khối SP: chỉ tên hiển thị cho CN (`ten_sp`, chữ xanh), không dòng phụ Mã SP/`ten_ghep`; phiếu thực tế (`isActual`) vẫn in theo từng lần trộn, tối đa 6 lần trộn mỗi bảng và giữ dòng tên kỹ thuật.
 
 **NVL phụ** nhập giống NVL chính: bấm **Thêm sản phẩm**, chọn **nhiều mã SP** dùng chung một danh sách NVL, rồi **Thêm NVL phụ**. Không tự fill theo lệnh SX. Lưu thành block `loai: "nvl_phu"` (`ma_sp` nối bằng dấu phẩy). Trùng mã SP chỉ chặn **trong** NVL chính hoặc **trong** NVL phụ — cùng mã ở cả hai phần là hợp lệ. Phiếu cũ gắn `nvl_phu` trên từng SP công thức vẫn mở được; nhóm các SP cùng danh sách NVL phụ thành 1 block.
 

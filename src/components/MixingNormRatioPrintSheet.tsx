@@ -226,21 +226,29 @@ function NormPrintProductSection({
       : [];
   const showBatchMeta = mode === 'primary';
   const noteText = stripMixingNormStdPrefix(product.ghi_chu);
-  const displayName =
-    String(product.print_name || product.ten_ghep || product.ten_sp || product.ma_sp || 'SẢN PHẨM').trim() ||
-    'SẢN PHẨM';
+  // Tên hiển thị cho công nhân trộn: ưu tiên ten_sp (ô "Tên sản phẩm / tên hiển thị
+  // cho công nhân trộn" trên form), fallback về ten_ghep/print_name rồi mã SP.
+  const workerName = String(product.ten_sp || '').trim();
+  const techName = String(product.print_name || product.ten_ghep || '').trim();
+  const maSp = String(product.ma_sp || '').trim();
+  const displayName = workerName || techName || maSp || 'SẢN PHẨM';
+  const subParts: string[] = [];
+  // Phiếu định mức: ẩn hẳn dòng phụ dưới tên hiển thị cho CN
+  // (không Mã SP, không ten_ghep). Phiếu thực tế giữ nguyên.
+  if (isActual) {
+    if (maSp && maSp !== displayName) subParts.push(`Mã SP: ${maSp}`);
+    if (techName && techName !== displayName) subParts.push(techName);
+  }
+  const subLine = subParts.join(' · ');
 
   return (
     <section className={`mixing-norm-ratio-print-block ${isActual ? 'is-actual' : ''}`}>
       <h2 className="mixing-norm-ratio-print-product">
         <span className="mixing-norm-ratio-print-product-title">
           <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
-          {noteText ? (
-            <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
-          ) : null}
-          {noteText ? <br /> : null}
           <span className="mixing-norm-ratio-print-product-code">{displayName}</span>
         </span>
+        {subLine ? <span className="mixing-norm-ratio-print-product-name">{subLine}</span> : null}
       </h2>
       {showBatchMeta && product.tong_trong_luong !== null && product.tong_trong_luong !== undefined ? (
         <p className="mixing-norm-ratio-print-tonnage">
@@ -359,6 +367,10 @@ function NormPrintProductSection({
       {mode === 'secondary' && secondaryLines.length === 0 ? (
         <p className="mixing-norm-ratio-print-empty">Chưa có dòng NVL phụ</p>
       ) : null}
+
+      {noteText ? (
+        <p className="mixing-norm-ratio-print-note">Ghi chú: {noteText}</p>
+      ) : null}
     </section>
   );
 }
@@ -417,6 +429,14 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               const displayLines = product.chi_tiet;
               const roundWeights = buildMixingRoundWeights(product, doc.isActual);
               const noteText = stripMixingNormStdPrefix(product.ghi_chu);
+              const workerName = String(product.ten_sp || '').trim();
+              const techName = String(product.print_name || product.ten_ghep || '').trim();
+              const maSp = String(product.ma_sp || '').trim();
+              const displayName = workerName || techName || maSp || 'SẢN PHẨM';
+              const subParts: string[] = [];
+              if (maSp && maSp !== displayName) subParts.push(`Mã SP: ${maSp}`);
+              if (techName && techName !== displayName) subParts.push(techName);
+              const subLine = subParts.join(' · ');
               return (
                 <section
                   key={`actual-${product.ma_sp}-${index}`}
@@ -425,14 +445,11 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   <h2 className="mixing-norm-ratio-print-product">
                     <span className="mixing-norm-ratio-print-product-title">
                       <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
-                      {noteText ? (
-                        <span className="mixing-norm-ratio-print-inline-note">{noteText}</span>
-                      ) : null}
-                      {noteText ? <br /> : null}
                       <span className="mixing-norm-ratio-print-product-code">
-                        {String(product.print_name || product.ten_ghep || product.ten_sp || product.ma_sp || 'SẢN PHẨM').trim() || 'SẢN PHẨM'}
+                        {displayName}
                       </span>
                     </span>
+                    {subLine ? <span className="mixing-norm-ratio-print-product-name">{subLine}</span> : null}
                   </h2>
                   {tong !== null && tong !== undefined ? (
                     <p className="mixing-norm-ratio-print-tonnage">
@@ -543,6 +560,9 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   </table>
                   )}
 
+                  {noteText ? (
+                    <p className="mixing-norm-ratio-print-note">Ghi chú: {noteText}</p>
+                  ) : null}
                 </section>
               );
             })}

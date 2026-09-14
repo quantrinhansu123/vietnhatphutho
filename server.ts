@@ -9478,6 +9478,85 @@ export function createApp() {
     }
   });
 
+  function parseCustomerBatchRecord(item: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+    const name = pickRowField(source, ['ten_khach_hang', 'khach_hang', 'name', 'ten'], '');
+    const code = pickRowField(source, ['ma_khach_hang', 'ma_kh', 'code'], '');
+    if (!name) return { error: 'Thiếu tên khách hàng.' };
+    if (!code) return { error: 'Thiếu mã khách hàng.' };
+    return {
+      record: {
+        ma_khach_hang: code,
+        ten_khach_hang: name,
+        ...buildCustomerOptionalFields(source)
+      }
+    };
+  }
+
+  app.post('/api/khach-hang/import-batch', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const createsInput = Array.isArray(req.body?.creates) ? req.body.creates : [];
+      const updatesInput = Array.isArray(req.body?.updates) ? req.body.updates : [];
+      if (createsInput.length === 0 && updatesInput.length === 0) {
+        return res.status(400).json({ error: 'Không có dòng khách hàng hợp lệ để import.' });
+      }
+      if (createsInput.length + updatesInput.length > 1000) {
+        return res.status(400).json({ error: 'Mỗi batch tối đa 1000 dòng (client gửi 200 dòng/batch).' });
+      }
+
+      const parseBatch = (items: unknown[]) => {
+        const records: Record<string, unknown>[] = [];
+        for (let index = 0; index < items.length; index += 1) {
+          const parsed = parseCustomerBatchRecord(items[index]);
+          if ('error' in parsed) {
+            return { error: `Dòng batch ${index + 1}: ${parsed.error}` } as const;
+          }
+          records.push(parsed.record);
+        }
+        return { records, error: null } as const;
+      };
+
+      const parsedCreates = parseBatch(createsInput);
+      if (parsedCreates.error) return res.status(400).json({ error: parsedCreates.error });
+      const parsedUpdates = parseBatch(updatesInput);
+      if (parsedUpdates.error) return res.status(400).json({ error: parsedUpdates.error });
+
+      // Insert batch: chỉ dòng mới → 1 query INSERT.
+      let createdCount = 0;
+      if (parsedCreates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_CUSTOMERS_TABLE)
+          .insert(parsedCreates.records)
+          .select('ma_khach_hang');
+        if (error) {
+          console.error('Supabase khach_hang batch insert error:', error);
+          return res.status(500).json({ error: customerWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
+        }
+        createdCount = data?.length ?? parsedCreates.records.length;
+      }
+
+      // Update batch: dòng đã tồn tại → 1 query UPSERT theo ma_khach_hang.
+      let updatedCount = 0;
+      if (parsedUpdates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_CUSTOMERS_TABLE)
+          .upsert(parsedUpdates.records, { onConflict: 'ma_khach_hang' })
+          .select('ma_khach_hang');
+        if (error) {
+          console.error('Supabase khach_hang batch update error:', error);
+          return res.status(500).json({ error: customerWriteError(error, SUPABASE_CUSTOMERS_TABLE) });
+        }
+        updatedCount = data?.length ?? parsedUpdates.records.length;
+      }
+
+      return res.status(200).json({ success: true, createdCount, updatedCount });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi import hàng loạt khách hàng.' });
+    }
+  });
+
   app.post('/api/khach-hang/replace', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
 
