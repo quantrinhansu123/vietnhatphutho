@@ -59,6 +59,11 @@ Gộp dòng tiến độ (`buildProductionProgressForOrder` trong `src/utils/pro
 - Xem trước/in lệnh SX hiển thị đúng `ten_ghep` trong JSON `san_pham` (thiếu thì tên SX thô) — **không tự ghép lại**.
 - Các cột KG / M2 / M dài và JSON `lenh_sx.san_pham` lấy trực tiếp dữ liệu quy đổi từ dòng đơn hàng (`ket_qua_quy_doi` và các trường liên quan), không tải lại `san_pham_quy_doi` trong form lệnh SX.
 
+### Mã lệnh SX
+
+- Chuẩn `LSX-...`, tối đa ~80 ký tự; lệnh gộp nhiều đơn nối bằng **gạch ngang** (vd `LSX-DH162-DH161-DH163-DH164`).
+- **Cấm `, ; | /`** trong mã (app tách nhiều mã theo các ký tự này). Server tự chuẩn hóa (`normalizeProductionOrderCode` trong `server.ts`): ký tự phân cách → `-`, gộp/trừ `-` thừa.
+
 ### Nhiều ca trên một lệnh
 
 - Form thêm/sửa Lệnh SX chọn ca bằng component select2 tìm kiếm (`SearchableMultiSelect`), vẫn cho phép chọn nhiều ca nhưng chỉ gọi `POST /api/lenh-sx` một lần và chỉ tạo một bản ghi `lenh_sx`.

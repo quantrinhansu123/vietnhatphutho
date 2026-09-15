@@ -1196,19 +1196,40 @@ export default function MixingNormMaterialsTab() {
     )].sort((a, b) => a.localeCompare(b, 'vi'));
   };
 
-  /** Các lệnh SX đã chọn (lưu text nối mã) — tra theo mã, giữ đúng thứ tự đã chọn. */
-  const selectedOrders = useMemo(() => {
+  /**
+   * Các lệnh SX đã chọn (lưu text nối mã) — tra theo mã, giữ đúng thứ tự đã chọn.
+   * Fallback: cả chuỗi có thể là 1 mã lệnh chứa dấu phẩy (vd "LSX-DH162,-DH161"
+   * chỉ lệch dấu nối) — so sánh bỏ hết ký tự phân cách để vẫn nhận ra lệnh.
+   */
+  const orderSelection = useMemo(() => {
     const codes = splitLsxCodes(form.maLenhSx);
     const byCode = new Map(
       productionOrders.map(order => [normalizeProductLookupKey(order.orderCode), order])
     );
-    const found: MixingProductionOrder[] = [];
+    const selected: MixingProductionOrder[] = [];
+    const push = (order: MixingProductionOrder) => {
+      if (!selected.some(item => item.id === order.id)) selected.push(order);
+    };
+    const unresolved: string[] = [];
     for (const code of codes) {
       const order = byCode.get(normalizeProductLookupKey(code));
-      if (order && !found.some(item => item.id === order.id)) found.push(order);
+      if (order) push(order);
+      else unresolved.push(code);
     }
-    return found;
+    if (unresolved.length > 0) {
+      const strip = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const whole = strip(form.maLenhSx);
+      if (whole) {
+        const single = productionOrders.find(order => strip(order.orderCode) === whole);
+        if (single) {
+          push(single);
+          return { selected, unresolved: [] };
+        }
+      }
+    }
+    return { selected, unresolved };
   }, [form.maLenhSx, productionOrders]);
+  const selectedOrders = orderSelection.selected;
 
   /** Loại/Nhóm máy (loai_may) tra theo mã hoặc tên máy — so sánh "cùng máy" theo nhóm. */
   const machineTypeByKey = useMemo(() => {
@@ -1244,6 +1265,16 @@ export default function MixingNormMaterialsTab() {
       machine => normalizeMachineKey(machine.code) === needle || normalizeMachineKey(machine.name) === needle
     );
     return found?.type.trim() || '—';
+  };
+
+  /** Mã lệnh trong form nhưng không khớp danh sách tải về — hiện chip cảnh báo
+   * để không "mất" lựa chọn, cho phép bỏ mã lẻ. */
+  const unresolvedOrderCodes = orderSelection.unresolved;
+
+  const removeUnresolvedOrderCode = (code: string) => {
+    const needle = normalizeProductLookupKey(code);
+    const kept = splitLsxCodes(form.maLenhSx).filter(item => normalizeProductLookupKey(item) !== needle);
+    setForm(prev => ({ ...prev, maLenhSx: kept.join(', ') }));
   };
 
   /** Máy chung của các lệnh đã chọn (so sánh chuẩn hóa). */
@@ -1683,8 +1714,23 @@ export default function MixingNormMaterialsTab() {
     if (!order) return [];
     const id = productId.trim();
     const codeKey = normalizeProductLookupKey(code);
+    // ID là identity; khi dòng lệnh chưa gắn ID thì khớp theo mọi biến thể mã
+    // (ma_sp/AMIS/mã mới) của SP đã chọn để không mất số liệu.
+    const catalog = id ? catalogProductsById.get(id) : undefined;
+    const accepted = new Set<string>([codeKey]);
+    if (catalog) {
+      [catalog.code, catalog.amisCode ?? '', catalog.newCode ?? ''].forEach(item => {
+        const key = normalizeProductLookupKey(item || '');
+        if (key) accepted.add(key);
+      });
+    }
     return order.productLines.filter(line => {
-      if (id) return resolveOrderLineProductId(line) === id;
+      const lineId = line.productId?.trim() || '';
+      if (id) {
+        // Dòng đã gắn ID khác thì loại (kể cả trùng mã/AMIS — khác SP).
+        if (lineId) return lineId === id;
+        return accepted.has(normalizeProductLookupKey(line.productCode));
+      }
       return normalizeProductLookupKey(line.productCode) === codeKey;
     });
   };
@@ -1706,68 +1752,115 @@ export default function MixingNormMaterialsTab() {
     return { sourceKg: roundMixing(sourceKg), allConverted };
   };
 
+  /** Mét cắt chuẩn hóa để gộp dòng (null khi không có). */
+  const normalizeGroupLength = (value: unknown): number | null => {
+    const num = Number(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(num) && num > 0 ? num : null;
+  };
+
+  type OrderLineGroup = {
+    key: string;
+    spId: string;
+    length: number | null;
+    code: string;
+    catalog?: ProductOption;
+    lines: MixingProductionOrder['productLines'];
+  };
+
   /**
-   * Hao hụt + SL quy đổi trước hao hụt của TỪNG mã SP đã chọn (lấy theo lệnh SX + danh mục SP).
-   * Dùng để hiển thị mỗi SP 1 dòng và để tính lại "Tổng SL sau hao hụt".
+   * Gom các dòng lệnh SX theo (san_pham_id, quy_cach_m_dai) — cùng SP nhưng khác
+   * mét cắt tách nhóm riêng; mỗi dòng lệnh chỉ tính 1 lần trong cả block.
    */
-  const resolveWasteBreakdown = (codes: string[], ids: string[] = []) =>
+  const collectGroupedOrderLines = (codes: string[], ids: string[] = []): OrderLineGroup[] => {
+    const groups = new Map<string, OrderLineGroup>();
+    const consumed = new Set<MixingProductionOrder['productLines'][number]>();
     codes
       .map(code => code.trim())
       .filter(Boolean)
-      .map((code, index) => {
-        const catalog = ids[index]
-          ? catalogProductsById.get(ids[index])
-          : findCatalogProductByAnyCode(catalogProducts, code);
-        const selectedOption = ids[index]
-          ? productOptionsById.get(ids[index])
-          : productOptionsByCode.get(normalizeProductLookupKey(code));
-        const orderLines = findOrderProductLines(selectedOrder, code, ids[index]);
-        const orderLine = orderLines[0];
-        // Không quy đổi được ra kg → coi như 0 (null làm sai công thức tổng).
-        const kg = sumOrderProductWeight(orderLines, catalog).sourceKg;
-        const tenSanXuat =
-          selectedOption?.tenSanXuat?.trim() ||
-          orderLine?.productionName?.trim() ||
-          orderLine?.productName?.trim() ||
-          catalog?.tenSanXuat?.trim() ||
-          catalog?.name ||
-          code;
-        const tenGhep =
-          selectedOption?.tenGhep?.trim() ||
-          orderLine?.tenGhep?.trim() ||
-          catalog?.tenGhep?.trim() ||
-          buildOrderTenGhep(tenSanXuat, {
-            nhomVthh: catalog?.nhomVthh,
-            maAmis: catalog?.amisCode || catalog?.newCode,
-            cutLengthM: orderLine?.quyCachMDai
-          }) ||
-          tenSanXuat;
-        return {
-          code,
-          name: selectedOption?.name?.trim() || orderLine?.productName?.trim() || catalog?.name || code,
-          // Keep this identical to the selected chip label (ten_ghep first).
-          tenSanXuat: tenGhep,
-          waste: catalog?.wastePercent ?? 0,
-          kg
-        };
+      .forEach((code, codeIndex) => {
+        const id = (ids[codeIndex] || '').trim();
+        const catalog =
+          (id ? catalogProductsById.get(id) : undefined) || findCatalogProductByAnyCode(catalogProducts, code);
+        const lines = findOrderProductLines(selectedOrder, code, id).filter(line => {
+          if (consumed.has(line)) return false;
+          consumed.add(line);
+          return true;
+        });
+        for (const line of lines) {
+          const spId = line.productId?.trim() || catalog?.id?.trim() || id;
+          const length = normalizeGroupLength(line.quyCachMDai);
+          const key = `${spId}__m:${length !== null ? length.toFixed(3) : 'none'}`;
+          let group = groups.get(key);
+          if (!group) {
+            group = { key, spId, length, code: code || line.productCode, catalog, lines: [] };
+            groups.set(key, group);
+          }
+          if (!group.catalog && catalog) group.catalog = catalog;
+          group.lines.push(line);
+        }
+        // Mã đã chọn nhưng không khớp dòng lệnh nào vẫn giữ 1 nhóm rỗng để hiển
+        // thị hao hụt theo danh mục (SL quy đổi = 0).
+        if (lines.length === 0) {
+          const emptyKey = `${id || normalizeProductLookupKey(code)}__empty:${codeIndex}`;
+          if (!groups.has(emptyKey)) {
+            groups.set(emptyKey, { key: emptyKey, spId: id, length: null, code, catalog, lines: [] });
+          }
+        }
       });
+    return [...groups.values()];
+  };
 
-  /** Tổng SL theo ĐVT Cuộn / Tấm của các SP đã chọn trên lệnh SX. */
+  /**
+   * Hao hụt + SL quy đổi trước hao hụt của TỪNG nhóm (san_pham_id, quy_cach_m_dai)
+   * đã chọn (lấy theo lệnh SX + danh mục SP). Dùng để hiển thị mỗi nhóm 1 dòng
+   * và để tính lại "Tổng SL sau hao hụt".
+   */
+  const resolveWasteBreakdown = (codes: string[], ids: string[] = []) =>
+    collectGroupedOrderLines(codes, ids).map(group => {
+      const selectedOption = (group.spId ? productOptionsById.get(group.spId) : undefined)
+        || productOptionsByCode.get(normalizeProductLookupKey(group.code));
+      const orderLine = group.lines[0];
+      // Không quy đổi được ra kg → coi như 0 (null làm sai công thức tổng).
+      const kg = sumOrderProductWeight(group.lines, group.catalog).sourceKg;
+      const tenSanXuat =
+        selectedOption?.tenSanXuat?.trim() ||
+        orderLine?.productionName?.trim() ||
+        orderLine?.productName?.trim() ||
+        group.catalog?.tenSanXuat?.trim() ||
+        group.catalog?.name ||
+        group.code;
+      const tenGhep =
+        selectedOption?.tenGhep?.trim() ||
+        orderLine?.tenGhep?.trim() ||
+        group.catalog?.tenGhep?.trim() ||
+        buildOrderTenGhep(tenSanXuat, {
+          nhomVthh: group.catalog?.nhomVthh,
+          maAmis: group.catalog?.amisCode || group.catalog?.newCode,
+          cutLengthM: orderLine?.quyCachMDai
+        }) ||
+        tenSanXuat;
+      return {
+        code: group.code,
+        name: selectedOption?.name?.trim() || orderLine?.productName?.trim() || group.catalog?.name || group.code,
+        // Keep this identical to the selected chip label (ten_ghep first).
+        tenSanXuat: tenGhep,
+        waste: group.catalog?.wastePercent ?? 0,
+        kg
+      };
+    });
+
+  /** Tổng SL theo ĐVT Cuộn / Tấm của các SP đã chọn trên lệnh SX (gộp theo nhóm, không trùng). */
   const resolveSelectedUnitTotals = (codes: string[], ids: string[] = []) => {
     let cuon = 0;
     let tam = 0;
-    codes
-      .map(code => code.trim())
-      .filter(Boolean)
-      .forEach((code, index) => {
-        const orderLines = findOrderProductLines(selectedOrder, code, ids[index]);
-        for (const line of orderLines) {
-          const qty = Number(line.quantity);
-          if (!Number.isFinite(qty) || qty <= 0) continue;
-          if (isCuonProduct(line.unit)) cuon += qty;
-          else if (isTamProduct(line.unit)) tam += qty;
-        }
-      });
+    for (const group of collectGroupedOrderLines(codes, ids)) {
+      for (const line of group.lines) {
+        const qty = Number(line.quantity);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
+        if (isCuonProduct(line.unit)) cuon += qty;
+        else if (isTamProduct(line.unit)) tam += qty;
+      }
+    }
     return { cuon: roundMixing(cuon), tam: roundMixing(tam) };
   };
 
@@ -1827,20 +1920,19 @@ export default function MixingNormMaterialsTab() {
     }));
   };
 
+  // Giữ đúng vị trí từng mã (kể cả ô trống '') để maSpIds[index] luôn ứng với maSpCodes[index].
   const resolveValidProductIds = (codes: string[], currentIds: string[] = []): string[] =>
-    codes
-      .map((code, index) => {
-        const id = currentIds[index]?.trim();
-        if (id) return id;
-        const catalog = findCatalogProductByAnyCode(catalogProducts, code);
-        if (catalog?.id?.trim()) return catalog.id.trim();
-        const orderLine = selectedOrder?.productLines.find(
-          item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
-        );
-        if (orderLine?.productId?.trim()) return orderLine.productId.trim();
-        return '';
-      })
-      .filter(Boolean);
+    codes.map((code, index) => {
+      const id = currentIds[index]?.trim();
+      if (id) return id;
+      const catalog = findCatalogProductByAnyCode(catalogProducts, code);
+      if (catalog?.id?.trim()) return catalog.id.trim();
+      const orderLine = selectedOrder?.productLines.find(
+        item => normalizeProductLookupKey(item.productCode) === normalizeProductLookupKey(code)
+      );
+      if (orderLine?.productId?.trim()) return orderLine.productId.trim();
+      return '';
+    });
 
   const buildSingleProductFromCode = (
     code: string,
@@ -1884,32 +1976,25 @@ export default function MixingNormMaterialsTab() {
     if (codes.length === 1) return buildSingleProductFromCode(codes[0], productIds[0] || '', order);
 
     const resolvedIds = resolveValidProductIds(codes, productIds);
-    const entries = codes.map((code, index) => ({
-      code,
-      productId: resolvedIds[index] || '',
-      catalog: resolvedIds[index]
-        ? catalogProductsById.get(resolvedIds[index]) || findCatalogProductByAnyCode(catalogProducts, code)
-        : findCatalogProductByAnyCode(catalogProducts, code)
-    }));
 
-    // Cộng SL quy đổi trước hao hụt của TỪNG SP trong lệnh SX;
-    // Tổng SL sau hao hụt = Σ (kg_i × (1 + tỷ lệ hao hụt_i / 100)) — mỗi SP một tỷ lệ riêng.
+    // Cộng SL quy đổi trước hao hụt theo TỪNG nhóm (san_pham_id, quy_cach_m_dai);
+    // Tổng SL sau hao hụt = Σ (kg_i × (1 + tỷ lệ hao hụt_i / 100)) — mỗi nhóm một tỷ lệ riêng.
     let sumKg = 0;
     let sumAfterWaste = 0;
     let allConverted = true;
-    for (const { code, productId, catalog } of entries) {
-      const orderLines = findOrderProductLines(order, code, productId);
-      const productWeight = sumOrderProductWeight(orderLines, catalog);
+    const groups = collectGroupedOrderLines(codes, resolvedIds);
+    for (const group of groups) {
+      const productWeight = sumOrderProductWeight(group.lines, group.catalog);
       if (!productWeight.allConverted) allConverted = false;
       const kg = productWeight.sourceKg;
-      const wastePercent = catalog?.wastePercent ?? 0;
+      const wastePercent = group.catalog?.wastePercent ?? 0;
       sumKg += kg;
       sumAfterWaste += kg * (1 + wastePercent / 100);
     }
 
     const waste = sumKg > 0
       ? roundMixing((sumAfterWaste / sumKg - 1) * 100)
-      : entries[0]?.catalog?.wastePercent ?? 0;
+      : groups[0]?.catalog?.wastePercent ?? 0;
 
     return {
       ...emptyProduct(),
@@ -2349,7 +2434,7 @@ export default function MixingNormMaterialsTab() {
 
     for (const [pIndex, product] of products.entries()) {
       const validIds = resolveValidProductIds(product.maSpCodes, product.maSpIds);
-      if (validIds.length === 0) {
+      if (!validIds.some(Boolean)) {
         setErrorProductKey(product.key);
         setError(`Sản phẩm #${pIndex + 1} (${product.maSp || '—'}) thiếu san_pham_id hợp lệ. Vui lòng kiểm tra mã sản phẩm.`);
         return;
@@ -2493,6 +2578,17 @@ export default function MixingNormMaterialsTab() {
 
       const payloadProducts = products.map((product, pIndex) => {
         const validIds = resolveValidProductIds(product.maSpCodes, product.maSpIds);
+        const nonEmptyIds = validIds.filter(Boolean);
+        // Mét cắt của block = mét chung của các nhóm (san_pham_id, quy_cach_m_dai);
+        // nhiều mét khác nhau thì lưu danh sách để không mất thông tin.
+        const distinctLengths = [
+          ...new Set(
+            collectGroupedOrderLines(product.maSpCodes, validIds)
+              .map(group => group.length)
+              .filter((length): length is number => length !== null)
+          )
+        ];
+        const uniformLength = distinctLengths.length === 1 ? distinctLengths[0] : null;
         const tong =
           product.tongTrongLuong.trim() === ''
             ? null
@@ -2517,8 +2613,10 @@ export default function MixingNormMaterialsTab() {
         return {
           loai: undefined as string | undefined,
           ma_sp: product.maSp.trim(),
-          san_pham_id: validIds[0] || undefined,
-          ...(validIds.length > 1 ? { san_pham_ids: validIds } : {}),
+          san_pham_id: nonEmptyIds[0] || undefined,
+          ...(nonEmptyIds.length > 1 ? { san_pham_ids: nonEmptyIds } : {}),
+          ...(uniformLength !== null ? { quy_cach_m_dai: uniformLength } : {}),
+          ...(uniformLength === null && distinctLengths.length > 1 ? { quy_cach_m_dai_list: distinctLengths } : {}),
           ten_sp: product.tenSp.trim(),
           ...(ten_ghep ? { ten_ghep } : {}),
           tong_trong_luong: tong,
@@ -2537,6 +2635,15 @@ export default function MixingNormMaterialsTab() {
         const codes = item.maSpCodes.map(code => code.trim()).filter(Boolean);
         if (codes.length === 0) continue;
         const validIds = resolveValidProductIds(codes, item.maSpIds);
+        const nonEmptyIds = validIds.filter(Boolean);
+        const distinctLengths = [
+          ...new Set(
+            collectGroupedOrderLines(codes, validIds)
+              .map(group => group.length)
+              .filter((length): length is number => length !== null)
+          )
+        ];
+        const uniformLength = distinctLengths.length === 1 ? distinctLengths[0] : null;
         const workshopType = resolveSecondaryWorkshopType(item, form.products, catalogProductsById, catalogProducts);
 
         const nvl_phu = item.lines
@@ -2573,8 +2680,10 @@ export default function MixingNormMaterialsTab() {
         payloadProducts.push({
           loai: 'nvl_phu',
           ma_sp: codes.join(', '),
-          san_pham_id: validIds[0] || undefined,
-          ...(validIds.length > 1 ? { san_pham_ids: validIds } : {}),
+          san_pham_id: nonEmptyIds[0] || undefined,
+          ...(nonEmptyIds.length > 1 ? { san_pham_ids: nonEmptyIds } : {}),
+          ...(uniformLength !== null ? { quy_cach_m_dai: uniformLength } : {}),
+          ...(uniformLength === null && distinctLengths.length > 1 ? { quy_cach_m_dai_list: distinctLengths } : {}),
           ten_sp: '',
           tong_trong_luong: null,
           ty_le_hao_hut: null,
@@ -3016,8 +3125,34 @@ export default function MixingNormMaterialsTab() {
                     getSearchText={orderOptionSearchText}
                     allowCustomValues={false}
                     hideSelectedFromList
+                    keepOptionsOrder
+                    maxResults={200}
                     inputClassName={inputClass}
                   />
+                  {unresolvedOrderCodes.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {unresolvedOrderCodes.map(code => (
+                        <span
+                          key={code}
+                          title="Không tìm thấy trong danh sách lệnh SX (có thể đã xóa/đổi mã)"
+                          className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800"
+                        >
+                          <span className="truncate">{code}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeUnresolvedOrderCode(code)}
+                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-amber-800 transition hover:bg-amber-100"
+                            title="Bỏ mã này"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                      <span className="text-[11px] font-semibold text-amber-700">
+                        Không tìm thấy trong danh sách lệnh — kiểm tra lại mã lệnh.
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

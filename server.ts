@@ -5896,9 +5896,22 @@ function pickRowField(row: Record<string, unknown>, keys: string[], fallback = '
   return fallback;
 }
 
+/**
+ * Chuẩn hóa mã lệnh SX: lệnh gộp nhiều đơn nối bằng gạch ngang.
+ * Cấm ký tự phân cách nhiều mã (, ; | /) vì app tách các mã lệnh/đơn hàng theo chúng.
+ * Giữ tiền tố LSX-, tối đa ~80 ký tự. Mã đã chuẩn không đổi.
+ */
+function normalizeProductionOrderCode(raw: unknown): string {
+  let code = String(raw ?? '').trim();
+  if (!code) return '';
+  code = code.replace(/[,;|/]+/g, '-').replace(/\s+/g, '-');
+  code = code.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  return code.slice(0, 80);
+}
+
 function makeProductionOrderCode(orderCode: string, suffix = '') {
-  const base = (orderCode || 'DH').replace(/\s+/g, '-');
-  return `LSX-${base}${suffix}`.slice(0, 80);
+  const base = normalizeProductionOrderCode(orderCode || 'DH') || 'DH';
+  return `LSX-${base.replace(/^LSX-/, '')}${suffix}`.slice(0, 80);
 }
 
 function generateNextStaffCode(existingCodes: Iterable<string>) {
@@ -6217,7 +6230,7 @@ function parseProductionOrderBody(
   const orderRef = pickRowField(source, ['ma_don_hang', 'orderRef', 'order_code'], '') || productOrderRefs.join(', ');
   const manualSeed = `MAN-${Date.now().toString(36).slice(-6).toUpperCase()}`;
   const codeInput = pickRowField(source, ['ma_lenh_sx', 'code'], '');
-  const code = codeInput || makeProductionOrderCode(orderRef || manualSeed);
+  const code = normalizeProductionOrderCode(codeInput) || makeProductionOrderCode(orderRef || manualSeed);
   const name = pickRowField(source, ['ten_lenh_sx', 'name'], '');
   const startDateTime = pickRowField(
     source,
