@@ -7,6 +7,8 @@ import {
 } from './MixingNormRatioPrintSheet';
 import { Select2 } from './shared/Select2';
 import { waitForPrintImagesReady } from '../utils/printReady';
+import { getProductionShiftOptions, normalizeShiftSettings } from '../utils/shiftSettings';
+import { STANDARD_SHIFTS } from '../types';
 import { normalizeProducts, type ProductRow } from '../features/san-pham';
 import { buildOrderTenGhep } from '../utils/productProductionName';
 import type { MixingNormProduct } from './MixingNormMaterialsTab';
@@ -460,6 +462,9 @@ function writeStoredSelection(date: string, shift: string, normId: string) {
 export default function ActualMixingSheetTab() {
   const stored = readStoredSelection();
   const [date, setDate] = useState(stored?.date || new Date().toISOString().slice(0, 10));
+  /** Ca trộn thực tế — chọn riêng (phiếu định mức mới không còn ca). */
+  const [shift, setShift] = useState(stored?.shift || '');
+  const [shiftOptions, setShiftOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [norms, setNorms] = useState<NormRecord[]>([]);
   const [actuals, setActuals] = useState<ActualRecord[]>([]);
   const [selectedNormId, setSelectedNormId] = useState(stored?.normId || '');
@@ -477,9 +482,10 @@ export default function ActualMixingSheetTab() {
     Promise.all([
       fetch('/api/bang-tron-vat-tu-dinh-muc').then(res => res.json()),
       fetch('/api/phieu-tron-thuc-te').then(res => res.json()),
-      fetch('/api/san-pham?format=table').then(res => res.json()).catch(() => [])
+      fetch('/api/san-pham?format=table').then(res => res.json()).catch(() => []),
+      fetch('/api/cai-dat').then(res => res.json()).catch(() => ({}))
     ])
-      .then(([normData, actualData, productData]) => {
+      .then(([normData, actualData, productData, settingData]) => {
         const rows = Array.isArray(normData.records) ? normData.records : [];
         setNorms(
           rows.map((row: Record<string, unknown>) => ({
@@ -492,6 +498,9 @@ export default function ActualMixingSheetTab() {
         );
         setActuals(normalizeActualRecords(actualData));
         setCatalogProducts(normalizeProducts(productData));
+        const settings = normalizeShiftSettings(settingData);
+        const options = getProductionShiftOptions(settings);
+        setShiftOptions(options.length > 0 ? options : STANDARD_SHIFTS.map(shift => ({ value: shift, label: shift })));
       })
       .catch(() => setError('Không thể tải dữ liệu phiếu trộn.'))
       .finally(() => setLoading(false));
@@ -531,6 +540,9 @@ export default function ActualMixingSheetTab() {
     [norms, selectedNormId]
   );
 
+  /** Ca hiệu lực của phiếu thực tế: ưu tiên ca chọn riêng, fallback ca của phiếu định mức cũ. */
+  const effectiveCa = shift.trim() || selectedNorm?.ca || '';
+
   useEffect(() => {
     if (!selectedNorm) {
       if (!selectedNormId) {
@@ -549,8 +561,8 @@ export default function ActualMixingSheetTab() {
   }, [selectedNorm, selectedNormId, actuals]);
 
   useEffect(() => {
-    writeStoredSelection(date, selectedNorm?.ca || '', selectedNormId);
-  }, [date, selectedNorm?.ca, selectedNormId]);
+    writeStoredSelection(date, effectiveCa, selectedNormId);
+  }, [date, effectiveCa, selectedNormId]);
 
   const addRound = (productIndex: number) => {
     setProducts(current =>
@@ -699,7 +711,7 @@ export default function ActualMixingSheetTab() {
     const norm = selectedNorm || norms.find(row => row.id === selectedNormId);
     if (!norm) return setError('Vui lòng chọn đúng dòng phiếu định mức.');
     if (!date) return setError('Vui lòng chọn ngày thực hiện trộn thực tế.');
-    if (!norm.ca) return setError('Phiếu định mức thiếu ca — sửa phiếu định mức rồi lưu lại.');
+    if (!effectiveCa) return setError('Vui lòng chọn ca trộn thực tế.');
     const hasFormulaLines = products.some(product => product.rounds.some(round => round.nvl.length > 0));
     const hasSecondaryLines = secondaryProducts.some(sec => sec.lines.length > 0);
     if (!hasFormulaLines && !hasSecondaryLines) {
@@ -770,7 +782,7 @@ export default function ActualMixingSheetTab() {
         body: JSON.stringify({
           id: existing?.id,
           ngay: date,
-          ca: norm.ca,
+          ca: effectiveCa,
           dinh_muc_id: norm.id,
           ma_lenh_sx: norm.ma_lenh_sx,
           ghi_chu: note,
@@ -792,8 +804,8 @@ export default function ActualMixingSheetTab() {
       setSecondaryProducts(attachSavedSecondary(standardSec, record.chi_tiet));
       setMessage(
         existing
-          ? `Đã cập nhật phiếu ${norm.ma_lenh_sx || norm.id} · ${norm.ngay} · ca ${norm.ca}.`
-          : `Đã lưu phiếu ${norm.ma_lenh_sx || norm.id} · ${norm.ngay} · ca ${norm.ca}.`
+          ? `Đã cập nhật phiếu ${norm.ma_lenh_sx || norm.id} · ${norm.ngay} · ca ${effectiveCa}.`
+          : `Đã lưu phiếu ${norm.ma_lenh_sx || norm.id} · ${norm.ngay} · ca ${effectiveCa}.`
       );
     } catch (err: any) {
       setError(err.message || 'Không thể lưu phiếu.');
@@ -891,7 +903,7 @@ export default function ActualMixingSheetTab() {
     setPrintDoc({
       maLenhSx: selectedNorm.ma_lenh_sx,
       ngay: date || selectedNorm.ngay,
-      ca: selectedNorm.ca,
+      ca: effectiveCa,
       isActual: true,
       intro: 'Tỷ lệ trộn định mức và kết quả trộn thực tế như sau',
       products: printProducts,
@@ -928,10 +940,10 @@ export default function ActualMixingSheetTab() {
       <div>
         <h2 className="text-base font-black text-zinc-950">Phiếu trộn thực tế</h2>
         <p className="text-xs font-semibold text-zinc-500">
-          Chọn đúng dòng phiếu định mức — ca lấy sẵn từ phiếu đó, không cần chọn ca riêng.
+          Chọn đúng dòng phiếu định mức — ca trộn thực tế chọn riêng (phiếu cũ tự lấy theo ca định mức).
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <label className="grid gap-1 text-xs font-black text-zinc-600">
           Ngày
           <input
@@ -942,12 +954,30 @@ export default function ActualMixingSheetTab() {
           />
         </label>
         <label className="grid gap-1 text-xs font-black text-zinc-600">
+          Ca <span className="text-[#ef1b2d]">*</span>
+          <select
+            value={shift}
+            onChange={e => setShift(e.target.value)}
+            className={fieldClass}
+          >
+            <option value="">Chọn ca...</option>
+            {shift && !shiftOptions.some(option => option.value === shift) ? (
+              <option value={shift}>{shift}</option>
+            ) : null}
+            {shiftOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-xs font-black text-zinc-600">
           Lệnh SX (phiếu trộn định mức)
           <Select2
             value={selectedNormId}
             disabled={matchingNorms.length === 0}
             onValueChange={value => {
               setSelectedNormId(value);
+              const normCa = matchingNorms.find(row => row.id === value)?.ca || '';
+              if (normCa) setShift(normCa);
               setError('');
               setMessage('');
             }}
@@ -979,7 +1009,7 @@ export default function ActualMixingSheetTab() {
           <span className="font-black text-zinc-950">{selectedNorm.ma_lenh_sx || selectedNorm.id}</span>
           {' · '}Ngày định mức <span className="font-mono font-black">{selectedNorm.ngay || '—'}</span>
           {' · '}Ngày trộn thực tế <span className="font-mono font-black">{date}</span>
-          {' · '}Ca <span className="font-black">{selectedNorm.ca || '—'}</span>
+          {' · '}Ca <span className="font-black">{effectiveCa || '—'}</span>
           {savedForSelected ? (
             <span className="ml-2 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">
               Đã có phiếu thực tế

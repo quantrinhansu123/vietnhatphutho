@@ -9,6 +9,7 @@ import { RowActionsMenu } from '../../components/shared/table';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
+import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
 import ProductionPlanNvlPrintSheet, { type ProductionPlanNvlPrintShiftGroup } from '../../components/ProductionPlanNvlPrintSheet';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
@@ -4117,9 +4118,12 @@ function warehouseSlipShiftMatchesOrder(slipShift: string | undefined, orderShif
     .map(part => part.trim())
     .filter(Boolean);
   if (slipShifts.length === 0) return true;
-  const target = (orderShift || '').trim();
-  if (!target || target === '-') return true;
-  return slipShifts.some(part => shiftNamesMatch(part, target));
+  const orderShifts = String(orderShift || '')
+    .split(/[,;+]/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  if (orderShifts.length === 0 || orderShifts.every(item => item === '-')) return true;
+  return slipShifts.some(slip => orderShifts.some(order => shiftNamesMatch(slip, order)));
 }
 
 /**
@@ -4561,11 +4565,6 @@ export function useProductionOrderPrint() {
 }
 
 export const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'];
-export const PRODUCTION_ORDER_EDIT_STATUS_OPTIONS = [
-  ...PRODUCTION_ORDER_STATUS_OPTIONS,
-  'Đang chạy',
-  'Huỷ lệnh'
-];
 
 export type ProductionOrderLookupSetting = {
   id: string;
@@ -4692,6 +4691,11 @@ export function settingMatchesShift(setting: ProductionOrderLookupSetting, shift
 export function formatProductionOrderShiftLabel(shift: string, settings: ProductionOrderLookupSetting[] = []) {
   const trimmed = shift.trim();
   if (!trimmed || trimmed === '-') return '-';
+
+  const combinedShifts = trimmed.split(/[,;+]/).map(item => item.trim()).filter(Boolean);
+  if (combinedShifts.length > 1) {
+    return combinedShifts.map(item => formatProductionOrderShiftLabel(item, settings)).join(', ');
+  }
 
   if (/\(\s*\d{1,2}:\d{2}/.test(trimmed)) {
     return trimmed;
@@ -5473,6 +5477,8 @@ export function AddProductionOrderModal({
   const [autofillProductOrderFilter, setAutofillProductOrderFilter] = useState('all');
   const [autofillProductSearch, setAutofillProductSearch] = useState('');
   const [autofillAppendMode, setAutofillAppendMode] = useState(false);
+  /** Ngày lọc riêng trong modal Tự điền — logic giống Ngày bắt đầu, độc lập với form. */
+  const [autofillDate, setAutofillDate] = useState('');
   const [showAddLine, setShowAddLine] = useState(false);
   const [lineDraftOrderRef, setLineDraftOrderRef] = useState('');
   const [lineDraftProductCode, setLineDraftProductCode] = useState('');
@@ -5489,6 +5495,7 @@ export function AddProductionOrderModal({
     setSelectedShifts([]);
     setFormError('');
     setShowAutofillOrders(false);
+    setAutofillDate('');
     setAutofillSearch('');
     setDragProductIndex(null);
     setDragOverProductIndex(null);
@@ -5554,31 +5561,52 @@ export function AddProductionOrderModal({
     setAutofillProductSearch('');
   }, [form.startDate]);
 
+  useEffect(() => {
+    setSelectedAutofillOrderCodes([]);
+    setSelectedAutofillProductKeys([]);
+    setAutofillProductOrderFilter('all');
+    setAutofillSearch('');
+    setAutofillProductSearch('');
+  }, [autofillDate]);
+
   const ordersForSelectedDate = useMemo(
     () => filterOrdersForProductionDate(orders, productionOrders, form.startDate),
     [orders, productionOrders, form.startDate]
   );
 
+  /** Đơn còn SL chưa lập lệnh — dùng chung cho Ngày bắt đầu và Ngày trong modal Tự điền. */
+  const selectOrdersWithRemainingQty = (list: typeof orders) =>
+    list.filter(order =>
+      getOrderProductLines(order).some(line => {
+        const productCode = line.productCode?.trim();
+        return (
+          Boolean(productCode) &&
+          productCode !== '-' &&
+          getOrderProductQuantity(orders, order.orderCode, productCode, line.productId) > 0 &&
+          getRemainingProductionQuantity(
+            orders,
+            productionOrders,
+            order.orderCode,
+            productCode,
+            line.productId
+          ) > 0
+        );
+      })
+    );
+
   const ordersWithProductionProducts = useMemo(
-    () =>
-      ordersForSelectedDate.filter(order =>
-        getOrderProductLines(order).some(line => {
-          const productCode = line.productCode?.trim();
-          return (
-            Boolean(productCode) &&
-            productCode !== '-' &&
-            getOrderProductQuantity(orders, order.orderCode, productCode, line.productId) > 0 &&
-            getRemainingProductionQuantity(
-              orders,
-              productionOrders,
-              order.orderCode,
-              productCode,
-              line.productId
-            ) > 0
-          );
-        })
-      ),
+    () => selectOrdersWithRemainingQty(ordersForSelectedDate),
     [ordersForSelectedDate, orders, productionOrders]
+  );
+
+  const ordersForAutofillDate = useMemo(
+    () => filterOrdersForProductionDate(orders, productionOrders, autofillDate),
+    [orders, productionOrders, autofillDate]
+  );
+
+  const modalOrdersWithRemaining = useMemo(
+    () => selectOrdersWithRemainingQty(ordersForAutofillDate),
+    [ordersForAutofillDate, orders, productionOrders]
   );
 
   const orderCodeOptions = useMemo(() => {
@@ -5634,7 +5662,7 @@ export function AddProductionOrderModal({
 
   const autofillOrderOptions = useMemo(() => {
     const normalized = autofillSearch.trim().toLowerCase();
-    return ordersWithProductionProducts
+    return modalOrdersWithRemaining
       .filter(order => getOrderProductLines(order).length > 0)
       .filter(order => {
         if (!normalized) return true;
@@ -5647,7 +5675,7 @@ export function AddProductionOrderModal({
           getOrderCreatedAtTimestamp(b.createdAt) - getOrderCreatedAtTimestamp(a.createdAt);
         return createdAtDiff || compareOrderCodesNewestFirst(a.orderCode, b.orderCode);
       });
-  }, [autofillSearch, ordersWithProductionProducts]);
+  }, [autofillSearch, modalOrdersWithRemaining]);
 
   const sortedSelectedOrderCodes = useMemo(
     () => sortOrderCodesNewestFirst(selectedAutofillOrderCodes, orders),
@@ -5656,7 +5684,7 @@ export function AddProductionOrderModal({
 
   const autofillProductCandidates = useMemo(() => {
     return sortedSelectedOrderCodes.flatMap(orderRef => {
-      return listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef)
+      return listProductOptionsForOrder(ordersForAutofillDate, productionOrders, catalogProducts, orderRef)
         .filter(product => product.orderQty > 0 && product.remainingQty > 0)
         .map(product => ({
             key: autofillProductKey(
@@ -5678,7 +5706,7 @@ export function AddProductionOrderModal({
           }))
         .sort((a, b) => a.lineIndex - b.lineIndex);
     });
-  }, [sortedSelectedOrderCodes, orders, ordersForSelectedDate, productionOrders, catalogProducts]);
+  }, [sortedSelectedOrderCodes, orders, ordersForAutofillDate, productionOrders, catalogProducts]);
 
   const autofillOrderFilterOptions = useMemo(
     () => [
@@ -5735,6 +5763,17 @@ export function AddProductionOrderModal({
       return;
     }
     setSelectedAutofillProductKeys(prev => [...new Set([...prev, ...keys])]);
+  };
+
+  /** Mở modal Tự điền: chốt ngày lọc riêng theo Ngày bắt đầu hiện tại rồi reset chọn. */
+  const openAutofillModal = () => {
+    setAutofillDate(form.startDate);
+    setAutofillSearch('');
+    setSelectedAutofillOrderCodes([]);
+    setSelectedAutofillProductKeys([]);
+    setAutofillProductOrderFilter('all');
+    setAutofillProductSearch('');
+    setShowAutofillOrders(true);
   };
 
   const applyAutofillOrders = () => {
@@ -5970,11 +6009,7 @@ export function AddProductionOrderModal({
     updateEntryLine(key, built);
   };
 
-  const toggleShift = (shift: string) => {
-    const nextShifts = selectedShifts.includes(shift)
-      ? selectedShifts.filter(item => item !== shift)
-      : [...selectedShifts, shift];
-
+  const applyShifts = (nextShifts: string[]) => {
     setSelectedShifts(nextShifts);
     setForm(prev => {
       const baseDate = prev.startDate || todayIsoDate();
@@ -6107,28 +6142,23 @@ export function AddProductionOrderModal({
     setIsSaving(true);
     setFormError('');
 
-    const multipleShifts = selectedShifts.length > 1;
-
     try {
-      for (const shift of selectedShifts) {
-        const shiftForm: ProductionOrderFormState = {
-          ...form,
-          shift,
-          // Nhiều ca: để trống mã để tự sinh, tránh trùng mã lệnh
-          code: multipleShifts ? '' : form.code
-        };
-        const res = await fetch('/api/lenh-sx', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(
-            productionOrderFormToCreatePayload(shiftForm, filledLines)
-          )
-        });
-        const data = await res.json().catch(() => ({}));
+      const shiftForm: ProductionOrderFormState = {
+        ...form,
+        // Một lệnh SX có thể phụ trách nhiều ca; lưu danh sách ca trên cùng bản ghi.
+        shift: selectedShifts.join(', ')
+      };
+      const res = await fetch('/api/lenh-sx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          productionOrderFormToCreatePayload(shiftForm, filledLines)
+        )
+      });
+      const data = await res.json().catch(() => ({}));
 
-        if (!res.ok) {
-          throw new Error(data.error || `Không thể tạo lệnh SX cho ${shift}.`);
-        }
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể tạo lệnh sản xuất.');
       }
 
       await onCreated();
@@ -6182,7 +6212,7 @@ export function AddProductionOrderModal({
               />
             </label>
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày bắt đầu *</span>
               <input
                 type="date"
                 value={form.startDate}
@@ -6210,12 +6240,6 @@ export function AddProductionOrderModal({
                 className={orderFieldClass}
               />
             </label>
-            <p className="col-span-2 pb-2 text-[11px] font-bold text-zinc-500">
-              {form.startDate
-                ? `Gợi ý đơn hàng cùng ngày ${form.startDate} hoặc còn SL chưa lập lệnh.`
-                : 'Chọn ngày lệnh SX để lọc đơn hàng cùng ngày.'}
-            </p>
-
             <div className="col-span-2 overflow-x-auto">
               <div className="min-w-[1380px]">
                 <RepeatableLinesBlock
@@ -6248,7 +6272,7 @@ export function AddProductionOrderModal({
                       )}
                       <button
                         type="button"
-                        onClick={() => setShowAutofillOrders(true)}
+                        onClick={openAutofillModal}
                         disabled={isLoadingLookups || ordersForSelectedDate.length === 0}
                         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
@@ -6560,49 +6584,24 @@ export function AddProductionOrderModal({
                   {isLoadingLookups ? 'Đang tải ca...' : 'Chưa có ca nào được khai báo.'}
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
-                  {shiftOptions.map(shift => {
-                    const shiftValue = String(shift);
-                    const checked = selectedShifts.includes(shiftValue);
-                    return (
-                      <label
-                        key={shiftValue}
-                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${
-                          checked
-                            ? 'border-[#ef1b2d]/30 bg-red-50 text-[#b30d1c]'
-                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleShift(shiftValue)}
-                          className="h-4 w-4 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                        />
-                        {formatProductionOrderShiftLabel(shiftValue, settings)}
-                      </label>
-                    );
-                  })}
-                </div>
+                <SearchableMultiSelect
+                  values={selectedShifts}
+                  onChange={applyShifts}
+                  options={shiftOptions}
+                  getValue={shift => String(shift)}
+                  getLabel={shift => formatProductionOrderShiftLabel(String(shift), settings)}
+                  getSearchText={shift => formatProductionOrderShiftLabel(String(shift), settings)}
+                  allowCustomValues={false}
+                  hideSelectedFromList
+                  placeholder="Gõ để tìm ca..."
+                  inputClassName={orderFieldClass}
+                />
               )}
               {selectedShifts.length > 1 && (
                 <p className="text-[11px] font-semibold text-emerald-700">
-                  Sẽ tạo {selectedShifts.length} lệnh SX — mỗi ca một lệnh (cùng sản phẩm, máy, ngày).
+                  Sẽ tạo 1 lệnh SX áp dụng cho {selectedShifts.length} ca đã chọn.
                 </p>
               )}
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
-              <SearchableSelect
-                value={form.status}
-                onChange={status => setForm(prev => ({ ...prev, status }))}
-                options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
-                placeholder="Gõ để tìm trạng thái"
-                getLabel={item => String(item)}
-                getValue={item => String(item)}
-                allowEmpty={false}
-              />
             </label>
 
             <label className="col-span-2 space-y-1.5">
@@ -6648,6 +6647,19 @@ export function AddProductionOrderModal({
               />
             </label>
 
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+              <SearchableSelect
+                value={form.status}
+                onChange={status => setForm(prev => ({ ...prev, status }))}
+                options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
+                placeholder="Gõ để tìm trạng thái"
+                getLabel={item => String(item)}
+                getValue={item => String(item)}
+                allowEmpty={false}
+              />
+            </label>
+
             <label className="col-span-2 space-y-1.5">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
               <textarea
@@ -6688,9 +6700,9 @@ export function AddProductionOrderModal({
               <div>
                 <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                  {form.startDate
-                    ? `Chọn đơn hàng cùng ngày ${form.startDate}, sau đó tick sản phẩm cần lập lệnh SX.`
-                    : 'Chọn ngày lệnh SX trước để lọc đơn hàng cùng ngày.'}
+                  {autofillDate
+                    ? `Chọn đơn hàng cùng ngày ${autofillDate}, sau đó tick sản phẩm cần lập lệnh SX.`
+                    : 'Chọn ngày để lọc đơn hàng cùng ngày.'}
                 </p>
               </div>
               <button
@@ -6703,7 +6715,17 @@ export function AddProductionOrderModal({
             </div>
 
             <div className="shrink-0 border-b border-zinc-100 p-4">
-              <label className="flex h-11 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="space-y-1.5 sm:w-48 sm:shrink-0">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày lập đơn hàng</span>
+                  <input
+                    type="date"
+                    value={autofillDate}
+                    onChange={event => setAutofillDate(event.target.value)}
+                    className={orderFieldClass}
+                  />
+                </label>
+                <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
                 <Search className="h-4 w-4 text-zinc-400" />
                 <input
                   value={autofillSearch}
@@ -6712,15 +6734,16 @@ export function AddProductionOrderModal({
                   className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
                 />
               </label>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <div className="p-4">
                 {autofillOrderOptions.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
-                    {form.startDate
-                      ? `Không có đơn hàng phù hợp cho ngày ${form.startDate}.`
-                      : 'Chọn ngày lệnh SX để xem đơn hàng cùng ngày.'}
+                    {autofillDate
+                      ? `Không có đơn hàng phù hợp cho ngày ${autofillDate}.`
+                      : 'Chọn ngày để xem đơn hàng cùng ngày.'}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -7633,7 +7656,7 @@ export function EditProductionOrderModal({
   }, [orders]);
 
   const statusOptions = useMemo(() => {
-    const options = [...PRODUCTION_ORDER_EDIT_STATUS_OPTIONS];
+    const options = [...PRODUCTION_ORDER_STATUS_OPTIONS];
     if (form.status && !options.includes(form.status)) {
       options.push(form.status);
     }
@@ -7901,7 +7924,7 @@ export function EditProductionOrderModal({
               <input value={form.code} onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))} className={orderFieldClass} />
             </label>
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày *</span>
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày bắt đầu *</span>
               <input
                 type="date"
                 value={form.startDate}
@@ -8248,33 +8271,29 @@ export function EditProductionOrderModal({
 
             <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
-                <SearchableSelect
-                  value={form.status}
-                  onChange={status => setForm(prev => ({ ...prev, status }))}
-                  options={statusOptions}
-                  placeholder="Gõ để tìm trạng thái"
-                  inputClassName={orderFieldClass}
-                  getLabel={item => String(item)}
-                  getValue={item => String(item)}
-                  allowEmpty={false}
-                />
-              </label>
-
-              <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca</span>
-                <input
-                  value={form.shift}
-                  onChange={e => {
-                    const shift = e.target.value;
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  Ca * <span className="text-zinc-400">(chọn nhiều ca)</span>
+                </span>
+                <SearchableMultiSelect
+                  values={selectedShift.split(',').map(item => item.trim()).filter(Boolean)}
+                  onChange={shifts => {
+                    const shift = shifts.join(', ');
+                    setSelectedShift(shift);
                     setForm(prev => {
                       const baseDate = prev.startDate || todayIsoDate();
-                      const endDateTime = shift ? computeLatestShiftEndDateTime(baseDate, [shift], settings) : prev.endDateTime;
-                      const startDateTime = shift ? computeEarliestShiftStartDateTime(baseDate, [shift], settings) : prev.startDateTime;
+                      const endDateTime = shifts.length > 0 ? computeLatestShiftEndDateTime(baseDate, shifts, settings) : prev.endDateTime;
+                      const startDateTime = shifts.length > 0 ? computeEarliestShiftStartDateTime(baseDate, shifts, settings) : prev.startDateTime;
                       return { ...prev, shift, endDateTime, startDateTime };
                     });
                   }}
-                  className={orderFieldClass}
+                  options={shiftOptions}
+                  getValue={item => String(item)}
+                  getLabel={item => formatProductionOrderShiftLabel(String(item), settings)}
+                  getSearchText={item => formatProductionOrderShiftLabel(String(item), settings)}
+                  allowCustomValues={false}
+                  hideSelectedFromList
+                  placeholder="Gõ để tìm ca..."
+                  inputClassName={orderFieldClass}
                 />
               </label>
 
@@ -8311,6 +8330,20 @@ export function EditProductionOrderModal({
                   value={form.endDateTime}
                   onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
                   className={orderFieldClass}
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+                <SearchableSelect
+                  value={form.status}
+                  onChange={status => setForm(prev => ({ ...prev, status }))}
+                  options={statusOptions}
+                  placeholder="Gõ để tìm trạng thái"
+                  inputClassName={orderFieldClass}
+                  getLabel={item => String(item)}
+                  getValue={item => String(item)}
+                  allowEmpty={false}
                 />
               </label>
 

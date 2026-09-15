@@ -18,6 +18,10 @@ export type SearchableMultiSelectProps<T> = {
   allowCustomValues?: boolean;
   /** Ẩn giá trị đã chọn khỏi danh sách dropdown — chip phía trên vẫn giữ để bỏ chọn. */
   hideSelectedFromList?: boolean;
+  /** Giữ nguyên thứ tự options từ cha (mặc định: sort A→Z theo nhãn). */
+  keepOptionsOrder?: boolean;
+  /** Số options tối đa hiện trong dropdown (mặc định: 50). */
+  maxResults?: number;
 };
 
 function defaultGetValue<T>(item: T): string {
@@ -35,7 +39,9 @@ export default function SearchableMultiSelect<T = string>({
   getLabel,
   getSearchText,
   allowCustomValues = true,
-  hideSelectedFromList = false
+  hideSelectedFromList = false,
+  keepOptionsOrder = false,
+  maxResults = 50
 }: SearchableMultiSelectProps<T>) {
   const resolvedGetLabel = getLabel ?? ((item: T) => String(item));
   const resolvedGetSearchText = getSearchText ?? resolvedGetLabel;
@@ -68,13 +74,13 @@ export default function SearchableMultiSelect<T = string>({
     return map;
   }, [options, values, getValue]);
 
-  const allKeys = useMemo(
-    () =>
-      [...itemsByKey.keys()].sort((a, b) =>
-        resolvedGetLabel(itemsByKey.get(a) as T).localeCompare(resolvedGetLabel(itemsByKey.get(b) as T), 'vi')
-      ),
-    [itemsByKey, resolvedGetLabel]
-  );
+  const allKeys = useMemo(() => {
+    const keys = [...itemsByKey.keys()];
+    if (keepOptionsOrder) return keys;
+    return keys.sort((a, b) =>
+      resolvedGetLabel(itemsByKey.get(a) as T).localeCompare(resolvedGetLabel(itemsByKey.get(b) as T), 'vi')
+    );
+  }, [itemsByKey, resolvedGetLabel, keepOptionsOrder]);
 
   const filteredKeys = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -84,8 +90,8 @@ export default function SearchableMultiSelect<T = string>({
     if (hideSelectedFromList) {
       list = list.filter(key => !selectedKeySet.has(key));
     }
-    return list.slice(0, 50);
-  }, [allKeys, query, itemsByKey, resolvedGetSearchText, hideSelectedFromList, selectedKeySet]);
+    return list.slice(0, Math.max(1, maxResults));
+  }, [allKeys, query, itemsByKey, resolvedGetSearchText, hideSelectedFromList, selectedKeySet, maxResults]);
 
   const trimmedQuery = query.trim();
   const canCreate =

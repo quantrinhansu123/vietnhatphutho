@@ -13,8 +13,8 @@ vì vậy cũng có thể có nhiều phiếu trộn thực tế (mỗi phiếu 
 
 **Ngày:** Picker chọn phiếu định mức trong `ActualMixingSheetTab.tsx` hiển thị **mã lệnh SX + ngày định mức + ca**. Ô "Ngày" trên màn
 này là **ngày thực hiện trộn thực tế** — độc lập với `ngay` của phiếu định mức, do người dùng tự nhập mỗi lần lưu,
-gửi thẳng vào cột `ngay` của `phieu_tron_thuc_te` (không copy từ `bang_tron_vat_tu_dinh_muc.ngay` nữa). `ca` vẫn lấy
-từ phiếu định mức đang chọn.
+gửi thẳng vào cột `ngay` của `phieu_tron_thuc_te` (không copy từ `bang_tron_vat_tu_dinh_muc.ngay` nữa). Ô **Ca** cũng
+chọn riêng trên màn thực tế (phiếu định mức mới không còn ca; chọn phiếu cũ có ca thì tự điền theo ca đó).
 
 ## Cối trộn tiêu chuẩn — không sửa, không tự chia cối
 

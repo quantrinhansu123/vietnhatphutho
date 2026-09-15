@@ -54,10 +54,21 @@ export type MixingProductionOrder = {
   salesOrderCode?: string;
   shift: string;
   machine: string;
+  /** Trạng thái lệnh SX (trang_thai): Chờ sx / Đang sx / Hoàn thành / Hủy. */
+  status?: string;
   startDate: string;
   staff: string;
+  /** Ngày giờ tạo bản ghi (ISO) — dùng sắp xếp lệnh mới → cũ. */
+  createdAt?: string;
   productLines: MixingProductionOrderProductLine[];
 };
+
+/** Các trạng thái lệnh SX coi là "đã xong" — không tạo PTĐM mới, ẩn khỏi picker xuất kho NVL. */
+export const MIXING_DONE_ORDER_STATUSES = ['Hoàn thành', 'Hủy'];
+
+export function isMixingDoneOrderStatus(status?: string | null): boolean {
+  return MIXING_DONE_ORDER_STATUSES.includes(String(status ?? '').trim());
+}
 
 export type MixingOrderProductCandidate = {
   key: string;
@@ -410,11 +421,13 @@ export function normalizeMixingProductionOrders(data: unknown): MixingProduction
         salesOrderCode: pickText(record, ['ma_don_hang', 'don_hang', 'order_ref', 'orderRef'], ''),
         shift: pickText(record, ['ca', 'shift'], ''),
         machine: pickText(record, ['may', 'ma_may', 'ten_may', 'machine'], ''),
+        status: pickText(record, ['trang_thai', 'status', 'tinh_trang'], ''),
         startDate: pickText(record, ['ngay_gio_bat_dau', 'ngay_bat_dau', 'ngay_san_xuat', 'start_date'], '').slice(
           0,
           10
         ),
         staff: pickText(record, ['nhan_su', 'staff', 'cong_nhan'], ''),
+        createdAt: pickText(record, ['created_at', 'createdAt'], ''),
         productLines
       };
     })

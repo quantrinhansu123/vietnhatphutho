@@ -194,7 +194,8 @@ export function filterMixingNormSuggestionsByDateShift(
   const date = String(ngay || '').slice(0, 10);
   const shift = String(ca || '').trim();
   if (!date || !shift) return [];
-  return norms.filter(row => row.ngay === date && shiftNamesMatch(row.ca, shift));
+  // Phiếu mới không còn ca → khớp theo ngày (ca nào cũng gợi ý).
+  return norms.filter(row => row.ngay === date && (!row.ca || shiftNamesMatch(row.ca, shift)));
 }
 
 /** Gộp NVL trùng mã từ mọi SP → dòng lần trộn trên form báo cáo phối trộn. */

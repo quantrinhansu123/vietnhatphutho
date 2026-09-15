@@ -78,8 +78,9 @@ const orderProductGridClass =
 const orderProductionProductGridClass =
   'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
+const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
 const ORDER_AMIS_SEARCH_MAX_RESULTS = 400;
 export {
@@ -194,6 +195,8 @@ export type OrderProductFormLine = {
   daiM: string;
   kg1Sp?: string;
   tongKg?: string;
+  /** Tổng KG do khách hàng/người lập đơn nhập trực tiếp, được ưu tiên hơn định mức quy đổi. */
+  manualTongKg?: boolean;
   conversionSource?: string;
   note: string;
   quyCach?: string;
@@ -244,6 +247,7 @@ export function newOrderProductFormLine(): OrderProductFormLine {
     slTrung: '',
     slNam: '',
     daiM: '',
+    manualTongKg: false,
     shouldRecalculateConversion: false,
     note: ''
   };
@@ -291,13 +295,17 @@ function OrderProductActions({
   total,
   onDelete,
   onMoveUp,
-  onMoveDown
+  onMoveDown,
+  onDuplicate,
+  moveButtonsInStt = false
 }: {
   index: number;
   total: number;
   onDelete: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onDuplicate?: () => void;
+  moveButtonsInStt?: boolean;
 }) {
   const canDelete = total > 1;
   const canMoveUp = index > 0;
@@ -317,32 +325,36 @@ function OrderProductActions({
         <Trash2 className="h-3.5 w-3.5" />
         <span className="sr-only">Xóa</span>
       </button>
-      <button
-        type="button"
-        title="Lên"
-        disabled={!canMoveUp}
-        className={`${orderProductActionBtnClass} border-zinc-200 text-zinc-700 hover:bg-zinc-100`}
-        onClick={event => {
-          event.stopPropagation();
-          if (canMoveUp) onMoveUp();
-        }}
-      >
-        <ArrowUp className="h-3.5 w-3.5" />
-        <span className="sr-only">Lên</span>
-      </button>
-      <button
-        type="button"
-        title="Xuống"
-        disabled={!canMoveDown}
-        className={`${orderProductActionBtnClass} border-zinc-200 text-zinc-700 hover:bg-zinc-100`}
-        onClick={event => {
-          event.stopPropagation();
-          if (canMoveDown) onMoveDown();
-        }}
-      >
-        <ArrowDown className="h-3.5 w-3.5" />
-        <span className="sr-only">Xuống</span>
-      </button>
+      {moveButtonsInStt ? null : (
+        <>
+          <button
+            type="button"
+            title="Lên"
+            disabled={!canMoveUp}
+            className={`${orderProductActionBtnClass} border-zinc-200 text-zinc-700 hover:bg-zinc-100`}
+            onClick={event => {
+              event.stopPropagation();
+              if (canMoveUp) onMoveUp();
+            }}
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+            <span className="sr-only">Lên</span>
+          </button>
+          <button
+            type="button"
+            title="Xuống"
+            disabled={!canMoveDown}
+            className={`${orderProductActionBtnClass} border-zinc-200 text-zinc-700 hover:bg-zinc-100`}
+            onClick={event => {
+              event.stopPropagation();
+              if (canMoveDown) onMoveDown();
+            }}
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+            <span className="sr-only">Xuống</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -357,6 +369,8 @@ function OrderProductLineShell({
   onDelete,
   onMoveUp,
   onMoveDown,
+  onDuplicate,
+  moveButtonsInStt = false,
   onDragStart,
   onDragOver,
   onDrop,
@@ -372,6 +386,8 @@ function OrderProductLineShell({
   onDelete: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onDuplicate?: () => void;
+  moveButtonsInStt?: boolean;
   onDragStart: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
   onDrop: () => void;
@@ -395,10 +411,52 @@ function OrderProductLineShell({
           onDragEnd={onDragEnd}
           onClick={event => event.stopPropagation()}
           title="Kéo để đổi thứ tự"
-          className="flex h-11 cursor-grab items-center gap-1.5 active:cursor-grabbing"
+          className="flex h-11 cursor-grab items-center gap-1 active:cursor-grabbing"
         >
           <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
           <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
+          {moveButtonsInStt ? (
+            <span className="ml-auto flex flex-col gap-0.5">
+              <button
+                type="button"
+                title="Chuyển lên"
+                disabled={index === 0}
+                className="inline-flex h-5 w-5 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-30"
+                onClick={event => {
+                  event.stopPropagation();
+                  onMoveUp();
+                }}
+              >
+                <ArrowUp className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                title="Chuyển xuống"
+                disabled={index === total - 1}
+                className="inline-flex h-5 w-5 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-30"
+                onClick={event => {
+                  event.stopPropagation();
+                  onMoveDown();
+                }}
+              >
+                <ArrowDown className="h-3 w-3" />
+              </button>
+            </span>
+          ) : null}
+          {moveButtonsInStt && onDuplicate ? (
+            <button
+              type="button"
+              title="Thêm dòng giống sản phẩm này ở bên dưới"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+              onClick={event => {
+                event.stopPropagation();
+                onDuplicate();
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span className="sr-only">Nhân bản dòng bên dưới</span>
+            </button>
+          ) : null}
         </div>
         {children}
         <div className="flex justify-end self-center">
@@ -408,6 +466,8 @@ function OrderProductLineShell({
             onDelete={onDelete}
             onMoveUp={onMoveUp}
             onMoveDown={onMoveDown}
+            onDuplicate={onDuplicate}
+            moveButtonsInStt={moveButtonsInStt}
           />
         </div>
       </RepeatableLineRow>
@@ -570,8 +630,14 @@ export function orderProductLinesToPayload(
 
       const sanPhamId = selectedProduct?.id || (line.productId?.trim() ? line.productId.trim() : undefined);
       const conversion = sanPhamId ? productConversions.find(item => item.sanPhamId === sanPhamId) : undefined;
-      const cutWeight = isCutOrder ? calculateCutOrderWeight(line.daiM, line.quantity, conversion, unit, productCode, productName) : null;
       const roundConversionValue = (value: number) => Math.round(value * 100) / 100;
+      const parsedManualKg = line.manualTongKg ? parsePercentInput(String(line.tongKg ?? '')) : Number.NaN;
+      const manualTotalKg = Number.isFinite(parsedManualKg) && parsedManualKg > 0
+        ? roundConversionValue(parsedManualKg)
+        : null;
+      const cutWeight = isCutOrder
+        ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName)
+        : null;
 
       let cutQuyCach: string | undefined;
       let cutM2: number | undefined;
@@ -588,10 +654,17 @@ export function orderProductLinesToPayload(
           }
         }
 
-        if (conversion?.trongLuongKgCuon) {
+        const manualKgPerUnit = manualTotalKg !== null && Number.isFinite(quantity) && quantity > 0
+          ? roundConversionValue(manualTotalKg / quantity)
+          : null;
+        if (manualKgPerUnit !== null && isCuonProduct(unit)) {
+          cutTlCuon = manualKgPerUnit;
+        } else if (conversion?.trongLuongKgCuon) {
           cutTlCuon = roundConversionValue(conversion.trongLuongKgCuon);
         }
-        if (cutWeight?.kg1Sp) {
+        if (manualKgPerUnit !== null && isTamProduct(unit)) {
+          cutTlTam = manualKgPerUnit;
+        } else if (cutWeight?.kg1Sp) {
           cutTlTam = roundConversionValue(cutWeight.kg1Sp);
         } else if (conversion?.trongLuongKgTam) {
           cutTlTam = roundConversionValue(conversion.trongLuongKgTam);
@@ -605,8 +678,9 @@ export function orderProductLinesToPayload(
           : undefined;
 
       const cutResults: Array<{ don_vi: string; gia_tri: number }> = [];
-      if (cutWeight && cutWeight.tongKg > 0) {
-        cutResults.push({ don_vi: 'kg', gia_tri: roundConversionValue(cutWeight.tongKg) });
+      const finalCutTotalKg = manualTotalKg ?? (cutWeight?.tongKg ? roundConversionValue(cutWeight.tongKg) : null);
+      if (finalCutTotalKg !== null && finalCutTotalKg > 0) {
+        cutResults.push({ don_vi: 'kg', gia_tri: finalCutTotalKg });
       }
       if (cutM2 !== undefined && cutM2 > 0) {
         cutResults.push({ don_vi: 'm2', gia_tri: cutM2 });
@@ -641,13 +715,13 @@ export function orderProductLinesToPayload(
               ...(cutTlTam !== undefined && cutTlTam > 0 ? { tl_tam: cutTlTam } : {})
             }
           : {}),
-        ...(cutWeight
+        ...(finalCutTotalKg !== null
           ? {
-              ...(cutWeight.kg1Sp > 0 && cutWeight.kg1Sp !== cutTlTam && cutWeight.kg1Sp !== cutTlCuon
+              ...(manualTotalKg === null && cutWeight?.kg1Sp && cutWeight.kg1Sp > 0 && cutWeight.kg1Sp !== cutTlTam && cutWeight.kg1Sp !== cutTlCuon
                 ? { kg_1_sp: roundConversionValue(cutWeight.kg1Sp) }
                 : {}),
-              tong_kg: roundConversionValue(cutWeight.tongKg),
-              nguon_quy_doi: cutWeight.source,
+              tong_kg: finalCutTotalKg,
+              nguon_quy_doi: manualTotalKg !== null ? CUSTOMER_ENTERED_KG_SOURCE : cutWeight?.source,
               ket_qua_quy_doi: cutResults
             }
           : cutResults.length > 0
@@ -687,6 +761,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     daiM: line.daiM || '',
     kg1Sp: line.kg1Sp || '',
     tongKg: line.tongKg || '',
+    manualTongKg: line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE,
     conversionSource: line.conversionSource || '',
     note: line.note || '',
     quyCach: line.quyCach || (line.quyCachMDai ? `Dài ${line.quyCachMDai}m` : ''),
@@ -989,6 +1064,23 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }));
   };
 
+  const duplicateProductLineBelow = (index: number) => {
+    const source = orderForm.productLines[index];
+    if (!source) return;
+    const duplicated: OrderProductFormLine = {
+      ...source,
+      key: `order-product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      sourceProduct: source.sourceProduct ? { ...source.sourceProduct } : undefined,
+      conversionResults: source.conversionResults?.map(result => ({ ...result }))
+    };
+    setOrderForm(prev => {
+      const next = [...prev.productLines];
+      next.splice(index + 1, 0, duplicated);
+      return { ...prev, productLines: next };
+    });
+    setSelectedProductLineKey(duplicated.key);
+  };
+
   const removeProductLine = (key: string) => {
     setOrderForm(prev => ({
       ...prev,
@@ -1022,7 +1114,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productCode,
       productName: match?.name || '',
       productionName: match?.productionName || '',
-      unit: allowedOrderUnits(match)[0] || match?.unit || ''
+      unit: allowedOrderUnits(match)[0] || match?.unit || '',
+      tongKg: '',
+      manualTongKg: false
     });
   };
 
@@ -1033,7 +1127,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productCode: match?.code || '',
       productName: match?.name || '',
       productionName: match?.productionName || '',
-      unit: 'Tấm'
+      unit: 'Tấm',
+      tongKg: '',
+      manualTongKg: false
     });
   };
 
@@ -1053,6 +1149,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
     const isCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
     const activeProductLines = orderForm.productLines.filter(line => line.productCode.trim() || line.productName.trim());
+    for (const line of activeProductLines) {
+      if (!line.manualTongKg) continue;
+      const enteredKg = parsePercentInput(String(line.tongKg ?? ''));
+      if (!Number.isFinite(enteredKg) || enteredKg <= 0) {
+        setFormError(`KG khách hàng nhập phải lớn hơn 0 cho sản phẩm ${line.productCode || line.productName}.`);
+        return;
+      }
+    }
     const products = orderProductLinesToPayload(activeProductLines, productOptions, orderForm.orderType, productConversions);
     if (products.length === 0) {
       setFormError('Vui lòng thêm ít nhất một sản phẩm.');
@@ -1088,16 +1192,29 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         const targetSpId = String(product.san_pham_id || option?.id || '').trim();
         const conversion = targetSpId ? productConversions.find(item => item.sanPhamId === targetSpId) : undefined;
         const qty = product.so_luong ?? 0;
+        const sourceLine = activeProductLines[productIndex];
+        const parsedManualKg = sourceLine?.manualTongKg
+          ? parsePercentInput(String(sourceLine.tongKg ?? ''))
+          : Number.NaN;
+        const manualTotalKg = Number.isFinite(parsedManualKg) && parsedManualKg > 0 ? parsedManualKg : null;
 
         let kgVal: number | null = null;
         let m2Val: number | null = null;
         let mDaiVal: number | null = null;
 
         if (conversion && qty > 0) {
-          kgVal = convertProductQuantity(qty, product.don_vi, 'kg', conversion);
-          m2Val = convertProductQuantity(qty, product.don_vi, 'm2', conversion);
-          mDaiVal = convertProductQuantity(qty, product.don_vi, 'm', conversion);
+          if (manualTotalKg !== null) {
+            kgVal = manualTotalKg;
+            m2Val = convertProductQuantity(manualTotalKg, 'kg', 'm2', conversion);
+            mDaiVal = convertProductQuantity(manualTotalKg, 'kg', 'm', conversion);
+          } else {
+            kgVal = convertProductQuantity(qty, product.don_vi, 'kg', conversion);
+            m2Val = convertProductQuantity(qty, product.don_vi, 'm2', conversion);
+            mDaiVal = convertProductQuantity(qty, product.don_vi, 'm', conversion);
+          }
         }
+
+        if (manualTotalKg !== null) kgVal = manualTotalKg;
 
         const normUnit = product.don_vi.trim().toLowerCase();
         if (kgVal === null && (normUnit === 'kg' || normUnit === 'kilogram')) kgVal = qty;
@@ -1108,8 +1225,17 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         const rKg = roundVal(kgVal);
         const rM2 = roundVal(m2Val);
         const rMDai = roundVal(mDaiVal);
-        const rTlCuon = conversion?.trongLuongKgCuon ? roundVal(conversion.trongLuongKgCuon) : null;
-        const rTlTam = conversion?.trongLuongKgTam ? roundVal(conversion.trongLuongKgTam) : null;
+        const manualKgPerUnit = manualTotalKg !== null && qty > 0 ? roundVal(manualTotalKg / qty) : null;
+        const rTlCuon = manualKgPerUnit !== null && isCuonProduct(product.don_vi)
+          ? manualKgPerUnit
+          : conversion?.trongLuongKgCuon
+            ? roundVal(conversion.trongLuongKgCuon)
+            : null;
+        const rTlTam = manualKgPerUnit !== null && isTamProduct(product.don_vi)
+          ? manualKgPerUnit
+          : conversion?.trongLuongKgTam
+            ? roundVal(conversion.trongLuongKgTam)
+            : null;
 
         const results: Array<{ don_vi: string; gia_tri: number }> = [];
         if (rKg !== null && rKg > 0) results.push({ don_vi: 'kg', gia_tri: rKg });
@@ -1163,6 +1289,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           ...(rKg !== null && rKg > 0 ? { tong_kg: rKg } : {}),
           ...(finalTlCuon !== null && finalTlCuon > 0 ? { tl_cuon: finalTlCuon } : {}),
           ...(finalTlTam !== null && finalTlTam > 0 ? { tl_tam: finalTlTam } : {}),
+          ...(manualTotalKg !== null ? { nguon_quy_doi: CUSTOMER_ENTERED_KG_SOURCE } : {}),
           ...(results.length > 0 ? { ket_qua_quy_doi: results } : {})
         });
       }
@@ -1319,6 +1446,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       onDelete={() => removeProductLine(line.key)}
       onMoveUp={() => moveProductLine(index, index - 1)}
       onMoveDown={() => moveProductLine(index, index + 1)}
+      onDuplicate={() => duplicateProductLineBelow(index)}
+      moveButtonsInStt={isFormCutOrder}
       onDragStart={event => handleProductDragStart(event, index)}
       onDragOver={handleProductDragOver}
       onDrop={() => handleProductDrop(index)}
@@ -1493,7 +1622,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'trung', label: 'Trung' },
                         { key: 'nam', label: 'Nam' },
                         { key: 'qty', label: 'SL (tổng)', required: true },
-                        { key: 'tongKg', label: 'Tổng KG' },
+                        { key: 'tongKg', label: 'Tổng KG (nhập)' },
                         { key: 'note', label: 'Ghi chú' },
                         { key: 'actions', label: '' }
                       ]
@@ -1509,7 +1638,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           { key: 'trung', label: 'Trung' },
                           { key: 'nam', label: 'Nam' },
                           { key: 'qty', label: 'SL (tổng)', required: true },
-                          { key: 'kg', label: 'KG' },
+                          { key: 'kg', label: 'KG (nhập)' },
                           { key: 'm2', label: 'M2' },
                           { key: 'mdai', label: 'M dài' },
                           { key: 'actions', label: '' }
@@ -1522,7 +1651,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'note', label: 'Ghi chú' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'qty', label: 'SL', required: true },
-                        { key: 'kg', label: 'KG' },
+                        { key: 'kg', label: 'KG (nhập)' },
                         { key: 'm2', label: 'M2' },
                         { key: 'mdai', label: 'M dài' },
                         { key: 'actions', label: '' }
@@ -1548,7 +1677,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName)
                         : null;
                       const displayedCutWeight = line.shouldRecalculateConversion
-                        ? cutWeight?.tongKg ?? null
+                        ? (line.manualTongKg
+                            ? parsePercentInput(String(line.tongKg ?? ''))
+                            : cutWeight?.tongKg ?? null)
                         : readStoredOrderConversion(line, 'kg');
                       return renderProductLineShell(
                         line,
@@ -1659,12 +1790,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <input
                             type="text"
-                            value={displayedCutWeight !== null ? formatNumber(displayedCutWeight, 2) : ''}
-                            readOnly
-                            title={line.shouldRecalculateConversion
-                              ? (cutWeight ? `Nguồn: ${cutWeight.source}` : 'Chưa đủ dữ liệu quy đổi')
-                              : (line.conversionSource ? `Nguồn đã lưu: ${line.conversionSource}` : 'Dữ liệu quy đổi đã lưu trong đơn hàng')}
-                            className={`${orderFieldClass} bg-zinc-50 text-right`}
+                            inputMode="decimal"
+                            value={line.manualTongKg
+                              ? String(line.tongKg ?? '')
+                              : displayedCutWeight !== null && Number.isFinite(displayedCutWeight)
+                                ? formatNumber(displayedCutWeight, 2)
+                                : ''}
+                            onChange={e => updateProductLine(line.key, {
+                              tongKg: e.target.value,
+                              manualTongKg: e.target.value.trim() !== '',
+                              shouldRecalculateConversion: true
+                            })}
+                            title={line.manualTongKg
+                              ? 'Tổng KG do khách hàng nhập; TL/tấm = Tổng KG / SL'
+                              : 'Có thể nhập Tổng KG của khách hàng để tính lại TL/tấm'}
+                            className={`${orderFieldClass} bg-white text-right`}
+                            placeholder="Nhập KG"
                           />
                         </div>
                         <div className="min-w-0">
@@ -1701,11 +1842,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     (Number.isFinite(namNum) ? Math.max(0, namNum) : 0);
                   const effectiveQtyText = isFormProductionOrder && hasRegionQty ? String(regionQtyTotal) : line.quantity;
                   const calculatedConversion = line.shouldRecalculateConversion && matchedConversion
-                    ? calculateOrderConversion(effectiveQtyText, effectiveUnit, matchedConversion, matchedLineProduct?.group)
+                    ? calculateOrderConversion(
+                        line.manualTongKg ? String(line.tongKg ?? '') : effectiveQtyText,
+                        line.manualTongKg ? 'kg' : effectiveUnit,
+                        matchedConversion,
+                        matchedLineProduct?.group
+                      )
                     : [];
 
                   const kgValue = line.shouldRecalculateConversion
-                    ? calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null
+                    ? (line.manualTongKg
+                        ? parsePercentInput(String(line.tongKg ?? ''))
+                        : calculatedConversion.find(([, , unit]) => unit === 'kg')?.[1] ?? null)
                     : readStoredOrderConversion(line, 'kg');
                   const m2Value = line.shouldRecalculateConversion
                     ? calculatedConversion.find(([, , unit]) => unit === 'm2')?.[1] ?? null
@@ -1842,8 +1990,21 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       <div className="col-span-1 min-w-0">
                         <input
                           type="text"
-                          value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
-                          readOnly
+                          inputMode="decimal"
+                          value={line.manualTongKg
+                            ? String(line.tongKg ?? '')
+                            : kgValue !== null && Number.isFinite(kgValue)
+                              ? formatNumber(kgValue, 3)
+                              : ''}
+                          onChange={e => updateProductLine(line.key, {
+                            tongKg: e.target.value,
+                            manualTongKg: e.target.value.trim() !== '',
+                            shouldRecalculateConversion: true
+                          })}
+                          title={line.manualTongKg
+                            ? `KG do khách hàng nhập${isCuonProduct(effectiveUnit) ? '; dùng để tính TL/cuộn' : isTamProduct(effectiveUnit) ? '; dùng để tính TL/tấm' : ''}`
+                            : 'Có thể nhập KG của khách hàng để ưu tiên giá trị thực tế'}
+                          placeholder="Nhập KG"
                           className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>

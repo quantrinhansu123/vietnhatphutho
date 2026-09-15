@@ -80,7 +80,7 @@ test('import: ĐVT CUỘN, TẤM về Tấm và tính ten_ghep', () => {
   );
 });
 
-test('import: marker 100%NS giữ nguyên text trong hangPhe và ten_ghep', () => {
+test('import: marker 100%NS chuẩn hóa về 100% NS trong hangPhe và ten_ghep', () => {
   const payload = productCatalogRowToPayload(
     makeRow({
       code: 'SP-NS',
@@ -89,8 +89,24 @@ test('import: marker 100%NS giữ nguyên text trong hangPhe và ten_ghep', () =
       group: 'TP; PX Đặc'
     })
   );
-  assert.equal(payload.hangPhe, '100%NS');
-  assert.ok(String(payload.tenGhep).includes('100%NS'));
+  assert.equal(payload.hangPhe, '100% NS');
+  assert.ok(String(payload.tenGhep).includes('100% NS'));
+});
+
+test('import: Rỗng bỏ 2.1m khỏi tên ghép nhưng vẫn lưu doDayM', () => {
+  const payload = productCatalogRowToPayload(
+    makeRow({
+      code: 'ECR05-4.5li-6m',
+      amisCode: 'ECR05-4.5li-6m',
+      name: 'Tấm nhựa rỗng màu trà',
+      productionName: 'Tấm nhựa rỗng màu trà - 4.5li x 2.1m x 6m - màng ECO',
+      group: 'TP; PX Rỗng',
+      unit: 'Tấm'
+    })
+  );
+  assert.equal(payload.doDayM, '2.1m');
+  assert.equal(payload.doDaiM, '6m');
+  assert.equal(payload.tenGhep, 'Tấm nhựa rỗng màu trà - ECO - 4.5li - 6m');
 });
 
 test('import: tên gốc đuôi li trùng độ li thì cắt, tên ghép hết trùng', () => {

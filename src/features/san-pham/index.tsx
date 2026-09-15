@@ -59,8 +59,10 @@ import { calculateProductConversionFormulas } from '../../utils/productConversio
 import {
   FILM_OPTIONS,
   WASTE_GRADE_OPTIONS,
+  calculateDoLiDm,
   composeProductionDisplayName,
   extractDoLiDm,
+  isDiscontinuedWhiteSuProduct,
   parseDoDaiMLength,
   seedProductionSpecs
 } from '../../utils/productProductionName';
@@ -670,7 +672,7 @@ export function ProductViewModal({
 
   const normSpecCells = [
     { label: 'Tên sản xuất', value: product.productionName || '-' },
-    { label: 'ĐM (đm n li)', value: product.doLiDm || '-' },
+    { label: 'ĐM (đm li, đm kg)', value: product.doLiDm || '-' },
     {
       label: 'Tên ghép',
       value: composeProductionDisplayName(
@@ -686,7 +688,7 @@ export function ProductViewModal({
         product.group
       )
     },
-    { label: 'Độ li', value: product.doLi || '-' },
+    { label: 'Độ li / ZEM', value: product.doLi || '-' },
     { label: 'Mét dài', value: product.doDaiM || '-' },
     { label: 'Màng', value: product.mang || '-' },
     { label: 'Hàng phế', value: product.hangPhe || '-' },
@@ -1172,7 +1174,7 @@ type ProductConversionForm = {
 const PRODUCT_GROUP_RULES = {
   'TP; PX Rỗng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '13' },
   'TP; PX Đặc': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '13' },
-  'TP; PX Sóng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '2' },
+  'TP; PX Sóng': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '2' },
   'TP; NVL': { units: [], primaryUnit: '', wastePercent: '' },
   'NVL': { units: [], primaryUnit: '', wastePercent: '' },
   'Khác': { units: [], primaryUnit: '', wastePercent: '' }
@@ -1346,7 +1348,12 @@ export function emptyProductForm(): ProductFormState {
 }
 
 export function productFormToPayload(form: ProductFormState) {
-  const doLiDm = form.doLiDm.trim() || extractDoLiDm(form.productionName) || '';
+  // Đặc thiếu đm: tên có thì extract, không thì tự tính theo bảng trừ lùi.
+  const doLiDm =
+    form.doLiDm.trim() ||
+    extractDoLiDm(form.productionName) ||
+    calculateDoLiDm(form.doLi, form.group) ||
+    '';
   const tenGhep = composeProductionDisplayName(
     {
       tenGoc: form.tenGoc.trim(),
@@ -1421,7 +1428,7 @@ export function ProductEditModal({
     mode === 'edit' && product ? productToForm(product, productConversions.filter(item => item.sanPhamId === product.id)) : emptyProductForm()
   );
   const [amisOpen, setAmisOpen] = useState(false);
-  // Mét dài trong Thông số SX chính là Khổ tấm dài (m dài/tấm) của khối quy đổi.
+  // Mét dài trong Thông số sản xuất chính là Khổ tấm dài (m dài/tấm) của khối quy đổi.
   // Ghi nhận giá trị lúc nạp form để chỉ đồng bộ khi người dùng đổi Mét dài
   // (dữ liệu đã lưu lúc mở form không bao giờ bị tự sửa).
   const prevDoDaiMRef = useRef<string>('');
@@ -1584,7 +1591,16 @@ export function ProductEditModal({
                   }
                 }
                 setForm(prev => {
-                  const nextBase = { ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName, group: item.group || prev.group };
+                  const nextGroup = item.group || prev.group;
+                  const rule = PRODUCT_GROUP_RULES[nextGroup as ProductGroup];
+                  // Fill Đơn vị tính + Tỷ lệ hàng hỏng theo SP đã chọn (fallback quy tắc nhóm).
+                  const storedUnit = item.unit && item.unit !== '-' ? item.unit : '';
+                  const unit = rule && rule.units.length > 0
+                    ? ((rule.units as readonly string[]).includes(storedUnit) ? storedUnit : (rule.primaryUnit || prev.unit))
+                    : (storedUnit || prev.unit);
+                  const storedWaste = item.wastePercent && item.wastePercent !== '-' ? item.wastePercent : '';
+                  const wastePercent = storedWaste || rule?.wastePercent || prev.wastePercent;
+                  const nextBase = { ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName, group: nextGroup, unit, wastePercent };
                   const seeded = seedProductionSpecs({
                     tenSanXuat: item.productionName,
                     maAmis: item.amisCode,
@@ -1619,10 +1635,9 @@ export function ProductEditModal({
           </label>
           <label className="block space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị tính *</span>
-            {form.group === 'TP; PX Đặc' ? (
+            {selectedGroupRule && selectedGroupRule.units.length > 1 ? (
               <select value={form.unit} onChange={event => updateCustomUnit(event.target.value)} className={productFieldClass}>
-                <option value="Tấm">Tấm</option>
-                <option value="Cuộn">Cuộn</option>
+                {selectedGroupRule.units.map(unit => <option key={unit} value={unit}>{unit}</option>)}
               </select>
             ) : (
               <input value={displayedUnit} onChange={event => updateCustomUnit(event.target.value)} readOnly={Boolean(selectedGroupRule?.primaryUnit)} className={`${productFieldClass} read-only:bg-zinc-100`} placeholder={form.group ? 'Nhập ĐVT' : 'Chọn Nhóm VTHH trước'} />
@@ -1657,10 +1672,7 @@ export function ProductEditModal({
           </label>
           <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 sm:col-span-2">
             <div>
-              <h4 className="text-xs font-black uppercase text-amber-900">Thông số SX / ghép tên</h4>
-              <p className="text-[10px] font-semibold text-amber-800/80">
-                ĐM lấy `(đm n li)` từ tên SX. Đặc: ưu tiên 8/9/20/30m làm m dài. Sóng: m dài đúng theo tên SX dòng. Không đổi unique `AMIS + Tên SP + Tên SX`.
-              </p>
+              <h4 className="text-xs font-black uppercase text-amber-900">Thông số sản xuất</h4>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <label className="space-y-1.5">
@@ -1668,11 +1680,11 @@ export function ProductEditModal({
                 <input value={form.tenGoc} onChange={event => setForm(prev => ({ ...prev, tenGoc: event.target.value }))} className={`${productFieldClass} bg-white`} />
               </label>
               <label className="space-y-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li</span>
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li / ZEM</span>
                 <input value={form.doLi} onChange={event => setForm(prev => ({ ...prev, doLi: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="5.0li / 6ZEM" />
               </label>
               <label className="space-y-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm n li)</span>
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm li, đm kg)</span>
                 <input value={form.doLiDm} onChange={event => setForm(prev => ({ ...prev, doLiDm: event.target.value }))} className={`${productFieldClass} bg-white`} placeholder="(đm 5.7 li)" />
               </label>
               <label className="space-y-1.5">
@@ -1718,7 +1730,7 @@ export function ProductEditModal({
             </div>
           </section>
           <section className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:col-span-2">
-            <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước. Mét dài trong Thông số SX chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm). Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.</p></div>
+            <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước. Mét dài trong Thông số sản xuất chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm). Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.</p></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {([
                 ['khoTamRongM', 'Khổ tấm rộng (m rộng)'], ['khoTamDaiM', 'Khổ tấm dài (m dài / tấm)'],
@@ -1947,6 +1959,16 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
       return;
     }
+    if (
+      isDiscontinuedWhiteSuProduct({
+        group: form.group,
+        maAmis: form.amisCode,
+        names: [form.name, form.productionName, form.tenGoc]
+      })
+    ) {
+      setProductFormError('Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh, không thể thêm mới.');
+      return;
+    }
     const duplicateError = findDuplicateProductIdentity(products, form);
     if (duplicateError) {
       setProductFormError(duplicateError);
@@ -1991,6 +2013,16 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
     }
     if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
       setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+      return;
+    }
+    if (
+      isDiscontinuedWhiteSuProduct({
+        group: form.group,
+        maAmis: form.amisCode,
+        names: [form.name, form.productionName, form.tenGoc]
+      })
+    ) {
+      setProductFormError('Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh, không thể cập nhật.');
       return;
     }
     const duplicateError = findDuplicateProductIdentity(products, form, editingProduct.id);
@@ -2117,6 +2149,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       const creates: Array<ReturnType<typeof productCatalogRowToPayload>> = [];
       const updates: Array<ReturnType<typeof productCatalogRowToPayload> & { id: string }> = [];
       const failures: string[] = [];
+      let skippedWhiteSu = 0;
 
       for (const row of rows) {
         const code = row.code.trim();
@@ -2125,6 +2158,18 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
         if (!code && !name) {
           failures.push(`dòng ${row.rowNumber}: thiếu mã SP và tên`);
+          continue;
+        }
+
+        // Nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh — bỏ qua khi nhập.
+        if (
+          isDiscontinuedWhiteSuProduct({
+            group: row.group,
+            maAmis: row.amisCode,
+            names: [name, productionName]
+          })
+        ) {
+          skippedWhiteSu += 1;
           continue;
         }
 
@@ -2202,6 +2247,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
 
       const summary = [
         created || updated ? `Đã nhập Excel SP (batch): thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
+        skippedWhiteSu ? `Bỏ qua ${skippedWhiteSu} dòng trắng sứ (STD01, đã ngừng kinh doanh).` : '',
         failures.length ? `${failures.length} lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
@@ -2250,6 +2296,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       let created = 0;
       let updated = 0;
       const failures: string[] = [];
+      const jobs: Array<Record<string, unknown>> = [];
 
       for (const row of rows) {
         const amis = row.amisCode.trim();
@@ -2314,20 +2361,31 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         }
         if (hasError) continue;
 
+        jobs.push({ rowNumber: row.rowNumber, ...fields });
+      }
+
+      // Gửi batch (200 dòng/request) để API upsert 1 lần thay cho N request từng dòng.
+      for (let index = 0; index < jobs.length; index += 200) {
+        const batch = jobs.slice(index, index + 200);
         const res = await fetch('/api/bang-quy-doi-san-pham/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: [{ rowNumber: row.rowNumber, ...fields }] })
+          body: JSON.stringify({ items: batch })
         });
 
         const data = await res.json();
         if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
+          failures.push(`dòng ${batch[0]?.rowNumber ?? '?'}–${batch[batch.length - 1]?.rowNumber ?? '?'}: ${data.error || 'Không lưu được'}`);
           continue;
         }
 
         created += Number(data.created) || 0;
         updated += Number(data.updated) || 0;
+        if (Array.isArray(data.errors)) {
+          for (const err of data.errors as Array<{ rowNumber?: number; error?: string }>) {
+            failures.push(`dòng ${err.rowNumber ?? '?'}: ${err.error || 'Không lưu được'}`);
+          }
+        }
       }
 
       const summary = [

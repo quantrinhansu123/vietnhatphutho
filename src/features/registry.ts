@@ -347,7 +347,8 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     sql: [
       'supabase-bang-tron-vat-tu-dinh-muc.sql',
       'supabase-bang-tron-vat-tu-dinh-muc-ngay-bat-buoc.sql',
-      'supabase-bang-tron-vat-tu-dinh-muc-ten-phieu.sql'
+      'supabase-bang-tron-vat-tu-dinh-muc-ten-phieu.sql',
+      'supabase-bang-tron-vat-tu-dinh-muc-may.sql'
     ],
     apiPrefix: '/api/bang-tron-vat-tu-dinh-muc',
     serverLines: 'bang_tron_vat_tu_dinh_muc routes',

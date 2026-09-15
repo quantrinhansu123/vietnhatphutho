@@ -697,11 +697,24 @@ export type WarehouseProductionOrderOption = {
   orderCode: string;
   shift: string;
   machine: string;
+  /** Trạng thái lệnh SX (trang_thai) — dùng để ẩn phiếu định mức của lệnh đã xong. */
+  status: string;
   startDate: string;
   /** ngay_ket_thuc — rỗng nếu lệnh SX chỉ chạy 1 ngày (startDate). */
   endDate: string;
   lines: Array<{ code: string; name: string; unit: string; quantity: number | null }>;
 };
+
+/** Lệnh SX đã xong (Hoàn thành/Hủy) — phiếu định mức của lệnh này ẩn khỏi picker xuất kho NVL. */
+function isWarehouseDoneOrderStatus(status?: string | null): boolean {
+  const normalized = String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  return normalized === 'hoan thanh' || normalized === 'huy';
+}
 
 /** Chặn trên số ngày sinh ra từ 1 khoảng ngay_bat_dau..ngay_ket_thuc, phòng dữ liệu lỗi. */
 const WAREHOUSE_PRODUCTION_ORDER_MAX_SPAN_DAYS = 60;
@@ -791,6 +804,7 @@ export function normalizeWarehouseProductionOrders(data: unknown): WarehouseProd
         orderCode,
         shift: pickText(record, ['ca', 'shift'], ''),
         machine: pickText(record, ['may', 'ma_may', 'ten_may', 'machine'], ''),
+        status: pickText(record, ['trang_thai', 'status', 'tinh_trang'], ''),
         startDate: pickText(record, ['ngay_gio_bat_dau', 'ngay_bat_dau', 'ngay_san_xuat', 'start_date'], '').slice(0, 10),
         endDate: pickText(record, ['ngay_gio_ket_thuc', 'ngay_ket_thuc', 'end_date'], '').slice(0, 10),
         lines: parseWarehouseProductionOrderLines(record)
@@ -1234,12 +1248,28 @@ export function WarehouseSlipPanel({
         const ngay = String(record.ngay ?? '').trim().slice(0, 10);
         const ca = String(record.ca ?? '').trim();
         if (!normId || !ngay) return null;
+        // Ẩn phiếu định mức khi TẤT CẢ lệnh SX liên quan (tra được) đã xong.
+        const linkedCodes = String(orderCode)
+          .split(/[,;|/]+/)
+          .map(part => normalizeMaterialKey(part.trim()))
+          .filter(Boolean);
+        const linkedOrders = linkedCodes
+          .map(code => productionOrderByCode.get(code))
+          .filter((order): order is WarehouseProductionOrderOption => Boolean(order));
+        if (
+          linkedCodes.length > 0 &&
+          linkedOrders.length > 0 &&
+          linkedOrders.every(order => isWarehouseDoneOrderStatus(order.status))
+        ) {
+          return null;
+        }
         const productionOrder = productionOrderByCode.get(normalizeMaterialKey(orderCode));
         return {
           key: lenhSxInstanceKey({ dinh_muc_id: normId, ma_lenh_sx: orderCode, ngay, ca }),
           normId,
           normName:
-            String(record.ten_phieu ?? '').trim() || formatMixingNormSlipName(ngay, ca, orderCode),
+            String(record.ten_phieu ?? '').trim() ||
+            formatMixingNormSlipName(ngay, String(record.may ?? record.machine ?? '').trim() || ca, orderCode),
           orderCode,
           ngay,
           ca,

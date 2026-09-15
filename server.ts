@@ -16,7 +16,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildOrderTenGhep, replaceCutLengthMeters } from './src/utils/productProductionName';
+import { buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, replaceCutLengthMeters } from './src/utils/productProductionName';
 
 dotenv.config();
 
@@ -2120,7 +2120,7 @@ function parseProductWastePercent(value: unknown): { error: string } | { value: 
 const PRODUCT_VTHH_RULES: Record<string, { group: string; units: string[]; primaryUnit?: string; wastePercent?: number }> = {
   'tp; px rỗng': { group: 'TP; PX Rỗng', units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: 13 },
   'tp; px đặc': { group: 'TP; PX Đặc', units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: 13 },
-  'tp; px sóng': { group: 'TP; PX Sóng', units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: 2 },
+  'tp; px sóng': { group: 'TP; PX Sóng', units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: 2 },
   'tp; nvl': { group: 'TP; NVL', units: [] },
   'nvl': { group: 'NVL', units: [] },
   'khác': { group: 'Khác', units: [] }
@@ -2263,7 +2263,7 @@ function parseProductPatchBody(
     record.trong_luong_nhua = parseOptionalMaterialDecimalText(source.plasticWeight ?? source.trong_luong_nhua);
   }
 
-  // Thông số SX (không đụng unique ma_amis+ten_sp+ten_san_xuat)
+  // Thông số sản xuất (không đụng unique ma_amis+ten_sp+ten_san_xuat)
   if (Object.prototype.hasOwnProperty.call(source, 'tenGoc') || Object.prototype.hasOwnProperty.call(source, 'ten_goc')) {
     record.ten_goc = parseMaterialText(source.tenGoc ?? source.ten_goc) || null;
   }
@@ -2295,10 +2295,32 @@ function parseProductPatchBody(
     Object.prototype.hasOwnProperty.call(source, 'tenSanXuat') ||
     Object.prototype.hasOwnProperty.call(source, 'ten_san_xuat')
   ) {
-    // Tự extract (đm n li) từ ten_san_xuat khi client không gửi do_li_dm
-    const dmMatch = String(productionName || '').match(/\(\s*đm\s*([\d.,]+)\s*li\s*\)/iu);
+    // Tự extract (đm n li/kg) từ ten_san_xuat khi client không gửi do_li_dm
+    const dmMatch = String(productionName || '').match(/\(\s*đm\s*([\d.,]+)\s*(li|kg)\s*\)/iu);
     if (dmMatch) {
-      record.do_li_dm = `(đm ${dmMatch[1].trim()} li)`;
+      record.do_li_dm = `(đm ${dmMatch[1].trim()} ${dmMatch[2].trim().toLowerCase()})`;
+    }
+  }
+  // Đặc thiếu đm: tự tính theo bảng trừ lùi từ độ li (kể cả hàng ZEM).
+  if (!record.do_li_dm && record.nhom_vthh === 'TP; PX Đặc' && typeof record.do_li === 'string' && record.do_li) {
+    const autoDm = calculateDoLiDm(record.do_li, 'TP; PX Đặc');
+    if (autoDm) record.do_li_dm = autoDm;
+  }
+
+  // Nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh — chặn thêm/sửa/import.
+  // Chỉ xét khi request có đủ nhóm (PATCH từng phần không có nhóm thì bỏ qua).
+  if (record.nhom_vthh === 'TP; PX Đặc') {
+    const names = [record.ten_sp, record.ten_san_xuat].filter(
+      (value): value is string => typeof value === 'string' && Boolean(value)
+    );
+    if (
+      isDiscontinuedWhiteSuProduct({
+        group: 'TP; PX Đặc',
+        maAmis: typeof record.ma_amis === 'string' ? record.ma_amis : '',
+        names
+      })
+    ) {
+      return { error: 'Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh.' };
     }
   }
 
@@ -3134,9 +3156,19 @@ function mixingNormWriteError(error: { code?: string; message?: string }) {
     return `Bảng ${SUPABASE_MIXING_NORM_TABLE} chưa tồn tại. Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql.`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_MIXING_NORM_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql.`;
+    return `Bảng ${SUPABASE_MIXING_NORM_TABLE} đang thiếu cột (${error.message}). Hãy chạy supabase-bang-tron-vat-tu-dinh-muc.sql và supabase-bang-tron-vat-tu-dinh-muc-may.sql.`;
   }
   return `Không thể lưu bảng trộn vật tư định mức. ${error.message || ''}`.trim();
+}
+
+/** Bỏ cột may khi DB chưa chạy migration may (giữ tương thích ngược). */
+function stripMixingNormMayColumn(record: Record<string, unknown>): Record<string, unknown> {
+  const { may: _omitted, ...rest } = record;
+  return rest;
+}
+
+function isMissingMixingNormMayColumn(error: { code?: string; message?: string }) {
+  return Boolean(error) && isMissingColumnError(error) && /may/i.test(String(error.message ?? ''));
 }
 
 function parseMixingNormBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
@@ -3146,10 +3178,11 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   const ngayRaw = String(source.ngay ?? '').trim();
   const ngay = ngayRaw ? parseWarehouseSlipDate(ngayRaw) || ngayRaw : null;
   const ma_lenh_sx = String(source.ma_lenh_sx ?? source.maLenhSx ?? '').trim() || null;
+  const may = String(source.may ?? source.ma_may ?? source.ten_may ?? '').trim() || null;
   const caRaw = String(source.ca ?? source.shift ?? '').trim();
   const ca = !caRaw || caRaw === '-' || caRaw === '—' ? null : caRaw;
   const ten_phieu = String(source.ten_phieu ?? source.tenPhieu ?? '').trim() ||
-    formatMixingNormSlipName(ngay, ca, ma_lenh_sx);
+    formatMixingNormSlipName(ngay, may || ca, ma_lenh_sx);
 
   const parseNvlLines = (raw: unknown, label: string, required = true) => {
     const linesRaw = Array.isArray(raw) ? raw : [];
@@ -3388,7 +3421,6 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
     }
 
     if (products.length === 0) return { error: 'Vui lòng thêm ít nhất 1 sản phẩm.' };
-    if (!ca) return { error: 'Vui lòng chọn ca.' };
 
     const first = products[0];
     return {
@@ -3397,6 +3429,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         ngay,
         ca,
         ma_lenh_sx,
+        may,
         ma_sp: first.ma_sp,
         ten_sp: first.ten_sp,
         tong_trong_luong: first.tong_trong_luong,
@@ -5640,11 +5673,25 @@ async function enrichOrderProductsWithConversionData(
       const isCutOrder = orderType === 'Đơn theo quy cách của khách đặt';
       const conversion = spId ? conversionMap.get(spId) : null;
       const round = (val: number) => Math.round((val + Number.EPSILON) * 100) / 100;
+      const isCustomerEnteredKg = product.nguon_quy_doi === 'khach_hang_nhap_kg' &&
+        Number.isFinite(product.tong_kg) && Number(product.tong_kg) > 0;
+      const quantity = Number(product.so_luong);
+      const manualKgPerUnit = isCustomerEnteredKg && Number.isFinite(quantity) && quantity > 0
+        ? round(Number(product.tong_kg) / quantity)
+        : null;
+      const normalizedUnit = String(product.don_vi || '')
+        .trim()
+        .toLocaleLowerCase('vi')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd');
+      const isSheetUnit = normalizedUnit === 'tam' || normalizedUnit === 'sheet';
+      const isRollUnit = normalizedUnit === 'cuon' || normalizedUnit === 'roll';
 
       if (isCutOrder) {
         const cutWeight = calculateCutOrderWeightServer(product.dai_m ?? null, product.so_luong, product.don_vi, conversion || null, product.ma_sp, product.ten_sp);
-        const kg1Sp = cutWeight?.kg1Sp ?? product.kg_1_sp ?? null;
-        const tongKg = cutWeight?.tongKg ?? product.tong_kg ?? null;
+        const kg1Sp = manualKgPerUnit ?? cutWeight?.kg1Sp ?? product.kg_1_sp ?? null;
+        const tongKg = isCustomerEnteredKg ? product.tong_kg ?? null : cutWeight?.tongKg ?? product.tong_kg ?? null;
 
         const width = extractProductWidthServer(product.ma_sp, product.ten_sp, conversion);
         const daiM = product.dai_m ?? null;
@@ -5652,8 +5699,12 @@ async function enrichOrderProductsWithConversionData(
         const m2 = width && width > 0 && daiM && qty && daiM > 0 && qty > 0 ? round(daiM * width * qty) : (product.m2 ?? null);
         const mDai = daiM && qty && daiM > 0 && qty > 0 ? round(daiM * qty) : (product.m_dai ?? null);
 
-        const tlCuon = conversion?.trong_luong_kg_cuon ?? product.tl_cuon ?? null;
-        const tlTam = kg1Sp ?? conversion?.trong_luong_kg_tam ?? product.tl_tam ?? null;
+        const tlCuon = manualKgPerUnit !== null && isRollUnit
+          ? manualKgPerUnit
+          : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
+        const tlTam = manualKgPerUnit !== null && isSheetUnit
+          ? manualKgPerUnit
+          : kg1Sp ?? product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null;
 
         const quyCachMDai = product.quy_cach_m_dai ?? (daiM && daiM > 0 ? daiM : null);
 
@@ -5671,13 +5722,21 @@ async function enrichOrderProductsWithConversionData(
           ...(tlCuon !== null ? { tl_cuon: tlCuon } : {}),
           ...(tlTam !== null ? { tl_tam: tlTam } : {}),
           ...(kg1Sp !== null && kg1Sp !== tlTam && kg1Sp !== tlCuon ? { kg_1_sp: kg1Sp } : {}),
-          ...(cutWeight?.source ? { nguon_quy_doi: cutWeight.source } : {}),
+          ...(isCustomerEnteredKg
+            ? { nguon_quy_doi: 'khach_hang_nhap_kg' }
+            : cutWeight?.source
+              ? { nguon_quy_doi: cutWeight.source }
+              : {}),
           ket_qua_quy_doi: results.length > 0 ? results : (product.ket_qua_quy_doi ?? [])
         };
       }
 
-      const tlCuon = conversion?.trong_luong_kg_cuon ?? product.tl_cuon ?? null;
-      const tlTam = conversion?.trong_luong_kg_tam ?? product.tl_tam ?? null;
+      const tlCuon = manualKgPerUnit !== null && isRollUnit
+        ? manualKgPerUnit
+        : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
+      const tlTam = manualKgPerUnit !== null && isSheetUnit
+        ? manualKgPerUnit
+        : product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null;
 
       return {
         ...product,
@@ -5837,9 +5896,22 @@ function pickRowField(row: Record<string, unknown>, keys: string[], fallback = '
   return fallback;
 }
 
+/**
+ * Chuẩn hóa mã lệnh SX: lệnh gộp nhiều đơn nối bằng gạch ngang.
+ * Cấm ký tự phân cách nhiều mã (, ; | /) vì app tách các mã lệnh/đơn hàng theo chúng.
+ * Giữ tiền tố LSX-, tối đa ~80 ký tự. Mã đã chuẩn không đổi.
+ */
+function normalizeProductionOrderCode(raw: unknown): string {
+  let code = String(raw ?? '').trim();
+  if (!code) return '';
+  code = code.replace(/[,;|/]+/g, '-').replace(/\s+/g, '-');
+  code = code.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  return code.slice(0, 80);
+}
+
 function makeProductionOrderCode(orderCode: string, suffix = '') {
-  const base = (orderCode || 'DH').replace(/\s+/g, '-');
-  return `LSX-${base}${suffix}`.slice(0, 80);
+  const base = normalizeProductionOrderCode(orderCode || 'DH') || 'DH';
+  return `LSX-${base.replace(/^LSX-/, '')}${suffix}`.slice(0, 80);
 }
 
 function generateNextStaffCode(existingCodes: Iterable<string>) {
@@ -6158,7 +6230,7 @@ function parseProductionOrderBody(
   const orderRef = pickRowField(source, ['ma_don_hang', 'orderRef', 'order_code'], '') || productOrderRefs.join(', ');
   const manualSeed = `MAN-${Date.now().toString(36).slice(-6).toUpperCase()}`;
   const codeInput = pickRowField(source, ['ma_lenh_sx', 'code'], '');
-  const code = codeInput || makeProductionOrderCode(orderRef || manualSeed);
+  const code = normalizeProductionOrderCode(codeInput) || makeProductionOrderCode(orderRef || manualSeed);
   const name = pickRowField(source, ['ten_lenh_sx', 'name'], '');
   const startDateTime = pickRowField(
     source,
@@ -7550,39 +7622,57 @@ export function createApp() {
 
   app.post('/api/bang-quy-doi-san-pham/import', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
-    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 200) : [];
-    if (items.length === 0) return res.status(400).json({ error: 'Không có dữ liệu import.' });
-    const valid: Array<{ rowNumber: number; record: Record<string, unknown> }> = [];
-    const errors: Array<{ rowNumber: number; error: string }> = [];
-    items.forEach((item: unknown, index: number) => {
-      const body = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-      const parsed = parseProductConversionBody(body);
-      const rowNumber = Number(body.rowNumber) || index + 1;
-      if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
-      else valid.push({ rowNumber, record: parsed.record });
-    });
-    const productIds = [...new Set(valid.map(item => String(item.record.san_pham_id)))];
-    const existingResult = productIds.length
-      ? await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('id,san_pham_id').in('san_pham_id', productIds)
-      : { data: [], error: null };
-    if (existingResult.error) return res.status(500).json({ error: existingResult.error.message });
-    const existing = new Map((existingResult.data || []).map(row => [String(row.san_pham_id), Number(row.id)]));
-    let created = 0, updated = 0;
-    const processItem = async (item: { rowNumber: number; record: Record<string, unknown> }) => {
-      const mapKey = String(item.record.san_pham_id);
-      const id = existing.get(mapKey);
-      if (id) {
-        const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).update({ ...item.record, updated_at: new Date().toISOString() }).eq('id', id);
-        if (result.error) errors.push({ rowNumber: item.rowNumber, error: result.error.message });
-        else updated += 1;
-        return;
+    try {
+      const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 1000) : [];
+      if (items.length === 0) return res.status(400).json({ error: 'Không có dữ liệu import.' });
+      const valid: Array<{ rowNumber: number; record: Record<string, unknown> }> = [];
+      const errors: Array<{ rowNumber: number; error: string }> = [];
+      items.forEach((item: unknown, index: number) => {
+        const body = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+        const parsed = parseProductConversionBody(body);
+        const rowNumber = Number(body.rowNumber) || index + 1;
+        if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
+        else valid.push({ rowNumber, record: parsed.record });
+      });
+      if (valid.length === 0) return res.json({ success: true, processed: items.length, created: 0, updated: 0, failed: errors.length, errors });
+      // Gom trùng san_pham_id trong cùng lô: giữ dòng cuối cùng (khớp unique san_pham_id).
+      const deduped = new Map<string, { rowNumber: number; record: Record<string, unknown> }>();
+      for (const item of valid) deduped.set(String(item.record.san_pham_id), item);
+      const records = [...deduped.values()];
+      const productIds = records.map(item => String(item.record.san_pham_id));
+      // Check tồn tại theo chunk nhỏ: .in() quá nhiều ID làm URL dài → Supabase fetch failed.
+      const existingIds = new Set<string>();
+      const SELECT_CHUNK = 150;
+      for (let index = 0; index < productIds.length; index += SELECT_CHUNK) {
+        const chunkIds = productIds.slice(index, index + SELECT_CHUNK);
+        const existingResult = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('san_pham_id').in('san_pham_id', chunkIds);
+        if (existingResult.error) return res.status(500).json({ error: existingResult.error.message });
+        for (const row of existingResult.data || []) existingIds.add(String(row.san_pham_id));
       }
-      const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).insert(item.record).select('id').single();
-      if (result.error) errors.push({ rowNumber: item.rowNumber, error: result.error.message });
-      else { created += 1; existing.set(mapKey, Number(result.data.id)); }
-    };
-    for (let index = 0; index < valid.length; index += 10) await Promise.all(valid.slice(index, index + 10).map(processItem));
-    return res.json({ success: true, processed: items.length, created, updated, failed: errors.length, errors });
+      const now = new Date().toISOString();
+      const payload = records.map(item => ({ ...item.record, updated_at: now }));
+      // Upsert batch theo unique (san_pham_id): 1 request thay cho N update/insert từng dòng.
+      const UPSERT_CHUNK = 200;
+      for (let index = 0; index < payload.length; index += UPSERT_CHUNK) {
+        const chunk = payload.slice(index, index + UPSERT_CHUNK);
+        const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).upsert(chunk, { onConflict: 'san_pham_id' });
+        if (result.error) {
+          const chunkRows = records.slice(index, index + UPSERT_CHUNK);
+          chunkRows.forEach(item => errors.push({ rowNumber: item.rowNumber, error: result.error.message }));
+        }
+      }
+      const failedRowNumbers = new Set(errors.map(err => err.rowNumber));
+      // Trừ lỗi validate ban đầu khỏi created/updated: chỉ đếm các dòng upsert thành công.
+      let created = 0, updated = 0;
+      for (const item of records) {
+        if (failedRowNumbers.has(item.rowNumber)) continue;
+        if (existingIds.has(String(item.record.san_pham_id))) updated += 1;
+        else created += 1;
+      }
+      return res.json({ success: true, processed: items.length, created, updated, failed: errors.length, errors });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Không import được dữ liệu.' });
+    }
   });
 
   app.get('/api/bang-quy-doi-san-pham/:id', async (req, res) => {
@@ -8504,12 +8594,11 @@ export function createApp() {
         if (!maNhanSu) continue;
         const batDau = pickRowField(item, ['thoi_gian_bat_dau', 'thoiGianBatDau', 'start'], '');
         const ketThuc = pickRowField(item, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
+        // Không validate thời gian (cho phép trống, cho phép trùng) — yêu cầu màn xếp lịch #3.
         if (batDau && !PHAN_CONG_TIME_RE.test(batDau))
           return res.status(400).json({ error: `Giờ bắt đầu không hợp lệ (${maNhanSu}).` });
         if (ketThuc && !PHAN_CONG_TIME_RE.test(ketThuc))
           return res.status(400).json({ error: `Giờ kết thúc không hợp lệ (${maNhanSu}).` });
-        if (batDau && ketThuc && batDau === ketThuc)
-          return res.status(400).json({ error: `Giờ bắt đầu và giờ kết thúc không được trùng nhau (${maNhanSu}).` });
         rows.push({
           id_lenh_sx: lenh ? lenh.id : null,
           ma_lenh_sx: lenh ? lenh.ma_lenh_sx || null : null,
@@ -11392,7 +11481,7 @@ export function createApp() {
       const [caRes, mayRes, phanCongRes, dieuDongRes, nhanSuRes] = await Promise.all([
         supabase.from('cai_dat_thoi_gian').select('*'),
         supabase.from('danh_sach_may').select('*'),
-        supabase.from('phan_cong_nhan_su_chi_tiet').select('*').eq('ngay_lam_viec', ngayLamViec),
+        supabase.from('phan_cong_nhan_su_chi_tiet').select('*').eq('ngay_lam_viec', ngayLamViec).order('created_at', { ascending: true }),
         supabase.from('dieu_dong_nhan_su').select('*').eq('ngay_lam_viec', ngayLamViec),
         supabase.from('nhan_su').select('ma_nhan_su, nhan_su')
       ]);
@@ -11400,9 +11489,10 @@ export function createApp() {
       let caList = (caRes.data || []) as any[];
       const mayList = mayRes.data || [];
       const phanCongAllRows = phanCongRes.data || [];
-      const phanCongList = phanCongAllRows.filter(
-        row => !isScheduleNoteRow(row) && !isGeneralScheduleNoteRow(row)
-      );
+      // Giữ đúng thứ tự đã xếp lúc xếp lịch (Trưởng ca → Trộn → Ra tấm...): sắp theo created_at.
+      const phanCongList = phanCongAllRows
+        .filter(row => !isScheduleNoteRow(row) && !isGeneralScheduleNoteRow(row))
+        .sort((a: any, b: any) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
       const dieuDongList = dieuDongRes.data || [];
       const nhanSuMap = new Map((nhanSuRes.data || []).map(ns => [String(ns.ma_nhan_su), ns.nhan_su]));
       const ghiChuChiTiet = normalizeScheduleNotes(phanCongAllRows);
@@ -11434,6 +11524,24 @@ export function createApp() {
         if (code) activeMachineCodes.add(code);
       }
       const mayListHienThi = mayList.filter(may => activeMachineCodes.has(getMachineCode(may.ma_may)));
+      // Máy bổ sung (Công việc khác / Hành chính) không có trong danh_sach_may — vẫn hiện nếu có lịch.
+      const PSEUDO_MACHINES: Array<{ ma_may: string; ten_may: string }> = [
+        { ma_may: 'CONG_VIEC_KHAC', ten_may: 'Công việc khác' },
+        { ma_may: 'HANH_CHINH', ten_may: 'Hành chính' }
+      ];
+      for (const pseudo of PSEUDO_MACHINES) {
+        if (activeMachineCodes.has(getMachineCode(pseudo.ma_may)) && !mayListHienThi.some((m: any) => getMachineCode(m.ma_may) === getMachineCode(pseudo.ma_may))) {
+          mayListHienThi.push(pseudo as any);
+        }
+      }
+      // Mã máy lạ khác (nếu có) — vẫn hiện để không mất lịch.
+      for (const code of activeMachineCodes) {
+        if (!mayListHienThi.some((m: any) => getMachineCode(m.ma_may) === code)) {
+          const sample = phanCongList.find((r: any) => getMachineCode(r.ma_may) === code) as any;
+          const label = String(sample?.may || '').trim() || code;
+          mayListHienThi.push({ ma_may: code, ten_may: label } as any);
+        }
+      }
 
       // Apply shift filter precedence: 'Thời gian' first, then 'Sản xuất', then regex match on name/code
       const fromTimeSettings = caList.filter(setting => setting.loai_cai_dat === 'Thời gian');
@@ -11511,7 +11619,8 @@ export function createApp() {
 
         // For each time slot, find employees and their machine assignments
         // Structure: machineData[tenMay][tenCa] to separate by both machine and shift
-        type MachineShiftData = Record<string, Record<string, Array<{ name: string; dispatch?: string }>>>;
+        // Giữ đúng thứ tự đã xếp (push theo created_at) — không sort lại theo tên.
+        type MachineShiftData = Record<string, Record<string, Array<{ name: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>>>;
         const machineData: MachineShiftData = {};
 
         for (const may of mayListHienThi) {
@@ -11520,6 +11629,7 @@ export function createApp() {
             machineData[may.ten_may][shiftCa.ten_cai_dat] = [];
           }
         }
+        const allMachinesForLookup: any[] = [...mayListHienThi, ...mayList];
 
         // Find employees assigned to machines in this time period
         for (const phanCong of phanCongList) {
@@ -11529,12 +11639,15 @@ export function createApp() {
           // Get employee name (last word only)
           const fullName = nhanSuMap.get(phanCong.ma_nhan_su) || phanCong.ma_nhan_su;
           const lastName = extractLastName(fullName);
+          const schedStart = String((phanCong as any).thoi_gian_bat_dau || '').trim().slice(0, 5);
+          const schedEnd = String((phanCong as any).thoi_gian_ket_thuc || '').trim().slice(0, 5);
+          const vaiTro = String((phanCong as any).vai_tro || '').trim();
 
-          // Find machine name from ma_may
-          const machine = mayList.find(
+          // Find machine name from ma_may (kể cả máy bổ sung)
+          const machine = allMachinesForLookup.find(
             m => m.ma_may === phanCong.ma_may || m.ten_may === phanCong.ma_may || m.ten_may === phanCong.may
           );
-          const machineName = machine?.ten_may || String(phanCong.may || '').trim();
+          const machineName = machine?.ten_may || String(phanCong.may || '').trim() || String(phanCong.ma_may || '').trim();
 
           if (!machineName) continue;
 
@@ -11568,16 +11681,18 @@ export function createApp() {
             const raw = String(dd.may_dieu_dong || '').trim();
             if (!raw) return '';
             if (raw === 'Việc khác') return 'Việc khác';
-            const found = mayList.find(m => m.ma_may === raw || m.ten_may === raw);
+            const found = allMachinesForLookup.find(m => m.ma_may === raw || m.ten_may === raw);
             return found?.ten_may || raw;
           };
 
           if (dispatchesForThisMachine.length > 0) {
-            // Note điều động ghi vào Ô CA CHÍNH của nhân sự (trong ngoặc, cạnh tên).
-            // Giờ: "làm lúc hh:mm" / "về lúc hh:mm" (tuỳ phần nào có dữ liệu).
+            // So sánh giờ làm việc (lịch) vs giờ điều động để ra "làm lúc / về lúc":
+            // ưu tiên giờ điều động, thiếu phần nào thì lấy giờ lịch.
             const dispatchNotes = dispatchesForThisMachine.map(dd => {
               const toMachineName = resolveDestMachineName(dd);
-              const timePhrase = formatDispatchPrintTime(dd.thoi_gian_bat_dau, dd.thoi_gian_ket_thuc);
+              const effStart = String(dd.thoi_gian_bat_dau || '').trim().slice(0, 5) || schedStart;
+              const effEnd = String(dd.thoi_gian_ket_thuc || '').trim().slice(0, 5) || schedEnd;
+              const timePhrase = formatDispatchPrintTime(effStart, effEnd);
               const toCa = String(dd.ca_dieu_dong || dd.ca || '').trim();
               const homeCa = String(phanCong.ca_lam_viec || '').trim();
               const sameMachine = !toMachineName || toMachineName === machineName;
@@ -11597,12 +11712,18 @@ export function createApp() {
 
             machineData[machineName][tenCa].push({
               name: lastName,
+              vaiTro,
+              batDau: schedStart,
+              ketThuc: schedEnd,
               dispatch: dispatchNotes.join('\n')
             });
           } else {
             // Employee stays in this machine (no dispatch from this machine)
             machineData[machineName][tenCa].push({
-              name: lastName
+              name: lastName,
+              vaiTro,
+              batDau: schedStart,
+              ketThuc: schedEnd
             });
           }
         }
@@ -11620,7 +11741,7 @@ export function createApp() {
 
           const rawDest = String(dd.may_dieu_dong || '').trim();
           if (!rawDest || rawDest === 'Việc khác') continue;
-          const destMachine = mayList.find(m => m.ma_may === rawDest || m.ten_may === rawDest);
+          const destMachine = allMachinesForLookup.find(m => m.ma_may === rawDest || m.ten_may === rawDest);
           const destMachineName = destMachine?.ten_may || rawDest;
           if (!machineData[destMachineName]) {
             machineData[destMachineName] = {};
@@ -11638,7 +11759,7 @@ export function createApp() {
           );
           if (alreadyListed) continue;
 
-          const homeMachine = mayList.find(m => m.ma_may === fromMachine || m.ten_may === fromMachine);
+          const homeMachine = allMachinesForLookup.find(m => m.ma_may === fromMachine || m.ten_may === fromMachine);
           const homeMachineName = homeMachine?.ten_may || fromMachine;
           const sameMachine = homeMachineName === destMachineName;
           const arrivalNote = sameMachine
@@ -13061,12 +13182,50 @@ export function createApp() {
       const materialClassError = await validateMixingNormMaterialClasses(parsed.record);
       if (materialClassError) return res.status(400).json({ error: materialClassError });
 
+      // Lệnh SX đã xong (Hoàn thành/Hủy) thì không tạo PTĐM mới.
+      const normOrderCodes = String(parsed.record.ma_lenh_sx ?? '')
+        .split(/[,;|/]+/).map(value => value.trim()).filter(Boolean);
+      if (normOrderCodes.length > 0 && supabase) {
+        try {
+          const { data: linkedOrders } = await supabase
+            .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+            .select('ma_lenh_sx, trang_thai')
+            .in('ma_lenh_sx', normOrderCodes);
+          const normStatus = (value: unknown) =>
+            String(value ?? '').trim().toLowerCase().normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/đ/g, 'd');
+          const done = (Array.isArray(linkedOrders) ? linkedOrders : []).find(row => {
+            const status = normStatus((row as Record<string, unknown>).trang_thai);
+            return status === 'hoan thanh' || status === 'huy';
+          }) as Record<string, unknown> | undefined;
+          if (done) {
+            return res.status(400).json({
+              error: `Lệnh SX ${String(done.ma_lenh_sx ?? '').trim()} đã ${String(done.trang_thai ?? '').trim()}, không thể tạo phiếu trộn định mức.`
+            });
+          }
+        } catch {
+          // Bỏ qua kiểm tra khi không tra được trạng thái lệnh.
+        }
+      }
+
       let insertRecord = { ...parsed.record };
       let { data, error } = await supabase
         .from(SUPABASE_MIXING_NORM_TABLE)
         .insert(insertRecord)
         .select('*')
         .single();
+
+      if (error && isMissingMixingNormMayColumn(error)) {
+        insertRecord = stripMixingNormMayColumn(insertRecord);
+        const retryMay = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .insert(insertRecord)
+          .select('*')
+          .single();
+        data = retryMay.data;
+        error = retryMay.error;
+      }
 
       if (error && isMissingColumnError(error) && error.message?.includes('ten_phieu')) {
         const { ten_phieu: _omitted, ...recordWithoutTenPhieu } = insertRecord;
@@ -13175,6 +13334,22 @@ export function createApp() {
           .insert(insertRecord)
           .select('*')
           .single();
+        if (insertResult.error && isMissingMixingNormMayColumn(insertResult.error)) {
+          const retryMay = await supabase
+            .from(SUPABASE_MIXING_NORM_TABLE)
+            .insert(stripMixingNormMayColumn(insertRecord))
+            .select('*')
+            .single();
+          if (retryMay.error) {
+            console.error('Supabase mixing norm history insert error:', retryMay.error);
+            return res.status(500).json({ error: mixingNormWriteError(retryMay.error) });
+          }
+          return res.status(201).json({
+            success: true,
+            created_history: true,
+            record: retryMay.data
+          });
+        }
         if (insertResult.error) {
           console.error('Supabase mixing norm history insert error:', insertResult.error);
           return res.status(500).json({ error: mixingNormWriteError(insertResult.error) });
@@ -13194,6 +13369,18 @@ export function createApp() {
         .eq('id', id)
         .select('*')
         .single();
+
+      if (error && isMissingMixingNormMayColumn(error)) {
+        updateRecord = stripMixingNormMayColumn(updateRecord);
+        const retryMay = await supabase
+          .from(SUPABASE_MIXING_NORM_TABLE)
+          .update(updateRecord)
+          .eq('id', id)
+          .select('*')
+          .single();
+        data = retryMay.data;
+        error = retryMay.error;
+      }
 
       if (error && isMissingColumnError(error) && error.message?.includes('ten_phieu')) {
         const { ten_phieu: _omitted, ...recordWithoutTenPhieu } = updateRecord;
