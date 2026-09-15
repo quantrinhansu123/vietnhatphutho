@@ -2291,6 +2291,7 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
       let created = 0;
       let updated = 0;
       const failures: string[] = [];
+      const jobs: Array<Record<string, unknown>> = [];
 
       for (const row of rows) {
         const amis = row.amisCode.trim();
@@ -2355,20 +2356,31 @@ export function ProductsPanel({ onBack }: { onBack: () => void }) {
         }
         if (hasError) continue;
 
+        jobs.push({ rowNumber: row.rowNumber, ...fields });
+      }
+
+      // Gửi batch (200 dòng/request) để API upsert 1 lần thay cho N request từng dòng.
+      for (let index = 0; index < jobs.length; index += 200) {
+        const batch = jobs.slice(index, index + 200);
         const res = await fetch('/api/bang-quy-doi-san-pham/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: [{ rowNumber: row.rowNumber, ...fields }] })
+          body: JSON.stringify({ items: batch })
         });
 
         const data = await res.json();
         if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
+          failures.push(`dòng ${batch[0]?.rowNumber ?? '?'}–${batch[batch.length - 1]?.rowNumber ?? '?'}: ${data.error || 'Không lưu được'}`);
           continue;
         }
 
         created += Number(data.created) || 0;
         updated += Number(data.updated) || 0;
+        if (Array.isArray(data.errors)) {
+          for (const err of data.errors as Array<{ rowNumber?: number; error?: string }>) {
+            failures.push(`dòng ${err.rowNumber ?? '?'}: ${err.error || 'Không lưu được'}`);
+          }
+        }
       }
 
       const summary = [

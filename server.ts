@@ -7609,39 +7609,57 @@ export function createApp() {
 
   app.post('/api/bang-quy-doi-san-pham/import', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
-    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 200) : [];
-    if (items.length === 0) return res.status(400).json({ error: 'Không có dữ liệu import.' });
-    const valid: Array<{ rowNumber: number; record: Record<string, unknown> }> = [];
-    const errors: Array<{ rowNumber: number; error: string }> = [];
-    items.forEach((item: unknown, index: number) => {
-      const body = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-      const parsed = parseProductConversionBody(body);
-      const rowNumber = Number(body.rowNumber) || index + 1;
-      if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
-      else valid.push({ rowNumber, record: parsed.record });
-    });
-    const productIds = [...new Set(valid.map(item => String(item.record.san_pham_id)))];
-    const existingResult = productIds.length
-      ? await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('id,san_pham_id').in('san_pham_id', productIds)
-      : { data: [], error: null };
-    if (existingResult.error) return res.status(500).json({ error: existingResult.error.message });
-    const existing = new Map((existingResult.data || []).map(row => [String(row.san_pham_id), Number(row.id)]));
-    let created = 0, updated = 0;
-    const processItem = async (item: { rowNumber: number; record: Record<string, unknown> }) => {
-      const mapKey = String(item.record.san_pham_id);
-      const id = existing.get(mapKey);
-      if (id) {
-        const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).update({ ...item.record, updated_at: new Date().toISOString() }).eq('id', id);
-        if (result.error) errors.push({ rowNumber: item.rowNumber, error: result.error.message });
-        else updated += 1;
-        return;
+    try {
+      const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 1000) : [];
+      if (items.length === 0) return res.status(400).json({ error: 'Không có dữ liệu import.' });
+      const valid: Array<{ rowNumber: number; record: Record<string, unknown> }> = [];
+      const errors: Array<{ rowNumber: number; error: string }> = [];
+      items.forEach((item: unknown, index: number) => {
+        const body = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+        const parsed = parseProductConversionBody(body);
+        const rowNumber = Number(body.rowNumber) || index + 1;
+        if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
+        else valid.push({ rowNumber, record: parsed.record });
+      });
+      if (valid.length === 0) return res.json({ success: true, processed: items.length, created: 0, updated: 0, failed: errors.length, errors });
+      // Gom trùng san_pham_id trong cùng lô: giữ dòng cuối cùng (khớp unique san_pham_id).
+      const deduped = new Map<string, { rowNumber: number; record: Record<string, unknown> }>();
+      for (const item of valid) deduped.set(String(item.record.san_pham_id), item);
+      const records = [...deduped.values()];
+      const productIds = records.map(item => String(item.record.san_pham_id));
+      // Check tồn tại theo chunk nhỏ: .in() quá nhiều ID làm URL dài → Supabase fetch failed.
+      const existingIds = new Set<string>();
+      const SELECT_CHUNK = 150;
+      for (let index = 0; index < productIds.length; index += SELECT_CHUNK) {
+        const chunkIds = productIds.slice(index, index + SELECT_CHUNK);
+        const existingResult = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).select('san_pham_id').in('san_pham_id', chunkIds);
+        if (existingResult.error) return res.status(500).json({ error: existingResult.error.message });
+        for (const row of existingResult.data || []) existingIds.add(String(row.san_pham_id));
       }
-      const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).insert(item.record).select('id').single();
-      if (result.error) errors.push({ rowNumber: item.rowNumber, error: result.error.message });
-      else { created += 1; existing.set(mapKey, Number(result.data.id)); }
-    };
-    for (let index = 0; index < valid.length; index += 10) await Promise.all(valid.slice(index, index + 10).map(processItem));
-    return res.json({ success: true, processed: items.length, created, updated, failed: errors.length, errors });
+      const now = new Date().toISOString();
+      const payload = records.map(item => ({ ...item.record, updated_at: now }));
+      // Upsert batch theo unique (san_pham_id): 1 request thay cho N update/insert từng dòng.
+      const UPSERT_CHUNK = 200;
+      for (let index = 0; index < payload.length; index += UPSERT_CHUNK) {
+        const chunk = payload.slice(index, index + UPSERT_CHUNK);
+        const result = await supabase.from(SUPABASE_PRODUCT_CONVERSIONS_TABLE).upsert(chunk, { onConflict: 'san_pham_id' });
+        if (result.error) {
+          const chunkRows = records.slice(index, index + UPSERT_CHUNK);
+          chunkRows.forEach(item => errors.push({ rowNumber: item.rowNumber, error: result.error.message }));
+        }
+      }
+      const failedRowNumbers = new Set(errors.map(err => err.rowNumber));
+      // Trừ lỗi validate ban đầu khỏi created/updated: chỉ đếm các dòng upsert thành công.
+      let created = 0, updated = 0;
+      for (const item of records) {
+        if (failedRowNumbers.has(item.rowNumber)) continue;
+        if (existingIds.has(String(item.record.san_pham_id))) updated += 1;
+        else created += 1;
+      }
+      return res.json({ success: true, processed: items.length, created, updated, failed: errors.length, errors });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Không import được dữ liệu.' });
+    }
   });
 
   app.get('/api/bang-quy-doi-san-pham/:id', async (req, res) => {
