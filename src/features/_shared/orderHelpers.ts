@@ -341,9 +341,9 @@ export function allowedOrderUnits(product: Pick<OrderProductOption, 'group' | 'u
   if (!product) return [];
   const group = product.group.replace(/\s+/g, '').toLocaleLowerCase('vi');
   const units =
-    group === 'tp;pxđặc'
+    group === 'tp;pxđặc' || group === 'tp;pxsóng'
       ? ['Tấm', 'Cuộn']
-      : group === 'tp;pxsóng' || group === 'tp;pxrỗng'
+      : group === 'tp;pxrỗng'
         ? ['Tấm']
         : ['kg'];
   const orderUnit = (preferredUnit || product.unit || '').trim();

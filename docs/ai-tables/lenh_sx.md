@@ -48,6 +48,8 @@ Cột `nhan_su` vẫn giữ trên lệnh SX (mặc định “Chưa phân công�
 
 Mỗi dòng lệnh: cột **Mã hàng / Tên hàng / Số lượng** trình bày bảng con (mỗi SP một dòng), không ghép bằng `|`.
 
+Gộp dòng tiến độ (`buildProductionProgressForOrder` trong `src/utils/productionProgressByProduct.ts`) giống bản in: cùng **mã hàng chuẩn hóa + ĐVT + m dài quy cách** mới là một dòng (cắt lẻ khác mét, Tấm/Cuộn tách riêng); Đã SX tính 1 lần theo mã rồi phân bổ theo thứ tự dòng.
+
 ### Tự điền từ đơn hàng
 
 - Giữ riêng từng dòng trong JSON `don_hang.san_pham`, kể cả các dòng trùng mã hoặc `san_pham_id`; không gộp số lượng.
@@ -61,3 +63,4 @@ Mỗi dòng lệnh: cột **Mã hàng / Tên hàng / Số lượng** trình bày
 
 - Form thêm/sửa Lệnh SX chọn ca bằng component select2 tìm kiếm (`SearchableMultiSelect`), vẫn cho phép chọn nhiều ca nhưng chỉ gọi `POST /api/lenh-sx` một lần và chỉ tạo một bản ghi `lenh_sx`.
 - Các ca được lưu chung trong cột `ca`, phân cách bằng dấu phẩy; ngày giờ bắt đầu/kết thúc bao trùm các ca đã chọn. Danh sách/in hiển thị nhãn từng ca và đối chiếu phiếu xuất kho khớp nếu có ít nhất một ca trùng nhau.
+- Thứ tự trường trong form: Ca * (chọn nhiều ca), Máy, Giờ bắt đầu, Giờ kết thúc, Trạng thái.

@@ -133,17 +133,6 @@ export function parseSongLengthMeters(tenSanXuat: string): number | null {
   return parseMeterNumber(matches[matches.length - 1][1]);
 }
 
-/** Với TP; PX Sóng: lấy mét dài nhất trong danh sách tên SX biến thể. */
-export function pickMaxSongLengthMeters(names: string[]): number | null {
-  let max: number | null = null;
-  for (const name of names) {
-    const n = parseSongLengthMeters(name);
-    if (n == null) continue;
-    if (max == null || n > max) max = n;
-  }
-  return max;
-}
-
 function splitFirstDash(text: string): { before: string; after: string } {
   const idx = text.indexOf('-');
   if (idx < 0) return { before: text.trim(), after: '' };

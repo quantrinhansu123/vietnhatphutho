@@ -28,6 +28,8 @@ export type ProductionProgressLine = {
   actualQty: number;
   remainingQty: number;
   status: ProductionProgressStatus;
+  /** Key mã hàng chuẩn hóa (không gồm ĐVT/m dài) — dùng để tính rồi phân bổ Đã SX. */
+  codeKey?: string;
 };
 
 export type ProductionProgressBucket = {
@@ -113,6 +115,35 @@ export function acceptanceQuantityForProduct(input: {
   }, 0);
 }
 
+/** Chuẩn hóa ĐVT để gộp dòng (giống key bản in lệnh SX): bỏ dấu, viết thường, xóa khoảng trắng. */
+function normalizeProgressUnit(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '');
+}
+
+/** Mét dài quy cách của dòng (quyCachMDai → chuỗi quy_cach → daiM), giống bản in. */
+function resolveProgressLengthMeters(line: {
+  quyCachMDai?: number | string | null;
+  quyCach?: string;
+  daiM?: string;
+}): number | null {
+  const direct = Number(String(line.quyCachMDai ?? '').replace(',', '.'));
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const fromQuyCach = String(line.quyCach ?? '').match(/(\d+(?:[.,]\d+)?)/);
+  if (fromQuyCach) {
+    const n = Number(fromQuyCach[1].replace(',', '.'));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const daiM = Number(String(line.daiM ?? '').replace(',', '.'));
+  if (Number.isFinite(daiM) && daiM > 0) return daiM;
+  return null;
+}
+
 export function buildProductionProgressForOrder(
   order: Pick<
     ProductionOrderRow,
@@ -133,8 +164,12 @@ export function buildProductionProgressForOrder(
     const productCode = String(line.productCode || '').trim();
     const productName = String(line.productName || '').trim();
     const productionName = String(line.productionName || '').trim();
-    const key = normalizeProductCodeKey(productCode || productName || productionName);
-    if (!key) return;
+    const codeKey = normalizeProductCodeKey(productCode || productName || productionName);
+    if (!codeKey) return;
+    // Gộp giống bản in: cùng mã + cùng ĐVT + cùng m dài quy cách mới là một dòng
+    // (cắt lẻ 8m vs 9m, Tấm vs Cuộn không gộp chung).
+    const lengthM = resolveProgressLengthMeters(line);
+    const key = `${codeKey}__u:${normalizeProgressUnit(line.unit)}__m:${lengthM !== null ? lengthM.toFixed(3) : 'none'}`;
 
     const plannedQty = parseProductionOrderQuantity(line.quantity) || 0;
     const lineTenGhep = String(line.tenGhep || '').trim() || undefined;
@@ -159,22 +194,34 @@ export function buildProductionProgressForOrder(
       plannedQty,
       actualQty: 0,
       remainingQty: plannedQty,
-      status: 'chua_sx'
+      status: 'chua_sx',
+      codeKey
     });
   });
 
-  for (const line of merged.values()) {
-    line.actualQty = acceptanceQuantityForProduct({
-      productCode: line.productCode,
-      productName: line.productName,
-      reports,
-      bucket
-    });
+  // Báo cáo sản lượng không phân biệt m dài/ĐVT nên tính Đã SX 1 lần theo mã hàng,
+  // rồi phân bổ theo thứ tự dòng (dòng trước fill tới KH, thừa dồn dòng cuối cùng mã).
+  const lines = [...merged.values()];
+  const remainingByCodeKey = new Map<string, number>();
+  lines.forEach((line, idx) => {
+    const key = String(line.codeKey || '');
+    if (!remainingByCodeKey.has(key)) {
+      remainingByCodeKey.set(key, acceptanceQuantityForProduct({
+        productCode: line.productCode,
+        productName: line.productName,
+        reports,
+        bucket
+      }));
+    }
+    const remaining = Math.max(0, remainingByCodeKey.get(key) ?? 0);
+    const isLastOfCode = idx === lines.length - 1 || lines[idx + 1].codeKey !== line.codeKey;
+    line.actualQty = isLastOfCode ? remaining : Math.min(remaining, line.plannedQty);
+    remainingByCodeKey.set(key, Math.max(0, remaining - line.actualQty));
     line.remainingQty = Math.max(0, line.plannedQty - line.actualQty);
     line.status = resolveProgressStatus(line.plannedQty, line.actualQty);
-  }
+  });
 
-  return [...merged.values()];
+  return lines;
 }
 
 /** MH trên lệnh khớp ngày/ca/máy mà chưa có báo cáo sản lượng. */

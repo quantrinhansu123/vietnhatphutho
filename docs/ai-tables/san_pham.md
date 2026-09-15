@@ -32,7 +32,7 @@
 
 `ma_sp`, `ten_sp`, `ten_san_xuat`, `don_vi` (`m`, `m2`, `Tấm`), `nhom_vthh`, `ton_dau_ky`, `npl_phan_tram` (JSON NPL, mỗi dòng lưu thêm `ten_nvl_sx` tương ứng từ Kho NVL).
 
-Thông số SX (migration `supabase-san-pham-thong-so-sx.sql`): `ten_goc`, `do_li`, `do_li_dm` (extract `(đm n li)` **hoặc `(đm n kg)`** từ `ten_san_xuat`, thiếu thì **tự tính cho Đặc** theo `calculateDoLiDm`), `do_day_m`, `do_dai_m`, `mang`, `hang_phe`.  
+Thông số sản xuất (migration `supabase-san-pham-thong-so-sx.sql`): `ten_goc`, `do_li`, `do_li_dm` (extract `(đm n li)` **hoặc `(đm n kg)`** từ `ten_san_xuat`, thiếu thì **tự tính cho Đặc** theo `calculateDoLiDm`), `do_day_m`, `do_dai_m`, `mang`, `hang_phe`.  
 **`do_li`**: chỉ nhận token `…li` tường minh (từ mã AMIS `- Nli` hoặc tên SX, chấp nhận dạng `10i` → chuẩn hóa `10li` qua `normalizeDoLiToken`); chứa KG hay ZEM thì không phải độ li (bỏ, suy tiếp hoặc để trống). Sửa dữ liệu cũ: `supabase-san-pham-xoa-do-li-zem.sql`.
 **`do_li_dm` tự tính (Đặc)**: li < 1 → −0.05; li < 2.8 → −0.1; li < 5 → −0.2; còn lại → −0.3 (vd 0.8→0.75, 2.8→2.6, 5→4.7). Tên có sẵn thì giữ. Rỗng/Sóng không tự tính (Sóng đm-kg loại trừ).
 **`ten_goc`**: cắt đuôi li trùng `do_li` (`stripDuplicateLiFromTenGoc`, trừ khi trong ngoặc). Sửa dữ liệu cũ: `supabase-san-pham-sua-ten-goc-trung-li.sql`.
@@ -43,11 +43,14 @@ Thông số SX (migration `supabase-san-pham-thong-so-sx.sql`): `ten_goc`, `do_l
 **Form SP (cắt lẻ):** `Mét dài` (`doDaiM`, parse qua `parseDoDaiMLength`) **chính là** `Khổ tấm dài (m dài/tấm)` — đổi Mét dài thì Khổ tấm dài luôn đồng bộ theo (kể cả ô đã gõ tay), các thông tin gốc (khổ tấm rộng, khổ cuộn rộng/dài, diện tích, kg/1 m dài, kg/m2) giữ nguyên rồi tính lại `Trọng lượng (kg/Tấm)`, kg/cuộn theo `autoCalculateProductConversion`. Dữ liệu đã lưu lúc mở form không bị tự sửa (chỉ đồng bộ khi `doDaiM` đổi). Thêm mới: chọn SP chính theo AMIS → lấy sẵn toàn bộ quy đổi gốc nếu khối đang trống.
 **Unique không đổi:** API vẫn chặn trùng bộ `ma_amis + ten_sp + ten_san_xuat`. Không tạo unique mới trên các cột thông số.
 
-Utils ghép tên: `src/utils/productProductionName.ts` (Đặc/Rỗng/Sóng; Sóng seed `do_dai_m` = m dài nhất cùng AMIS).
+Utils ghép tên: `src/utils/productProductionName.ts` (Đặc/Rỗng/Sóng; Sóng `do_dai_m` đúng theo tên SX của dòng; Đặc ưu tiên 8/9/20/30m làm m dài).
 
 Đồng bộ kiểm kho dùng `supabase-san-pham-kiem-kho-dong-bo.sql` trên DB chính để bảo đảm mỗi `kiem_kho.id` chỉ cộng một lần.
 
 Danh sách chỉ hiển thị `Thành phẩm`; mỗi sản phẩm là nhóm dòng, các đơn vị quy đổi hợp lệ (`m`, `m2`, `Tấm`, `kg`) nằm ở dòng con. Plan/mockup: `plan_danh_sach_san_pham.md`.
+
+- `TP; PX Sóng` chọn được `Tấm`/`Cuộn` (form hiện dropdown khi nhóm có >1 ĐVT; `allowedOrderUnits` trong `src/features/_shared/orderHelpers.ts` dùng chung cho đơn hàng/lệnh SX).
+- Chọn mã AMIS trong form tự fill Nhóm VTHH + Đơn vị tính + Tỷ lệ hàng hỏng (ưu tiên giá trị đã lưu của SP, fallback quy tắc nhóm).
 
 ### Excel danh mục SP
 

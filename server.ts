@@ -2120,7 +2120,7 @@ function parseProductWastePercent(value: unknown): { error: string } | { value: 
 const PRODUCT_VTHH_RULES: Record<string, { group: string; units: string[]; primaryUnit?: string; wastePercent?: number }> = {
   'tp; px rỗng': { group: 'TP; PX Rỗng', units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: 13 },
   'tp; px đặc': { group: 'TP; PX Đặc', units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: 13 },
-  'tp; px sóng': { group: 'TP; PX Sóng', units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: 2 },
+  'tp; px sóng': { group: 'TP; PX Sóng', units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: 2 },
   'tp; nvl': { group: 'TP; NVL', units: [] },
   'nvl': { group: 'NVL', units: [] },
   'khác': { group: 'Khác', units: [] }
@@ -2263,7 +2263,7 @@ function parseProductPatchBody(
     record.trong_luong_nhua = parseOptionalMaterialDecimalText(source.plasticWeight ?? source.trong_luong_nhua);
   }
 
-  // Thông số SX (không đụng unique ma_amis+ten_sp+ten_san_xuat)
+  // Thông số sản xuất (không đụng unique ma_amis+ten_sp+ten_san_xuat)
   if (Object.prototype.hasOwnProperty.call(source, 'tenGoc') || Object.prototype.hasOwnProperty.call(source, 'ten_goc')) {
     record.ten_goc = parseMaterialText(source.tenGoc ?? source.ten_goc) || null;
   }

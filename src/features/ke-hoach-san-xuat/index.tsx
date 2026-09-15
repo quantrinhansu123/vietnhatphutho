@@ -6580,19 +6580,6 @@ export function AddProductionOrderModal({
               )}
             </label>
 
-            <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
-              <SearchableSelect
-                value={form.status}
-                onChange={status => setForm(prev => ({ ...prev, status }))}
-                options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
-                placeholder="Gõ để tìm trạng thái"
-                getLabel={item => String(item)}
-                getValue={item => String(item)}
-                allowEmpty={false}
-              />
-            </label>
-
             <label className="col-span-2 space-y-1.5">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy *</span>
               {renderMachineSelect(
@@ -6633,6 +6620,19 @@ export function AddProductionOrderModal({
                 value={form.endDateTime}
                 onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
                 className={orderFieldClass}
+              />
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+              <SearchableSelect
+                value={form.status}
+                onChange={status => setForm(prev => ({ ...prev, status }))}
+                options={[...PRODUCTION_ORDER_STATUS_OPTIONS]}
+                placeholder="Gõ để tìm trạng thái"
+                getLabel={item => String(item)}
+                getValue={item => String(item)}
+                allowEmpty={false}
               />
             </label>
 
@@ -8236,20 +8236,6 @@ export function EditProductionOrderModal({
 
             <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
-                <SearchableSelect
-                  value={form.status}
-                  onChange={status => setForm(prev => ({ ...prev, status }))}
-                  options={statusOptions}
-                  placeholder="Gõ để tìm trạng thái"
-                  inputClassName={orderFieldClass}
-                  getLabel={item => String(item)}
-                  getValue={item => String(item)}
-                  allowEmpty={false}
-                />
-              </label>
-
-              <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                   Ca * <span className="text-zinc-400">(chọn nhiều ca)</span>
                 </span>
@@ -8309,6 +8295,20 @@ export function EditProductionOrderModal({
                   value={form.endDateTime}
                   onChange={e => setForm(prev => ({ ...prev, endDateTime: e.target.value }))}
                   className={orderFieldClass}
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+                <SearchableSelect
+                  value={form.status}
+                  onChange={status => setForm(prev => ({ ...prev, status }))}
+                  options={statusOptions}
+                  placeholder="Gõ để tìm trạng thái"
+                  inputClassName={orderFieldClass}
+                  getLabel={item => String(item)}
+                  getValue={item => String(item)}
+                  allowEmpty={false}
                 />
               </label>
 

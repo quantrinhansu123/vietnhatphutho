@@ -1174,7 +1174,7 @@ type ProductConversionForm = {
 const PRODUCT_GROUP_RULES = {
   'TP; PX Rỗng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '13' },
   'TP; PX Đặc': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '13' },
-  'TP; PX Sóng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '2' },
+  'TP; PX Sóng': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '2' },
   'TP; NVL': { units: [], primaryUnit: '', wastePercent: '' },
   'NVL': { units: [], primaryUnit: '', wastePercent: '' },
   'Khác': { units: [], primaryUnit: '', wastePercent: '' }
@@ -1428,7 +1428,7 @@ export function ProductEditModal({
     mode === 'edit' && product ? productToForm(product, productConversions.filter(item => item.sanPhamId === product.id)) : emptyProductForm()
   );
   const [amisOpen, setAmisOpen] = useState(false);
-  // Mét dài trong Thông số SX chính là Khổ tấm dài (m dài/tấm) của khối quy đổi.
+  // Mét dài trong Thông số sản xuất chính là Khổ tấm dài (m dài/tấm) của khối quy đổi.
   // Ghi nhận giá trị lúc nạp form để chỉ đồng bộ khi người dùng đổi Mét dài
   // (dữ liệu đã lưu lúc mở form không bao giờ bị tự sửa).
   const prevDoDaiMRef = useRef<string>('');
@@ -1591,7 +1591,16 @@ export function ProductEditModal({
                   }
                 }
                 setForm(prev => {
-                  const nextBase = { ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName, group: item.group || prev.group };
+                  const nextGroup = item.group || prev.group;
+                  const rule = PRODUCT_GROUP_RULES[nextGroup as ProductGroup];
+                  // Fill Đơn vị tính + Tỷ lệ hàng hỏng theo SP đã chọn (fallback quy tắc nhóm).
+                  const storedUnit = item.unit && item.unit !== '-' ? item.unit : '';
+                  const unit = rule && rule.units.length > 0
+                    ? ((rule.units as readonly string[]).includes(storedUnit) ? storedUnit : (rule.primaryUnit || prev.unit))
+                    : (storedUnit || prev.unit);
+                  const storedWaste = item.wastePercent && item.wastePercent !== '-' ? item.wastePercent : '';
+                  const wastePercent = storedWaste || rule?.wastePercent || prev.wastePercent;
+                  const nextBase = { ...prev, amisCode: item.amisCode, name: item.name, productionName: item.productionName, group: nextGroup, unit, wastePercent };
                   const seeded = seedProductionSpecs({
                     tenSanXuat: item.productionName,
                     maAmis: item.amisCode,
@@ -1626,10 +1635,9 @@ export function ProductEditModal({
           </label>
           <label className="block space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị tính *</span>
-            {form.group === 'TP; PX Đặc' ? (
+            {selectedGroupRule && selectedGroupRule.units.length > 1 ? (
               <select value={form.unit} onChange={event => updateCustomUnit(event.target.value)} className={productFieldClass}>
-                <option value="Tấm">Tấm</option>
-                <option value="Cuộn">Cuộn</option>
+                {selectedGroupRule.units.map(unit => <option key={unit} value={unit}>{unit}</option>)}
               </select>
             ) : (
               <input value={displayedUnit} onChange={event => updateCustomUnit(event.target.value)} readOnly={Boolean(selectedGroupRule?.primaryUnit)} className={`${productFieldClass} read-only:bg-zinc-100`} placeholder={form.group ? 'Nhập ĐVT' : 'Chọn Nhóm VTHH trước'} />
@@ -1664,10 +1672,7 @@ export function ProductEditModal({
           </label>
           <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 sm:col-span-2">
             <div>
-              <h4 className="text-xs font-black uppercase text-amber-900">Thông số SX / ghép tên</h4>
-              <p className="text-[10px] font-semibold text-amber-800/80">
-                ĐM lấy `(đm n li/kg)` từ tên SX. Đặc: ưu tiên 8/9/20/30m làm m dài. Sóng: m dài đúng theo tên SX dòng. Không đổi unique `AMIS + Tên SP + Tên SX`.
-              </p>
+              <h4 className="text-xs font-black uppercase text-amber-900">Thông số sản xuất</h4>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <label className="space-y-1.5">
@@ -1725,7 +1730,7 @@ export function ProductEditModal({
             </div>
           </section>
           <section className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:col-span-2">
-            <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước. Mét dài trong Thông số SX chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm). Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.</p></div>
+            <div><h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4><p className="text-[10px] font-semibold text-zinc-500">Có thể nhập ngay, không cần chọn Nhóm VTHH trước. Mét dài trong Thông số sản xuất chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm). Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.</p></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {([
                 ['khoTamRongM', 'Khổ tấm rộng (m rộng)'], ['khoTamDaiM', 'Khổ tấm dài (m dài / tấm)'],

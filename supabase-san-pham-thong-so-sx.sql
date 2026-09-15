@@ -1,4 +1,4 @@
--- Thông số SX suy luận + định mức (đm n li) lưu riêng.
+-- Thông số sản xuất suy luận + định mức (đm n li) lưu riêng.
 -- Không đổi unique: vẫn giữ unique ma_sp (nếu còn) và chặn logic
 -- trùng bộ ma_amis + ten_sp + ten_san_xuat ở API. Không tạo unique mới.
 
