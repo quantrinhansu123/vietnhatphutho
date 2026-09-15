@@ -58,6 +58,8 @@ export type MixingProductionOrder = {
   status?: string;
   startDate: string;
   staff: string;
+  /** Ngày giờ tạo bản ghi (ISO) — dùng sắp xếp lệnh mới → cũ. */
+  createdAt?: string;
   productLines: MixingProductionOrderProductLine[];
 };
 
@@ -425,6 +427,7 @@ export function normalizeMixingProductionOrders(data: unknown): MixingProduction
           10
         ),
         staff: pickText(record, ['nhan_su', 'staff', 'cong_nhan'], ''),
+        createdAt: pickText(record, ['created_at', 'createdAt'], ''),
         productLines
       };
     })

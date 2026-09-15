@@ -10,10 +10,10 @@ Query: `ngay`, `ca`, `q`
 Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts` (phiếu không ca khớp theo ngày)
 
 **Nghiệp vụ hiện tại:**
-- **Nhiều lệnh SX / 1 phiếu:** ô Lệnh SX là select2 chọn nhiều (`SearchableMultiSelect`); các lệnh phải **cùng máy** (lọc options + validate khi lưu, đổi máy sẽ bỏ lệnh khác máy). `ma_lenh_sx` lưu text nối bằng dấu phẩy (vd `"LSX-001, LSX-002"`); API khớp token khi lọc nên tương thích ngược.
+- **Nhiều lệnh SX / 1 phiếu:** ô Lệnh SX là select2 chọn nhiều (`SearchableMultiSelect`); các lệnh phải **cùng máy/nhóm máy** — trùng tên máy chuẩn hóa hoặc cùng `loai_may` trong danh mục máy (lọc options + validate khi chọn/đổi máy/lưu, thông báo ghi rõ nhóm máy). `ma_lenh_sx` lưu text nối bằng dấu phẩy (vd `"LSX-001, LSX-002"`); API khớp token khi lọc nên tương thích ngược.
 - **Bỏ ô Ca / Ngày / Ghi chú chung:** ngày phiếu tự điền (hôm nay khi tạo, giữ ngày cũ khi sửa); `ca` lưu `null`; ghi chú chung giữ lại khi sửa, phiếu mới để trống. Server không còn bắt buộc `ca`.
 - **Máy phiếu:** ô Máy (select2, bắt buộc) mặc định theo máy chung các lệnh; tên máy in cạnh tiêu đề (`Máy: X` sau Tên phiếu) và có trong `ten_phieu` (`PTĐM - ngày - Máy - LSX`). Cột `may` (migration `...-may.sql`).
-- **Trạng thái theo lệnh SX:** cột Trạng thái trên list suy từ lệnh liên quan (tất cả xong → Hoàn thành; có Đang sx → Đang sx; còn lại Chờ sx). Lệnh `Hoàn thành`/`Hủy` ẩn khỏi ô chọn lệnh, **chặn tạo PTĐM mới** (client + `POST` server tra `lenh_sx.trang_thai`), và phiếu của lệnh đã xong ẩn khỏi picker xuất kho NVL.
+- **Trạng thái theo lệnh SX:** cột Trạng thái trên list suy từ lệnh liên quan (tất cả xong → Hoàn thành; có Đang sx → Đang sx; còn lại Chờ sx). Lệnh `Hoàn thành`/`Hủy` ẩn khỏi ô chọn lệnh, **chặn tạo PTĐM mới** (client + `POST` server tra `lenh_sx.trang_thai`), và phiếu của lệnh đã xong ẩn khỏi picker xuất kho NVL. Nhãn option lệnh SX: `<mã lệnh> - <máy>`. Options ẩn lệnh đã xong, lọc cùng máy và sắp xếp lệnh tạo mới → cũ (`created_at`).
 - Một `ma_lenh_sx` có thể có nhiều phiếu trộn định mức; không chặn trùng theo mã lệnh.
 - Khi sửa làm thay đổi trọng lượng NVL chính/phụ, FE gửi `tao_lich_su: true`; API tạo dòng mới, giữ dòng cũ và gán `id_phieu_tron_dm_ban_dau` thẳng về phiếu gốc. Tên bản mới có hậu tố ` - tỷ lệ N`. Sửa metadata khác cập nhật tại chỗ.
 - `ngay` là ô nhập bắt buộc trên form và cột `bang_tron_vat_tu_dinh_muc.ngay` là `NOT NULL`.

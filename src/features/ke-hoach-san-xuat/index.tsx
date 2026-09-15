@@ -4565,11 +4565,6 @@ export function useProductionOrderPrint() {
 }
 
 export const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'];
-export const PRODUCTION_ORDER_EDIT_STATUS_OPTIONS = [
-  ...PRODUCTION_ORDER_STATUS_OPTIONS,
-  'Đang chạy',
-  'Huỷ lệnh'
-];
 
 export type ProductionOrderLookupSetting = {
   id: string;
@@ -7621,7 +7616,7 @@ export function EditProductionOrderModal({
   }, [orders]);
 
   const statusOptions = useMemo(() => {
-    const options = [...PRODUCTION_ORDER_EDIT_STATUS_OPTIONS];
+    const options = [...PRODUCTION_ORDER_STATUS_OPTIONS];
     if (form.status && !options.includes(form.status)) {
       options.push(form.status);
     }

@@ -869,20 +869,21 @@ function normalizeMachineKey(value: string): string {
   return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function normalizeMachineOptions(data: unknown): Array<{ code: string; name: string }> {
+function normalizeMachineOptions(data: unknown): Array<{ code: string; name: string; type: string }> {
   const list =
     data && typeof data === 'object' && Array.isArray((data as { machines?: unknown }).machines)
       ? (data as { machines: unknown[] }).machines
       : [];
-  const byCode = new Map<string, { code: string; name: string }>();
+  const byCode = new Map<string, { code: string; name: string; type: string }>();
   for (const raw of list) {
     if (!raw || typeof raw !== 'object') continue;
     const record = raw as Record<string, unknown>;
     const code = String(record.ma_may ?? record.code ?? '').trim();
     const name = String(record.ten_may ?? record.name ?? code).trim();
+    const type = String(record.loai_may ?? record.type ?? '').trim();
     if (!code && !name) continue;
     const key = code || name;
-    if (!byCode.has(key)) byCode.set(key, { code: code || name, name: name || code });
+    if (!byCode.has(key)) byCode.set(key, { code: code || name, name: name || code, type });
   }
   return [...byCode.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 }
@@ -1120,7 +1121,7 @@ export default function MixingNormMaterialsTab() {
   const [rows, setRows] = useState<MixingNormRow[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
-  const [machines, setMachines] = useState<Array<{ code: string; name: string }>>([]);
+  const [machines, setMachines] = useState<Array<{ code: string; name: string; type: string }>>([]);
   const [catalogProducts, setCatalogProducts] = useState<ProductOption[]>([]);
   const [productConversions, setProductConversions] = useState<MixingProductConversion[]>([]);
   const [shiftOptions, setShiftOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -1209,6 +1210,42 @@ export default function MixingNormMaterialsTab() {
     return found;
   }, [form.maLenhSx, productionOrders]);
 
+  /** Loại/Nhóm máy (loai_may) tra theo mã hoặc tên máy — so sánh "cùng máy" theo nhóm. */
+  const machineTypeByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const machine of machines) {
+      const type = normalizeMachineKey(machine.type);
+      if (!type) continue;
+      for (const key of [normalizeMachineKey(machine.code), normalizeMachineKey(machine.name)]) {
+        if (key && !map.has(key)) map.set(key, type);
+      }
+    }
+    return map;
+  }, [machines]);
+
+  /**
+   * Hai máy coi là "cùng máy" khi trùng tên chuẩn hóa, hoặc cùng Loại/Nhóm máy
+   * trong danh mục (vd Máy Tạo Hạt 1 và Máy Tạo Hạt 2).
+   */
+  const isSameMachineGroup = (a: string, b: string): boolean => {
+    const ka = normalizeMachineKey(a);
+    const kb = normalizeMachineKey(b);
+    if (!ka || !kb) return false;
+    if (ka === kb) return true;
+    const ta = machineTypeByKey.get(ka);
+    const tb = machineTypeByKey.get(kb);
+    return Boolean(ta && tb && ta === tb);
+  };
+
+  /** Nhóm máy hiển thị trong thông báo (để phân biệt khi báo không cùng máy). */
+  const machineGroupLabel = (value: string): string => {
+    const needle = normalizeMachineKey(value);
+    const found = machines.find(
+      machine => normalizeMachineKey(machine.code) === needle || normalizeMachineKey(machine.name) === needle
+    );
+    return found?.type.trim() || '—';
+  };
+
   /** Máy chung của các lệnh đã chọn (so sánh chuẩn hóa). */
   const selectedOrdersCommonMachine = useMemo(() => {
     const keys = new Set(
@@ -1218,15 +1255,20 @@ export default function MixingNormMaterialsTab() {
     return selectedOrders.find(order => normalizeMachineKey(order.machine))?.machine.trim() || '';
   }, [selectedOrders]);
 
-  /** Lệnh SX hiện trong ô select2: ẩn lệnh đã xong, lọc theo máy phiếu (nếu đã chọn). */
+  /** Lệnh SX hiện trong ô select2: ẩn lệnh đã xong, lọc theo máy phiếu (nếu đã chọn), mới → cũ. */
   const eligibleOrderOptions = useMemo(() => {
-    const machineKey = normalizeMachineKey(form.may);
-    return productionOrders.filter(order => {
-      if (isMixingDoneOrderStatus(order.status)) return false;
-      if (!machineKey) return true;
-      const orderMachine = normalizeMachineKey(order.machine);
-      return !orderMachine || orderMachine === machineKey;
-    });
+    return productionOrders
+      .filter(order => {
+        if (isMixingDoneOrderStatus(order.status)) return false;
+        if (!normalizeMachineKey(form.may)) return true;
+        const orderMachine = normalizeMachineKey(order.machine);
+        return !orderMachine || isSameMachineGroup(order.machine, form.may);
+      })
+      .sort((a, b) => {
+        const ta = Date.parse(a.createdAt || '');
+        const tb = Date.parse(b.createdAt || '');
+        return (Number.isFinite(tb) ? tb : -1) - (Number.isFinite(ta) ? ta : -1);
+      });
   }, [productionOrders, form.may]);
 
   /**
@@ -1883,17 +1925,14 @@ export default function MixingNormMaterialsTab() {
     };
   };
 
-  /** Nhãn 1 lệnh SX trong ô chọn nhiều lệnh (kèm máy + trạng thái). */
+  /** Nhãn 1 lệnh SX trong ô chọn nhiều lệnh: `<mã lệnh> - <máy>`. */
   const orderOptionLabel = (order: MixingProductionOrder) => {
-    const first = order.productLines[0];
-    const parts = [`${order.orderCode}${first ? ` — ${first.productCode}` : ''}`];
-    if (order.machine.trim()) parts.push(`Máy ${order.machine.trim()}`);
-    if (String(order.status ?? '').trim()) parts.push(String(order.status ?? '').trim());
-    return parts.join(' · ');
+    const machine = order.machine.trim();
+    return machine ? `${order.orderCode} - ${machine}` : order.orderCode;
   };
 
   const orderOptionSearchText = (order: MixingProductionOrder) =>
-    `${order.orderCode} ${order.machine} ${order.status ?? ''} ${order.productLines.map(l => `${l.productCode} ${l.productName}`).join(' ')}`;
+    `${order.orderCode} ${order.machine} ${order.productLines.map(l => `${l.productCode} ${l.productName}`).join(' ')}`;
 
   /**
    * Chọn nhiều lệnh SX (select2) — các lệnh phải cùng máy, bỏ qua lệnh đã xong.
@@ -1911,14 +1950,14 @@ export default function MixingNormMaterialsTab() {
     const machineKeys = new Set(
       next.map(order => normalizeMachineKey(order.machine)).filter(Boolean)
     );
-    if (machineKeys.size > 1) {
-      const offender = next.find(order => {
-        const key = normalizeMachineKey(order.machine);
-        return key && key !== normalizeMachineKey(next[0]?.machine || '');
-      });
+    const reference = next.find(order => normalizeMachineKey(order.machine));
+    const offender = next.find(
+      order => normalizeMachineKey(order.machine) && reference && !isSameMachineGroup(order.machine, reference.machine)
+    );
+    if (machineKeys.size > 1 && reference && offender) {
       setError(
-        `Các lệnh SX phải cùng máy.` +
-        (offender ? ` ${offender.orderCode} (máy ${offender.machine.trim() || '—'}) không cùng máy với ${next[0]?.orderCode || 'lệnh đã chọn'}.` : '')
+        `Các lệnh SX phải cùng máy/nhóm máy.` +
+        ` ${offender.orderCode} (máy ${offender.machine.trim() || '—'} · nhóm ${machineGroupLabel(offender.machine)}) không cùng nhóm với ${reference.orderCode} (máy ${reference.machine.trim() || '—'} · nhóm ${machineGroupLabel(reference.machine)}).`
       );
       return;
     }
@@ -1946,7 +1985,7 @@ export default function MixingNormMaterialsTab() {
     for (const code of codes) {
       const order = byCode.get(normalizeProductLookupKey(code));
       const orderMachine = normalizeMachineKey(order?.machine || '');
-      if (!order || !orderMachine || !nextMachine || orderMachine === normalizeMachineKey(nextMachine)) {
+      if (!order || !orderMachine || !nextMachine || isSameMachineGroup(order.machine, nextMachine)) {
         kept.push(code);
       } else {
         dropped.push(code);
@@ -2276,12 +2315,12 @@ export default function MixingNormMaterialsTab() {
     const foreignOrder = matchedOrders.find(
       order => {
         const key = normalizeMachineKey(order.machine);
-        return key && key !== normalizeMachineKey(effectiveMay);
+        return key && !isSameMachineGroup(order.machine, effectiveMay);
       }
     );
     if (foreignOrder) {
       setError(
-        `Các lệnh SX phải cùng máy. ${foreignOrder.orderCode} (máy ${foreignOrder.machine.trim()}) không cùng máy ${effectiveMay}.`
+        `Các lệnh SX phải cùng máy/nhóm máy với ${effectiveMay}. ${foreignOrder.orderCode} (máy ${foreignOrder.machine.trim() || '—'} · nhóm ${machineGroupLabel(foreignOrder.machine)}) không cùng nhóm.`
       );
       return;
     }
@@ -2934,7 +2973,7 @@ export default function MixingNormMaterialsTab() {
                 </p>
               ) : null}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                <label className="space-y-1.5 sm:col-span-1">
+                <label className="space-y-1.5 sm:col-span-2">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                     Tên phiếu
                   </span>
@@ -2946,7 +2985,23 @@ export default function MixingNormMaterialsTab() {
                     title="Tên phiếu tự động: PTĐM - ngày - Máy - LSX/ĐH"
                   />
                 </label>
-                <div className="space-y-1.5 sm:col-span-2">
+                <label className="space-y-1.5 sm:col-span-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                    Máy <span className="text-[#ef1b2d]">*</span>
+                  </span>
+                  <SearchableSelect
+                    value={form.may}
+                    onChange={updateNormMachine}
+                    options={machines}
+                    placeholder="Chọn máy..."
+                    getValue={item => (item as { code: string }).code}
+                    getLabel={item => (item as { code: string; name: string }).name}
+                    getSearchText={item => `${(item as { code: string; name: string }).code} ${(item as { code: string; name: string }).name}`}
+                    inputClassName={inputClass}
+                    maxResults={60}
+                  />
+                </label>
+                <div className="space-y-1.5 sm:col-span-4">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                     Lệnh SX <span className="text-[#ef1b2d]">*</span>
                     <span className="ml-1 font-semibold normal-case text-zinc-400">(chọn nhiều lệnh cùng máy)</span>
@@ -2964,22 +3019,6 @@ export default function MixingNormMaterialsTab() {
                     inputClassName={inputClass}
                   />
                 </div>
-                <label className="space-y-1.5 sm:col-span-1">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                    Máy <span className="text-[#ef1b2d]">*</span>
-                  </span>
-                  <SearchableSelect
-                    value={form.may}
-                    onChange={updateNormMachine}
-                    options={machines}
-                    placeholder="Chọn máy..."
-                    getValue={item => (item as { code: string }).code}
-                    getLabel={item => (item as { code: string; name: string }).name}
-                    getSearchText={item => `${(item as { code: string; name: string }).code} ${(item as { code: string; name: string }).name}`}
-                    inputClassName={inputClass}
-                    maxResults={60}
-                  />
-                </label>
               </div>
 
               <div className="flex items-center justify-between gap-2">
