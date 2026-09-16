@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `phieu_xuat_nhap_kho` |
 | **Tab** | `warehouse-slip`, `warehouse-history` |
-| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`, `supabase-phieu-xuat-nhap-kho-lenh-sx.sql`, `supabase-phieu-xuat-nhap-kho-phan-loai-may.sql`, `supabase-phieu-xuat-nhap-kho-trong-luong-kg.sql`) |
+| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`, `supabase-phieu-xuat-nhap-kho-lenh-sx.sql`, `supabase-phieu-xuat-nhap-kho-phan-loai-may.sql`, `supabase-phieu-xuat-nhap-kho-trong-luong-kg.sql`, `supabase-phieu-xuat-nhap-kho-ton-dau-ca-may.sql`) |
 
 ## API (`server.ts`)
 
@@ -32,6 +32,7 @@ Trọng lượng quy đổi được lưu tại `trong_luong_kg` (cả NVL chín
 Khi nạp nhiều dòng NVL phụ, hệ thống gộp và cộng SL định mức/thực xuất/trọng lượng theo cùng máy + cùng tên (+mã khi tên trống) + cùng ĐVT + cùng giá. Riêng **Băng Dính** và **Tem** chỉ gộp khi đồng thời trùng `nhom_vthh`; các NVL phụ khác không tách theo VTHH. Dữ liệu cũ thiếu ID dùng mã/tên làm khóa dự phòng.
 Danh sách **Chi tiết NVL** hiển thị thêm **Tên sản xuất**, ưu tiên tên trên phiếu định mức rồi đối chiếu `kho_nvl.ten_nvl_sx` theo mã NPL; trường tên sản xuất chỉ hiển thị, không tạo thêm cột lưu trữ trên phiếu.
 Bản in phiếu xuất NVL tách mỗi máy thành một trang; trong mỗi trang in riêng bảng NVL chính, NVL phụ và Chưa phân loại nếu có dữ liệu. Cuối bản in luôn có 1 trang **TỔNG HỢP** gộp dòng toàn bộ máy/ca (cùng tên + cùng ĐVT + cùng giá; Băng Dính/Tem trùng thêm VTHH) với 2 bảng riêng và 2 tổng **TỔNG TL NVL CHÍNH TOÀN PHIẾU** / **TỔNG TL NVL PHỤ TOÀN PHIẾU**. Màn nhập hiển thị tổng TL ngay tại header nhóm NVL chính/phụ và hộp tổng cuối bảng.
+Mỗi dòng NVL xuất có thêm **Tồn đầu ca** (`ton_dau_ca_may`, nhập tay, không bắt buộc) hiển thị trước cột **SL CT** trên màn lập phiếu và trước cột **SL định mức xuất** trên bản in (kèm tổng cột). Gộp dòng NVL phụ cộng dồn tồn đầu ca theo cùng khóa gộp.
 
 ## Frontend
 

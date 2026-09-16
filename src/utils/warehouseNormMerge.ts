@@ -254,6 +254,7 @@ export type AuxiliaryWarehouseLine = {
   unit: string;
   quantity: number;
   documentQuantity?: number | null;
+  tonDauCaMay?: number | null;
   quotaQuantity?: number | null;
   suggestedQuantity?: number | null;
   unitPrice: number;
@@ -378,6 +379,10 @@ export function mergeAuxiliaryWarehouseLines<T extends AuxiliaryWarehouseLine>(
       ...current,
       quantity,
       documentQuantity: sumOptionalWarehouseNumber(current.documentQuantity, source.documentQuantity),
+      tonDauCaMay: sumOptionalWarehouseNumber(
+        (current as AuxiliaryWarehouseLine).tonDauCaMay,
+        (source as AuxiliaryWarehouseLine).tonDauCaMay
+      ),
       quotaQuantity: sumOptionalWarehouseNumber(current.quotaQuantity, source.quotaQuantity),
       suggestedQuantity: sumOptionalWarehouseNumber(current.suggestedQuantity, source.suggestedQuantity),
       weightKg: combinedWeight ?? current.weightKg,
@@ -407,6 +412,7 @@ export function consolidateWarehouseLines<T extends {
   unit: string;
   quantity: string | number;
   documentQuantity?: string | number | null;
+  tonDauCaMay?: string | number | null;
   unitPrice?: string | number;
   warehouseClass?: WarehouseMaterialClass | string;
   machine?: string;
@@ -476,12 +482,17 @@ export function consolidateWarehouseLines<T extends {
     const lineDocQty = Number(String(line.documentQuantity || '').replace(',', '.'));
     const totalDocQty = (Number.isFinite(currentDocQty) ? currentDocQty : 0) + (Number.isFinite(lineDocQty) ? lineDocQty : 0);
 
+    const currentTonQty = Number(String((current as T).tonDauCaMay || '').replace(',', '.'));
+    const lineTonQty = Number(String((line as T).tonDauCaMay || '').replace(',', '.'));
+    const totalTonQty = (Number.isFinite(currentTonQty) ? currentTonQty : 0) + (Number.isFinite(lineTonQty) ? lineTonQty : 0);
+
     const notes = [...new Set([current.lineNote, line.lineNote].map(v => String(v || '').trim()).filter(Boolean))];
 
     result[existingIndex] = {
       ...current,
       quantity: totalQty > 0 ? (Number.isInteger(totalQty) ? String(totalQty) : String(Math.round(totalQty * 100) / 100)) : (current.quantity || line.quantity || ''),
       documentQuantity: totalDocQty > 0 ? (Number.isInteger(totalDocQty) ? String(totalDocQty) : String(Math.round(totalDocQty * 100) / 100)) : (current.documentQuantity || line.documentQuantity || ''),
+      tonDauCaMay: totalTonQty > 0 ? (Number.isInteger(totalTonQty) ? String(totalTonQty) : String(Math.round(totalTonQty * 1000) / 1000)) : ((current as T).tonDauCaMay || (line as T).tonDauCaMay || ''),
       unitPrice: current.unitPrice || line.unitPrice || '',
       lineNote: notes.join('; ') || undefined,
       normWeightPerUnitKg: perUnit ?? current.normWeightPerUnitKg,

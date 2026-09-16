@@ -13,6 +13,7 @@ export type WarehouseSlipPrintLine = {
   unit: string;
   quantity: number;
   documentQuantity?: number | null;
+  tonDauCaMay?: number | null;
   unitPrice: number;
   lineAmount: number;
   quotaQuantity?: number | null;
@@ -101,7 +102,7 @@ function formatPrintQty(value: number | null | undefined, fractionDigits = 2) {
 
 function sumPrintQty(
   lines: WarehouseSlipPrintLine[],
-  key: 'quotaQuantity' | 'quantity' | 'documentQuantity' | 'suggestedQuantity'
+  key: 'quotaQuantity' | 'quantity' | 'documentQuantity' | 'suggestedQuantity' | 'tonDauCaMay'
 ) {
   return lines.reduce((sum, line) => {
     const value =
@@ -111,7 +112,9 @@ function sumPrintQty(
           ? line.documentQuantity
           : key === 'suggestedQuantity'
             ? line.suggestedQuantity
-            : line.quotaQuantity;
+            : key === 'tonDauCaMay'
+              ? line.tonDauCaMay
+              : line.quotaQuantity;
     return Number.isFinite(value) && value! > 0 ? sum + (value as number) : sum;
   }, 0);
 }
@@ -449,6 +452,7 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
               if (classLines.length === 0) return null;
               const classQuota = classLines.reduce((sum, line) => sum + quotaOf(line), 0);
               const classActual = classLines.reduce((sum, line) => sum + (line.quantity || 0), 0);
+              const classTonDauCa = classLines.reduce((sum, line) => sum + (Number.isFinite(line.tonDauCaMay) && (line.tonDauCaMay as number) > 0 ? (line.tonDauCaMay as number) : 0), 0);
               const showWeightKg = materialClass === 'nvl_phu' || materialClass === 'nvl_chinh';
               const classWeightKg = classLines.reduce(
                 (sum, line) => sum + (ensurePrintLineWeightKg(line) ?? 0),
@@ -462,7 +466,7 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                     <thead>
                       <tr>
                         <th>STT</th><th>Mã vật tư</th><th>Tên vật tư</th><th>ĐVT</th>
-                        <th>PN nhập / giá</th><th>SL định mức xuất</th><th>SL thực xuất</th>
+                        <th>PN nhập / giá</th><th>Tồn đầu ca</th><th>SL định mức xuất</th><th>SL thực xuất</th>
                         {showWeightKg ? <th>Trọng lượng (kg)</th> : null}
                         <th>Thành tiền</th><th>Ghi chú</th>
                       </tr>
@@ -482,6 +486,7 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                             <td className="warehouse-slip-print-center">
                               {[line.sourceInboundSlipCode, line.unitPrice > 0 ? `${formatMoney(line.unitPrice, 0)} đ` : ''].filter(Boolean).join(' · ')}
                             </td>
+                            <td className="warehouse-slip-print-right">{formatPrintQty(line.tonDauCaMay)}</td>
                             <td className="warehouse-slip-print-right">{formatPrintQty(quotaOf(line))}</td>
                             <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity)}</td>
                             {showWeightKg ? (
@@ -495,7 +500,8 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                     </tbody>
                     <tfoot>
                       <tr>
-                        <td colSpan={5} className="warehouse-slip-print-total-label">TỔNG {classLabel[materialClass]}</td>
+                        <td colSpan={6} className="warehouse-slip-print-total-label">TỔNG {classLabel[materialClass]}</td>
+                        <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classTonDauCa, 3)}</td>
                         <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classQuota, 3)}</td>
                         <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classActual, 3)}</td>
                         {showWeightKg ? (
@@ -554,6 +560,7 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
             if (classLines.length === 0) return null;
             const classQuota = classLines.reduce((sum, line) => sum + quotaOf(line), 0);
             const classActual = classLines.reduce((sum, line) => sum + (line.quantity || 0), 0);
+            const classTonDauCa = classLines.reduce((sum, line) => sum + (Number.isFinite(line.tonDauCaMay) && (line.tonDauCaMay as number) > 0 ? (line.tonDauCaMay as number) : 0), 0);
             const classWeight = classLines.reduce((sum, line) => sum + (ensurePrintLineWeightKg(line) ?? 0), 0);
             const classAmount = classLines.reduce((sum, line) => sum + line.lineAmount, 0);
             return (
@@ -565,7 +572,7 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                   <thead>
                     <tr>
                       <th>STT</th><th>Mã vật tư</th><th>Tên vật tư</th><th>ĐVT</th>
-                      <th>PN nhập / giá</th><th>SL định mức xuất</th><th>SL thực xuất</th>
+                      <th>PN nhập / giá</th><th>Tồn đầu ca</th><th>SL định mức xuất</th><th>SL thực xuất</th>
                       <th>Trọng lượng (kg)</th>
                       <th>Thành tiền</th><th>Ghi chú</th>
                     </tr>
@@ -585,6 +592,7 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                           <td className="warehouse-slip-print-center">
                             {[line.sourceInboundSlipCode, line.unitPrice > 0 ? `${formatMoney(line.unitPrice, 0)} đ` : ''].filter(Boolean).join(' · ')}
                           </td>
+                          <td className="warehouse-slip-print-right">{formatPrintQty(line.tonDauCaMay)}</td>
                           <td className="warehouse-slip-print-right">{formatPrintQty(quotaOf(line))}</td>
                           <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity)}</td>
                           <td className="warehouse-slip-print-right">{formatPrintQty(lineWeight)}</td>
@@ -596,7 +604,8 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={5} className="warehouse-slip-print-total-label">TỔNG {classLabel[materialClass]} TOÀN PHIẾU</td>
+                      <td colSpan={6} className="warehouse-slip-print-total-label">TỔNG {classLabel[materialClass]} TOÀN PHIẾU</td>
+                      <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classTonDauCa, 3)}</td>
                       <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classQuota, 3)}</td>
                       <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classActual, 3)}</td>
                       <td className="warehouse-slip-print-right warehouse-slip-print-total-value">{formatNumber(classWeight, 3)}</td>
