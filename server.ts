@@ -130,6 +130,7 @@ const SUPABASE_MACHINE_DOWNTIME_TABLE =
   process.env.SUPABASE_MACHINE_DOWNTIME_TABLE || 'phieu_bao_dung_may';
 const SUPABASE_MACHINE_RUN_LOG_TABLE =
   process.env.SUPABASE_MACHINE_RUN_LOG_TABLE || 'nhat_ky_chay_may';
+const SUPABASE_SO_TRON_TABLE = process.env.SUPABASE_SO_TRON_TABLE || 'so_tron';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Phú Thọ';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -10950,6 +10951,52 @@ export function createApp() {
     }
   });
 
+  // Tra cứu trực tiếp bảng nhan_su theo mã nhân sự → tên (dùng cho Sổ trộn).
+  // GET /api/nhan-su/by-code?codes=NV001,NV002 (tối đa 200 mã)
+  app.get('/api/nhan-su/by-code', async (req, res) => {
+    if (!supabase) {
+      return res.json({ names: {} });
+    }
+
+    try {
+      const raw = typeof req.query.codes === 'string' ? req.query.codes : '';
+      const codes = [...new Set(raw.split(/[,;|]+/).map(code => code.trim()).filter(Boolean))].slice(0, 200);
+      if (codes.length === 0) {
+        return res.json({ names: {} });
+      }
+
+      let { data, error } = await supabase
+        .from(SUPABASE_STAFF_TABLE)
+        .select('ma_nhan_su, nhan_su')
+        .in('ma_nhan_su', codes);
+
+      if (error && isMissingColumnError(error)) {
+        const fallback = await supabase.from(SUPABASE_STAFF_TABLE).select('*').limit(2000);
+        data = fallback.data;
+        error = fallback.error;
+      }
+
+      if (error) {
+        console.error('Supabase nhan_su by-code query error:', error);
+        return res.status(500).json({ error: `Không thể tra cứu nhân sự. ${error.message}` });
+      }
+
+      const wanted = new Set(codes.map(code => code.toLowerCase()));
+      const names: Record<string, string> = {};
+      for (const row of ((data || []) as Array<Record<string, unknown>>)) {
+        const code = pickStaffField(row, ['ma_nhan_su', 'ma_nv', 'id']);
+        const name = pickStaffName(row);
+        if (code && name && wanted.has(code.toLowerCase())) {
+          names[code] = name;
+        }
+      }
+
+      return res.json({ names, total: Object.keys(names).length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tra cứu nhân sự theo mã.' });
+    }
+  });
+
   app.post('/api/nhan-su', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -11804,15 +11851,15 @@ export function createApp() {
               const sameCa = !toCa || shiftsMatchLabel(toCa, homeCa);
               if (!sameMachine) {
                 return timePhrase
-                  ? `(${lastName} ${timePhrase} ${toMachineName})`
-                  : `(${lastName} ${toMachineName})`;
+                  ? `${lastName} (Chuyển đến ${toMachineName} ${timePhrase})`
+                  : `${lastName} (Chuyển đến ${toMachineName})`;
               }
               if (sameCa) {
-                return timePhrase ? `(${lastName} ${timePhrase})` : `(${lastName})`;
+                return timePhrase ? `${lastName} (${timePhrase})` : `${lastName}`;
               }
               return timePhrase
-                ? `(${lastName} được chuyển đến ca ${toCa} ${timePhrase})`
-                : `(${lastName} được chuyển đến ca ${toCa})`;
+                ? `${lastName} (Chuyển đến ca ${toCa} ${timePhrase})`
+                : `${lastName} (Chuyển đến ca ${toCa})`;
             });
 
             machineData[machineName][tenCa].push({
@@ -11869,11 +11916,11 @@ export function createApp() {
           const sameMachine = homeMachineName === destMachineName;
           const arrivalNote = sameMachine
             ? timePhrase
-              ? `(${lastName} ${timePhrase} — từ ca ${homeCa || '—'})`
-              : `(${lastName} — từ ca ${homeCa || '—'})`
+              ? `${lastName} (${timePhrase} — từ ca ${homeCa || '—'})`
+              : `${lastName} (từ ca ${homeCa || '—'})`
             : timePhrase
-              ? `(${lastName} ${timePhrase} từ ${homeMachineName || 'máy khác'})`
-              : `(${lastName} từ ${homeMachineName || 'máy khác'})`;
+              ? `${lastName} (${timePhrase} từ ${homeMachineName || 'máy khác'})`
+              : `${lastName} (từ ${homeMachineName || 'máy khác'})`;
 
           machineData[destMachineName][tenCa].push({
             name: lastName,
@@ -13829,6 +13876,173 @@ export function createApp() {
       return res.json({ success: true, deleted });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhiều báo cáo NVL tồn theo máy.' });
+    }
+  });
+
+  function parseSoTronBody(body: unknown) {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const asText = (value: unknown) => (value === null || value === undefined ? '' : String(value));
+    const asJsonArray = (value: unknown) => (Array.isArray(value) ? value : []);
+    const ngay = asText(source.ngay).trim().slice(0, 10);
+    const maMay = asText(source.ma_may ?? source.maMay).trim();
+    const ca = asText(source.ca).trim();
+    if (!ngay) return { error: 'Thiếu ngày sổ trộn.' };
+    if (!maMay) return { error: 'Thiếu máy.' };
+    if (!ca) return { error: 'Thiếu ca.' };
+    return {
+      record: {
+        chi_nhanh: asText(source.chi_nhanh ?? source.chiNhanh).trim() || 'Phú Thọ',
+        ngay,
+        ma_may: maMay,
+        ten_may: asText(source.ten_may ?? source.tenMay).trim(),
+        ca,
+        nhan_su: asText(source.nhan_su ?? source.nhanSu).trim(),
+        nhan_su_chi_tiet: asJsonArray(source.nhan_su_chi_tiet ?? source.nhanSuChiTiet),
+        lenh_sx: asJsonArray(source.lenh_sx ?? source.lenhSx),
+        coi_tron_mau: asJsonArray(source.coi_tron_mau ?? source.coiTronMau),
+        bang_nvl: asJsonArray(source.bang_nvl ?? source.bangNvl),
+        bang_san_pham: asJsonArray(source.bang_san_pham ?? source.bangSanPham),
+        bang_hang_loi: asJsonArray(source.bang_hang_loi ?? source.bangHangLoi),
+        bang_ban_giao: asJsonArray(source.bang_ban_giao ?? source.bangBanGiao),
+        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim()
+      }
+    };
+  }
+
+  function soTronWriteError(error: { message?: string; code?: string }) {
+    const message = String(error?.message ?? '');
+    if (error?.code === '42P01' || /does not exist|not exist|Could not find the table/i.test(message)) {
+      return 'Bảng so_tron chưa tồn tại trên Supabase. Hãy chạy file supabase-so-tron.sql trong Supabase SQL Editor.';
+    }
+    if (error?.code === '23505' || /duplicate|unique/i.test(message)) {
+      return 'Đã tồn tại sổ trộn cho máy + ngày + ca này. Hãy mở phiếu cũ để sửa.';
+    }
+    return message ? `Không thể lưu sổ trộn. ${message}` : 'Không thể lưu sổ trộn.';
+  }
+
+  app.get('/api/so-tron', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
+      const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 300) : 100;
+
+      let query = supabase
+        .from(SUPABASE_SO_TRON_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (ngay) query = query.eq('ngay', ngay);
+      if (maMay) query = query.eq('ma_may', maMay);
+      if (ca) query = query.eq('ca', ca);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase so tron query error:', error);
+        return res.status(500).json({ error: soTronWriteError(error) });
+      }
+
+      return res.json({ reports: data || [], total: data?.length || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải sổ trộn.' });
+    }
+  });
+
+  app.post('/api/so-tron', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseSoTronBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_TRON_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so tron insert error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soTronWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu sổ trộn.' });
+    }
+  });
+
+  app.put('/api/so-tron/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ trộn.' });
+
+      const parsed = parseSoTronBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_TRON_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so tron update error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soTronWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+      return res.json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật sổ trộn.' });
+    }
+  });
+
+  app.delete('/api/so-tron/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ trộn.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_TRON_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Supabase so tron delete error:', error);
+        return res.status(500).json({ error: soTronWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ trộn.' });
     }
   });
 

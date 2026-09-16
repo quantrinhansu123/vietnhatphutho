@@ -4960,6 +4960,52 @@ export function getOrderProductUnit(
   return line?.unit && line.unit !== '-' ? line.unit : '';
 }
 
+const SALES_ORDER_TYPE = 'Đơn bán';
+
+function normalizeRegionKey(value: string): 'bac' | 'trung' | 'nam' | '' {
+  const text = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+  if (text.includes('bac')) return 'bac';
+  if (text.includes('trung')) return 'trung';
+  if (text.includes('nam')) return 'nam';
+  return '';
+}
+
+function isSalesOrder(order?: OrderRow): boolean {
+  if (!order) return false;
+  return normalizeRegionKey(order.orderType) === '' &&
+    order.orderType.trim().toLocaleLowerCase('vi') === SALES_ORDER_TYPE.toLocaleLowerCase('vi');
+}
+
+function orderLineHasRegionQuantity(line?: OrderProductLine): boolean {
+  if (!line) return false;
+  return [line.soLuongBac, line.soLuongTrung, line.soLuongNam].some(value => String(value ?? '').trim() !== '');
+}
+
+function buildSalesOrderRegionFields(
+  order: OrderRow | undefined,
+  sourceLine: OrderProductLine | undefined,
+  quantity: number
+): Pick<ProductionOrderEntryLine, 'slBac' | 'slTrung' | 'slNam'> {
+  if (!isSalesOrder(order) || orderLineHasRegionQuantity(sourceLine) || !Number.isFinite(quantity) || quantity <= 0) {
+    return {};
+  }
+
+  const region = normalizeRegionKey(order.khu_vuc || '');
+  if (!region) return {};
+
+  const value = String(quantity);
+  return {
+    slBac: region === 'bac' ? value : '0',
+    slTrung: region === 'trung' ? value : '0',
+    slNam: region === 'nam' ? value : '0'
+  };
+}
+
 function productionProductMatchesCode(product: ProductRow, productCode: string) {
   const key = normalizeProductCodeKey(productCode);
   if (!key) return false;
@@ -5016,6 +5062,7 @@ export function buildProductionEntryLine(
     .filter(order => order.orderCode === orderRef)
     .flatMap(order => getOrderProductLines(order))
     .find(item => productLineMatches(item, productCode, productId, productionName));
+  const sourceOrder = orders.find(order => order.orderCode === orderRef);
   const remaining = sourceRemaining ?? getRemainingProductionQuantity(
     orders,
     productionOrders,
@@ -5033,7 +5080,8 @@ export function buildProductionEntryLine(
     unit: unit || getOrderProductUnit(orders, orderRef, productCode, productId, productionName),
     // Chỉ lấy ID thật trên dòng don_hang.san_pham; không fallback từ catalog/ô chọn.
     productId: sourceProductId || undefined,
-    ...productionEntryMetadataFromOrderLine(line)
+    ...productionEntryMetadataFromOrderLine(line),
+    ...buildSalesOrderRegionFields(sourceOrder, line, remaining)
   };
 }
 

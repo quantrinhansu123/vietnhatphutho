@@ -1,0 +1,2469 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { ExternalLink, Loader2, Minus, Plus, Printer, RefreshCw, Save, Trash2, X } from 'lucide-react';
+import { BackButton } from '../../components/layout/NavButtons';
+import { pathFromTab } from '../../routes';
+import SearchableMultiSelect from '../../components/SearchableMultiSelect';
+import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import {
+  findMachineByRef,
+  machineSelectValue,
+  normalizeMachines,
+  type MachineRow
+} from '../danh-sach-may';
+import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
+import { printSoTronSlip } from './print';
+import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
+import type { OrderProductLine } from '../_shared/productionProductHelpers';
+import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
+import { STANDARD_SHIFTS } from '../../types';
+
+const CHI_NHANH_MAC_DINH = 'Phú Thọ';
+const SO_LAN_TRON_MAC_DINH = 5;
+const SO_LAN_TRON_TOI_DA = 20;
+
+type CoiMauNvl = {
+  material_id: string;
+  ma_nvl: string;
+  ten_nvl: string;
+  ten_nvl_sx: string;
+  dvt: string;
+  gia_tri: string;
+};
+type CoiMauItem = {
+  ma_lenh_sx: string;
+  ten_phieu: string;
+  ma_sp: string;
+  ten_sp: string;
+  dinh_luong_coi: string;
+  tong_trong_luong: string;
+  ghi_chu: string;
+  nvl: CoiMauNvl[];
+};
+
+/** Tách chuỗi mã lệnh (nhiều lệnh ngăn nhau bằng , ; | /) thành từng mã. */
+function splitLenhCodes(value: string) {
+  return str(value)
+    .split(/[,;|/]+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+type NvlRow = {
+  key: string;
+  /** Id NVL trong kho (gộp theo id, fallback mã) */
+  material_id: string;
+  ma_nvl: string;
+  ten_nvl: string;
+  ten_nvl_sx: string;
+  dvt: string;
+  lan: string[];
+  /** Các lệnh SX mà NVL này thuộc về (gộp khi trùng mã giữa nhiều lệnh) */
+  nguon: string[];
+};
+type SanPhamRow = {
+  key: string;
+  ma_lenh_sx: string;
+  ma_sp: string;
+  ten_sp: string;
+  so_luong: string;
+  dinh_muc: string;
+  trong_luong: string;
+  ghi_chu: string;
+};
+type HangLoiRow = { key: string; ten_loi: string; so_luong: string };
+type BanGiaoRow = {
+  key: string;
+  material_id: string;
+  ma_nvl: string;
+  ten_nvl: string;
+  ten_nvl_sx: string;
+  lay_trong_kho: string;
+  ton_dau_ca: string;
+  ton_dau_tu_dong: boolean;
+};
+type PhanCongItem = { ma_nhan_su: string; ten: string; vai_tro: string };
+
+export type SoTronSavedReport = {
+  id: string;
+  chi_nhanh: string;
+  ngay: string;
+  ma_may: string;
+  ten_may: string;
+  ca: string;
+  nhan_su: string;
+  nhan_su_chi_tiet: unknown[];
+  lenh_sx: { id: string; ma_lenh: string }[];
+  coi_tron_mau: CoiMauItem[];
+  bang_nvl: { material_id: string; ma_nvl: string; ten_nvl: string; ten_nvl_sx: string; dvt: string; lan: number[]; tong: number; lenh_sx: string[] }[];
+  bang_san_pham: {
+    ma_lenh_sx: string;
+    ma_sp: string;
+    ten_sp: string;
+    so_luong: string;
+    dinh_muc: string;
+    trong_luong: string;
+    ghi_chu: string;
+  }[];
+  bang_hang_loi: { ten_loi: string; so_luong: string }[];
+  bang_ban_giao: {
+    material_id: string;
+    ma_nvl: string;
+    ten_nvl: string;
+    ten_nvl_sx: string;
+    lay_trong_kho: number;
+    ton_dau_ca: number;
+    tong_su_dung: number;
+    ton_cuoi_ca: number;
+  }[];
+  ghi_chu: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+function uid() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function todayLocal() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+}
+
+function str(value: unknown) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function parseNum(value: unknown) {
+  const parsed = Number(str(value).replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function round2(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function formatQty(value: number) {
+  const rounded = round2(value);
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function splitShifts(raw: string) {
+  return str(raw)
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+function normalizeShiftKey(value: string) {
+  return str(value).toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function machineMatches(orderMachine: string, code: string, name: string) {
+  const ref = str(orderMachine).toLowerCase();
+  if (!ref || ref === '-') return true;
+  const keys = [code, name].map(v => str(v).toLowerCase()).filter(Boolean);
+  if (keys.length === 0) return true;
+  return keys.some(key => ref.includes(key) || key.includes(ref));
+}
+
+/** Lệnh khớp ít nhất 1 ca đã chọn (chuỗi ca của lệnh nối bằng ","). Rỗng = tất cả. */
+function shiftMatchesAny(orderShift: string, selectedCas: string[]) {
+  if (selectedCas.length === 0) return true;
+  const parts = splitShifts(orderShift).map(p => normalizeShiftKey(p));
+  if (parts.length === 0 || parts.every(p => !p)) return true;
+  return selectedCas.some(ca => {
+    const target = normalizeShiftKey(ca);
+    if (!target) return true;
+    return parts.some(part => part && (part === target || part.includes(target) || target.includes(part)));
+  });
+}
+
+function pickRecordText(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = str(record[key]);
+    if (value && value !== '-') return value;
+  }
+  return '';
+}
+
+function normalizeStaffDirectory(data: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+  const visitMember = (item: unknown) => {
+    if (!item || typeof item !== 'object') return;
+    const record = item as Record<string, unknown>;
+    const code = pickRecordText(record, ['ma_nhan_su', 'ma_nv', 'code', 'id']);
+    const name = pickRecordText(record, ['ten_nhan_su', 'ho_ten', 'ten', 'name']);
+    if (code && name && !map.has(code)) map.set(code, name);
+    if (name && !map.has(name)) map.set(name, name);
+  };
+  const visitUnknown = (value: unknown, depth: number) => {
+    if (depth > 4 || !value) return;
+    if (typeof value === 'string') {
+      const name = value.trim();
+      if (name && !map.has(name)) map.set(name, name);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(item => visitUnknown(item, depth + 1));
+      return;
+    }
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      if (Array.isArray(record.branches) || Array.isArray(record.departments) || Array.isArray(record.members)) {
+        visitUnknown(record.branches ?? record.departments ?? record.members, depth + 1);
+        return;
+      }
+      if (Array.isArray(record.staff) || Array.isArray(record.data) || Array.isArray(record.items)) {
+        visitUnknown(record.staff ?? record.data ?? record.items, depth + 1);
+        return;
+      }
+      visitMember(value);
+    }
+  };
+  visitUnknown(data, 0);
+  return map;
+}
+
+function normalizePhanCong(data: unknown, staffMap: Map<string, string>): PhanCongItem[] {
+  const raw = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object'
+      ? (data as Record<string, unknown>).items
+      : [];
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const ma = pickRecordText(record, ['ma_nhan_su', 'ma_nv', 'code']);
+      const tenTrucTiep = pickRecordText(record, ['ten_nhan_su', 'ho_ten', 'ten', 'name']);
+      const ten = tenTrucTiep || (ma ? staffMap.get(ma) || '' : '') || ma;
+      const vaiTro = pickRecordText(record, ['vai_tro', 'role', 'chuc_vu']);
+      if (!ma && !ten) return null;
+      return { ma_nhan_su: ma || ten, ten, vai_tro: vaiTro };
+    })
+    .filter((item): item is PhanCongItem => Boolean(item));
+}
+
+function normalizeCoiMauNvl(raw: unknown): CoiMauNvl[] {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .map(rawLine => {
+      if (!rawLine || typeof rawLine !== 'object') return null;
+      const line = rawLine as Record<string, unknown>;
+      const ma = pickRecordText(line, ['ma_nvl', 'materialCode', 'code']);
+      const sx = pickRecordText(line, ['ten_nvl_san_xuat', 'tenNvlSanXuat']);
+      const ten = pickRecordText(line, ['ten_nvl', 'materialName', 'name']) || sx;
+      if (!ma && !ten) return null;
+      const dvtRaw = pickRecordText(line, ['don_vi', 'dvt', 'unit', 'don_vi_dinh_muc']) || 'kg';
+      return {
+        material_id: str(line.material_id ?? line.materialId ?? ''),
+        ma_nvl: ma || ten,
+        ten_nvl: ten || ma,
+        ten_nvl_sx: sx,
+        dvt: dvtRaw === '%' ? '%' : 'kg',
+        gia_tri: str(line.gia_tri ?? line.dinh_muc ?? '')
+      };
+    })
+    .filter((line): line is CoiMauNvl => Boolean(line));
+}
+
+/** Block sản phẩm trong chi_tiet: { ma_sp, nvl|chi_tiet } — không phải dòng NVL phẳng. */
+function isCoiMauProductBlock(item: Record<string, unknown>) {
+  if (Array.isArray(item.nvl)) return true;
+  if (Array.isArray(item.chi_tiet) && (item.ma_sp || item.ten_sp)) return true;
+  return Boolean(str(item.ma_sp)) && !str(item.ma_nvl);
+}
+
+/** Chuẩn hóa mọi dạng ngày (ISO YYYY-MM-DD, DD/MM/YYYY) về key YYYYMMDD để so sánh. */
+function toSortableDateKey(value: unknown) {
+  const s = str(value);
+  if (!s || s === '-') return '';
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}${iso[2]}${iso[3]}`;
+  const vn = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (vn) return `${vn[3]}${vn[2].padStart(2, '0')}${vn[1].padStart(2, '0')}`;
+  return '';
+}
+
+/** Ngày bắt đầu / kết thúc của lệnh (ưu tiên field thô ISO, fallback field đã format). */
+function orderDateKey(order: ProductionOrderRow, kind: 'start' | 'end') {
+  const candidates =
+    kind === 'start'
+      ? [order.ngay_gio_bat_dau, order.ngay_bat_dau, order.startDate]
+      : [order.ngay_gio_ket_thuc, order.endDate];
+  for (const c of candidates) {
+    const key = toSortableDateKey(c);
+    if (key) return key;
+  }
+  return '';
+}
+
+function normalizeCoiMau(data: unknown): { products: CoiMauItem[] } {
+  const container =
+    data && typeof data === 'object' && Array.isArray((data as { records?: unknown }).records)
+      ? (data as { records: unknown[] }).records
+      : [];
+  const products: CoiMauItem[] = [];
+  const pushBlock = (maLenh: string, tenPhieu: string, prod: Record<string, unknown>, nvl: CoiMauNvl[]) => {
+    const ma_sp = pickRecordText(prod, ['ma_sp', 'productCode']);
+    const ten_sp = pickRecordText(prod, ['ten_ghep', 'ten_sp', 'productName']) || ma_sp;
+    if (!ma_sp && !ten_sp && nvl.length === 0) return;
+    products.push({
+      ma_lenh_sx: maLenh,
+      ten_phieu: tenPhieu,
+      ma_sp,
+      ten_sp,
+      dinh_luong_coi: str(prod.dinh_luong_coi ?? ''),
+      tong_trong_luong: str(prod.tong_trong_luong ?? ''),
+      ghi_chu: str(prod.ghi_chu ?? ''),
+      nvl
+    });
+  };
+  for (const raw of container) {
+    if (!raw || typeof raw !== 'object') continue;
+    const record = raw as Record<string, unknown>;
+    const maLenh = pickRecordText(record, ['ma_lenh_sx', 'maLenhSx']);
+    const tenPhieu = pickRecordText(record, ['ten_phieu', 'tenPhieu']);
+    const before = products.length;
+    // 1) products[] nếu có
+    if (Array.isArray(record.products)) {
+      for (const rawProd of record.products as unknown[]) {
+        if (!rawProd || typeof rawProd !== 'object') continue;
+        const prod = rawProd as Record<string, unknown>;
+        pushBlock(maLenh, tenPhieu, prod, normalizeCoiMauNvl(prod.nvl ?? prod.chi_tiet));
+      }
+    }
+    if (products.length !== before) continue;
+    const chiTiet = record.chi_tiet;
+    if (Array.isArray(chiTiet) && chiTiet.length > 0) {
+      const first = chiTiet[0];
+      if (first && typeof first === 'object' && isCoiMauProductBlock(first as Record<string, unknown>)) {
+        // 2) NEW: chi_tiet = các block sản phẩm { ma_sp, nvl|chi_tiet }
+        for (const entry of chiTiet as unknown[]) {
+          if (!entry || typeof entry !== 'object') continue;
+          const prod = entry as Record<string, unknown>;
+          pushBlock(maLenh, tenPhieu, prod, normalizeCoiMauNvl(prod.nvl ?? prod.chi_tiet));
+        }
+      } else {
+        // 3) LEGACY: chi_tiet = các dòng NVL phẳng + SP ở cấp phiếu
+        pushBlock(maLenh, tenPhieu, record, normalizeCoiMauNvl(chiTiet));
+      }
+    } else {
+      // 4) Phiếu chỉ có cột SP/NVL cấp phiếu
+      const ma = pickRecordText(record, ['ma_nvl']);
+      const ten = pickRecordText(record, ['ten_nvl']);
+      const hasSp = Boolean(pickRecordText(record, ['ma_sp', 'ten_sp']));
+      if (ma || ten || hasSp) {
+        const fallbackLines: unknown[] =
+          ma || ten
+            ? [
+                {
+                  ma_nvl: ma,
+                  ten_nvl: ten,
+                  don_vi: pickRecordText(record, ['don_vi_dinh_muc']),
+                  dinh_muc: record.dinh_muc
+                }
+              ]
+            : [];
+        pushBlock(maLenh, tenPhieu, record, normalizeCoiMauNvl(fallbackLines));
+      }
+    }
+  }
+  return { products };
+}
+
+/** Combo Máy-Ca rút từ lệnh SX đã chọn (1 lệnh có thể gồm nhiều ca nối ","). */
+type MayCaCombo = { machine: string; ca: string };
+
+function combosFromOrders(ordersList: ProductionOrderRow[]): MayCaCombo[] {
+  const map = new Map<string, MayCaCombo>();
+  for (const order of ordersList) {
+    const rawMachine = str(order.machine);
+    const machine = rawMachine === '-' ? '' : rawMachine;
+    const rawParts = splitShifts(order.shift);
+    const parts = (rawParts.length > 0 ? rawParts : ['']).map(p => (p === '-' ? '' : p));
+    for (const ca of parts) {
+      const key = `${machine}|||${ca}`;
+      if (!map.has(key)) map.set(key, { machine, ca });
+    }
+  }
+  return [...map.values()];
+}
+
+function phanCongItemMay(item: unknown) {
+  if (!item || typeof item !== 'object') return '';
+  const rec = item as Record<string, unknown>;
+  return `${str(rec.ma_may)} ${str(rec.may)}`.trim();
+}
+
+function formatMayCa(machine: string, shift: string) {
+  const may = str(machine) && str(machine) !== '-' ? str(machine) : '—';
+  const ca = str(shift) && str(shift) !== '-' ? str(shift) : '—';
+  return `${may} - ${ca}`;
+}
+
+function normalizeSoTronReports(data: unknown): SoTronSavedReport[] {
+  const raw = data && typeof data === 'object' ? (data as Record<string, unknown>).reports : data;
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const r = item as Record<string, unknown>;
+      const asArray = (value: unknown) => (Array.isArray(value) ? value : []);
+      return {
+        id: str(r.id),
+        chi_nhanh: str(r.chi_nhanh) || CHI_NHANH_MAC_DINH,
+        ngay: str(r.ngay).slice(0, 10),
+        ma_may: str(r.ma_may),
+        ten_may: str(r.ten_may),
+        ca: str(r.ca),
+        nhan_su: str(r.nhan_su),
+        nhan_su_chi_tiet: asArray(r.nhan_su_chi_tiet),
+        lenh_sx: asArray(r.lenh_sx) as { id: string; ma_lenh: string }[],
+        coi_tron_mau: asArray(r.coi_tron_mau) as CoiMauItem[],
+        bang_nvl: asArray(r.bang_nvl) as SoTronSavedReport['bang_nvl'],
+        bang_san_pham: asArray(r.bang_san_pham) as SoTronSavedReport['bang_san_pham'],
+        bang_hang_loi: asArray(r.bang_hang_loi) as SoTronSavedReport['bang_hang_loi'],
+        bang_ban_giao: asArray(r.bang_ban_giao) as SoTronSavedReport['bang_ban_giao'],
+        ghi_chu: str(r.ghi_chu),
+        created_at: str(r.created_at),
+        updated_at: str(r.updated_at)
+      } as SoTronSavedReport;
+    })
+    .filter((item): item is SoTronSavedReport => Boolean(item && item.id));
+}
+
+const inputClass =
+  'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20';
+const numInputClass = `${inputClass} text-right tabular-nums`;
+const labelClass = 'mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500';
+const cardClass = 'rounded-xl border border-slate-200 bg-white shadow-card';
+const sectionTitleClass = 'font-display text-[14px] font-semibold tracking-tight text-slate-900';
+
+function SectionHeader({ index, title, desc }: { index: string; title: string; desc: string }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-[11px] font-bold text-white">
+        {index}
+      </span>
+      <span className="min-w-0">
+        <span className={`block ${sectionTitleClass}`}>{title}</span>
+        <span className="mt-0.5 block text-[11.5px] leading-snug text-slate-500">{desc}</span>
+      </span>
+    </div>
+  );
+}
+
+export function SoTronPanel({
+  onBack,
+  onOpenList,
+  editReport,
+  onEditConsumed
+}: {
+  onBack: () => void;
+  onOpenList: () => void;
+  editReport?: SoTronSavedReport | null;
+  onEditConsumed?: () => void;
+}) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const [machines, setMachines] = useState<MachineRow[]>([]);
+  const [materials, setMaterials] = useState<MaterialRow[]>([]);
+  const [shiftOptions, setShiftOptions] = useState<{ value: string; label: string }[]>([]);
+  const [orders, setOrders] = useState<ProductionOrderRow[]>([]);
+  // Tổng số lệnh tải được (null = chưa tải xong / tải lỗi) — để chẩn đoán lọc
+  const [ordersTotal, setOrdersTotal] = useState<number | null>(null);
+  const [staffMap, setStaffMap] = useState<Map<string, string>>(new Map());
+  const [savedReports, setSavedReports] = useState<SoTronSavedReport[]>([]);
+
+  const [ngay, setNgay] = useState(todayLocal());
+  // Máy (chọn 1) + Ca (chọn nhiều) để lọc lệnh SX
+  const [machineRef, setMachineRef] = useState('');
+  const [selectedCa, setSelectedCa] = useState<string[]>([]);
+  const [phanCong, setPhanCong] = useState<PhanCongItem[]>([]);
+  // Nhân sự gom theo từng combo Máy-Ca (để hiển thị theo máy và ca)
+  const [staffGroups, setStaffGroups] = useState<{ key: string; label: string; staff: PhanCongItem[] }[]>([]);
+  // true khi người dùng đã sửa tay ô Nhân sự ca (không tự ghi đè nữa)
+  const [nhanSuTouched, setNhanSuTouched] = useState(false);
+  // Tăng để đồng bộ lại nhân sự sau khi sắp xếp lịch mới xong
+  const [staffTick, setStaffTick] = useState(0);
+
+  // Đồng bộ: tải lại danh mục nhân viên (mã → tên) rồi tải lại phân công
+  const handleSyncStaff = async () => {
+    setIsLoadingStaff(true);
+    try {
+      const res = await fetch('/api/nhan-su?format=groups&scope=all');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setStaffMap(normalizeStaffDirectory(data));
+    } catch {
+      /* bỏ qua, vẫn đồng bộ phân công bên dưới */
+    }
+    setStaffTick(t => t + 1);
+  };
+  const [nhanSuText, setNhanSuText] = useState('');
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+
+  const [selectedLenh, setSelectedLenh] = useState<string[]>([]);
+  const [coiMau, setCoiMau] = useState<CoiMauItem[]>([]);
+  const [isLoadingCoi, setIsLoadingCoi] = useState(false);
+
+  const [numLan, setNumLan] = useState(SO_LAN_TRON_MAC_DINH);
+  const [nvlRows, setNvlRows] = useState<NvlRow[]>([]);
+  const [spRows, setSpRows] = useState<SanPhamRow[]>([]);
+  const [loiRows, setLoiRows] = useState<HangLoiRow[]>([]);
+  const [banGiaoRows, setBanGiaoRows] = useState<BanGiaoRow[]>([]);
+  const [ghiChu, setGhiChu] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [prevTonMap, setPrevTonMap] = useState<Map<string, number>>(new Map());
+
+  const selectedOrders = useMemo(
+    () => selectedLenh.map(code => orders.find(o => o.code === code)).filter((o): o is ProductionOrderRow => Boolean(o)),
+    [selectedLenh, orders]
+  );
+
+  // Combo Máy-Ca rút từ các lệnh đã chọn
+  const orderCombos = useMemo(() => combosFromOrders(selectedOrders), [selectedOrders]);
+
+  // ---- Resolve máy theo danh mục (phục vụ nhân sự / tồn / lưu phiếu) ----
+  const resolveComboMachine = (machineRaw: string) => {
+    const found = findMachineByRef(machines, machineRaw);
+    return {
+      code: found?.code || machineRaw,
+      name: found?.name || machineRaw,
+      display: found ? machineSelectValue(found) : machineRaw
+    };
+  };
+
+  const resolveComboIdentity = (combo: MayCaCombo) => {
+    const resolved = resolveComboMachine(combo.machine);
+    return { ma_may: resolved.code, ten_may: resolved.name, ca: combo.ca };
+  };
+
+  // Danh mục kho NVL: tra id + tên sản xuất theo id/mã (gộp NVL theo id)
+  const materialById = useMemo(() => new Map(materials.map(m => [m.id, m])), [materials]);
+  const materialByCode = useMemo(() => {
+    const map = new Map<string, MaterialRow>();
+    for (const m of materials) {
+      const key = str(m.code).toLowerCase();
+      if (key && !map.has(key)) map.set(key, m);
+    }
+    return map;
+  }, [materials]);
+
+  const resolveNvlDisplay = (materialId: string, ma: string, ten: string, sx: string) => {
+    const dir =
+      (str(materialId) && materialById.get(str(materialId))) ||
+      materialByCode.get(str(ma).toLowerCase());
+    if (!dir) {
+      return { material_id: str(materialId), ma_nvl: str(ma), ten_nvl: str(ten), ten_nvl_sx: str(sx) };
+    }
+    return {
+      material_id: dir.id,
+      ma_nvl: dir.code || str(ma),
+      ten_nvl: dir.name || str(ten),
+      ten_nvl_sx: dir.productionName || str(sx)
+    };
+  };
+
+  const nvlRowKey = (materialId: string, ma: string) => {
+    const disp = resolveNvlDisplay(materialId, ma, '', '');
+    return (disp.material_id || disp.ma_nvl).toLowerCase();
+  };
+
+  // In phiếu đúng mẫu giấy: 1 tờ A4 ngang (cửa sổ in riêng)
+  const handlePrintA4 = () => {
+    printSoTronSlip({
+      ngay,
+      mayCa: orderCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · '),
+      nhanSu: nhanSuText.trim(),
+      lenhSx: selectedLenh,
+      numLan,
+      nvl: nvlRows
+        .filter(row => row.ma_nvl.trim() !== '')
+        .map(row => ({
+          ma_nvl: row.ma_nvl.trim(),
+          ten_nvl: row.ten_nvl.trim(),
+          ten_nvl_sx: row.ten_nvl_sx.trim(),
+          dvt: row.dvt.trim() || 'kg',
+          lan: row.lan.map(v => v.trim()),
+          tong: round2(row.lan.reduce((s, v) => s + parseNum(v), 0))
+        })),
+      sp: spRows
+        .filter(row => row.ten_sp.trim() !== '' || row.ma_sp.trim() !== '')
+        .map(row => ({
+          ma_lenh_sx: row.ma_lenh_sx,
+          ten_sp: row.ten_sp.trim(),
+          so_luong: row.so_luong.trim(),
+          dinh_muc: row.dinh_muc.trim(),
+          trong_luong: row.trong_luong.trim(),
+          ghi_chu: row.ghi_chu.trim()
+        })),
+      loi: loiRows
+        .filter(row => row.ten_loi.trim() !== '')
+        .map(row => ({ ten_loi: row.ten_loi.trim(), so_luong: row.so_luong.trim() })),
+      banGiao: banGiaoRows
+        .filter(row => row.ma_nvl.trim() !== '')
+        .map(row => {
+          const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+          return {
+            ma_nvl: row.ma_nvl.trim(),
+            ten_nvl: `${row.ten_nvl.trim()}${row.ten_nvl_sx.trim() ? ` (${row.ten_nvl_sx.trim()})` : ''}`,
+            lay_trong_kho: row.lay_trong_kho.trim(),
+            ton_dau_ca: row.ton_dau_ca.trim(),
+            tong_su_dung: suDung,
+            ton_cuoi_ca: round2(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung)
+          };
+        }),
+      ghiChu: ghiChu.trim()
+    });
+  };
+
+  // Nạp danh mục dùng chung 1 lần
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const [machineRes, materialRes, settingRes, orderRes, staffRes, reportRes] = await Promise.all([
+          fetch('/api/danh-sach-may'),
+          fetch('/api/kho-nvl'),
+          fetch('/api/cai-dat'),
+          fetch('/api/lenh-sx'),
+          // format=groups để có cả mã + tên nhân viên (API thường chỉ trả tên)
+          fetch('/api/nhan-su?format=groups&scope=all'),
+          fetch('/api/so-tron?limit=100')
+        ]);
+        const [machineData, materialData, settingData, orderData, staffData, reportData] = await Promise.all([
+          machineRes.json().catch(() => ({})),
+          materialRes.json().catch(() => ({})),
+          settingRes.json().catch(() => ({})),
+          orderRes.json().catch(() => ({})),
+          staffRes.json().catch(() => ({})),
+          reportRes.json().catch(() => ({}))
+        ]);
+        if (!alive) return;
+        if (machineRes.ok) {
+          const list = normalizeMachines(machineData).filter(
+            m => !m.branch || m.branch === '-' || /phú thọ/i.test(m.branch)
+          );
+          setMachines(list.length > 0 ? list : normalizeMachines(machineData));
+        }
+        if (materialRes.ok) {
+          try {
+            setMaterials(normalizeMaterialsInventory(materialData));
+          } catch {
+            setMaterials([]);
+          }
+        }
+        if (settingRes.ok) {
+          const options = getProductionShiftOptions(normalizeShiftSettings(settingData));
+          setShiftOptions(options.length > 0 ? options : STANDARD_SHIFTS.map(s => ({ value: s, label: s })));
+        } else {
+          setShiftOptions(STANDARD_SHIFTS.map(s => ({ value: s, label: s })));
+        }
+        if (orderRes.ok) {
+          try {
+            const list = normalizeProductionOrders(orderData);
+            setOrders(list);
+            setOrdersTotal(list.length);
+          } catch {
+            setOrders([]);
+            setOrdersTotal(0);
+          }
+        }
+        if (staffRes.ok) setStaffMap(normalizeStaffDirectory(staffData));
+        if (reportRes.ok) setSavedReports(normalizeSoTronReports(reportData));
+      } finally {
+        if (alive) setIsLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Lệnh SX bắt buộc có cả ngày bắt đầu và ngày kết thúc,
+  // ngày chọn phải nằm trong khoảng ngay_bat_dau → ngay_ket_thuc
+  const dateMatchedOrders = useMemo(() => {
+    if (!ngay) return [];
+    const dayKey = ngay.replace(/-/g, '');
+    return orders
+      .filter(order => {
+        const start = orderDateKey(order, 'start');
+        const end = orderDateKey(order, 'end');
+        if (!start || !end) return false;
+        if (start > dayKey || dayKey > end) return false;
+        return true;
+      })
+      .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+  }, [orders, ngay]);
+
+  const orderHasRef = (order: ProductionOrderRow) =>
+    (str(order.machine) && str(order.machine) !== '-') ||
+    (str(order.shift) && str(order.shift) !== '-');
+
+  // Lệnh thiếu ngày bắt đầu hoặc ngày kết thúc (hiện kèm để kiểm tra lại)
+  const datelessOrders = useMemo(() => {
+    if (!ngay) return [];
+    return orders
+      .filter(order => (!orderDateKey(order, 'start') || !orderDateKey(order, 'end')) && orderHasRef(order))
+      .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+  }, [orders, ngay]);
+
+  /** Nhãn 1 lệnh trong ô chọn nhiều lệnh (kiểu phiếu trộn định mức): `<mã> - <máy> · <ngày> · <ca>`. */
+  const lenhOptionLabel = (order: ProductionOrderRow) => {
+    const machine = str(order.machine) && str(order.machine) !== '-' ? str(order.machine) : '';
+    const base = machine ? `${order.code} - ${machine}` : order.code;
+    const dispDay = (k: string) => (k ? `${k.slice(6, 8)}/${k.slice(4, 6)}/${k.slice(0, 4)}` : '');
+    const start = orderDateKey(order, 'start');
+    const end = orderDateKey(order, 'end');
+    const range = start || end ? ` · ${dispDay(start) || '—'} → ${dispDay(end) || '—'}` : ' · thiếu ngày';
+    const shift = str(order.shift) && str(order.shift) !== '-' ? ` · ${str(order.shift)}` : '';
+    return `${base}${range}${shift}`;
+  };
+
+  const lenhOptionSearchText = (order: ProductionOrderRow) => {
+    const products = Array.isArray(order.products)
+      ? (order.products as OrderProductLine[])
+          .map(p => `${str(p.productCode)} ${str(p.tenGhep || p.productName)}`)
+          .join(' ')
+      : '';
+    return `${order.code} ${str(order.machine)} ${str(order.shift)} ${products}`;
+  };
+
+  // Lọc lệnh theo máy (chọn 1) + ca (chọn nhiều) đã chọn ở mục 1 (trống = tất cả).
+  // Options ô chọn lệnh: lệnh trong ngày + lệnh thiếu ngày, đã lọc máy/ca.
+  const lenhOptions = useMemo(() => {
+    const machine = machineRef.trim();
+    const resolved = machine ? resolveComboMachine(machine) : null;
+    const passRef = (order: ProductionOrderRow) => {
+      if (resolved && !machineMatches(order.machine, resolved.code, resolved.name)) return false;
+      if (!shiftMatchesAny(order.shift, selectedCa)) return false;
+      return true;
+    };
+    const dated = dateMatchedOrders.filter(passRef);
+    const seen = new Set(dated.map(o => o.code));
+    return [...dated, ...datelessOrders.filter(o => !seen.has(o.code) && passRef(o))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateMatchedOrders, datelessOrders, machineRef, selectedCa, machines]);
+
+  const lenhValues = useMemo(
+    () => lenhOptions.filter(o => selectedLenh.includes(o.code)),
+    [lenhOptions, selectedLenh]
+  );
+
+  // Mã lệnh đã chọn nhưng không còn trong danh sách tải về (chip cảnh báo kiểu định mức)
+  const unresolvedLenhCodes = useMemo(() => {
+    const known = new Set(orders.map(o => o.code));
+    return selectedLenh.filter(code => !known.has(code));
+  }, [selectedLenh, orders]);
+
+  // Luôn hiển thị TÊN nhân viên: tra mã → tên (khớp cả hoa thường),
+  // rớt lại tên đã lưu, cuối cùng mới hiện mã
+  const lookupStaffName = (map: Map<string, string>, ma: string, fallback: string) => {
+    const code = str(ma);
+    if (!code) return str(fallback);
+    return map.get(code) || map.get(code.toLowerCase()) || str(fallback) || code;
+  };
+  const staffDisplayName = (p: PhanCongItem) => lookupStaffName(staffMap, p.ma_nhan_su, p.ten);
+
+  const staffTextFrom = (map: Map<string, string>, list: PhanCongItem[]) =>
+    list.map(p => lookupStaffName(map, p.ma_nhan_su, p.ten)).filter(Boolean).join(', ');
+
+  // Danh mục nhân viên về sau (vd bấm Đồng bộ) mà ô chưa sửa tay → dựng lại tên
+  useEffect(() => {
+    if (nhanSuTouched || phanCong.length === 0) return;
+    setNhanSuText(staffTextFrom(staffMap, phanCong));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staffMap]);
+  // Tự động fill nhân sự CHỈ theo ngày + máy + ca đã chọn ở mục 1
+  // (không fill theo lệnh SX)
+  useEffect(() => {
+    if (isLoading || !ngay) {
+      setPhanCong([]);
+      setStaffGroups([]);
+      return;
+    }
+    const machine = machineRef.trim();
+    if (!machine) {
+      setPhanCong([]);
+      setStaffGroups([]);
+      return;
+    }
+    const combos =
+      selectedCa.length > 0
+        ? selectedCa.map(ca => ({ machine, ca }))
+        : [{ machine, ca: '' }];
+    if (combos.length === 0) {
+      setPhanCong([]);
+      setStaffGroups([]);
+      return;
+    }
+    let alive = true;
+    setIsLoadingStaff(true);
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          const perCombo = await Promise.all(
+            combos.map(async combo => {
+              try {
+                const params = new URLSearchParams({ ngay_lam_viec: ngay });
+                if (combo.ca) params.set('ca', combo.ca);
+                const res = await fetch(`/api/phan-cong-nhan-su?${params.toString()}`);
+                const data = await res.json().catch(() => ({}));
+                if (!alive || !res.ok) return [];
+                const itemsRaw =
+                  data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)
+                    ? (data as { items: unknown[] }).items
+                    : [];
+                const found = findMachineByRef(machines, combo.machine);
+                const code = found?.code || combo.machine;
+                const name = found?.name || combo.machine;
+                const filtered = itemsRaw.filter(item => machineMatches(phanCongItemMay(item), code, name));
+                return normalizePhanCong(filtered, staffMap);
+              } catch {
+                return [];
+              }
+            })
+          );
+          if (!alive) return;
+          const merged = new Map<string, PhanCongItem>();
+          for (const person of perCombo.flat()) {
+            if (!merged.has(person.ma_nhan_su)) merged.set(person.ma_nhan_su, person);
+          }
+          const list = [...merged.values()];
+          // Truy vấn trực tiếp bảng nhan_su theo mã để lấy tên
+          const nameMap = new Map(staffMap);
+          const codes = [...new Set(list.map(p => p.ma_nhan_su).filter(Boolean))];
+          const missing = codes.filter(
+            code => !nameMap.has(code) && !nameMap.has(code.toLowerCase())
+          );
+          if (missing.length > 0) {
+            try {
+              const nameRes = await fetch(
+                `/api/nhan-su/by-code?codes=${encodeURIComponent(missing.join(','))}`
+              );
+              const nameData = await nameRes.json().catch(() => ({}));
+              if (alive && nameRes.ok && nameData && typeof nameData.names === 'object') {
+                for (const [code, name] of Object.entries(nameData.names as Record<string, unknown>)) {
+                  const text = str(name);
+                  if (!text) continue;
+                  nameMap.set(code, text);
+                  nameMap.set(code.toLowerCase(), text);
+                }
+                setStaffMap(nameMap);
+              }
+            } catch {
+              /* bỏ qua, dùng tên đã có */
+            }
+          }
+          if (!alive) return;
+          setPhanCong(list);
+          setNhanSuTouched(false);
+          setStaffGroups(
+            combos.map((combo, i) => ({
+              key: `${combo.machine}|||${combo.ca}`,
+              label: formatMayCa(combo.machine, combo.ca),
+              staff: perCombo[i] || []
+            }))
+          );
+          setNhanSuText(staffTextFrom(nameMap, list));
+        } catch {
+          if (alive) {
+            setPhanCong([]);
+            setStaffGroups([]);
+            setNhanSuText('');
+          }
+        } finally {
+          if (alive) setIsLoadingStaff(false);
+        }
+      })();
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [ngay, machineRef, selectedCa, machines, staffMap, staffTick, isLoading]);
+
+  // Lấy phiếu trộn định mức theo các lệnh SX đã chọn.
+  // Nhiều mã lệnh ngăn nhau bằng dấu phẩy trong 1 request;
+  // server tách token [,;|/] và khớp từng mã trong ma_lenh_sx của phiếu
+  // (1 phiếu có thể gộp nhiều lệnh, 1 lệnh có thể có nhiều phiếu).
+  useEffect(() => {
+    if (selectedLenh.length === 0) {
+      setCoiMau([]);
+      return;
+    }
+    let alive = true;
+    setIsLoadingCoi(true);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/bang-tron-vat-tu-dinh-muc?ma_lenh_sx=${encodeURIComponent(selectedLenh.join(','))}&limit=200`
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!alive) return;
+        if (res.ok) {
+          const { products } = normalizeCoiMau(data);
+          setCoiMau(products);
+        } else {
+          setCoiMau([]);
+        }
+      } catch {
+        if (alive) setCoiMau([]);
+      } finally {
+        if (alive) setIsLoadingCoi(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [selectedLenh]);
+
+  // Gộp NVL từ cối mẫu vào bảng 1 (giữ số đã nhập).
+  // Fill toàn bộ NVL của mọi lệnh đã chọn; gộp theo ID kho NVL
+  // (fallback mã khi chưa khớp danh mục); trùng thì gộp 1 dòng,
+  // cộng dồn nguồn lệnh vào cột Lệnh SX.
+  useEffect(() => {
+    const selectedSet = new Set(selectedLenh.map(c => c.trim().toLowerCase()));
+    const desired = new Map<
+      string,
+      { material_id: string; ma: string; ten: string; sx: string; dvt: string; nguon: Set<string> }
+    >();
+    for (const item of coiMau) {
+      const tokens = splitLenhCodes(item.ma_lenh_sx);
+      const matched = tokens.filter(t => selectedSet.has(t.toLowerCase()));
+      const owners = matched.length > 0 ? matched : [...selectedLenh];
+      for (const line of item.nvl) {
+        if (!line.ma_nvl) continue;
+        const disp = resolveNvlDisplay(line.material_id, line.ma_nvl, line.ten_nvl, line.ten_nvl_sx);
+        const key = (disp.material_id || disp.ma_nvl).toLowerCase();
+        if (!key) continue;
+        const entry = desired.get(key) || {
+          material_id: disp.material_id,
+          ma: disp.ma_nvl,
+          ten: disp.ten_nvl,
+          sx: disp.ten_nvl_sx,
+          dvt: line.dvt,
+          nguon: new Set<string>()
+        };
+        if (disp.ten_nvl && !entry.ten) entry.ten = disp.ten_nvl;
+        if (disp.ten_nvl_sx && !entry.sx) entry.sx = disp.ten_nvl_sx;
+        if (line.dvt && (!entry.dvt || entry.dvt === 'kg')) entry.dvt = line.dvt;
+        for (const code of owners) {
+          const original = selectedLenh.find(c => c.trim().toLowerCase() === code.trim().toLowerCase()) || code;
+          entry.nguon.add(original);
+        }
+        desired.set(key, entry);
+      }
+    }
+    const foldRow = (map: Map<string, NvlRow>, row: NvlRow) => {
+      const disp = resolveNvlDisplay(row.material_id, row.ma_nvl, row.ten_nvl, row.ten_nvl_sx);
+      const key = (disp.material_id || disp.ma_nvl || row.key).toLowerCase();
+      const normalized: NvlRow = { ...row, ...disp };
+      const cur = map.get(key);
+      if (!cur) {
+        map.set(key, normalized);
+        return;
+      }
+      const curHas = cur.lan.some(v => str(v) !== '');
+      const rowHas = normalized.lan.some(v => str(v) !== '');
+      const keep = rowHas && !curHas ? normalized : cur;
+      const other = keep === normalized ? cur : normalized;
+      map.set(key, { ...keep, nguon: [...new Set([...keep.nguon, ...other.nguon])] });
+    };
+    setNvlRows(prev => {
+      const map = new Map<string, NvlRow>();
+      for (const row of prev) foldRow(map, row);
+      for (const [key, meta] of desired) {
+        const cur = map.get(key);
+        const nguon = [...meta.nguon];
+        if (cur) {
+          map.set(key, {
+            ...cur,
+            material_id: meta.material_id || cur.material_id,
+            ten_nvl: cur.ten_nvl || meta.ten,
+            ten_nvl_sx: cur.ten_nvl_sx || meta.sx,
+            dvt: cur.dvt || meta.dvt,
+            nguon: [...new Set([...cur.nguon, ...nguon])]
+          });
+        } else {
+          map.set(key, {
+            key: uid(),
+            material_id: meta.material_id,
+            ma_nvl: meta.ma,
+            ten_nvl: meta.ten,
+            ten_nvl_sx: meta.sx,
+            dvt: meta.dvt,
+            lan: Array(numLan).fill(''),
+            nguon
+          });
+        }
+      }
+      // Giữ dòng đã nhập số hoặc dòng mới thêm tay (chưa có mã), dù không còn trong cối mẫu
+      return [...map.values()].filter(
+        row => desired.has((row.material_id || row.ma_nvl).toLowerCase()) || row.lan.some(v => str(v) !== '') || !row.ma_nvl.trim()
+      );
+    });
+    setBanGiaoRows(prev => {
+      const prevMap = new Map(
+        prev.map(row => {
+          const disp = resolveNvlDisplay(row.material_id, row.ma_nvl, row.ten_nvl, row.ten_nvl_sx);
+          return [(disp.material_id || disp.ma_nvl || row.key).toLowerCase(), { ...row, ...disp }] as const;
+        })
+      );
+      const next: BanGiaoRow[] = [];
+      for (const [key, meta] of desired) {
+        const old = prevMap.get(key);
+        if (old) {
+          next.push({
+            ...old,
+            material_id: meta.material_id || old.material_id,
+            ten_nvl: old.ten_nvl || meta.ten,
+            ten_nvl_sx: old.ten_nvl_sx || meta.sx
+          });
+        } else {
+          next.push({
+            key: uid(),
+            material_id: meta.material_id,
+            ma_nvl: meta.ma,
+            ten_nvl: meta.ten,
+            ten_nvl_sx: meta.sx,
+            lay_trong_kho: '',
+            ton_dau_ca: prevTonMap.has(key) ? formatQty(prevTonMap.get(key) || 0) : '',
+            ton_dau_tu_dong: true
+          });
+        }
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coiMau, materials, selectedLenh, numLan]);
+
+  // Tồn đầu ca = tồn cuối kỳ trước (theo combo Máy-Ca đầu tiên của lệnh đã chọn,
+  // phiếu gần nhất khác ngày/ca của đúng máy đó)
+  useEffect(() => {
+    const first = orderCombos[0];
+    const resolved = first ? resolveComboMachine(first.machine) : null;
+    const maMay = resolved?.code || '';
+    const caVal = first?.ca || '';
+    if (!maMay) {
+      setPrevTonMap(new Map());
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/so-tron?ma_may=${encodeURIComponent(maMay)}&limit=50`);
+        const data = await res.json().catch(() => ({}));
+        if (!alive || !res.ok) return;
+        const list = normalizeSoTronReports(data).filter(r => !(r.ngay === ngay && r.ca === caVal));
+        const prev = list[0];
+        const map = new Map<string, number>();
+        if (prev) {
+          for (const line of prev.bang_ban_giao) {
+            const value = Number(line.ton_cuoi_ca) || 0;
+            // Index cả key thô (tương thích phiếu cũ) lẫn key chuẩn id kho
+            const rawKey = (str(line.material_id) || str(line.ma_nvl)).toLowerCase();
+            if (rawKey) map.set(rawKey, value);
+            const disp = resolveNvlDisplay(str(line.material_id), str(line.ma_nvl), '', '');
+            const canonKey = (disp.material_id || disp.ma_nvl).toLowerCase();
+            if (canonKey) map.set(canonKey, value);
+          }
+        }
+        if (!alive) return;
+        setPrevTonMap(map);
+        setBanGiaoRows(rows =>
+          rows.map(row => {
+            if (!row.ton_dau_tu_dong) return row;
+            const key = (row.material_id || row.ma_nvl).toLowerCase();
+            if (map.has(key)) return { ...row, ton_dau_ca: formatQty(map.get(key) || 0) };
+            return row.ton_dau_ca === '' ? row : { ...row, ton_dau_ca: row.ton_dau_ca };
+          })
+        );
+      } catch {
+        /* bỏ qua */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [orderCombos, machines, materials, ngay]);
+
+  // Tổng sử dụng theo NVL (key = id kho, fallback mã, chữ thường) — cộng dồn khi trùng
+  const nvlTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of nvlRows) {
+      const key = (row.material_id || row.ma_nvl).toLowerCase();
+      if (!key) continue;
+      const total = round2(row.lan.reduce((sum, v) => sum + parseNum(v), 0));
+      map.set(key, round2((map.get(key) || 0) + total));
+    }
+    return map;
+  }, [nvlRows]);
+  const nvlUsageOf = (materialId: string, ma: string) =>
+    round2(nvlTotals.get((materialId || ma).toLowerCase()) || 0);
+
+  // NVL chính trong kho = NVL không thuộc nhóm vật tư phụ (để picker "Thêm NVL khác")
+  const mainMaterials = useMemo(() => {
+    return materials
+      .filter(m => {
+        const g = str(m.auxiliaryMaterialGroup);
+        return (!g || g === '-') && (str(m.code) || str(m.name));
+      })
+      .sort((a, b) => str(a.code || a.name).localeCompare(str(b.code || b.name), 'vi'));
+  }, [materials]);
+
+  const materialOptionLabel = (m: MaterialRow) =>
+    `${m.code || '—'} — ${m.name || m.productionName || m.code}`;
+
+  const materialOptionSearch = (m: MaterialRow) =>
+    `${m.code} ${m.name} ${m.productionName}`;
+
+  // Thêm NVL khác từ picker (chỉ NVL chính): thêm đồng thời vào bảng 1 và bảng 4
+  const addExtraNvls = (mats: MaterialRow[]) => {
+    const norm = mats
+      .map(m => ({
+        key: `${str(m.id) || str(m.code)}`.toLowerCase(),
+        material_id: str(m.id),
+        ma_nvl: str(m.code),
+        ten_nvl: str(m.name),
+        ten_nvl_sx: str(m.productionName),
+        dvt: str(m.unit) && str(m.unit) !== '-' ? str(m.unit) : 'kg'
+      }))
+      .filter(m => m.key);
+    if (norm.length === 0) return;
+    setNvlRows(rows => {
+      const keys = new Set(rows.map(r => (r.material_id || r.ma_nvl).toLowerCase()));
+      const adds = norm.filter(m => !keys.has(m.key));
+      if (adds.length === 0) return rows;
+      return [
+        ...rows,
+        ...adds.map(m => ({
+          key: uid(),
+          material_id: m.material_id,
+          ma_nvl: m.ma_nvl,
+          ten_nvl: m.ten_nvl,
+          ten_nvl_sx: m.ten_nvl_sx,
+          dvt: m.dvt,
+          lan: Array(numLan).fill('') as string[],
+          nguon: [] as string[]
+        }))
+      ];
+    });
+    setBanGiaoRows(rows => {
+      const keys = new Set(rows.map(r => (r.material_id || r.ma_nvl).toLowerCase()));
+      const adds = norm.filter(m => !keys.has(m.key));
+      if (adds.length === 0) return rows;
+      return [
+        ...rows,
+        ...adds.map(m => ({
+          key: uid(),
+          material_id: m.material_id,
+          ma_nvl: m.ma_nvl,
+          ten_nvl: m.ten_nvl,
+          ten_nvl_sx: m.ten_nvl_sx,
+          lay_trong_kho: '',
+          ton_dau_ca: prevTonMap.has(m.key) ? formatQty(prevTonMap.get(m.key) || 0) : '',
+          ton_dau_tu_dong: true
+        }))
+      ];
+    });
+  };
+
+  const tongSuDungChung = useMemo(
+    () => round2([...nvlTotals.values()].reduce((sum, v) => sum + v, 0)),
+    [nvlTotals]
+  );
+
+  // Gom cối mẫu theo SẢN PHẨM (tên hiển thị cho công nhân trộn, không hiện tên phiếu
+  // trộn định mức). Chỉ lấy NVL cối chính — NVL phụ (nvl_phu) không đọc vào.
+  const coiMauGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      { key: string; ma_sp: string; ten_sp: string; lenh: Set<string>; blocks: CoiMauItem[] }
+    >();
+    for (const b of coiMau) {
+      const key = b.ma_sp || b.ten_sp || 'san-pham';
+      const g = map.get(key) || {
+        key,
+        ma_sp: b.ma_sp,
+        ten_sp: b.ten_sp,
+        lenh: new Set<string>(),
+        blocks: [] as CoiMauItem[]
+      };
+      g.blocks.push(b);
+      if (!g.ten_sp && b.ten_sp) g.ten_sp = b.ten_sp;
+      if (!g.ma_sp && b.ma_sp) g.ma_sp = b.ma_sp;
+      for (const token of splitLenhCodes(b.ma_lenh_sx)) g.lenh.add(token);
+      map.set(key, g);
+    }
+    return [...map.values()];
+  }, [coiMau]);
+
+  // Lệnh đã chọn nhưng không phiếu nào chứa mã đó (tách token , ; | / để so)
+  const uncoveredLenh = useMemo(() => {
+    const covered = new Set<string>();
+    for (const b of coiMau) {
+      for (const token of splitLenhCodes(b.ma_lenh_sx)) covered.add(token.toLowerCase());
+    }
+    return selectedLenh.filter(code => !covered.has(code.trim().toLowerCase()));
+  }, [coiMau, selectedLenh]);
+
+  const productSuggestions = useMemo(() => {
+    const list: { value: string; label: string; maLenh: string; maSp: string; tenSp: string }[] = [];
+    for (const order of selectedOrders) {
+      const products: OrderProductLine[] = Array.isArray(order.products) ? order.products : [];
+      for (const p of products) {
+        const maSp = str(p.productCode);
+        const tenSp = str(p.tenGhep || p.productName) || maSp;
+        if (!maSp && !tenSp) continue;
+        list.push({
+          value: `${maSp} — ${tenSp}`,
+          label: `${maSp} — ${tenSp} (${order.code})`,
+          maLenh: order.code,
+          maSp,
+          tenSp
+        });
+      }
+    }
+    return list;
+  }, [selectedOrders]);
+
+  // Các combo của lệnh đã chọn mà ngày này đã có sổ trộn (trừ phiếu đang sửa)
+  const existingForCombos = useMemo(() => {
+    if (!ngay || orderCombos.length === 0) return [];
+    return orderCombos
+      .map(combo => {
+        const id = resolveComboIdentity(combo);
+        const hit = savedReports.find(
+          r => r.ngay === ngay && r.ma_may === id.ma_may && r.ca === id.ca && r.id !== editingId
+        );
+        return hit ? { combo, report: hit } : null;
+      })
+      .filter((x): x is { combo: MayCaCombo; report: SoTronSavedReport } => Boolean(x));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedReports, ngay, orderCombos, machines, editingId]);
+
+  const resizeLan = (next: number) => {
+    const clamped = Math.max(1, Math.min(SO_LAN_TRON_TOI_DA, next));
+    setNumLan(clamped);
+    setNvlRows(rows =>
+      rows.map(row => {
+        const lan = [...row.lan];
+        while (lan.length < clamped) lan.push('');
+        return { ...row, lan: lan.slice(0, clamped) };
+      })
+    );
+  };
+
+  const applyPrevTon = () => {
+    setBanGiaoRows(rows =>
+      rows.map(row => {
+        const key = (row.material_id || row.ma_nvl).toLowerCase();
+        return {
+          ...row,
+          ton_dau_ca: prevTonMap.has(key) ? formatQty(prevTonMap.get(key) || 0) : row.ton_dau_ca,
+          ton_dau_tu_dong: true
+        };
+      })
+    );
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setMachineRef('');
+    setSelectedCa([]);
+    setSelectedLenh([]);
+    setPhanCong([]);
+    setNhanSuText('');
+    setNhanSuTouched(false);
+    setStaffGroups([]);
+    setCoiMau([]);
+    setNvlRows([]);
+    setSpRows([]);
+    setLoiRows([]);
+    setBanGiaoRows([]);
+    setGhiChu('');
+    setNumLan(SO_LAN_TRON_MAC_DINH);
+    setMessage(null);
+  };
+
+  const loadReportToForm = (report: SoTronSavedReport) => {
+    setEditingId(report.id);
+    setNgay(report.ngay);
+    const found =
+      findMachineByRef(machines, report.ma_may) ?? findMachineByRef(machines, report.ten_may);
+    setMachineRef(found ? machineSelectValue(found) : report.ten_may || report.ma_may);
+    setSelectedCa(report.ca ? [report.ca] : []);
+    setStaffGroups([]);
+    setNhanSuText(report.nhan_su);
+    setNhanSuTouched(true);
+    setPhanCong(
+      (Array.isArray(report.nhan_su_chi_tiet) ? report.nhan_su_chi_tiet : [])
+        .map(item => {
+          if (!item || typeof item !== 'object') return null;
+          const rec = item as Record<string, unknown>;
+          return {
+            ma_nhan_su: str(rec.ma_nhan_su),
+            ten: str(rec.ten) || str(rec.ma_nhan_su),
+            vai_tro: str(rec.vai_tro)
+          };
+        })
+        .filter((x): x is PhanCongItem => Boolean(x))
+    );
+    const codes = report.lenh_sx.map(l => str(l.ma_lenh)).filter(Boolean);
+    setSelectedLenh(codes);
+    setCoiMau(report.coi_tron_mau || []);
+    const maxLan = Math.max(
+      SO_LAN_TRON_MAC_DINH,
+      ...report.bang_nvl.map(l => (Array.isArray(l.lan) ? l.lan.length : 0))
+    );
+    setNumLan(Math.min(SO_LAN_TRON_TOI_DA, maxLan));
+    setNvlRows(
+      report.bang_nvl.map(line => ({
+        key: uid(),
+        material_id: str((line as { material_id?: unknown }).material_id),
+        ma_nvl: str(line.ma_nvl),
+        ten_nvl: str(line.ten_nvl),
+        ten_nvl_sx: str((line as { ten_nvl_sx?: unknown }).ten_nvl_sx),
+        dvt: str(line.dvt) || 'kg',
+        lan: Array.from({ length: Math.min(SO_LAN_TRON_TOI_DA, maxLan) }, (_, i) =>
+          Array.isArray(line.lan) && line.lan[i] !== undefined && line.lan[i] !== null
+            ? String(line.lan[i])
+            : ''
+        ),
+        nguon: Array.isArray(line.lenh_sx) ? line.lenh_sx.map((c: unknown) => str(c)).filter(Boolean) : []
+      }))
+    );
+    setSpRows(
+      report.bang_san_pham.map(line => ({
+        key: uid(),
+        ma_lenh_sx: str(line.ma_lenh_sx),
+        ma_sp: str(line.ma_sp),
+        ten_sp: str(line.ten_sp),
+        so_luong: str(line.so_luong),
+        dinh_muc: str(line.dinh_muc),
+        trong_luong: str(line.trong_luong),
+        ghi_chu: str(line.ghi_chu)
+      }))
+    );
+    setLoiRows(
+      report.bang_hang_loi.map(line => ({
+        key: uid(),
+        ten_loi: str(line.ten_loi),
+        so_luong: str(line.so_luong)
+      }))
+    );
+    setBanGiaoRows(
+      report.bang_ban_giao.map(line => ({
+        key: uid(),
+        material_id: str(line.material_id),
+        ma_nvl: str(line.ma_nvl),
+        ten_nvl: str(line.ten_nvl),
+        ten_nvl_sx: str(line.ten_nvl_sx),
+        lay_trong_kho: line.lay_trong_kho !== undefined && line.lay_trong_kho !== null ? String(line.lay_trong_kho) : '',
+        ton_dau_ca: line.ton_dau_ca !== undefined && line.ton_dau_ca !== null ? String(line.ton_dau_ca) : '',
+        ton_dau_tu_dong: false
+      }))
+    );
+    setGhiChu(report.ghi_chu);
+    setMessage(null);
+  };
+
+  const handleSave = async () => {
+    if (!ngay) {
+      setMessage({ text: 'Vui lòng chọn Ngày.', type: 'error' });
+      return;
+    }
+    if (selectedLenh.length === 0) {
+      setMessage({ text: 'Vui lòng chọn ít nhất 1 lệnh sản xuất.', type: 'error' });
+      return;
+    }
+    if (orderCombos.length === 0) {
+      setMessage({ text: 'Lệnh đã chọn chưa có thông tin máy-ca.', type: 'error' });
+      return;
+    }
+    const identities = orderCombos
+      .map(resolveComboIdentity)
+      .filter(id => id.ma_may && id.ma_may !== '-' && id.ca && id.ca !== '-');
+    const skipped = orderCombos.length - identities.length;
+    if (identities.length === 0) {
+      setMessage({ text: 'Lệnh đã chọn thiếu máy hoặc ca. Bổ sung máy/ca cho lệnh SX rồi thử lại.', type: 'error' });
+      return;
+    }
+    setIsSaving(true);
+    setMessage(null);
+    try {
+      const bangNvl = nvlRows
+        .filter(row => row.ma_nvl.trim() !== '')
+        .map(row => {
+          const lan = row.lan.map(parseNum).map(round2);
+          return {
+            material_id: row.material_id,
+            ma_nvl: row.ma_nvl.trim(),
+            ten_nvl: row.ten_nvl.trim(),
+            ten_nvl_sx: row.ten_nvl_sx.trim(),
+            dvt: row.dvt.trim() || 'kg',
+            lan,
+            tong: round2(lan.reduce((s, v) => s + v, 0)),
+            lenh_sx: row.nguon
+          };
+        });
+      const bangBanGiao = banGiaoRows
+        .filter(row => row.ma_nvl.trim() !== '')
+        .map(row => {
+          const lay = parseNum(row.lay_trong_kho);
+          const dau = parseNum(row.ton_dau_ca);
+          const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+          return {
+            material_id: row.material_id,
+            ma_nvl: row.ma_nvl.trim(),
+            ten_nvl: row.ten_nvl.trim(),
+            ten_nvl_sx: row.ten_nvl_sx.trim(),
+            lay_trong_kho: round2(lay),
+            ton_dau_ca: round2(dau),
+            tong_su_dung: suDung,
+            ton_cuoi_ca: round2(lay + dau - suDung)
+          };
+        });
+      const basePayload = {
+        chi_nhanh: CHI_NHANH_MAC_DINH,
+        ngay,
+        nhan_su: nhanSuText.trim(),
+        nhan_su_chi_tiet: phanCong,
+        lenh_sx: selectedOrders.map(o => ({ id: o.id, ma_lenh: o.code })),
+        coi_tron_mau: coiMau,
+        bang_nvl: bangNvl,
+        bang_san_pham: spRows
+          .filter(row => row.ten_sp.trim() !== '' || row.ma_sp.trim() !== '')
+          .map(row => ({
+            ma_lenh_sx: row.ma_lenh_sx,
+            ma_sp: row.ma_sp.trim(),
+            ten_sp: row.ten_sp.trim(),
+            so_luong: row.so_luong.trim(),
+            dinh_muc: row.dinh_muc.trim(),
+            trong_luong: row.trong_luong.trim(),
+            ghi_chu: row.ghi_chu.trim()
+          })),
+        bang_hang_loi: loiRows
+          .filter(row => row.ten_loi.trim() !== '')
+          .map(row => ({ ten_loi: row.ten_loi.trim(), so_luong: row.so_luong.trim() })),
+        bang_ban_giao: bangBanGiao,
+        ghi_chu: ghiChu.trim()
+      };
+      const sendOne = async (idn: { ma_may: string; ten_may: string; ca: string }) => {
+        const dup = editingId
+          ? null
+          : savedReports.find(r => r.ngay === ngay && r.ma_may === idn.ma_may && r.ca === idn.ca);
+        const url = editingId
+          ? `/api/so-tron/${encodeURIComponent(editingId)}`
+          : dup
+            ? `/api/so-tron/${encodeURIComponent(dup.id)}`
+            : '/api/so-tron';
+        const res = await fetch(url, {
+          method: editingId || dup ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...basePayload, ma_may: idn.ma_may, ten_may: idn.ten_may, ca: idn.ca })
+        });
+        const data = await res.json().catch(() => ({}));
+        return { idn, ok: res.ok, updated: Boolean(editingId || dup), error: str(data.error), id: str(data?.report?.id || dup?.id) };
+      };
+      const targets = editingId ? [identities[0]] : identities;
+      const results = [];
+      for (const idn of targets) {
+        // eslint-disable-next-line no-await-in-loop
+        results.push(await sendOne(idn));
+      }
+      const failed = results.filter(r => !r.ok);
+      if (failed.length > 0) {
+        setMessage({
+          text: `Lưu lỗi ${failed.length}/${results.length} phiếu: ${failed.map(f => `${f.idn.ten_may || f.idn.ma_may} - ${f.idn.ca} (${f.error || 'lỗi'})`).join('; ')}`,
+          type: 'error'
+        });
+      } else {
+        const label = results
+          .map(r => `${r.idn.ten_may || r.idn.ma_may} - ${r.idn.ca}`)
+          .join('; ');
+        const skipNote = skipped > 0 ? ` (bỏ qua ${skipped} combo thiếu máy/ca)` : '';
+        setMessage({
+          text:
+            results.length > 1
+              ? `Đã lưu ${results.length} sổ trộn (${label})${skipNote}.`
+              : `${results[0].updated ? 'Đã cập nhật sổ trộn.' : 'Đã lưu sổ trộn.'}${skipNote}`,
+          type: 'success'
+        });
+        if (results.length === 1 && results[0].id) setEditingId(results[0].id);
+      }
+      const listRes = await fetch('/api/so-tron?limit=100');
+      const listData = await listRes.json().catch(() => ({}));
+      if (listRes.ok) setSavedReports(normalizeSoTronReports(listData));
+    } catch (err) {
+      setMessage({ text: err instanceof Error ? err.message : 'Không thể lưu sổ trộn.', type: 'error' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!editReport || isLoading || machines.length === 0) return;
+    loadReportToForm(editReport);
+    onEditConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editReport, isLoading, machines]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-slate-500">
+        <Loader2 className="h-5 w-5 animate-spin" /> Đang tải sổ trộn...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-3">
+        <BackButton onClick={onBack} />
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">Sổ trộn</h2>
+          <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
+            Báo cáo cuối ngày của công nhân — Chi nhánh Phú Thọ. Chọn ngày + máy + ca để lọc lệnh SX rồi fill số liệu.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenList}
+          className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+        >
+          Danh sách
+        </button>
+      </div>
+
+      {message && (
+        <div
+          className={`rounded-xl border px-3 py-2.5 text-[12.5px] font-semibold ${
+            message.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : message.type === 'error'
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : 'border-sky-200 bg-sky-50 text-sky-700'
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      {/* 1. Header: ngày + máy + ca */}
+          <section className={`${cardClass} space-y-3 p-4`}>
+            <SectionHeader
+              index="1"
+              title="Ngày — Máy — Ca"
+              desc="Chọn ngày và máy, có thể chọn nhiều ca. Lệnh SX bên dưới lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca."
+            />
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+              <div>
+                <label className={labelClass}>Chi nhánh</label>
+                <input value={CHI_NHANH_MAC_DINH} disabled className={`${inputClass} bg-slate-50 text-slate-500`} />
+              </div>
+              <div>
+                <label className={labelClass}>Ngày</label>
+                <input
+                  type="date"
+                  value={ngay}
+                  onChange={e => setNgay(e.target.value)}
+                  className={`${inputClass} tabular-nums`}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Máy</label>
+                <SearchableSelect
+                  value={machineRef}
+                  onChange={setMachineRef}
+                  options={machines as unknown[]}
+                  placeholder="Chọn máy..."
+                  inputClassName={inputClass}
+                  getLabel={item => {
+                    const m = item as MachineRow;
+                    return m.code && m.name && m.code !== m.name ? `${m.code} · ${m.name}` : m.name || m.code;
+                  }}
+                  getValue={item => machineSelectValue(item as MachineRow)}
+                  getSearchText={item => {
+                    const m = item as MachineRow;
+                    return `${m.code} ${m.name}`;
+                  }}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Ca (chọn nhiều)</label>
+                <SearchableMultiSelect<string>
+                  values={selectedCa}
+                  onChange={setSelectedCa}
+                  options={shiftOptions.map(s => s.value)}
+                  placeholder="Tất cả ca..."
+                  getValue={v => v}
+                  getLabel={v => shiftOptions.find(s => s.value === v)?.label || v}
+                  getSearchText={v => shiftOptions.find(s => s.value === v)?.label || v}
+                  allowCustomValues={false}
+                  hideSelectedFromList
+                  keepOptionsOrder
+                  maxResults={50}
+                  inputClassName={inputClass}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <label className={`${labelClass} !mb-0`}>
+                  Nhân sự trong ca {isLoadingStaff ? '(đang fill...)' : '(tự động từ lịch phân công)'}
+                </label>
+                <a
+                  href={pathFromTab('sap-xep-lich-lam-viec')}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Mở trang sắp xếp lịch làm việc trong tab mới"
+                  className="inline-flex items-center gap-0.5 text-[11px] font-bold text-brand-600 hover:text-brand-700 hover:underline"
+                >
+                  Sắp xếp lịch
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void handleSyncStaff()}
+                  disabled={isLoadingStaff}
+                  title="Đồng bộ lại nhân sự sau khi sắp xếp lịch mới xong"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isLoadingStaff ? 'animate-spin' : ''}`} />
+                  Đồng bộ
+                </button>
+              </div>
+              {staffGroups.length > 0 ? (
+                <div className="mb-1.5 space-y-1.5">
+                  {staffGroups.map(group => (
+                    <div key={group.key} className="flex flex-wrap items-center gap-1.5">
+                      <span className="min-w-[140px] text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        {group.label}
+                      </span>
+                      {group.staff.length > 0 ? (
+                        group.staff.map((p, i) => (
+                          <span
+                            key={`${p.ma_nhan_su}-${i}`}
+                            className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11.5px] font-bold text-slate-700"
+                          >
+                            {staffDisplayName(p)}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[11.5px] font-semibold text-slate-400">Chưa phân công</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : phanCong.length > 0 ? (
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
+                  {phanCong.map((p, i) => (
+                    <span
+                      key={`${p.ma_nhan_su}-${i}`}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11.5px] font-bold text-slate-700"
+                    >
+                      {staffDisplayName(p)}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mb-1.5 text-[11.5px] text-slate-400">
+                  {ngay && (machineRef || selectedLenh.length > 0)
+                    ? 'Không tìm thấy lịch phân công — nhập tay bên dưới hoặc mở sắp xếp lịch.'
+                    : 'Chọn ngày, máy, ca để tự động fill nhân sự.'}
+                </p>
+              )}
+              <input
+                value={nhanSuText}
+                onChange={e => {
+                  setNhanSuTouched(true);
+                  setNhanSuText(e.target.value);
+                }}
+                placeholder="Nhân sự ca (có thể sửa tay)"
+                className={inputClass}
+              />
+            </div>
+            {existingForCombos.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
+                <span>Ngày này đã có sổ trộn — bấm để mở:</span>
+                {existingForCombos.map(({ combo, report }) => (
+                  <button
+                    key={report.id}
+                    type="button"
+                    onClick={() => loadReportToForm(report)}
+                    className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11.5px] font-bold text-white hover:bg-amber-700"
+                  >
+                    {formatMayCa(combo.machine, combo.ca)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 2. Lệnh sản xuất */}
+          <section className={`${cardClass} space-y-3 p-4`}>
+            <SectionHeader
+              index="2"
+              title="Lệnh sản xuất"
+              desc="Lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca đã chọn. Mỗi lệnh hiển thị lệnh - máy · ngày · ca, chọn nhiều (gõ để tìm)."
+            />
+            <div>
+              <label className={labelClass}>
+                Lệnh SX (chọn nhiều) <span className="text-rose-500">*</span>
+              </label>
+              <SearchableMultiSelect<ProductionOrderRow>
+                values={lenhValues}
+                onChange={sel => setSelectedLenh(sel.map(o => o.code))}
+                options={lenhOptions}
+                placeholder={
+                  lenhOptions.length > 0
+                    ? 'Gõ để tìm lệnh SX...'
+                    : 'Chưa có lệnh SX phù hợp ngày chọn'
+                }
+                getValue={item => item.code}
+                getLabel={lenhOptionLabel}
+                getSearchText={lenhOptionSearchText}
+                allowCustomValues={false}
+                hideSelectedFromList
+                keepOptionsOrder
+                maxResults={200}
+                inputClassName={inputClass}
+              />
+              {unresolvedLenhCodes.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+                  {unresolvedLenhCodes.map(code => (
+                    <span
+                      key={code}
+                      title="Không tìm thấy trong danh sách lệnh SX (có thể đã xóa/đổi mã)"
+                      className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800"
+                    >
+                      <span className="truncate">{code}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLenh(prev => prev.filter(c => c !== code))}
+                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-amber-800 transition hover:bg-amber-100"
+                        title="Bỏ mã này"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <span className="text-[11px] font-semibold text-amber-700">
+                    Không tìm thấy trong danh sách lệnh — kiểm tra lại mã lệnh.
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            {ordersTotal === null ? (
+              <p className="text-[12px] font-semibold text-rose-500">
+                Không tải được danh sách lệnh SX — kiểm tra mạng hoặc tab Lệnh sản xuất.
+              </p>
+            ) : (
+              <p className="text-[11.5px] font-semibold text-slate-500">
+                Đã tải {ordersTotal} lệnh · {dateMatchedOrders.length} lệnh trong khoảng ngày
+                {datelessOrders.length > 0 ? ` · ${datelessOrders.length} lệnh thiếu ngày` : ''}
+                {(machineRef || selectedCa.length > 0) ? ` · ${lenhOptions.length} lệnh sau lọc máy-ca` : ''}
+                .
+              </p>
+            )}
+            {isLoadingCoi && (
+              <p className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" /> Đang lấy phiếu trộn mẫu...
+              </p>
+            )}
+            {(coiMau.length > 0 || uncoveredLenh.length > 0) && (
+              <div className="space-y-2">
+                <h4 className="text-[12px] font-bold uppercase tracking-wider text-slate-500">
+                  Cối trộn mẫu của các lệnh
+                </h4>
+                {coiMauGroups.map(group => {
+                  const lenhChung = [...group.lenh].join(', ');
+                  return (
+                    <div key={group.key} className="overflow-hidden rounded-lg border border-slate-200">
+                      <div className="bg-slate-50 px-3 py-1.5 text-[12px] font-bold text-slate-800">
+                        {group.ten_sp || group.ma_sp || 'Sản phẩm'}
+                        {group.ma_sp && group.ten_sp ? (
+                          <span className="font-semibold text-slate-500"> ({group.ma_sp})</span>
+                        ) : null}
+                        {lenhChung ? (
+                          <span className="font-semibold text-slate-500"> · Lệnh: {lenhChung}</span>
+                        ) : null}
+                      </div>
+                      {group.blocks.map((block, bi) => (
+                        <div key={`${group.key}-${bi}`} className="overflow-x-auto border-t border-slate-100">
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pt-1.5 text-[11px] font-semibold text-slate-500">
+                            {block.ma_lenh_sx ? <span>Lệnh SX: {block.ma_lenh_sx}</span> : null}
+                            {block.tong_trong_luong ? (
+                              <span>Tổng trọng lượng: <span className="tabular-nums text-slate-700">{block.tong_trong_luong} kg</span></span>
+                            ) : null}
+                            {block.dinh_luong_coi ? (
+                              <span>Định lượng cối: <span className="tabular-nums text-slate-700">{block.dinh_luong_coi} kg</span></span>
+                            ) : null}
+                          </div>
+                          {block.ghi_chu ? (
+                            <div className="px-3 text-[11px] text-slate-500">Ghi chú: {block.ghi_chu}</div>
+                          ) : null}
+                          <table className="w-full min-w-[480px] text-left text-[12px]">
+                            <thead>
+                              <tr className="bg-white text-[10.5px] uppercase tracking-wider text-slate-400">
+                                <th className="px-3 py-1.5" colSpan={4}>
+                                  {block.ma_sp ? `${block.ma_sp} — ` : ''}{block.ten_sp}
+                                  {block.dinh_luong_coi ? ` · Cối ${block.dinh_luong_coi} kg` : ''}
+                                </th>
+                              </tr>
+                              <tr className="border-y border-slate-100 text-[10.5px] uppercase tracking-wider text-slate-400">
+                                <th className="px-3 py-1.5">Mã NVL</th>
+                                <th className="px-3 py-1.5">Tên NVL</th>
+                                <th className="px-3 py-1.5">ĐVT</th>
+                                <th className="px-3 py-1.5 text-right">Giá trị</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {block.nvl.map((line, li) => (
+                                <tr key={li} className="border-b border-slate-50 last:border-0">
+                                  <td className="px-3 py-1.5 font-bold">{line.ma_nvl}</td>
+                                  <td className="px-3 py-1.5">
+                                    <div>{line.ten_nvl}</div>
+                                    {line.ten_nvl_sx ? (
+                                      <div className="text-[11px] italic text-slate-400">{line.ten_nvl_sx}</div>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-3 py-1.5">{line.dvt}</td>
+                                  <td className="px-3 py-1.5 text-right tabular-nums">{line.gia_tri}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+                {uncoveredLenh.map(code => (
+                  <p key={code} className="text-[12px] font-semibold text-slate-400">
+                    {code}: chưa có phiếu trộn định mức.
+                  </p>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 3.1 Bảng NVL thực tế */}
+          <section className={`${cardClass} space-y-3 p-4`}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <SectionHeader
+                index="3.1"
+                title="NVL trộn thực tế"
+                desc="Fill toàn bộ NVL của các lệnh đã chọn (mã + tên + tên SX theo kho NVL). Trùng NVL được gộp theo id kho thành 1 dòng và cộng dồn vào tổng sử dụng."
+              />
+              <span className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => resizeLan(numLan - 1)}
+                  disabled={numLan <= 1}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  title="Bớt 1 lần trộn"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <span className="min-w-[52px] text-center text-[12px] font-bold tabular-nums">{numLan} lần</span>
+                <button
+                  type="button"
+                  onClick={() => resizeLan(numLan + 1)}
+                  disabled={numLan >= SO_LAN_TRON_TOI_DA}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  title="Thêm 1 lần trộn"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </span>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[640px] text-left text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                    <th className="px-2 py-2">Nguyên liệu</th>
+                    <th className="px-2 py-2">Lệnh SX</th>
+                    <th className="w-[70px] px-2 py-2">ĐVT</th>
+                    {Array.from({ length: numLan }, (_, i) => (
+                      <th key={i} className="w-[72px] px-1 py-2 text-center">L{i + 1}</th>
+                    ))}
+                    <th className="w-[84px] px-2 py-2 text-right">Tổng</th>
+                    <th className="w-[36px] px-1 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {nvlRows.length === 0 && (
+                    <tr>
+                      <td colSpan={numLan + 5} className="px-3 py-5 text-center font-semibold text-slate-400">
+                        Chọn lệnh SX để tự fill NVL theo phiếu trộn.
+                      </td>
+                    </tr>
+                  )}
+                  {nvlRows.map((row, ri) => (
+                    <tr key={row.key} className="border-b border-slate-100 last:border-0">
+                      <td className="px-2 py-1.5">
+                        <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl}</div>
+                        <div className="text-[11px] text-slate-500">{row.ten_nvl}</div>
+                        {row.ten_nvl_sx ? (
+                          <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
+                        ) : null}
+                      </td>
+                      <td className="max-w-[140px] px-2 py-1.5 text-[11.5px] font-semibold text-slate-600">
+                        {row.nguon.length > 0 ? row.nguon.join(', ') : '—'}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.dvt}
+                          onChange={e =>
+                            setNvlRows(rows => rows.map((r, i) => (i === ri ? { ...r, dvt: e.target.value } : r)))
+                          }
+                          className={inputClass}
+                        />
+                      </td>
+                      {row.lan.map((cell, li) => (
+                        <td key={li} className="px-1 py-1.5">
+                          <input
+                            inputMode="decimal"
+                            value={cell}
+                            onChange={e =>
+                              setNvlRows(rows =>
+                                rows.map((r, i) =>
+                                  i === ri ? { ...r, lan: r.lan.map((c, j) => (j === li ? e.target.value : c)) } : r
+                                )
+                              )
+                            }
+                            className={numInputClass}
+                          />
+                        </td>
+                      ))}
+                      <td className="px-2 py-1.5 text-right text-[13px] font-bold tabular-nums">
+                        {formatQty(round2(row.lan.reduce((sum, v) => sum + parseNum(v), 0)))}
+                      </td>
+                      <td className="px-1 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setNvlRows(rows => rows.filter((_, i) => i !== ri))}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-[220px] flex-1">
+                <SearchableMultiSelect<MaterialRow>
+                  values={[]}
+                  onChange={sel => addExtraNvls(sel)}
+                  options={mainMaterials}
+                  placeholder="Thêm NVL khác (chỉ NVL chính, gõ để tìm)..."
+                  getValue={m => m.id || m.code}
+                  getLabel={materialOptionLabel}
+                  getSearchText={materialOptionSearch}
+                  allowCustomValues={false}
+                  hideSelectedFromList
+                  keepOptionsOrder
+                  maxResults={100}
+                  inputClassName={inputClass}
+                />
+              </div>
+              <span className="text-[12.5px] font-bold text-slate-700">
+                Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
+              </span>
+            </div>
+          </section>
+
+          {/* 3.2 Bảng sản phẩm */}
+          <section className={`${cardClass} space-y-3 p-4`}>
+            <SectionHeader
+              index="3.2"
+              title="Sản phẩm"
+              desc="Nhập các sản phẩm trong lệnh và số lượng. Cột lệnh SX cho biết SP thuộc lệnh nào."
+            />
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[760px] text-left text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                    <th className="w-[130px] px-2 py-2">Lệnh SX</th>
+                    <th className="px-2 py-2">Tên hàng hóa</th>
+                    <th className="w-[80px] px-2 py-2">Số lượng</th>
+                    <th className="w-[90px] px-2 py-2">Định mức</th>
+                    <th className="w-[90px] px-2 py-2">Trọng lượng</th>
+                    <th className="w-[110px] px-2 py-2">Ghi chú</th>
+                    <th className="w-[36px] px-1 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {spRows.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-5 text-center font-semibold text-slate-400">
+                        Chưa có sản phẩm — bấm “Thêm sản phẩm”.
+                      </td>
+                    </tr>
+                  )}
+                  {spRows.map((row, ri) => (
+                    <tr key={row.key} className="border-b border-slate-100 align-top last:border-0">
+                      <td className="px-2 py-1.5">
+                        <select
+                          value={row.ma_lenh_sx}
+                          onChange={e =>
+                            setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ma_lenh_sx: e.target.value } : r)))
+                          }
+                          className={inputClass}
+                        >
+                          <option value="">—</option>
+                          {selectedLenh.map(code => (
+                            <option key={code} value={code}>
+                              {code}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.ten_sp}
+                          list={`so-tron-sp-suggest-${row.key}`}
+                          onChange={e => {
+                            const value = e.target.value;
+                            setSpRows(rows =>
+                              rows.map((r, i) => {
+                                if (i !== ri) return r;
+                                const hit = productSuggestions.find(s => s.value === value || s.label === value);
+                                return {
+                                  ...r,
+                                  ten_sp: value,
+                                  ma_sp: hit ? hit.maSp : r.ma_sp,
+                                  ma_lenh_sx: hit && !r.ma_lenh_sx ? hit.maLenh : r.ma_lenh_sx
+                                };
+                              })
+                            );
+                          }}
+                          placeholder="Tên hàng / mã SP"
+                          className={inputClass}
+                        />
+                        <datalist id={`so-tron-sp-suggest-${row.key}`}>
+                          {productSuggestions.map(s => (
+                            <option key={`${s.maLenh}-${s.maSp}`} value={s.value}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </datalist>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.so_luong}
+                          onChange={e =>
+                            setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
+                          }
+                          className={numInputClass}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.dinh_muc}
+                          onChange={e =>
+                            setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, dinh_muc: e.target.value } : r)))
+                          }
+                          className={inputClass}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.trong_luong}
+                          onChange={e =>
+                            setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, trong_luong: e.target.value } : r)))
+                          }
+                          className={numInputClass}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.ghi_chu}
+                          onChange={e =>
+                            setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ghi_chu: e.target.value } : r)))
+                          }
+                          className={inputClass}
+                        />
+                      </td>
+                      <td className="px-1 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSpRows(rows => rows.filter((_, i) => i !== ri))}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setSpRows(rows => [
+                  ...rows,
+                  {
+                    key: uid(),
+                    ma_lenh_sx: selectedLenh[0] || '',
+                    ma_sp: '',
+                    ten_sp: '',
+                    so_luong: '',
+                    dinh_muc: '',
+                    trong_luong: '',
+                    ghi_chu: ''
+                  }
+                ])
+              }
+              className="flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            >
+              <Plus className="h-4 w-4" /> Thêm sản phẩm
+            </button>
+          </section>
+
+          {/* 3.3 Hàng lỗi hỏng */}
+          <section className={`${cardClass} space-y-3 p-4`}>
+            <SectionHeader index="3.3" title="Hàng lỗi hỏng" desc="Tên lỗi và số lượng (kg)." />
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[420px] text-left text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                    <th className="px-2 py-2">Tên lỗi</th>
+                    <th className="w-[140px] px-2 py-2">Số lượng (kg)</th>
+                    <th className="w-[36px] px-1 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {loiRows.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="px-3 py-5 text-center font-semibold text-slate-400">
+                        Không có hàng lỗi — bấm “Thêm lỗi” nếu phát sinh.
+                      </td>
+                    </tr>
+                  )}
+                  {loiRows.map((row, ri) => (
+                    <tr key={row.key} className="border-b border-slate-100 last:border-0">
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.ten_loi}
+                          onChange={e =>
+                            setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, ten_loi: e.target.value } : r)))
+                          }
+                          placeholder="VD: PDK, P-02(D)..."
+                          className={inputClass}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          inputMode="decimal"
+                          value={row.so_luong}
+                          onChange={e =>
+                            setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
+                          }
+                          className={numInputClass}
+                        />
+                      </td>
+                      <td className="px-1 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setLoiRows(rows => rows.filter((_, i) => i !== ri))}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLoiRows(rows => [...rows, { key: uid(), ten_loi: '', so_luong: '' }])}
+              className="flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            >
+              <Plus className="h-4 w-4" /> Thêm lỗi
+            </button>
+          </section>
+
+          {/* 3.4 Bàn giao ca sau */}
+          <section className={`${cardClass} space-y-3 p-4`}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <SectionHeader
+                index="3.4"
+                title="Nhựa bàn giao ca sau"
+                desc="Loại nhựa tự fill theo phiếu trộn. Tồn đầu ca = tồn cuối kỳ trước (lấy theo combo Máy-Ca đầu tiên khi chọn nhiều). Tồn cuối = lấy trong kho + tồn đầu ca − tổng sử dụng."
+              />
+              <button
+                type="button"
+                onClick={applyPrevTon}
+                disabled={prevTonMap.size === 0}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Lấy tồn cuối kỳ trước
+              </button>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[680px] text-left text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                    <th className="px-2 py-2">Loại nhựa</th>
+                    <th className="w-[110px] px-2 py-2">Lấy trong kho</th>
+                    <th className="w-[110px] px-2 py-2">Tồn đầu ca</th>
+                    <th className="w-[100px] px-2 py-2 text-right">Tổng sử dụng</th>
+                    <th className="w-[110px] px-2 py-2 text-right">Tồn cuối ca</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {banGiaoRows.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-5 text-center font-semibold text-slate-400">
+                        Chọn lệnh SX để tự fill loại nhựa.
+                      </td>
+                    </tr>
+                  )}
+                  {banGiaoRows.map((row, ri) => {
+                    const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+                    const tonCuoi = round2(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung);
+                    return (
+                      <tr key={row.key} className="border-b border-slate-100 last:border-0">
+                        <td className="px-2 py-1.5">
+                          <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl}</div>
+                          <div className="text-[11px] text-slate-500">{row.ten_nvl}</div>
+                          {row.ten_nvl_sx ? (
+                            <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            inputMode="decimal"
+                            value={row.lay_trong_kho}
+                            onChange={e =>
+                              setBanGiaoRows(rows =>
+                                rows.map((r, i) => (i === ri ? { ...r, lay_trong_kho: e.target.value } : r))
+                              )
+                            }
+                            className={numInputClass}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            inputMode="decimal"
+                            value={row.ton_dau_ca}
+                            onChange={e =>
+                              setBanGiaoRows(rows =>
+                                rows.map((r, i) =>
+                                  i === ri ? { ...r, ton_dau_ca: e.target.value, ton_dau_tu_dong: false } : r
+                                )
+                              )
+                            }
+                            className={numInputClass}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-slate-600">
+                          {formatQty(suDung)}
+                        </td>
+                        <td className="px-2 py-1.5 text-right text-[13px] font-bold tabular-nums text-brand-700">
+                          {formatQty(tonCuoi)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Ghi chú + Lưu */}
+          <section className={`${cardClass} space-y-3 p-4`}>
+            <div>
+              <label className={labelClass}>Ghi chú</label>
+              <textarea
+                value={ghiChu}
+                onChange={e => setGhiChu(e.target.value)}
+                rows={2}
+                className={`${inputClass} resize-y`}
+                placeholder="Ghi chú thêm của ca..."
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {editingId ? 'Cập nhật sổ trộn' : 'Lưu sổ trộn'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePrintA4()}
+                disabled={nvlRows.length === 0 && spRows.length === 0}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <Printer className="h-4 w-4" /> In A4
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50"
+              >
+                Phiếu mới
+              </button>
+            </div>
+          </section>
+    </div>
+  );
+}
+
+export default SoTronPanel;
+
+export function SoTronListView({
+  onBack,
+  onCreate,
+  onEdit
+}: {
+  onBack: () => void;
+  onCreate: () => void;
+  onEdit: (report: SoTronSavedReport) => void;
+}) {
+  const [reports, setReports] = useState<SoTronSavedReport[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState('');
+
+  const load = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/so-tron?limit=100');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setReports(normalizeSoTronReports(data));
+      } else {
+        setMessage(str(data.error) || 'Không thể tải danh sách sổ trộn.');
+      }
+    } catch {
+      setMessage('Không thể tải danh sách sổ trộn.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Xóa sổ trộn này?')) return;
+    const res = await fetch(`/api/so-tron/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMessage(str(data.error) || 'Không thể xóa sổ trộn.');
+      return;
+    }
+    setReports(prev => prev.filter(r => r.id !== id));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-3">
+        <BackButton onClick={onBack} />
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">
+            Danh sách sổ trộn
+          </h2>
+          <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
+            Mỗi dòng là 1 máy + 1 ngày + 1 ca. Cuối ngày có nhiều máy, nhiều ca.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onCreate}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-800"
+        >
+          <Plus className="h-4 w-4" /> Nhập sổ trộn
+        </button>
+      </div>
+
+      {message && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12.5px] font-semibold text-rose-700">
+          {message}
+        </div>
+      )}
+
+      <div className={`${cardClass} overflow-hidden`}>
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-slate-500">
+            <Loader2 className="h-5 w-5 animate-spin" /> Đang tải danh sách...
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-[12.5px]">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="px-3 py-2">Ngày</th>
+                  <th className="px-3 py-2">Máy</th>
+                  <th className="px-3 py-2">Ca</th>
+                  <th className="px-3 py-2">Lệnh SX</th>
+                  <th className="px-3 py-2">Nhân sự</th>
+                  <th className="px-3 py-2 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center font-semibold text-slate-400">
+                      Chưa có sổ trộn nào.
+                    </td>
+                  </tr>
+                )}
+                {reports.map(report => (
+                  <tr key={report.id} className="border-b border-slate-50 last:border-0">
+                    <td className="px-3 py-2 font-bold tabular-nums">{report.ngay}</td>
+                    <td className="px-3 py-2 font-semibold">{report.ten_may || report.ma_may}</td>
+                    <td className="px-3 py-2">{report.ca}</td>
+                    <td className="px-3 py-2 text-slate-600">{report.lenh_sx.map(l => l.ma_lenh).join(', ')}</td>
+                    <td className="max-w-[220px] truncate px-3 py-2 text-slate-600">{report.nhan_su}</td>
+                    <td className="px-3 py-2">
+                      <span className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onEdit(report)}
+                          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                        >
+                          Sửa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(report.id)}
+                          className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50"
+                        >
+                          Xóa
+                        </button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -83,6 +83,7 @@ import { CanTuDongPanel } from './features/can-tu-dong';
 import { KiemKhoPanel } from './features/kiem-kho';
 import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
+import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/so-tron';
 import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -211,6 +212,7 @@ export default function App() {
     name: string;
   } | null>(null);
   const [machineNvlEditReport, setMachineNvlEditReport] = useState<MachineNvlSavedReport | null>(null);
+  const [soTronEditReport, setSoTronEditReport] = useState<SoTronSavedReport | null>(null);
   const [weighingPendingAdd, setWeighingPendingAdd] = useState<WeighingPendingAdd | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
     let nextTab = tab;
@@ -1231,6 +1233,41 @@ export default function App() {
                   onInitialMachineConsumed={() => setMachineNvlReportPrefill(null)}
                   editReport={machineNvlEditReport}
                   onEditConsumed={() => setMachineNvlEditReport(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'so-tron' ? (
+              <motion.div
+                key="so-tron"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoTronPanel
+                  onBack={() => goBack('report-forms')}
+                  onOpenList={() => navigateToTab('so-tron-list')}
+                  editReport={soTronEditReport}
+                  onEditConsumed={() => setSoTronEditReport(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'so-tron-list' ? (
+              <motion.div
+                key="so-tron-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoTronListView
+                  onBack={() => goBack('report-lists')}
+                  onCreate={() => {
+                    setSoTronEditReport(null);
+                    navigateToTab('so-tron');
+                  }}
+                  onEdit={report => {
+                    setSoTronEditReport(report);
+                    navigateToTab('so-tron');
+                  }}
                 />
               </motion.div>
             ) : activeTab === 'acceptance-report' ? (
