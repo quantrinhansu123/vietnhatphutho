@@ -912,7 +912,7 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                               const schedPhrase = !p.dispatch
                                 ? formatPersonTimeRange(p.batDau, p.ketThuc, row.khungGio)
                                 : '';
-                              return schedPhrase ? `${p.name} (${schedPhrase})` : p.name;
+                              return schedPhrase ? `(${p.name} ${schedPhrase})` : p.name;
                             })
                             .filter(Boolean)
                             .join(', ');
@@ -929,9 +929,12 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                                       .split('\n')
                                       .map(line => line.trim())
                                       .filter(Boolean);
-                                    const fixedLines = rawLines.map(line =>
-                                      line.includes(p.name) ? line : `${p.name} ${line}`
-                                    );
+                                    const fixedLines = rawLines.map(line => {
+                                      if (line.includes(p.name)) return line;
+                                      // Dữ liệu cũ thiếu tên: chèn tên vào trong ngoặc.
+                                      if (line.startsWith('(')) return `(${p.name} ${line.slice(1).trimStart()}`;
+                                      return `(${p.name} ${line})`;
+                                    });
                                     return (
                                       <div
                                         key={`dispatch-${pidx}`}
