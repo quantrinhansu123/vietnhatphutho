@@ -1518,6 +1518,18 @@ export function SoTronPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editReport, isLoading, machines]);
 
+  // Tổng + style dùng cho tờ phiếu nhập liệu kiểu sổ giấy (giống mẫu hình)
+  const paperSpTotalSoLuong = spRows.reduce((s, r) => s + parseNum(r.so_luong), 0);
+  const paperSpTotalTrongLuong = spRows.reduce((s, r) => s + parseNum(r.trong_luong), 0);
+  const paperLoiTotal = loiRows.reduce((s, r) => s + parseNum(r.so_luong), 0);
+  const paperCellInput =
+    'w-full bg-transparent px-1 py-1 text-center text-[12.5px] font-semibold tabular-nums text-slate-900 outline-none focus:bg-brand-50';
+  const paperCellInputLeft =
+    'w-full bg-transparent px-1 py-1 text-left text-[12.5px] font-semibold text-slate-900 outline-none focus:bg-brand-50';
+  const paperTh =
+    'border border-slate-800 bg-slate-100 px-1 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700';
+  const paperTd = 'border border-slate-700 px-0.5 py-0.5';
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-slate-500">
@@ -1858,6 +1870,8 @@ export function SoTronPanel({
             )}
           </section>
 
+          {/* Giao diện cũ (chưa chọn lệnh SX) — giữ nguyên logic nhập */}
+          {selectedLenh.length === 0 && (<>
           {/* 3.1 Bảng NVL thực tế */}
           <section className={`${cardClass} space-y-3 p-4`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2289,6 +2303,486 @@ export function SoTronPanel({
             </div>
           </section>
 
+          </>)}
+          {/* 3. Tờ phiếu nhập liệu kiểu sổ giấy (hiện sau khi chọn lệnh SX — giống mẫu hình) */}
+          {selectedLenh.length > 0 && (
+            <section className="overflow-hidden rounded-xl border-2 border-slate-800 bg-white shadow-card">
+              {/* Đầu phiếu: Ngày + Nhân sự chạy máy */}
+              <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1 border-b-2 border-slate-800 px-3 py-2 text-[13px] font-semibold text-slate-900">
+                <span>
+                  Ngày{' '}
+                  <span className="inline-block min-w-[28px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
+                    {ngay.slice(8, 10) || '...'}
+                  </span>{' '}
+                  Tháng{' '}
+                  <span className="inline-block min-w-[28px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
+                    {ngay.slice(5, 7) || '...'}
+                  </span>{' '}
+                  Năm{' '}
+                  <span className="inline-block min-w-[48px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
+                    {ngay.slice(0, 4) || '...'}
+                  </span>
+                </span>
+                <span className="min-w-0 flex-1 text-right">
+                  Nhân sự chạy máy:{' '}
+                  <span className="font-bold text-slate-900">{nhanSuText.trim() || '...'}</span>
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 px-3 py-1.5 text-[11.5px] font-semibold text-slate-600">
+                <span className="min-w-0">
+                  Máy-Ca: <span className="font-bold text-slate-800">{orderCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · ') || '...'}</span>
+                  {' '}· Lệnh: <span className="font-bold text-slate-800">{selectedLenh.join(', ')}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => resizeLan(numLan - 1)}
+                    disabled={numLan <= 1}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                    title="Bớt 1 lần trộn"
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="min-w-[52px] text-center text-[12px] font-bold tabular-nums">{numLan} lần</span>
+                  <button
+                    type="button"
+                    onClick={() => resizeLan(numLan + 1)}
+                    disabled={numLan >= SO_LAN_TRON_TOI_DA}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                    title="Thêm 1 lần trộn"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              </div>
+
+              {/* Bảng NVL trộn thực tế: Nguyên liệu | ĐVT | L1..Ln | Tổng */}
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-center" style={{ minWidth: 360 + numLan * 64 }}>
+                  <thead>
+                    <tr>
+                      <th rowSpan={2} className={`${paperTh} min-w-[150px]`}>Nguyên Liệu</th>
+                      <th rowSpan={2} className={`${paperTh} w-[56px]`}>ĐVT</th>
+                      <th colSpan={numLan} className={paperTh}>Trọng Lượng</th>
+                      <th rowSpan={2} className={`${paperTh} w-[70px]`}>Tổng</th>
+                      <th rowSpan={2} className={`${paperTh} w-[30px]`} />
+                    </tr>
+                    <tr>
+                      {Array.from({ length: numLan }, (_, i) => (
+                        <th key={i} className="border border-slate-800 bg-slate-50 px-0 py-1 text-[11px] font-bold tabular-nums text-slate-700">
+                          L{i + 1}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nvlRows.length === 0 && (
+                      <tr>
+                        <td colSpan={numLan + 4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                          Chưa có NVL — kiểm tra cối trộn mẫu của lệnh hoặc thêm NVL khác bên dưới.
+                        </td>
+                      </tr>
+                    )}
+                    {nvlRows.map((row, ri) => (
+                      <tr key={row.key}>
+                        <td className="border border-slate-700 px-1 py-0.5 text-left">
+                          <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl || '—'}</div>
+                          {row.ten_nvl ? <div className="text-[11px] text-slate-500">{row.ten_nvl}</div> : null}
+                          {row.ten_nvl_sx ? (
+                            <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
+                          ) : null}
+                          {row.nguon.length > 0 ? (
+                            <div className="text-[10.5px] font-semibold text-slate-400">{row.nguon.join(', ')}</div>
+                          ) : null}
+                        </td>
+                        <td className={paperTd}>
+                          <input
+                            value={row.dvt}
+                            onChange={e =>
+                              setNvlRows(rows => rows.map((r, i) => (i === ri ? { ...r, dvt: e.target.value } : r)))
+                            }
+                            className={paperCellInput}
+                          />
+                        </td>
+                        {row.lan.map((cell, li) => (
+                          <td key={li} className={paperTd}>
+                            <input
+                              inputMode="decimal"
+                              value={cell}
+                              onChange={e =>
+                                setNvlRows(rows =>
+                                  rows.map((r, i) =>
+                                    i === ri ? { ...r, lan: r.lan.map((c, j) => (j === li ? e.target.value : c)) } : r
+                                  )
+                                )
+                              }
+                              className={paperCellInput}
+                            />
+                          </td>
+                        ))}
+                        <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums">
+                          {formatQty(round2(row.lan.reduce((sum, v) => sum + parseNum(v), 0)))}
+                        </td>
+                        <td className="border border-slate-700 px-0.5 py-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setNvlRows(rows => rows.filter((_, i) => i !== ri))}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-300 px-3 py-1.5">
+                <div className="min-w-[220px] flex-1">
+                  <SearchableMultiSelect<MaterialRow>
+                    values={[]}
+                    onChange={sel => addExtraNvls(sel)}
+                    options={mainMaterials}
+                    placeholder="Thêm NVL khác (chỉ NVL chính, gõ để tìm)..."
+                    getValue={m => m.id || m.code}
+                    getLabel={materialOptionLabel}
+                    getSearchText={materialOptionSearch}
+                    allowCustomValues={false}
+                    hideSelectedFromList
+                    keepOptionsOrder
+                    maxResults={100}
+                    inputClassName={inputClass}
+                  />
+                </div>
+                <span className="text-[12.5px] font-bold text-slate-700">
+                  Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
+                </span>
+              </div>
+
+              {/* Dòng tổng sản phẩm của quá trình chạy máy */}
+              <p className="border-y-2 border-slate-800 px-3 py-1.5 text-[13px] font-semibold text-slate-900">
+                Sản phẩm của quá trình chạy máy:{' '}
+                <span className="font-bold tabular-nums">{formatQty(round2(paperSpTotalTrongLuong))}</span> kg
+              </p>
+
+              {/* 3 bảng cạnh nhau: Sản phẩm | Hàng lỗi hỏng | Nhựa bàn giao ca sau */}
+              <div className="grid grid-cols-1 lg:grid-cols-12">
+                {/* Sản phẩm */}
+                <div className="border-b-2 border-slate-800 lg:col-span-5 lg:border-b-0 lg:border-r-2">
+                  <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
+                    Sản Phẩm
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[440px] border-collapse text-center">
+                      <thead>
+                        <tr>
+                          <th className={`${paperTh} w-[64px]`}>Lệnh</th>
+                          <th className={paperTh}>Tên hàng hóa</th>
+                          <th className={`${paperTh} w-[56px]`}>Số Lượng</th>
+                          <th className={`${paperTh} w-[62px]`}>Định mức</th>
+                          <th className={`${paperTh} w-[68px]`}>Trọng lượng</th>
+                          <th className={`${paperTh} w-[70px]`}>Ghi chú</th>
+                          <th className={`${paperTh} w-[28px]`} />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {spRows.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                              Chưa có sản phẩm — bấm “Thêm sản phẩm”.
+                            </td>
+                          </tr>
+                        )}
+                        {spRows.map((row, ri) => (
+                          <tr key={row.key}>
+                            <td className={paperTd}>
+                              <select
+                                value={row.ma_lenh_sx}
+                                onChange={e =>
+                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ma_lenh_sx: e.target.value } : r)))
+                                }
+                                className={paperCellInput}
+                              >
+                                <option value="">—</option>
+                                {selectedLenh.map(code => (
+                                  <option key={code} value={code}>
+                                    {code}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className={paperTd}>
+                              <input
+                                value={row.ten_sp}
+                                list={`so-tron-paper-sp-${row.key}`}
+                                onChange={e => {
+                                  const value = e.target.value;
+                                  setSpRows(rows =>
+                                    rows.map((r, i) => {
+                                      if (i !== ri) return r;
+                                      const hit = productSuggestions.find(s => s.value === value || s.label === value);
+                                      return {
+                                        ...r,
+                                        ten_sp: value,
+                                        ma_sp: hit ? hit.maSp : r.ma_sp,
+                                        ma_lenh_sx: hit && !r.ma_lenh_sx ? hit.maLenh : r.ma_lenh_sx
+                                      };
+                                    })
+                                  );
+                                }}
+                                placeholder="Tên hàng / mã SP"
+                                className={paperCellInputLeft}
+                              />
+                              <datalist id={`so-tron-paper-sp-${row.key}`}>
+                                {productSuggestions.map(s => (
+                                  <option key={`${s.maLenh}-${s.maSp}`} value={s.value}>
+                                    {s.label}
+                                  </option>
+                                ))}
+                              </datalist>
+                            </td>
+                            <td className={paperTd}>
+                              <input
+                                value={row.so_luong}
+                                onChange={e =>
+                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
+                                }
+                                className={paperCellInput}
+                              />
+                            </td>
+                            <td className={paperTd}>
+                              <input
+                                value={row.dinh_muc}
+                                onChange={e =>
+                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, dinh_muc: e.target.value } : r)))
+                                }
+                                className={paperCellInput}
+                              />
+                            </td>
+                            <td className={paperTd}>
+                              <input
+                                value={row.trong_luong}
+                                onChange={e =>
+                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, trong_luong: e.target.value } : r)))
+                                }
+                                className={paperCellInput}
+                              />
+                            </td>
+                            <td className={paperTd}>
+                              <input
+                                value={row.ghi_chu}
+                                onChange={e =>
+                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ghi_chu: e.target.value } : r)))
+                                }
+                                className={paperCellInputLeft}
+                              />
+                            </td>
+                            <td className="border border-slate-700 px-0.5 py-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setSpRows(rows => rows.filter((_, i) => i !== ri))}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {spRows.length > 0 && (
+                          <tr className="bg-slate-50 font-bold">
+                            <td colSpan={2} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng</td>
+                            <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalSoLuong))}</td>
+                            <td className="border border-slate-700" />
+                            <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalTrongLuong))}</td>
+                            <td colSpan={2} className="border border-slate-700" />
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="p-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSpRows(rows => [
+                          ...rows,
+                          {
+                            key: uid(),
+                            ma_lenh_sx: selectedLenh[0] || '',
+                            ma_sp: '',
+                            ten_sp: '',
+                            so_luong: '',
+                            dinh_muc: '',
+                            trong_luong: '',
+                            ghi_chu: ''
+                          }
+                        ])
+                      }
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Thêm sản phẩm
+                    </button>
+                  </div>
+                </div>
+
+                {/* Hàng lỗi hỏng */}
+                <div className="border-b-2 border-slate-800 lg:col-span-3 lg:border-b-0 lg:border-r-2">
+                  <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
+                    Hàng Lỗi Hỏng
+                  </p>
+                  <table className="w-full border-collapse text-center">
+                    <thead>
+                      <tr>
+                        <th className={`${paperTh} w-[36px]`}>Stt</th>
+                        <th className={paperTh}>Tên Lỗi</th>
+                        <th className={`${paperTh} w-[76px]`}>Số lượng</th>
+                        <th className={`${paperTh} w-[28px]`} />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loiRows.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                            Không có hàng lỗi.
+                          </td>
+                        </tr>
+                      )}
+                      {loiRows.map((row, ri) => (
+                        <tr key={row.key}>
+                          <td className="border border-slate-700 px-1 py-1 tabular-nums text-slate-500">{ri + 1}</td>
+                          <td className={paperTd}>
+                            <input
+                              value={row.ten_loi}
+                              onChange={e =>
+                                setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, ten_loi: e.target.value } : r)))
+                              }
+                              placeholder="VD: PDK..."
+                              className={paperCellInputLeft}
+                            />
+                          </td>
+                          <td className={paperTd}>
+                            <input
+                              inputMode="decimal"
+                              value={row.so_luong}
+                              onChange={e =>
+                                setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
+                              }
+                              className={paperCellInput}
+                            />
+                          </td>
+                          <td className="border border-slate-700 px-0.5 py-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setLoiRows(rows => rows.filter((_, i) => i !== ri))}
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {loiRows.length > 0 && (
+                        <tr className="bg-slate-50 font-bold">
+                          <td colSpan={2} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng tổng</td>
+                          <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperLoiTotal))}</td>
+                          <td className="border border-slate-700" />
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <div className="p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setLoiRows(rows => [...rows, { key: uid(), ten_loi: '', so_luong: '' }])}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Thêm lỗi
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nhựa bàn giao ca sau */}
+                <div className="lg:col-span-4">
+                  <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
+                    Nhựa Bàn Giao Ca Sau
+                  </p>
+                  <table className="w-full border-collapse text-center">
+                    <thead>
+                      <tr>
+                        <th className={paperTh}>Loại Nhựa</th>
+                        <th className={`${paperTh} w-[76px]`}>Nhập Trong Ngày</th>
+                        <th className={`${paperTh} w-[76px]`}>Nhập Ca Trước</th>
+                        <th className={`${paperTh} w-[76px]`}>Tồn Cuối Ca</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {banGiaoRows.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                            Chưa có loại nhựa.
+                          </td>
+                        </tr>
+                      )}
+                      {banGiaoRows.map((row, ri) => {
+                        const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+                        const tonCuoi = round2(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung);
+                        return (
+                          <tr key={row.key}>
+                            <td className="border border-slate-700 px-1 py-0.5 text-left">
+                              <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl || '—'}</div>
+                              {row.ten_nvl ? <div className="text-[11px] text-slate-500">{row.ten_nvl}</div> : null}
+                              {row.ten_nvl_sx ? (
+                                <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
+                              ) : null}
+                            </td>
+                            <td className={paperTd}>
+                              <input
+                                inputMode="decimal"
+                                value={row.lay_trong_kho}
+                                onChange={e =>
+                                  setBanGiaoRows(rows =>
+                                    rows.map((r, i) => (i === ri ? { ...r, lay_trong_kho: e.target.value } : r))
+                                  )
+                                }
+                                className={paperCellInput}
+                              />
+                            </td>
+                            <td className={paperTd}>
+                              <input
+                                inputMode="decimal"
+                                value={row.ton_dau_ca}
+                                onChange={e =>
+                                  setBanGiaoRows(rows =>
+                                    rows.map((r, i) =>
+                                      i === ri ? { ...r, ton_dau_ca: e.target.value, ton_dau_tu_dong: false } : r
+                                    )
+                                  )
+                                }
+                                className={paperCellInput}
+                              />
+                            </td>
+                            <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-brand-700">
+                              {formatQty(tonCuoi)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <div className="p-1.5">
+                    <button
+                      type="button"
+                      onClick={applyPrevTon}
+                      disabled={prevTonMap.size === 0}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" /> Lấy tồn cuối kỳ trước
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
           {/* Ghi chú + Lưu */}
           <section className={`${cardClass} space-y-3 p-4`}>
             <div>

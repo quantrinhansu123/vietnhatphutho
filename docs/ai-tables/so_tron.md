@@ -17,7 +17,7 @@
 
 | File | Nội dung |
 |------|----------|
-| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit`) |
+| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit`). Chưa chọn lệnh SX → form cũ 4 card (3.1–3.4); đã chọn lệnh → tờ phiếu kiểu sổ giấy (đầu phiếu Ngày/Nhân sự → bảng NVL L1..Ln + Tổng → dòng tổng SP → 3 bảng cạnh nhau Sản phẩm có Cộng / Hàng lỗi có Stt + Cộng / Bàn giao theo tên cột giấy). Chung state/handler/lưu với form cũ. |
 | `src/features/so-tron/print.ts` | Phiếu in đúng mẫu giấy: 1 tờ A4 ngang (`@page landscape`, font 7.5–9pt, `table-layout: fixed`). Header Ngày/Máy-Ca/Nhân sự → bảng NVL L1..L20 + Tổng → dòng tổng SP → 3 bảng cạnh nhau (Sản phẩm có Cộng | Hàng lỗi có Stt + Cộng | Bàn giao). Đệm dòng trống cho đủ form. In qua cửa sổ riêng (`printSoTronSlip`, pattern `LichLamViecPrintModal`). |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/routes.ts` | `so-tron` → `/so-tron` |

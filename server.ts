@@ -11851,15 +11851,15 @@ export function createApp() {
               const sameCa = !toCa || shiftsMatchLabel(toCa, homeCa);
               if (!sameMachine) {
                 return timePhrase
-                  ? `${lastName} (Chuyển đến ${toMachineName} ${timePhrase})`
-                  : `${lastName} (Chuyển đến ${toMachineName})`;
+                  ? `(Chuyển đến ${toMachineName} ${lastName} ${timePhrase})`
+                  : `(Chuyển đến ${toMachineName} ${lastName})`;
               }
               if (sameCa) {
-                return timePhrase ? `${lastName} (${timePhrase})` : `${lastName}`;
+                return timePhrase ? `(${lastName} ${timePhrase})` : `(${lastName})`;
               }
               return timePhrase
-                ? `${lastName} (Chuyển đến ca ${toCa} ${timePhrase})`
-                : `${lastName} (Chuyển đến ca ${toCa})`;
+                ? `(Chuyển đến ca ${toCa} ${lastName} ${timePhrase})`
+                : `(Chuyển đến ca ${toCa} ${lastName})`;
             });
 
             machineData[machineName][tenCa].push({
@@ -11916,11 +11916,11 @@ export function createApp() {
           const sameMachine = homeMachineName === destMachineName;
           const arrivalNote = sameMachine
             ? timePhrase
-              ? `${lastName} (${timePhrase} — từ ca ${homeCa || '—'})`
-              : `${lastName} (từ ca ${homeCa || '—'})`
+              ? `(${lastName} ${timePhrase} — từ ca ${homeCa || '—'})`
+              : `(${lastName} — từ ca ${homeCa || '—'})`
             : timePhrase
-              ? `${lastName} (${timePhrase} từ ${homeMachineName || 'máy khác'})`
-              : `${lastName} (từ ${homeMachineName || 'máy khác'})`;
+              ? `(${lastName} ${timePhrase} từ ${homeMachineName || 'máy khác'})`
+              : `(${lastName} từ ${homeMachineName || 'máy khác'})`;
 
           machineData[destMachineName][tenCa].push({
             name: lastName,
