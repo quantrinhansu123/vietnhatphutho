@@ -109,6 +109,8 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'mixing-report': 'report-forms',
   'mixing-report-list': 'factory-qc',
   'machine-nvl-report': 'report-forms',
+  'so-tron': 'report-forms',
+  'so-tron-list': 'report-lists',
   'machine-nvl-report-list': 'factory-kho',
   'machine-downtime-list': 'report-lists',
   'machine-downtime-report': 'report-forms',

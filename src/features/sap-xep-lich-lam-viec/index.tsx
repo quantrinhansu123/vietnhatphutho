@@ -291,6 +291,29 @@ const emptyPerson = (vaiTro: string, removable: boolean, times: { start?: string
   removable
 });
 
+function rolePriority(role: string): number {
+  const text = normalizeMachineText(role);
+  if (text.includes('truong ca')) return 0;
+  if (text.includes('tron')) return 1;
+  if (text.includes('ra tam')) return 2;
+  return 3;
+}
+
+function sortPeopleForPreview(people: PersonForm[]): PersonForm[] {
+  return people
+    .map((person, index) => ({ person, index, priority: rolePriority(person.vaiTro) }))
+    .sort((a, b) => a.priority - b.priority || a.index - b.index)
+    .map(item => item.person);
+}
+
+/** Sắp xếp dòng lịch theo vai trò: Trưởng ca → Trộn → Ra Tấm → ... (giữ ổn định thứ tự cũ khi cùng vai trò). */
+function sortRowsByRole(rows: SchedRow[]): SchedRow[] {
+  return rows
+    .map((row, index) => ({ row, index, priority: rolePriority(row.vai_tro) }))
+    .sort((a, b) => a.priority - b.priority || a.index - b.index)
+    .map(item => item.row);
+}
+
 /**
  * Gắn vai trò theo máy, giữ nguyên nhân sự theo thứ tự ô.
  * Luôn có thêm 1 ô trống (removable) ngay sau các vai trò cố định.
@@ -365,8 +388,7 @@ const emptyBlock = (
  * Không còn ép 4 vai trò mặc định cũ (bỏ "Nhân sự chính/Thợ phụ/Học việc").
  */
 function groupToBlock(group: SchedGroup): ScheduleBlock {
-  const people: PersonForm[] = group.rows
-    .filter(row => row.ma_nhan_su)
+  const people: PersonForm[] = sortRowsByRole(group.rows.filter(row => row.ma_nhan_su))
     .map(row => ({
       key: uid(),
       vaiTro: row.vai_tro || '',
@@ -621,6 +643,59 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     });
   }, [formBlocks, editingKey, groups, formNgayLamViec]);
 
+  const formPreviewGroups = useMemo(() => {
+    const map = new Map<string, {
+      key: string;
+      maMay: string;
+      tenMay: string;
+      ca: string;
+      people: PersonForm[];
+      isDraft: boolean;
+    }>();
+
+    if (formNgayLamViec) {
+      for (const group of groups.filter(g => g.ngay_lam_viec === formNgayLamViec && g.key !== editingKey)) {
+      map.set(groupKey(group.ma_may, group.ngay_lam_viec, group.ca_lam_viec), {
+        key: group.key,
+        maMay: group.ma_may,
+        tenMay: group.ten_may || machineName(group.ma_may),
+        ca: group.ca_lam_viec,
+        people: sortPeopleForPreview(
+          group.rows
+            .filter(row => row.ma_nhan_su)
+            .map(row => ({
+              key: row.id,
+              vaiTro: row.vai_tro || '',
+              maNhanSu: row.ma_nhan_su,
+              thoiGianBatDau: row.thoi_gian_bat_dau || '',
+              thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
+              removable: row.removable
+            }))
+        ),
+        isDraft: false
+      });
+      }
+    }
+
+    for (const block of formBlocks) {
+      const filledPeople = block.people.filter(person => person.maNhanSu.trim());
+      if (!block.maMay && filledPeople.length === 0) continue;
+      const key = groupKey(block.maMay || block.key, formNgayLamViec || 'draft', block.caLamViec || 'draft');
+      map.set(key, {
+        key,
+        maMay: block.maMay,
+        tenMay: block.maMay ? machineName(block.maMay) : 'Chưa chọn máy',
+        ca: block.caLamViec || 'Chưa chọn ca',
+        people: sortPeopleForPreview(filledPeople),
+        isDraft: true
+      });
+    }
+
+    return [...map.values()].sort((a, b) =>
+      a.tenMay.localeCompare(b.tenMay, 'vi') || a.ca.localeCompare(b.ca, 'vi')
+    );
+  }, [editingKey, formBlocks, formNgayLamViec, groups, machineName]);
+
   const updateBlock = (blockKey: string, patch: Partial<ScheduleBlock>) => {
     setFormBlocks(prev => prev.map(b => (b.key === blockKey ? { ...b, ...patch } : b)));
   };
@@ -664,6 +739,57 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     return out;
   }, [shiftOptions, groups, batchCa]);
 
+  const batchPreviewGroups = useMemo(() => {
+    if (!batchDate) return [];
+
+    const map = new Map<string, {
+      key: string;
+      maMay: string;
+      tenMay: string;
+      ca: string;
+      people: PersonForm[];
+      isDraft: boolean;
+    }>();
+
+    for (const group of groups.filter(g => g.ngay_lam_viec === batchDate)) {
+      map.set(groupKey(group.ma_may, group.ngay_lam_viec, group.ca_lam_viec), {
+        key: group.key,
+        maMay: group.ma_may,
+        tenMay: group.ten_may || machineName(group.ma_may),
+        ca: group.ca_lam_viec,
+        people: sortPeopleForPreview(
+          group.rows
+            .filter(row => row.ma_nhan_su)
+            .map(row => ({
+              key: row.id,
+              vaiTro: row.vai_tro || '',
+              maNhanSu: row.ma_nhan_su,
+              thoiGianBatDau: row.thoi_gian_bat_dau || '',
+              thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
+              removable: row.removable
+            }))
+        ),
+        isDraft: false
+      });
+    }
+
+    if (batchMachine && batchCa) {
+      const key = groupKey(batchMachine, batchDate, batchCa);
+      map.set(key, {
+        key,
+        maMay: batchMachine,
+        tenMay: batchMachine ? machineName(batchMachine) : 'Chưa chọn máy',
+        ca: batchCa,
+        people: sortPeopleForPreview(batchPeople.filter(person => person.maNhanSu.trim())),
+        isDraft: true
+      });
+    }
+
+    return [...map.values()].sort((a, b) =>
+      a.tenMay.localeCompare(b.tenMay, 'vi') || a.ca.localeCompare(b.ca, 'vi')
+    );
+  }, [batchCa, batchDate, batchMachine, batchPeople, groups, machineName]);
+
   // Nạp dữ liệu khi đổi máy hoặc ngày — giữ đúng thứ tự đã xếp, không ép vai trò mặc định cũ
   const loadBatchDataForMachineAndDate = useCallback((date: string, machineCode: string, caValue = '') => {
     if (!date || !machineCode) {
@@ -684,8 +810,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     }
 
     const target = (caValue && matching.find(g => g.ca_lam_viec === caValue)) || matching[0];
-    const people: PersonForm[] = target.rows
-      .filter(row => row.ma_nhan_su)
+    const people: PersonForm[] = sortRowsByRole(target.rows.filter(row => row.ma_nhan_su))
       .map(row => ({
         key: uid(),
         vaiTro: row.vai_tro || '',
@@ -1248,7 +1373,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
             </div>
           ) : (
             filteredGroups.map(group => {
-              const filledRows = group.rows.filter(r => r.ma_nhan_su);
+              const filledRows = sortRowsByRole(group.rows.filter(r => r.ma_nhan_su));
               return (
                 <div key={group.key} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1502,7 +1627,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     </div>
 
                     <div className="space-y-2">
-                      {block.people.map(person => (
+                      {sortPeopleForPreview(block.people).map(person => (
                         <div
                           key={person.key}
                           className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
@@ -1569,46 +1694,47 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">Đang sắp trong ngày (theo máy và ca)</p>
                 </div>
                 <div className="max-h-[40vh] flex-1 space-y-3 overflow-y-auto p-3 lg:max-h-none">
-                  {!formNgayLamViec ? (
+                  {!formNgayLamViec && formPreviewGroups.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-3 py-6 text-center text-xs font-bold text-zinc-400">
                       Chọn ngày làm việc để xem lịch đang sắp.
                     </p>
+                  ) : formPreviewGroups.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-3 py-6 text-center text-xs font-bold text-zinc-400">
+                      Ngày {formatDate(formNgayLamViec)} chưa có lịch nào.
+                    </p>
                   ) : (
-                    <>
-                      {groups
-                        .filter(g => g.ngay_lam_viec === formNgayLamViec)
-                        .sort((a, b) =>
-                          (a.ten_may || a.ma_may).localeCompare(b.ten_may || b.ma_may, 'vi') ||
-                          a.ca_lam_viec.localeCompare(b.ca_lam_viec, 'vi')
-                        )
-                        .map(g => {
-                          const names = g.rows.filter(r => r.ma_nhan_su).map(r => staffName(r.ma_nhan_su));
-                          return (
-                            <div key={g.key} className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
-                              <p className="bg-zinc-950 px-3 py-1.5 text-center text-xs font-black text-white">
-                                {g.ten_may || g.ma_may}
-                              </p>
-                              <table className="w-full text-left text-xs">
-                                <tbody>
-                                  <tr className="border-t border-zinc-100">
-                                    <td className="w-20 shrink-0 px-2.5 py-2 align-top font-black text-zinc-700">
-                                      {g.ca_lam_viec}
-                                    </td>
-                                    <td className="px-2.5 py-2 font-semibold text-zinc-800">
-                                      {names.length > 0 ? names.join(', ') : <span className="text-zinc-400">—</span>}
-                                    </td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-                          );
-                        })}
-                      {groups.filter(g => g.ngay_lam_viec === formNgayLamViec).length === 0 ? (
-                        <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-3 py-6 text-center text-xs font-bold text-zinc-400">
-                          Ngày {formatDate(formNgayLamViec)} chưa có lịch nào.
-                        </p>
-                      ) : null}
-                    </>
+                    formPreviewGroups.map(group => (
+                      <div key={group.key} className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+                        <div className="flex items-center justify-between gap-2 bg-zinc-950 px-3 py-1.5 text-white">
+                          <p className="min-w-0 truncate text-xs font-black">{group.tenMay || group.maMay}</p>
+                          {group.isDraft ? (
+                            <span className="shrink-0 rounded-full bg-[#ef1b2d] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                              Đang chọn
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-[5rem_minmax(0,1fr)] border-t border-zinc-100 text-xs">
+                          <div className="px-2.5 py-2 font-black text-zinc-700">{group.ca}</div>
+                          <div className="space-y-1 px-2.5 py-2">
+                            {group.people.length > 0 ? (
+                              group.people.map(person => (
+                                <div key={person.key} className="font-semibold text-zinc-800">
+                                  {person.vaiTro ? <span className="font-black text-zinc-950">{person.vaiTro}: </span> : null}
+                                  {staffName(person.maNhanSu)}
+                                  {(person.thoiGianBatDau || person.thoiGianKetThuc) ? (
+                                    <span className="ml-1 text-[11px] font-bold text-zinc-400">
+                                      {person.thoiGianBatDau || '--:--'}→{person.thoiGianKetThuc || '--:--'}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ))
+                            ) : (
+                              <span className="font-semibold text-zinc-400">Chưa chọn nhân sự</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               </aside>
@@ -1715,7 +1841,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
-                    {detailGroup.rows.filter(r => r.ma_nhan_su).map(row => (
+                    {sortRowsByRole(detailGroup.rows.filter(r => r.ma_nhan_su)).map(row => (
                       <tr key={row.id} className="hover:bg-zinc-50">
                         <td className="px-3 py-2 font-bold text-zinc-500">{row.vai_tro || '—'}</td>
                         <td className="px-3 py-2 font-black text-zinc-800">{staffName(row.ma_nhan_su)}</td>
@@ -1883,7 +2009,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   </div>
 
                   <div className="space-y-2">
-                    {batchPeople.map(person => (
+                    {sortPeopleForPreview(batchPeople).map(person => (
                       <div
                         key={person.key}
                         className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
@@ -1930,6 +2056,59 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   </div>
                 </>
               )}
+
+              <aside className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
+                <div className="border-b border-zinc-200 bg-white px-4 py-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-800">
+                    Lịch làm việc ngày {batchDate ? formatDate(batchDate) : '—'}
+                  </h4>
+                  <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">Đang sắp trong ngày (theo máy và ca)</p>
+                </div>
+                <div className="max-h-72 space-y-3 overflow-y-auto p-3">
+                  {!batchDate ? (
+                    <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-3 py-6 text-center text-xs font-bold text-zinc-400">
+                      Chọn ngày làm việc để xem lịch đang sắp.
+                    </p>
+                  ) : batchPreviewGroups.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-3 py-6 text-center text-xs font-bold text-zinc-400">
+                      Ngày {formatDate(batchDate)} chưa có lịch nào.
+                    </p>
+                  ) : (
+                    batchPreviewGroups.map(group => (
+                      <div key={group.key} className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+                        <div className="flex items-center justify-between gap-2 bg-zinc-950 px-3 py-1.5 text-white">
+                          <p className="min-w-0 truncate text-xs font-black">{group.tenMay || group.maMay}</p>
+                          {group.isDraft ? (
+                            <span className="shrink-0 rounded-full bg-[#ef1b2d] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                              Đang chọn
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-[5rem_minmax(0,1fr)] border-t border-zinc-100 text-xs">
+                          <div className="px-2.5 py-2 font-black text-zinc-700">{group.ca}</div>
+                          <div className="space-y-1 px-2.5 py-2">
+                            {group.people.length > 0 ? (
+                              group.people.map(person => (
+                                <div key={person.key} className="font-semibold text-zinc-800">
+                                  {person.vaiTro ? <span className="font-black text-zinc-950">{person.vaiTro}: </span> : null}
+                                  {staffName(person.maNhanSu)}
+                                  {(person.thoiGianBatDau || person.thoiGianKetThuc) ? (
+                                    <span className="ml-1 text-[11px] font-bold text-zinc-400">
+                                      {person.thoiGianBatDau || '--:--'}→{person.thoiGianKetThuc || '--:--'}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ))
+                            ) : (
+                              <span className="font-semibold text-zinc-400">Chưa chọn nhân sự</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </aside>
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">

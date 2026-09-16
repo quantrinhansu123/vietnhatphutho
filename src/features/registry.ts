@@ -31,6 +31,7 @@ export type TableId =
   | 'phieu_tron_thuc_te'
   | 'bao_cao_nghiem_thu'
   | 'bao_cao_may_nvl_ton'
+  | 'so_tron'
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
   | 'dieu_dong_nhan_su'
@@ -389,6 +390,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/bao-cao-may-nvl-ton/index.tsx',
     components: ['src/components/MachineNvlPrintSheet.tsx', 'src/components/MachineNvlReportListView.tsx'],
     utils: ['src/utils/machineNvlReports.ts']
+  },
+  so_tron: {
+    table: 'so_tron',
+    label: 'Sổ trộn ca (công nhân cuối ngày)',
+    sql: ['supabase-so-tron.sql'],
+    apiPrefix: '/api/so-tron',
+    serverLines: 'parseSoTronBody + GET/POST/PUT/DELETE /api/so-tron (sau bulk-delete bao-cao-may-nvl-ton)',
+    appTab: 'so-tron | so-tron-list',
+    appLines: 'src/features/so-tron/index.tsx (SoTronPanel + SoTronListView)',
+    components: [],
+    utils: []
   },
   phieu_bao_dung_may: {
     table: 'phieu_bao_dung_may',

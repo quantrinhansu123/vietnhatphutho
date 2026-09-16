@@ -118,12 +118,29 @@ function shiftLabel(shift: { ten_cai_dat?: string; ma_cai_dat?: string; khung_gi
   return range ? `${base} · ${range}` : base;
 }
 
-function formatPersonTimeRange(startRaw: unknown, endRaw: unknown) {
+function normalizeTimeText(value: unknown) {
+  const match = String(value || '').trim().match(/(\d{1,2}):(\d{2})/);
+  if (!match) return '';
+  return `${match[1].padStart(2, '0')}:${match[2]}`;
+}
+
+function parseShiftTimeRange(value: unknown): { start: string; end: string } {
+  const matches = [...String(value || '').matchAll(/(\d{1,2}):(\d{2})/g)];
+  return {
+    start: matches[0] ? normalizeTimeText(matches[0][0]) : '',
+    end: matches[1] ? normalizeTimeText(matches[1][0]) : ''
+  };
+}
+
+function formatPersonTimeRange(startRaw: unknown, endRaw: unknown, shiftRangeRaw?: unknown) {
   const start = String(startRaw || '').trim().slice(0, 5);
   const end = String(endRaw || '').trim().slice(0, 5);
+  const normalizedStart = normalizeTimeText(start);
+  const normalizedEnd = normalizeTimeText(end);
+  const shiftRange = parseShiftTimeRange(shiftRangeRaw);
   const parts: string[] = [];
-  if (/^\d{1,2}:\d{2}$/.test(start)) parts.push(`làm lúc ${start}`);
-  if (/^\d{1,2}:\d{2}$/.test(end)) parts.push(`về lúc ${end}`);
+  if (normalizedStart && normalizedStart !== shiftRange.start) parts.push(`làm lúc ${normalizedStart}`);
+  if (normalizedEnd && normalizedEnd !== shiftRange.end) parts.push(`về lúc ${normalizedEnd}`);
   return parts.join(' ');
 }
 
@@ -888,25 +905,40 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.tenCa))) ??
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.maCa || ''))) ??
                             [];
+                          // Dòng 1: tên NV cách nhau bằng dấu phẩy (kèm giờ riêng nếu khác giờ ca).
+                          // Các điều động + ghi chú gom xuống dưới cùng, mỗi dòng kèm tên NV.
+                          const namesLine = cell.nhanSu
+                            .map(p => {
+                              const schedPhrase = !p.dispatch
+                                ? formatPersonTimeRange(p.batDau, p.ketThuc, row.khungGio)
+                                : '';
+                              return schedPhrase ? `${p.name} (${schedPhrase})` : p.name;
+                            })
+                            .filter(Boolean)
+                            .join(', ');
+                          const dispatched = cell.nhanSu.filter(p => String(p.dispatch || '').trim());
                           return (
                             <td key={midx} className="border border-zinc-300 px-2 py-2 align-top">
                               {cell.nhanSu.length === 0 && cellNotes.length === 0 ? (
                                 <span className="text-zinc-400">-</span>
                               ) : (
                                 <div className="space-y-1">
-                                  {cell.nhanSu.map((p, pidx) => {
-                                    // So sánh giờ LV (lịch) vs điều động: dispatch đã là giờ hiệu lực
-                                    // (ưu tiên điều động, thiếu thì lấy giờ lịch). Không dispatch thì hiện giờ lịch.
-                                    const schedPhrase = !p.dispatch ? formatPersonTimeRange(p.batDau, p.ketThuc) : '';
+                                  {namesLine ? <div>{namesLine}</div> : null}
+                                  {dispatched.map((p, pidx) => {
+                                    const rawLines = String(p.dispatch || '')
+                                      .split('\n')
+                                      .map(line => line.trim())
+                                      .filter(Boolean);
+                                    const fixedLines = rawLines.map(line =>
+                                      line.includes(p.name) ? line : `${p.name} ${line}`
+                                    );
                                     return (
-                                      <div key={`ns-${pidx}`}>
-                                        <span>{p.name}</span>
-                                        {schedPhrase ? <span> ({schedPhrase})</span> : null}
-                                        {p.dispatch ? (
-                                          <div className="note-cell italic text-zinc-600" style={{ whiteSpace: 'pre-line' }}>
-                                            {p.dispatch}
-                                          </div>
-                                        ) : null}
+                                      <div
+                                        key={`dispatch-${pidx}`}
+                                        className="note-cell italic text-zinc-600"
+                                        style={{ whiteSpace: 'pre-line' }}
+                                      >
+                                        {fixedLines.join('\n')}
                                       </div>
                                     );
                                   })}

@@ -150,6 +150,13 @@ export function MenuPageHeader({ title, desc }: { title: string; desc: string })
 
 export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Sổ trộn',
+    desc: 'Báo cáo cuối ngày của công nhân: ngày + máy/ca, lệnh SX, NVL thực tế, sản phẩm, hàng lỗi và nhựa bàn giao.',
+    icon: ClipboardList,
+    icon3d: spiralNotepad3d,
+    tab: 'so-tron'
+  },
+  {
     title: 'Báo cáo tồn',
     desc: 'Theo dõi NVL tồn theo từng máy và ca sản xuất.',
     icon: Boxes,
@@ -277,6 +284,13 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
 ];
 
 export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Danh sách sổ trộn',
+    desc: 'Xem, sửa và xóa các sổ trộn đã lưu theo ngày, máy và ca.',
+    icon: History,
+    icon3d: spiralNotepad3d,
+    tab: 'so-tron-list'
+  },
   {
     title: 'Danh sách báo cáo tồn',
     desc: 'Xem báo cáo NVL tồn theo từng máy và ca sản xuất.',
@@ -972,6 +986,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },
   'mixing-report-list': { group: 'QC', sub: 'BOM và tỷ lệ phối trộn' },
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
+  'so-tron': { group: 'Sản xuất', sub: 'Sổ trộn' },
+  'so-tron-list': { group: 'Sản xuất', sub: 'Danh sách sổ trộn' },
   'machine-nvl-report-list': { group: 'Kho', sub: 'Báo cáo tồn máy' },
   'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
   'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },
