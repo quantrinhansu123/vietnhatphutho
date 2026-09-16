@@ -100,6 +100,8 @@ const SUPABASE_PRODUCTION_PLAN_DETAILS_TABLE =
 const SUPABASE_WAREHOUSE_MOVEMENTS_TABLE = process.env.SUPABASE_WAREHOUSE_MOVEMENTS_TABLE || 'phieu_xuat_nhap_kho';
 const SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE =
   process.env.SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE || 'phieu_xuat_nhap_kho_lenh_sx';
+const SUPABASE_WAREHOUSE_HISTORY_TABLE =
+  process.env.SUPABASE_WAREHOUSE_HISTORY_TABLE || 'phieu_xuat_nhap_kho_lich_su';
 const SUPABASE_MIXING_REPORTS_TABLE = process.env.SUPABASE_MIXING_REPORTS_TABLE || 'bao_cao_phoi_tron';
 const SUPABASE_MIXING_NORM_TABLE =
   process.env.SUPABASE_MIXING_NORM_TABLE || 'bang_tron_vat_tu_dinh_muc';
@@ -5093,6 +5095,46 @@ async function replaceWarehouseLenhSxLinks(maPhieu: string, items: WarehouseSlip
     }
   } catch (err) {
     console.error('replaceWarehouseLenhSxLinks unexpected error:', err);
+  }
+}
+
+/**
+ * Lưu vết 1 lần SỬA phiếu xuất kho NVL (best-effort, không chặn luồng PUT).
+ * Snapshot cũ = toàn bộ dòng trước khi sửa, snapshot mới = toàn bộ dòng sau khi sửa.
+ */
+async function insertWarehouseSlipHistory(entry: {
+  maPhieu: string;
+  loaiPhieu: string;
+  loaiKho: string;
+  ngayPhieu: string | null;
+  ca: string | null;
+  nguoiSua: string | null;
+  snapshotCu: unknown[];
+  snapshotMoi: unknown[];
+}) {
+  if (!supabase || !entry.maPhieu) return;
+  try {
+    const { error } = await supabase.from(SUPABASE_WAREHOUSE_HISTORY_TABLE).insert({
+      ma_phieu: entry.maPhieu,
+      loai_phieu: entry.loaiPhieu || null,
+      loai_kho: entry.loaiKho || null,
+      ngay_phieu: entry.ngayPhieu,
+      ca: entry.ca,
+      nguoi_sua: entry.nguoiSua,
+      snapshot_cu: entry.snapshotCu,
+      snapshot_moi: entry.snapshotMoi
+    });
+    if (error) {
+      if (isMissingTableError(error)) {
+        console.warn(
+          `Bảng ${SUPABASE_WAREHOUSE_HISTORY_TABLE} chưa tồn tại. Hãy chạy supabase-phieu-xuat-nhap-kho-lich-su.sql để bật lịch sử sửa phiếu xuất kho NVL.`
+        );
+      } else {
+        console.error('Supabase phieu_xuat_nhap_kho_lich_su insert error:', error);
+      }
+    }
+  } catch (err) {
+    console.error('insertWarehouseSlipHistory unexpected error:', err);
   }
 }
 
@@ -10412,6 +10454,43 @@ export function createApp() {
     }
   });
 
+  app.get('/api/phieu-xuat-nhap-kho/:slipCode/lich-su', async (req, res) => {
+    if (!supabase) {
+      return res.json({ history: [], total: 0, source: 'local' });
+    }
+
+    try {
+      const slipCode = String(req.params.slipCode || '').trim();
+      if (!slipCode) {
+        return res.status(400).json({ error: 'Thiếu mã phiếu.' });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_WAREHOUSE_HISTORY_TABLE)
+        .select('*')
+        .eq('ma_phieu', slipCode)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        if (isMissingTableError(error)) {
+          return res.json({ history: [], total: 0, source: 'supabase-missing-table' });
+        }
+        console.error('Supabase phieu_xuat_nhap_kho_lich_su query error:', error);
+        return res.status(500).json({
+          error: `Không thể tải lịch sử sửa phiếu từ ${SUPABASE_WAREHOUSE_HISTORY_TABLE}. ${error.message}`
+        });
+      }
+
+      return res.json({
+        history: data || [],
+        total: data?.length || 0,
+        source: 'supabase'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải lịch sử sửa phiếu.' });
+    }
+  });
+
   app.get('/api/phieu-xuat-nhap-kho', async (req, res) => {
     if (!supabase) {
       return res.json({ movements: [], total: 0, source: 'local' });
@@ -10577,7 +10656,7 @@ export function createApp() {
 
       const { data: existing, error: fetchError } = await supabase
         .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .select('ma_npl, loai_kho')
+        .select('*')
         .eq('ma_phieu', slipCode);
 
       if (fetchError) {
@@ -10590,6 +10669,9 @@ export function createApp() {
       if (!existing || existing.length === 0) {
         return res.status(404).json({ error: 'Không tìm thấy phiếu cần cập nhật.' });
       }
+
+      // Snapshot toàn bộ dòng cũ để lưu lịch sử sửa (chỉ áp dụng phiếu xuất kho NVL).
+      const snapshotCu = Array.isArray(existing) ? existing : [];
 
       const affectedNvlCodes = new Set<string>();
       existing.forEach(row => {
@@ -10635,6 +10717,20 @@ export function createApp() {
         slipCode,
         parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl' ? parsed.lenhSxDaChon : []
       );
+
+      // Chỉ lưu lịch sử sửa cho phiếu XUẤT kho NVL.
+      if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
+        await insertWarehouseSlipHistory({
+          maPhieu: slipCode,
+          loaiPhieu: parsed.loaiPhieu,
+          loaiKho: parsed.loaiKho,
+          ngayPhieu: parsed.ngayPhieu,
+          ca: parsed.ca,
+          nguoiSua: parsed.nguoiLap,
+          snapshotCu,
+          snapshotMoi: Array.isArray(data) ? data : []
+        });
+      }
 
       return res.json({
         success: true,

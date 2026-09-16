@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `phieu_xuat_nhap_kho` |
 | **Tab** | `warehouse-slip`, `warehouse-history` |
-| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`, `supabase-phieu-xuat-nhap-kho-lenh-sx.sql`, `supabase-phieu-xuat-nhap-kho-phan-loai-may.sql`, `supabase-phieu-xuat-nhap-kho-trong-luong-kg.sql`, `supabase-phieu-xuat-nhap-kho-ton-dau-ca-may.sql`) |
+| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`, `supabase-phieu-xuat-nhap-kho-lenh-sx.sql`, `supabase-phieu-xuat-nhap-kho-phan-loai-may.sql`, `supabase-phieu-xuat-nhap-kho-trong-luong-kg.sql`, `supabase-phieu-xuat-nhap-kho-ton-dau-ca-may.sql`, `supabase-phieu-xuat-nhap-kho-lich-su.sql`) |
 
 ## API (`server.ts`)
 
@@ -15,7 +15,8 @@
 | GET | `/api/phieu-xuat-nhap-kho/gia-tb-nhap` | (giá BQ nhập theo mã NVL + tháng) |
 | GET | `/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat` | tập phiếu trộn định mức đã xuất (`dinh_muc_id`, `ten_phieu`) — có `ma_phieu` thì lọc theo 1 phiếu xuất kho |
 | POST | `/api/phieu-xuat-nhap-kho` | ~5263 |
-| PUT | `/api/phieu-xuat-nhap-kho/:slipCode` | ~5377 |
+| PUT | `/api/phieu-xuat-nhap-kho/:slipCode` | ~5377 — với phiếu xuất kho NVL thì lưu 1 row snapshot cũ/mới vào `phieu_xuat_nhap_kho_lich_su` |
+| GET | `/api/phieu-xuat-nhap-kho/:slipCode/lich-su` | danh sách lần sửa của 1 phiếu (mới nhất trước) |
 | DELETE | slip / id | ~5495+ |
 
 ### Liên kết phiếu trộn định mức
@@ -33,6 +34,7 @@ Khi nạp nhiều dòng NVL phụ, hệ thống gộp và cộng SL định mứ
 Danh sách **Chi tiết NVL** hiển thị thêm **Tên sản xuất**, ưu tiên tên trên phiếu định mức rồi đối chiếu `kho_nvl.ten_nvl_sx` theo mã NPL; trường tên sản xuất chỉ hiển thị, không tạo thêm cột lưu trữ trên phiếu.
 Bản in phiếu xuất NVL tách mỗi máy thành một trang; trong mỗi trang in riêng bảng NVL chính, NVL phụ và Chưa phân loại nếu có dữ liệu. Cuối bản in luôn có 1 trang **TỔNG HỢP** gộp dòng toàn bộ máy/ca (cùng tên + cùng ĐVT + cùng giá; Băng Dính/Tem trùng thêm VTHH) với 2 bảng riêng và 2 tổng **TỔNG TL NVL CHÍNH TOÀN PHIẾU** / **TỔNG TL NVL PHỤ TOÀN PHIẾU**. Màn nhập hiển thị tổng TL ngay tại header nhóm NVL chính/phụ và hộp tổng cuối bảng.
 Mỗi dòng NVL xuất có thêm **Tồn đầu ca** (`ton_dau_ca_may`, nhập tay, không bắt buộc) hiển thị trước cột **SL CT** trên màn lập phiếu và trước cột **SL định mức xuất** trên bản in (kèm tổng cột). Gộp dòng NVL phụ cộng dồn tồn đầu ca theo cùng khóa gộp.
+Mỗi lần **sửa** phiếu xuất kho NVL (PUT) lưu 1 row vào `phieu_xuat_nhap_kho_lich_su` gồm người sửa + snapshot toàn bộ dòng cũ/mới (best-effort, không chặn lưu phiếu nếu chưa chạy migration). Nút **Lịch sử thay đổi** (icon History) có ở: menu thao tác từng phiếu xuất NVL + modal chi tiết phiếu trong `warehouse-history`, và khi đang sửa phiếu xuất NVL trong `warehouse-slip`. Modal hiển thị từng lần sửa (mới nhất trước): thời gian, người sửa, thông tin phiếu đổi + diff dòng (thêm/xóa/sửa Tồn đầu ca, SL CT, SL thực, giá, thành tiền...).
 
 ## Frontend
 
