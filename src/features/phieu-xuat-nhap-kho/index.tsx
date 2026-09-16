@@ -691,6 +691,196 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
     .filter((row): row is WarehouseMovementRow => Boolean(row.id || row.slipCode));
 }
 
+/** 1 row bảng `phieu_xuat_nhap_kho_lich_su` = 1 lần sửa phiếu xuất kho NVL. */
+export interface WarehouseSlipHistoryEntry {
+  id: string;
+  createdAt: string;
+  maPhieu: string;
+  loaiPhieu: string;
+  loaiKho: string;
+  ngayPhieu: string;
+  ca: string;
+  nguoiSua: string;
+  snapshotCu: Record<string, unknown>[];
+  snapshotMoi: Record<string, unknown>[];
+}
+
+function asHistorySnapshot(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    : [];
+}
+
+export function normalizeWarehouseSlipHistory(data: unknown): WarehouseSlipHistoryEntry[] {
+  const list = data && typeof data === 'object' && Array.isArray((data as { history?: unknown }).history)
+    ? (data as { history: unknown[] }).history
+    : Array.isArray(data)
+      ? data
+      : [];
+  return list
+    .map((entry): WarehouseSlipHistoryEntry | null => {
+      if (!entry || typeof entry !== 'object') return null;
+      const record = entry as Record<string, unknown>;
+      return {
+        id: String(record.id ?? '').trim(),
+        createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
+        maPhieu: String(record.ma_phieu ?? record.slipCode ?? '').trim(),
+        loaiPhieu: String(record.loai_phieu ?? '').trim(),
+        loaiKho: String(record.loai_kho ?? '').trim(),
+        ngayPhieu: String(record.ngay_phieu ?? '').trim(),
+        ca: String(record.ca ?? '').trim(),
+        nguoiSua: String(record.nguoi_sua ?? '').trim(),
+        snapshotCu: asHistorySnapshot(record.snapshot_cu ?? record.snapshotCu),
+        snapshotMoi: asHistorySnapshot(record.snapshot_moi ?? record.snapshotMoi)
+      };
+    })
+    .filter((row): row is WarehouseSlipHistoryEntry => Boolean(row.maPhieu))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+export function formatWarehouseHistoryTime(value: string): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+type HistorySnapshotField = {
+  key: string;
+  label: string;
+  format: (row: Record<string, unknown>) => string;
+  isChanged: (before: Record<string, unknown>, after: Record<string, unknown>) => boolean;
+};
+
+const HISTORY_NUMBER = (value: unknown, digits = 2) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? formatNumber(num, digits) : '';
+};
+
+const HISTORY_SNAPSHOT_FIELDS: HistorySnapshotField[] = [
+  { key: 'ten', label: 'Tên NVL', format: row => String(row.ten_npl ?? row.itemName ?? '').trim() || '—', isChanged: (a, b) => String(a.ten_npl ?? '').trim() !== String(b.ten_npl ?? '').trim() },
+  { key: 'don_vi', label: 'ĐVT', format: row => String(row.don_vi ?? row.unit ?? '').trim() || '—', isChanged: (a, b) => String(a.don_vi ?? '').trim() !== String(b.don_vi ?? '').trim() },
+  { key: 'may', label: 'Máy', format: row => String(row.may ?? row.machine ?? '').trim() || '—', isChanged: (a, b) => String(a.may ?? '').trim() !== String(b.may ?? '').trim() },
+  { key: 'ton_dau_ca_may', label: 'Tồn đầu ca', format: row => HISTORY_NUMBER(row.ton_dau_ca_may ?? row.tonDauCaMay), isChanged: (a, b) => Number(a.ton_dau_ca_may ?? a.tonDauCaMay ?? 0) !== Number(b.ton_dau_ca_may ?? b.tonDauCaMay ?? 0) },
+  { key: 'so_luong_chung_tu', label: 'SL CT', format: row => HISTORY_NUMBER(row.so_luong_chung_tu ?? row.documentQuantity), isChanged: (a, b) => Number(a.so_luong_chung_tu ?? a.documentQuantity ?? 0) !== Number(b.so_luong_chung_tu ?? b.documentQuantity ?? 0) },
+  { key: 'so_luong', label: 'SL thực', format: row => HISTORY_NUMBER(row.so_luong ?? row.quantity), isChanged: (a, b) => Number(a.so_luong ?? a.quantity ?? 0) !== Number(b.so_luong ?? b.quantity ?? 0) },
+  { key: 'don_gia', label: 'Giá', format: row => HISTORY_NUMBER(row.don_gia ?? row.unitPrice, 0), isChanged: (a, b) => Number(a.don_gia ?? a.unitPrice ?? 0) !== Number(b.don_gia ?? b.unitPrice ?? 0) },
+  { key: 'thanh_tien', label: 'Thành tiền', format: row => HISTORY_NUMBER(row.thanh_tien ?? row.lineAmount, 0), isChanged: (a, b) => Number(a.thanh_tien ?? a.lineAmount ?? 0) !== Number(b.thanh_tien ?? b.lineAmount ?? 0) }
+];
+
+function historySnapshotLineKey(row: Record<string, unknown>, index: number): string {
+  const code = String(row.ma_npl ?? row.itemCode ?? row.code ?? '').trim();
+  const machine = String(row.may ?? row.machine ?? '').trim().toLowerCase();
+  const cls = String(row.phan_loai_nvl ?? row.materialClass ?? '').trim().toLowerCase();
+  const unit = String(row.don_vi ?? row.unit ?? '').trim().toLowerCase();
+  const base = `${code}|${machine}|${cls}|${unit}`;
+  return base === '|||' ? `__dong_${index}` : `${base}#${index}`;
+}
+
+export interface WarehouseSlipHistoryFieldChange {
+  label: string;
+  before: string;
+  after: string;
+}
+
+export interface WarehouseSlipHistoryLineDiff {
+  key: string;
+  status: 'added' | 'removed' | 'changed' | 'unchanged';
+  code: string;
+  name: string;
+  changes: WarehouseSlipHistoryFieldChange[];
+}
+
+export interface WarehouseSlipHistoryDiff {
+  headerChanges: WarehouseSlipHistoryFieldChange[];
+  lineDiffs: WarehouseSlipHistoryLineDiff[];
+  addedCount: number;
+  removedCount: number;
+  changedCount: number;
+}
+
+const historyText = (value: unknown) => String(value ?? '').trim();
+
+export function diffWarehouseSlipSnapshots(
+  snapshotCu: Record<string, unknown>[],
+  snapshotMoi: Record<string, unknown>[]
+): WarehouseSlipHistoryDiff {
+  const headerOf = (rows: Record<string, unknown>[]) => rows[0] ?? {};
+  const before = headerOf(snapshotCu);
+  const after = headerOf(snapshotMoi);
+  const headerPairs: Array<[string, unknown, unknown]> = [
+    ['Ngày phiếu', before.ngay_phieu ?? '', after.ngay_phieu ?? ''],
+    ['Ca', before.ca ?? '', after.ca ?? ''],
+    ['Lý do', before.ly_do ?? '', after.ly_do ?? ''],
+    ['Ghi chú', before.ghi_chu ?? '', after.ghi_chu ?? ''],
+    ['Người lập', before.nguoi_lap ?? '', after.nguoi_lap ?? '']
+  ];
+  const headerChanges = headerPairs
+    .filter(([, a, b]) => historyText(a) !== historyText(b))
+    .map(([label, a, b]) => ({ label, before: historyText(a) || '—', after: historyText(b) || '—' }));
+
+  const beforeKeys = snapshotCu.map((row, index) => historySnapshotLineKey(row, index));
+  const afterKeys = snapshotMoi.map((row, index) => historySnapshotLineKey(row, index));
+  const beforeByKey = new Map(snapshotCu.map((row, index) => [beforeKeys[index], row] as const));
+  const afterByKey = new Map(snapshotMoi.map((row, index) => [afterKeys[index], row] as const));
+
+  const lineDiffs: WarehouseSlipHistoryLineDiff[] = [];
+  const seen = new Set<string>();
+  const pushLine = (key: string, status: WarehouseSlipHistoryLineDiff['status'], b?: Record<string, unknown>, a?: Record<string, unknown>) => {
+    if (seen.has(`${status}:${key}`)) return;
+    seen.add(`${status}:${key}`);
+    const ref = (a ?? b ?? {}) as Record<string, unknown>;
+    const changes: WarehouseSlipHistoryFieldChange[] = [];
+    if (status === 'changed' && b && a) {
+      HISTORY_SNAPSHOT_FIELDS.forEach(field => {
+        if (field.isChanged(b, a)) {
+          changes.push({ label: field.label, before: field.format(b) || '—', after: field.format(a) || '—' });
+        }
+      });
+    }
+    lineDiffs.push({
+      key,
+      status,
+      code: String(ref.ma_npl ?? ref.itemCode ?? ref.code ?? '').trim() || '—',
+      name: String(ref.ten_npl ?? ref.itemName ?? ref.name ?? '').trim(),
+      changes
+    });
+  };
+
+  beforeKeys.forEach((key, index) => {
+    const b = beforeByKey.get(key);
+    const a = afterByKey.get(key);
+    if (!b) return;
+    if (!a) pushLine(key, 'removed', b);
+    else if (HISTORY_SNAPSHOT_FIELDS.some(field => field.isChanged(b, a))) pushLine(key, 'changed', b, a);
+    else pushLine(key, 'unchanged', b, a);
+    void index;
+  });
+  afterKeys.forEach(key => {
+    if (!beforeByKey.has(key)) {
+      const a = afterByKey.get(key);
+      if (a) pushLine(key, 'added', undefined, a);
+    }
+  });
+
+  return {
+    headerChanges,
+    lineDiffs,
+    addedCount: lineDiffs.filter(line => line.status === 'added').length,
+    removedCount: lineDiffs.filter(line => line.status === 'removed').length,
+    changedCount: lineDiffs.filter(line => line.status === 'changed').length
+  };
+}
+
+export function summarizeWarehouseHistoryDiff(diff: WarehouseSlipHistoryDiff): string {
+  const parts: string[] = [];
+  if (diff.headerChanges.length > 0) parts.push(`${diff.headerChanges.length} thông tin phiếu`);
+  if (diff.changedCount > 0) parts.push(`sửa ${diff.changedCount} dòng`);
+  if (diff.addedCount > 0) parts.push(`thêm ${diff.addedCount} dòng`);
+  if (diff.removedCount > 0) parts.push(`xóa ${diff.removedCount} dòng`);
+  return parts.length > 0 ? parts.join(' · ') : 'Không đổi nội dung dòng';
+}
+
 export function mapWarehouseMovementsForShiftSummary(rows: WarehouseMovementRow[]): ShiftSummaryWarehouseMovement[] {
   return rows.map(row => ({
     id: row.id,
@@ -830,6 +1020,198 @@ export function normalizeWarehouseProductionOrders(data: unknown): WarehouseProd
     .filter((order): order is WarehouseProductionOrderOption => Boolean(order));
 }
 
+export function WarehouseSlipHistoryModal({
+  maPhieu,
+  open,
+  onClose
+}: {
+  maPhieu: string | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [entries, setEntries] = useState<WarehouseSlipHistoryEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || !maPhieu) return;
+    let cancelled = false;
+    const load = async () => {
+      setIsLoading(true);
+      setError('');
+      try {
+        const res = await fetch(`/api/phieu-xuat-nhap-kho/${encodeURIComponent(maPhieu)}/lich-su`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Không thể tải lịch sử thay đổi.');
+        if (cancelled) return;
+        const normalized = normalizeWarehouseSlipHistory(data);
+        setEntries(normalized);
+        setExpandedId(normalized[0]?.id ?? null);
+      } catch (loadError: any) {
+        if (cancelled) return;
+        setEntries([]);
+        setError(loadError.message || 'Không thể tải lịch sử thay đổi.');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, maPhieu]);
+
+  const diffs = useMemo(
+    () => new Map(entries.map(entry => [entry.id, diffWarehouseSlipSnapshots(entry.snapshotCu, entry.snapshotMoi)] as const)),
+    [entries]
+  );
+
+  if (!open) return null;
+
+  const statusStyle: Record<WarehouseSlipHistoryLineDiff['status'], string> = {
+    added: 'bg-emerald-100 text-emerald-800',
+    removed: 'bg-rose-100 text-rose-700',
+    changed: 'bg-amber-100 text-amber-800',
+    unchanged: 'bg-zinc-100 text-zinc-500'
+  };
+  const statusLabel: Record<WarehouseSlipHistoryLineDiff['status'], string> = {
+    added: 'Thêm',
+    removed: 'Xóa',
+    changed: 'Sửa',
+    unchanged: 'Giữ nguyên'
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Lịch sử thay đổi</h3>
+            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+              {maPhieu || '—'} · {entries.length} lần sửa
+            </p>
+          </div>
+          <BackButton onClick={onClose} />
+        </div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
+          {isLoading ? (
+            <p className="flex items-center gap-1.5 text-xs font-bold text-zinc-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Đang tải lịch sử thay đổi...
+            </p>
+          ) : error ? (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>
+          ) : entries.length === 0 ? (
+            <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-500">
+              Phiếu này chưa có lần sửa nào được lưu.
+            </p>
+          ) : (
+            entries.map((entry, entryIndex) => {
+              const diff = diffs.get(entry.id);
+              const summary = diff ? summarizeWarehouseHistoryDiff(diff) : '';
+              const expanded = expandedId === entry.id;
+              const visibleLines = (diff?.lineDiffs ?? []).filter(line => line.status !== 'unchanged');
+              const unchangedCount = (diff?.lineDiffs ?? []).filter(line => line.status === 'unchanged').length;
+              return (
+                <div key={entry.id || `${entryIndex}`} className="overflow-hidden rounded-xl border border-zinc-200">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : entry.id)}
+                    className="flex w-full flex-wrap items-center gap-2 bg-zinc-50 px-3 py-2.5 text-left transition hover:bg-zinc-100"
+                  >
+                    <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-black text-white">
+                      Lần {entries.length - entryIndex}
+                    </span>
+                    <span className="font-mono text-xs font-black text-zinc-900">
+                      {formatWarehouseHistoryTime(entry.createdAt)}
+                    </span>
+                    <span className="text-xs font-bold text-zinc-600">
+                      {entry.nguoiSua ? `Người sửa: ${entry.nguoiSua}` : 'Không rõ người sửa'}
+                    </span>
+                    <span className="text-[11px] font-semibold text-zinc-500">{summary}</span>
+                    <ChevronDown className={`ml-auto h-4 w-4 text-zinc-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {expanded && diff ? (
+                    <div className="space-y-2 border-t border-zinc-200 bg-white px-3 py-3">
+                      {diff.headerChanges.length > 0 ? (
+                        <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+                          <p className="text-[10px] font-black uppercase tracking-wider text-sky-700">Thông tin phiếu đổi</p>
+                          <ul className="mt-1 space-y-0.5">
+                            {diff.headerChanges.map(change => (
+                              <li key={change.label} className="text-xs font-semibold text-zinc-700">
+                                {change.label}: <span className="font-mono text-rose-700 line-through">{change.before}</span>
+                                {' → '}
+                                <span className="font-mono text-emerald-700">{change.after}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {visibleLines.length === 0 ? (
+                        <p className="text-xs font-semibold text-zinc-500">Không đổi nội dung dòng NVL.</p>
+                      ) : (
+                        <table className="min-w-full text-left text-xs">
+                          <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+                            <tr>
+                              <th className="px-2 py-1.5 font-black">Mã NVL</th>
+                              <th className="px-2 py-1.5 font-black">Thay đổi</th>
+                              <th className="px-2 py-1.5 font-black">Trạng thái</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {visibleLines.map(line => (
+                              <tr key={line.key}>
+                                <td className="px-2 py-1.5 font-bold text-zinc-900">
+                                  {line.code}
+                                  {line.name && line.name !== '—' ? (
+                                    <span className="block max-w-[220px] truncate font-semibold text-zinc-500" title={line.name}>
+                                      {line.name}
+                                    </span>
+                                  ) : null}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  {line.status === 'added' ? (
+                                    <span className="font-bold text-emerald-700">Dòng mới thêm</span>
+                                  ) : line.status === 'removed' ? (
+                                    <span className="font-bold text-rose-700">Dòng bị xóa</span>
+                                  ) : (
+                                    <ul className="space-y-0.5">
+                                      {line.changes.map(change => (
+                                        <li key={change.label} className="font-semibold text-zinc-700">
+                                          {change.label}:{' '}
+                                          <span className="font-mono text-rose-700">{change.before}</span>
+                                          {' → '}
+                                          <span className="font-mono text-emerald-700">{change.after}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-black ${statusStyle[line.status]}`}>
+                                    {statusLabel[line.status]}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                      {unchangedCount > 0 ? (
+                        <p className="text-[11px] font-semibold text-zinc-400">{unchangedCount} dòng giữ nguyên.</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WarehouseSlipPanel({
   onBack,
   onOpenHistory
@@ -884,6 +1266,7 @@ export function WarehouseSlipPanel({
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [printAutoTrigger, setPrintAutoTrigger] = useState(false);
   const [editSlipCode, setEditSlipCode] = useState<string | null>(null);
+  const [showEditHistory, setShowEditHistory] = useState(false);
   const [shiftSettings, setShiftSettings] = useState<ReturnType<typeof normalizeShiftSettings>>([]);
   const [productionOrders, setProductionOrders] = useState<WarehouseProductionOrderOption[]>([]);
   const [isLoadingProductionOrders, setIsLoadingProductionOrders] = useState(true);
@@ -2451,6 +2834,17 @@ export function WarehouseSlipPanel({
               <span className="text-emerald-800">TL NVL phụ: {formatWarehouseWeightKg(slipWeightKgByClass.phu)}</span>
             </div>
           ) : null}
+          {editSlipCode && isNvlExport ? (
+            <button
+              type="button"
+              onClick={() => setShowEditHistory(true)}
+              className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400"
+              title="Xem lịch sử các lần sửa phiếu này"
+            >
+              <History className="h-4 w-4" />
+              Lịch sử thay đổi
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handlePrintPreview}
@@ -2490,6 +2884,11 @@ export function WarehouseSlipPanel({
           setPrintAutoTrigger(false);
         }}
       />
+      <WarehouseSlipHistoryModal
+        maPhieu={editSlipCode}
+        open={showEditHistory && Boolean(editSlipCode)}
+        onClose={() => setShowEditHistory(false)}
+      />
     </div>
   );
 }
@@ -2512,6 +2911,7 @@ export function WarehouseHistoryPanel({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [viewingSlipCode, setViewingSlipCode] = useState<string | null>(null);
+  const [historySlipCode, setHistorySlipCode] = useState<string | null>(null);
   const [deletingSlipCode, setDeletingSlipCode] = useState<string | null>(null);
   const [selectedSlipCodes, setSelectedSlipCodes] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -3075,6 +3475,16 @@ export function WarehouseHistoryPanel({
                               >
                                 <Printer className="h-4 w-4" />
                               </button>
+                              {group.header.slipType === 'xuat' && group.header.warehouseKind === 'nvl' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setHistorySlipCode(group.slipCode)}
+                                  title="Xem lịch sử thay đổi"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-sky-700 transition hover:bg-sky-50"
+                                >
+                                  <History className="h-4 w-4" />
+                                </button>
+                              ) : null}
                               {canDelete ? (
                                 <button
                                   type="button"
@@ -3269,6 +3679,16 @@ export function WarehouseHistoryPanel({
                 Tổng tiền: <span className="text-[#ef1b2d]">{formatWarehouseMoney(viewingSlipTotal)} đ</span>
               </p>
               <div className="flex flex-wrap items-center gap-2">
+                {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+                  <button
+                    type="button"
+                    onClick={() => setHistorySlipCode(viewingSlipCode)}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-extrabold text-sky-800 transition hover:bg-sky-100"
+                  >
+                    <History className="h-4 w-4" />
+                    Lịch sử thay đổi
+                  </button>
+                ) : null}
                 {canEdit ? (
                   <button
                     type="button"
@@ -3302,6 +3722,11 @@ export function WarehouseHistoryPanel({
           setHistoryPrintSlip(null);
           setHistoryPrintAutoTrigger(false);
         }}
+      />
+      <WarehouseSlipHistoryModal
+        maPhieu={historySlipCode}
+        open={Boolean(historySlipCode)}
+        onClose={() => setHistorySlipCode(null)}
       />
     </div>
   );
