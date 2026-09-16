@@ -12,6 +12,8 @@ import {
 } from '../danh-sach-may';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
 import { printSoTronSlip } from './print';
+import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
+import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
 import type { OrderProductLine } from '../_shared/productionProductHelpers';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
@@ -522,6 +524,7 @@ export function SoTronPanel({
   const [banGiaoRows, setBanGiaoRows] = useState<BanGiaoRow[]>([]);
   const [ghiChu, setGhiChu] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [previewPhieuGiaoCaReport, setPreviewPhieuGiaoCaReport] = useState<SoTronSavedReport | null>(null);
   const [prevTonMap, setPrevTonMap] = useState<Map<string, number>>(new Map());
   // Tổng xuất kho NVL theo ngày-máy-ca (Nhập Trong Ngày trong bảng Bàn Giao Ca Sau)
   const [nhapTrongNgayMap, setNhapTrongNgayMap] = useState<Map<string, number>>(new Map());
@@ -2919,6 +2922,69 @@ export function SoTronPanel({
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  const firstCombo = orderCombos[0];
+                  const machineIdn = firstCombo ? resolveComboMachine(firstCombo.machine) : null;
+                  const reportSnapshot: SoTronSavedReport = {
+                    id: editingId || '',
+                    chi_nhanh: CHI_NHANH_MAC_DINH,
+                    ngay,
+                    ma_may: machineIdn?.code || (firstCombo?.machine ?? ''),
+                    ten_may: machineIdn?.name || (firstCombo?.machine ?? ''),
+                    ca: selectedCa || (firstCombo?.ca ?? ''),
+                    nhan_su: nhanSuText.trim(),
+                    nhan_su_chi_tiet: phanCong,
+                    lenh_sx: selectedOrders.map(o => ({ id: o.id, ma_lenh: o.code })),
+                    coi_tron_mau: coiMau,
+                    bang_nvl: nvlRows.map(row => {
+                      const lan = row.lan.map(parseNum).map(round2);
+                      return {
+                        material_id: row.material_id,
+                        ma_nvl: row.ma_nvl.trim(),
+                        ten_nvl: row.ten_nvl.trim(),
+                        ten_nvl_sx: row.ten_nvl_sx.trim(),
+                        dvt: row.dvt.trim() || 'kg',
+                        lan,
+                        tong: round2(lan.reduce((s, v) => s + v, 0)),
+                        lenh_sx: row.nguon
+                      };
+                    }),
+                    bang_san_pham: spRows.map(row => ({
+                      ma_lenh_sx: row.ma_lenh_sx,
+                      ma_sp: row.ma_sp.trim(),
+                      ten_sp: row.ten_sp.trim(),
+                      so_luong: row.so_luong.trim(),
+                      dinh_muc: row.dinh_muc.trim(),
+                      trong_luong: row.trong_luong.trim(),
+                      ghi_chu: row.ghi_chu.trim()
+                    })),
+                    bang_hang_loi: loiRows.map(row => ({ ten_loi: row.ten_loi.trim(), so_luong: row.so_luong.trim() })),
+                    bang_ban_giao: banGiaoRows.map(row => {
+                      const lay = parseNum(row.lay_trong_kho);
+                      const dau = parseNum(row.ton_dau_ca);
+                      const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+                      return {
+                        material_id: row.material_id,
+                        ma_nvl: row.ma_nvl.trim(),
+                        ten_nvl: row.ten_nvl.trim(),
+                        ten_nvl_sx: row.ten_nvl_sx.trim(),
+                        lay_trong_kho: round2(lay),
+                        ton_dau_ca: round2(dau),
+                        tong_su_dung: suDung,
+                        ton_cuoi_ca: round2(lay + dau - suDung)
+                      };
+                    }),
+                    ghi_chu: ghiChu.trim()
+                  };
+                  setPreviewPhieuGiaoCaReport(reportSnapshot);
+                }}
+                disabled={nvlRows.length === 0 && spRows.length === 0}
+                className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+              >
+                <Printer className="h-4 w-4" /> In phiếu giao ca
+              </button>
+              <button
+                type="button"
                 onClick={resetForm}
                 className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50"
               >
@@ -2927,6 +2993,18 @@ export function SoTronPanel({
             </div>
           </section>
           )}
+
+      {previewPhieuGiaoCaReport && (
+        <PhieuGiaoCaModal
+          open={!!previewPhieuGiaoCaReport}
+          report={previewPhieuGiaoCaReport}
+          onClose={() => setPreviewPhieuGiaoCaReport(null)}
+          onSaved={updated => {
+            setPreviewPhieuGiaoCaReport(null);
+            loadReportToForm(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2943,6 +3021,7 @@ export function SoTronListView({
   onEdit: (report: SoTronSavedReport) => void;
 }) {
   const [reports, setReports] = useState<SoTronSavedReport[]>([]);
+  const [selectedPhieuGiaoCa, setSelectedPhieuGiaoCa] = useState<SoTronSavedReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
 
@@ -3042,6 +3121,14 @@ export function SoTronListView({
                       <span className="flex justify-end gap-1.5">
                         <button
                           type="button"
+                          onClick={() => setSelectedPhieuGiaoCa(report)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition"
+                          title="In phiếu giao ca (cho xem và sửa trước khi in)"
+                        >
+                          <Printer className="h-3.5 w-3.5" /> In phiếu giao ca
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => onEdit(report)}
                           className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
                         >
@@ -3063,6 +3150,22 @@ export function SoTronListView({
           </div>
         )}
       </div>
+
+      {selectedPhieuGiaoCa && (
+        <PhieuGiaoCaModal
+          open={!!selectedPhieuGiaoCa}
+          report={selectedPhieuGiaoCa}
+          onClose={() => setSelectedPhieuGiaoCa(null)}
+          onSaved={updated => {
+            setReports(prev => prev.map(r => (r.id === updated.id ? updated : r)));
+            setSelectedPhieuGiaoCa(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+export { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
+export { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
+
