@@ -4498,6 +4498,7 @@ type WarehouseSlipLineInput = {
   unit: string;
   quantity: number;
   documentQuantity?: number;
+  tonDauCaMay?: number;
   unitPrice: number;
   lineAmount: number;
   materialClass: WarehouseMaterialClass;
@@ -4815,6 +4816,9 @@ function parseWarehouseSlipLines(
     const documentQuantity = parseOptionalMaterialNumber(
       record.documentQuantity ?? record.so_luong_chung_tu ?? record.document_qty
     );
+    const tonDauCaMay = parseOptionalMaterialNumber(
+      record.tonDauCaMay ?? record.ton_dau_ca_may ?? record.machineOpeningQty ?? record.openingQty
+    );
     const unitPriceRaw = record.unitPrice ?? record.don_gia ?? record.price ?? record.gia;
     const unitPrice = parseOptionalMaterialNumber(unitPriceRaw) ?? 0;
     const sourceInboundLineId = String(
@@ -4862,6 +4866,10 @@ function parseWarehouseSlipLines(
       documentQuantity:
         documentQuantity !== null && documentQuantity > 0
           ? roundWarehouseMoney(documentQuantity)
+          : undefined,
+      tonDauCaMay:
+        tonDauCaMay !== null && Number.isFinite(tonDauCaMay) && tonDauCaMay >= 0
+          ? roundWarehouseQty(tonDauCaMay)
           : undefined,
       unitPrice: roundWarehouseMoney(unitPrice),
       lineAmount: roundWarehouseMoney(quantity * unitPrice),
@@ -4999,7 +5007,8 @@ function buildWarehouseSlipInsertRecords(
       may: parsed.loaiKho === 'nvl' ? item.machine || null : null,
       phan_loai_nvl: parsed.loaiKho === 'nvl' ? item.materialClass : null,
       trong_luong_kg: parsed.loaiKho === 'nvl' ? item.weightKg ?? null : null,
-      nhom_vthh: parsed.loaiKho === 'nvl' ? item.nhomVthh || null : null
+      nhom_vthh: parsed.loaiKho === 'nvl' ? item.nhomVthh || null : null,
+      ton_dau_ca_may: parsed.loaiKho === 'nvl' ? item.tonDauCaMay ?? null : null
     };
 
     if (parsed.loaiKho === 'san_pham') {

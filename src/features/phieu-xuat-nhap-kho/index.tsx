@@ -106,6 +106,7 @@ export interface WarehouseMovementRow {
   unit: string;
   quantity: number;
   documentQuantity?: number;
+  tonDauCaMay?: number;
   unitPrice: number;
   lineAmount: number;
   weightKg?: number;
@@ -127,6 +128,7 @@ export interface WarehouseSlipLineDraft {
   unit: string;
   quantity: string;
   documentQuantity?: string;
+  tonDauCaMay?: string;
   unitPrice: string;
   quotaQuantity?: string;
   suggestedQuantity?: string;
@@ -207,6 +209,7 @@ export type WarehouseSlipPrefillDraft = {
       | 'unit'
       | 'quantity'
       | 'documentQuantity'
+      | 'tonDauCaMay'
       | 'unitPrice'
       | 'quotaQuantity'
       | 'suggestedQuantity'
@@ -255,6 +258,10 @@ export function buildWarehouseSlipDraftFromHistoryRows(
       documentQuantity:
         row.documentQuantity != null && Number.isFinite(row.documentQuantity)
           ? formatNumber(row.documentQuantity, 2)
+          : '',
+      tonDauCaMay:
+        row.tonDauCaMay != null && Number.isFinite(row.tonDauCaMay)
+          ? formatNumber(row.tonDauCaMay, 2)
           : '',
       unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : '',
       warehouseClass: row.materialClass,
@@ -363,6 +370,7 @@ export type WarehouseSlipPayloadItem = {
   unit: string;
   quantity: number;
   documentQuantity?: number;
+  tonDauCaMay?: number;
   unitPrice: number;
   quotaQuantity?: number;
   suggestedQuantity?: number;
@@ -393,6 +401,7 @@ export function parseWarehouseSlipPayloadItems(
     .map(line => {
       const quantity = parsePercentInput(line.quantity);
       const documentQuantity = parsePercentInput(line.documentQuantity ?? line.suggestedQuantity ?? '');
+      const tonDauCaMay = parsePercentInput(line.tonDauCaMay ?? '');
       const unitPrice = parseMoneyInput(line.unitPrice);
       const quotaQuantity = parsePercentInput(line.quotaQuantity ?? '');
       const suggestedQuantity = parsePercentInput(line.suggestedQuantity ?? '');
@@ -424,6 +433,8 @@ export function parseWarehouseSlipPayloadItems(
         quantity,
         documentQuantity:
           Number.isFinite(documentQuantity) && documentQuantity > 0 ? documentQuantity : undefined,
+        tonDauCaMay:
+          Number.isFinite(tonDauCaMay) && tonDauCaMay >= 0 ? tonDauCaMay : undefined,
         unitPrice: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0,
         quotaQuantity: Number.isFinite(quotaQuantity) && quotaQuantity > 0 ? quotaQuantity : undefined,
         suggestedQuantity:
@@ -493,6 +504,7 @@ export function buildWarehouseSlipPrintData(
     unit: item.unit,
     quantity: item.quantity,
     documentQuantity: item.documentQuantity ?? item.suggestedQuantity ?? null,
+    tonDauCaMay: item.tonDauCaMay ?? null,
     unitPrice: item.unitPrice,
     lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100,
     quotaQuantity: item.quotaQuantity ?? null,
@@ -538,6 +550,7 @@ export function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     unit: '',
     quantity: '',
     documentQuantity: '',
+    tonDauCaMay: '',
     unitPrice: '',
     sourceInboundLineId: '',
     sourceInboundSlipCode: '',
@@ -559,6 +572,7 @@ export function createWarehouseLineDraftFromPrefill(
     | 'unit'
     | 'quantity'
     | 'documentQuantity'
+    | 'tonDauCaMay'
     | 'unitPrice'
     | 'quotaQuantity'
     | 'suggestedQuantity'
@@ -581,6 +595,7 @@ export function createWarehouseLineDraftFromPrefill(
     unit: line.unit || '',
     quantity: line.quantity || '',
     documentQuantity: line.documentQuantity || line.suggestedQuantity || '',
+    tonDauCaMay: line.tonDauCaMay || '',
     unitPrice: line.unitPrice || '',
     quotaQuantity: line.quotaQuantity || '',
     suggestedQuantity: line.suggestedQuantity || '',
@@ -621,6 +636,7 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         warehouseKindRaw === 'san_pham' || (Boolean(maSp) && !maNpl) ? 'san_pham' : 'nvl';
       const quantity = Number(record.so_luong ?? record.quantity);
       const documentQuantity = Number(record.so_luong_chung_tu ?? record.documentQuantity);
+      const tonDauCaMay = Number(record.ton_dau_ca_may ?? record.tonDauCaMay);
       const unitPrice = Number(record.don_gia ?? record.unitPrice ?? record.price ?? 0);
       const lineAmountRaw = Number(record.thanh_tien ?? record.lineAmount ?? record.amount);
       const lineAmount = Number.isFinite(lineAmountRaw)
@@ -654,6 +670,7 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         unit: String(record.don_vi ?? record.unit ?? '').trim() || '-',
         quantity: Number.isFinite(quantity) ? quantity : 0,
         documentQuantity: Number.isFinite(documentQuantity) && documentQuantity > 0 ? documentQuantity : undefined,
+        tonDauCaMay: Number.isFinite(tonDauCaMay) && tonDauCaMay >= 0 ? tonDauCaMay : undefined,
         unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
         lineAmount: Number.isFinite(lineAmount) ? lineAmount : 0,
         weightKg:
@@ -2094,7 +2111,9 @@ export function WarehouseSlipPanel({
 
           <div
             className={
-              warehouseKind === 'nvl'
+              warehouseKind === 'nvl' && isNvlExport
+                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
+                : warehouseKind === 'nvl'
                 ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
                 : slipType === 'nhap' || isNvlExport
                 ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
@@ -2118,6 +2137,7 @@ export function WarehouseSlipPanel({
               </>
             ) : isNvlExport ? (
               <>
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tồn đầu ca</span>
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL CT</span>
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL Thực *</span>
               </>
@@ -2151,7 +2171,9 @@ export function WarehouseSlipPanel({
               <div
                 key={line.key}
                 className={
-                  warehouseKind === 'nvl'
+                  warehouseKind === 'nvl' && isNvlExport
+                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
+                    : warehouseKind === 'nvl'
                     ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
                     : slipType === 'nhap' || isNvlExport
                     ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
@@ -2292,6 +2314,20 @@ export function WarehouseSlipPanel({
                   </>
                 ) : isNvlExport ? (
                   <>
+                    <div>
+                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
+                        Tồn đầu ca
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={line.tonDauCaMay || ''}
+                        onChange={event => updateLine(line.key, { tonDauCaMay: event.target.value })}
+                        className={warehouseFieldClass}
+                        placeholder="Tồn ĐC"
+                        title="Tồn đầu ca của máy (nhập tay)"
+                      />
+                    </div>
                     <div>
                       <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
                         SL CT
@@ -2727,6 +2763,7 @@ export function WarehouseHistoryPanel({
         unit: row.unit,
         quantity: row.quantity,
         documentQuantity: row.documentQuantity ?? null,
+        tonDauCaMay: row.tonDauCaMay ?? null,
         unitPrice: row.unitPrice,
         lineAmount: row.lineAmount,
         materialClass: row.materialClass,
