@@ -253,6 +253,8 @@ function normalizeCoiMauNvl(raw: unknown): CoiMauNvl[] {
     .map(rawLine => {
       if (!rawLine || typeof rawLine !== 'object') return null;
       const line = rawLine as Record<string, unknown>;
+      // Bỏ dòng NVL phụ — chỉ lấy NVL cối chính.
+      if (String(line.loai ?? '').trim() === 'nvl_phu') return null;
       const ma = pickRecordText(line, ['ma_nvl', 'materialCode', 'code']);
       const sx = pickRecordText(line, ['ten_nvl_san_xuat', 'tenNvlSanXuat']);
       const ten = pickRecordText(line, ['ten_nvl', 'materialName', 'name']) || sx;
@@ -308,6 +310,8 @@ function normalizeCoiMau(data: unknown): { products: CoiMauItem[] } {
       : [];
   const products: CoiMauItem[] = [];
   const pushBlock = (maLenh: string, tenPhieu: string, prod: Record<string, unknown>, nvl: CoiMauNvl[]) => {
+    // Bỏ cả block NVL phụ — chỉ lấy NVL cối chính.
+    if (String(prod.loai ?? '').trim() === 'nvl_phu') return;
     const ma_sp = pickRecordText(prod, ['ma_sp', 'productCode']);
     const ten_sp = pickRecordText(prod, ['ten_ghep', 'ten_sp', 'productName']) || ma_sp;
     if (!ma_sp && !ten_sp && nvl.length === 0) return;
@@ -327,16 +331,15 @@ function normalizeCoiMau(data: unknown): { products: CoiMauItem[] } {
     const record = raw as Record<string, unknown>;
     const maLenh = pickRecordText(record, ['ma_lenh_sx', 'maLenhSx']);
     const tenPhieu = pickRecordText(record, ['ten_phieu', 'tenPhieu']);
-    const before = products.length;
-    // 1) products[] nếu có
-    if (Array.isArray(record.products)) {
+    // 1) products[] nếu có (kể cả khi các block đều là NVL phụ và bị bỏ qua)
+    if (Array.isArray(record.products) && (record.products as unknown[]).length > 0) {
       for (const rawProd of record.products as unknown[]) {
         if (!rawProd || typeof rawProd !== 'object') continue;
         const prod = rawProd as Record<string, unknown>;
         pushBlock(maLenh, tenPhieu, prod, normalizeCoiMauNvl(prod.nvl ?? prod.chi_tiet));
       }
+      continue;
     }
-    if (products.length !== before) continue;
     const chiTiet = record.chi_tiet;
     if (Array.isArray(chiTiet) && chiTiet.length > 0) {
       const first = chiTiet[0];
@@ -1543,7 +1546,7 @@ export function SoTronPanel({
       <div className="flex items-start gap-3">
         <BackButton onClick={onBack} />
         <div className="min-w-0 flex-1">
-          <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">Sổ trộn</h2>
+          <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">Báo cáo theo ngày - máy - ca - lệnh sản xuất</h2>
           <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
             Báo cáo cuối ngày của công nhân — Chi nhánh Phú Thọ. Chọn ngày + máy + ca để lọc lệnh SX rồi fill số liệu.
           </p>
@@ -1799,21 +1802,14 @@ export function SoTronPanel({
                   Cối trộn mẫu của các lệnh
                 </h4>
                 {coiMauGroups.map(group => {
-                  const lenhChung = [...group.lenh].join(', ');
                   return (
                     <div key={group.key} className="overflow-hidden rounded-lg border border-slate-200">
-                      <div className="bg-slate-50 px-3 py-1.5 text-[12px] font-bold text-slate-800">
+                      <div className="bg-slate-50 px-3 py-1.5 text-[14px] font-bold text-slate-800">
                         {group.ten_sp || group.ma_sp || 'Sản phẩm'}
-                        {group.ma_sp && group.ten_sp ? (
-                          <span className="font-semibold text-slate-500"> ({group.ma_sp})</span>
-                        ) : null}
-                        {lenhChung ? (
-                          <span className="font-semibold text-slate-500"> · Lệnh: {lenhChung}</span>
-                        ) : null}
                       </div>
                       {group.blocks.map((block, bi) => (
                         <div key={`${group.key}-${bi}`} className="overflow-x-auto border-t border-slate-100">
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pt-1.5 text-[11px] font-semibold text-slate-500">
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pt-1.5 text-[13px] font-semibold text-slate-500">
                             {block.ma_lenh_sx ? <span>Lệnh SX: {block.ma_lenh_sx}</span> : null}
                             {block.tong_trong_luong ? (
                               <span>Tổng trọng lượng: <span className="tabular-nums text-slate-700">{block.tong_trong_luong} kg</span></span>
@@ -1822,17 +1818,8 @@ export function SoTronPanel({
                               <span>Định lượng cối: <span className="tabular-nums text-slate-700">{block.dinh_luong_coi} kg</span></span>
                             ) : null}
                           </div>
-                          {block.ghi_chu ? (
-                            <div className="px-3 text-[11px] text-slate-500">Ghi chú: {block.ghi_chu}</div>
-                          ) : null}
                           <table className="w-full min-w-[480px] text-left text-[12px]">
                             <thead>
-                              <tr className="bg-white text-[10.5px] uppercase tracking-wider text-slate-400">
-                                <th className="px-3 py-1.5" colSpan={4}>
-                                  {block.ma_sp ? `${block.ma_sp} — ` : ''}{block.ten_sp}
-                                  {block.dinh_luong_coi ? ` · Cối ${block.dinh_luong_coi} kg` : ''}
-                                </th>
-                              </tr>
                               <tr className="border-y border-slate-100 text-[10.5px] uppercase tracking-wider text-slate-400">
                                 <th className="px-3 py-1.5">Mã NVL</th>
                                 <th className="px-3 py-1.5">Tên NVL</th>
@@ -1841,19 +1828,24 @@ export function SoTronPanel({
                               </tr>
                             </thead>
                             <tbody>
-                              {block.nvl.map((line, li) => (
-                                <tr key={li} className="border-b border-slate-50 last:border-0">
-                                  <td className="px-3 py-1.5 font-bold">{line.ma_nvl}</td>
-                                  <td className="px-3 py-1.5">
-                                    <div>{line.ten_nvl}</div>
-                                    {line.ten_nvl_sx ? (
-                                      <div className="text-[11px] italic text-slate-400">{line.ten_nvl_sx}</div>
-                                    ) : null}
+                              {block.nvl.length === 0 ? (
+                                <tr>
+                                  <td colSpan={4} className="px-3 py-4 text-center text-[13px] font-semibold text-slate-400">
+                                    Không có NVL chính.
                                   </td>
-                                  <td className="px-3 py-1.5">{line.dvt}</td>
-                                  <td className="px-3 py-1.5 text-right tabular-nums">{line.gia_tri}</td>
                                 </tr>
-                              ))}
+                              ) : (
+                                block.nvl.map((line, li) => (
+                                  <tr key={li} className="border-b border-slate-50 last:border-0">
+                                    <td className="px-3 py-1.5 font-bold">{line.ma_nvl}</td>
+                                    <td className="px-3 py-1.5">
+                                      <div>{line.ten_nvl_sx || line.ten_nvl}</div>
+                                    </td>
+                                    <td className="px-3 py-1.5">{line.dvt}</td>
+                                    <td className="px-3 py-1.5 text-right tabular-nums">{line.gia_tri}</td>
+                                  </tr>
+                                ))
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -1862,7 +1854,7 @@ export function SoTronPanel({
                   );
                 })}
                 {uncoveredLenh.map(code => (
-                  <p key={code} className="text-[12px] font-semibold text-slate-400">
+                  <p key={code} className="text-[13px] font-semibold text-slate-400">
                     {code}: chưa có phiếu trộn định mức.
                   </p>
                 ))}
@@ -1870,8 +1862,14 @@ export function SoTronPanel({
             )}
           </section>
 
-          {/* Giao diện cũ (chưa chọn lệnh SX) — giữ nguyên logic nhập */}
-          {selectedLenh.length === 0 && (<>
+          {/* Chưa chọn lệnh SX — chỉ hiện gợi ý, ẩn toàn bộ phần nhập liệu */}
+          {selectedLenh.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-[13px] font-semibold text-slate-400">
+              Chọn ít nhất 1 lệnh SX ở mục 2 để nhập dữ liệu sổ trộn.
+            </div>
+          )}
+          {/* Giao diện cũ (không dùng — giữ lại để tham khảo) */}
+          {false && (<>
           {/* 3.1 Bảng NVL thực tế */}
           <section className={`${cardClass} space-y-3 p-4`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2783,7 +2781,8 @@ export function SoTronPanel({
               </div>
             </section>
           )}
-          {/* Ghi chú + Lưu */}
+          {/* Ghi chú + Lưu (chỉ hiện sau khi chọn lệnh SX) */}
+          {selectedLenh.length > 0 && (
           <section className={`${cardClass} space-y-3 p-4`}>
             <div>
               <label className={labelClass}>Ghi chú</label>
@@ -2822,6 +2821,7 @@ export function SoTronPanel({
               </button>
             </div>
           </section>
+          )}
     </div>
   );
 }

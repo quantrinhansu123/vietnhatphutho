@@ -11851,15 +11851,15 @@ export function createApp() {
               const sameCa = !toCa || shiftsMatchLabel(toCa, homeCa);
               if (!sameMachine) {
                 return timePhrase
-                  ? `(Chuyển đến ${toMachineName} ${lastName} ${timePhrase})`
-                  : `(Chuyển đến ${toMachineName} ${lastName})`;
+                  ? `(${lastName} Chuyển đến ${toMachineName} ${timePhrase})`
+                  : `(${lastName} Chuyển đến ${toMachineName})`;
               }
               if (sameCa) {
                 return timePhrase ? `(${lastName} ${timePhrase})` : `(${lastName})`;
               }
               return timePhrase
-                ? `(Chuyển đến ca ${toCa} ${lastName} ${timePhrase})`
-                : `(Chuyển đến ca ${toCa} ${lastName})`;
+                ? `(${lastName} Chuyển đến ca ${toCa} ${timePhrase})`
+                : `(${lastName} Chuyển đến ca ${toCa})`;
             });
 
             machineData[machineName][tenCa].push({
