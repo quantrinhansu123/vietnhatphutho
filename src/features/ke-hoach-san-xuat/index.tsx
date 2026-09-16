@@ -55,6 +55,8 @@ import {
   splitProductionProductCodes,
   splitProductionProductNames,
   splitProductionFieldValues,
+  isUuidLike,
+  resolveActualProductCode,
   type OrderProductLine
 } from '../_shared/productionProductHelpers';
 import {
@@ -102,7 +104,9 @@ export {
   expandProductionOrderProductLines,
   splitProductionProductCodes,
   splitProductionProductNames,
-  splitProductionFieldValues
+  splitProductionFieldValues,
+  isUuidLike,
+  resolveActualProductCode
 } from '../_shared/productionProductHelpers';
 
 export type AssignedPersonnel = {
@@ -260,22 +264,27 @@ export function getProductionPlanLineMaterials(
   return [...merged.values()];
 }
 
-export function formatProductionOrderProductsSummary(row: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>) {
+export function formatProductionOrderProductsSummary(
+  row: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>,
+  catalogProducts?: Array<{ id: string; code?: string; ma_sp?: string }>
+) {
   const products = getProductionOrderProductLines(row);
   if (products.length === 0) return '-';
   if (products.length === 1) {
     const product = products[0];
+    const code = resolveActualProductCode(product.productCode, product.productId, catalogProducts) || product.productCode || '-';
     const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai, {
       tenGhep: product.tenGhep
     });
-    return `${product.productCode || '-'} · ${name} · ${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}`;
+    return `${code} · ${name} · ${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''}`;
   }
   return products
     .map(product => {
+      const code = resolveActualProductCode(product.productCode, product.productId, catalogProducts) || product.productCode || '-';
       const name = formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai, {
         tenGhep: product.tenGhep
       });
-      return `${product.productCode || '-'} (${name}) (${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''})`;
+      return `${code} (${name}) (${product.quantity}${product.unit && product.unit !== '-' ? ` ${product.unit}` : ''})`;
     })
     .join(' | ');
 }
@@ -4339,7 +4348,7 @@ export function ProductionOrderPrintSheet({
                 );
                 return (
                 <tr key={`${line.productCode}-${index}`}>
-                  <td>{line.productCode || '-'}</td>
+                  <td>{resolveActualProductCode(line.productCode, line.productId, productCatalog) || line.productCode || '-'}</td>
                   <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(line.productionName || line.productName, line.quyCachMDai, { tenGhep: line.tenGhep })}</td>
                   <td className="production-order-print-center">{line.unit && line.unit !== '-' ? line.unit : '-'}</td>
                   <td className="production-order-print-right">{formatProductionOrderPrintQuantity(line.quantity)}</td>
@@ -4360,7 +4369,7 @@ export function ProductionOrderPrintSheet({
                 );
                 return (
               <tr>
-                <td>{order.productCode || '-'}</td>
+                <td>{resolveActualProductCode(order.productCode, (order as any).products?.[0]?.productId, productCatalog) || order.productCode || '-'}</td>
                 <td className="production-order-print-product-name-cell">{formatProductionNameWithLength(order.productionName || order.productName, (order as any).quyCachMDai || (order as any).products?.[0]?.quyCachMDai, { tenGhep: (order as any).tenGhep || (order as any).products?.[0]?.tenGhep })}</td>
                 <td className="production-order-print-center">{order.unit && order.unit !== '-' ? order.unit : '-'}</td>
                 <td className="production-order-print-right">{formatProductionOrderPrintQuantity(order.quantity)}</td>
@@ -5215,18 +5224,48 @@ export function listProductOptionsForOrder(
     )
     .filter(item => (item.code && item.code !== '-') || Boolean(item.productId?.trim()));
 
+  if (fromOrders.length === 0 && catalogProducts.length > 0) {
+    return catalogProducts.map((catalogProduct, index) => {
+      const code = catalogProduct.code || '';
+      const sourceProductId = catalogProduct.id || '';
+      const productIdentity = `id:${sourceProductId}`;
+      return {
+        id: sourceProductId,
+        optionKey: `${productIdentity}::line:${index}:1`,
+        code,
+        name: catalogProduct.name || code,
+        productionName: catalogProduct.productionName || '',
+        unit: catalogProduct.unit && catalogProduct.unit !== '-' ? catalogProduct.unit : '',
+        productId: sourceProductId,
+        group: catalogProduct.group || '',
+        newCode: catalogProduct.newCode || '',
+        orderQty: 0,
+        remainingQty: 0,
+        orderProductStt: index + 1,
+        lineIndex: index,
+        sourceLine: {
+          productId: sourceProductId,
+          productCode: code,
+          productName: catalogProduct.name || code,
+          productionName: catalogProduct.productionName || '',
+          unit: catalogProduct.unit || '',
+          quantity: '0',
+          stt: index + 1
+        } as OrderProductLine
+      };
+    });
+  }
+
   const orderedBeforeByProduct = new Map<string, number>();
   return fromOrders.map(meta => {
-      const code = meta.code;
       const sourceProductId = meta.productId?.trim() || '';
-      // san_pham_id của dòng đơn hàng là nguồn duy nhất. Nếu ID không còn trong
-      // catalog thì không được dò theo mã/tên rồi âm thầm thay bằng sản phẩm khác.
       const catalogProduct = sourceProductId
         ? catalogProducts.find(product => product.id === sourceProductId)
-        : undefined;
+        : (isUuidLike(meta.code) ? catalogProducts.find(product => product.id === meta.code) : undefined);
+      const code = resolveActualProductCode(meta.code, sourceProductId, catalogProducts) || meta.code;
       const productIdentity = sourceProductId
         ? `id:${sourceProductId}`
-        : `code:${normalizeProductCodeKey(meta.code)}::${meta.productionName.trim().toLowerCase()}`;
+        : `code:${normalizeProductCodeKey(code)}::${meta.productionName.trim().toLowerCase()}`;
       const orderQty = parseRowQuantity(meta.line.quantity);
       const orderedBefore = orderedBeforeByProduct.get(productIdentity) ?? 0;
       const allocatedQty = getAllocatedProductionQuantity(
@@ -5240,7 +5279,7 @@ export function listProductOptionsForOrder(
       orderedBeforeByProduct.set(productIdentity, orderedBefore + orderQty);
 
       return {
-        id: sourceProductId,
+        id: sourceProductId || catalogProduct?.id || '',
         // Mỗi dòng JSON đơn hàng là một lựa chọn riêng, kể cả khi trùng sản phẩm.
         optionKey: `${productIdentity}::line:${meta.lineIndex}:${meta.line.stt ?? meta.lineIndex + 1}`,
         code,
@@ -5249,14 +5288,17 @@ export function listProductOptionsForOrder(
         // ĐVT trong đơn hàng là nguồn chính; danh mục sản phẩm chỉ fallback
         // cho dữ liệu đơn hàng cũ bị thiếu ĐVT.
         unit: meta.unit || (catalogProduct?.unit && catalogProduct.unit !== '-' ? catalogProduct.unit : ''),
-        productId: sourceProductId,
+        productId: sourceProductId || catalogProduct?.id || '',
         group: catalogProduct?.group || meta.group,
         newCode: catalogProduct?.newCode || '',
         orderQty,
         remainingQty: Math.max(0, orderQty - allocatedToThisLine),
         orderProductStt: meta.line.stt ?? meta.lineIndex + 1,
         lineIndex: meta.lineIndex,
-        sourceLine: meta.line
+        sourceLine: {
+          ...meta.line,
+          productCode: code
+        }
       };
     });
 }
@@ -5920,11 +5962,12 @@ export function AddProductionOrderModal({
       catalogProducts,
       orderRef
     ).find(item => item.optionKey === productCode || item.code === productCode);
+    const resolvedProductCode = selectedProduct?.code || resolveActualProductCode(productCode, selectedProduct?.id, catalogProducts);
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
       orderRef,
-      selectedProduct?.code || productCode,
+      resolvedProductCode || productCode,
       selectedProduct?.name || '',
       selectedProduct?.unit || '',
       selectedProduct?.productionName || '',
@@ -5937,7 +5980,7 @@ export function AddProductionOrderModal({
       key: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       orderRef,
       ...built,
-      productCode: selectedProduct?.code || productCode,
+      productCode: resolvedProductCode || productCode,
       productName: built.productName || built.productCode,
       productionName: built.productionName || '',
       quantity: String(quantity),
@@ -6019,16 +6062,43 @@ export function AddProductionOrderModal({
     const product = typeof productIdentifier === 'object'
       ? productIdentifier
       : options.find(item => item.optionKey === productIdentifier) ||
-        options.find(item => (productIdentifier && item.productId === productIdentifier) || item.code === productIdentifier);
+        options.find(item => (productIdentifier && item.productId === productIdentifier) || item.code === productIdentifier) ||
+        (() => {
+          const cat = catalogProducts.find(p => p.id === productIdentifier || p.code === productIdentifier);
+          if (!cat) return undefined;
+          return {
+            id: cat.id,
+            optionKey: `cat:${cat.id}`,
+            code: cat.code,
+            name: cat.name,
+            productionName: cat.productionName || '',
+            unit: cat.unit || '',
+            productId: cat.id,
+            orderQty: 0,
+            remainingQty: 0,
+            orderProductStt: 1,
+            lineIndex: 0,
+            sourceLine: {
+              productId: cat.id,
+              productCode: cat.code,
+              productName: cat.name,
+              productionName: cat.productionName || '',
+              unit: cat.unit || '',
+              quantity: '0'
+            } as OrderProductLine
+          } as (typeof options)[number];
+        })();
 
     if (!product) return;
+
+    const resolvedProductCode = resolveActualProductCode(product.code, product.productId, catalogProducts);
 
     const isSameProduct = Boolean(
       currentLine &&
       currentLine.orderProductStt === product.orderProductStt &&
       (
         (product.productId && currentLine.productId && product.productId === currentLine.productId) ||
-        (product.code && currentLine.productCode && product.code.trim() === currentLine.productCode.trim())
+        (resolvedProductCode && currentLine.productCode && resolvedProductCode.trim() === currentLine.productCode.trim())
       ) &&
       (
         !product.productionName || !currentLine.productionName || product.productionName.trim() === currentLine.productionName.trim()
@@ -6046,7 +6116,7 @@ export function AddProductionOrderModal({
       orders,
       productionOrders,
       orderRef,
-      product.code,
+      resolvedProductCode || product.code,
       product.name,
       product.unit,
       product.productionName,
@@ -6054,7 +6124,10 @@ export function AddProductionOrderModal({
       product.sourceLine,
       product.orderQty
     );
-    updateEntryLine(key, built);
+    updateEntryLine(key, {
+      ...built,
+      productCode: resolvedProductCode || product.code
+    });
   };
 
   const applyShifts = (nextShifts: string[]) => {
@@ -6354,19 +6427,25 @@ export function AddProductionOrderModal({
                       catalogProducts,
                       line.orderRef
                     );
+                    const resolvedLineProductCode = resolveActualProductCode(
+                      line.productCode,
+                      line.productId,
+                      catalogProducts
+                    );
                     const selectedProduct =
                       productOptions.find(item =>
                         line.orderProductStt !== undefined &&
                         item.orderProductStt === line.orderProductStt &&
-                        (line.productId ? item.productId === line.productId : item.code === line.productCode)
+                        (line.productId ? item.productId === line.productId : item.code === resolvedLineProductCode)
                       ) ||
                       productOptions.find(item =>
-                        (line.productId ? item.productId === line.productId : item.code === line.productCode) &&
+                        (line.productId ? item.productId === line.productId : item.code === resolvedLineProductCode) &&
                         (line.productionName ? item.productionName === line.productionName : true)
                       ) ||
                       productOptions.find(item =>
-                        line.productId ? item.productId === line.productId : item.code === line.productCode
-                      );
+                        line.productId ? item.productId === line.productId : item.code === resolvedLineProductCode
+                      ) ||
+                      productOptions.find(item => item.code === resolvedLineProductCode);
                     const allowedUnits = allowedOrderUnits(selectedProduct);
                     const effectiveUnit = selectedProduct
                       ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
@@ -6467,7 +6546,7 @@ export function AddProductionOrderModal({
                           </div>
                           <div className="w-full min-w-0">
                             <SearchableSelect
-                              value={selectedProduct?.optionKey || line.productId || line.productCode}
+                              value={selectedProduct?.optionKey || resolvedLineProductCode}
                               onSelectOption={item => item && handleEntryProductChange(line.key, line.orderRef, item as (typeof productOptions)[number])}
                               onChange={optionKey => handleEntryProductChange(line.key, line.orderRef, optionKey)}
                               options={productOptions}
@@ -6476,6 +6555,10 @@ export function AddProductionOrderModal({
                               isLoading={isLoadingLookups}
                               inputClassName={orderFieldClass}
                               getLabel={item => {
+                                const product = item as (typeof productOptions)[number];
+                                return product.code || '';
+                              }}
+                              getOptionLabel={item => {
                                 const product = item as (typeof productOptions)[number];
                                 const remaining =
                                   product.remainingQty <= 0 && product.orderQty > 0
@@ -6490,7 +6573,15 @@ export function AddProductionOrderModal({
                                 );
                                 return product.code ? `${product.code} - ${productName}${remaining}` : productName;
                               }}
+                              getSearchText={item => {
+                                const product = item as (typeof productOptions)[number];
+                                return `${product.code} ${product.productionName || product.name}`;
+                              }}
                               getValue={item => (item as (typeof productOptions)[number]).optionKey}
+                              resolveSelectedItem={(options, val) => {
+                                const opts = options as (typeof productOptions);
+                                return opts.find(item => item.optionKey === val || item.code === val || (item.productId && item.productId === val)) ?? null;
+                              }}
                             />
                           </div>
                           <div className="w-full min-w-0">
@@ -7036,6 +7127,10 @@ export function AddProductionOrderModal({
                   inputClassName="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-[#ef1b2d]/10"
                   getLabel={item => {
                     const product = item as ReturnType<typeof listProductOptionsForOrder>[number];
+                    return product.code || '';
+                  }}
+                  getOptionLabel={item => {
+                    const product = item as ReturnType<typeof listProductOptionsForOrder>[number];
                     const productName = formatProductionNameWithLength(
                       product.productionName || product.name,
                       product.sourceLine.quyCachMDai,
@@ -7044,6 +7139,10 @@ export function AddProductionOrderModal({
                     return product.code
                       ? `${product.code} - ${productName}${product.orderQty > 0 ? ` · còn ${formatNumber(product.remainingQty, 0)} · SL Tồn 0` : ''}`
                       : productName;
+                  }}
+                  getSearchText={item => {
+                    const product = item as ReturnType<typeof listProductOptionsForOrder>[number];
+                    return `${product.code} ${product.productionName || product.name}`;
                   }}
                   getValue={item => (item as ReturnType<typeof listProductOptionsForOrder>[number]).optionKey}
                 />
@@ -7324,11 +7423,13 @@ function groupProductionOrderScheduleRows(rows: ProductionOrderScheduleRow[]) {
 export function ProductionOrderViewModal({
   row,
   onClose,
-  staffMap
+  staffMap,
+  catalogProducts
 }: {
   row: ProductionOrderRow | null;
   onClose: () => void;
   staffMap?: Map<string, string>;
+  catalogProducts?: ProductRow[];
 }) {
   const [scheduleRows, setScheduleRows] = useState<ProductionOrderScheduleRow[]>([]);
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
@@ -7546,7 +7647,7 @@ export function ProductionOrderViewModal({
                 {productLines.map((product, index) => (
                   <tr key={`${product.productCode}-${index}`}>
                     <td className="px-3 py-2 text-center font-bold text-zinc-500">{product.stt || (index + 1)}</td>
-                    <td className="px-3 py-2 font-black text-zinc-950">{product.productCode || '-'}</td>
+                    <td className="px-3 py-2 font-black text-zinc-950">{resolveActualProductCode(product.productCode, product.productId, catalogProducts) || product.productCode || '-'}</td>
                     <td className="px-3 py-2 font-semibold text-zinc-700">{formatProductionNameWithLength(product.productionName || product.productName, product.quyCachMDai, { tenGhep: product.tenGhep })}</td>
                     <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{product.quantity || '-'}</td>
                     <td className="px-3 py-2 text-zinc-600">{product.unit && product.unit !== '-' ? product.unit : '-'}</td>
@@ -7620,9 +7721,14 @@ export function EditProductionOrderModal({
         productLines.length > 0
           ? productLines.map((product, index) => {
               const sourceProductId = product.productId?.trim() || '';
+              const resolvedProductCode = resolveActualProductCode(
+                product.productCode,
+                sourceProductId,
+                catalogProducts
+              );
               const catalogProduct = sourceProductId
                 ? catalogProducts.find(item => item.id === sourceProductId)
-                : undefined;
+                : (isUuidLike(product.productCode) ? catalogProducts.find(item => item.id === product.productCode) : undefined);
               const productionName =
                 (product.productionName && product.productionName !== '-' ? product.productionName : '') ||
                 catalogProduct?.productionName ||
@@ -7630,12 +7736,12 @@ export function EditProductionOrderModal({
               return {
                 key: `edit-${row.id}-${index}`,
                 orderRef: product.orderRef || (row.orderRef === '-' ? '' : row.orderRef),
-                productCode: product.productCode === '-' ? '' : product.productCode,
-                productName: product.productName === '-' ? '' : product.productName,
+                productCode: resolvedProductCode === '-' ? '' : resolvedProductCode,
+                productName: product.productName === '-' ? '' : (product.productName || catalogProduct?.name || ''),
                 productionName,
                 quantity: product.quantity === '-' ? '' : product.quantity,
-                unit: product.unit === '-' ? '' : product.unit,
-                productId: sourceProductId || undefined,
+                unit: product.unit === '-' ? '' : (product.unit || catalogProduct?.unit || ''),
+                productId: sourceProductId || catalogProduct?.id || undefined,
                 ...productionEntryMetadataFromOrderLine(product)
               };
             })
@@ -7653,7 +7759,7 @@ export function EditProductionOrderModal({
     setSelectedShift(row.shift === '-' ? '' : row.shift);
     setFormError('');
     setDragProductIndex(null);
-  }, [open, row]);
+  }, [open, row, catalogProducts]);
 
   useEffect(() => {
     if (!open) return;
@@ -7778,9 +7884,36 @@ export function EditProductionOrderModal({
     const product = typeof productIdentifier === 'object'
       ? productIdentifier
       : options.find(item => item.optionKey === productIdentifier) ||
-        options.find(item => (productIdentifier && item.productId === productIdentifier) || item.code === productIdentifier);
+        options.find(item => (productIdentifier && item.productId === productIdentifier) || item.code === productIdentifier) ||
+        (() => {
+          const cat = catalogProducts.find(p => p.id === productIdentifier || p.code === productIdentifier);
+          if (!cat) return undefined;
+          return {
+            id: cat.id,
+            optionKey: `cat:${cat.id}`,
+            code: cat.code,
+            name: cat.name,
+            productionName: cat.productionName || '',
+            unit: cat.unit || '',
+            productId: cat.id,
+            orderQty: 0,
+            remainingQty: 0,
+            orderProductStt: 1,
+            lineIndex: 0,
+            sourceLine: {
+              productId: cat.id,
+              productCode: cat.code,
+              productName: cat.name,
+              productionName: cat.productionName || '',
+              unit: cat.unit || '',
+              quantity: '0'
+            } as OrderProductLine
+          } as (typeof options)[number];
+        })();
 
     if (!product) return;
+
+    const resolvedProductCode = resolveActualProductCode(product.code, product.productId, catalogProducts);
 
     // So sánh xem sản phẩm được chọn có thực sự thay đổi so với dòng hiện tại không
     const isSameProduct = Boolean(
@@ -7788,7 +7921,7 @@ export function EditProductionOrderModal({
       currentLine.orderProductStt === product.orderProductStt &&
       (
         (product.productId && currentLine.productId && product.productId === currentLine.productId) ||
-        (product.code && currentLine.productCode && product.code.trim() === currentLine.productCode.trim())
+        (resolvedProductCode && currentLine.productCode && resolvedProductCode.trim() === currentLine.productCode.trim())
       ) &&
       (
         !product.productionName || !currentLine.productionName || product.productionName.trim() === currentLine.productionName.trim()
@@ -7808,7 +7941,7 @@ export function EditProductionOrderModal({
       orders,
       productionOrders,
       orderRef,
-      product.code,
+      resolvedProductCode || product.code,
       product.name,
       product.unit,
       product.productionName,
@@ -7816,7 +7949,10 @@ export function EditProductionOrderModal({
       product.sourceLine,
       product.orderQty
     );
-    updateEntryLine(key, built);
+    updateEntryLine(key, {
+      ...built,
+      productCode: resolvedProductCode || product.code
+    });
   };
 
   const moveProductLine = (from: number, to: number) => {
@@ -8056,19 +8192,25 @@ export function EditProductionOrderModal({
                       catalogProducts,
                       line.orderRef
                     );
+                    const resolvedLineProductCode = resolveActualProductCode(
+                      line.productCode,
+                      line.productId,
+                      catalogProducts
+                    );
                     const selectedProduct =
                       productOptions.find(item =>
                         line.orderProductStt !== undefined &&
                         item.orderProductStt === line.orderProductStt &&
-                        (line.productId ? item.productId === line.productId : item.code === line.productCode)
+                        (line.productId ? item.productId === line.productId : item.code === resolvedLineProductCode)
                       ) ||
                       productOptions.find(item =>
-                        (line.productId ? item.productId === line.productId : item.code === line.productCode) &&
+                        (line.productId ? item.productId === line.productId : item.code === resolvedLineProductCode) &&
                         (line.productionName ? item.productionName === line.productionName : true)
                       ) ||
                       productOptions.find(item =>
-                        line.productId ? item.productId === line.productId : item.code === line.productCode
-                      );
+                        line.productId ? item.productId === line.productId : item.code === resolvedLineProductCode
+                      ) ||
+                      productOptions.find(item => item.code === resolvedLineProductCode);
                     const allowedUnits = allowedOrderUnits(selectedProduct);
                     const effectiveUnit = selectedProduct
                       ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
@@ -8168,7 +8310,7 @@ export function EditProductionOrderModal({
                           </div>
                           <div className="w-full min-w-0">
                             <SearchableSelect
-                              value={selectedProduct?.optionKey || line.productId || line.productCode}
+                              value={selectedProduct?.optionKey || resolvedLineProductCode}
                               onSelectOption={item => item && handleEntryProductChange(line.key, line.orderRef, item as (typeof productOptions)[number])}
                               onChange={optionKey => handleEntryProductChange(line.key, line.orderRef, optionKey)}
                               options={productOptions}
@@ -8177,6 +8319,10 @@ export function EditProductionOrderModal({
                               inputClassName={orderFieldClass}
                               getLabel={item => {
                                 const product = item as (typeof productOptions)[number];
+                                return product.code || '';
+                              }}
+                              getOptionLabel={item => {
+                                const product = item as (typeof productOptions)[number];
                                 const productName = formatProductionNameWithLength(
                                   product.productionName || product.name,
                                   product.sourceLine.quyCachMDai,
@@ -8184,7 +8330,15 @@ export function EditProductionOrderModal({
                                 );
                                 return product.code ? `${product.code} - ${productName}` : productName;
                               }}
+                              getSearchText={item => {
+                                const product = item as (typeof productOptions)[number];
+                                return `${product.code} ${product.productionName || product.name}`;
+                              }}
                               getValue={item => (item as (typeof productOptions)[number]).optionKey}
+                              resolveSelectedItem={(options, val) => {
+                                const opts = options as (typeof productOptions);
+                                return opts.find(item => item.optionKey === val || item.code === val || (item.productId && item.productId === val)) ?? null;
+                              }}
                             />
                           </div>
                           <div className="w-full min-w-0">

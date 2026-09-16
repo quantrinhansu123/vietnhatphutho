@@ -25,8 +25,8 @@
 
 ## Nghiệp vụ
 
-- **Header:** Chi nhánh cố định Phú Thọ. Chọn Ngày + Máy (1) + Ca (nhiều, trống = tất cả, nguồn từ `cai_dat_thoi_gian`).
-- **Lệnh SX:** `GET /api/lenh-sx` → lọc client: **bắt buộc có cả `ngay_bat_dau` và `ngay_ket_thuc`**, ngày chọn nằm trong khoảng (so qua key `YYYYMMDD`) + khớp máy đã chọn (mờ mã/tên) + khớp ít nhất 1 ca đã chọn (chuỗi ca nối `,`). Ô chọn kiểu phiếu trộn định mức (`SearchableMultiSelect<ProductionOrderRow>`, values là object lệnh): nhãn `<mã> - <máy> · <ngày> · <ca>`, tìm theo mã/máy/ca/SP; options = lệnh trong ngày + lệnh thiếu ngày (đã lọc máy/ca).
+- **Header:** Chi nhánh cố định Phú Thọ. Chọn Ngày + Máy (1) + Ca (1, trống = tất cả, nguồn từ `cai_dat_thoi_gian`, `SearchableSelect` đơn).
+- **Lệnh SX:** `GET /api/lenh-sx` → lọc client: **bắt buộc có cả `ngay_bat_dau` và `ngay_ket_thuc`**, ngày chọn nằm trong khoảng (so qua key `YYYYMMDD`) + khớp máy đã chọn (mờ mã/tên) + khớp ca đã chọn (chuỗi ca nối `,`, `shiftMatchesSingle`). Ô chọn kiểu phiếu trộn định mức (`SearchableMultiSelect<ProductionOrderRow>`, values là object lệnh): nhãn `<mã> - <máy> · <ngày> · <ca>`, tìm theo mã/máy/ca/SP; options = lệnh trong ngày + lệnh thiếu ngày (đã lọc máy/ca).
 - **Lệnh SX:** `GET /api/lenh-sx` → lọc client: **bắt buộc có cả `ngay_bat_dau` và `ngay_ket_thuc`**, ngày chọn nằm trong khoảng (so qua key `YYYYMMDD`). Ô chọn kiểu phiếu trộn định mức (`SearchableMultiSelect<ProductionOrderRow>`, values là object lệnh): nhãn `<mã> - <máy> · <ngày> · <ca>`, tìm theo mã/máy/ca/SP; options = lệnh trong ngày + lệnh thiếu ngày; mã đã chọn mà không còn trong danh sách hiện chip cảnh báo. Máy/ca lưu phiếu, nhân sự (`phan-cong-nhan-su`), tồn đầu ca đều rút từ combo của lệnh đã chọn (1 phiếu/combo, trùng thì cập nhật).
 - **Cối trộn mẫu:** 1 request `GET /api/bang-tron-vat-tu-dinh-muc?ma_lenh_sx=<mã1>,<mã2>…` cho tất cả lệnh đã chọn (server tách token `,;|/` và khớp từng mã trong `ma_lenh_sx` của phiếu). Hiển thị gom theo **sản phẩm** (tên hiển thị cho công nhân trộn, không hiện tên phiếu; chỉ NVL cối chính, bỏ `nvl_phu`); mỗi cối hiện Lệnh SX, Tổng trọng lượng, Định lượng cối, Ghi chú.
 - **Thêm NVL khác:** picker `SearchableMultiSelect` chỉ load **NVL chính** trong kho (loại trừ nhóm vật tư phụ), chọn nhiều 1 lúc; tự thêm đồng thời vào bảng 1 và bảng 4 (kèm tồn đầu kỳ trước).
@@ -35,7 +35,7 @@
 - **Bảng 1 NVL thực tế:** fill toàn bộ NVL của mọi lệnh đã chọn, đối chiếu kho NVL (`kho-nvl` → id + tên SX). Hiển thị 3 dòng: mã NVL, tên NVL, tên SX NVL. Gộp theo **id kho** (fallback mã): trùng thì 1 dòng, cộng dồn nguồn lệnh (cột Lệnh SX) và tổng sử dụng. Mỗi dòng lưu `material_id/ten_nvl_sx/lenh_sx[]`. Tồn kỳ trước tra tương thích cả phiếu cũ (theo mã).
 - **Bảng 2 Sản phẩm:** người dùng thêm dòng, gợi ý SP từ lệnh đã chọn. Cột Lệnh SX để biết SP thuộc lệnh nào. Trường: lệnh SX, tên hàng, số lượng, định mức, trọng lượng, ghi chú.
 - **Bảng 3 Hàng lỗi hỏng:** tên lỗi + số lượng (kg).
-- **Bảng 4 Bàn giao ca sau:** loại nhựa tự fill theo NVL cối mẫu. `tồn_đầu_ca` = tồn cuối kỳ trước (cùng máy, phiếu gần nhất khác ngày/ca) — tự fill, cho sửa. `tổng_sử_dụng` = Σ bảng 1 theo mã NVL. `tồn_cuối = lấy_trong_kho + tồn_đầu_ca − tổng_sử_dụng`.
+- **Bảng 4 Bàn giao ca sau (Nhựa Bàn Giao Ca Sau):** loại nhựa tự fill theo NVL cối mẫu. Cột **Nhập Trong Ngày** (trường `lay_trong_kho`) tự động lấy từ phiếu xuất kho NVL theo ngày - máy - ca. Cột **Nhập Ca Trước** (trường `ton_dau_ca`) tự động lấy từ tồn ca trước theo ngày - máy - ca (cùng máy, ca trước gần nhất). `tổng_sử_dụng` = Σ bảng 1 theo mã NVL. `tồn_cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng_sử_dụng`.
 
 ## Liên kết
 

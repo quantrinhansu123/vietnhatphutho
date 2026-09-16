@@ -35,6 +35,33 @@ export interface OrderProductLine {
   soLuongNam?: string;
 }
 
+export function isUuidLike(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+}
+
+export function resolveActualProductCode(
+  productCode: string | undefined | null,
+  productId: string | undefined | null,
+  catalogProducts?: Array<{ id: string; code?: string; ma_sp?: string }>
+): string {
+  const code = (productCode || '').trim();
+  if (code && !isUuidLike(code) && code !== '-') {
+    return code;
+  }
+  const idToFind = (productId && isUuidLike(productId))
+    ? productId.trim()
+    : (isUuidLike(code) ? code : '');
+  if (idToFind && catalogProducts?.length) {
+    const catalogItem = catalogProducts.find(p => p.id === idToFind);
+    const resolvedCode = catalogItem?.code || (catalogItem as any)?.ma_sp;
+    if (resolvedCode && !isUuidLike(resolvedCode)) {
+      return resolvedCode;
+    }
+  }
+  return code && !isUuidLike(code) ? code : (code === '-' ? '-' : '');
+}
+
 export function splitProductionProductCodes(raw: string): string[] {
   return raw
     .split(',')

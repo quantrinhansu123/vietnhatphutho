@@ -10498,10 +10498,10 @@ export function createApp() {
     }
 
     try {
-      const loaiFilter = parseWarehouseSlipType(req.query.loai ?? req.query.type);
+      const loaiFilter = parseWarehouseSlipType(req.query.loai ?? req.query.type ?? req.query.loai_phieu);
       const khoFilter = parseWarehouseStorageType(req.query.loai_kho ?? req.query.kho ?? req.query.warehouseKind);
-      const fromDate = parseWarehouseSlipDate(req.query.from ?? req.query.tu_ngay);
-      const toDate = parseWarehouseSlipDate(req.query.to ?? req.query.den_ngay);
+      const fromDate = parseWarehouseSlipDate(req.query.from ?? req.query.tu_ngay ?? req.query.ngay ?? req.query.ngay_phieu);
+      const toDate = parseWarehouseSlipDate(req.query.to ?? req.query.den_ngay ?? req.query.ngay ?? req.query.ngay_phieu);
       const slipCode = String(req.query.ma_phieu ?? req.query.slipCode ?? '').trim();
       const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? '').trim();
       const maSp = String(req.query.ma_sp ?? req.query.productCode ?? '').trim();

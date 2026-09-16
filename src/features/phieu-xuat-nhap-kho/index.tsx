@@ -1755,7 +1755,9 @@ export function WarehouseSlipPanel({
         if (matched.length > 0) matched.forEach(value => matchedShifts.add(value));
         else matchedShifts.add(instance.ca);
       }
-      if (matchedShifts.size > 0) setSelectedShifts([...matchedShifts]);
+      if (matchedShifts.size > 0) {
+        setSelectedShifts(isNvlExport ? [[...matchedShifts][0]] : [...matchedShifts]);
+      }
 
       setNormLoadMessage('');
       const merged = mergeNormMaterialLines(
@@ -2275,6 +2277,13 @@ export function WarehouseSlipPanel({
                     (không bắt buộc)
                   </span>
                 </>
+              ) : isNvlExport ? (
+                <>
+                  Ca{' '}
+                  <span className="font-semibold normal-case tracking-normal text-zinc-400">
+                    (chọn 1)
+                  </span>
+                </>
               ) : (
                 'Ca'
               )}
@@ -2296,11 +2305,21 @@ export function WarehouseSlipPanel({
                         }`}
                       >
                         <input
-                          type="checkbox"
+                          type={isNvlExport ? 'radio' : 'checkbox'}
+                          name={isNvlExport ? 'warehouse-slip-shift' : undefined}
                           checked={checked}
-                          onChange={() =>
-                            setSelectedShifts(current => toggleWarehouseShiftSelection(current, option.value))
-                          }
+                          onChange={() => {
+                            if (isNvlExport) {
+                              // Xuất kho NVL: chỉ chọn 1 ca (click lại để bỏ chọn)
+                              setSelectedShifts(current =>
+                                current.includes(option.value) ? [] : [option.value]
+                              );
+                            } else {
+                              setSelectedShifts(current =>
+                                toggleWarehouseShiftSelection(current, option.value)
+                              );
+                            }
+                          }}
                           className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
                         />
                         {option.label}
@@ -2316,6 +2335,10 @@ export function WarehouseSlipPanel({
               ) : isNvlInbound ? (
                 <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
                   Có thể bỏ trống ca khi nhập kho NVL.
+                </p>
+              ) : isNvlExport ? (
+                <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
+                  Chọn 1 ca để xuất kho NVL.
                 </p>
               ) : null}
             </div>
