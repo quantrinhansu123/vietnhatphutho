@@ -120,6 +120,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'machine-downtime-report': 'report-forms',
   'machine-run-log': 'report-forms',
   'machine-run-log-list': 'report-lists',
+  'bao-cao-tuan': 'report-forms',
   'acceptance-report': 'report-forms',
   'dashboard': 'quan-tri'
 };

@@ -1177,6 +1177,35 @@ function pickStaffField(row: Record<string, unknown>, keys: string[], fallback =
   return fallback;
 }
 
+/** Soft delete nhân sự: deleted_at != null (hoặc cờ da_xoa/is_deleted) = đã xóa. */
+function isStaffDeletedRow(row: Record<string, unknown>) {
+  const deletedAt = row.deleted_at ?? row.deletedAt;
+  if (deletedAt !== null && deletedAt !== undefined && String(deletedAt).trim() !== '') return true;
+  for (const key of ['da_xoa', 'is_deleted', 'isDeleted']) {
+    const value = row[key];
+    if (value === true || value === 1 || String(value ?? '').trim().toLowerCase() === 'true') return true;
+  }
+  return false;
+}
+
+function shouldIncludeDeletedStaff(req: express.Request) {
+  const query = req.query as Record<string, unknown>;
+  for (const key of ['includeDeleted', 'include_deleted', 'withDeleted', 'with_deleted', 'showDeleted']) {
+    const value = query[key];
+    if (value === true || value === 1) return true;
+    const text = String(value ?? '').trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y'].includes(text)) return true;
+  }
+  return false;
+}
+
+function staffSoftDeleteMissingColumnHint(error: { code?: string; message?: string } | null) {
+  if (isMissingColumnError(error) && /deleted/i.test(error?.message || '')) {
+    return ' Bảng nhan_su thiếu cột deleted_at — chạy supabase-nhan-su-soft-delete.sql trong Supabase SQL Editor.';
+  }
+  return '';
+}
+
 function mapStaffRecord(row: Record<string, unknown>) {
   const name = pickStaffName(row);
   const department = pickStaffField(row, ['phong_ban', 'phongban', 'department'], 'Chưa phân phòng ban');
@@ -1190,6 +1219,8 @@ function mapStaffRecord(row: Record<string, unknown>) {
   const password = pickStaffField(row, ['mat_khau', 'password'], '');
   const signatureUrl = pickStaffField(row, ['link_chu_ky', 'chu_ky_url', 'signature_url'], '');
   const region = pickStaffField(row, ['khu_vuc', 'region'], '');
+  const deletedAtRaw = row.deleted_at ?? row.deletedAt ?? null;
+  const deletedAt = deletedAtRaw ? String(deletedAtRaw) : null;
 
   return {
     id: code || name,
@@ -1207,6 +1238,9 @@ function mapStaffRecord(row: Record<string, unknown>) {
     link_chu_ky: signatureUrl,
     region,
     khu_vuc: region,
+    deletedAt,
+    deleted_at: deletedAt,
+    isDeleted: isStaffDeletedRow(row),
     viewPermissions: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     assignedPositions: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions),
@@ -6032,6 +6066,21 @@ function extractLastName(fullName: string): string {
   return parts[parts.length - 1] || '';
 }
 
+/**
+ * Tên gọn khi in lịch: viết tắt họ + tên đệm + tên.
+ * VD "Nguyễn Văn An" → "NVA An". Tên đơn ("An") hoặc mã ("NV012") giữ nguyên.
+ */
+function formatShortStaffName(fullName: string): string {
+  const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return '';
+  const parts = clean.split(' ');
+  if (parts.length <= 1) return clean;
+  if (/^[A-Za-z0-9._-]+$/.test(clean) && /\d/.test(clean)) return clean;
+  const last = parts[parts.length - 1] || '';
+  const initials = parts.map(p => (p[0] || '').toLocaleUpperCase('vi')).join('');
+  return initials ? `${initials} ${last}` : last;
+}
+
 function productionOrderProductLabel(productCode: string, productName: string) {
   if (productName && productCode) return `${productCode} · ${productName}`;
   return productName || productCode || '-';
@@ -10851,18 +10900,29 @@ export function createApp() {
       const scope = typeof req.query.scope === 'string' ? req.query.scope : 'filtered';
       const departmentFilter = `%${SUPABASE_STAFF_DEPARTMENT}%`;
       const branchFilter = `%${SUPABASE_STAFF_BRANCH}%`;
+      const includeDeleted = shouldIncludeDeletedStaff(req);
 
       if (format === 'groups') {
-        const { data, error } = await supabase
+        let staffQuery = supabase
           .from(SUPABASE_STAFF_TABLE)
           .select('*');
+        if (!includeDeleted) {
+          staffQuery = staffQuery.is('deleted_at', null);
+        }
+        let { data, error } = await staffQuery;
+
+        if (error && !includeDeleted && isMissingColumnError(error)) {
+          // DB chưa chạy migration soft-delete → đọc toàn bộ như cũ.
+          ({ data, error } = await supabase.from(SUPABASE_STAFF_TABLE).select('*'));
+        }
 
         if (error) {
           return respondSupabaseReadError(res, error, SUPABASE_STAFF_TABLE, { branches: [], total: 0 });
         }
 
         const rows = ((data || []) as Record<string, unknown>[])
-          .filter(row => pickStaffName(row));
+          .filter(row => pickStaffName(row))
+          .filter(row => includeDeleted || !isStaffDeletedRow(row));
 
         const filteredRows = scope === 'all'
           ? rows
@@ -10882,7 +10942,7 @@ export function createApp() {
         });
       }
 
-      const staffSelect = 'nhan_su, phong_ban, chi_nhanh';
+      const staffSelect = 'nhan_su, phong_ban, chi_nhanh, deleted_at';
 
       async function runStaffQuery(mode: 'dept-branch' | 'dept-only' | 'all') {
         let query = supabase!
@@ -10890,6 +10950,10 @@ export function createApp() {
           .select(staffSelect)
           .not('nhan_su', 'is', null)
           .order('nhan_su', { ascending: true });
+
+        if (!includeDeleted) {
+          query = query.is('deleted_at', null);
+        }
 
         if (mode === 'dept-branch') {
           query = query.ilike('phong_ban', departmentFilter).ilike('chi_nhanh', branchFilter);
@@ -10907,6 +10971,10 @@ export function createApp() {
             fallback = fallback.ilike('phong_ban', departmentFilter);
           }
           ({ data, error } = await fallback);
+        }
+
+        if (!error && !includeDeleted && Array.isArray(data)) {
+          data = (data as Record<string, unknown>[]).filter(row => !isStaffDeletedRow(row)) as typeof data;
         }
 
         return { data, error };
@@ -10955,6 +11023,7 @@ export function createApp() {
 
   // Tra cứu trực tiếp bảng nhan_su theo mã nhân sự → tên (dùng cho Sổ trộn).
   // GET /api/nhan-su/by-code?codes=NV001,NV002 (tối đa 200 mã)
+  // Mặc định ẩn bản ghi đã xóa mềm; thêm ?includeDeleted=1 để tra cả bản ghi đã xóa.
   app.get('/api/nhan-su/by-code', async (req, res) => {
     if (!supabase) {
       return res.json({ names: {} });
@@ -10966,11 +11035,16 @@ export function createApp() {
       if (codes.length === 0) {
         return res.json({ names: {} });
       }
+      const includeDeleted = shouldIncludeDeletedStaff(req);
 
-      let { data, error } = await supabase
+      let staffByCodeQuery = supabase
         .from(SUPABASE_STAFF_TABLE)
-        .select('ma_nhan_su, nhan_su')
+        .select('ma_nhan_su, nhan_su, deleted_at')
         .in('ma_nhan_su', codes);
+      if (!includeDeleted) {
+        staffByCodeQuery = staffByCodeQuery.is('deleted_at', null);
+      }
+      let { data, error } = await staffByCodeQuery;
 
       if (error && isMissingColumnError(error)) {
         const fallback = await supabase.from(SUPABASE_STAFF_TABLE).select('*').limit(2000);
@@ -10986,6 +11060,7 @@ export function createApp() {
       const wanted = new Set(codes.map(code => code.toLowerCase()));
       const names: Record<string, string> = {};
       for (const row of ((data || []) as Array<Record<string, unknown>>)) {
+        if (!includeDeleted && isStaffDeletedRow(row)) continue;
         const code = pickStaffField(row, ['ma_nhan_su', 'ma_nv', 'id']);
         const name = pickStaffName(row);
         if (code && name && wanted.has(code.toLowerCase())) {
@@ -11013,6 +11088,49 @@ export function createApp() {
       const parsed = parseStaffBody(source);
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
+      }
+
+      // Nếu mã đã tồn tại ở bản ghi xóa mềm → khôi phục + cập nhật thay vì tạo trùng.
+      // Chỉ khôi phục khi trùng tên (Excel nhập lại đúng người); khác tên thì cấp mã mới
+      // để không ghi đè dữ liệu người đã xóa (mã frontend tự sinh chỉ dựa trên bản ghi đang hiện).
+      const desiredCode = pickRowField(source, ['ma_nhan_su', 'ma_nv', 'code'], '');
+      if (desiredCode) {
+        const { data: existing } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .select('ma_nhan_su, nhan_su, deleted_at')
+          .eq('ma_nhan_su', desiredCode)
+          .limit(1);
+        const existingRow = Array.isArray(existing) && existing.length > 0
+          ? (existing[0] as Record<string, unknown>)
+          : null;
+        if (existingRow && isStaffDeletedRow(existingRow)) {
+          const existingName = pickStaffName(existingRow).toLowerCase();
+          const incomingName = String((parsed.record.nhan_su ?? '')).trim().toLowerCase();
+          const samePerson = !existingName || !incomingName || existingName === incomingName;
+          if (samePerson) {
+            const restoreRecord = { ...parsed.record, deleted_at: null } as Record<string, unknown>;
+            delete restoreRecord.ma_nhan_su;
+            const { data: restored, error: restoreError } = await supabase
+              .from(SUPABASE_STAFF_TABLE)
+              .update(restoreRecord)
+              .eq('ma_nhan_su', desiredCode)
+              .select('*')
+              .single();
+            if (!restoreError && restored) {
+              return res.json({
+                success: true,
+                restored: true,
+                staff: restored,
+                person: mapStaffRecord(restored as Record<string, unknown>)
+              });
+            }
+            // Nếu khôi phục lỗi (VD thiếu cột) thì rơi xuống insert như cũ để báo lỗi rõ ràng.
+          } else {
+            const freshCode = await generateNextStaffCodeFromDb();
+            parsed.record.ma_nhan_su = freshCode;
+            source.ma_nhan_su = freshCode;
+          }
+        }
       }
 
       const { data: created, error: insertError } = await supabase
@@ -11071,6 +11189,11 @@ export function createApp() {
 
       for (const row of list) {
         const record = row as Record<string, unknown>;
+        // Bỏ qua bản ghi đã xóa mềm.
+        if (isStaffDeletedRow(record)) {
+          skipped += 1;
+          continue;
+        }
         // Không lấy từ vi_tri (đã là Phòng ban_Chức vụ sau sync).
         const congViec = pickStaffField(record, ['Cong_Viec', 'cong_viec', 'chuc_vu', 'role'], '');
         const department = pickStaffField(record, ['phong_ban', 'phongban', 'department'], '');
@@ -11179,15 +11302,26 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
-      const record = { ...parsed.record };
+      const record = { ...parsed.record, deleted_at: null };
       delete (record as Record<string, unknown>).ma_nhan_su;
 
-      const { data: updated, error: updateError } = await supabase
+      let { data: updated, error: updateError } = await supabase
         .from(SUPABASE_STAFF_TABLE)
         .update(record)
         .eq('ma_nhan_su', code)
         .select('*')
         .single();
+
+      // DB chưa chạy migration soft-delete → thử lại không kèm deleted_at.
+      if (updateError && isMissingColumnError(updateError) && /deleted/i.test(updateError.message || '')) {
+        delete (record as Record<string, unknown>).deleted_at;
+        ({ data: updated, error: updateError } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .update(record)
+          .eq('ma_nhan_su', code)
+          .select('*')
+          .single());
+      }
 
       if (updateError) {
         console.error('Supabase nhan_su update error:', updateError);
@@ -11249,6 +11383,7 @@ export function createApp() {
     }
   });
 
+  /** Xóa mềm nhân sự: ẩn khỏi danh sách (deleted_at), không mất dữ liệu. Thêm ?hard=1 để xóa vĩnh viễn. */
   app.delete('/api/nhan-su/:code', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -11260,23 +11395,147 @@ export function createApp() {
     }
 
     try {
-      const { error: deleteError } = await supabase
-        .from(SUPABASE_STAFF_TABLE)
-        .delete()
-        .eq('ma_nhan_su', code);
+      const hardQuery = String((req.query as Record<string, unknown>).hard ?? '').trim().toLowerCase();
+      const hardBody = (req.body as Record<string, unknown> | undefined)?.hard;
+      const hard = ['1', 'true', 'yes'].includes(hardQuery) || hardBody === true || String(hardBody ?? '').trim() === '1';
 
-      if (deleteError) {
-        console.error('Supabase nhan_su delete error:', deleteError);
-        return res.status(500).json({ error: staffWriteErrorMessage(deleteError) });
+      if (hard) {
+        const { error: deleteError } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .delete()
+          .eq('ma_nhan_su', code);
+
+        if (deleteError) {
+          console.error('Supabase nhan_su hard delete error:', deleteError);
+          return res.status(500).json({ error: staffWriteErrorMessage(deleteError) });
+        }
+
+        return res.json({ success: true, hardDeleted: true });
       }
 
-      return res.json({ success: true });
+      const { data, error: softDeleteError } = await supabase
+        .from(SUPABASE_STAFF_TABLE)
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('ma_nhan_su', code)
+        .is('deleted_at', null)
+        .select('ma_nhan_su');
+
+      if (softDeleteError) {
+        console.error('Supabase nhan_su soft delete error:', softDeleteError);
+        const hint = staffSoftDeleteMissingColumnHint(softDeleteError);
+        return res.status(500).json({ error: `${staffWriteErrorMessage(softDeleteError)}${hint}`.trim() });
+      }
+
+      if (!data || data.length === 0) {
+        const { data: existing } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .select('ma_nhan_su')
+          .eq('ma_nhan_su', code)
+          .limit(1);
+        if (!existing || existing.length === 0) {
+          return res.status(404).json({ error: `Không tìm thấy nhân sự mã ${code}.` });
+        }
+        return res.json({ success: true, softDeleted: true, alreadyDeleted: true });
+      }
+
+      return res.json({ success: true, softDeleted: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhân sự.' });
     }
   });
 
+  /** Khôi phục 1 nhân sự đã xóa mềm. */
+  app.post('/api/nhan-su/:code/restore', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    const code = String(req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ error: 'Thiếu mã nhân sự.' });
+    }
+
+    try {
+      const { data, error: restoreError } = await supabase
+        .from(SUPABASE_STAFF_TABLE)
+        .update({ deleted_at: null })
+        .eq('ma_nhan_su', code)
+        .select('*')
+        .maybeSingle();
+
+      if (restoreError) {
+        console.error('Supabase nhan_su restore error:', restoreError);
+        const hint = staffSoftDeleteMissingColumnHint(restoreError);
+        return res.status(500).json({ error: `${staffWriteErrorMessage(restoreError)}${hint}`.trim() });
+      }
+
+      if (!data) {
+        return res.status(404).json({ error: `Không tìm thấy nhân sự mã ${code}.` });
+      }
+
+      return res.json({
+        success: true,
+        staff: data,
+        person: mapStaffRecord(data as Record<string, unknown>)
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi khôi phục nhân sự.' });
+    }
+  });
+
+  /** Xóa mềm hàng loạt: ẩn khỏi danh sách, vẫn khôi phục được. Body { codes: string[], hard?: boolean } */
   app.post('/api/nhan-su/bulk-delete', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const codesRaw = Array.isArray(body.codes) ? body.codes : Array.isArray(body.ids) ? body.ids : [];
+      const codes = [...new Set(codesRaw.map(code => String(code || '').trim()).filter(Boolean))];
+      if (codes.length === 0) {
+        return res.status(400).json({ error: 'Thiếu danh sách mã nhân sự.' });
+      }
+      const hard = body.hard === true || String(body.hard ?? '').trim() === '1';
+
+      if (hard) {
+        const { data, error } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .delete()
+          .in('ma_nhan_su', codes)
+          .select('ma_nhan_su');
+
+        if (error) {
+          console.error('Supabase nhan_su bulk hard delete error:', error);
+          return res.status(500).json({ error: staffWriteErrorMessage(error) });
+        }
+
+        const deleted = Array.isArray(data) ? data.length : 0;
+        return res.json({ success: true, hardDeleted: true, deleted, requested: codes.length });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_STAFF_TABLE)
+        .update({ deleted_at: new Date().toISOString() })
+        .in('ma_nhan_su', codes)
+        .is('deleted_at', null)
+        .select('ma_nhan_su');
+
+      if (error) {
+        console.error('Supabase nhan_su bulk soft delete error:', error);
+        const hint = staffSoftDeleteMissingColumnHint(error);
+        return res.status(500).json({ error: `${staffWriteErrorMessage(error)}${hint}`.trim() });
+      }
+
+      const deleted = Array.isArray(data) ? data.length : 0;
+      return res.json({ success: true, softDeleted: true, deleted, requested: codes.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhiều nhân sự.' });
+    }
+  });
+
+  /** Khôi phục hàng loạt nhân sự đã xóa mềm. Body { codes: string[] } */
+  app.post('/api/nhan-su/bulk-restore', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
@@ -11291,19 +11550,20 @@ export function createApp() {
 
       const { data, error } = await supabase
         .from(SUPABASE_STAFF_TABLE)
-        .delete()
+        .update({ deleted_at: null })
         .in('ma_nhan_su', codes)
         .select('ma_nhan_su');
 
       if (error) {
-        console.error('Supabase nhan_su bulk delete error:', error);
-        return res.status(500).json({ error: staffWriteErrorMessage(error) });
+        console.error('Supabase nhan_su bulk restore error:', error);
+        const hint = staffSoftDeleteMissingColumnHint(error);
+        return res.status(500).json({ error: `${staffWriteErrorMessage(error)}${hint}`.trim() });
       }
 
-      const deleted = Array.isArray(data) ? data.length : 0;
-      return res.json({ success: true, deleted, requested: codes.length });
+      const restored = Array.isArray(data) ? data.length : 0;
+      return res.json({ success: true, restored, requested: codes.length });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhiều nhân sự.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi khôi phục nhân sự.' });
     }
   });
 
@@ -11773,7 +12033,8 @@ export function createApp() {
 
         // For each time slot, find employees and their machine assignments
         // Structure: machineData[tenMay][tenCa] to separate by both machine and shift
-        // Giữ đúng thứ tự đã xếp (push theo created_at) — không sort lại theo tên.
+        // Push theo created_at rồi sort ổn định theo vai trò khi trả về
+        // (Trưởng ca → Trộn → Ra Tấm → khác) — xem sortNhanSuByRole bên dưới.
         type MachineShiftData = Record<string, Record<string, Array<{ name: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>>>;
         const machineData: MachineShiftData = {};
 
@@ -11790,9 +12051,9 @@ export function createApp() {
           if (!phanCong.ma_may || !phanCong.ma_nhan_su) continue;
           if (!assignmentMatchesShift(phanCong as Record<string, unknown>, ca)) continue;
 
-          // Get employee name (last word only)
+          // Tên gọn khi in: viết tắt họ + tên (VD "Nguyễn Văn An" → "NVA An").
           const fullName = nhanSuMap.get(phanCong.ma_nhan_su) || phanCong.ma_nhan_su;
-          const lastName = extractLastName(fullName);
+          const lastName = formatShortStaffName(fullName);
           const schedStart = String((phanCong as any).thoi_gian_bat_dau || '').trim().slice(0, 5);
           const schedEnd = String((phanCong as any).thoi_gian_ket_thuc || '').trim().slice(0, 5);
           const vaiTro = String((phanCong as any).vai_tro || '').trim();
@@ -11905,7 +12166,7 @@ export function createApp() {
           }
 
           const fullName = nhanSuMap.get(dd.ma_nhan_su) || dd.ma_nhan_su;
-          const lastName = extractLastName(String(fullName || ''));
+          const lastName = formatShortStaffName(String(fullName || ''));
           const timePhrase = formatDispatchPrintTime(dd.thoi_gian_bat_dau, dd.thoi_gian_ket_thuc);
           const fromMachine = String(dd.may_goc || '').trim();
           const alreadyListed = machineData[destMachineName][tenCa].some(
@@ -11930,6 +12191,26 @@ export function createApp() {
           });
         }
 
+        const sortNhanSuByRole = (list: Array<{ vaiTro?: string }>) => {
+          const priority = (role: unknown) => {
+            const text = String(role || '')
+              .toLowerCase()
+              .replace(/đ/g, 'd')
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            if (text.includes('truong ca')) return 0;
+            if (text.includes('tron')) return 1;
+            if (text.includes('ra tam')) return 2;
+            return 3;
+          };
+          return (list || [])
+            .map((person, index) => ({ person, index, order: priority((person as { vaiTro?: string }).vaiTro) }))
+            .sort((a, b) => a.order - b.order || a.index - b.index)
+            .map(item => item.person);
+        };
+
         return {
           khungGio,
           tenCa,
@@ -11937,7 +12218,9 @@ export function createApp() {
           machines: mayListHienThi.map(may => ({
             maMay: may.ma_may,
             tenMay: may.ten_may,
-            nhanSu: machineData[may.ten_may]?.[tenCa] || []
+            // Luôn trả theo thứ tự Trưởng ca → Trộn → Ra Tấm → Ra Tấm 2,
+            // không phụ thuộc giờ sớm/muộn hay điều động.
+            nhanSu: sortNhanSuByRole(machineData[may.ten_may]?.[tenCa] || [])
           }))
         };
       });

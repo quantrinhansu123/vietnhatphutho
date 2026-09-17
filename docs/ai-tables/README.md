@@ -53,6 +53,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `so_giao_ca_mmtb` | `/so-giao-ca-mmtb` (card Sổ giao ca MMTB trong `/phieu-bao-cao`) | [so_giao_ca_mmtb.md](./so_giao_ca_mmtb.md) |
 | `so_che_do_may` | `/so-che-do-may` (card Sổ chế độ máy trong `/phieu-bao-cao`) + `/danh-sach-so-che-do-may` | [so_che_do_may.md](./so_che_do_may.md) |
 | `phieu_bao_dung_may` | `/phieu-bao-dung-may` | [phieu_bao_dung_may.md](./phieu_bao_dung_may.md) |
+| *(chưa có bảng)* | `/bao-cao-tuan` (card Báo cáo tuần trong `/phieu-bao-cao`) | [bao_cao_tuan.md](./bao_cao_tuan.md) |
 | *(tổng hợp)* | `/bang-dieu-khien` | [control_board.md](./control_board.md) |
 
 ## File dùng chung (chỉ khi cần)

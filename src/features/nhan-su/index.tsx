@@ -46,6 +46,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
   Trash2
 } from 'lucide-react';
@@ -64,6 +65,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     { member: HrMember; departmentName: string; branchName: string } | null
   >(null);
   const [deletingCode, setDeletingCode] = useState('');
+  const [restoringCode, setRestoringCode] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [staffError, setStaffError] = useState('');
   const [showAddStaffForm, setShowAddStaffForm] = useState(false);
@@ -72,17 +75,20 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   const [isImportingExcel, setIsImportingExcel] = useState(false);
   const [selectedStaffCodes, setSelectedStaffCodes] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkRestoring, setIsBulkRestoring] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
   const [addStaffDefaults, setAddStaffDefaults] = useState<{ branchId: string; department: string }>({
     branchId: '',
     department: ''
   });
-  const loadStaffGroups = async () => {
+  const loadStaffGroups = async (includeDeleted = showDeleted) => {
     setIsLoadingStaff(true);
     setStaffError('');
 
     try {
-      const res = await fetch('/api/nhan-su?format=groups&scope=all');
+      const res = await fetch(
+        `/api/nhan-su?format=groups&scope=all${includeDeleted ? '&includeDeleted=1' : ''}`
+      );
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -101,8 +107,15 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   };
 
   useEffect(() => {
-    void loadStaffGroups();
+    void loadStaffGroups(false);
   }, []);
+
+  const toggleShowDeleted = () => {
+    const next = !showDeleted;
+    setShowDeleted(next);
+    setSelectedStaffCodes(new Set());
+    void loadStaffGroups(next);
+  };
 
   useEffect(() => {
     setDepartmentFilter('');
@@ -113,7 +126,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
       window.alert('Nhân sự này chưa có mã (ma_nhan_su) nên không thể xóa tự động.');
       return;
     }
-    if (!window.confirm(`Xóa nhân sự "${member.name}" (${member.code})?`)) return;
+    if (!window.confirm(`Xóa nhân sự "${member.name}" (${member.code})?\n\nDữ liệu được giữ lại (xóa mềm) và có thể khôi phục từ mục "Hiện đã xóa".`)) return;
 
     setDeletingCode(member.code);
     try {
@@ -128,11 +141,38 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         return next;
       });
       await loadStaffGroups();
-      showAppToast(`Đã xóa nhân sự ${member.code}.`);
+      showAppToast(`Đã xóa nhân sự ${member.code} (có thể khôi phục).`);
     } catch (error: any) {
       window.alert(error.message || 'Không thể xóa nhân sự.');
     } finally {
       setDeletingCode('');
+    }
+  };
+
+  const handleRestoreMember = async (member: HrMember) => {
+    if (!member.code) {
+      window.alert('Nhân sự này chưa có mã (ma_nhan_su) nên không thể khôi phục.');
+      return;
+    }
+
+    setRestoringCode(member.code);
+    try {
+      const res = await fetch(`/api/nhan-su/${encodeURIComponent(member.code)}/restore`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể khôi phục nhân sự.');
+      }
+      setSelectedStaffCodes(prev => {
+        const next = new Set(prev);
+        next.delete(member.code);
+        return next;
+      });
+      await loadStaffGroups();
+      showAppToast(`Đã khôi phục nhân sự ${member.code}.`);
+    } catch (error: any) {
+      window.alert(error.message || 'Không thể khôi phục nhân sự.');
+    } finally {
+      setRestoringCode('');
     }
   };
 
@@ -381,6 +421,31 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
 
   const allStaffCodes = useMemo(() => collectStaffCodes(branches).map(code => code.trim()).filter(Boolean), [branches]);
 
+  const deletedCount = useMemo(
+    () =>
+      branches.reduce(
+        (sum, branch) =>
+          sum +
+          branch.departments.reduce(
+            (deptSum, department) => deptSum + department.members.filter(member => member.isDeleted).length,
+            0
+          ),
+        0
+      ),
+    [branches]
+  );
+
+  const selectedDeletedCount = useMemo(() => {
+    const deletedCodes = new Set(
+      branches.flatMap(branch =>
+        branch.departments.flatMap(department =>
+          department.members.filter(member => member.isDeleted).map(member => String(member.code || '').trim())
+        )
+      )
+    );
+    return [...selectedStaffCodes].filter(code => deletedCodes.has(code)).length;
+  }, [branches, selectedStaffCodes]);
+
   const allVisibleSelected =
     visibleStaffCodes.length > 0 && visibleStaffCodes.every(code => selectedStaffCodes.has(code));
 
@@ -420,8 +485,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
     if (
       !window.confirm(
         deletingAll
-          ? `Bạn sắp XÓA HẾT ${codes.length} nhân sự trong hệ thống.\n\nHành động này không thể hoàn tác. Tiếp tục?`
-          : `Xóa ${label}?\n\nHành động này không thể hoàn tác.`
+          ? `Bạn sắp XÓA ${codes.length} nhân sự trong hệ thống (xóa mềm — dữ liệu được giữ lại và khôi phục được).\n\nTiếp tục?`
+          : `Xóa ${label}?\n\nXóa mềm: dữ liệu được giữ lại, có thể khôi phục từ mục "Hiện đã xóa".`
       )
     ) {
       return;
@@ -429,7 +494,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
 
     if (
       deletingAll &&
-      !window.confirm(`Xác nhận lần cuối: xóa hết ${codes.length} nhân sự?`)
+      !window.confirm(`Xác nhận lần cuối: xóa ${codes.length} nhân sự (xóa mềm)?`)
     ) {
       return;
     }
@@ -450,7 +515,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
       const deleted = Number(data.deleted) || codes.length;
       setSelectedStaffCodes(new Set());
       await loadStaffGroups();
-      const message = `Đã xóa ${deleted} nhân sự.`;
+      const message = `Đã xóa ${deleted} nhân sự (có thể khôi phục).`;
       setSyncViTriMessage(message);
       showAppToast(message);
     } catch (error: unknown) {
@@ -459,6 +524,38 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
       showAppToast(message, 'error');
     } finally {
       setIsBulkDeleting(false);
+    }
+  };
+
+  const handleBulkRestoreSelected = async () => {
+    const codes = [...selectedStaffCodes].map(code => code.trim()).filter(Boolean);
+    if (codes.length === 0) return;
+
+    setIsBulkRestoring(true);
+    setSyncViTriMessage('');
+    try {
+      const res = await fetch('/api/nhan-su/bulk-restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codes })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể khôi phục nhân sự đã chọn.');
+      }
+
+      const restored = Number(data.restored) || codes.length;
+      setSelectedStaffCodes(new Set());
+      await loadStaffGroups();
+      const message = `Đã khôi phục ${restored} nhân sự.`;
+      setSyncViTriMessage(message);
+      showAppToast(message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Không thể khôi phục nhân sự đã chọn.';
+      setSyncViTriMessage(message);
+      showAppToast(message, 'error');
+    } finally {
+      setIsBulkRestoring(false);
     }
   };
 
@@ -638,16 +735,31 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
       {canDelete ? (
         <section className="grid gap-3 rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
-            <p className="text-sm font-black text-zinc-950">Xóa theo lựa chọn</p>
+            <p className="text-sm font-black text-zinc-950">Xóa mềm theo lựa chọn</p>
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              Đã tick {selectedCount} dòng. Có thể chọn hết danh sách đang xem hoặc toàn bộ nhân sự rồi xóa.
+              Đã tick {selectedCount} dòng{selectedDeletedCount > 0 ? ` (${selectedDeletedCount} đã xóa)` : ''}.
+              Xóa mềm giữ lại dữ liệu — bật "Hiện đã xóa" để xem và khôi phục.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <button
               type="button"
+              onClick={toggleShowDeleted}
+              disabled={isLoadingStaff || isBulkDeleting || isBulkRestoring}
+              className={`flex h-11 items-center gap-1.5 rounded-xl border px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                showDeleted
+                  ? 'border-sky-600 bg-sky-600 text-white hover:bg-sky-700'
+                  : 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+              }`}
+              title="Hiện các nhân sự đã xóa mềm để khôi phục"
+            >
+              <Eye className="h-4 w-4" />
+              {showDeleted ? `Đang hiện đã xóa (${deletedCount})` : `Hiện đã xóa${deletedCount > 0 ? ` (${deletedCount})` : ''}`}
+            </button>
+            <button
+              type="button"
               onClick={toggleSelectAllVisible}
-              disabled={isLoadingStaff || visibleStaffCodes.length === 0 || isBulkDeleting}
+              disabled={isLoadingStaff || visibleStaffCodes.length === 0 || isBulkDeleting || isBulkRestoring}
               className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {allVisibleSelected ? 'Bỏ chọn đang xem' : 'Chọn đang xem'}
@@ -655,7 +767,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
             <button
               type="button"
               onClick={selectAllStaff}
-              disabled={isLoadingStaff || allStaffCodes.length === 0 || isBulkDeleting}
+              disabled={isLoadingStaff || allStaffCodes.length === 0 || isBulkDeleting || isBulkRestoring}
               className="flex h-11 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-4 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Chọn hết ({allStaffCodes.length})
@@ -663,15 +775,25 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
             <button
               type="button"
               onClick={clearStaffSelection}
-              disabled={selectedCount === 0 || isBulkDeleting}
+              disabled={selectedCount === 0 || isBulkDeleting || isBulkRestoring}
               className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Bỏ chọn
             </button>
             <button
               type="button"
+              onClick={() => void handleBulkRestoreSelected()}
+              disabled={selectedDeletedCount === 0 || isBulkRestoring || isBulkDeleting}
+              className="flex h-11 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Khôi phục các dòng đã xóa mềm trong lựa chọn"
+            >
+              {isBulkRestoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              {isBulkRestoring ? 'Đang khôi phục...' : `Khôi phục${selectedDeletedCount > 0 ? ` (${selectedDeletedCount})` : ''}`}
+            </button>
+            <button
+              type="button"
               onClick={() => void handleBulkDeleteSelected()}
-              disabled={selectedCount === 0 || isBulkDeleting}
+              disabled={selectedCount === 0 || isBulkDeleting || isBulkRestoring}
               className="flex h-11 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -698,7 +820,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                       type="checkbox"
                       checked={allVisibleSelected}
                       onChange={toggleSelectAllVisible}
-                      disabled={visibleStaffCodes.length === 0 || isBulkDeleting}
+                      disabled={visibleStaffCodes.length === 0 || isBulkDeleting || isBulkRestoring}
                       className="h-4 w-4 accent-[#ef1b2d]"
                       aria-label="Chọn tất cả nhân sự đang xem"
                     />
@@ -722,23 +844,31 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 {tableRows.map(({ key, departmentName, member }) => {
                   const code = String(member.code || '').trim();
                   const canTick = Boolean(code);
+                  const isDeleted = Boolean(member.isDeleted);
                   return (
                   <React.Fragment key={key}>
-                    <TableRow>
+                    <TableRow className={isDeleted ? 'bg-zinc-100/70 opacity-70' : undefined}>
                       {canDelete ? (
                         <td className="px-3 py-3 text-center">
                           <input
                             type="checkbox"
                             checked={canTick && selectedStaffCodes.has(code)}
                             onChange={() => toggleStaffCode(code)}
-                            disabled={!canTick || isBulkDeleting}
+                            disabled={!canTick || isBulkDeleting || isBulkRestoring}
                             className="h-4 w-4 accent-[#ef1b2d] disabled:opacity-40"
                             aria-label={canTick ? `Chọn ${member.name}` : `${member.name} chưa có mã`}
                             title={canTick ? undefined : 'Chưa có mã nhân sự — không thể xóa hàng loạt'}
                           />
                         </td>
                       ) : null}
-                      <td className="whitespace-nowrap px-4 py-3 font-black text-zinc-950">{member.name}</td>
+                      <td className="whitespace-nowrap px-4 py-3 font-black text-zinc-950">
+                        {member.name}
+                        {isDeleted ? (
+                          <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                            Đã xóa
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold text-zinc-700">
                         {member.code || '—'}
                       </td>
@@ -796,7 +926,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                             <Eye className="h-3.5 w-3.5" />
                             Xem
                           </button>
-                          {canEdit ? (
+                          {canEdit && !isDeleted ? (
                             <button
                               type="button"
                               onClick={() =>
@@ -813,7 +943,23 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                               Sửa
                             </button>
                           ) : null}
-                          {canDelete ? (
+                          {canDelete && isDeleted ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleRestoreMember(member)}
+                              disabled={restoringCode === member.code || isBulkRestoring}
+                              aria-label={`Khôi phục ${member.name}`}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {restoringCode === member.code ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              )}
+                              Khôi phục
+                            </button>
+                          ) : null}
+                          {canDelete && !isDeleted ? (
                             <button
                               type="button"
                               onClick={() => void handleDeleteMember(member)}

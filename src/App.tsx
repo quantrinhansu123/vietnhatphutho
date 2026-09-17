@@ -86,6 +86,7 @@ import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/so-tron';
 import { SoGiaoCaMmtbPanel, SoGiaoCaMmtbListView, type SoGiaoCaMmtbRecord } from './features/so-giao-ca-mmtb';
 import { SoCheDoMayWorkspace } from './features/so-che-do-may';
+import { BaoCaoTuanPanel } from './features/bao-cao-tuan';
 import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -1387,6 +1388,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MachineRunLogPanel onBack={() => goBack('report-lists')} />
+              </motion.div>
+            ) : activeTab === 'bao-cao-tuan' ? (
+              <motion.div
+                key="bao-cao-tuan"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoTuanPanel onBack={() => goBack('report-forms')} />
               </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div
