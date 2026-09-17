@@ -144,6 +144,37 @@ function formatPersonTimeRange(startRaw: unknown, endRaw: unknown, shiftRangeRaw
   return parts.join(' ');
 }
 
+/** Thứ tự in cố định: Trưởng ca → Trộn → Ra Tấm → Ra Tấm 2 → khác. */
+function normalizeScheduleRoleText(value: unknown) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function scheduleRolePriority(role: unknown): number {
+  const text = normalizeScheduleRoleText(role);
+  if (text.includes('truong ca')) return 0;
+  if (text.includes('tron')) return 1;
+  if (text.includes('ra tam')) return 2;
+  return 3;
+}
+
+/**
+ * Sắp xếp nhân sự trong 1 ô máy/ca theo vai trò cố định.
+ * Không phụ thuộc giờ sớm/muộn (batDau/ketThuc) hay điều động (dispatch).
+ * Giữ nguyên thứ tự cũ khi cùng vai trò (stable sort).
+ */
+function sortSchedulePeopleForPrint<T extends { vaiTro?: string }>(people: T[]): T[] {
+  return people
+    .map((person, index) => ({ person, index, priority: scheduleRolePriority(person.vaiTro) }))
+    .sort((a, b) => a.priority - b.priority || a.index - b.index)
+    .map(item => item.person);
+}
+
 function scheduleShiftCode(row: LichRow) {
   return String(row.maCa || row.tenCa || '').trim().toUpperCase();
 }
@@ -900,14 +931,16 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                         ) : null}
                         <td className="schedule-shift-col border border-zinc-300 px-2 py-2">{row.previewTenCa}</td>
                         {row.machines.map((cell, midx) => {
-                          // Giữ đúng thứ tự đã xếp lúc xếp lịch (không sort lại).
+                          // Luôn in theo thứ tự vai trò cố định (Trưởng ca → Trộn → Ra Tấm → Ra Tấm 2),
+                          // kể cả khi có điều động hay giờ làm sớm/muộn khác giờ ca.
+                          const orderedNhanSu = sortSchedulePeopleForPrint(cell.nhanSu);
                           const cellNotes =
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.tenCa))) ??
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.maCa || ''))) ??
                             [];
                           // Dòng 1: tên NV cách nhau bằng dấu phẩy (kèm giờ riêng nếu khác giờ ca).
                           // Các điều động + ghi chú gom xuống dưới cùng, mỗi dòng kèm tên NV.
-                          const namesLine = cell.nhanSu
+                          const namesLine = orderedNhanSu
                             .map(p => {
                               const schedPhrase = !p.dispatch
                                 ? formatPersonTimeRange(p.batDau, p.ketThuc, row.khungGio)
@@ -916,10 +949,10 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                             })
                             .filter(Boolean)
                             .join(', ');
-                          const dispatched = cell.nhanSu.filter(p => String(p.dispatch || '').trim());
+                          const dispatched = orderedNhanSu.filter(p => String(p.dispatch || '').trim());
                           return (
                             <td key={midx} className="border border-zinc-300 px-2 py-2 align-top">
-                              {cell.nhanSu.length === 0 && cellNotes.length === 0 ? (
+                              {orderedNhanSu.length === 0 && cellNotes.length === 0 ? (
                                 <span className="text-zinc-400">-</span>
                               ) : (
                                 <div className="space-y-1">

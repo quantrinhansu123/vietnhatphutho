@@ -225,6 +225,13 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     icon: ClipboardList,
     icon3d: reportList3d,
     tab: 'kiem-kho'
+  },
+  {
+    title: 'Báo cáo tuần',
+    desc: 'Mẫu BC01-V3: chọn tuần (từ ngày → đến ngày) và máy, nhập các mục I→VI.',
+    icon: ClipboardList,
+    icon3d: spiralCalendar3d,
+    tab: 'bao-cao-tuan'
   }
 ];
 
@@ -1026,6 +1033,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machine-downtime-list': { group: 'Quản Đốc', sub: 'DS máy dừng' },
   'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
   'machine-run-log-list': { group: 'Quản Đốc', sub: 'DS nhật ký chạy máy' },
+  'bao-cao-tuan': { group: 'Sản xuất', sub: 'Báo cáo tuần' },
   'production-plan-history': { group: 'Quản Đốc', sub: 'Kế hoạch sản xuất' },
   'facility-management': { group: 'Kho', sub: 'Quản lý CSVC' },
   'factory': { group: 'Trang chủ', sub: 'Chọn vai trò' },

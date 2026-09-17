@@ -304,6 +304,10 @@ export function ProductionOrderPrintPreviewModal({
 
   const printDate = formatProductionOrderPrintDate(order.startDate || order.ngay_bat_dau || order.ngay_gio_bat_dau);
   const overLimitCount = computedRows.filter(r => r.overLimit).length;
+  const totalTongTl = computedRows.reduce(
+    (sum, r) => sum + (Number.isFinite(r.tongTl) ? r.tongTl : 0),
+    0
+  );
 
   const numHeadCell = 'whitespace-nowrap px-2.5 py-2.5 text-center font-bold';
   const textHeadCell = 'whitespace-nowrap px-2.5 py-2.5 text-left font-bold';
@@ -455,9 +459,6 @@ export function ProductionOrderPrintPreviewModal({
                           <span className="block leading-tight">Tồn</span>
                           <span className="block leading-tight">kho</span>
                         </th>
-                        <th className={`${numHeadCell} production-order-preview-th-nowrap w-16`}>
-                          TL/cuộn
-                        </th>
                         <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
                           <span className="block leading-tight">Tổng</span>
                           <span className="block leading-tight">SX</span>
@@ -473,6 +474,9 @@ export function ProductionOrderPrintPreviewModal({
                         <th className={`${numHeadCell} production-order-preview-th-stack w-16 bg-zinc-900 print:bg-gray-100`}>
                           <span className="block leading-tight">SLSX</span>
                           <span className="block leading-tight">Nam</span>
+                        </th>
+                        <th className={`${numHeadCell} production-order-preview-th-nowrap w-16`}>
+                          TL/cuộn
                         </th>
                         <th className={`${numHeadCell} w-14`}>TL/Tấm</th>
                         <th className={`${numHeadCell} w-16`}>Tổng TL</th>
@@ -527,9 +531,6 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.don_vi || '—'}
                               </td>
                               <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
-                              <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>
-                                {isCuon ? formatNum(row.kg_cuon) : '—'}
-                              </td>
                               <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>
                                 {row.so_luong.toFixed(2)}
                               </td>
@@ -567,6 +568,9 @@ export function ProductionOrderPrintPreviewModal({
                                 />
                               </td>
                               <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>
+                                {isCuon ? formatNum(row.kg_cuon) : '—'}
+                              </td>
+                              <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>
                                 {isTam ? formatNum(row.tl_tam) : '—'}
                               </td>
                               <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>
@@ -578,6 +582,22 @@ export function ProductionOrderPrintPreviewModal({
                         })
                       )}
                     </tbody>
+                    {computedRows.length > 0 ? (
+                      <tfoot>
+                        <tr className="bg-zinc-100 print:bg-gray-100">
+                          <td
+                            colSpan={12}
+                            className="border-t-2 border-zinc-900 px-2.5 py-2 text-right text-xs font-black uppercase tracking-wide text-zinc-900 print:border-gray-600 print:text-black"
+                          >
+                            Tổng trọng lượng
+                          </td>
+                          <td className="border-t-2 border-zinc-900 px-2.5 py-2 text-right text-sm font-black tabular-nums text-zinc-950 print:border-gray-600 print:text-black">
+                            {totalTongTl.toFixed(2)}
+                          </td>
+                          <td className="border-t-2 border-zinc-900 px-2.5 py-2 print:border-gray-600" />
+                        </tr>
+                      </tfoot>
+                    ) : null}
                   </table>
                 </div>
               </div>

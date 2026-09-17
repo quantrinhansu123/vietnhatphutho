@@ -32,6 +32,7 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'weighing-summary',
     'machine-downtime-report',
     'machine-run-log',
+    'bao-cao-tuan',
     'damaged-goods-report',
     'acceptance-report',
     'kiem-kho',
