@@ -54,6 +54,7 @@ import {
   useProductionOrderPrint,
   AddProductionOrderModal,
   ProductionOrderViewModal,
+  resolveActualProductCode,
   EditProductionOrderModal,
   ProductionPlanModal,
   ProductionOrderPrintSheet,
@@ -1055,7 +1056,7 @@ export function ControlBoardPanel({
                   </td>
                   <td className="px-2 py-1.5 font-black text-emerald-700">{row.priority > 0 ? row.priority : '-'}</td>
                   <td className="px-2 py-1.5 font-black text-zinc-950">{row.code || '-'}</td>
-                  <td className="px-2 py-1.5 font-semibold text-zinc-700">{row.productCode || '-'}</td>
+                  <td className="px-2 py-1.5 font-semibold text-zinc-700">{resolveActualProductCode(row.productCode, (row.products as any)?.[0]?.productId, products) || row.productCode || '-'}</td>
                   <td className="px-2 py-1.5 font-mono font-bold text-zinc-700">{row.quantity}</td>
                   <td className="px-2 py-1.5">
                     <span className="inline-flex whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800 md:inline md:whitespace-normal">
@@ -1149,6 +1150,7 @@ export function ControlBoardPanel({
         row={viewingProductionOrder}
         onClose={() => setViewingProductionOrder(null)}
         staffMap={staffMap}
+        catalogProducts={products}
       />
 
       <EditProductionOrderModal

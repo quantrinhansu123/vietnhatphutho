@@ -32,6 +32,7 @@ import {
   normalizeProductionOrders,
   PRODUCTION_ORDER_STATUS_OPTIONS,
   ProductionOrderViewModal,
+  resolveActualProductCode,
   type ProductionOrderRow
 } from '../ke-hoach-san-xuat';
 import { ProductionOrderPrintPreviewModal } from './PrintPreviewModal';
@@ -541,7 +542,12 @@ export function ProductionOrdersPanel({
         onCreated={loadProductionOrders}
       />
 
-      <ProductionOrderViewModal row={viewingRow} onClose={() => setViewingRow(null)} staffMap={staffMap} />
+      <ProductionOrderViewModal
+        row={viewingRow}
+        onClose={() => setViewingRow(null)}
+        staffMap={staffMap}
+        catalogProducts={catalogProducts}
+      />
 
       <EditProductionOrderModal
         open={Boolean(editingRow)}
@@ -609,7 +615,7 @@ export function ProductionOrdersPanel({
                   </TableHead>
                   <TableBody>
                     {group.rows.map(row => {
-                      const progressLines = buildProductionProgressForOrder(row, acceptanceReports);
+                      const progressLines = buildProductionProgressForOrder(row, acceptanceReports, catalogProducts);
                       const productLines = getProductionOrderProductLines(row);
                       return (
                       <React.Fragment key={row.id}>
@@ -625,7 +631,7 @@ export function ProductionOrdersPanel({
                                     ? progressLines.map((product, index) => (
                                         <tr key={`${row.id}-${product.productCode}-${index}`}>
                                           <td className="w-[22%] px-2 py-1.5 font-black text-zinc-950">
-                                            {product.productCode || '-'}
+                                            {resolveActualProductCode(product.productCode, product.productId, catalogProducts) || product.productCode || '-'}
                                           </td>
                                           <td className="px-2 py-1.5 font-semibold text-zinc-700">
                                             {formatProductionNameWithLength(
@@ -652,7 +658,7 @@ export function ProductionOrdersPanel({
                                     : productLines.map((product, index) => (
                                         <tr key={`${row.id}-${product.productCode}-${index}`}>
                                           <td className="w-[28%] px-2.5 py-1.5 font-black text-zinc-950">
-                                            {product.productCode || '-'}
+                                            {resolveActualProductCode(product.productCode, product.productId, catalogProducts) || product.productCode || '-'}
                                           </td>
                                           <td className="px-2.5 py-1.5 font-semibold text-zinc-700">
                                             {formatProductionNameWithLength(

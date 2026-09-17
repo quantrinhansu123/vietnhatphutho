@@ -12,10 +12,14 @@ import {
 } from '../danh-sach-may';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
 import { printSoTronSlip } from './print';
+import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
+import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
 import type { OrderProductLine } from '../_shared/productionProductHelpers';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
 import { STANDARD_SHIFTS } from '../../types';
+import { normalizeWarehouseMovements } from '../phieu-xuat-nhap-kho';
+
 
 const CHI_NHANH_MAC_DINH = 'Phú Thọ';
 const SO_LAN_TRON_MAC_DINH = 5;
@@ -168,16 +172,14 @@ function machineMatches(orderMachine: string, code: string, name: string) {
   return keys.some(key => ref.includes(key) || key.includes(ref));
 }
 
-/** Lệnh khớp ít nhất 1 ca đã chọn (chuỗi ca của lệnh nối bằng ","). Rỗng = tất cả. */
-function shiftMatchesAny(orderShift: string, selectedCas: string[]) {
-  if (selectedCas.length === 0) return true;
+/** Lệnh khớp ca đã chọn (chuỗi ca của lệnh nối bằng ","). Rỗng = tất cả. */
+function shiftMatchesSingle(orderShift: string, selectedCa: string) {
+  if (!str(selectedCa)) return true;
   const parts = splitShifts(orderShift).map(p => normalizeShiftKey(p));
   if (parts.length === 0 || parts.every(p => !p)) return true;
-  return selectedCas.some(ca => {
-    const target = normalizeShiftKey(ca);
-    if (!target) return true;
-    return parts.some(part => part && (part === target || part.includes(target) || target.includes(part)));
-  });
+  const target = normalizeShiftKey(selectedCa);
+  if (!target) return true;
+  return parts.some(part => part && (part === target || part.includes(target) || target.includes(part)));
 }
 
 function pickRecordText(record: Record<string, unknown>, keys: string[]) {
@@ -485,9 +487,9 @@ export function SoTronPanel({
   const [savedReports, setSavedReports] = useState<SoTronSavedReport[]>([]);
 
   const [ngay, setNgay] = useState(todayLocal());
-  // Máy (chọn 1) + Ca (chọn nhiều) để lọc lệnh SX
+  // Máy (chọn 1) + Ca (chọn 1) để lọc lệnh SX
   const [machineRef, setMachineRef] = useState('');
-  const [selectedCa, setSelectedCa] = useState<string[]>([]);
+  const [selectedCa, setSelectedCa] = useState('');
   const [phanCong, setPhanCong] = useState<PhanCongItem[]>([]);
   // Nhân sự gom theo từng combo Máy-Ca (để hiển thị theo máy và ca)
   const [staffGroups, setStaffGroups] = useState<{ key: string; label: string; staff: PhanCongItem[] }[]>([]);
@@ -522,7 +524,10 @@ export function SoTronPanel({
   const [banGiaoRows, setBanGiaoRows] = useState<BanGiaoRow[]>([]);
   const [ghiChu, setGhiChu] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [previewPhieuGiaoCaReport, setPreviewPhieuGiaoCaReport] = useState<SoTronSavedReport | null>(null);
   const [prevTonMap, setPrevTonMap] = useState<Map<string, number>>(new Map());
+  // Tổng xuất kho NVL theo ngày-máy-ca (Nhập Trong Ngày trong bảng Bàn Giao Ca Sau)
+  const [nhapTrongNgayMap, setNhapTrongNgayMap] = useState<Map<string, number>>(new Map());
 
   const selectedOrders = useMemo(
     () => selectedLenh.map(code => orders.find(o => o.code === code)).filter((o): o is ProductionOrderRow => Boolean(o)),
@@ -740,14 +745,14 @@ export function SoTronPanel({
     return `${order.code} ${str(order.machine)} ${str(order.shift)} ${products}`;
   };
 
-  // Lọc lệnh theo máy (chọn 1) + ca (chọn nhiều) đã chọn ở mục 1 (trống = tất cả).
+  // Lọc lệnh theo máy (chọn 1) + ca (chọn 1) đã chọn ở mục 1 (trống = tất cả).
   // Options ô chọn lệnh: lệnh trong ngày + lệnh thiếu ngày, đã lọc máy/ca.
   const lenhOptions = useMemo(() => {
     const machine = machineRef.trim();
     const resolved = machine ? resolveComboMachine(machine) : null;
     const passRef = (order: ProductionOrderRow) => {
       if (resolved && !machineMatches(order.machine, resolved.code, resolved.name)) return false;
-      if (!shiftMatchesAny(order.shift, selectedCa)) return false;
+      if (!shiftMatchesSingle(order.shift, selectedCa)) return false;
       return true;
     };
     const dated = dateMatchedOrders.filter(passRef);
@@ -799,15 +804,7 @@ export function SoTronPanel({
       setStaffGroups([]);
       return;
     }
-    const combos =
-      selectedCa.length > 0
-        ? selectedCa.map(ca => ({ machine, ca }))
-        : [{ machine, ca: '' }];
-    if (combos.length === 0) {
-      setPhanCong([]);
-      setStaffGroups([]);
-      return;
-    }
+    const combos = [{ machine, ca: selectedCa.trim() }];
     let alive = true;
     setIsLoadingStaff(true);
     const timer = setTimeout(() => {
@@ -1038,7 +1035,7 @@ export function SoTronPanel({
             ma_nvl: meta.ma,
             ten_nvl: meta.ten,
             ten_nvl_sx: meta.sx,
-            lay_trong_kho: '',
+            lay_trong_kho: nhapTrongNgayMap.has(key) ? formatQty(nhapTrongNgayMap.get(key) || 0) : '',
             ton_dau_ca: prevTonMap.has(key) ? formatQty(prevTonMap.get(key) || 0) : '',
             ton_dau_tu_dong: true
           });
@@ -1049,13 +1046,13 @@ export function SoTronPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coiMau, materials, selectedLenh, numLan]);
 
-  // Tồn đầu ca = tồn cuối kỳ trước (theo combo Máy-Ca đầu tiên của lệnh đã chọn,
-  // phiếu gần nhất khác ngày/ca của đúng máy đó)
+  // Nhập Ca Trước = tồn cuối kỳ trước (theo ngày - máy - ca: tìm phiếu ca trước gần nhất của đúng máy đó)
   useEffect(() => {
-    const first = orderCombos[0];
-    const resolved = first ? resolveComboMachine(first.machine) : null;
-    const maMay = resolved?.code || '';
-    const caVal = first?.ca || '';
+    const machineRaw = machineRef.trim() || orderCombos[0]?.machine || '';
+    const caVal = selectedCa.trim() || orderCombos[0]?.ca || '';
+    const resolved = machineRaw ? resolveComboMachine(machineRaw) : null;
+    const maMay = resolved?.code || machineRaw;
+    const tenMay = resolved?.name || machineRaw;
     if (!maMay) {
       setPrevTonMap(new Map());
       return;
@@ -1063,11 +1060,54 @@ export function SoTronPanel({
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/so-tron?ma_may=${encodeURIComponent(maMay)}&limit=50`);
+        const res = await fetch(`/api/so-tron?ma_may=${encodeURIComponent(maMay)}&limit=100`);
         const data = await res.json().catch(() => ({}));
         if (!alive || !res.ok) return;
-        const list = normalizeSoTronReports(data).filter(r => !(r.ngay === ngay && r.ca === caVal));
-        const prev = list[0];
+        const allReports = normalizeSoTronReports(data);
+
+        // Thứ tự các ca trong ngày từ shiftOptions (để xác định ca nào trước ca nào)
+        const getShiftIndex = (shiftName: string) => {
+          if (!shiftName) return -1;
+          const s = shiftName.trim().toLowerCase();
+          const idx = shiftOptions.findIndex(
+            o => o.value.trim().toLowerCase() === s || o.label.trim().toLowerCase() === s
+          );
+          if (idx >= 0) return idx;
+          const m = s.match(/\d+/);
+          return m ? parseInt(m[0], 10) : -1;
+        };
+        const targetShiftIdx = getShiftIndex(caVal);
+
+        // Lọc các phiếu ca trước của đúng máy đó:
+        // - ngày trước (r.ngay < ngay)
+        // - hoặc cùng ngày nhưng ca trước (targetShiftIdx >= 0 ? rShift < targetShift : r.ca !== caVal)
+        const candidates = allReports.filter(r => {
+          if (!machineMatches(r.ma_may || r.ten_may, maMay, tenMay)) return false;
+          if (r.ngay === ngay && r.ca === caVal) return false;
+          if (r.ngay > ngay) return false;
+          if (r.ngay === ngay) {
+            if (targetShiftIdx >= 0) {
+              const rShiftIdx = getShiftIndex(r.ca);
+              if (rShiftIdx >= 0) return rShiftIdx < targetShiftIdx;
+            }
+            return r.ca !== caVal;
+          }
+          return true;
+        });
+
+        // Sắp xếp giảm dần theo ngày, sau đó giảm dần theo thứ tự ca trong ngày
+        candidates.sort((a, b) => {
+          const dateCmp = b.ngay.localeCompare(a.ngay);
+          if (dateCmp !== 0) return dateCmp;
+          const aShiftIdx = getShiftIndex(a.ca);
+          const bShiftIdx = getShiftIndex(b.ca);
+          if (aShiftIdx >= 0 && bShiftIdx >= 0 && aShiftIdx !== bShiftIdx) {
+            return bShiftIdx - aShiftIdx;
+          }
+          return (b.id || '').localeCompare(a.id || '');
+        });
+
+        const prev = candidates[0];
         const map = new Map<string, number>();
         if (prev) {
           for (const line of prev.bang_ban_giao) {
@@ -1097,7 +1137,76 @@ export function SoTronPanel({
     return () => {
       alive = false;
     };
-  }, [orderCombos, machines, materials, ngay]);
+  }, [machineRef, selectedCa, orderCombos, machines, materials, ngay, shiftOptions]);
+
+  // Nhập Trong Ngày = tổng xuất kho NVL (loại xuat, kho nvl) theo ngày + máy + ca hiện tại
+  useEffect(() => {
+    const machineRaw = machineRef.trim() || orderCombos[0]?.machine || '';
+    const caVal = selectedCa.trim() || orderCombos[0]?.ca || '';
+    if (!ngay || !machineRaw) {
+      setNhapTrongNgayMap(new Map());
+      return;
+    }
+    const resolved = resolveComboMachine(machineRaw);
+    const maMay = resolved.code || machineRaw;
+    const tenMay = resolved.name || machineRaw;
+    let alive = true;
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          ngay_phieu: ngay,
+          loai_phieu: 'xuat',
+          loai_kho: 'nvl'
+        });
+        const res = await fetch(`/api/phieu-xuat-nhap-kho?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        if (!alive || !res.ok) return;
+        const rows = normalizeWarehouseMovements(data);
+        // Lọc theo ngày - máy - ca
+        const filtered = rows.filter(row => {
+          if (row.slipType !== 'xuat' || row.warehouseKind !== 'nvl') return false;
+          if (row.slipDate && row.slipDate !== ngay) return false;
+          // Kiểm tra máy khớp
+          if (!machineMatches(row.machine, maMay, tenMay)) return false;
+          // Kiểm tra ca (nếu đã chọn ca)
+          if (caVal && !shiftMatchesSingle(row.shift, caVal)) return false;
+          return true;
+        });
+        // Gộp số lượng theo mã NVL (itemCode = ma_npl), index thêm canonical key từ kho NVL
+        const map = new Map<string, number>();
+        for (const row of filtered) {
+          const rawKey = (row.itemCode || '').toLowerCase();
+          if (!rawKey) continue;
+          const qty = Number(row.quantity) || 0;
+          map.set(rawKey, round2((map.get(rawKey) || 0) + qty));
+          // Index thêm bằng canonical id từ kho NVL (nếu có)
+          const matEntry = materialByCode.get(rawKey);
+          if (matEntry && matEntry.id) {
+            const idKey = matEntry.id.toLowerCase();
+            if (idKey && idKey !== rawKey) {
+              map.set(idKey, round2((map.get(idKey) || 0) + qty));
+            }
+          }
+        }
+        if (!alive) return;
+        setNhapTrongNgayMap(map);
+        // Tự điền lay_trong_kho (Nhập Trong Ngày) nếu có giá trị
+        setBanGiaoRows(rows =>
+          rows.map(row => {
+            const key = (row.material_id || row.ma_nvl).toLowerCase();
+            const val = map.get(key);
+            if (val === undefined) return row;
+            return { ...row, lay_trong_kho: formatQty(val) };
+          })
+        );
+      } catch {
+        /* bỏ qua */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [ngay, machineRef, selectedCa, orderCombos, machines, materials, materialByCode]);
 
   // Tổng sử dụng theo NVL (key = id kho, fallback mã, chữ thường) — cộng dồn khi trùng
   const nvlTotals = useMemo(() => {
@@ -1172,7 +1281,7 @@ export function SoTronPanel({
           ma_nvl: m.ma_nvl,
           ten_nvl: m.ten_nvl,
           ten_nvl_sx: m.ten_nvl_sx,
-          lay_trong_kho: '',
+          lay_trong_kho: nhapTrongNgayMap.has(m.key) ? formatQty(nhapTrongNgayMap.get(m.key) || 0) : '',
           ton_dau_ca: prevTonMap.has(m.key) ? formatQty(prevTonMap.get(m.key) || 0) : '',
           ton_dau_tu_dong: true
         }))
@@ -1272,6 +1381,7 @@ export function SoTronPanel({
         const key = (row.material_id || row.ma_nvl).toLowerCase();
         return {
           ...row,
+          lay_trong_kho: nhapTrongNgayMap.has(key) ? formatQty(nhapTrongNgayMap.get(key) || 0) : row.lay_trong_kho,
           ton_dau_ca: prevTonMap.has(key) ? formatQty(prevTonMap.get(key) || 0) : row.ton_dau_ca,
           ton_dau_tu_dong: true
         };
@@ -1282,7 +1392,7 @@ export function SoTronPanel({
   const resetForm = () => {
     setEditingId(null);
     setMachineRef('');
-    setSelectedCa([]);
+    setSelectedCa('');
     setSelectedLenh([]);
     setPhanCong([]);
     setNhanSuText('');
@@ -1304,7 +1414,7 @@ export function SoTronPanel({
     const found =
       findMachineByRef(machines, report.ma_may) ?? findMachineByRef(machines, report.ten_may);
     setMachineRef(found ? machineSelectValue(found) : report.ten_may || report.ma_may);
-    setSelectedCa(report.ca ? [report.ca] : []);
+    setSelectedCa(report.ca || '');
     setStaffGroups([]);
     setNhanSuText(report.nhan_su);
     setNhanSuTouched(true);
@@ -1579,7 +1689,7 @@ export function SoTronPanel({
             <SectionHeader
               index="1"
               title="Ngày — Máy — Ca"
-              desc="Chọn ngày và máy, có thể chọn nhiều ca. Lệnh SX bên dưới lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca."
+              desc="Chọn ngày + máy + 1 ca. Lệnh SX bên dưới lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca."
             />
             <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
               <div>
@@ -1615,20 +1725,18 @@ export function SoTronPanel({
                 />
               </div>
               <div>
-                <label className={labelClass}>Ca (chọn nhiều)</label>
-                <SearchableMultiSelect<string>
-                  values={selectedCa}
+                <label className={labelClass}>Ca (chọn 1)</label>
+                <SearchableSelect
+                  value={selectedCa}
                   onChange={setSelectedCa}
-                  options={shiftOptions.map(s => s.value)}
+                  options={shiftOptions as unknown[]}
                   placeholder="Tất cả ca..."
-                  getValue={v => v}
-                  getLabel={v => shiftOptions.find(s => s.value === v)?.label || v}
-                  getSearchText={v => shiftOptions.find(s => s.value === v)?.label || v}
-                  allowCustomValues={false}
-                  hideSelectedFromList
-                  keepOptionsOrder
-                  maxResults={50}
                   inputClassName={inputClass}
+                  getLabel={item => (item as { label: string }).label || (item as { value: string }).value}
+                  getValue={item => (item as { value: string }).value}
+                  getSearchText={item =>
+                    `${(item as { value: string }).value} ${(item as { label: string }).label}`
+                  }
                 />
               </div>
             </div>
@@ -1787,7 +1895,7 @@ export function SoTronPanel({
               <p className="text-[11.5px] font-semibold text-slate-500">
                 Đã tải {ordersTotal} lệnh · {dateMatchedOrders.length} lệnh trong khoảng ngày
                 {datelessOrders.length > 0 ? ` · ${datelessOrders.length} lệnh thiếu ngày` : ''}
-                {(machineRef || selectedCa.length > 0) ? ` · ${lenhOptions.length} lệnh sau lọc máy-ca` : ''}
+                {(machineRef || selectedCa) ? ` · ${lenhOptions.length} lệnh sau lọc máy-ca` : ''}
                 .
               </p>
             )}
@@ -2219,15 +2327,15 @@ export function SoTronPanel({
               <SectionHeader
                 index="3.4"
                 title="Nhựa bàn giao ca sau"
-                desc="Loại nhựa tự fill theo phiếu trộn. Tồn đầu ca = tồn cuối kỳ trước (lấy theo combo Máy-Ca đầu tiên khi chọn nhiều). Tồn cuối = lấy trong kho + tồn đầu ca − tổng sử dụng."
+                desc="Loại nhựa tự fill theo phiếu trộn. Nhập Trong Ngày = tự lấy từ phiếu xuất kho NVL theo ngày-máy-ca. Nhập Ca Trước = tồn cuối kỳ trước (so_tron cùng máy, ca trước). Tồn cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng sử dụng."
               />
               <button
                 type="button"
                 onClick={applyPrevTon}
-                disabled={prevTonMap.size === 0}
+                disabled={prevTonMap.size === 0 && nhapTrongNgayMap.size === 0}
                 className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
               >
-                <RefreshCw className="h-3.5 w-3.5" /> Lấy tồn cuối kỳ trước
+                <RefreshCw className="h-3.5 w-3.5" /> Đồng bộ xuất kho & tồn ca trước
               </button>
             </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -2235,8 +2343,8 @@ export function SoTronPanel({
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
                     <th className="px-2 py-2">Loại nhựa</th>
-                    <th className="w-[110px] px-2 py-2">Lấy trong kho</th>
-                    <th className="w-[110px] px-2 py-2">Tồn đầu ca</th>
+                    <th className="w-[110px] px-2 py-2">Nhập Trong Ngày</th>
+                    <th className="w-[110px] px-2 py-2">Nhập Ca Trước</th>
                     <th className="w-[100px] px-2 py-2 text-right">Tổng sử dụng</th>
                     <th className="w-[110px] px-2 py-2 text-right">Tồn cuối ca</th>
                   </tr>
@@ -2771,10 +2879,10 @@ export function SoTronPanel({
                     <button
                       type="button"
                       onClick={applyPrevTon}
-                      disabled={prevTonMap.size === 0}
+                      disabled={prevTonMap.size === 0 && nhapTrongNgayMap.size === 0}
                       className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                     >
-                      <RefreshCw className="h-3.5 w-3.5" /> Lấy tồn cuối kỳ trước
+                      <RefreshCw className="h-3.5 w-3.5" /> Đồng bộ xuất kho & tồn ca trước
                     </button>
                   </div>
                 </div>
@@ -2814,6 +2922,69 @@ export function SoTronPanel({
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  const firstCombo = orderCombos[0];
+                  const machineIdn = firstCombo ? resolveComboMachine(firstCombo.machine) : null;
+                  const reportSnapshot: SoTronSavedReport = {
+                    id: editingId || '',
+                    chi_nhanh: CHI_NHANH_MAC_DINH,
+                    ngay,
+                    ma_may: machineIdn?.code || (firstCombo?.machine ?? ''),
+                    ten_may: machineIdn?.name || (firstCombo?.machine ?? ''),
+                    ca: selectedCa || (firstCombo?.ca ?? ''),
+                    nhan_su: nhanSuText.trim(),
+                    nhan_su_chi_tiet: phanCong,
+                    lenh_sx: selectedOrders.map(o => ({ id: o.id, ma_lenh: o.code })),
+                    coi_tron_mau: coiMau,
+                    bang_nvl: nvlRows.map(row => {
+                      const lan = row.lan.map(parseNum).map(round2);
+                      return {
+                        material_id: row.material_id,
+                        ma_nvl: row.ma_nvl.trim(),
+                        ten_nvl: row.ten_nvl.trim(),
+                        ten_nvl_sx: row.ten_nvl_sx.trim(),
+                        dvt: row.dvt.trim() || 'kg',
+                        lan,
+                        tong: round2(lan.reduce((s, v) => s + v, 0)),
+                        lenh_sx: row.nguon
+                      };
+                    }),
+                    bang_san_pham: spRows.map(row => ({
+                      ma_lenh_sx: row.ma_lenh_sx,
+                      ma_sp: row.ma_sp.trim(),
+                      ten_sp: row.ten_sp.trim(),
+                      so_luong: row.so_luong.trim(),
+                      dinh_muc: row.dinh_muc.trim(),
+                      trong_luong: row.trong_luong.trim(),
+                      ghi_chu: row.ghi_chu.trim()
+                    })),
+                    bang_hang_loi: loiRows.map(row => ({ ten_loi: row.ten_loi.trim(), so_luong: row.so_luong.trim() })),
+                    bang_ban_giao: banGiaoRows.map(row => {
+                      const lay = parseNum(row.lay_trong_kho);
+                      const dau = parseNum(row.ton_dau_ca);
+                      const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+                      return {
+                        material_id: row.material_id,
+                        ma_nvl: row.ma_nvl.trim(),
+                        ten_nvl: row.ten_nvl.trim(),
+                        ten_nvl_sx: row.ten_nvl_sx.trim(),
+                        lay_trong_kho: round2(lay),
+                        ton_dau_ca: round2(dau),
+                        tong_su_dung: suDung,
+                        ton_cuoi_ca: round2(lay + dau - suDung)
+                      };
+                    }),
+                    ghi_chu: ghiChu.trim()
+                  };
+                  setPreviewPhieuGiaoCaReport(reportSnapshot);
+                }}
+                disabled={nvlRows.length === 0 && spRows.length === 0}
+                className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+              >
+                <Printer className="h-4 w-4" /> In phiếu giao ca
+              </button>
+              <button
+                type="button"
                 onClick={resetForm}
                 className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50"
               >
@@ -2822,6 +2993,18 @@ export function SoTronPanel({
             </div>
           </section>
           )}
+
+      {previewPhieuGiaoCaReport && (
+        <PhieuGiaoCaModal
+          open={!!previewPhieuGiaoCaReport}
+          report={previewPhieuGiaoCaReport}
+          onClose={() => setPreviewPhieuGiaoCaReport(null)}
+          onSaved={updated => {
+            setPreviewPhieuGiaoCaReport(null);
+            loadReportToForm(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2838,6 +3021,7 @@ export function SoTronListView({
   onEdit: (report: SoTronSavedReport) => void;
 }) {
   const [reports, setReports] = useState<SoTronSavedReport[]>([]);
+  const [selectedPhieuGiaoCa, setSelectedPhieuGiaoCa] = useState<SoTronSavedReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
 
@@ -2937,6 +3121,14 @@ export function SoTronListView({
                       <span className="flex justify-end gap-1.5">
                         <button
                           type="button"
+                          onClick={() => setSelectedPhieuGiaoCa(report)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition"
+                          title="In phiếu giao ca (cho xem và sửa trước khi in)"
+                        >
+                          <Printer className="h-3.5 w-3.5" /> In phiếu giao ca
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => onEdit(report)}
                           className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
                         >
@@ -2958,6 +3150,22 @@ export function SoTronListView({
           </div>
         )}
       </div>
+
+      {selectedPhieuGiaoCa && (
+        <PhieuGiaoCaModal
+          open={!!selectedPhieuGiaoCa}
+          report={selectedPhieuGiaoCa}
+          onClose={() => setSelectedPhieuGiaoCa(null)}
+          onSaved={updated => {
+            setReports(prev => prev.map(r => (r.id === updated.id ? updated : r)));
+            setSelectedPhieuGiaoCa(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+export { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
+export { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
+
