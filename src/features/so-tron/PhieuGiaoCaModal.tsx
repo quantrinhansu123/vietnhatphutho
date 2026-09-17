@@ -426,6 +426,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         bang_san_pham: nextBangSanPham,
         bang_hang_loi: nextBangHangLoi,
         bang_ban_giao: nextBangBanGiao,
+        tong_nvl: Math.round((nextBangBanGiao.reduce((s, l) => s + (Number(l.tong_su_dung) || 0), 0) + Number.EPSILON) * 100) / 100,
+        tong_nhap_nvl: Math.round((nextBangBanGiao.reduce((s, l) => s + (Number(l.lay_trong_kho) || 0), 0) + Number.EPSILON) * 100) / 100,
+        tong_sp_co_mang: Number((report as unknown as Record<string, unknown>).tong_sp_co_mang) || 0,
+        tong_sp_khong_mang: Number((report as unknown as Record<string, unknown>).tong_sp_khong_mang) || 0,
+        tong_loi_hong: Number((report as unknown as Record<string, unknown>).tong_loi_hong) || 0,
+        chi_tieu_phan_tram: Number((report as unknown as Record<string, unknown>).chi_tieu_phan_tram) || 0,
         ghi_chu: suCoLuuY
       };
 

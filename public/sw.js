@@ -1,7 +1,7 @@
 /* Viet Nhat IPT service worker */
 // ĐỔI VERSION mỗi khi build bản mới có thay đổi giao diện — nếu không,
 // trình duyệt giữ index.html/bundle cũ trong cache và người dùng không thấy nút/màn hình mới.
-const VERSION = 'v1.0.2';
+const VERSION = 'v1.0.4';
 const SHELL_CACHE = `vnipt-shell-${VERSION}`;
 const RUNTIME_CACHE = `vnipt-runtime-${VERSION}`;
 

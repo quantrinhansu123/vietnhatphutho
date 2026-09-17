@@ -32,6 +32,9 @@ export type TableId =
   | 'bao_cao_nghiem_thu'
   | 'bao_cao_may_nvl_ton'
   | 'so_tron'
+  | 'so_test_mau_nhua'
+  | 'so_giao_ca_mmtb'
+  | 'bao_cao_ngay'
   | 'so_che_do_may'
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
@@ -395,13 +398,35 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   so_tron: {
     table: 'so_tron',
     label: 'Sổ trộn ca (công nhân cuối ngày)',
-    sql: ['supabase-so-tron.sql'],
+    sql: ['supabase-so-tron.sql', 'supabase-so-tron-tong-hop.sql', 'supabase-so-tron-tong-nhap.sql'],
     apiPrefix: '/api/so-tron',
     serverLines: 'parseSoTronBody + GET/POST/PUT/DELETE /api/so-tron (sau bulk-delete bao-cao-may-nvl-ton)',
     appTab: 'so-tron | so-tron-list',
     appLines: 'src/features/so-tron/index.tsx (SoTronPanel + SoTronListView)',
     components: [],
     utils: []
+  },
+  bao_cao_ngay: {
+    table: 'bao_cao_ngay',
+    label: 'Báo cáo ngày (tổng hợp từ sổ trộn)',
+    sql: ['supabase-bao-cao-ngay.sql'],
+    apiPrefix: '/api/bao-cao-ngay',
+    serverLines: 'parseBaoCaoNgayBody + GET/POST/PUT/DELETE (soft delete deleted_at)/POST restore /api/bao-cao-ngay',
+    appTab: 'bao-cao-ngay | bao-cao-ngay-list',
+    appLines: 'src/features/bao-cao-ngay/index.tsx (BaoCaoNgayPanel + BaoCaoNgayListView + BaoCaoNgayTable)',
+    components: [],
+    utils: []
+  },
+  so_test_mau_nhua: {
+    table: 'so_test_mau_nhua',
+    label: 'Sổ test mẫu nhựa (QC, theo ngày)',
+    sql: ['supabase-so-test-mau-nhua.sql'],
+    apiPrefix: '/api/so-test-mau-nhua',
+    serverLines: 'parseSoTestMauNhuaBody + GET/POST/PUT/DELETE /api/so-test-mau-nhua (sau so-che-do-may)',
+    appTab: 'so-test-mau-nhua',
+    appLines: 'src/features/so-test-mau-nhua/index.tsx (SoTestMauNhuaWorkspace)',
+    components: [],
+    utils: ['src/features/so-test-mau-nhua/model.ts', 'src/features/so-test-mau-nhua/print.ts']
   },
   so_giao_ca_mmtb: {
     table: 'so_giao_ca_mmtb',

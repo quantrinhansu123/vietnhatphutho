@@ -86,7 +86,9 @@ import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/so-tron';
 import { SoGiaoCaMmtbPanel, SoGiaoCaMmtbListView, type SoGiaoCaMmtbRecord } from './features/so-giao-ca-mmtb';
 import { SoCheDoMayWorkspace } from './features/so-che-do-may';
+import { SoTestMauNhuaWorkspace } from './features/so-test-mau-nhua';
 import { BaoCaoTuanPanel } from './features/bao-cao-tuan';
+import { BaoCaoNgayListView, BaoCaoNgayPanel, type BaoCaoNgaySavedReport } from './features/bao-cao-ngay';
 import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -216,6 +218,7 @@ export default function App() {
   } | null>(null);
   const [machineNvlEditReport, setMachineNvlEditReport] = useState<MachineNvlSavedReport | null>(null);
   const [soTronEditReport, setSoTronEditReport] = useState<SoTronSavedReport | null>(null);
+  const [baoCaoNgayEditReport, setBaoCaoNgayEditReport] = useState<BaoCaoNgaySavedReport | null>(null);
   const [soGiaoCaMmtbEditRecord, setSoGiaoCaMmtbEditRecord] = useState<SoGiaoCaMmtbRecord | null>(null);
   const [weighingPendingAdd, setWeighingPendingAdd] = useState<WeighingPendingAdd | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
@@ -1309,6 +1312,8 @@ export default function App() {
                   }}
                 />
               </motion.div>
+            ) : activeTab === 'so-test-mau-nhua' ? (
+              <SoTestMauNhuaWorkspace onBack={() => goBack('factory-qc')} />
             ) : activeTab === 'so-che-do-may' ? (
               <motion.div
                 key="so-che-do-may"
@@ -1398,6 +1403,41 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <BaoCaoTuanPanel onBack={() => goBack('report-forms')} />
+              </motion.div>
+            ) : activeTab === 'bao-cao-ngay' ? (
+              <motion.div
+                key="bao-cao-ngay"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoNgayPanel
+                  onBack={() => goBack('report-forms')}
+                  onOpenList={() => navigateToTab('bao-cao-ngay-list')}
+                  editReport={baoCaoNgayEditReport}
+                  onEditConsumed={() => setBaoCaoNgayEditReport(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'bao-cao-ngay-list' ? (
+              <motion.div
+                key="bao-cao-ngay-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoNgayListView
+                  onBack={() => goBack('report-lists')}
+                  onCreate={() => {
+                    setBaoCaoNgayEditReport(null);
+                    navigateToTab('bao-cao-ngay');
+                  }}
+                  onEdit={report => {
+                    setBaoCaoNgayEditReport(report);
+                    navigateToTab('bao-cao-ngay');
+                  }}
+                />
               </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div

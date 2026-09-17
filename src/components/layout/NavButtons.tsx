@@ -104,6 +104,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'weighing-summary': 'report-forms',
   'weighing-summary-list': 'factory-qc',
   'can-tu-dong': 'factory-qc',
+  'so-test-mau-nhua': 'factory-qc',
   'damaged-goods-report': 'report-forms',
   'damaged-goods-report-list': 'factory-qc',
   'mixing-report': 'report-forms',
@@ -121,6 +122,8 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'machine-run-log': 'report-forms',
   'machine-run-log-list': 'report-lists',
   'bao-cao-tuan': 'report-forms',
+  'bao-cao-ngay': 'report-forms',
+  'bao-cao-ngay-list': 'report-lists',
   'acceptance-report': 'report-forms',
   'dashboard': 'quan-tri'
 };

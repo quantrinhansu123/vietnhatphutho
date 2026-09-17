@@ -131,8 +131,10 @@ const SUPABASE_MACHINE_DOWNTIME_TABLE =
 const SUPABASE_MACHINE_RUN_LOG_TABLE =
   process.env.SUPABASE_MACHINE_RUN_LOG_TABLE || 'nhat_ky_chay_may';
 const SUPABASE_SO_TRON_TABLE = process.env.SUPABASE_SO_TRON_TABLE || 'so_tron';
+const SUPABASE_BAO_CAO_NGAY_TABLE = process.env.SUPABASE_BAO_CAO_NGAY_TABLE || 'bao_cao_ngay';
 const SUPABASE_SO_GIAO_CA_MMTB_TABLE = process.env.SUPABASE_SO_GIAO_CA_MMTB_TABLE || 'so_giao_ca_mmtb';
 const SUPABASE_SO_CHE_DO_MAY_TABLE = process.env.SUPABASE_SO_CHE_DO_MAY_TABLE || 'so_che_do_may';
+const SUPABASE_SO_TEST_MAU_NHUA_TABLE = process.env.SUPABASE_SO_TEST_MAU_NHUA_TABLE || 'so_test_mau_nhua';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Phú Thọ';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -14284,6 +14286,10 @@ export function createApp() {
   function parseSoTronBody(body: unknown) {
     const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
     const asText = (value: unknown) => (value === null || value === undefined ? '' : String(value));
+    const asNum = (value: unknown) => {
+      const parsed = Number(String(value ?? '').trim().replace(',', '.'));
+      return Number.isFinite(parsed) ? Math.round((parsed + Number.EPSILON) * 100) / 100 : 0;
+    };
     const asJsonArray = (value: unknown) => (Array.isArray(value) ? value : []);
     const ngay = asText(source.ngay).trim().slice(0, 10);
     const maMay = asText(source.ma_may ?? source.maMay).trim();
@@ -14306,6 +14312,12 @@ export function createApp() {
         bang_san_pham: asJsonArray(source.bang_san_pham ?? source.bangSanPham),
         bang_hang_loi: asJsonArray(source.bang_hang_loi ?? source.bangHangLoi),
         bang_ban_giao: asJsonArray(source.bang_ban_giao ?? source.bangBanGiao),
+        tong_nvl: asNum(source.tong_nvl ?? source.tongNvl),
+        tong_nhap_nvl: asNum(source.tong_nhap_nvl ?? source.tongNhapNvl ?? source.tongNhap),
+        tong_sp_co_mang: asNum(source.tong_sp_co_mang ?? source.tongSpCoMang),
+        tong_sp_khong_mang: asNum(source.tong_sp_khong_mang ?? source.tongSpKhongMang),
+        tong_loi_hong: asNum(source.tong_loi_hong ?? source.tongLoiHong),
+        chi_tieu_phan_tram: asNum(source.chi_tieu_phan_tram ?? source.chiTieuPhanTram),
         ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim()
       }
     };
@@ -14319,6 +14331,9 @@ export function createApp() {
     if (error?.code === '23505' || /duplicate|unique/i.test(message)) {
       return 'Đã tồn tại sổ trộn cho máy + ngày + ca này. Hãy mở phiếu cũ để sửa.';
     }
+    if (/Could not find|does not exist|column/i.test(message) && /tong_|chi_tieu/i.test(message)) {
+      return 'Bảng so_tron thiếu cột tổng hợp. Hãy chạy file supabase-so-tron-tong-hop.sql và supabase-so-tron-tong-nhap.sql trong Supabase SQL Editor rồi lưu lại.';
+    }
     return message ? `Không thể lưu sổ trộn. ${message}` : 'Không thể lưu sổ trộn.';
   }
 
@@ -14329,10 +14344,12 @@ export function createApp() {
 
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const tuNgay = typeof req.query.tu_ngay === 'string' ? req.query.tu_ngay.trim() : '';
+      const denNgay = typeof req.query.den_ngay === 'string' ? req.query.den_ngay.trim() : '';
       const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
       const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
-      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 300) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 100;
 
       let query = supabase
         .from(SUPABASE_SO_TRON_TABLE)
@@ -14342,7 +14359,12 @@ export function createApp() {
         .limit(limit);
 
       if (ngay) query = query.eq('ngay', ngay);
-      if (maMay) query = query.eq('ma_may', maMay);
+      if (tuNgay) query = query.gte('ngay', tuNgay);
+      if (denNgay) query = query.lte('ngay', denNgay);
+      if (maMay) {
+        const cleanMaMay = maMay.replace(/["']/g, '');
+        query = query.or(`ma_may.eq."${cleanMaMay}",ten_may.eq."${cleanMaMay}"`);
+      }
       if (ca) query = query.eq('ca', ca);
 
       const { data, error } = await query;
@@ -14375,6 +14397,21 @@ export function createApp() {
         .single();
 
       if (error) {
+        // DB chưa chạy migration tong_nhap_nvl → thử lại không kèm cột mới
+        if (/tong_nhap_nvl/i.test(String((error as { message?: string })?.message ?? ''))) {
+          const { tong_nhap_nvl: _drop, ...fallbackRecord } = parsed.record as Record<string, unknown>;
+          const retry = await supabase
+            .from(SUPABASE_SO_TRON_TABLE)
+            .insert(fallbackRecord)
+            .select('*')
+            .single();
+          if (retry.error) {
+            console.error('Supabase so tron insert error:', retry.error);
+            const status = retry.error?.code === '23505' ? 409 : 500;
+            return res.status(status).json({ error: soTronWriteError(retry.error) });
+          }
+          return res.status(201).json({ success: true, report: retry.data });
+        }
         console.error('Supabase so tron insert error:', error);
         const status = error?.code === '23505' ? 409 : 500;
         return res.status(status).json({ error: soTronWriteError(error) });
@@ -14408,6 +14445,23 @@ export function createApp() {
         .single();
 
       if (error) {
+        // DB chưa chạy migration tong_nhap_nvl → thử lại không kèm cột mới
+        if (/tong_nhap_nvl/i.test(String((error as { message?: string })?.message ?? ''))) {
+          const { tong_nhap_nvl: _dropUpdate, ...fallbackRecord } = parsed.record as Record<string, unknown>;
+          const retry = await supabase
+            .from(SUPABASE_SO_TRON_TABLE)
+            .update(fallbackRecord)
+            .eq('id', id)
+            .select('*')
+            .single();
+          if (retry.error) {
+            console.error('Supabase so tron update error:', retry.error);
+            const status = retry.error?.code === '23505' ? 409 : 500;
+            return res.status(status).json({ error: soTronWriteError(retry.error) });
+          }
+          if (!retry.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+          return res.json({ success: true, report: retry.data });
+        }
         console.error('Supabase so tron update error:', error);
         const status = error?.code === '23505' ? 409 : 500;
         return res.status(status).json({ error: soTronWriteError(error) });
@@ -14445,6 +14499,273 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ trộn.' });
+    }
+  });
+
+  // =====================================================================
+  // BÁO CÁO NGÀY (tổng hợp từ sổ trộn, 1 ngày = 1 báo cáo, soft delete)
+  // =====================================================================
+
+  function baoCaoNgayWriteError(error: { message?: string; code?: string }) {
+    const message = String(error?.message ?? '');
+    if (error?.code === '42P01' || /does not exist|not exist|Could not find the table/i.test(message)) {
+      return 'Bảng bao_cao_ngay chưa tồn tại trên Supabase. Hãy chạy file supabase-bao-cao-ngay.sql trong Supabase SQL Editor.';
+    }
+    if (error?.code === '23505' || /duplicate|unique/i.test(message)) {
+      return 'Ngày này đã có báo cáo ngày. Mỗi ngày chỉ có 1 báo cáo — hãy mở báo cáo cũ để xem/sửa.';
+    }
+    if (/Could not find|does not exist|column/i.test(message)) {
+      return `Bảng bao_cao_ngay đang thiếu cột (${message}). Hãy chạy supabase-bao-cao-ngay.sql.`;
+    }
+    return message ? `Không thể lưu báo cáo ngày. ${message}` : 'Không thể lưu báo cáo ngày.';
+  }
+
+  function baoCaoNgaySoftDeleteHint(error: { message?: string }) {
+    const message = String(error?.message ?? '');
+    if (/Could not find|does not exist|column/i.test(message) && /deleted_at/i.test(message)) {
+      return ' Bảng bao_cao_ngay thiếu cột deleted_at — chạy supabase-bao-cao-ngay.sql trong Supabase SQL Editor.';
+    }
+    return '';
+  }
+
+  function parseBaoCaoNgayBody(body: unknown) {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const asText = (value: unknown) => (value === null || value === undefined ? '' : String(value));
+    const asNum = (value: unknown) => {
+      const parsed = Number(String(value ?? '').trim().replace(',', '.'));
+      return Number.isFinite(parsed) ? Math.round((parsed + Number.EPSILON) * 100) / 100 : 0;
+    };
+    const asJsonArray = (value: unknown) => (Array.isArray(value) ? value : []);
+    const ngay = asText(source.ngay).trim().slice(0, 10);
+    if (!ngay || !/^\d{4}-\d{2}-\d{2}$/.test(ngay)) return { error: 'Thiếu ngày báo cáo (YYYY-MM-DD).' };
+    return {
+      record: {
+        chi_nhanh: asText(source.chi_nhanh ?? source.chiNhanh).trim() || 'Phú Thọ',
+        ngay,
+        nhan_su_c1: asText(source.nhan_su_c1 ?? source.nhanSuC1).trim(),
+        thanh_pham: asJsonArray(source.thanh_pham ?? source.thanhPham),
+        phe_hong: asJsonArray(source.phe_hong ?? source.pheHong),
+        vat_tu: asJsonArray(source.vat_tu ?? source.vatTu),
+        tong_thanh_pham_so_luong: asNum(source.tong_thanh_pham_so_luong ?? source.tongThanhPhamSoLuong),
+        tong_thanh_pham_trong_luong: asNum(source.tong_thanh_pham_trong_luong ?? source.tongThanhPhamTrongLuong),
+        tong_phe: asNum(source.tong_phe ?? source.tongPhe),
+        tong_nhap_vt: asNum(source.tong_nhap_vt ?? source.tongNhapVt),
+        tong_ton_trong_ngay: asNum(source.tong_ton_trong_ngay ?? source.tongTonTrongNgay),
+        tong_hao_hut: asNum(source.tong_hao_hut ?? source.tongHaoHut),
+        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim()
+      }
+    };
+  }
+
+  app.get('/api/bao-cao-ngay', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const tuNgay = typeof req.query.tu_ngay === 'string' ? req.query.tu_ngay.trim() : '';
+      const denNgay = typeof req.query.den_ngay === 'string' ? req.query.den_ngay.trim() : '';
+      const includeDeleted = String(req.query.includeDeleted ?? req.query.include_deleted ?? '') === '1';
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 200;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 200;
+
+      let query = supabase
+        .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .limit(limit);
+
+      if (!includeDeleted) {
+        try {
+          query = query.is('deleted_at', null);
+        } catch {
+          /* DB chưa chạy migration soft-delete → đọc toàn bộ như cũ */
+        }
+      }
+      if (ngay) query = query.eq('ngay', ngay);
+      if (tuNgay) query = query.gte('ngay', tuNgay);
+      if (denNgay) query = query.lte('ngay', denNgay);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase bao cao ngay query error:', error);
+        // DB chưa có cột deleted_at → đọc lại không lọc xóa mềm
+        if (!includeDeleted && /deleted_at/i.test(String(error.message ?? ''))) {
+          let fallback = supabase
+            .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+            .select('*')
+            .order('ngay', { ascending: false })
+            .limit(limit);
+          if (ngay) fallback = fallback.eq('ngay', ngay);
+          if (tuNgay) fallback = fallback.gte('ngay', tuNgay);
+          if (denNgay) fallback = fallback.lte('ngay', denNgay);
+          const retry = await fallback;
+          if (retry.error) {
+            return res.status(500).json({ error: baoCaoNgayWriteError(retry.error) });
+          }
+          return res.json({ reports: retry.data || [], total: retry.data?.length || 0 });
+        }
+        return res.status(500).json({ error: baoCaoNgayWriteError(error) });
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+      const visible = includeDeleted ? rows : rows.filter(row => {
+        const deletedAt = (row as Record<string, unknown>).deleted_at ?? (row as Record<string, unknown>).deletedAt;
+        return deletedAt === null || deletedAt === undefined;
+      });
+      return res.json({ reports: visible, total: visible.length });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo ngày.' });
+    }
+  });
+
+  app.post('/api/bao-cao-ngay', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseBaoCaoNgayBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase bao cao ngay insert error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: baoCaoNgayWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo ngày.' });
+    }
+  });
+
+  app.put('/api/bao-cao-ngay/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo ngày.' });
+
+      const parsed = parseBaoCaoNgayBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase bao cao ngay update error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: baoCaoNgayWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo ngày.' });
+      return res.json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật báo cáo ngày.' });
+    }
+  });
+
+  /** Xóa mềm báo cáo ngày: ẩn khỏi danh sách (deleted_at), không mất dữ liệu. Thêm ?hard=1 để xóa vĩnh viễn. */
+  app.delete('/api/bao-cao-ngay/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo ngày.' });
+      const hard = String(req.query.hard ?? '') === '1';
+
+      if (hard) {
+        const { data, error } = await supabase
+          .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+          .delete()
+          .eq('id', id)
+          .select('id')
+          .single();
+        if (error) {
+          console.error('Supabase bao cao ngay hard delete error:', error);
+          return res.status(500).json({ error: baoCaoNgayWriteError(error) });
+        }
+        if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo ngày.' });
+        return res.json({ success: true, hardDeleted: true });
+      }
+
+      const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const deletedBy = typeof body.deleted_by === 'string' ? body.deleted_by.trim()
+        : typeof body.deletedBy === 'string' ? body.deletedBy.trim() : null;
+
+      const patch: Record<string, unknown> = { deleted_at: new Date().toISOString() };
+      if (deletedBy) patch.deleted_by = deletedBy;
+
+      const { data, error: softDeleteError } = await supabase
+        .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+        .update(patch)
+        .eq('id', id)
+        .is('deleted_at', null)
+        .select('id, deleted_at');
+
+      if (softDeleteError) {
+        console.error('Supabase bao cao ngay soft delete error:', softDeleteError);
+        const hint = baoCaoNgaySoftDeleteHint(softDeleteError);
+        return res.status(500).json({ error: `Không thể xóa báo cáo ngày. ${softDeleteError.message}${hint}`.trim() });
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+      if (rows.length === 0) {
+        const { data: existing } = await supabase
+          .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+          .select('id')
+          .eq('id', id)
+          .maybeSingle();
+        if (!existing) return res.status(404).json({ error: 'Không tìm thấy báo cáo ngày.' });
+        return res.json({ success: true, softDeleted: true, alreadyDeleted: true });
+      }
+      return res.json({ success: true, softDeleted: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo ngày.' });
+    }
+  });
+
+  app.post('/api/bao-cao-ngay/:id/restore', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo ngày.' });
+      const { data, error } = await supabase
+        .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+        .update({ deleted_at: null, deleted_by: null })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Supabase bao cao ngay restore error:', error);
+        return res.status(500).json({ error: baoCaoNgayWriteError(error) });
+      }
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo ngày.' });
+      return res.json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi khôi phục báo cáo ngày.' });
     }
   });
 
@@ -14845,6 +15166,206 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ chế độ máy.' });
+    }
+  });
+
+  function parseSoTestMauNhuaBody(body: unknown) {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const asText = (value: unknown) => (value === null || value === undefined ? '' : String(value));
+    const ngayRaw = asText(source.ngay).trim().slice(0, 10);
+    const ngayMatch = /^(\d{1,4})-(\d{1,2})-(\d{1,2})$/.exec(ngayRaw);
+    if (!ngayMatch) return { error: 'Ngày không hợp lệ (YYYY-MM-DD, năm 1–2999).' };
+    const nam = Number(ngayMatch[1]);
+    const thang = Number(ngayMatch[2]);
+    const ngayNum = Number(ngayMatch[3]);
+    if (thang < 1 || thang > 12 || nam < 1 || nam > 2999) {
+      return { error: 'Ngày không hợp lệ (YYYY-MM-DD, năm 1–2999).' };
+    }
+    const leap = (nam % 4 === 0 && nam % 100 !== 0) || nam % 400 === 0;
+    const daysInMonth = thang === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(thang) ? 30 : 31;
+    if (ngayNum < 1 || ngayNum > daysInMonth) {
+      return { error: 'Ngày không hợp lệ (YYYY-MM-DD, năm 1–2999).' };
+    }
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const ngay = `${nam}-${pad2(thang)}-${pad2(ngayNum)}`;
+    const rawList = Array.isArray(source.chi_tiet) ? source.chi_tiet : [];
+    if (rawList.length > 200) return { error: 'Sổ chỉ được có tối đa 200 dòng.' };
+    const chiTiet: {
+      material_id: string;
+      ma_npl: string;
+      ten_npl: string;
+      may_ep_mau: string;
+      may_va_dap: string;
+      chi_so_mi: string;
+      ket_luan: string;
+      nguoi_thuc_hien: string;
+    }[] = [];
+    for (let i = 0; i < rawList.length; i++) {
+      const item = rawList[i];
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return { error: `Dòng ${i + 1} không hợp lệ.` };
+      }
+      const row = item as Record<string, unknown>;
+      const get = (v: unknown) => asText(v).trim().slice(0, 2000);
+      const line = {
+        material_id: get(row.material_id),
+        ma_npl: get(row.ma_npl).slice(0, 200),
+        ten_npl: get(row.ten_npl).slice(0, 500),
+        may_ep_mau: get(row.may_ep_mau).slice(0, 500),
+        may_va_dap: get(row.may_va_dap).slice(0, 500),
+        chi_so_mi: get(row.chi_so_mi).slice(0, 500),
+        ket_luan: get(row.ket_luan).slice(0, 500),
+        nguoi_thuc_hien: get(row.nguoi_thuc_hien).slice(0, 200)
+      };
+      const hasContent = Object.values(line).some(v => v !== '');
+      if (!hasContent) continue;
+      if (!line.material_id) {
+        return { error: `Dòng ${i + 1}: vui lòng chọn loại hàng từ kho nguyên vật liệu.` };
+      }
+      chiTiet.push(line);
+    }
+    return {
+      record: {
+        chi_nhanh: asText(source.chi_nhanh).trim().slice(0, 120) || 'Phú Thọ',
+        ngay,
+        chi_tiet: chiTiet
+      }
+    };
+  }
+
+  function soTestMauNhuaWriteError(error: { message?: string; code?: string }) {
+    const message = String(error?.message ?? '');
+    if (error?.code === '42P01' || /does not exist|not exist|Could not find the table/i.test(message)) {
+      return 'Bảng so_test_mau_nhua chưa tồn tại trên Supabase. Hãy chạy file supabase-so-test-mau-nhua.sql trong Supabase SQL Editor.';
+    }
+    if (error?.code === '23505' || /duplicate|unique/i.test(message)) {
+      return 'Đã tồn tại sổ test mẫu nhựa cho ngày này. Hãy mở sổ cũ để sửa.';
+    }
+    return message ? `Không thể lưu sổ test mẫu nhựa. ${message}` : 'Không thể lưu sổ test mẫu nhựa.';
+  }
+
+  app.get('/api/so-test-mau-nhua', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim().slice(0, 10) : '';
+      const tuNgay = typeof req.query.tu_ngay === 'string' ? req.query.tu_ngay.trim().slice(0, 10) : '';
+      const denNgay = typeof req.query.den_ngay === 'string' ? req.query.den_ngay.trim().slice(0, 10) : '';
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 100;
+
+      let query = supabase
+        .from(SUPABASE_SO_TEST_MAU_NHUA_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .limit(limit);
+
+      if (ngay) query = query.eq('ngay', ngay);
+      if (tuNgay) query = query.gte('ngay', tuNgay);
+      if (denNgay) query = query.lte('ngay', denNgay);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase so test mau nhua query error:', error);
+        return res.status(500).json({ error: soTestMauNhuaWriteError(error) });
+      }
+
+      return res.json({ records: data || [], total: data?.length || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải sổ test mẫu nhựa.' });
+    }
+  });
+
+  app.post('/api/so-test-mau-nhua', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseSoTestMauNhuaBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_TEST_MAU_NHUA_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so test mau nhua insert error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soTestMauNhuaWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu sổ test mẫu nhựa.' });
+    }
+  });
+
+  app.put('/api/so-test-mau-nhua/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ test mẫu nhựa.' });
+
+      const parsed = parseSoTestMauNhuaBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_TEST_MAU_NHUA_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so test mau nhua update error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soTestMauNhuaWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ test mẫu nhựa.' });
+      return res.json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật sổ test mẫu nhựa.' });
+    }
+  });
+
+  app.delete('/api/so-test-mau-nhua/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ test mẫu nhựa.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_TEST_MAU_NHUA_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Supabase so test mau nhua delete error:', error);
+        return res.status(500).json({ error: soTestMauNhuaWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ test mẫu nhựa.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ test mẫu nhựa.' });
     }
   });
 

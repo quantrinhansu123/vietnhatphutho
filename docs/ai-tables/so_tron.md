@@ -2,7 +2,7 @@
 
 | Bảng | `so_tron` |
 | Tab | `so-tron` → `/so-tron` (card **Sổ trộn** trong `/phieu-bao-cao`) + `so-tron-list` → `/danh-sach-so-tron` (card **Danh sách sổ trộn** trong `/danh-sach-bao-cao`, vào từ `/nha-may/cong-nhan` → Lịch sử công việc) |
-| SQL | `supabase-so-tron.sql` |
+| SQL | `supabase-so-tron.sql` + `supabase-so-tron-tong-hop.sql` (5 cột tổng hợp) + `supabase-so-tron-tong-nhap.sql` (`tong_nhap_nvl`) |
 
 ## API (`server.ts`)
 
